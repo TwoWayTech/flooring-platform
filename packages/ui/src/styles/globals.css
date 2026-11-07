@@ -246,3 +246,11 @@
     inset: 0 auto auto 0;
   }
 }
+
+/* Horizontal tab rows on phones scroll by touch; a scrollbar under them only adds noise. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Localization and tax (tabs Region, Currency, Sales tax, Payroll rules, Documents; tax rules feed the quote builder; step-up for currency and tax). Then Number format.
+- Next step: Phase 2, Settings: Number format (decimals per kind from NUMBER_KINDS, negative style, compact numbers, live examples with <Num>; money 2 → 0 changes display not totals, hover shows full value). Then Company profile and Audit log.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -32,7 +32,7 @@
 - [x] Settings: users
 - [x] Settings: security roles
 - [x] Settings: branding
-- [ ] Settings: localization and tax
+- [x] Settings: localization and tax
 - [ ] Settings: number format
 - [ ] Settings: company profile and audit log
 - [ ] Super-admin: companies and company access

@@ -12,7 +12,10 @@ export function SettingsNav() {
   const pathname = usePathname();
   const items = visibleItems(product.settings, access);
   return (
-    <nav aria-label="Settings" className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:overflow-visible lg:px-0">
+    <nav
+      aria-label="Settings"
+      className="scrollbar-none -mx-4 overflow-x-auto px-4 lg:mx-0 lg:overflow-visible lg:px-0"
+    >
       <ul className="flex gap-1 lg:flex-col">
         {items.map((item) => {
           const active = pathname.startsWith(item.href);
