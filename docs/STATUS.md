@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 5 (ship)
-- Next step: Phase 5, write docs/demo-script.md (20 to 30 minute click path, persona by persona, following the presenter guide steps), then the Vercel deploy (ask the user before the deploy command runs).
+- Next step: Phase 5, deploy to Vercel: one project, hostnames flooring-demo.vercel.app and hr-demo.vercel.app. Ask the user before the deploy command runs; exact steps are in docs/deploy.md.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-2140-phase4-polish.md
 
@@ -53,7 +53,7 @@
 
 ### Phase 5: ship
 - [x] All tests green, production build passes
-- [ ] docs/demo-script.md
+- [x] docs/demo-script.md
 - [ ] Deployed: Flooring and HR hosts
 
 ## Decisions

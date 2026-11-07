@@ -88,6 +88,12 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
       anyOf: ["settings.numbers.manage"],
     },
     {
+      title: "Branding",
+      say: "Change the brand color: buttons, links, the floor pattern and charts follow at once.",
+      href: "/settings/branding",
+      anyOf: ["settings.branding.manage"],
+    },
+    {
       title: "Audit log",
       say: "Every change made above, with who, when, before and after.",
       href: "/settings/audit",
