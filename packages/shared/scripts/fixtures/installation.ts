@@ -78,6 +78,15 @@ function costJob(invoice: Invoice, crew: Crew) {
   };
 }
 
+/** A crew with no job yet on that date, so no crew is booked twice in a day; any crew once all are booked. */
+function freeCrew(ctx: GenContext, crews: readonly Crew[], busy: Map<string, Set<string>>, date: string): Crew {
+  const taken = busy.get(date) ?? new Set<string>();
+  const free = crews.filter((c) => !taken.has(c.id));
+  const crew = ctx.rng.pick(free.length > 0 ? free : crews);
+  busy.set(date, taken.add(crew.id));
+  return crew;
+}
+
 /** Forty installation jobs from the most recent invoices that bill installation labor. */
 export function buildJobs(
   ctx: GenContext,
@@ -91,9 +100,10 @@ export function buildJobs(
     .filter((i) => !i.isReturn && laborLines(i).length > 0)
     .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt))
     .slice(-(PAST_JOBS + TODAY_JOBS + UPCOMING_JOBS));
+  const busy = new Map<string, Set<string>>();
   const jobs = candidates.map((invoice, index): Job => {
-    const crew = ctx.rng.pick(crews);
     const date = jobDate(ctx, invoice, index);
+    const crew = freeCrew(ctx, crews, busy, date);
     const status = jobStatus(ctx, date);
     const customer = customers.find((c) => c.id === invoice.customerId)!;
     const rooms = quotes.find((q) => q.id === invoice.quoteId)?.rooms ?? [];

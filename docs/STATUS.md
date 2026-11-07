@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Dashboard (Flooring): revenue and gross margin chart (chart tokens validated, see ADR 0002 and design plan), key figures, needs attention (lib/attention.ts), best and slow sellers, today's jobs. Replace the placeholder in features/home/home-page.tsx.
+- Next step: Phase 2, Inventory: product and roll lists with mini roll gauges and filters, roll detail page with the large gauge, cut history, remnants, location and cost (permission), "Cut roll" dialog (leftover under 12 ft becomes a remnant; put the cut rule in packages/shared). Then Quote builder.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -26,7 +26,7 @@
 
 ### Phase 2: Tier 1 screens
 - [x] Login, personas, MFA
-- [ ] Dashboard
+- [x] Dashboard
 - [ ] Inventory, roll detail, cut roll
 - [ ] Quote builder, invoice, PDF
 - [ ] Settings: users

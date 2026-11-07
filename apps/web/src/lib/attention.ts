@@ -17,6 +17,7 @@ export const CERTIFICATE_WARNING_DAYS = 30;
 export interface AttentionItem {
   key: string;
   count: number;
+  /** What is counted, without the number, e.g. "overdue invoices". */
   label: string;
   href: string;
   tone: "danger" | "warning" | "brand";
@@ -29,7 +30,8 @@ interface Check {
   load: (client: ApiClient, today: string) => Promise<Omit<AttentionItem, "key">>;
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** The noun for a count: "overdue invoice" for 1, "overdue invoices" otherwise. */
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
  * The "Needs attention" checks (spec "Dashboard": overdue invoices, low rolls, expiring

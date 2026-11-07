@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { PageHeader } from "@workspace/ui/components/page-header";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { DashboardPage } from "@/features/dashboard/dashboard-page";
 import { homeFor } from "@/products";
 
 /**
@@ -18,5 +18,5 @@ export function HomePage() {
     if (home !== "/") router.replace(home);
   }, [home, router]);
   if (home !== "/") return null;
-  return <PageHeader title={product.key === "hr" ? "HR dashboard" : "Dashboard"} />;
+  return product.key === "flooring" ? <DashboardPage /> : null;
 }

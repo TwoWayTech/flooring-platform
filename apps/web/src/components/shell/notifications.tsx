@@ -54,7 +54,7 @@ export function Notifications() {
               <li key={item.key}>
                 <Link href={item.href} className="hover:bg-raised flex items-center gap-3 px-4 py-2.5 text-sm">
                   <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", DOT[item.tone])} />
-                  {item.label}
+                  {item.count} {item.label}
                 </Link>
               </li>
             ))}

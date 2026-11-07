@@ -1,5 +1,6 @@
 import { dec, moneyString, sum, marginPct, type Dec } from "./money";
 import { daysBetween } from "./dates";
+import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
 import type { Bill, Expense, Invoice, Product, Roll } from "./types";
 
@@ -127,4 +128,87 @@ export function monthlyPnl(
       netIncome: moneyString(gross.minus(opex)),
     };
   });
+}
+
+/** A product's sales over a period, from invoice lines. */
+export interface ProductSales {
+  productId: string;
+  revenue: string;
+  quantity: string;
+}
+
+/**
+ * Best sellers (spec "Dashboard"): material revenue per product from invoices issued on or after
+ * `since`, returns subtracted, highest first. Services are left out; they are not stock.
+ */
+export function bestSellers(invoices: readonly Invoice[], since: string, limit: number): ProductSales[] {
+  const totals = new Map<string, { revenue: Dec; quantity: Dec }>();
+  for (const inv of invoices) {
+    if (inv.status === "void" || inv.issuedAt < since) continue;
+    const sign = inv.isReturn ? -1 : 1;
+    for (const line of inv.lines) {
+      if (line.category !== "material" || !line.productId) continue;
+      const t = totals.get(line.productId) ?? { revenue: dec(0), quantity: dec(0) };
+      const amount = lineAmount(line).times(sign);
+      totals.set(line.productId, {
+        revenue: t.revenue.plus(amount),
+        quantity: t.quantity.plus(dec(line.quantity).times(sign)),
+      });
+    }
+  }
+  return [...totals.entries()]
+    .sort(([, a], [, b]) => b.revenue.comparedTo(a.revenue))
+    .slice(0, limit)
+    .map(([productId, t]) => ({ productId, revenue: moneyString(t.revenue), quantity: t.quantity.toString() }));
+}
+
+/** A stocked product that has not sold for a while. */
+export interface SlowMover {
+  productId: string;
+  lastSoldAt: string | null;
+  daysWithoutSale: number;
+  /** Stock on hand in the product's stock unit: cartons or each for boxed goods, ft for rolls. */
+  onHand: string;
+  onHandUnit: "cartons" | "each" | "ft";
+}
+
+/**
+ * Slow movers (spec "Dashboard"): stocked products ranked by days since their last sale, or
+ * since they were added when they never sold. Quantities only, so no cost is exposed.
+ */
+export function slowMovers(
+  products: readonly Product[],
+  rolls: readonly Roll[],
+  invoices: readonly Invoice[],
+  today: string,
+  limit: number,
+): SlowMover[] {
+  const lastSale = new Map<string, string>();
+  for (const inv of invoices) {
+    if (inv.isReturn || inv.status === "void") continue;
+    for (const line of inv.lines) {
+      if (line.productId && (lastSale.get(line.productId) ?? "") < inv.issuedAt)
+        lastSale.set(line.productId, inv.issuedAt);
+    }
+  }
+  const rollFeet = new Map<string, Dec>();
+  for (const roll of rolls)
+    rollFeet.set(roll.productId, (rollFeet.get(roll.productId) ?? dec(0)).plus(roll.remainingLengthFt));
+  return products
+    .filter((p) => p.category !== "service")
+    .map((p) => {
+      const feet = rollFeet.get(p.id);
+      const onHand = feet ?? dec(p.cartonsOnHand ?? 0);
+      const sold = lastSale.get(p.id) ?? null;
+      return {
+        productId: p.id,
+        lastSoldAt: sold,
+        daysWithoutSale: daysBetween(sold ?? p.createdAt, today),
+        onHand: onHand.toString(),
+        onHandUnit: (feet ? "ft" : p.unit === "each" ? "each" : "cartons") as SlowMover["onHandUnit"],
+      };
+    })
+    .filter((m) => dec(m.onHand).gt(0))
+    .sort((a, b) => b.daysWithoutSale - a.daysWithoutSale)
+    .slice(0, limit);
 }
