@@ -108,7 +108,7 @@ export class DemoStore implements ApiClient {
 
   async listCompanyDirectory(companyId: CompanyId) {
     const db = await this.db(companyId);
-    return { roles: db.list("roles"), users: db.list("users") };
+    return { roles: db.list("roles"), users: db.list("users"), branding: db.settings.branding };
   }
 
   async getCompany() {

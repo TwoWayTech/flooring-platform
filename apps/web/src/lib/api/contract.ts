@@ -1,5 +1,6 @@
 import type {
   AuditEntry,
+  Branding,
   Company,
   CompanyFixtures,
   CompanyId,
@@ -32,6 +33,13 @@ export interface CompanyAccessPatch {
   ceiling?: PermissionKey[];
   userLimit?: number;
   branchLimit?: number;
+}
+
+/** A company as seen from outside it: who can sign in, and how it looks. */
+export interface CompanyDirectory {
+  roles: Role[];
+  users: User[];
+  branding: Branding;
 }
 
 /** Fields for inviting a user (spec "Settings: Users"). */
@@ -76,8 +84,8 @@ export interface ApiClient {
   listCompanies(): Promise<Company[]>;
   /** Changes a company's products, modules, ceiling or limits; audited in both logs. */
   updateCompanyAccess(companyId: CompanyId, patch: CompanyAccessPatch): Promise<Company>;
-  /** Roles and users of any company, read-only (super-admin "Company access"). */
-  listCompanyDirectory(companyId: CompanyId): Promise<{ roles: Role[]; users: User[] }>;
+  /** Roles, users and branding of any company, read-only (login personas, super-admin "Company access"). */
+  listCompanyDirectory(companyId: CompanyId): Promise<CompanyDirectory>;
 
   /** The open company's record (modules, ceiling, limits). */
   getCompany(): Promise<Company>;

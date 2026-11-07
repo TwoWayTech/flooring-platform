@@ -25,7 +25,7 @@
 - [x] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle, notifications
 
 ### Phase 2: Tier 1 screens
-- [ ] Login, personas, MFA
+- [x] Login, personas, MFA
 - [ ] Dashboard
 - [ ] Inventory, roll detail, cut roll
 - [ ] Quote builder, invoice, PDF

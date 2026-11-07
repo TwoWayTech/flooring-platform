@@ -30,7 +30,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | --- | --- | --- |
 | `listCompanies()` | `GET /platform/companies` | Status, plan, products, modules, ceiling, limits. |
 | `updateCompanyAccess(id, patch)` | `PATCH /platform/companies/:id/access` | Modules, ceiling, user and branch limits. Takes effect at once and is written to the company's audit log as "Platform admin". |
-| `listCompanyDirectory(id)` | `GET /platform/companies/:id/directory` | Roles and users, read-only. |
+| `listCompanyDirectory(id)` | `GET /platform/companies/:id/directory` | Roles, users and branding, read-only. Used by the login page and the company access page. |
 
 ## Company and settings
 
