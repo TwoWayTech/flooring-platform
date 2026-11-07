@@ -1,8 +1,9 @@
 # Status
 
-- Current phase: not started
-- Next step: run KICKOFF-PROMPT.md (Phase 0)
+- Current phase: Phase 0 (plan), started, not finished
+- Next step: Phase 0. Look up Next.js 16 (proxy.ts vs middleware.ts, App Router), Tailwind v4, shadcn/ui and Motion with Context7; confirm React and TypeScript versions work with Next 16; then expand the checklist below into concrete tasks per phase and start Phase 1 (monorepo).
 - Deployed URLs: none yet
+- Last session log: docs/sessions/2026-11-07-1635-phase0-start.md
 
 ## Checklist
 
