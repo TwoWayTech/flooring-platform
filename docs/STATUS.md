@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 5 (ship)
-- Next step: Phase 5, run `pnpm build` and fix anything the production build reports, then write docs/demo-script.md (20 to 30 minute click path, persona by persona, following the presenter guide steps), then the Vercel deploy (ask the user before the deploy command runs).
+- Next step: Phase 5, write docs/demo-script.md (20 to 30 minute click path, persona by persona, following the presenter guide steps), then the Vercel deploy (ask the user before the deploy command runs).
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-2140-phase4-polish.md
 
@@ -52,7 +52,7 @@
 - [x] Visual QA in both themes at 1440 px and 390 px
 
 ### Phase 5: ship
-- [ ] All tests green, production build passes
+- [x] All tests green, production build passes
 - [ ] docs/demo-script.md
 - [ ] Deployed: Flooring and HR hosts
 
