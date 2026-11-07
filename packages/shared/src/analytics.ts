@@ -1,4 +1,4 @@
-import { dec, moneyString, sum, marginPct, type Dec } from "./money";
+import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
 import { daysBetween } from "./dates";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
@@ -283,4 +283,115 @@ export function jobCosting(job: Pick<Job, "materials" | "laborCost" | "revenue">
     margin: moneyString(dec(job.revenue).minus(cost)),
     marginPct: marginPct(job.revenue, cost).toString(),
   };
+}
+
+/** Sales of one product category over a period. */
+export interface CategorySales {
+  category: string;
+  revenue: string;
+  cost: string;
+  margin: string;
+}
+
+/**
+ * Sales by category (spec "Reports hub"): line amounts and costs grouped by product category,
+ * returns subtracted. Services group under their tax category (labor, freight, service).
+ */
+export function salesByCategory(invoices: readonly Invoice[], products: readonly Product[]): CategorySales[] {
+  const groups = new Map<string, { revenue: Dec; cost: Dec }>();
+  for (const inv of invoices) {
+    if (inv.status === "void") continue;
+    const sign = inv.isReturn ? -1 : 1;
+    for (const line of inv.lines) {
+      const product = products.find((p) => p.id === line.productId);
+      const key = product && product.category !== "service" ? product.category : line.category;
+      const g = groups.get(key) ?? { revenue: dec(0), cost: dec(0) };
+      groups.set(key, {
+        revenue: g.revenue.plus(lineAmount(line).times(sign)),
+        cost: g.cost.plus(roundMoney(dec(line.quantity).times(line.unitCost)).times(sign)),
+      });
+    }
+  }
+  return [...groups.entries()]
+    .map(([category, g]) => ({
+      category,
+      revenue: moneyString(g.revenue),
+      cost: moneyString(g.cost),
+      margin: moneyString(g.revenue.minus(g.cost)),
+    }))
+    .sort((a, b) => Number(b.revenue) - Number(a.revenue));
+}
+
+/** Sales tax collected in one jurisdiction, with taxable and exempt sales (blueprint "Sales tax reports"). */
+export interface TaxJurisdictionRow {
+  state: string;
+  jurisdiction: string;
+  ratePct: string;
+  sales: string;
+  exemptSales: string;
+  tax: string;
+}
+
+/**
+ * Sales tax by jurisdiction: each invoice stores the rule it used, so the report reads the
+ * stored jurisdiction and tax, never today's rules. Returns reduce what was collected.
+ */
+export function salesTaxByJurisdiction(invoices: readonly Invoice[]): TaxJurisdictionRow[] {
+  const rows = new Map<
+    string,
+    { state: string; jurisdiction: string; ratePct: string; sales: Dec; exempt: Dec; tax: Dec }
+  >();
+  for (const inv of invoices) {
+    if (inv.status === "void") continue;
+    const sign = inv.isReturn ? -1 : 1;
+    const key = inv.taxRule ? `${inv.taxRule.state}|${inv.taxRule.jurisdiction}` : `${inv.jobSite.state}|Not collected`;
+    const r = rows.get(key) ?? {
+      state: inv.taxRule?.state ?? inv.jobSite.state,
+      jurisdiction: inv.taxRule?.jurisdiction ?? "Not collected",
+      ratePct: inv.taxRule?.ratePct ?? "0",
+      sales: dec(0),
+      exempt: dec(0),
+      tax: dec(0),
+    };
+    const subtotal = dec(inv.subtotal).times(sign);
+    rows.set(key, {
+      ...r,
+      sales: r.sales.plus(subtotal),
+      exempt: inv.taxExempt ? r.exempt.plus(subtotal) : r.exempt,
+      tax: r.tax.plus(dec(inv.tax).times(sign)),
+    });
+  }
+  return [...rows.values()]
+    .map((r) => ({
+      state: r.state,
+      jurisdiction: r.jurisdiction,
+      ratePct: r.ratePct,
+      sales: moneyString(r.sales),
+      exemptSales: moneyString(r.exempt),
+      tax: moneyString(r.tax),
+    }))
+    .sort((a, b) => a.state.localeCompare(b.state));
+}
+
+/** Stock value of one category. */
+export interface CategoryValuation {
+  category: string;
+  value: string;
+}
+
+/**
+ * Inventory valuation by category (spec section 4): rolls at remaining area × their own cost,
+ * boxed goods at cartons × average cost. The categories add up to inventoryValuation's total.
+ */
+export function inventoryByCategory(products: readonly Product[], rolls: readonly Roll[]): CategoryValuation[] {
+  const totals = new Map<string, Dec>();
+  const add = (category: string, value: Dec) => totals.set(category, (totals.get(category) ?? dec(0)).plus(value));
+  for (const roll of rolls) {
+    const product = products.find((p) => p.id === roll.productId);
+    if (product) add(product.category, rollValue(roll));
+  }
+  for (const p of products) if (p.cartonsOnHand !== undefined) add(p.category, dec(p.cartonsOnHand).times(p.cost));
+  return [...totals.entries()]
+    .map(([category, v]) => ({ category, value: moneyString(v) }))
+    .sort((a, b) => Number(b.value) - Number(a.value));
 }

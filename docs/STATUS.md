@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 3 (Tier 2 screens)
-- Next step: Phase 3, Reports hub at /reports: P&L (monthlyPnl), sales by category, sales tax by jurisdiction (from invoices taxRule), inventory valuation; date range, branch and category filters; CSV export (components/data-table/csv) and PDF export (@react-pdf/renderer, like invoices). Then Meetings.
+- Next step: Phase 3, Meetings at /meetings: calendar (week or month list), attendees (staff, customers, suppliers), recurring meetings expanded into occurrences, reminders; new meeting dialog. Then Phase 4 polish (presenter guide, states, a11y and reduced motion, visual QA).
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
 
@@ -42,7 +42,7 @@
 - [x] Customers and receivables
 - [x] Suppliers, purchase orders, payables
 - [x] Installation calendar and job card
-- [ ] Reports hub
+- [x] Reports hub
 - [ ] Meetings
 
 ### Phase 4: Tier 3 polish

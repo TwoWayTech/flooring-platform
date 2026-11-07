@@ -1,0 +1,33 @@
+import { expect, test } from "@playwright/test";
+import { signInAs, SUMMIT_OWNER } from "./helpers";
+
+test.describe("reports hub", () => {
+  test("shows the P&L with totals and exports CSV and PDF", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports?report=pnl");
+    await expect(page.getByRole("columnheader", { name: "Net income" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Total", exact: true })).toBeVisible();
+
+    const csv = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    expect((await csv).suggestedFilename()).toMatch(/^pnl-\d{4}-\d{2}-\d{2}\.csv$/);
+
+    const pdf = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export PDF" }).click();
+    expect((await pdf).suggestedFilename()).toMatch(/^pnl-\d{4}-\d{2}-\d{2}\.pdf$/);
+  });
+
+  test("sales tax report reads the jurisdiction each invoice stored", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports?report=tax");
+    await expect(page.getByRole("cell", { name: "Denver combined" })).toBeVisible();
+  });
+
+  test("Sales sees only sales by category, without cost", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports");
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Sales");
+    await page.getByRole("option", { name: "View as Sales" }).click();
+    await expect(page.getByRole("navigation", { name: "Reports" }).getByRole("button")).toHaveCount(1);
+    await expect(page.getByRole("columnheader", { name: "Revenue" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Cost" })).toHaveCount(0);
+  });
+});
