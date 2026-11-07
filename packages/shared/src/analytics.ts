@@ -2,7 +2,7 @@ import { dec, moneyString, sum, marginPct, type Dec } from "./money";
 import { daysBetween } from "./dates";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
-import type { Bill, Expense, Invoice, Product, Roll } from "./types";
+import type { Bill, Expense, Invoice, Job, Product, Roll } from "./types";
 
 /** Open balance of an invoice or bill: total minus payments, never below zero for a sale. */
 export function balance(doc: { total: string; paid: string }): Dec {
@@ -256,4 +256,31 @@ export function customerStatement(
       balance: moneyString(running),
     };
   });
+}
+
+/** What an installation job cost and earned. */
+export interface JobCosting {
+  materials: string;
+  labor: string;
+  cost: string;
+  revenue: string;
+  margin: string;
+  marginPct: string;
+}
+
+/**
+ * Job costing (spec "Installation": materials, labor, margin): materials at cost plus labor,
+ * against the job's revenue. Margin is shown only with installation.job.view_sensitive.
+ */
+export function jobCosting(job: Pick<Job, "materials" | "laborCost" | "revenue">): JobCosting {
+  const materials = sum(job.materials.map((m) => m.cost));
+  const cost = materials.plus(job.laborCost);
+  return {
+    materials: moneyString(materials),
+    labor: moneyString(job.laborCost),
+    cost: moneyString(cost),
+    revenue: moneyString(job.revenue),
+    margin: moneyString(dec(job.revenue).minus(cost)),
+    marginPct: marginPct(job.revenue, cost).toString(),
+  };
 }

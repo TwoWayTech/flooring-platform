@@ -12,6 +12,7 @@ const PAGES = [
   "/sales?view=customers",
   "/purchasing?view=orders",
   "/purchasing?view=bills",
+  "/installation",
   "/sales/quotes/sm-quo-0288",
   "/sales/quotes/new",
   "/sales/invoices/sm-inv-0150",

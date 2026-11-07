@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bestSellers, customerStatement, dec, lineAmount, slowMovers, type CompanyFixtures } from "../src";
+import { bestSellers, customerStatement, dec, jobCosting, lineAmount, slowMovers, type CompanyFixtures } from "../src";
 
 const summit = JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "summit.json"), "utf8")) as CompanyFixtures;
 const today = summit.anchorDate;
@@ -40,5 +40,17 @@ describe("customer statement", () => {
         .reduce((s, i) => s.plus(i.total).minus(i.paid), dec(0));
       expect(lines.at(-1)?.balance ?? "0.00", customer.name).toBe(open.toFixed(2));
     }
+  });
+});
+
+describe("job costing", () => {
+  it("adds materials and labor and takes them from revenue", () => {
+    const costing = jobCosting({
+      materials: [{ cost: "1200.50" }, { cost: "99.50" }] as never,
+      laborCost: "640.00",
+      revenue: "3100.00",
+    });
+    expect(costing).toMatchObject({ materials: "1300.00", cost: "1940.00", margin: "1160.00" });
+    expect(Number(costing.marginPct)).toBeCloseTo(37.42, 2);
   });
 });

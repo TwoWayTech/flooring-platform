@@ -85,3 +85,12 @@ describe("money", () => {
     expect(marginPct(0, 10).toString()).toBe("0");
   });
 });
+
+describe("full value on hover", () => {
+  it("shows up to the kind's maximum decimals for computed ratios", () => {
+    const settings = defaultNumberSettings();
+    expect(formatFull("44.27325842696629213483", "percent", settings)).toBe("44.2733%");
+    expect(isRounded("44.27325842696629213483", "percent", settings)).toBe(true);
+    expect(isRounded("12.5", "percent", settings)).toBe(false);
+  });
+});

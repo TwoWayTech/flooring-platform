@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Panel } from "@workspace/ui/components/panel";
 import { cn } from "@workspace/ui/lib/utils";
+import { hourLabel } from "@/features/installation/job-status";
 import type { TimelineJob } from "./use-dashboard-data";
 
 /** The working day the timeline shows, in hours. */
@@ -10,11 +11,6 @@ const DAY_START = 7;
 const DAY_END = 18;
 const SPAN = DAY_END - DAY_START;
 const TICKS = [8, 11, 14, 17];
-
-function hourLabel(hour: number): string {
-  const h = hour % 12 === 0 ? 12 : hour % 12;
-  return `${h} ${hour < 12 ? "am" : "pm"}`;
-}
 
 /** Groups today's jobs by crew, in the order the first job starts. */
 function byCrew(jobs: readonly TimelineJob[]) {

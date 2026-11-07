@@ -85,12 +85,19 @@ export function formatNumber(
 
 /** The full stored value with every significant decimal, for the hover tooltip on rounded numbers. */
 export function formatFull(value: DecimalInput, kind: NumberKind, settings: NumberSettings): string {
-  const d = dec(value);
-  const places = Math.max(d.decimalPlaces(), displayDecimals(kind, settings));
-  return formatNumber(value, kind, settings, { decimals: Math.min(places, 20) });
+  return formatNumber(value, kind, settings, { decimals: fullDecimals(value, kind, settings) });
+}
+
+/**
+ * Decimals for the full value: as many as the value has, up to the most the kind allows. Stored
+ * values never exceed that (blueprint "Number display"), so only computed ratios get trimmed.
+ */
+function fullDecimals(value: DecimalInput, kind: NumberKind, settings: NumberSettings): number {
+  const places = Math.min(dec(value).decimalPlaces(), NUMBER_KINDS[kind].max);
+  return Math.max(places, displayDecimals(kind, settings));
 }
 
 /** Whether display rounding hides digits, so the UI knows to offer the full value on hover. */
 export function isRounded(value: DecimalInput, kind: NumberKind, settings: NumberSettings, delta = 0): boolean {
-  return dec(value).decimalPlaces() > displayDecimals(kind, settings, delta);
+  return fullDecimals(value, kind, settings) > displayDecimals(kind, settings, delta);
 }
