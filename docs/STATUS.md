@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Users (list with status, roles, branch, MFA, last login, seats used vs limit; invite with seat limit enforced in DemoStore.inviteUser; disable; reset MFA). Settings layout with a sub-navigation from products/settings-menu.ts. Then Security roles.
+- Next step: Phase 2, Settings: Security roles (role list with user counts, create or copy, permission matrix module → resource → action from packages/shared catalog, data scope, greyed "Not included in your plan" outside the ceiling, locked Owner, step-up MFA on save via components/step-up-dialog; escalation refused by DemoStore.saveRole).
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -29,7 +29,7 @@
 - [x] Dashboard
 - [x] Inventory, roll detail, cut roll
 - [x] Quote builder, invoice, PDF
-- [ ] Settings: users
+- [x] Settings: users
 - [ ] Settings: security roles
 - [ ] Settings: branding
 - [ ] Settings: localization and tax
