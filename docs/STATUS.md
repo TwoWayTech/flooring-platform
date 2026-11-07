@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Phase 3 (Tier 2 screens)
-- Next step: Phase 3 wrap-up (full lint, typecheck, unit, e2e, session log), then Phase 4: presenter guide panel.
+- Current phase: Phase 4 (Tier 3 polish)
+- Next step: Phase 4, presenter guide panel: a toggle in the top bar opens a side panel with talking points for the current screen and persona (from a per-route script), remembered per browser.
 - Deployed URLs: none yet
-- Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
+- Last session log: docs/sessions/2026-11-07-2015-phase3-tier2.md
 
 ## Checklist
 
