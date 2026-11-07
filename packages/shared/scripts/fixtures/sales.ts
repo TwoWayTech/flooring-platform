@@ -7,13 +7,12 @@ import type {
   Customer,
   Invoice,
   Payment,
-  PaymentTerms,
   Product,
   Quote,
   QuoteStatus,
   User,
 } from "../../src/types";
-import { ruleForState } from "../../src/us-pack/tax";
+import { dueDate, taxContextFor } from "../../src/operations/quotes";
 import type { GenContext } from "./context";
 import { buildRooms, roomLines, tradeLines } from "./sales-lines";
 
@@ -32,7 +31,6 @@ const UNPAID_CHANCE_BY_AGE: readonly [maxDaysPastDue: number, chance: number][] 
 ];
 /** Share of invoices later partly returned (spec section 4). */
 const RETURN_SHARE = 0.03;
-const TERM_DAYS: Record<PaymentTerms, number> = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45 };
 
 /** Generated sales documents for one company. */
 export interface SalesFixtures {
@@ -57,11 +55,8 @@ function totalsFor(
   on: string,
   lumpSum: boolean,
 ) {
-  const tax = inputs.settings.localization.tax;
-  const collects = inputs.settings.localization.region.statesOfOperation.includes(site.state);
-  const rule = collects ? ruleForState(tax.rules, site.state) : undefined;
-  const exempt = customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on;
-  return { rule, exempt, totals: computeTotals(lines, { rule, exempt, rounding: tax.rounding, lumpSum }) };
+  const ctx = taxContextFor(inputs.settings.localization.tax, site.state, customer, on, lumpSum);
+  return { rule: ctx.rule, exempt: ctx.exempt, totals: computeTotals(lines, ctx) };
 }
 
 /**
@@ -146,7 +141,7 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     salesRepId: quote.salesRepId,
     branchId: quote.branchId,
     issuedAt,
-    dueAt: addDays(issuedAt, TERM_DAYS[customer.terms]),
+    dueAt: dueDate(issuedAt, customer.terms),
     status: "open",
     isReturn: false,
     jobSite: quote.jobSite,

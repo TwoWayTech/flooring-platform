@@ -4,17 +4,16 @@ import type {
   Bill,
   BillPayment,
   Expense,
-  PaymentTerms,
   PoLine,
   Product,
   PurchaseOrder,
   Supplier,
 } from "../../src/types";
 import type { GenContext } from "./context";
+import { dueDate } from "../../src/operations/quotes";
 import { brandCode } from "./vocabulary";
 
 const ORDERS_PER_MONTH = 5;
-const TERM_DAYS: Record<PaymentTerms, number> = { due_on_receipt: 0, net_15: 15, net_30: 30, net_45: 45 };
 
 /** Generated purchasing documents for one company. */
 export interface PurchasingFixtures {
@@ -109,7 +108,7 @@ export function buildPurchasing(
         supplierId: supplier.id,
         poId: po.id,
         issuedAt: po.receivedAt!,
-        dueAt: addDays(po.receivedAt!, TERM_DAYS[supplier.terms]),
+        dueAt: dueDate(po.receivedAt!, supplier.terms),
         total,
         paid: "0.00",
       };

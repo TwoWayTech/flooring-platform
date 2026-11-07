@@ -184,7 +184,7 @@ export function RollPage({ rollId }: { rollId: string }) {
                       <td className="px-4 text-right whitespace-nowrap">
                         <Num kind="quantity" value={cut.lengthFt} unit="ft" />
                       </td>
-                      <td className="px-4">
+                      <td className="px-4 whitespace-nowrap">
                         {cut.reference || <span className="text-muted-foreground">Not recorded</span>}
                       </td>
                       <td className="px-4 whitespace-nowrap">{userName(cut.byUserId)}</td>
