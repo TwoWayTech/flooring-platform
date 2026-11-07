@@ -4,7 +4,7 @@ import { SESSION_COOKIE } from "./lib/session/session";
 
 /** Paths anyone may open without a demo session. */
 function isPublic(pathname: string): boolean {
-  return pathname === "/login" || pathname.startsWith("/api/demo/");
+  return pathname === "/login" || pathname === "/design" || pathname.startsWith("/api/demo/");
 }
 
 /**

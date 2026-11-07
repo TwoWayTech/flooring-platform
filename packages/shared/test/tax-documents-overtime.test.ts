@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   EXAMPLE_TAX_RULES,
   US_STATES,
+  BRAND_SCALE_STEPS,
+  brandScale,
   brandTokens,
+  hexToOklch,
+  NEUTRALS,
   checkBrandColor,
   computeTotals,
   contrastRatio,
@@ -131,5 +135,19 @@ describe("brand colors", () => {
     expect(checkBrandColor("#FFE600").ok).toBe(false);
     expect(checkBrandColor("#2E8B7E").ok).toBe(true);
     expect(checkBrandColor("teal").ok).toBe(false);
+  });
+});
+
+describe("brand scale and pattern tones", () => {
+  it("steps from light to dark in the brand's hue", () => {
+    const scale = brandScale("#2E8B7E");
+    const lightness = BRAND_SCALE_STEPS.map((s) => hexToOklch(scale[s]).l);
+    expect(lightness).toEqual([...lightness].sort((a, b) => b - a));
+  });
+
+  it("keeps pattern tones close to the theme background", () => {
+    const tokens = brandTokens("#1F6FA8");
+    for (const tone of tokens.light.pattern) expect(contrastRatio(tone, NEUTRALS.light.background)).toBeLessThan(1.25);
+    for (const tone of tokens.dark.pattern) expect(contrastRatio(tone, NEUTRALS.dark.background)).toBeLessThan(1.35);
   });
 });

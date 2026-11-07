@@ -98,6 +98,8 @@ export interface AccentTokens {
   accentInk: string;
   /** Faint tint for selected rows and the active nav item. */
   accentSoft: string;
+  /** Three low-contrast plank tones for the floor pattern, close to the theme background. */
+  pattern: [string, string, string];
 }
 
 /** Moves lightness in steps until the predicate passes; returns the closest passing color. */
@@ -107,6 +109,44 @@ function adjustUntil(start: Oklch, direction: 1 | -1, passes: (hex: string) => b
     if (passes(hex)) return hex;
   }
   return direction === 1 ? "#FFFFFF" : "#000000";
+}
+
+/** Plank tones at the given lightness steps, with chroma kept low so the pattern stays quiet. */
+function patternTones(base: Oklch, lightness: [number, number, number], chromaShare: number): [string, string, string] {
+  const c = Math.min(base.c, 0.12) * chromaShare;
+  return lightness.map((l) => oklchToHex({ l, c, h: base.h })) as [string, string, string];
+}
+
+/** Steps of the brand shade scale. */
+export const BRAND_SCALE_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
+
+/** Lightness and relative chroma per step: chroma peaks mid-scale and fades at both ends. */
+const SCALE_SHAPE: Record<(typeof BRAND_SCALE_STEPS)[number], [l: number, chroma: number]> = {
+  50: [0.97, 0.25],
+  100: [0.93, 0.4],
+  200: [0.88, 0.55],
+  300: [0.82, 0.7],
+  400: [0.74, 0.85],
+  500: [0.64, 1],
+  600: [0.55, 1],
+  700: [0.46, 0.9],
+  800: [0.37, 0.7],
+  900: [0.29, 0.5],
+};
+
+/**
+ * An OKLCH shade scale from one brand color (design brief "Color"): fixed lightness steps so
+ * every company's scale has the same rhythm, with the brand's hue and capped chroma.
+ */
+export function brandScale(brandHex: string): Record<(typeof BRAND_SCALE_STEPS)[number], string> {
+  const base = hexToOklch(brandHex);
+  const chroma = Math.min(base.c, 0.14);
+  return Object.fromEntries(
+    BRAND_SCALE_STEPS.map((step) => {
+      const [l, share] = SCALE_SHAPE[step];
+      return [step, oklchToHex({ l, c: chroma * share, h: base.h })];
+    }),
+  ) as Record<(typeof BRAND_SCALE_STEPS)[number], string>;
 }
 
 /**
@@ -127,12 +167,14 @@ export function brandTokens(brandHex: string): { light: AccentTokens; dark: Acce
       accentForeground: "#FFFFFF",
       accentInk: lightInk,
       accentSoft: oklchToHex({ l: 0.94, c: Math.min(base.c, 0.12) * 0.35, h: base.h }),
+      pattern: patternTones(base, [0.95, 0.92, 0.89], 0.28),
     },
     dark: {
       accent: darkFill,
       accentForeground: NEUTRALS.dark.background,
       accentInk: darkInk,
       accentSoft: oklchToHex({ l: 0.3, c: Math.min(base.c, 0.12) * 0.45, h: base.h }),
+      pattern: patternTones(base, [0.255, 0.28, 0.305], 0.5),
     },
   };
 }

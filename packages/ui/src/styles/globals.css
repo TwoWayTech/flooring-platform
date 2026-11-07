@@ -1,4 +1,208 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @source "../../../../apps/web/src/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens from docs/design-brief.md and docs/design-plan.md (CLAUDE.md rule 6).
+ * Neutrals are fixed; only the brand accent changes per company. BrandStyle overrides the
+ * --brand-* and --pattern-* variables at runtime from the company's one brand color.
+ */
+:root {
+  --background: #eef0ec; /* Limestone */
+  --surface: #fafbf9; /* Paper */
+  --raised: #f3f5f2;
+  --hairline: #cdd3cd; /* Grout */
+  --foreground: #1f2b30; /* Slate */
+  --muted-foreground: #5b6a6e;
+  --oak: #b8894d;
+  --oak-ink: #8a6330;
+  --success: #3f8f55; /* Moss */
+  --warning: #c98a1e; /* Amber */
+  --danger: #c2453d; /* Brick */
+  --success-ink: #2f6e41;
+  --warning-ink: #8a5d10;
+  --danger-ink: #a3362f;
+
+  /* Patina default; replaced per company. */
+  --brand: #228275;
+  --brand-foreground: #ffffff;
+  --brand-ink: #13796d;
+  --brand-soft: #d6f2ed;
+  --pattern-1: #ddf4f0;
+  --pattern-2: #d4eae6;
+  --pattern-3: #cae0dc;
+  --chart-1: var(--brand);
+  --chart-2: var(--oak);
+  --chart-3: #8b9a9c;
+  --chart-4: #b7c1bf;
+  --chart-5: #5b6a6e;
+
+  /* Aliases for names the shadcn components read directly. */
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --border: var(--hairline);
+  --secondary: var(--raised);
+  --radius: 8px;
+
+  --shadow-float: 0 12px 32px -12px rgb(31 43 48 / 0.28), 0 2px 6px -2px rgb(31 43 48 / 0.12);
+  color-scheme: light;
+}
+
+.dark {
+  --background: #152024;
+  --surface: #1d2b31;
+  --raised: #24343b;
+  --hairline: #31444c;
+  --foreground: #e6ebe8;
+  --muted-foreground: #9fb0ae;
+  --oak: #d3a867;
+  --oak-ink: #d3a867;
+  --success: #5fb072;
+  --warning: #e0a53f;
+  --danger: #e06a61;
+  --success-ink: #7cc68d;
+  --warning-ink: #ebbb63;
+  --danger-ink: #ef8a82;
+
+  --brand: #58b1a3;
+  --brand-foreground: #152024;
+  --brand-ink: #58b1a3;
+  --brand-soft: #13342f;
+  --pattern-1: #022a24;
+  --pattern-2: #08302a;
+  --pattern-3: #103631;
+  --chart-3: #6d7f81;
+  --chart-4: #4c5e62;
+  --chart-5: #9fb0ae;
+
+  --shadow-float: 0 16px 40px -12px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-unbounded), var(--font-instrument), ui-sans-serif, sans-serif;
+
+  /* Minor-third scale from the brief: 12, 13, 14 (base UI), 16, 19, 23, 28, 34, 41 px. */
+  --text-2xs: 12px;
+  --text-2xs--line-height: 1.45;
+  --text-xs: 13px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 14px;
+  --text-sm--line-height: 1.45;
+  --text-base: 16px;
+  --text-base--line-height: 1.45;
+  --text-lg: 19px;
+  --text-lg--line-height: 1.3;
+  --text-xl: 23px;
+  --text-xl--line-height: 1.15;
+  --text-2xl: 28px;
+  --text-2xl--line-height: 1.15;
+  --text-3xl: 34px;
+  --text-3xl--line-height: 1.15;
+  --text-4xl: 41px;
+  --text-4xl--line-height: 1.15;
+
+  /* Radius follows hierarchy: 4 px controls and chips, 8 px panels, 14 px dialogs and drawers. */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-4xl: 4px;
+  --radius-panel: 8px;
+  --radius-xl: 14px;
+  --radius-dialog: 14px;
+
+  /* Depth comes from surfaces and hairlines; only floating layers get a shadow. */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: var(--shadow-float);
+  --shadow-lg: var(--shadow-float);
+  --shadow-xl: var(--shadow-float);
+  --shadow-2xl: var(--shadow-float);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-hairline: var(--hairline);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--brand-foreground);
+  --color-secondary: var(--raised);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--raised);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--raised);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--danger);
+  --color-border: var(--hairline);
+  --color-input: var(--hairline);
+  --color-ring: var(--brand-ink);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-oak: var(--oak);
+  --color-oak-ink: var(--oak-ink);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-success-ink: var(--success-ink);
+  --color-warning-ink: var(--warning-ink);
+  --color-danger-ink: var(--danger-ink);
+  --color-pattern-1: var(--pattern-1);
+  --color-pattern-2: var(--pattern-2);
+  --color-pattern-3: var(--pattern-3);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+@layer base {
+  * {
+    @apply border-hairline;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-sm antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand-ink);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--brand-soft);
+  }
+}
+
+/* Login floor laying: each plank settles into place once, in installer order (design brief). */
+@keyframes plank-lay {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+.floor-pattern-animate rect {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: plank-lay 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floor-pattern-animate rect {
+    animation: none;
+  }
+}
