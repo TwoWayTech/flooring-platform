@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Company profile (form for settings.profile) and Audit log (list of api.list("audit") newest first with category filter; every change made in the demo appears there). Then Super-admin.
+- Next step: Phase 2, Super-admin at /admin (platform session): companies list (status, plan, products) and company access page (modules, ceiling toggles, user and branch limits, read-only roles and users, effective-access preview for any role or user) via api.listCompanies, updateCompanyAccess, listCompanyDirectory. Removing a ceiling permission must hide it for that company at once. Then HR host.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -34,7 +34,7 @@
 - [x] Settings: branding
 - [x] Settings: localization and tax
 - [x] Settings: number format
-- [ ] Settings: company profile and audit log
+- [x] Settings: company profile and audit log
 - [ ] Super-admin: companies and company access
 - [ ] HR host: dashboard, employees, timesheets, PTO, own settings
 
