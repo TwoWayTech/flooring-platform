@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Phase 5 (ship)
-- Next step: Phase 5, deploy to Vercel: one project, hostnames flooring-demo.vercel.app and hr-demo.vercel.app. Ask the user before the deploy command runs; exact steps are in docs/deploy.md.
-- Deployed URLs: none yet
-- Last session log: docs/sessions/2026-11-07-2140-phase4-polish.md
+- Current phase: done (all phases shipped)
+- Next step: none required. Optional: set DEMO_SESSION_SECRET on Vercel (`vercel env add DEMO_SESSION_SECRET production`, then `vercel deploy --prod`), and grant the Vercel GitHub app access to TwoWayTech/flooring-platform, then run `vercel git connect` so pushes deploy automatically.
+- Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
+- Last session log: docs/sessions/2026-11-07-2330-phase5-ship.md
 
 ## Checklist
 
@@ -54,7 +54,7 @@
 ### Phase 5: ship
 - [x] All tests green, production build passes
 - [x] docs/demo-script.md
-- [ ] Deployed: Flooring and HR hosts
+- [x] Deployed: Flooring and HR hosts
 
 ## Decisions
 (see docs/adr/)

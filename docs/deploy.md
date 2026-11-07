@@ -17,7 +17,13 @@ Run these from the repository root, `C:\dev\flooring-platform`.
 4. Set the session signing key (recommended). Run `vercel env add DEMO_SESSION_SECRET production` and paste any long random string when asked. Without it the demo still runs, signed with the labelled non-secret key described in ADR 0001; the cookie only records which persona was picked and protects no real data.
 5. Deploy to production: `vercel deploy --prod`. `.vercelignore` keeps local builds and caches (such as `.turbo` and `.next`) out of the upload; without it the upload hits the 100 MB file limit.
 6. Add the HR hostname to the same project: `vercel domains add hr-demo-twowaytech.vercel.app flooring-demo-twowaytech`.
-7. Check both hosts: `https://flooring-demo-twowaytech.vercel.app/login` shows "Flooring Suite" and `https://hr-demo-twowaytech.vercel.app/login` shows "HR Suite". To run the end-to-end checks against the deployment: `E2E_BASE_URL=https://flooring-demo-twowaytech.vercel.app pnpm --filter web test:e2e -- login shell dashboard`.
+7. Check both hosts: `https://flooring-demo-twowaytech.vercel.app/login` shows "Flooring Suite" and `https://hr-demo-twowaytech.vercel.app/login` shows "HR Suite".
+8. Run the end-to-end checks against the deployment, one test at a time so a slow connection does not cause timeouts. Flooring tests use the Flooring host: `E2E_BASE_URL=https://flooring-demo-twowaytech.vercel.app pnpm --filter web test:e2e -- --project=desktop --workers=1 --timeout=180000 login shell dashboard quote inventory`. HR tests use the HR host, because `?product=hr` only works on localhost: `E2E_BASE_URL=https://hr-demo-twowaytech.vercel.app pnpm --filter web test:e2e -- --project=desktop --workers=1 --timeout=180000 -g HR`. On the HR host a test that signs in to a Flooring company fails by design: each host only accepts its own product's companies.
+
+## Current deployment (2026-11-07)
+- Project `flooring-demo-twowaytech` (personal scope `twowaytech`), Root Directory `apps/web`, Next.js, Node 24. Both hostnames are assigned and live.
+- Checked against the live site: the core Flooring specs and every HR spec that signs in to Harbor Staffing pass.
+- Not done, left to the owner: `DEMO_SESSION_SECRET` is not set (step 4), and the GitHub repository is not connected, because the Vercel GitHub app has no access to `TwoWayTech/flooring-platform`. After granting it access, `vercel git connect` makes every push deploy automatically.
 
 ## Later deploys
 `vercel deploy --prod` from the repository root. Data lives in each visitor's browser (localStorage), so a deploy never loses anyone's demo changes and needs no database.
