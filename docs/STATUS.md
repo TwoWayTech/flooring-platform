@@ -18,7 +18,7 @@
   - formatNumber + number kinds/defaults; units (sq ft, sq yd, cartons, roll area); money (decimal.js)
   - US pack: 50 states + DC, sales tax example rules (CO, PA, FL, NJ, MD, TX), overtime (federal + CA daily)
   - quote/invoice totals calculator (lines, waste, labor tax by job-site state)
-- [ ] Seeded fixtures generator (`pnpm fixtures`) and reconciliation test
+- [x] Seeded fixtures generator (`pnpm fixtures`) and reconciliation test
 - [ ] DemoStore, apiClient, demo route handlers (login, logout, context), hostname proxy; docs/api-contract.md
 - [ ] docs/design-plan.md reviewed against the brief
 - [ ] Design system: tokens, fonts, themes, brand scale from one color, floor pattern, roll gauge, Num

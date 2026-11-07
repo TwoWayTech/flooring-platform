@@ -1,5 +1,6 @@
 import { dec, moneyString, pctOf, roundMoney, sum, marginPct, type Dec } from "./money";
 import type { SellUnit } from "./units";
+import type { Product } from "./types/catalog";
 import type { TaxCategory, TaxRule } from "./us-pack/tax";
 
 /** One line of a quote or invoice. Quantities and prices are decimal strings. */
@@ -114,4 +115,15 @@ export function computeTotals(lines: readonly DocLine[], ctx: TaxContext): Docum
 /** Deposit due on acceptance: a percentage of the total, rounded to cents. */
 export function depositAmount(total: string, depositPct: string): string {
   return moneyString(pctOf(total, depositPct));
+}
+
+/**
+ * Tax category of a catalog product (blueprint "Sales tax engine", rule 1). Goods are
+ * materials; service products name their own category (installation is labor, delivery is
+ * freight, furniture moving is a service) in `attributes.taxCategory`.
+ */
+export function productTaxCategory(product: Pick<Product, "category" | "attributes">): TaxCategory {
+  if (product.category !== "service") return "material";
+  const declared = product.attributes.taxCategory as TaxCategory | undefined;
+  return declared ?? "service";
 }

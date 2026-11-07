@@ -7,6 +7,7 @@ export * from "./money";
 export * from "./units";
 export * from "./numbers";
 export * from "./documents";
+export * from "./dates";
 export * from "./analytics";
 export * from "./color";
 export * from "./types";

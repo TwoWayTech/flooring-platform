@@ -1,12 +1,7 @@
 import { dec, moneyString, sum, marginPct, type Dec } from "./money";
+import { daysBetween } from "./dates";
 import { rollAreaSqFt } from "./units";
 import type { Bill, Expense, Invoice, Product, Roll } from "./types";
-
-/** Whole days from `from` to `to` (ISO dates); positive when `to` is later. */
-export function daysBetween(from: string, to: string): number {
-  const ms = Date.parse(to.slice(0, 10)) - Date.parse(from.slice(0, 10));
-  return Math.round(ms / 86_400_000);
-}
 
 /** Open balance of an invoice or bill: total minus payments, never below zero for a sale. */
 export function balance(doc: { total: string; paid: string }): Dec {
@@ -131,14 +126,5 @@ export function monthlyPnl(
       expenses: moneyString(opex),
       netIncome: moneyString(gross.minus(opex)),
     };
-  });
-}
-
-/** The 12 months ending with the month of `today`, oldest first, as YYYY-MM. */
-export function last12Months(today: string): string[] {
-  const [y, m] = today.split("-").map(Number) as [number, number];
-  return Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(Date.UTC(y, m - 1 - (11 - i), 1));
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   });
 }
