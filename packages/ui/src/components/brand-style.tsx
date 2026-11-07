@@ -9,6 +9,7 @@ function declarations(t: AccentTokens): string {
     `--pattern-1:${t.pattern[0]}`,
     `--pattern-2:${t.pattern[1]}`,
     `--pattern-3:${t.pattern[2]}`,
+    `--chart-1:${t.chart}`,
   ].join(";");
 }
 

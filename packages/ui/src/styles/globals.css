@@ -7,6 +7,20 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * State variants used by the shadcn primitives. Radix reports state as data-state and
+ * data-orientation, so each variant matches those as well as a bare true attribute.
+ */
+@custom-variant data-open (&:where([data-state="open"]), &:where([data-open]:not([data-open="false"])));
+@custom-variant data-closed (&:where([data-state="closed"]), &:where([data-closed]:not([data-closed="false"])));
+@custom-variant data-checked (&:where([data-state="checked"]), &:where([data-checked]:not([data-checked="false"])));
+@custom-variant data-unchecked (&:where([data-state="unchecked"]), &:where([data-unchecked]:not([data-unchecked="false"])));
+@custom-variant data-active (&:where([data-state="active"]), &:where([data-active]:not([data-active="false"])));
+@custom-variant data-disabled (&:where([data-disabled]:not([data-disabled="false"])));
+@custom-variant data-inset (&:where([data-inset]:not([data-inset="false"])));
+@custom-variant data-horizontal (&:where([data-orientation="horizontal"]));
+@custom-variant data-vertical (&:where([data-orientation="vertical"]));
+
+/*
  * Design tokens from docs/design-brief.md and docs/design-plan.md (CLAUDE.md rule 6).
  * Neutrals are fixed; only the brand accent changes per company. BrandStyle overrides the
  * --brand-* and --pattern-* variables at runtime from the company's one brand color.
@@ -35,8 +49,9 @@
   --pattern-1: #ddf4f0;
   --pattern-2: #d4eae6;
   --pattern-3: #cae0dc;
-  --chart-1: var(--brand);
-  --chart-2: var(--oak);
+  /* Chart series, validated with the dataviz palette checks: brand first, Oak second. */
+  --chart-1: #129e8e;
+  --chart-2: #885706;
   --chart-3: #8b9a9c;
   --chart-4: #b7c1bf;
   --chart-5: #5b6a6e;
@@ -75,6 +90,8 @@
   --pattern-1: #022a24;
   --pattern-2: #08302a;
   --pattern-3: #103631;
+  --chart-1: #049182;
+  --chart-2: #c18634;
   --chart-3: #6d7f81;
   --chart-4: #4c5e62;
   --chart-5: #9fb0ae;

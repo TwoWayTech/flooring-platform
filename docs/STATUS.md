@@ -22,7 +22,7 @@
 - [x] DemoStore, apiClient, demo route handlers (login, logout, context), hostname proxy; docs/api-contract.md
 - [x] docs/design-plan.md reviewed against the brief
 - [x] Design system: tokens, fonts, themes, brand scale from one color, floor pattern, roll gauge, Num
-- [ ] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle, notifications
+- [x] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle, notifications
 
 ### Phase 2: Tier 1 screens
 - [ ] Login, personas, MFA

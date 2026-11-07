@@ -100,6 +100,8 @@ export interface AccentTokens {
   accentSoft: string;
   /** Three low-contrast plank tones for the floor pattern, close to the theme background. */
   pattern: [string, string, string];
+  /** First chart series: the brand hue at a lightness and chroma charts can read (dataviz checks). */
+  chart: string;
 }
 
 /** Moves lightness in steps until the predicate passes; returns the closest passing color. */
@@ -115,6 +117,24 @@ function adjustUntil(start: Oklch, direction: 1 | -1, passes: (hex: string) => b
 function patternTones(base: Oklch, lightness: [number, number, number], chromaShare: number): [string, string, string] {
   const c = Math.min(base.c, 0.12) * chromaShare;
   return lightness.map((l) => oklchToHex({ l, c, h: base.h })) as [string, string, string];
+}
+
+/**
+ * Chart lightness per theme. Charts pair the brand with Oak (design brief "Charts"); these
+ * ranges keep both inside the dataviz validator's lightness band and apart in lightness, so
+ * the two series stay distinct for color-blind readers.
+ */
+const CHART_LIGHTNESS = { light: [0.63, 0.7], dark: [0.555, 0.64] } as const;
+/** Below this OKLCH chroma a series reads as gray (dataviz validator floor, plus rounding margin). */
+const CHART_MIN_CHROMA = 0.102;
+
+/** The brand hue for charts: the lowest lightness in range at which it still has enough color. */
+function chartTone(base: Oklch, [from, to]: readonly [number, number]): string {
+  for (let l = from; l <= to; l += 0.005) {
+    const hex = oklchToHex({ l, c: Math.max(base.c, 0.12), h: base.h });
+    if (hexToOklch(hex).c >= CHART_MIN_CHROMA) return hex;
+  }
+  return oklchToHex({ l: to, c: Math.max(base.c, 0.12), h: base.h });
 }
 
 /** Steps of the brand shade scale. */
@@ -168,6 +188,7 @@ export function brandTokens(brandHex: string): { light: AccentTokens; dark: Acce
       accentInk: lightInk,
       accentSoft: oklchToHex({ l: 0.94, c: Math.min(base.c, 0.12) * 0.35, h: base.h }),
       pattern: patternTones(base, [0.95, 0.92, 0.89], 0.28),
+      chart: chartTone(base, CHART_LIGHTNESS.light),
     },
     dark: {
       accent: darkFill,
@@ -175,6 +196,7 @@ export function brandTokens(brandHex: string): { light: AccentTokens; dark: Acce
       accentInk: darkInk,
       accentSoft: oklchToHex({ l: 0.3, c: Math.min(base.c, 0.12) * 0.45, h: base.h }),
       pattern: patternTones(base, [0.255, 0.28, 0.305], 0.5),
+      chart: chartTone(base, CHART_LIGHTNESS.dark),
     },
   };
 }
