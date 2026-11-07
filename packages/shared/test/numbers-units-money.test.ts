@@ -50,8 +50,10 @@ describe("formatNumber", () => {
     expect(formatNumber("12400", "money", s, { compact: true })).toBe("$12.4K");
   });
 
-  it("keeps full precision of decimal strings", () => {
-    expect(formatFull("0.12345678", "unitCost", s)).toBe("$0.12345678");
+  it("keeps full precision of decimal strings, up to the kind's maximum decimals", () => {
+    // A float would lose the last digits of this value; decimal strings keep them.
+    expect(formatFull("123456789012.3456", "unitCost", s)).toBe("$123,456,789,012.3456");
+    expect(formatFull("0.12345678", "unitCost", s)).toBe("$0.1235");
   });
 
   it("drops the sign on values that round to zero", () => {
