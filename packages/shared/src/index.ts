@@ -8,6 +8,7 @@ export * from "./units";
 export * from "./numbers";
 export * from "./documents";
 export * from "./dates";
+export * from "./date-shift";
 export * from "./analytics";
 export * from "./color";
 export * from "./types";
