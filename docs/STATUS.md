@@ -12,7 +12,7 @@
 
 ### Phase 1: foundation
 - [x] Monorepo: pnpm + Turborepo, apps/web, packages/shared, packages/ui; lint, typecheck, test scripts wired
-- [ ] packages/shared: keys, permission engine, formatNumber, units, money, US pack, unit tests
+- [x] packages/shared: keys, permission engine, formatNumber, units, money, US pack, unit tests
   - permission keys `module.resource.action`, modules, products, default roles + data scope
   - effectivePermissions, canGrant, canAssignRole, dataScope, sensitive fields
   - formatNumber + number kinds/defaults; units (sq ft, sq yd, cartons, roll area); money (decimal.js)

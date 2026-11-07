@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`default role matrix > matches the reviewed snapshot 1`] = `
+{
+  "accountant": "xx....xxxxxxxxx...xxx...xxx..x..x...xxxxxxxxxxx.....x...............x..xx.xxxx.......xxx.x",
+  "employee": "....................................................................x..xx...xx............",
+  "hr": "...............................................................xxxxxxxxxxxxxxxxxx........x",
+  "installer": ".......................................................x...x........x..xx...xx............",
+  "manager": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xx..xxxxxxxxxxxxxxxxxx...xxxxxxx.xxxxx........x",
+  "owner": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "sales": "xxxx..xx...xx.xxx...x.....x............x.......xxxx.x..x............x..xx.x.xxx...........",
+  "warehouse": "x...................x.....xxxx..x..x.......x...........x............x..xx...xx............",
+}
+`;
