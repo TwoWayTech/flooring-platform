@@ -230,3 +230,14 @@ export function checkBrandColor(hex: string): BrandCheck {
     message: "Passes WCAG AA. Buttons and text shades are adjusted automatically.",
   };
 }
+
+/**
+ * Light-theme tokens for documents rendered outside CSS, such as invoice PDFs, where CSS
+ * variables are not available. They mirror the design brief's Slate, muted text and Grout.
+ */
+export const DOCUMENT_TOKENS = {
+  ink: NEUTRALS.light.text,
+  muted: "#5B6A6E",
+  hairline: "#CDD3CD",
+  onBrand: "#FFFFFF",
+} as const;

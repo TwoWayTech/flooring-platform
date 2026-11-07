@@ -216,7 +216,7 @@ export function DataTable<T>({
         </div>
       ) : null}
 
-      <div className="bg-surface border-hairline rounded-panel max-h-[calc(100dvh-13rem)] min-h-40 overflow-auto border">
+      <div className="bg-surface border-hairline rounded-panel relative max-h-[calc(100dvh-13rem)] min-h-40 overflow-auto border">
         <table className="w-full border-collapse text-sm">
           <thead className="bg-raised sticky top-0 z-10">
             {table.getHeaderGroups().map((group) => (

@@ -81,3 +81,8 @@ export const UNIT_SINGULAR: Record<SellUnit, string> = {
   ft: "ft",
   hour: "hour",
 };
+
+/** Cartons, items and steps are whole counts; areas and lengths are quantities with decimals. */
+export function quantityKind(unit: SellUnit): "count" | "quantity" {
+  return unit === "carton" || unit === "each" || unit === "step" ? "count" : "quantity";
+}

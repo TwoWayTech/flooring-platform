@@ -2,6 +2,8 @@ import { format } from "date-fns";
 import {
   canAssignRole,
   cutRoll,
+  invoiceFromQuote,
+  nextNumber,
   dateShift,
   escalations,
   shiftDates,
@@ -11,6 +13,7 @@ import {
   type CompanyId,
   type CompanySettings,
   type PlatformFixtures,
+  type Quote,
   type Role,
   type User,
 } from "@workspace/shared";
@@ -263,6 +266,63 @@ export class DemoStore implements ApiClient {
     });
     this.emit();
     return result;
+  }
+
+  async saveQuote(quote: Quote) {
+    const db = this.open();
+    const isNew = !quote.number;
+    const prefix = db.settings.localization.documents.quotePrefix;
+    const saved = isNew
+      ? {
+          ...quote,
+          id: quote.id || newId(db.companyId, "quo"),
+          number: nextNumber(
+            prefix,
+            db.list("quotes").map((q) => q.number),
+            2001,
+          ),
+        }
+      : quote;
+    db.put("quotes", saved);
+    this.appendAudit(db, {
+      category: "data",
+      action: isNew ? "Created quote" : "Saved quote",
+      target: saved.number,
+      before: null,
+      after: `total ${saved.total}`,
+    });
+    this.emit();
+    return saved;
+  }
+
+  async convertQuoteToInvoice(quoteId: string) {
+    const db = this.open();
+    const quote = db.get("quotes", quoteId);
+    if (!quote) throw new DemoRuleError("This quote no longer exists.");
+    if (quote.invoiceId) throw new DemoRuleError(`This quote is already invoiced.`);
+    if (quote.lines.length === 0) throw new DemoRuleError("Add at least one line before converting to an invoice.");
+    const customer = db.get("customers", quote.customerId)!;
+    const prefix = db.settings.localization.documents.invoicePrefix;
+    const invoice = invoiceFromQuote(quote, customer, db.settings.localization.tax, {
+      id: newId(db.companyId, "inv"),
+      number: nextNumber(
+        prefix,
+        db.list("invoices").map((i) => i.number),
+        1001,
+      ),
+      issuedAt: this.todayIso,
+    });
+    db.put("invoices", invoice);
+    db.put("quotes", { ...quote, status: "invoiced", invoiceId: invoice.id, total: invoice.total });
+    this.appendAudit(db, {
+      category: "data",
+      action: "Converted quote to invoice",
+      target: quote.number,
+      before: quote.status,
+      after: invoice.number,
+    });
+    this.emit();
+    return invoice;
   }
 
   async recordAudit(entry: AuditInput) {

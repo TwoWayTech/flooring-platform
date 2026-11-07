@@ -47,7 +47,7 @@ const CHECKS: Check[] = [
       return {
         count,
         label: plural(count, "overdue invoice", "overdue invoices"),
-        href: "/sales/invoices?status=overdue",
+        href: "/sales?view=invoices&status=overdue",
         tone: "danger",
       };
     },
@@ -81,7 +81,7 @@ const CHECKS: Check[] = [
       return {
         count,
         label: `${plural(count, "certificate", "certificates")} expiring`,
-        href: "/sales/customers?filter=certificates",
+        href: "/sales?view=customers&filter=certificates",
         tone: "warning",
       };
     },

@@ -5,6 +5,8 @@ import type {
   CompanyFixtures,
   CompanyId,
   CutResult,
+  Invoice,
+  Quote,
   CompanySettings,
   ModuleKey,
   PermissionKey,
@@ -115,6 +117,13 @@ export interface ApiClient {
    * leftover under 12 ft becomes a remnant. Audited.
    */
   cutRoll(rollId: string, lengthFt: string, reference: string): Promise<CutResult>;
+  /** Saves a quote; a new quote gets the next number from the company's quote prefix. Audited. */
+  saveQuote(quote: Quote): Promise<Quote>;
+  /**
+   * Converts a quote into an invoice dated today (spec "Quote builder → invoice"): totals are
+   * recomputed under the job site's tax rule, and the quote is marked invoiced. Audited.
+   */
+  convertQuoteToInvoice(quoteId: string): Promise<Invoice>;
   /** Appends an entry to the open company's audit log as the signed-in user. */
   recordAudit(entry: AuditInput): Promise<void>;
 }

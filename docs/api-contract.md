@@ -69,3 +69,5 @@ Added with their screens below.
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
 | `cutRoll(rollId, lengthFt, reference)` | `POST /rolls/:id/cuts` | Refuses lengths of 0 or more than is left. Records the cut with the user and time. A full roll's leftover under 12 ft becomes a remnant (new roll record, parent linked) and the roll is used up. Audited. |
+| `saveQuote(quote)` | `PUT /quotes/:id` | A new quote gets the next number with the company's quote prefix. Audited. |
+| `convertQuoteToInvoice(quoteId)` | `POST /quotes/:id/invoice` | Refuses quotes already invoiced or without lines. Recomputes totals under the job-site state's tax rule, stores the rule version, numbers the invoice with the invoice prefix, dates it today with the customer's terms, and marks the quote invoiced. Audited. |

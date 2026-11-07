@@ -154,12 +154,12 @@ export function RollPage({ rollId }: { rollId: string }) {
         </dl>
       </Panel>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Panel title="Cut history" bodyClassName="p-0">
           {roll.cuts.length === 0 ? (
             <p className="text-muted-foreground p-4">No cuts yet.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-raised text-muted-foreground text-xs">
                   <tr>

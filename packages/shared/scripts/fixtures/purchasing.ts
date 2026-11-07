@@ -1,14 +1,6 @@
 import { addDays, daysBetween, last12Months } from "../../src/dates";
 import { dec, moneyString, roundMoney, sum } from "../../src/money";
-import type {
-  Bill,
-  BillPayment,
-  Expense,
-  PoLine,
-  Product,
-  PurchaseOrder,
-  Supplier,
-} from "../../src/types";
+import type { Bill, BillPayment, Expense, PoLine, Product, PurchaseOrder, Supplier } from "../../src/types";
 import type { GenContext } from "./context";
 import { dueDate } from "../../src/operations/quotes";
 import { brandCode } from "./vocabulary";
