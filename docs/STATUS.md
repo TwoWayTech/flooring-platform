@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, HR host (?product=hr locally, Harbor Staffing): HR dashboard (headcount, W-2 vs 1099, overtime this week, PTO pending, upcoming time off), Employees (pay rate only with hr.employee.view_sensitive), weekly Timesheets grid with overtime flags (splitOvertime; California rule for CA workers), Time off requests and balances with approve or deny, and its own Users, Roles and Settings (already shared). Flooring companies with the HR module use the same screens under /hr.
+- Current phase: Phase 3 (Tier 2 screens)
+- Next step: Phase 3, Customers and receivables as a Customers tab on /sales (homeowners, dealers, contractors; customer drawer with statement; aging buckets current, 30, 60, 90+ from agingSummary; certificate filter from the attention link ?view=customers&filter=certificates; credit limit only with customers.customer.view_sensitive). Then Suppliers, purchase orders, payables at /purchasing.
 - Deployed URLs: none yet
-- Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
+- Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
 
 ## Checklist
 
@@ -36,7 +36,7 @@
 - [x] Settings: number format
 - [x] Settings: company profile and audit log
 - [x] Super-admin: companies and company access
-- [ ] HR host: dashboard, employees, timesheets, PTO, own settings
+- [x] HR host: dashboard, employees, timesheets, PTO, own settings
 
 ### Phase 3: Tier 2 screens
 - [ ] Customers and receivables

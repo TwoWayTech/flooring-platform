@@ -46,3 +46,11 @@ export function splitOvertime(days: readonly number[], rule: OvertimeRule): Over
   });
   return { regular, overtime, doubleTime, flaggedDays };
 }
+
+/**
+ * The overtime rule for one worker: California's daily rule follows the work state, so a
+ * California worker gets it whatever the company default is (US pack example).
+ */
+export function overtimeRuleFor(workState: string, companyRule: OvertimeRule): OvertimeRule {
+  return workState === "CA" ? "california" : companyRule;
+}

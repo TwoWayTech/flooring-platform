@@ -19,7 +19,7 @@ export const HARBOR_OWNER: Persona = { companyId: "harbor", userId: "hb-usr-01",
  */
 export async function signInAs(page: Page, persona: Persona, path = "/") {
   const hr = persona.companyId === "harbor";
-  await page.goto(hr ? "/login?product=hr" : "/login");
+  await page.goto(hr ? "/login?product=hr" : "/login?product=flooring");
   const status = await page.evaluate(async (body) => {
     const response = await fetch("/api/demo/login", {
       method: "POST",

@@ -12,6 +12,7 @@ import {
   contrastRatio,
   depositAmount,
   ruleForState,
+  overtimeRuleFor,
   splitOvertime,
   type DocLine,
 } from "../src";
@@ -149,5 +150,16 @@ describe("brand scale and pattern tones", () => {
     const tokens = brandTokens("#1F6FA8");
     for (const tone of tokens.light.pattern) expect(contrastRatio(tone, NEUTRALS.light.background)).toBeLessThan(1.25);
     for (const tone of tokens.dark.pattern) expect(contrastRatio(tone, NEUTRALS.dark.background)).toBeLessThan(1.35);
+  });
+});
+
+describe("overtime rule per worker", () => {
+  it("uses California's daily rule for California workers and the company rule elsewhere", () => {
+    expect(overtimeRuleFor("CA", "federal")).toBe("california");
+    expect(overtimeRuleFor("FL", "federal")).toBe("federal");
+    expect(splitOvertime([10, 10, 8, 8, 8, 0, 0], overtimeRuleFor("CA", "federal")).overtime).toBe(4);
+    expect(splitOvertime([10, 10, 8, 8, 8, 0, 0], overtimeRuleFor("FL", "federal")).overtime).toBe(4);
+    expect(splitOvertime([10, 10, 8, 8, 0, 0, 0], overtimeRuleFor("FL", "federal")).overtime).toBe(0);
+    expect(splitOvertime([10, 10, 8, 8, 0, 0, 0], overtimeRuleFor("CA", "federal")).overtime).toBe(4);
   });
 });
