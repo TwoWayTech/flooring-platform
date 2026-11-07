@@ -20,7 +20,7 @@
   - quote/invoice totals calculator (lines, waste, labor tax by job-site state)
 - [x] Seeded fixtures generator (`pnpm fixtures`) and reconciliation test
 - [x] DemoStore, apiClient, demo route handlers (login, logout, context), hostname proxy; docs/api-contract.md
-- [ ] docs/design-plan.md reviewed against the brief
+- [x] docs/design-plan.md reviewed against the brief
 - [ ] Design system: tokens, fonts, themes, brand scale from one color, floor pattern, roll gauge, Num
 - [ ] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle, notifications
 
