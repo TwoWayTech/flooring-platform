@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Inventory: product and roll lists with mini roll gauges and filters, roll detail page with the large gauge, cut history, remnants, location and cost (permission), "Cut roll" dialog (leftover under 12 ft becomes a remnant; put the cut rule in packages/shared). Then Quote builder.
+- Next step: Phase 2, Quote builder: room canvas (draw and resize rectangles, auto sq ft), product lines in sq yd or cartons with waste, labor lines, tax by job-site state from settings (computeTotals in packages/shared/documents.ts), deposit, convert to invoice (put conversion in packages/shared/operations), invoice view, PDF with @react-pdf/renderer. Routes /sales, /sales/quotes/new, /sales/quotes/[id], /sales/invoices/[id]. Reuse components/data-table for quote and invoice lists.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -27,7 +27,7 @@
 ### Phase 2: Tier 1 screens
 - [x] Login, personas, MFA
 - [x] Dashboard
-- [ ] Inventory, roll detail, cut roll
+- [x] Inventory, roll detail, cut roll
 - [ ] Quote builder, invoice, PDF
 - [ ] Settings: users
 - [ ] Settings: security roles

@@ -4,6 +4,7 @@ import type {
   Company,
   CompanyFixtures,
   CompanyId,
+  CutResult,
   CompanySettings,
   ModuleKey,
   PermissionKey,
@@ -109,6 +110,11 @@ export interface ApiClient {
   saveRole(role: Role): Promise<Role>;
   /** Deletes a non-system role that no user holds. */
   deleteRole(roleId: string): Promise<void>;
+  /**
+   * Cuts a length from a roll as the signed-in user (spec "Inventory and roll detail"); a
+   * leftover under 12 ft becomes a remnant. Audited.
+   */
+  cutRoll(rollId: string, lengthFt: string, reference: string): Promise<CutResult>;
   /** Appends an entry to the open company's audit log as the signed-in user. */
   recordAudit(entry: AuditInput): Promise<void>;
 }

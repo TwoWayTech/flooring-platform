@@ -70,3 +70,14 @@ export function quantityForArea(
 
 /** Leftover pieces shorter than this become remnants after a cut (spec "Inventory and roll detail"). */
 export const REMNANT_THRESHOLD_FT = 12;
+
+/** A selling unit in "price per …" phrases, e.g. "per carton". */
+export const UNIT_SINGULAR: Record<SellUnit, string> = {
+  sq_ft: "sq ft",
+  sq_yd: "sq yd",
+  carton: "carton",
+  each: "item",
+  step: "step",
+  ft: "ft",
+  hour: "hour",
+};

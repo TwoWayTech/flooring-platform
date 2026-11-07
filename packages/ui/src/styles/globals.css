@@ -223,3 +223,26 @@
     animation: none;
   }
 }
+
+/* Printing: only a print target (such as a roll label or an invoice) reaches the paper, in ink on white. */
+:root {
+  --print-ink: #000000;
+  --print-paper: #ffffff;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print-target],
+  [data-print-target] * {
+    visibility: visible;
+    color: var(--print-ink) !important;
+    background: var(--print-paper) !important;
+    border-color: var(--print-ink) !important;
+  }
+  [data-print-target] {
+    position: absolute;
+    inset: 0 auto auto 0;
+  }
+}

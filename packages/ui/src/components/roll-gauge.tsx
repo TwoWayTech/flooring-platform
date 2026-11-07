@@ -44,7 +44,7 @@ export function RollGauge({ originalFt, remainingFt, cutsFt, size = "large", cla
   // Cross-section area is proportional to the length still wound, so the radius follows √share.
   const radius = l.coreR + (l.maxR - l.coreR) * Math.sqrt(share);
   const x0 = l.maxR * 2 + l.gap;
-  const trackWidth = l.width - x0 - 1;
+  const trackWidth = Math.max(1, l.width - x0 - 1);
   const scale = trackWidth / Math.max(originalFt, 1);
   // Only a change in length (a cut) animates; resizing or first paint draws instantly.
   const lastRemaining = useRef(remainingFt);

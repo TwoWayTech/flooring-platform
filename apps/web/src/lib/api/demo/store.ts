@@ -1,9 +1,11 @@
 import { format } from "date-fns";
 import {
   canAssignRole,
+  cutRoll,
   dateShift,
   escalations,
   shiftDates,
+  validateCut,
   type AuditEntry,
   type Company,
   type CompanyId,
@@ -234,6 +236,33 @@ export class DemoStore implements ApiClient {
       after: null,
     });
     this.emit();
+  }
+
+  async cutRoll(rollId: string, lengthFt: string, reference: string) {
+    const db = this.open();
+    const roll = db.get("rolls", rollId);
+    if (!roll) throw new DemoRuleError("This roll no longer exists.");
+    const problem = validateCut(roll, lengthFt);
+    if (problem) throw new DemoRuleError(problem);
+    const result = cutRoll(
+      roll,
+      { lengthFt, at: nowStamp(), reference, byUserId: this.viewer!.userId },
+      { cutId: newId(db.companyId, "cut"), remnantId: newId(db.companyId, "roll") },
+    );
+    db.put("rolls", result.roll);
+    if (result.remnant) db.put("rolls", result.remnant);
+    const after = result.remnant
+      ? `0 ft, remnant ${result.remnant.rollNumber} of ${result.remnant.remainingLengthFt} ft`
+      : `${result.roll.remainingLengthFt} ft`;
+    this.appendAudit(db, {
+      category: "data",
+      action: `Cut ${lengthFt} ft`,
+      target: `Roll ${roll.rollNumber}`,
+      before: `${roll.remainingLengthFt} ft`,
+      after,
+    });
+    this.emit();
+    return result;
   }
 
   async recordAudit(entry: AuditInput) {

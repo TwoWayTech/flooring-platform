@@ -65,3 +65,7 @@ Rule failures throw `DemoRuleError` with a message written for the presenter; th
 ## Domain actions
 
 Added with their screens below.
+
+| Method | Real endpoint | Behaviour |
+| --- | --- | --- |
+| `cutRoll(rollId, lengthFt, reference)` | `POST /rolls/:id/cuts` | Refuses lengths of 0 or more than is left. Records the cut with the user and time. A full roll's leftover under 12 ft becomes a remnant (new roll record, parent linked) and the roll is used up. Audited. |
