@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 3 (Tier 2 screens)
-- Next step: Phase 3, Customers and receivables as a Customers tab on /sales (homeowners, dealers, contractors; customer drawer with statement; aging buckets current, 30, 60, 90+ from agingSummary; certificate filter from the attention link ?view=customers&filter=certificates; credit limit only with customers.customer.view_sensitive). Then Suppliers, purchase orders, payables at /purchasing.
+- Next step: Phase 3, Purchasing at /purchasing: suppliers list with amount owed, purchase orders (create, receive which adds stock, bill), bills with payables aging (agingSummary on bills), pay a bill. Put receive and bill rules in packages/shared/operations. Then Installation.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
 
@@ -39,7 +39,7 @@
 - [x] HR host: dashboard, employees, timesheets, PTO, own settings
 
 ### Phase 3: Tier 2 screens
-- [ ] Customers and receivables
+- [x] Customers and receivables
 - [ ] Suppliers, purchase orders, payables
 - [ ] Installation calendar and job card
 - [ ] Reports hub

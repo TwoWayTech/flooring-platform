@@ -9,6 +9,7 @@ const PAGES = [
   "/inventory/rolls/sm-roll-0004",
   "/sales",
   "/sales?view=invoices",
+  "/sales?view=customers",
   "/sales/quotes/sm-quo-0288",
   "/sales/quotes/new",
   "/sales/invoices/sm-inv-0150",

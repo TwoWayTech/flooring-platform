@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
+import { CustomersTable } from "@/features/customers/customers-table";
 import { InvoicesTable } from "./invoices-table";
 import { QuotesTable } from "./quotes-table";
 
@@ -19,18 +20,24 @@ export function SalesPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [quotes, invoices, customers, users] = await Promise.all([
+    const [quotes, invoices, customers, users, payments] = await Promise.all([
       client.list("quotes"),
       client.list("invoices"),
       client.list("customers"),
       client.list("users"),
+      client.list("payments"),
     ]);
-    return { quotes, invoices, customers, users };
+    return { quotes, invoices, customers, users, payments };
   }, []);
   const canQuotes = can("sales.quote.view");
   const canInvoices = can("sales.invoice.view");
-  if (!canQuotes && !canInvoices) return <NoAccess />;
-  const view = params.get("view") === "invoices" || !canQuotes ? "invoices" : "quotes";
+  const canCustomers = can("customers.customer.view");
+  if (!canQuotes && !canInvoices && !canCustomers) return <NoAccess />;
+  const requested = params.get("view");
+  const allowed = { quotes: canQuotes, invoices: canInvoices, customers: canCustomers };
+  const view =
+    (Object.keys(allowed) as (keyof typeof allowed)[]).find((v) => v === requested && allowed[v]) ??
+    (Object.keys(allowed) as (keyof typeof allowed)[]).find((v) => allowed[v])!;
 
   return (
     <>
@@ -51,10 +58,13 @@ export function SalesPage() {
         <TabsList aria-label="Sales view">
           {canQuotes ? <TabsTrigger value="quotes">Quotes</TabsTrigger> : null}
           {canInvoices ? <TabsTrigger value="invoices">Invoices</TabsTrigger> : null}
+          {canCustomers ? <TabsTrigger value="customers">Customers and receivables</TabsTrigger> : null}
         </TabsList>
       </Tabs>
       {data.status !== "ready" ? (
         <Skeleton className="h-96" aria-label="Loading sales" />
+      ) : view === "customers" ? (
+        <CustomersTable customers={data.data.customers} invoices={data.data.invoices} payments={data.data.payments} />
       ) : view === "invoices" ? (
         <InvoicesTable invoices={data.data.invoices} customers={data.data.customers} />
       ) : (

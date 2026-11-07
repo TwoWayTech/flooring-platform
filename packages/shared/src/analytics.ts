@@ -212,3 +212,48 @@ export function slowMovers(
     .sort((a, b) => b.daysWithoutSale - a.daysWithoutSale)
     .slice(0, limit);
 }
+
+/** One line of a customer statement. Amounts are signed: invoices add, payments subtract. */
+export interface StatementLine {
+  date: string;
+  kind: "invoice" | "payment";
+  reference: string;
+  amount: string;
+  balance: string;
+}
+
+/**
+ * A customer statement (spec "Customers and receivables"): invoices and payments in date order
+ * with a running balance, closing at the customer's open invoice balances. Returns are refunded
+ * on the spot, so they never change what the customer owes and are left out.
+ */
+export function customerStatement(
+  invoices: readonly Invoice[],
+  payments: readonly { invoiceId: string; at: string; amount: string; customerId: string }[],
+  customerId: string,
+): StatementLine[] {
+  const events = [
+    ...invoices
+      .filter((i) => i.customerId === customerId && i.status !== "void" && !i.isReturn)
+      .map((i) => ({ date: i.issuedAt, kind: "invoice" as const, reference: i.number, amount: dec(i.total) })),
+    ...payments
+      .filter((p) => p.customerId === customerId)
+      .map((p) => ({
+        date: p.at.slice(0, 10),
+        kind: "payment" as const,
+        reference: invoices.find((i) => i.id === p.invoiceId)?.number ?? "",
+        amount: dec(p.amount).negated(),
+      })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "invoice" ? -1 : 1));
+  let running = dec(0);
+  return events.map((e) => {
+    running = running.plus(e.amount);
+    return {
+      date: e.date,
+      kind: e.kind,
+      reference: e.reference,
+      amount: moneyString(e.amount),
+      balance: moneyString(running),
+    };
+  });
+}

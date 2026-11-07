@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bestSellers, dec, lineAmount, slowMovers, type CompanyFixtures } from "../src";
+import { bestSellers, customerStatement, dec, lineAmount, slowMovers, type CompanyFixtures } from "../src";
 
 const summit = JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "summit.json"), "utf8")) as CompanyFixtures;
 const today = summit.anchorDate;
@@ -28,5 +28,17 @@ describe("best sellers and slow movers", () => {
     expect(slow.map((s) => s.daysWithoutSale)).toEqual([...slow.map((s) => s.daysWithoutSale)].sort((a, b) => b - a));
     const services = new Set(summit.products.filter((p) => p.category === "service").map((p) => p.id));
     expect(slow.some((s) => services.has(s.productId))).toBe(false);
+  });
+});
+
+describe("customer statement", () => {
+  it("ends at the customer's open balance for every customer", () => {
+    for (const customer of summit.customers) {
+      const lines = customerStatement(summit.invoices, summit.payments, customer.id);
+      const open = summit.invoices
+        .filter((i) => i.customerId === customer.id && !i.isReturn && i.status !== "void")
+        .reduce((s, i) => s.plus(i.total).minus(i.paid), dec(0));
+      expect(lines.at(-1)?.balance ?? "0.00", customer.name).toBe(open.toFixed(2));
+    }
   });
 });
