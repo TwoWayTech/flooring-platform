@@ -1,4 +1,4 @@
-import { addDays } from "../../src/dates";
+import { addDays, mondayOf } from "../../src/dates";
 import type { Attendee, Customer, Meeting, Supplier, User } from "../../src/types";
 import type { GenContext } from "./context";
 
@@ -45,12 +45,23 @@ const TEMPLATES: Record<string, readonly Template[]> = {
   ],
 };
 
+/**
+ * A workday `slot` weekdays after the Monday `firstWeek` weeks from the anchor's week, so one
+ * random draw spreads meetings evenly over Monday to Friday.
+ */
+function workday(anchor: string, firstWeek: number, slot: number): string {
+  return addDays(mondayOf(anchor), (firstWeek + Math.floor(slot / 5)) * 7 + (slot % 5));
+}
+
 function staff(users: readonly User[], count: number, ctx: GenContext): Attendee[] {
   const active = users.filter((u) => u.status === "active");
   return ctx.rng.sample(active, count).map((u) => ({ kind: "staff", id: u.id, name: u.name }));
 }
 
-/** Meetings from two weeks back to three weeks ahead, with staff, customers or suppliers attending. */
+/**
+ * One-off meetings from a week back to two weeks ahead; recurring series began weeks ago so they
+ * show every week of the calendar. Staff, customers or suppliers attend.
+ */
 export function buildMeetings(
   ctx: GenContext,
   users: readonly User[],
@@ -70,7 +81,10 @@ export function buildMeetings(
       attendees.push({ kind: "supplier", id: supplier.id, name: supplier.name });
       title = `${title}: ${supplier.name}`;
     }
-    const day = addDays(ctx.anchor, ctx.rng.int(-14, 21));
+    const day =
+      template.recurrence === "none"
+        ? workday(ctx.anchor, -1, ctx.rng.int(0, 19))
+        : workday(ctx.anchor, -6, ctx.rng.int(0, 14));
     return {
       id: ctx.id("mtg"),
       title,

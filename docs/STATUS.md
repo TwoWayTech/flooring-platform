@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 3 (Tier 2 screens)
-- Next step: Phase 3, Meetings at /meetings: calendar (week or month list), attendees (staff, customers, suppliers), recurring meetings expanded into occurrences, reminders; new meeting dialog. Then Phase 4 polish (presenter guide, states, a11y and reduced motion, visual QA).
+- Next step: Phase 3 wrap-up (full lint, typecheck, unit, e2e, session log), then Phase 4: presenter guide panel.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
 
@@ -43,7 +43,7 @@
 - [x] Suppliers, purchase orders, payables
 - [x] Installation calendar and job card
 - [x] Reports hub
-- [ ] Meetings
+- [x] Meetings
 
 ### Phase 4: Tier 3 polish
 - [ ] Presenter guide panel

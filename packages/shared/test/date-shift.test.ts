@@ -21,6 +21,14 @@ describe("shiftDates", () => {
     }
   });
 
+  it("keeps meetings on their weekday so recurring series line up with the calendar", () => {
+    const shift = dateShift(anchor, "2026-11-07");
+    const { meetings } = shiftDates({ meetings: [{ start: "2026-11-05T09:00" }] }, shift);
+    expect(meetings[0]!.start).toBe("2026-11-05T09:00");
+    const later = shiftDates({ meetings: [{ start: "2026-11-05T09:00" }] }, dateShift(anchor, "2026-11-12"));
+    expect(later.meetings[0]!.start).toBe("2026-11-12T09:00");
+  });
+
   it("moves month keys with the dates around them", () => {
     const shift = dateShift(anchor, "2026-12-20");
     expect(shiftDates({ month: "2026-11" }, shift)).toEqual({ month: "2026-12" });

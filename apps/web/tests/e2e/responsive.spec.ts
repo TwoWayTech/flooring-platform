@@ -14,6 +14,7 @@ const PAGES = [
   "/purchasing?view=bills",
   "/installation",
   "/reports",
+  "/meetings",
   "/sales/quotes/sm-quo-0288",
   "/sales/quotes/new",
   "/sales/invoices/sm-inv-0150",

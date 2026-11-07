@@ -18,3 +18,4 @@ export * from "./us-pack/overtime";
 export * from "./operations/rolls";
 export * from "./operations/quotes";
 export * from "./operations/purchasing";
+export * from "./operations/meetings";
