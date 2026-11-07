@@ -25,3 +25,6 @@ pnpm dev | pnpm build | pnpm lint | pnpm typecheck | pnpm test | pnpm test:e2e |
 9. Commit after every working screen with a conventional message, and tick docs/STATUS.md as you go.
 10. Never write secrets; never read or edit .env files; use invented names, never real manufacturers' brands or logos.
 11. Before stopping for any reason: commit, update STATUS.md with the exact next step, and write a log in docs/sessions/.
+12. Push to GitHub after every commit (git push origin <current branch>). Never leave work only on this laptop.
+13. Clean code: small focused files and functions, clear names, no dead or commented-out code, no duplicated logic. Prettier and ESLint must pass.
+14. Comments: every exported function, component, hook and type gets a short JSDoc comment saying what it does and why. Business rules (tax, costing, units, permissions, ledger) get a comment explaining the rule and pointing to the spec section. No comments that only repeat the code.
