@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Phase 1 (foundation)
-- Next step: Phase 1, monorepo: pnpm + Turborepo with apps/web (Next 16.4.5), packages/shared, packages/ui.
+- Current phase: Phase 2 (Tier 1 screens)
+- Next step: Phase 2, Dashboard (Flooring): revenue and gross margin chart (chart tokens validated, see ADR 0002 and design plan), key figures, needs attention (lib/attention.ts), best and slow sellers, today's jobs. Replace the placeholder in features/home/home-page.tsx.
 - Deployed URLs: none yet
-- Last session log: docs/sessions/2026-11-07-1635-phase0-start.md
+- Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
 ## Checklist
 
