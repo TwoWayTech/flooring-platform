@@ -1,10 +1,11 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import { Menu, Presentation, Search } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Monogram } from "@workspace/ui/components/monogram";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { usePresenterGuide } from "@/features/presenter/use-presenter-guide";
 import { Notifications } from "./notifications";
 import { UserMenu } from "./user-menu";
 
@@ -13,10 +14,14 @@ interface TopBarProps {
   onOpenMenu: () => void;
 }
 
-/** Top bar: menu and logo on phones, the command trigger, notifications, theme and account. */
+/**
+ * Top bar: menu and logo on phones, the command trigger, the presenter guide toggle,
+ * notifications, theme and account.
+ */
 export function TopBar({ onOpenPalette, onOpenMenu }: TopBarProps) {
   const { settings } = useWorkspace();
   const { branding } = settings;
+  const [guideOpen, setGuideOpen] = usePresenterGuide();
   return (
     <div className="flex h-14 items-center gap-2 px-4 lg:px-8">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onOpenMenu} aria-label="Open menu">
@@ -39,6 +44,16 @@ export function TopBar({ onOpenPalette, onOpenMenu }: TopBarProps) {
         <kbd className="bg-raised hidden rounded-sm px-1.5 py-0.5 font-sans text-xs font-medium sm:inline">Ctrl K</kbd>
       </button>
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Presenter guide"
+          aria-pressed={guideOpen}
+          className={guideOpen ? "bg-brand-soft text-brand-ink" : undefined}
+          onClick={() => setGuideOpen(!guideOpen)}
+        >
+          <Presentation />
+        </Button>
         <Notifications />
         <ThemeToggle />
         <UserMenu />

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@workspace/ui/components/sheet";
+import { PresenterGuide } from "@/features/presenter/presenter-guide";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
@@ -9,7 +10,7 @@ import { ViewAsBanner } from "./view-as";
 
 /**
  * The app shell (design brief "Layout"): sidebar on the Limestone canvas from 1024 px, a drawer
- * below that, the top bar, the "View as" banner, and the page.
+ * below that, the top bar, the "View as" banner, the page and the presenter guide.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -35,6 +36,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <Suspense fallback={null}>
+        <PresenterGuide />
+      </Suspense>
     </div>
   );
 }

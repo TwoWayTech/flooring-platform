@@ -5,6 +5,13 @@ import { ThemeProvider } from "next-themes";
 import type { ReactNode } from "react";
 import { Toaster } from "@workspace/ui/components/sonner";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
+import { GUIDE_FOOTPRINT_PX, usePresenterGuide } from "@/features/presenter/use-presenter-guide";
+
+/** Toasts in the bottom right, moved aside while the presenter guide is open. */
+function Toasts() {
+  const [guideOpen] = usePresenterGuide();
+  return <Toaster position="bottom-right" offset={guideOpen ? { right: GUIDE_FOOTPRINT_PX } : undefined} />;
+}
 
 /**
  * App-wide providers: light, dark and system themes (class on <html>), motion that respects
@@ -16,7 +23,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <MotionConfig reducedMotion="user">
         <TooltipProvider delayDuration={250}>
           {children}
-          <Toaster position="bottom-right" />
+          <Toasts />
         </TooltipProvider>
       </MotionConfig>
     </ThemeProvider>

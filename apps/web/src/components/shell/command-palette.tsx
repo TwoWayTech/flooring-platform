@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
-import { Building2, Eye, FilePlus2, LogOut, Moon, RotateCcw, Scissors, UserPlus } from "lucide-react";
+import { Building2, Eye, FilePlus2, LogOut, Moon, Presentation, RotateCcw, Scissors, UserPlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PermissionKey } from "@workspace/shared";
 import {
@@ -20,6 +20,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useSessionActions } from "@/lib/session/use-session-actions";
 import { visibleItems } from "@/products";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { usePresenterGuide } from "@/features/presenter/use-presenter-guide";
 import { resetDemo } from "./user-menu";
 import { useCanViewAs } from "./view-as";
 
@@ -47,7 +48,8 @@ function useHotkey(onOpen: () => void) {
 
 /**
  * The ⌘K palette (design brief "Components and patterns"): every page the viewer may open, plus
- * actions such as New quote, Cut a roll, Invite user, View as role, Toggle theme and Sign out.
+ * actions such as New quote, Cut a roll, Invite user, the presenter guide, View as role, Toggle
+ * theme and Sign out.
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
@@ -56,6 +58,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const companies = useApiQuery((client) => client.listCompanies(), []);
   const otherCompanies = (companies.data ?? []).filter((c) => c.product === session.product && c.id !== company.id);
   const { signOut, switchCompany } = useSessionActions();
+  const [guideOpen, setGuideOpen] = usePresenterGuide();
   useHotkey(() => onOpenChange(true));
 
   const run = (action: () => void) => {
@@ -81,6 +84,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       icon: UserPlus,
       permission: "settings.users.manage",
       run: () => router.push("/settings/users?invite=1"),
+    },
+    {
+      label: guideOpen ? "Hide presenter guide" : "Show presenter guide",
+      icon: Presentation,
+      run: () => setGuideOpen(!guideOpen),
     },
     { label: "Toggle theme", icon: Moon, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
     { label: "Reset demo data", icon: RotateCcw, run: () => void resetDemo() },

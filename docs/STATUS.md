@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 4 (Tier 3 polish)
-- Next step: Phase 4, presenter guide panel: a toggle in the top bar opens a side panel with talking points for the current screen and persona (from a per-route script), remembered per browser.
+- Next step: Phase 4, empty, loading and error states on every screen: audit each route for a skeleton while loading, an empty state that says what to do, and an error state with a retry when the api call fails.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-2015-phase3-tier2.md
 
@@ -46,7 +46,7 @@
 - [x] Meetings
 
 ### Phase 4: Tier 3 polish
-- [ ] Presenter guide panel
+- [x] Presenter guide panel
 - [ ] Empty, loading and error states
 - [ ] Accessibility and reduced-motion pass
 - [ ] Visual QA in both themes at 1440 px and 390 px
