@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Branding (logo upload stored in DemoStore as a data URL, brand color with live preview and checkBrandColor contrast check, pattern, default theme, reset via a resetSettings section call). Then Localization and tax.
+- Next step: Phase 2, Settings: Localization and tax (tabs Region, Currency, Sales tax, Payroll rules, Documents; tax rules feed the quote builder; step-up for currency and tax). Then Number format.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -31,7 +31,7 @@
 - [x] Quote builder, invoice, PDF
 - [x] Settings: users
 - [x] Settings: security roles
-- [ ] Settings: branding
+- [x] Settings: branding
 - [ ] Settings: localization and tax
 - [ ] Settings: number format
 - [ ] Settings: company profile and audit log

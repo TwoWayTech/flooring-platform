@@ -38,6 +38,11 @@ export class CompanyDb {
     return this.base.companyId;
   }
 
+  /** The generated settings, before any change made in the demo. */
+  get defaultSettings(): CompanySettings {
+    return this.base.settings;
+  }
+
   get settings(): CompanySettings {
     return this.overlay.settings ?? this.base.settings;
   }

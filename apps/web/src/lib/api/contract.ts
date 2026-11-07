@@ -97,6 +97,9 @@ export interface ApiClient {
   /** Replaces one settings section and audits the change. */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
 
+  /** Restores one settings section to the company's original values and audits it. */
+  resetSettings(section: keyof CompanySettings): Promise<CompanySettings>;
+
   /** Records of a collection, limited to the viewer's data scope. */
   list<K extends CollectionName>(collection: K): Promise<Collections[K]>;
   /** One record by id, or undefined when it does not exist or is outside the viewer's scope. */

@@ -140,6 +140,10 @@ export class DemoStore implements ApiClient {
     return db.settings;
   }
 
+  async resetSettings(section: keyof CompanySettings) {
+    return this.updateSettings(section, this.open().defaultSettings[section]);
+  }
+
   async list<K extends CollectionName>(collection: K) {
     const db = this.open();
     return applyScope(db, collection, db.list(collection), this.subject(db));
