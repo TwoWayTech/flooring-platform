@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Security roles (role list with user counts, create or copy, permission matrix module → resource → action from packages/shared catalog, data scope, greyed "Not included in your plan" outside the ceiling, locked Owner, step-up MFA on save via components/step-up-dialog; escalation refused by DemoStore.saveRole).
+- Next step: Phase 2, Settings: Branding (logo upload stored in DemoStore as a data URL, brand color with live preview and checkBrandColor contrast check, pattern, default theme, reset via a resetSettings section call). Then Localization and tax.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -30,7 +30,7 @@
 - [x] Inventory, roll detail, cut roll
 - [x] Quote builder, invoice, PDF
 - [x] Settings: users
-- [ ] Settings: security roles
+- [x] Settings: security roles
 - [ ] Settings: branding
 - [ ] Settings: localization and tax
 - [ ] Settings: number format
