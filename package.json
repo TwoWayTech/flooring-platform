@@ -8,14 +8,18 @@
   "scripts": {
     "dev": "turbo run dev --filter=web",
     "build": "turbo run build",
-    "lint": "turbo run lint",
+    "lint": "turbo run lint && prettier --check .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "pnpm --filter web test:e2e",
-    "fixtures": "pnpm --filter @workspace/shared fixtures"
+    "fixtures": "pnpm --filter @workspace/shared fixtures",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "turbo": "2.11.10",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "prettier": "3.9.10",
+    "prettier-plugin-tailwindcss": "0.8.1"
   }
 }

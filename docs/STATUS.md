@@ -11,7 +11,7 @@
 - [x] Versions checked with Context7; tasks below expanded (ADR 0001)
 
 ### Phase 1: foundation
-- [ ] Monorepo: pnpm + Turborepo, apps/web, packages/shared, packages/ui; lint, typecheck, test scripts wired
+- [x] Monorepo: pnpm + Turborepo, apps/web, packages/shared, packages/ui; lint, typecheck, test scripts wired
 - [ ] packages/shared: keys, permission engine, formatNumber, units, money, US pack, unit tests
   - permission keys `module.resource.action`, modules, products, default roles + data scope
   - effectivePermissions, canGrant, canAssignRole, dataScope, sensitive fields
