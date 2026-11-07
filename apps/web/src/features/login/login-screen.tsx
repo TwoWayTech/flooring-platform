@@ -84,8 +84,8 @@ function PersonaCard({ persona, selected, onSelect }: { persona: Persona; select
         selected ? "border-brand bg-brand-soft" : "border-hairline hover:bg-raised",
       )}
     >
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm font-semibold">{persona.user.name}</span>
+      <span className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="text-sm font-semibold">{persona.user.name}</span>
         <span className="text-brand-ink shrink-0 text-xs font-medium">{persona.role.name}</span>
       </span>
       <span className="text-muted-foreground text-xs">{persona.role.description}</span>

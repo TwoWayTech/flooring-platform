@@ -61,7 +61,9 @@ export function TodaysJobs({ jobs }: { jobs: readonly TimelineJob[] }) {
                       width: `${(Math.min(job.durationHours, DAY_END - job.startHour) / SPAN) * 100}%`,
                     }}
                   >
-                    {job.number} {customer?.contactName.split(" ").at(-1)}
+                    <span className="truncate">
+                      {job.number} {customer?.contactName.split(" ").at(-1)}
+                    </span>
                   </Link>
                 ))}
               </div>

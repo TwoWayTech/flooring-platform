@@ -46,9 +46,16 @@ function jobStatus(ctx: GenContext, date: string): JobStatus {
   return "scheduled";
 }
 
-/** Job dates: 25 in the past, 4 today and 11 over the next two weeks, oldest invoice first. */
+/**
+ * Job dates: 25 over the last two weeks (never before the invoice, never today), 4 today and 11
+ * over the next two weeks, so the installation calendar is busy around the presenting day.
+ */
 function jobDate(ctx: GenContext, invoice: Invoice, index: number): string {
-  if (index < PAST_JOBS) return [addDays(invoice.issuedAt, ctx.rng.int(2, 10)), addDays(ctx.anchor, -1)].sort()[0]!;
+  if (index < PAST_JOBS) {
+    const recent = addDays(ctx.anchor, -ctx.rng.int(1, 14));
+    const afterInvoice = [recent, addDays(invoice.issuedAt, 1)].sort().at(-1)!;
+    return [afterInvoice, addDays(ctx.anchor, -1)].sort()[0]!;
+  }
   if (index < PAST_JOBS + TODAY_JOBS) return ctx.anchor;
   return addDays(ctx.anchor, ctx.rng.int(1, 13));
 }

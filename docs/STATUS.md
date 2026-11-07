@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Phase 4 (Tier 3 polish)
-- Next step: Phase 4, visual QA: screenshot every screen in tests/e2e/screens.ts in light and dark at 1440 px and 390 px, fix what looks off (alignment, truncation, empty space, contrast of decorative marks), then run the Phase 4 checks and write the session log.
+- Current phase: Phase 5 (ship)
+- Next step: Phase 5, run `pnpm build` and fix anything the production build reports, then write docs/demo-script.md (20 to 30 minute click path, persona by persona, following the presenter guide steps), then the Vercel deploy (ask the user before the deploy command runs).
 - Deployed URLs: none yet
-- Last session log: docs/sessions/2026-11-07-2015-phase3-tier2.md
+- Last session log: docs/sessions/2026-11-07-2140-phase4-polish.md
 
 ## Checklist
 
@@ -49,7 +49,7 @@
 - [x] Presenter guide panel
 - [x] Empty, loading and error states
 - [x] Accessibility and reduced-motion pass
-- [ ] Visual QA in both themes at 1440 px and 390 px
+- [x] Visual QA in both themes at 1440 px and 390 px
 
 ### Phase 5: ship
 - [ ] All tests green, production build passes
