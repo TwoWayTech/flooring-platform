@@ -77,7 +77,13 @@ export function RevenuePanel({ data, ownScope }: { data: DashboardData; ownScope
   const { totals } = data;
   return (
     <Panel
-      title={ownScope ? "Your revenue, last 12 months" : "Revenue and gross margin, last 12 months"}
+      title={
+        ownScope
+          ? "Your revenue, last 12 months"
+          : showMargin
+            ? "Revenue and gross margin, last 12 months"
+            : "Revenue, last 12 months"
+      }
       actions={
         <Button variant="ghost" size="sm" onClick={() => setAsTable((v) => !v)} aria-pressed={asTable}>
           {asTable ? <BarChart3 /> : <Table2 />}

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Super-admin at /admin (platform session): companies list (status, plan, products) and company access page (modules, ceiling toggles, user and branch limits, read-only roles and users, effective-access preview for any role or user) via api.listCompanies, updateCompanyAccess, listCompanyDirectory. Removing a ceiling permission must hide it for that company at once. Then HR host.
+- Next step: Phase 2, HR host (?product=hr locally, Harbor Staffing): HR dashboard (headcount, W-2 vs 1099, overtime this week, PTO pending, upcoming time off), Employees (pay rate only with hr.employee.view_sensitive), weekly Timesheets grid with overtime flags (splitOvertime; California rule for CA workers), Time off requests and balances with approve or deny, and its own Users, Roles and Settings (already shared). Flooring companies with the HR module use the same screens under /hr.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -35,7 +35,7 @@
 - [x] Settings: localization and tax
 - [x] Settings: number format
 - [x] Settings: company profile and audit log
-- [ ] Super-admin: companies and company access
+- [x] Super-admin: companies and company access
 - [ ] HR host: dashboard, employees, timesheets, PTO, own settings
 
 ### Phase 3: Tier 2 screens
