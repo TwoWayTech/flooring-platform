@@ -72,3 +72,7 @@ Added with their screens below.
 | `cutRoll(rollId, lengthFt, reference)` | `POST /rolls/:id/cuts` | Refuses lengths of 0 or more than is left. Records the cut with the user and time. A full roll's leftover under 12 ft becomes a remnant (new roll record, parent linked) and the roll is used up. Audited. |
 | `saveQuote(quote)` | `PUT /quotes/:id` | A new quote gets the next number with the company's quote prefix. Audited. |
 | `convertQuoteToInvoice(quoteId)` | `POST /quotes/:id/invoice` | Refuses quotes already invoiced or without lines. Recomputes totals under the job-site state's tax rule, stores the rule version, numbers the invoice with the invoice prefix, dates it today with the customer's terms, and marks the quote invoiced. Audited. |
+| `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. Audited. |
+| `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons go into stock; broadloom arrives as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
+| `billPurchaseOrder(poId, billNumber)` | `POST /purchase-orders/:id/bill` | Only received orders; the bill takes the PO total and the supplier's terms. Audited. |
+| `payBill(billId)` | `POST /bills/:id/payments` | Pays the open balance in full and records the bill payment. Audited. |

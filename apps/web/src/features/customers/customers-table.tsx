@@ -7,6 +7,7 @@ import {
   balance,
   daysBetween,
   isOverdue,
+  openInvoices,
   PAYMENT_TERM_LABELS,
   SENSITIVE,
   sum,
@@ -21,9 +22,9 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { AgingPanel } from "@/components/aging-panel";
 import { CERTIFICATE_WARNING_DAYS } from "@/lib/attention";
 import { CustomerDrawer } from "./customer-drawer";
-import { ReceivablesPanel } from "./receivables-panel";
 
 const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" };
 type Filter = CustomerType | "all" | "certificates";
@@ -102,7 +103,7 @@ export function CustomersTable({
 
   return (
     <>
-      <ReceivablesPanel invoices={invoices} today={today} />
+      <AgingPanel title="Receivables aging" docs={openInvoices(invoices)} today={today} />
       <DataTable
         id="sales-customers"
         rows={rows}

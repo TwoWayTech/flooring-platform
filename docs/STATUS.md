@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 3 (Tier 2 screens)
-- Next step: Phase 3, Purchasing at /purchasing: suppliers list with amount owed, purchase orders (create, receive which adds stock, bill), bills with payables aging (agingSummary on bills), pay a bill. Put receive and bill rules in packages/shared/operations. Then Installation.
+- Next step: Phase 3, Installation at /installation: week calendar by crew and subcontractor (?week= navigation; jobs from api.list("jobs")), job card drawer or page (/installation?job=id from the dashboard timeline) with materials, labor, margin (installation.job.view_sensitive), placeholder photos and sign-off (installation.job.sign_off). Then Reports hub.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1945-phase2-tier1.md
 
@@ -40,7 +40,7 @@
 
 ### Phase 3: Tier 2 screens
 - [x] Customers and receivables
-- [ ] Suppliers, purchase orders, payables
+- [x] Suppliers, purchase orders, payables
 - [ ] Installation calendar and job card
 - [ ] Reports hub
 - [ ] Meetings

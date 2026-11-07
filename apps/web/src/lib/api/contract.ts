@@ -4,7 +4,10 @@ import type {
   Company,
   CompanyFixtures,
   CompanyId,
+  Bill,
   CutResult,
+  PoLine,
+  PurchaseOrder,
   Invoice,
   Quote,
   CompanySettings,
@@ -127,6 +130,14 @@ export interface ApiClient {
    * recomputed under the job site's tax rule, and the quote is marked invoiced. Audited.
    */
   convertQuoteToInvoice(quoteId: string): Promise<Invoice>;
+  /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
+  createPurchaseOrder(input: { supplierId: string; expectedAt: string; lines: PoLine[] }): Promise<PurchaseOrder>;
+  /** Receives a purchase order: cartons go into stock and broadloom arrives as new rolls. Audited. */
+  receivePurchaseOrder(poId: string): Promise<PurchaseOrder>;
+  /** Enters the supplier's bill for a received purchase order. Audited. */
+  billPurchaseOrder(poId: string, billNumber: string): Promise<Bill>;
+  /** Pays a bill's open balance in full. Audited. */
+  payBill(billId: string): Promise<Bill>;
   /** Appends an entry to the open company's audit log as the signed-in user. */
   recordAudit(entry: AuditInput): Promise<void>;
 }

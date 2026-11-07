@@ -1,6 +1,6 @@
 "use client";
 
-import { AGING_BUCKETS, agingSummary, openInvoices, type Invoice } from "@workspace/shared";
+import { AGING_BUCKETS, agingSummary } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { cn } from "@workspace/ui/lib/utils";
@@ -14,16 +14,23 @@ const TONE: Record<(typeof AGING_BUCKETS)[number]["key"], string> = {
   d90plus: "bg-danger",
 };
 
+/** A document with a due date and a balance: an open invoice or a supplier bill. */
+interface AgingDoc {
+  dueAt: string;
+  total: string;
+  paid: string;
+}
+
 /**
- * Receivables aging (spec "Customers and receivables": current, 30, 60, 90+). The buckets always
- * add up to the open invoices, which the reconciliation test checks on the fixtures.
+ * Aging by bucket (spec: current, 30, 60, 90+) for receivables or payables. The buckets always
+ * add up to the open balance, which the reconciliation test checks on the fixtures.
  */
-export function ReceivablesPanel({ invoices, today }: { invoices: Invoice[]; today: string }) {
-  const aging = agingSummary(openInvoices(invoices), today);
+export function AgingPanel({ title, docs, today }: { title: string; docs: readonly AgingDoc[]; today: string }) {
+  const aging = agingSummary(docs, today);
   const total = Number(aging.total) || 1;
   return (
     <Panel
-      title="Receivables aging"
+      title={title}
       actions={
         <span className="text-sm font-semibold">
           <Num kind="money" value={aging.total} /> open
