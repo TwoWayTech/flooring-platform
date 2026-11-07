@@ -93,7 +93,6 @@ export function CutRollDialog({
               <Input
                 id="cut-length"
                 inputMode="decimal"
-                autoFocus
                 value={length}
                 onChange={(e) => setLength(e.target.value.replace(/[^\d.]/g, ""))}
                 className="pr-10 tabular-nums"

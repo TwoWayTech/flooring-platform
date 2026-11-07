@@ -8,7 +8,7 @@ test.describe("app shell", () => {
     for (const label of ["Dashboard", "Sales", "Inventory", "Purchasing", "Installation", "Reports"]) {
       await expect(nav.getByRole("link", { name: label })).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: /Company: Summit Floor Co./ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Summit Floor Co..*switch company/ })).toBeVisible();
   });
 
   test("HR host shows only HR menus", async ({ page }) => {
@@ -38,10 +38,13 @@ test.describe("app shell", () => {
 
   test("switching company changes name and branding", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER);
-    await page.getByRole("button", { name: /Company: Summit Floor Co./ }).click();
+    const brand = () =>
+      page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand").trim());
+    const summitBrand = await brand();
+    await page.getByRole("button", { name: /Summit Floor Co..*switch company/ }).click();
     await page.getByRole("menuitem", { name: /Keystone Flooring Supply/ }).click();
-    await expect(page.getByRole("button", { name: /Company: Keystone Flooring Supply/ })).toBeVisible();
-    await expect(page.getByRole("img", { name: "Keystone Flooring Supply logo" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Keystone Flooring Supply.*switch company/ })).toBeVisible();
+    await expect.poll(brand).not.toBe(summitBrand);
   });
 
   test("opens the menu drawer on a phone @phone", async ({ page }) => {

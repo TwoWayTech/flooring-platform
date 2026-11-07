@@ -72,7 +72,7 @@ export function InviteDialog({ open, onOpenChange, roles, branches }: InviteDial
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="invite-name">Name</Label>
-              <Input id="invite-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+              <Input id="invite-name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="invite-title">Job title</Label>

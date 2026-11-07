@@ -6,7 +6,7 @@ import { SENSITIVE, type Product, type Roll } from "@workspace/shared";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Swatch } from "@workspace/ui/components/swatch";
-import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { Segmented } from "@workspace/ui/components/segmented";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -112,15 +112,12 @@ export function RollsTable({ rolls, products }: { rolls: Roll[]; products: Produ
       empty={{ message: "No rolls match this filter." }}
       initialSort={{ id: "remaining", desc: false }}
       toolbar={
-        <Tabs value={filter} onValueChange={(v) => router.replace(`/inventory?view=rolls&filter=${v}`)}>
-          <TabsList aria-label="Show">
-            {(Object.keys(FILTERS) as RollFilter[]).map((key) => (
-              <TabsTrigger key={key} value={key}>
-                {FILTERS[key]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <Segmented
+          label="Show"
+          options={Object.entries(FILTERS) as [RollFilter, string][]}
+          value={filter}
+          onChange={(v) => router.replace(`/inventory?view=rolls&filter=${v}`)}
+        />
       }
     />
   );

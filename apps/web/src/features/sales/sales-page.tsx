@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FilePlus2 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -54,22 +54,28 @@ export function SalesPage() {
           ) : null
         }
       />
-      <Tabs value={view} onValueChange={(v) => router.replace(`/sales?view=${v}`)}>
+      <Tabs value={view} className="gap-6" onValueChange={(v) => router.replace(`/sales?view=${v}`)}>
         <TabsList aria-label="Sales view">
           {canQuotes ? <TabsTrigger value="quotes">Quotes</TabsTrigger> : null}
           {canInvoices ? <TabsTrigger value="invoices">Invoices</TabsTrigger> : null}
           {canCustomers ? <TabsTrigger value="customers">Customers and receivables</TabsTrigger> : null}
         </TabsList>
+        <TabsContent value={view} className="flex flex-col gap-6">
+          {data.status !== "ready" ? (
+            <QueryFallback query={data} className="h-96" label="Loading sales" />
+          ) : view === "customers" ? (
+            <CustomersTable
+              customers={data.data.customers}
+              invoices={data.data.invoices}
+              payments={data.data.payments}
+            />
+          ) : view === "invoices" ? (
+            <InvoicesTable invoices={data.data.invoices} customers={data.data.customers} />
+          ) : (
+            <QuotesTable quotes={data.data.quotes} customers={data.data.customers} users={data.data.users} />
+          )}
+        </TabsContent>
       </Tabs>
-      {data.status !== "ready" ? (
-        <QueryFallback query={data} className="h-96" label="Loading sales" />
-      ) : view === "customers" ? (
-        <CustomersTable customers={data.data.customers} invoices={data.data.invoices} payments={data.data.payments} />
-      ) : view === "invoices" ? (
-        <InvoicesTable invoices={data.data.invoices} customers={data.data.customers} />
-      ) : (
-        <QuotesTable quotes={data.data.quotes} customers={data.data.customers} users={data.data.users} />
-      )}
     </>
   );
 }

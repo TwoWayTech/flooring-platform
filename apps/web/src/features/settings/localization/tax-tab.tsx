@@ -15,6 +15,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Switch } from "@workspace/ui/components/switch";
+import { ScrollRegion } from "@/components/scroll-region";
 import { Field } from "@/components/field";
 
 type Tax = LocalizationSettings["tax"];
@@ -75,7 +76,7 @@ export function TaxTab({ draft, setDraft }: { draft: Tax; setDraft: (next: Tax) 
       <p className="bg-warning/14 text-warning-ink rounded-md px-3 py-2 text-sm">
         {EXAMPLE_RULE_NOTE}. Rates and taxability are examples.
       </p>
-      <div className="border-hairline relative overflow-x-auto rounded-md border">
+      <ScrollRegion label="Tax rules by state" className="border-hairline rounded-md border">
         <table className="w-full min-w-[46rem] text-sm">
           <thead className="bg-raised text-muted-foreground text-xs">
             <tr>
@@ -147,7 +148,7 @@ export function TaxTab({ draft, setDraft }: { draft: Tax; setDraft: (next: Tax) 
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
       <Select
         value=""
         onValueChange={(code) => setDraft({ ...draft, rules: [...draft.rules, newRule(code as StateCode)] })}

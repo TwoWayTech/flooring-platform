@@ -11,6 +11,7 @@ import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { cn } from "@workspace/ui/lib/utils";
+import { ScrollRegion } from "@/components/scroll-region";
 import { downloadText, toCsv } from "@/components/data-table/csv";
 import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
@@ -265,7 +266,7 @@ export function ReportsPage() {
           ) : key === "inventory" && !can(SENSITIVE.productCost) ? (
             <p className="text-muted-foreground">Inventory value is at cost, which your role does not include.</p>
           ) : (
-            <div className="border-hairline relative overflow-x-auto rounded-md border">
+            <ScrollRegion label={`${spec.label} table`} className="border-hairline rounded-md border">
               <table className="w-full text-sm">
                 <thead className="bg-raised text-muted-foreground text-xs">
                   <tr>
@@ -314,7 +315,7 @@ export function ReportsPage() {
                   </tfoot>
                 ) : null}
               </table>
-            </div>
+            </ScrollRegion>
           )}
           <p className="text-muted-foreground text-xs">{filters} Figures are computed from documents.</p>
         </Panel>

@@ -15,6 +15,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { ProductPicker } from "./product-picker";
+import { ScrollRegion } from "@/components/scroll-region";
 
 interface LinesEditorProps {
   lines: DocLine[];
@@ -46,7 +47,7 @@ export function LinesEditor({ lines, rooms, products, totals, editable, onAdd, o
   const services = products.filter((p) => p.category === "service");
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative overflow-x-auto">
+      <ScrollRegion label="Quote lines">
         <table className="w-full min-w-[34rem] text-sm">
           <thead className="text-muted-foreground text-xs">
             <tr className="border-hairline border-b">
@@ -147,7 +148,7 @@ export function LinesEditor({ lines, rooms, products, totals, editable, onAdd, o
         {lines.length === 0 ? (
           <p className="text-muted-foreground py-6 text-center">No lines yet. Add a product, then labor.</p>
         ) : null}
-      </div>
+      </ScrollRegion>
       {editable ? (
         <div className="flex flex-wrap gap-2">
           <ProductPicker label="Add product" products={goods} onPick={onAdd} />

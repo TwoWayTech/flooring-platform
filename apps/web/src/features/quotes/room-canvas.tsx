@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import type { Room } from "@workspace/shared";
+import { formatNumber, type Room } from "@workspace/shared";
+import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { cn } from "@workspace/ui/lib/utils";
 
 /** The drawing area in ft; rooms snap to half a foot. */
@@ -35,6 +36,10 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<Drag | null>(null);
   const [sketch, setSketch] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const settings = useNumberSettings();
+  const ft = (value: number | string) => formatNumber(value, "quantity", settings);
+  /** "9.50 × 19.00 ft": what the room shows under its name, and part of its name for screen readers. */
+  const sizeLabel = (room: Room) => `${ft(room.widthFt)} × ${ft(room.lengthFt)} ft`;
 
   function toFt(e: PointerEvent) {
     const svg = svgRef.current!;
@@ -123,13 +128,13 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
       <rect width={FIELD.width} height={FIELD.height} fill="url(#room-grid)" />
       {rooms.map((room) => {
         const selected = room.id === selectedId;
-        const area = room.widthFt * room.lengthFt;
+        const size = sizeLabel(room);
         return (
           <g
             key={room.id}
             tabIndex={0}
             role="button"
-            aria-label={`${room.name}, ${room.widthFt} by ${room.lengthFt} ft`}
+            aria-label={`${room.name}, ${size}`}
             aria-pressed={selected}
             className="focus-visible:outline-none"
             onFocus={() => onSelect(room.id)}
@@ -151,27 +156,25 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
               strokeWidth={selected ? 2.5 : 1.25}
               vectorEffect="non-scaling-stroke"
             />
-            <text
-              x={room.x + room.widthFt / 2}
-              y={room.y + room.lengthFt / 2 - 0.2}
-              textAnchor="middle"
-              className="fill-foreground"
-              fontSize={0.95}
-              fontWeight={600}
-            >
-              {room.name}
+            <text textAnchor="middle" className="fill-foreground" fontSize={0.95} fontWeight={600}>
+              <tspan x={room.x + room.widthFt / 2} y={room.y + room.lengthFt / 2 - 0.2}>
+                {room.name}
+              </tspan>
+              {room.lengthFt >= 4 ? (
+                <>
+                  {" "}
+                  <tspan
+                    x={room.x + room.widthFt / 2}
+                    y={room.y + room.lengthFt / 2 + 1.1}
+                    className="fill-muted-foreground"
+                    fontSize={0.8}
+                    fontWeight={400}
+                  >
+                    {size}
+                  </tspan>
+                </>
+              ) : null}
             </text>
-            {room.lengthFt >= 4 ? (
-              <text
-                x={room.x + room.widthFt / 2}
-                y={room.y + room.lengthFt / 2 + 1.1}
-                textAnchor="middle"
-                className="fill-muted-foreground"
-                fontSize={0.8}
-              >
-                {room.widthFt} × {room.lengthFt} ft, {area} sq ft
-              </text>
-            ) : null}
             {selected && editable ? (
               <rect
                 x={room.x + room.widthFt - 0.6}

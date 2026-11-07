@@ -11,6 +11,7 @@ import { Panel } from "@workspace/ui/components/panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { cn } from "@workspace/ui/lib/utils";
+import { ScrollRegion } from "@/components/scroll-region";
 import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
@@ -157,7 +158,7 @@ export function TimesheetsPage() {
         {rows.length === 0 ? (
           <p className="text-muted-foreground px-4 pb-4">No timesheets for this week.</p>
         ) : (
-          <div className="relative overflow-x-auto">
+          <ScrollRegion label="Timesheets this week">
             <table className="w-full min-w-[44rem] text-sm">
               <thead className="bg-raised text-muted-foreground text-xs">
                 <tr>
@@ -186,7 +187,7 @@ export function TimesheetsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
         )}
       </Panel>
     </>

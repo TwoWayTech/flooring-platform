@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Monogram } from "@workspace/ui/components/monogram";
 import type { InvoiceModel } from "./invoice-model";
+import { ScrollRegion } from "@/components/scroll-region";
 
 function Block({ title, lines }: { title: string; lines: string[] }) {
   return (
@@ -69,7 +70,7 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
         <Block title="Job site" lines={model.jobSite} />
       </div>
 
-      <div className="relative overflow-x-auto">
+      <ScrollRegion label="Invoice lines">
         <table className="w-full">
           <thead className="text-muted-foreground border-hairline border-b text-xs">
             <tr>
@@ -98,7 +99,7 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
 
       <div className="flex flex-wrap justify-between gap-8">
         <div className="text-muted-foreground max-w-sm text-xs">

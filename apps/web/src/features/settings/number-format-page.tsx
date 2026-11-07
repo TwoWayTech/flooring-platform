@@ -11,6 +11,7 @@ import { NumberSettingsProvider } from "@workspace/ui/components/number-settings
 import { Panel } from "@workspace/ui/components/panel";
 import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group";
 import { Switch } from "@workspace/ui/components/switch";
+import { ScrollRegion } from "@/components/scroll-region";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -88,7 +89,7 @@ export function NumberFormatPage() {
           These settings change how numbers look, never what is stored. Totals keep full precision; hover a rounded
           number to see its full value. People can also add or remove decimals per table column for themselves.
         </p>
-        <div className="border-hairline relative overflow-x-auto rounded-md border">
+        <ScrollRegion label="Number formats" className="border-hairline rounded-md border">
           <table className="w-full min-w-[32rem] text-sm">
             <thead className="bg-raised text-muted-foreground text-xs">
               <tr>
@@ -126,7 +127,7 @@ export function NumberFormatPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
         <div className="grid gap-6 sm:grid-cols-2">
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Negative numbers</legend>

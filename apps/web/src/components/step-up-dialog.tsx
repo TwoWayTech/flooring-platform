@@ -66,7 +66,6 @@ export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDi
               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               inputMode="numeric"
               autoComplete="one-time-code"
-              autoFocus
               aria-invalid={error ? true : undefined}
               aria-describedby="step-up-hint"
               className="tracking-[0.3em] tabular-nums placeholder:tracking-normal"

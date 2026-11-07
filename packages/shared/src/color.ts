@@ -84,8 +84,8 @@ export function contrastRatio(a: string, b: string): number {
 
 /** Fixed neutrals from the design brief that accents must work against. */
 export const NEUTRALS = {
-  light: { background: "#EEF0EC", surface: "#FAFBF9", text: "#1F2B30" },
-  dark: { background: "#152024", surface: "#1D2B31", text: "#E6EBE8" },
+  light: { background: "#EEF0EC", surface: "#FAFBF9", raised: "#F3F5F2", text: "#1F2B30" },
+  dark: { background: "#152024", surface: "#1D2B31", raised: "#24343B", text: "#E6EBE8" },
 } as const;
 
 /** Accent tokens for one theme. */
@@ -169,24 +169,34 @@ export function brandScale(brandHex: string): Record<(typeof BRAND_SCALE_STEPS)[
   ) as Record<(typeof BRAND_SCALE_STEPS)[number], string>;
 }
 
+/** A predicate: the color reads as text at 4.5:1 (WCAG AA) on every one of these backgrounds. */
+const readsOn =
+  (...backgrounds: string[]) =>
+  (hex: string) =>
+    backgrounds.every((background) => contrastRatio(hex, background) >= 4.5);
+
 /**
  * Derives accent tokens for both themes from one brand color. Light theme darkens the fill
  * until white text reaches 4.5:1; dark theme brightens it (as the brief's Patina #4FB3A3 does)
- * until dark text reaches 4.5:1.
+ * until dark text reaches 4.5:1. Ink is text, so it must read on every neutral and on the soft
+ * tint behind the active nav item and selected rows.
  */
 export function brandTokens(brandHex: string): { light: AccentTokens; dark: AccentTokens } {
   const base = hexToOklch(brandHex);
-  const lightFill = adjustUntil(base, -1, (hex) => contrastRatio(hex, "#FFFFFF") >= 4.5);
-  const lightInk = adjustUntil(base, -1, (hex) => contrastRatio(hex, NEUTRALS.light.background) >= 4.5);
+  const lightSoft = oklchToHex({ l: 0.94, c: Math.min(base.c, 0.12) * 0.35, h: base.h });
+  const darkSoft = oklchToHex({ l: 0.3, c: Math.min(base.c, 0.12) * 0.45, h: base.h });
+  const { light, dark } = NEUTRALS;
+  const lightFill = adjustUntil(base, -1, readsOn("#FFFFFF"));
+  const lightInk = adjustUntil(base, -1, readsOn(light.background, light.surface, light.raised, lightSoft));
   const darkStart = { ...base, l: Math.max(base.l, 0.7) };
-  const darkFill = adjustUntil(darkStart, 1, (hex) => contrastRatio(hex, NEUTRALS.dark.background) >= 4.5);
-  const darkInk = adjustUntil(darkStart, 1, (hex) => contrastRatio(hex, NEUTRALS.dark.surface) >= 4.5);
+  const darkFill = adjustUntil(darkStart, 1, readsOn(dark.background));
+  const darkInk = adjustUntil(darkStart, 1, readsOn(dark.background, dark.surface, dark.raised, darkSoft));
   return {
     light: {
       accent: lightFill,
       accentForeground: "#FFFFFF",
       accentInk: lightInk,
-      accentSoft: oklchToHex({ l: 0.94, c: Math.min(base.c, 0.12) * 0.35, h: base.h }),
+      accentSoft: lightSoft,
       pattern: patternTones(base, [0.95, 0.92, 0.89], 0.28),
       chart: chartTone(base, CHART_LIGHTNESS.light),
     },
@@ -194,7 +204,7 @@ export function brandTokens(brandHex: string): { light: AccentTokens; dark: Acce
       accent: darkFill,
       accentForeground: NEUTRALS.dark.background,
       accentInk: darkInk,
-      accentSoft: oklchToHex({ l: 0.3, c: Math.min(base.c, 0.12) * 0.45, h: base.h }),
+      accentSoft: darkSoft,
       pattern: patternTones(base, [0.255, 0.28, 0.305], 0.5),
       chart: chartTone(base, CHART_LIGHTNESS.dark),
     },

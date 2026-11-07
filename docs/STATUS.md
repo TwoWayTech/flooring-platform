@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 4 (Tier 3 polish)
-- Next step: Phase 4, accessibility and reduced-motion pass: keyboard through every screen (skip link, focus order, dialogs and drawers return focus), visible focus, contrast of muted text and pills in both themes, and Motion or CSS animations off under prefers-reduced-motion.
+- Next step: Phase 4, visual QA: screenshot every screen in tests/e2e/screens.ts in light and dark at 1440 px and 390 px, fix what looks off (alignment, truncation, empty space, contrast of decorative marks), then run the Phase 4 checks and write the session log.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-2015-phase3-tier2.md
 
@@ -48,7 +48,7 @@
 ### Phase 4: Tier 3 polish
 - [x] Presenter guide panel
 - [x] Empty, loading and error states
-- [ ] Accessibility and reduced-motion pass
+- [x] Accessibility and reduced-motion pass
 - [ ] Visual QA in both themes at 1440 px and 390 px
 
 ### Phase 5: ship

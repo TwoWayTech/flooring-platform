@@ -7,6 +7,7 @@ import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { cn } from "@workspace/ui/lib/utils";
+import { ScrollRegion } from "@/components/scroll-region";
 import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -88,7 +89,7 @@ export function InstallationPage() {
         }
         bodyClassName="p-0"
       >
-        <div className="relative overflow-x-auto">
+        <ScrollRegion label="Crew calendar">
           <table className="w-full min-w-[56rem] table-fixed text-sm">
             <thead className="bg-raised text-muted-foreground text-xs">
               <tr>
@@ -125,9 +126,11 @@ export function InstallationPage() {
                                 "bg-surface border-hairline hover:bg-raised rounded-sm border border-l-4 px-2 py-1 text-left text-xs",
                                 STATUS_EDGE[job.status],
                               )}
-                              aria-label={`Open job ${job.number}, ${customerName(job)}, ${hourLabel(job.startHour)}`}
                             >
-                              <span className="block font-medium">{job.number}</span>
+                              <span className="block font-medium">
+                                <span className="sr-only">Open job </span>
+                                {job.number}
+                              </span>
                               <span className="text-muted-foreground block truncate">
                                 {hourLabel(job.startHour)}, {customerName(job)}
                               </span>
@@ -140,7 +143,7 @@ export function InstallationPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
         {jobs.some((j) => j.date >= days[0]! && j.date <= days[6]!) ? null : (
           <p className="text-muted-foreground border-hairline border-t px-4 py-3 text-sm">
             No installations are booked this week. Use Next week to look ahead.

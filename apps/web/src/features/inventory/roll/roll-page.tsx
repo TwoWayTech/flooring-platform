@@ -10,6 +10,7 @@ import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { Swatch } from "@workspace/ui/components/swatch";
+import { ScrollRegion } from "@/components/scroll-region";
 import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
@@ -159,7 +160,7 @@ export function RollPage({ rollId }: { rollId: string }) {
           {roll.cuts.length === 0 ? (
             <p className="text-muted-foreground p-4">No cuts yet.</p>
           ) : (
-            <div className="relative overflow-x-auto">
+            <ScrollRegion label="Cut history">
               <table className="w-full text-sm">
                 <thead className="bg-raised text-muted-foreground text-xs">
                   <tr>
@@ -192,7 +193,7 @@ export function RollPage({ rollId }: { rollId: string }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           )}
         </Panel>
         <Panel title="Remnants from this roll" bodyClassName="p-0">

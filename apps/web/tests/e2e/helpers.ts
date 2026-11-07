@@ -30,5 +30,20 @@ export async function signInAs(page: Page, persona: Persona, path = "/") {
   }, persona);
   expect(status).toBe(200);
   await page.goto(path);
-  await expect(page.getByRole("button", { name: "Search or run a command (Ctrl K)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Search or run a command" })).toBeVisible();
+}
+
+/** Signs in as the platform admin (the "Platform admin (you)" card) and opens an admin page. */
+export async function signInAsPlatformAdmin(page: Page, path = "/admin") {
+  await page.goto("/login?product=flooring");
+  const status = await page.evaluate(async () => {
+    const response = await fetch("/api/demo/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "platform" }),
+    });
+    return response.status;
+  });
+  expect(status).toBe(200);
+  await page.goto(path);
 }

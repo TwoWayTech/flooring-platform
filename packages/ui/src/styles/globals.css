@@ -44,7 +44,7 @@
   /* Patina default; replaced per company. */
   --brand: #228275;
   --brand-foreground: #ffffff;
-  --brand-ink: #13796d;
+  --brand-ink: #0c766a;
   --brand-soft: #d6f2ed;
   --pattern-1: #ddf4f0;
   --pattern-2: #d4eae6;
@@ -218,9 +218,22 @@
   animation: plank-lay 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/*
+ * Reduced motion (CLAUDE.md rule 6): the floor stays still, and every other CSS animation or
+ * transition (dialogs, drawers, skeletons) finishes at once. Motion's own animations follow
+ * MotionConfig reducedMotion="user".
+ */
 @media (prefers-reduced-motion: reduce) {
   .floor-pattern-animate rect {
     animation: none;
+  }
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

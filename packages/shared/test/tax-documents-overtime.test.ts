@@ -127,8 +127,18 @@ describe("brand colors", () => {
       const t = brandTokens(hex);
       expect(contrastRatio(t.light.accent, t.light.accentForeground)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(t.dark.accent, t.dark.accentForeground)).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(t.light.accentInk, "#EEF0EC")).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(t.dark.accentInk, "#1D2B31")).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("derives an ink that reads on every neutral and on its own soft tint in both themes", () => {
+    for (const hex of ["#2E8B7E", "#2F6B3F", "#1F6FB2", "#B5532A", "#7A4FB0", "#C9A227"]) {
+      const t = brandTokens(hex);
+      for (const theme of ["light", "dark"] as const) {
+        const { background, surface, raised } = NEUTRALS[theme];
+        for (const backdrop of [background, surface, raised, t[theme].accentSoft]) {
+          expect(contrastRatio(t[theme].accentInk, backdrop)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
     }
   });
 

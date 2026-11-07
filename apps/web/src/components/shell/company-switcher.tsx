@@ -22,7 +22,7 @@ function CompanyMark() {
   const { settings } = useWorkspace();
   const { branding } = settings;
   return (
-    <span className="relative size-11 shrink-0">
+    <span aria-hidden="true" className="relative size-11 shrink-0">
       <FloorPattern
         pattern={branding.pattern}
         width={88}
@@ -69,12 +69,12 @@ export function CompanySwitcher() {
       <DropdownMenuTrigger
         disabled={switching}
         className="hover:bg-raised flex w-full items-center gap-3 rounded-md p-1.5 text-left transition-colors"
-        aria-label={`Company: ${settings.branding.displayName}. Switch company`}
       >
         <CompanyMark />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm leading-tight font-semibold">{settings.branding.displayName}</span>
           <span className="text-muted-foreground block truncate text-xs">{product.name}</span>
+          <span className="sr-only">, switch company</span>
         </span>
         <ChevronsUpDown aria-hidden="true" className="text-muted-foreground size-4" />
       </DropdownMenuTrigger>

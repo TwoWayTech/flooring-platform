@@ -15,6 +15,7 @@ import {
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
+import { ScrollRegion } from "@/components/scroll-region";
 
 /** Why a permission cannot be ticked by this viewer, or null when it can. */
 export type CellLock = "plan" | "module" | "not_held" | "owner" | null;
@@ -69,7 +70,7 @@ export function PermissionMatrix({ product, granted, lockOf, onToggle }: Permiss
               </h3>
               <p className="text-muted-foreground text-xs">{module.description}</p>
             </div>
-            <div className="border-hairline relative overflow-x-auto rounded-md border">
+            <ScrollRegion label={`${module.label} permissions`} className="border-hairline rounded-md border">
               <table className="w-full text-sm">
                 <thead className="bg-raised text-muted-foreground text-xs">
                   <tr>
@@ -128,7 +129,7 @@ export function PermissionMatrix({ product, granted, lockOf, onToggle }: Permiss
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </section>
         );
       })}

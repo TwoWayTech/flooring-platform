@@ -36,11 +36,9 @@ export function UserMenu() {
     .join(", ");
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={`Account: ${user.name}`}
-        className="bg-raised border-hairline grid size-8 place-items-center rounded-full border text-xs font-semibold"
-      >
-        {initials(user.name)}
+      <DropdownMenuTrigger className="bg-raised border-hairline grid size-8 place-items-center rounded-full border text-xs font-semibold">
+        <span aria-hidden="true">{initials(user.name)}</span>
+        <span className="sr-only">Account: {user.name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="flex flex-col gap-0.5">

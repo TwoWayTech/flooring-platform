@@ -27,12 +27,15 @@ function Row({
   note?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-0.5 py-1.5">
-      <div className={cn("flex items-baseline justify-between gap-3", strong && "text-base font-semibold")}>
-        <dt>{label}</dt>
-        <dd className="text-right">{children}</dd>
-      </div>
-      {note ? <p className="text-muted-foreground text-xs">{note}</p> : null}
+    <div
+      className={cn(
+        "grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-0.5 py-1.5",
+        strong && "text-base font-semibold",
+      )}
+    >
+      <dt>{label}</dt>
+      <dd className="text-right">{children}</dd>
+      {note ? <dd className="text-muted-foreground col-span-2 text-xs font-normal">{note}</dd> : null}
     </div>
   );
 }

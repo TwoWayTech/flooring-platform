@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -27,19 +27,21 @@ export function InventoryPage() {
   return (
     <>
       <PageHeader title="Inventory" />
-      <Tabs value={view} onValueChange={(v) => router.replace(`/inventory?view=${v}`)}>
+      <Tabs value={view} className="gap-6" onValueChange={(v) => router.replace(`/inventory?view=${v}`)}>
         <TabsList aria-label="Inventory view">
           {canProducts ? <TabsTrigger value="products">Products</TabsTrigger> : null}
           {canRolls ? <TabsTrigger value="rolls">Rolls and remnants</TabsTrigger> : null}
         </TabsList>
+        <TabsContent value={view} className="flex flex-col gap-6">
+          {data.status !== "ready" ? (
+            <QueryFallback query={data} className="h-96" label="Loading inventory" />
+          ) : view === "rolls" ? (
+            <RollsTable rolls={data.data.rolls} products={data.data.products} />
+          ) : (
+            <ProductsTable products={data.data.products} rolls={data.data.rolls} />
+          )}
+        </TabsContent>
       </Tabs>
-      {data.status !== "ready" ? (
-        <QueryFallback query={data} className="h-96" label="Loading inventory" />
-      ) : view === "rolls" ? (
-        <RollsTable rolls={data.data.rolls} products={data.data.products} />
-      ) : (
-        <ProductsTable products={data.data.products} rolls={data.data.rolls} />
-      )}
     </>
   );
 }

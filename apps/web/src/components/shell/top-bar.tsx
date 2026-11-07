@@ -37,11 +37,16 @@ export function TopBar({ onOpenPalette, onOpenMenu }: TopBarProps) {
         type="button"
         onClick={onOpenPalette}
         className="bg-surface border-hairline text-muted-foreground hover:border-foreground/30 ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors sm:w-80 lg:mr-auto lg:ml-0"
-        aria-label="Search or run a command (Ctrl K)"
+        aria-keyshortcuts="Control+K Meta+K"
       >
         <Search aria-hidden="true" className="size-4" />
-        <span className="hidden flex-1 text-left sm:inline">Search or run a command</span>
-        <kbd className="bg-raised hidden rounded-sm px-1.5 py-0.5 font-sans text-xs font-medium sm:inline">Ctrl K</kbd>
+        <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search or run a command</span>
+        <kbd
+          aria-hidden="true"
+          className="bg-raised hidden rounded-sm px-1.5 py-0.5 font-sans text-xs font-medium sm:inline"
+        >
+          Ctrl K
+        </kbd>
       </button>
       <div className="flex items-center gap-1">
         <Button

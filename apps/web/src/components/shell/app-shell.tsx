@@ -10,7 +10,7 @@ import { ViewAsBanner } from "./view-as";
 
 /**
  * The app shell (design brief "Layout"): sidebar on the Limestone canvas from 1024 px, a drawer
- * below that, the top bar, the "View as" banner, the page and the presenter guide.
+ * below that, a skip link to the page, the top bar, the "View as" banner, the page and the presenter guide.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -18,6 +18,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[252px_minmax(0,1fr)]">
+      <a
+        href="#main"
+        className="bg-surface border-hairline focus:rounded-panel sr-only border focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-3 focus:py-2 focus:shadow-md"
+      >
+        Skip to main content
+      </a>
       <aside className="hidden lg:sticky lg:top-0 lg:block lg:h-dvh">
         <Sidebar />
       </aside>
@@ -30,7 +36,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       </Sheet>
       <div className="flex min-w-0 flex-col">
         <TopBar onOpenPalette={() => setPaletteOpen(true)} onOpenMenu={() => setMenuOpen(true)} />
-        <main id="main" className="flex w-full max-w-[1400px] flex-1 flex-col gap-6 px-4 pt-2 pb-12 lg:px-8">
+        <main
+          id="main"
+          tabIndex={-1}
+          className="flex w-full max-w-[1400px] flex-1 flex-col gap-6 px-4 pt-2 pb-12 lg:px-8"
+        >
           <ViewAsBanner />
           {children}
         </main>

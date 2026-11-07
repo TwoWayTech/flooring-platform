@@ -107,7 +107,7 @@ export function NewMeetingDialog({ open, onOpenChange, users, customers, supplie
             <DialogDescription>Attendees get a reminder before it starts.</DialogDescription>
           </DialogHeader>
           <Field id="mtg-title" label="Title">
-            <Input id="mtg-title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+            <Input id="mtg-title" value={title} onChange={(e) => setTitle(e.target.value)} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field id="mtg-date" label="Date">

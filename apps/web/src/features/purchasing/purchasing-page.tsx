@@ -17,7 +17,7 @@ import {
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { StatusPill } from "@workspace/ui/components/status-pill";
-import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { QueryFallback } from "@/components/query-fallback";
 import { AgingPanel } from "@/components/aging-panel";
 import { DataTable } from "@/components/data-table/data-table";
@@ -161,53 +161,55 @@ export function PurchasingPage() {
           ) : null
         }
       />
-      <Tabs value={view} onValueChange={(v) => router.replace(`/purchasing?view=${v}`)}>
+      <Tabs value={view} className="gap-6" onValueChange={(v) => router.replace(`/purchasing?view=${v}`)}>
         <TabsList aria-label="Purchasing view">
           <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
           {can("purchasing.order.view") ? <TabsTrigger value="orders">Purchase orders</TabsTrigger> : null}
           {can("purchasing.bill.view") ? <TabsTrigger value="bills">Bills and payables</TabsTrigger> : null}
         </TabsList>
+        <TabsContent value={view} className="flex flex-col gap-6">
+          {data.status !== "ready" ? (
+            <QueryFallback query={data} className="h-96" label="Loading purchasing" />
+          ) : view === "suppliers" ? (
+            <DataTable
+              id="purchasing-suppliers"
+              rows={data.data.suppliers}
+              columns={supplierColumns}
+              getRowId={(s) => s.id}
+              searchPlaceholder="Search suppliers"
+              csvName="suppliers"
+              empty={{ message: "No suppliers yet." }}
+            />
+          ) : view === "bills" ? (
+            <>
+              <AgingPanel title="Payables aging" docs={data.data.bills.filter((b) => balance(b).gt(0))} today={today} />
+              <DataTable
+                id="purchasing-bills"
+                rows={data.data.bills}
+                columns={billColumns}
+                getRowId={(b) => b.id}
+                searchPlaceholder="Search bills"
+                csvName="bills"
+                initialSort={{ id: "due", desc: true }}
+                empty={{ message: "No bills yet. Bills come from received purchase orders." }}
+              />
+            </>
+          ) : (
+            <DataTable
+              id="purchasing-orders"
+              rows={data.data.purchaseOrders}
+              columns={orderColumns}
+              getRowId={(p) => p.id}
+              onRowClick={setOpenPo}
+              rowLabel={(p) => `Open ${p.number}`}
+              searchPlaceholder="Search purchase orders"
+              csvName="purchase-orders"
+              initialSort={{ id: "created", desc: true }}
+              empty={{ message: "No purchase orders yet. Create a purchase order." }}
+            />
+          )}
+        </TabsContent>
       </Tabs>
-      {data.status !== "ready" ? (
-        <QueryFallback query={data} className="h-96" label="Loading purchasing" />
-      ) : view === "suppliers" ? (
-        <DataTable
-          id="purchasing-suppliers"
-          rows={data.data.suppliers}
-          columns={supplierColumns}
-          getRowId={(s) => s.id}
-          searchPlaceholder="Search suppliers"
-          csvName="suppliers"
-          empty={{ message: "No suppliers yet." }}
-        />
-      ) : view === "bills" ? (
-        <>
-          <AgingPanel title="Payables aging" docs={data.data.bills.filter((b) => balance(b).gt(0))} today={today} />
-          <DataTable
-            id="purchasing-bills"
-            rows={data.data.bills}
-            columns={billColumns}
-            getRowId={(b) => b.id}
-            searchPlaceholder="Search bills"
-            csvName="bills"
-            initialSort={{ id: "due", desc: true }}
-            empty={{ message: "No bills yet. Bills come from received purchase orders." }}
-          />
-        </>
-      ) : (
-        <DataTable
-          id="purchasing-orders"
-          rows={data.data.purchaseOrders}
-          columns={orderColumns}
-          getRowId={(p) => p.id}
-          onRowClick={setOpenPo}
-          rowLabel={(p) => `Open ${p.number}`}
-          searchPlaceholder="Search purchase orders"
-          csvName="purchase-orders"
-          initialSort={{ id: "created", desc: true }}
-          empty={{ message: "No purchase orders yet. Create a purchase order." }}
-        />
-      )}
       <OrderDrawer
         po={openPo ? (data.data?.purchaseOrders.find((p) => p.id === openPo.id) ?? null) : null}
         supplier={openPo ? supplierOf(openPo.supplierId) : undefined}
