@@ -1,23 +1,28 @@
 # Status
 
-- Current phase: Phase 0 (plan), started, not finished
-- Next step: Phase 0. Look up Next.js 16 (proxy.ts vs middleware.ts, App Router), Tailwind v4, shadcn/ui and Motion with Context7; confirm React and TypeScript versions work with Next 16; then expand the checklist below into concrete tasks per phase and start Phase 1 (monorepo).
+- Current phase: Phase 1 (foundation)
+- Next step: Phase 1, monorepo: pnpm + Turborepo with apps/web (Next 16.4.5), packages/shared, packages/ui.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1635-phase0-start.md
 
 ## Checklist
 
 ### Phase 0: plan
-- [ ] Versions checked with Context7; tasks below expanded
+- [x] Versions checked with Context7; tasks below expanded (ADR 0001)
 
 ### Phase 1: foundation
-- [ ] Monorepo: pnpm + Turborepo, apps/web, packages/shared, packages/ui
+- [ ] Monorepo: pnpm + Turborepo, apps/web, packages/shared, packages/ui; lint, typecheck, test scripts wired
 - [ ] packages/shared: keys, permission engine, formatNumber, units, money, US pack, unit tests
-- [ ] Seeded fixtures generator and reconciliation test
-- [ ] DemoStore, apiClient, demo route handlers, hostname proxy
+  - permission keys `module.resource.action`, modules, products, default roles + data scope
+  - effectivePermissions, canGrant, canAssignRole, dataScope, sensitive fields
+  - formatNumber + number kinds/defaults; units (sq ft, sq yd, cartons, roll area); money (decimal.js)
+  - US pack: 50 states + DC, sales tax example rules (CO, PA, FL, NJ, MD, TX), overtime (federal + CA daily)
+  - quote/invoice totals calculator (lines, waste, labor tax by job-site state)
+- [ ] Seeded fixtures generator (`pnpm fixtures`) and reconciliation test
+- [ ] DemoStore, apiClient, demo route handlers (login, logout, context), hostname proxy; docs/api-contract.md
 - [ ] docs/design-plan.md reviewed against the brief
-- [ ] Design system: tokens, fonts, themes, floor pattern, roll gauge
-- [ ] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle
+- [ ] Design system: tokens, fonts, themes, brand scale from one color, floor pattern, roll gauge, Num
+- [ ] App shell: sidebar, top bar, command palette, company switcher, view as role, theme toggle, notifications
 
 ### Phase 2: Tier 1 screens
 - [ ] Login, personas, MFA
