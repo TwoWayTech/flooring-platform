@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 2 (Tier 1 screens)
-- Next step: Phase 2, Settings: Number format (decimals per kind from NUMBER_KINDS, negative style, compact numbers, live examples with <Num>; money 2 → 0 changes display not totals, hover shows full value). Then Company profile and Audit log.
+- Next step: Phase 2, Settings: Company profile (form for settings.profile) and Audit log (list of api.list("audit") newest first with category filter; every change made in the demo appears there). Then Super-admin.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-1835-phase1-foundation.md
 
@@ -33,7 +33,7 @@
 - [x] Settings: security roles
 - [x] Settings: branding
 - [x] Settings: localization and tax
-- [ ] Settings: number format
+- [x] Settings: number format
 - [ ] Settings: company profile and audit log
 - [ ] Super-admin: companies and company access
 - [ ] HR host: dashboard, employees, timesheets, PTO, own settings
