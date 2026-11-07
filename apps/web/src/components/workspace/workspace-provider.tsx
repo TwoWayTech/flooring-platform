@@ -6,6 +6,7 @@ import { BrandStyle } from "@workspace/ui/components/brand-style";
 import { NumberSettingsProvider } from "@workspace/ui/components/number-settings";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
+import { QueryFallback } from "@/components/query-fallback";
 import { viewerAccess } from "@/lib/access";
 import type { CompanySession } from "@/lib/session/session";
 import { PRODUCTS } from "@/products";
@@ -91,6 +92,8 @@ function WorkspaceData({ session, viewAs, setViewAs, children, fallback }: Works
       return { company, settings, roles, users };
     },
     [session.companyId],
+    // The shell keeps its company and roles when a later re-read fails; the page shows the error.
+    { keepDataOnError: true },
   );
   useCompanyDefaultTheme(query.data?.settings.branding.defaultTheme);
 
@@ -113,6 +116,9 @@ function WorkspaceData({ session, viewAs, setViewAs, children, fallback }: Works
     };
   }, [query, session, viewAs, setViewAs]);
 
+  if (query.status === "error") {
+    return <QueryFallback query={query} className="m-4 lg:m-8" label="Loading your workspace" />;
+  }
   if (!workspace) return <>{fallback}</>;
   return (
     <WorkspaceContext.Provider value={workspace}>

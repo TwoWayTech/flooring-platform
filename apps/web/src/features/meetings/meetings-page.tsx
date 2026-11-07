@@ -7,8 +7,8 @@ import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -95,7 +95,7 @@ export function MeetingsPage() {
         }
       >
         {data.status !== "ready" ? (
-          <Skeleton className="h-64" aria-label="Loading meetings" />
+          <QueryFallback query={data} className="h-64" label="Loading meetings" />
         ) : (
           <ol className="grid grid-cols-1 gap-3 md:grid-cols-7">
             {days.map((day, i) => {
@@ -140,6 +140,11 @@ export function MeetingsPage() {
             })}
           </ol>
         )}
+        {data.status === "ready" && occurrences.length === 0 ? (
+          <p className="text-muted-foreground mt-3 hidden text-sm md:block">
+            No meetings this week. Use New meeting to schedule one.
+          </p>
+        ) : null}
       </Panel>
       <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md">

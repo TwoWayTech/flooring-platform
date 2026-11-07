@@ -9,8 +9,8 @@ import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Swatch } from "@workspace/ui/components/swatch";
+import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -57,7 +57,7 @@ export function RollPage({ rollId }: { rollId: string }) {
   );
 
   if (!can("inventory.roll.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading roll" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading roll" />;
   const { roll, product, remnants, users } = data.data;
   if (!roll)
     return (

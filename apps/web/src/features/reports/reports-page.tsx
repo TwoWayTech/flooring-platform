@@ -10,10 +10,10 @@ import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { downloadText, toCsv } from "@/components/data-table/csv";
 import { NoAccess } from "@/components/no-access";
+import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -261,7 +261,7 @@ export function ReportsPage() {
             ) : null}
           </div>
           {!report ? (
-            <Skeleton className="h-64" aria-label="Loading report" />
+            <QueryFallback query={data} className="h-64" label="Loading report" />
           ) : key === "inventory" && !can(SENSITIVE.productCost) ? (
             <p className="text-muted-foreground">Inventory value is at cost, which your role does not include.</p>
           ) : (
@@ -281,6 +281,13 @@ export function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {report.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={report.columns.length} className="text-muted-foreground h-16 px-3">
+                        No figures for these filters. Choose a wider date range or all branches.
+                      </td>
+                    </tr>
+                  ) : null}
                   {report.rows.map((row, i) => (
                     <tr key={i} className="border-hairline border-t">
                       {report!.columns.map((c) => (

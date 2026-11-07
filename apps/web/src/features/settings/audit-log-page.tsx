@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { AuditCategory, AuditEntry } from "@workspace/shared";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
-import { Skeleton } from "@workspace/ui/components/skeleton";
+import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
@@ -30,7 +30,7 @@ export function AuditLogPage() {
   const [category, setCategory] = useState<AuditCategory | "all">("all");
   const data = useApiQuery((client) => client.list("audit"), []);
   if (!can("settings.audit.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading audit log" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading audit log" />;
   const rows = data.data.filter((e) => category === "all" || e.category === category);
 
   const columns: ColumnSpec<AuditEntry>[] = [

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Phase 4 (Tier 3 polish)
-- Next step: Phase 4, empty, loading and error states on every screen: audit each route for a skeleton while loading, an empty state that says what to do, and an error state with a retry when the api call fails.
+- Next step: Phase 4, accessibility and reduced-motion pass: keyboard through every screen (skip link, focus order, dialogs and drawers return focus), visible focus, contrast of muted text and pills in both themes, and Motion or CSS animations off under prefers-reduced-motion.
 - Deployed URLs: none yet
 - Last session log: docs/sessions/2026-11-07-2015-phase3-tier2.md
 
@@ -47,7 +47,7 @@
 
 ### Phase 4: Tier 3 polish
 - [x] Presenter guide panel
-- [ ] Empty, loading and error states
+- [x] Empty, loading and error states
 - [ ] Accessibility and reduced-motion pass
 - [ ] Visual QA in both themes at 1440 px and 390 px
 

@@ -6,6 +6,7 @@ import { dataScope } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Skeleton } from "@workspace/ui/components/skeleton";
+import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { AttentionPanel } from "./attention-panel";
 import { RevenuePanel } from "./revenue-panel";
@@ -40,7 +41,9 @@ export function DashboardPage() {
           ) : null
         }
       />
-      {data.status !== "ready" ? (
+      {data.status === "error" ? (
+        <QueryFallback query={data} label="Loading dashboard" />
+      ) : data.status !== "ready" ? (
         <div
           className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]"
           aria-busy="true"

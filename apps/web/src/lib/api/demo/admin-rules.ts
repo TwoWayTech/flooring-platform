@@ -1,8 +1,9 @@
 import { hasActiveOwner, type Role, type User } from "@workspace/shared";
 import type { UserPatch } from "../contract";
+import { ApiError } from "../errors";
 
 /** A rule the demo refuses to break; its message is shown to the presenter as is. */
-export class DemoRuleError extends Error {}
+export class DemoRuleError extends ApiError {}
 
 /** Seats are used by active and invited users; disabled users free their seat (spec "Settings: Users"). */
 export function seatsUsed(users: readonly User[]): number {

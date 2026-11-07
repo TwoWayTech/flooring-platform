@@ -61,7 +61,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `deleteRole(id)` | `DELETE /roles/:id` | Default roles cannot be deleted; roles still held cannot be deleted. |
 | `recordAudit(entry)` | `POST /audit` | Appends an entry as the signed-in user. |
 
-Rule failures throw `DemoRuleError` with a message written for the presenter; the real client maps HTTP 403 and 409 responses to the same error.
+Rule failures throw `DemoRuleError`, a kind of `ApiError` (`lib/api/errors.ts`), with a message written for the presenter; the real client maps HTTP 403 and 409 responses to `ApiError` too.
 
 ## Domain actions
 
@@ -76,3 +76,8 @@ Added with their screens below.
 | `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons go into stock; broadloom arrives as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
 | `billPurchaseOrder(poId, billNumber)` | `POST /purchase-orders/:id/bill` | Only received orders; the bill takes the PO total and the supplier's terms. Audited. |
 | `payBill(billId)` | `POST /bills/:id/payments` | Pays the open balance in full and records the bill payment. Audited. |
+
+## Errors and the simulated network
+
+- Every failure a person should read is an `ApiError`. Reads surface it through `useApiQuery` (status `error`, with `retry`) and `QueryFallback`; a failed save that a screen does not catch is shown as a toast by `useApiErrorToasts`.
+- `withSimulatedNetwork` (`lib/api/network.ts`) wraps the client. The presenter guide's Network control sets normal, slow (each call waits 1.5 s) or offline (each call fails with an `ApiError` before it runs, so nothing is saved). It affects the next request only and resets on reload. `setViewer`, `subscribe`, `today` and `openCompany` are not simulated. A real client needs no change: the wrapper only delays or fails calls.

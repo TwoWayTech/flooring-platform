@@ -17,8 +17,8 @@ import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { Field } from "@/components/field";
@@ -209,7 +209,7 @@ export function TimeOffPage() {
       />
       <HrTabs />
       {data.status !== "ready" ? (
-        <Skeleton className="h-96" aria-label="Loading time off" />
+        <QueryFallback query={data} className="h-96" label="Loading time off" />
       ) : (
         <>
           <DataTable

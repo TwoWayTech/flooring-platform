@@ -16,9 +16,9 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { QueryFallback } from "@/components/query-fallback";
 import { AgingPanel } from "@/components/aging-panel";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -169,7 +169,7 @@ export function PurchasingPage() {
         </TabsList>
       </Tabs>
       {data.status !== "ready" ? (
-        <Skeleton className="h-96" aria-label="Loading purchasing" />
+        <QueryFallback query={data} className="h-96" label="Loading purchasing" />
       ) : view === "suppliers" ? (
         <DataTable
           id="purchasing-suppliers"

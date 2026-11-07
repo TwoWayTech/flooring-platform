@@ -2,8 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useCan } from "@/components/workspace/workspace-context";
 import { NoAccess } from "@/components/no-access";
@@ -34,7 +34,7 @@ export function InventoryPage() {
         </TabsList>
       </Tabs>
       {data.status !== "ready" ? (
-        <Skeleton className="h-96" aria-label="Loading inventory" />
+        <QueryFallback query={data} className="h-96" label="Loading inventory" />
       ) : view === "rolls" ? (
         <RollsTable rolls={data.data.rolls} products={data.data.products} />
       ) : (

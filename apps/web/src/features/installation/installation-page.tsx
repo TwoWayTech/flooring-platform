@@ -6,8 +6,8 @@ import { addDays, mondayOf, type Crew, type Job } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -44,7 +44,7 @@ export function InstallationPage() {
     return { jobs, crews, customers };
   }, []);
   if (!can("installation.job.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading installation" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading installation" />;
 
   const { jobs, crews, customers } = data.data;
   const days = DAY_NAMES.map((_, i) => addDays(week, i));
@@ -141,6 +141,11 @@ export function InstallationPage() {
             </tbody>
           </table>
         </div>
+        {jobs.some((j) => j.date >= days[0]! && j.date <= days[6]!) ? null : (
+          <p className="text-muted-foreground border-hairline border-t px-4 py-3 text-sm">
+            No installations are booked this week. Use Next week to look ahead.
+          </p>
+        )}
       </Panel>
       <JobCard
         job={openJob}

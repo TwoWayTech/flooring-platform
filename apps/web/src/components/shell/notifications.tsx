@@ -46,7 +46,14 @@ export function Notifications() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <p className="border-hairline border-b px-4 py-3 text-sm font-semibold">Needs attention</p>
-        {items.length === 0 ? (
+        {attention.status === "error" ? (
+          <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm">
+            <p className="text-muted-foreground">Notifications could not load. {attention.error.message}</p>
+            <Button variant="outline" size="sm" onClick={attention.retry}>
+              Try again
+            </Button>
+          </div>
+        ) : items.length === 0 ? (
           <p className="text-muted-foreground px-4 py-6 text-sm">Nothing needs your attention right now.</p>
         ) : (
           <ul className="py-1">

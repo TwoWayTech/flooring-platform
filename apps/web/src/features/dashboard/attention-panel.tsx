@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import type { AttentionItem } from "@/lib/attention";
+import { QueryFallback } from "@/components/query-fallback";
 import { useAttention } from "@/components/shell/notifications";
 
 const COUNT_TONE: Record<AttentionItem["tone"], string> = {
@@ -19,13 +19,13 @@ export function AttentionPanel() {
   const attention = useAttention();
   return (
     <Panel title="Needs attention" bodyClassName="p-0">
-      {attention.status === "loading" ? (
-        <Skeleton className="m-4 h-24" />
-      ) : (attention.data ?? []).length === 0 ? (
+      {attention.status !== "ready" ? (
+        <QueryFallback query={attention} className="m-4 h-24" label="Loading what needs attention" />
+      ) : attention.data.length === 0 ? (
         <p className="text-muted-foreground px-4 py-6">Nothing needs your attention right now.</p>
       ) : (
         <ul className="divide-hairline divide-y">
-          {attention.data!.map((item) => (
+          {attention.data.map((item) => (
             <li key={item.key}>
               <Link href={item.href} className="hover:bg-raised flex items-center gap-4 px-4 py-3">
                 <span

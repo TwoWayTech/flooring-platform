@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { CircleCheck, Clock, CreditCard, PauseCircle } from "lucide-react";
 import { MODULES, PRODUCT_LABELS, type Company } from "@workspace/shared";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -49,7 +49,7 @@ export function CompaniesPage() {
         description="Plans, products, modules and access for every company on the platform."
       />
       {data.status !== "ready" ? (
-        <Skeleton className="h-64" aria-label="Loading companies" />
+        <QueryFallback query={data} className="h-64" label="Loading companies" />
       ) : (
         <DataTable
           id="admin-companies"

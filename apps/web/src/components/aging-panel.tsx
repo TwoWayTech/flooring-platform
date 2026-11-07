@@ -37,6 +37,7 @@ export function AgingPanel({ title, docs, today }: { title: string; docs: readon
         </span>
       }
     >
+      {Number(aging.total) === 0 ? <p className="text-muted-foreground mb-4">Everything is paid in full.</p> : null}
       <div className="flex h-2.5 overflow-hidden rounded-full" aria-hidden="true">
         {AGING_BUCKETS.map((b) => (
           <span

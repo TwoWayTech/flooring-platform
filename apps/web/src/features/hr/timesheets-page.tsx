@@ -9,9 +9,9 @@ import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { cn } from "@workspace/ui/lib/utils";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -104,7 +104,7 @@ export function TimesheetsPage() {
     return { timesheets, employees };
   }, []);
   if (!can("hr.timesheet.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading timesheets" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading timesheets" />;
 
   const { timesheets, employees } = data.data;
   const weeks = weeksOf(timesheets);

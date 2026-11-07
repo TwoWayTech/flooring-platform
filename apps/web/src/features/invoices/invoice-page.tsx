@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ArrowLeft, Download, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
-import { Skeleton } from "@workspace/ui/components/skeleton";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -46,7 +46,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   );
 
   if (!can("sales.invoice.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-[40rem]" aria-label="Loading invoice" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-[40rem]" label="Loading invoice" />;
   if (!data.data || !data.data.customer) {
     return <p className="text-muted-foreground">This invoice does not exist or is outside what you can see.</p>;
   }

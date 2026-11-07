@@ -5,8 +5,8 @@ import { Lock, Plus } from "lucide-react";
 import type { Role } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -42,7 +42,7 @@ export function RolesPage() {
   }, []);
 
   if (!can("settings.roles.view") && !can("settings.roles.manage")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading roles" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading roles" />;
   const { roles, users } = data.data;
   const canManage = can("settings.roles.manage");
   const list = unsaved ? [...roles, unsaved] : roles;

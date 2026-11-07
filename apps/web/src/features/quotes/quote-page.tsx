@@ -1,6 +1,6 @@
 "use client";
 
-import { Skeleton } from "@workspace/ui/components/skeleton";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -24,7 +24,7 @@ export function QuotePage({ quoteId }: { quoteId: string | null }) {
     [quoteId],
   );
   if (!can("sales.quote.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-[32rem]" aria-label="Loading quote" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-[32rem]" label="Loading quote" />;
   const { quote, products, customers, settings } = data.data;
   if (quoteId && !quote)
     return <p className="text-muted-foreground">This quote does not exist or is outside what you can see.</p>;

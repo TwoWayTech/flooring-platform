@@ -13,8 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
@@ -66,7 +66,7 @@ export function UsersPage() {
   }, []);
 
   if (!can("settings.users.view") && !can("settings.users.manage")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading users" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading users" />;
   const { users, roles } = data.data;
   const manage = can("settings.users.manage");
   const seatsUsed = users.filter((u) => u.status !== "disabled").length;

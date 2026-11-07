@@ -6,7 +6,7 @@ import { addDays, type Employee } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { AttentionPanel } from "@/features/dashboard/attention-panel";
@@ -46,7 +46,7 @@ export function HrDashboard() {
     return { employees, timesheets, ptoRequests };
   }, []);
   if (!can("hr.overview.view")) return <NoAccess />;
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading HR" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading HR" />;
 
   const { employees, timesheets, ptoRequests } = data.data;
   const active = employees.filter((e) => e.status !== "terminated");

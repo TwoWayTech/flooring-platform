@@ -8,6 +8,7 @@ import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { GUIDE_STEPS, type GuideStep } from "./guide-steps";
+import { NetworkControl } from "./network-control";
 import { usePresenterGuide } from "./use-presenter-guide";
 
 /** 2 when the browser shows the step's screen and tab, 1 for the screen alone, 0 otherwise. */
@@ -29,7 +30,7 @@ function currentStep(steps: GuideStep[], pathname: string, view: string | null):
 /**
  * The presenter guide (spec Tier 3): a small floating panel listing the demo steps in order, each
  * linking to its screen. Steps the viewed role cannot open are greyed out, which itself shows
- * permissions at work during "View as".
+ * permissions at work during "View as". The footer simulates a slow or offline network.
  */
 export function PresenterGuide() {
   const [open, setOpen] = usePresenterGuide();
@@ -108,6 +109,9 @@ export function PresenterGuide() {
               );
             })}
           </ol>
+          <footer className="border-hairline border-t px-4 py-2">
+            <NetworkControl />
+          </footer>
         </motion.aside>
       ) : null}
     </AnimatePresence>

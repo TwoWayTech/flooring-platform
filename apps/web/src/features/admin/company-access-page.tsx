@@ -19,8 +19,8 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
+import { QueryFallback } from "@/components/query-fallback";
 import { Field } from "@/components/field";
 import { PermissionMatrix } from "@/features/settings/roles/permission-matrix";
 import { api } from "@/lib/api";
@@ -179,7 +179,7 @@ export function CompanyAccessPage({ companyId }: { companyId: CompanyId }) {
     },
     [companyId],
   );
-  if (data.status !== "ready") return <Skeleton className="h-96" aria-label="Loading company" />;
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading company" />;
   const { company, roles, users } = data.data;
   if (!company) return <p className="text-muted-foreground">This company does not exist.</p>;
   return (

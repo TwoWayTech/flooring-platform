@@ -1,5 +1,6 @@
 import type { ApiClient } from "./contract";
 import { DemoStore } from "./demo/store";
+import { withSimulatedNetwork } from "./network";
 
 /**
  * The app's single ApiClient. NEXT_PUBLIC_DATA_SOURCE=demo (the default) selects DemoStore; a
@@ -11,5 +12,6 @@ function createApiClient(): ApiClient {
   return new DemoStore();
 }
 
-export const api: ApiClient = createApiClient();
+/** The client every screen uses, behind the presenter's simulated network (normal by default). */
+export const api: ApiClient = withSimulatedNetwork(createApiClient());
 export type * from "./contract";

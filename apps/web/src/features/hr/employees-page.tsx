@@ -4,8 +4,8 @@ import { Briefcase, CircleCheck, CirclePause, CircleX, FileSignature } from "luc
 import { SENSITIVE, stateName, type Employee } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
@@ -89,7 +89,7 @@ export function EmployeesPage() {
       <PageHeader title={product.key === "hr" ? "Employees" : "HR"} />
       <HrTabs />
       {data.status !== "ready" ? (
-        <Skeleton className="h-96" aria-label="Loading employees" />
+        <QueryFallback query={data} className="h-96" label="Loading employees" />
       ) : (
         <DataTable
           id="hr-employees"

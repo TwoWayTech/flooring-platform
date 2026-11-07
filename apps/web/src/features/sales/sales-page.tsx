@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FilePlus2 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -62,7 +62,7 @@ export function SalesPage() {
         </TabsList>
       </Tabs>
       {data.status !== "ready" ? (
-        <Skeleton className="h-96" aria-label="Loading sales" />
+        <QueryFallback query={data} className="h-96" label="Loading sales" />
       ) : view === "customers" ? (
         <CustomersTable customers={data.data.customers} invoices={data.data.invoices} payments={data.data.payments} />
       ) : view === "invoices" ? (
