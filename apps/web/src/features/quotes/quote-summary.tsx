@@ -120,12 +120,22 @@ export function QuoteSummary({
               {taxNote(ctx, state)}
               {canOverride ? (
                 <span className="mt-1 flex flex-wrap gap-2">
-                  <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setChangingTax(true)}>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="text-brand-ink h-auto px-0 text-xs"
+                    onClick={() => setChangingTax(true)}
+                  >
                     <Pencil />
                     Change tax
                   </Button>
                   {override ? (
-                    <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => onOverride(null)}>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-brand-ink h-auto px-0 text-xs"
+                      onClick={() => onOverride(null)}
+                    >
                       <Undo2 />
                       Use the default rate
                     </Button>
