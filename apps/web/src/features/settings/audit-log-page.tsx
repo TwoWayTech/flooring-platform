@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import type { AuditCategory, AuditEntry } from "@workspace/shared";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -27,11 +25,9 @@ const CATEGORIES: Record<AuditCategory, string> = {
 export function AuditLogPage() {
   const can = useCan();
   const formatDate = useFormatDate();
-  const [category, setCategory] = useState<AuditCategory | "all">("all");
   const data = useApiQuery((client) => client.list("audit"), []);
   if (!can("settings.audit.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading audit log" />;
-  const rows = data.data.filter((e) => category === "all" || e.category === category);
 
   const columns: ColumnSpec<AuditEntry>[] = [
     { id: "at", header: "When", value: (e) => e.at, cell: (e) => formatDate(e.at, true) },
@@ -73,28 +69,13 @@ export function AuditLogPage() {
   return (
     <DataTable
       id="settings-audit"
-      rows={rows}
+      rows={data.data}
       columns={columns}
       getRowId={(e) => e.id}
       searchPlaceholder="Search the audit log"
       csvName="audit-log"
       initialSort={{ id: "at", desc: true }}
       empty={{ message: "No changes recorded yet." }}
-      toolbar={
-        <Select value={category} onValueChange={(v) => setCategory(v as AuditCategory | "all")}>
-          <SelectTrigger className="bg-surface h-9 w-44" aria-label="Area">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All areas</SelectItem>
-            {(Object.keys(CATEGORIES) as AuditCategory[]).map((c) => (
-              <SelectItem key={c} value={c}>
-                {CATEGORIES[c]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      }
     />
   );
 }

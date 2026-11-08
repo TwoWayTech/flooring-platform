@@ -1,28 +1,24 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Scissors, Truck, TriangleAlert } from "lucide-react";
 import { locationName, SENSITIVE, type Location, type Product, type Roll } from "@workspace/shared";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Swatch } from "@workspace/ui/components/swatch";
-import { Segmented } from "@workspace/ui/components/segmented";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
 import { LOW_ROLL_FT } from "@/lib/attention";
 import { rollSqYd } from "./stock";
 
-const FILTERS = { all: "All", full: "Full rolls", remnants: "Remnants", low: `Under ${LOW_ROLL_FT} ft` } as const;
-type RollFilter = keyof typeof FILTERS;
-
-/** Rolls matching a list filter; used-up rolls are hidden except from "All". */
-function matches(roll: Roll, filter: RollFilter): boolean {
+/** What a roll is today, for the Type column and its filter: Low is a full roll under LOW_ROLL_FT. */
+function rollType(roll: Roll): "In transit" | "Remnant" | "Used up" | "Low" | "Roll" {
   const left = Number(roll.remainingLengthFt);
-  if (filter === "full") return !roll.isRemnant && left > 0;
-  if (filter === "remnants") return roll.isRemnant && left > 0;
-  if (filter === "low") return !roll.isRemnant && left > 0 && left < LOW_ROLL_FT;
-  return true;
+  if (roll.transferId) return "In transit";
+  if (roll.isRemnant) return "Remnant";
+  if (left === 0) return "Used up";
+  return left < LOW_ROLL_FT ? "Low" : "Roll";
 }
 
 interface RollsTableProps {
@@ -37,8 +33,6 @@ interface RollsTableProps {
 export function RollsTable({ rolls, products, locations, warehouseId }: RollsTableProps) {
   const can = useCan();
   const router = useRouter();
-  const params = useSearchParams();
-  const filter = (params.get("filter") as RollFilter) in FILTERS ? (params.get("filter") as RollFilter) : "all";
   const productOf = (roll: Roll) => products.find((p) => p.id === roll.productId);
 
   const columns: ColumnSpec<Roll>[] = [
@@ -90,7 +84,8 @@ export function RollsTable({ rolls, products, locations, warehouseId }: RollsTab
     },
     { id: "width", header: "Width", kind: "quantity", unit: "ft", value: (r) => r.widthFt },
     { id: "area", header: "Area", kind: "quantity", unit: "sq yd", value: (r) => rollSqYd(r) },
-    { id: "warehouse", header: "Warehouse", value: (r) => locationName(locations, r.locationId) },
+    // The page's warehouse filter applies to every inventory tab, so this column has none of its own.
+    { id: "warehouse", header: "Warehouse", value: (r) => locationName(locations, r.locationId), filter: false },
     { id: "bin", header: "Bin", value: (r) => r.bin },
     ...(can(SENSITIVE.productCost)
       ? [{ id: "cost", header: "Cost per sq ft", kind: "unitCost" as const, value: (r: Roll) => r.costPerSqFt }]
@@ -98,13 +93,14 @@ export function RollsTable({ rolls, products, locations, warehouseId }: RollsTab
     {
       id: "type",
       header: "Type",
-      value: (r) => (r.transferId ? "In transit" : r.isRemnant ? "Remnant" : "Roll"),
+      filter: "select",
+      value: rollType,
       cell: (r) => {
-        const left = Number(r.remainingLengthFt);
-        if (r.transferId) return <StatusPill tone="brand" icon={Truck} label="In transit" />;
-        if (r.isRemnant) return <StatusPill tone="neutral" icon={Scissors} label="Remnant" />;
-        if (left > 0 && left < LOW_ROLL_FT) return <StatusPill tone="warning" icon={TriangleAlert} label="Low" />;
-        return left === 0 ? <span className="text-muted-foreground">Used up</span> : "Roll";
+        const type = rollType(r);
+        if (type === "In transit") return <StatusPill tone="brand" icon={Truck} label={type} />;
+        if (type === "Remnant") return <StatusPill tone="neutral" icon={Scissors} label={type} />;
+        if (type === "Low") return <StatusPill tone="warning" icon={TriangleAlert} label={type} />;
+        return type === "Used up" ? <span className="text-muted-foreground">{type}</span> : type;
       },
     },
   ];
@@ -112,27 +108,15 @@ export function RollsTable({ rolls, products, locations, warehouseId }: RollsTab
   return (
     <DataTable
       id="inventory-rolls"
-      rows={rolls.filter((r) => matches(r, filter) && (!warehouseId || r.locationId === warehouseId))}
+      rows={rolls.filter((r) => !warehouseId || r.locationId === warehouseId)}
       columns={columns}
       getRowId={(r) => r.id}
       onRowClick={(r) => router.push(`/inventory/rolls/${r.id}`)}
       rowLabel={(r) => `Open roll ${r.rollNumber}`}
       searchPlaceholder="Search rolls, products, dye lots"
       csvName="rolls"
-      empty={{ message: "No rolls match this filter." }}
+      empty={{ message: "No rolls at this warehouse." }}
       initialSort={{ id: "remaining", desc: false }}
-      toolbar={
-        <Segmented
-          label="Show"
-          options={Object.entries(FILTERS) as [RollFilter, string][]}
-          value={filter}
-          onChange={(v) => {
-            const next = new URLSearchParams(params);
-            next.set("filter", v);
-            router.replace(`/inventory?${next.toString()}`);
-          }}
-        />
-      }
     />
   );
 }

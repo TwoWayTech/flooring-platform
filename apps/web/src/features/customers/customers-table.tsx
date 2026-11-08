@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { CircleAlert, ShieldCheck } from "lucide-react";
 import {
   balance,
@@ -16,7 +15,6 @@ import {
   type Invoice,
   type Payment,
 } from "@workspace/shared";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -27,7 +25,6 @@ import { CERTIFICATE_WARNING_DAYS } from "@/lib/attention";
 import { CustomerDrawer } from "./customer-drawer";
 
 const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" };
-type Filter = CustomerType | "all" | "certificates";
 
 /**
  * Customers and receivables (spec Tier 2): homeowners, dealers and contractors with open and
@@ -43,19 +40,13 @@ export function CustomersTable({
   payments: Payment[];
 }) {
   const can = useCan();
-  const router = useRouter();
-  const params = useSearchParams();
   const [open, setOpen] = useState<Customer | null>(null);
   const today = api.today();
-  const filter = (params.get("filter") as Filter | null) ?? "all";
   const daysLeft = (c: Customer) => (c.certificate ? daysBetween(today, c.certificate.expiresAt) : null);
   const expiringSoon = (c: Customer) => {
     const d = daysLeft(c);
     return d !== null && d >= 0 && d <= CERTIFICATE_WARNING_DAYS;
   };
-  const rows = customers.filter((c) =>
-    filter === "all" ? true : filter === "certificates" ? expiringSoon(c) : c.type === filter,
-  );
   const own = (c: Customer) => invoices.filter((i) => i.customerId === c.id && !i.isReturn && i.status !== "void");
 
   const columns: ColumnSpec<Customer>[] = [
@@ -76,7 +67,13 @@ export function CustomersTable({
     ...(can(SENSITIVE.creditLimit)
       ? [{ id: "credit", header: "Credit limit", kind: "money" as const, value: (c: Customer) => c.creditLimit }]
       : []),
-    { id: "open", header: "Open balance", kind: "money", value: (c) => sum(own(c).map(balance)).toString() },
+    {
+      id: "open",
+      header: "Open balance",
+      kind: "money",
+      value: (c) => sum(own(c).map(balance)).toString(),
+      total: true,
+    },
     {
       id: "overdue",
       header: "Overdue",
@@ -91,7 +88,8 @@ export function CustomersTable({
     {
       id: "certificate",
       header: "Certificate",
-      value: (c) => c.certificate?.expiresAt ?? null,
+      filter: "select",
+      value: (c) => (!c.certificate ? null : expiringSoon(c) ? "Expires soon" : "Valid"),
       cell: (c) =>
         !c.certificate ? null : expiringSoon(c) ? (
           <StatusPill tone="warning" icon={CircleAlert} label={`Expires in ${daysLeft(c)} days`} />
@@ -106,7 +104,7 @@ export function CustomersTable({
       <AgingPanel title="Receivables aging" docs={openInvoices(invoices)} today={today} />
       <DataTable
         id="sales-customers"
-        rows={rows}
+        rows={customers}
         columns={columns}
         getRowId={(c) => c.id}
         onRowClick={setOpen}
@@ -114,29 +112,7 @@ export function CustomersTable({
         searchPlaceholder="Search customers"
         csvName="customers"
         initialSort={{ id: "open", desc: true }}
-        empty={{
-          message:
-            filter === "certificates" ? "No certificates expire in the next 30 days." : "No customers in this group.",
-        }}
-        toolbar={
-          <Select
-            value={filter}
-            onValueChange={(v) => router.replace(`/sales?view=customers${v === "all" ? "" : `&filter=${v}`}`)}
-          >
-            <SelectTrigger className="bg-surface h-9 w-52" aria-label="Show">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All customers</SelectItem>
-              {(Object.keys(TYPES) as CustomerType[]).map((t) => (
-                <SelectItem key={t} value={t}>
-                  {TYPES[t]}s
-                </SelectItem>
-              ))}
-              <SelectItem value="certificates">Certificates expiring</SelectItem>
-            </SelectContent>
-          </Select>
-        }
+        empty={{ message: "No customers yet." }}
       />
       <CustomerDrawer customer={open} invoices={invoices} payments={payments} onClose={() => setOpen(null)} />
     </>

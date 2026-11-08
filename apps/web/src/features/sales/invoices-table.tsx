@@ -1,17 +1,14 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { balance, locationName, type Customer, type Invoice, type Location } from "@workspace/shared";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { api } from "@/lib/api";
-import { invoiceState, InvoiceStatePill, invoiceStateLabel, type InvoiceState } from "@/lib/document-status";
+import { invoiceState, InvoiceStatePill, invoiceStateLabel } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 
-const FILTERS: (InvoiceState | "all")[] = ["all", "open", "overdue", "partial", "paid", "return"];
-
-/** Invoices with their state today; `?status=overdue` comes from "Needs attention". */
+/** Invoices with their state today; "Needs attention" links here filtered to Overdue (spec A2). */
 export function InvoicesTable({
   invoices,
   customers,
@@ -22,11 +19,8 @@ export function InvoicesTable({
   locations: Location[];
 }) {
   const router = useRouter();
-  const params = useSearchParams();
   const formatDate = useFormatDate();
   const today = api.today();
-  const filter = (params.get("status") as InvoiceState | null) ?? "all";
-  const rows = invoices.filter((i) => filter === "all" || invoiceState(i, today) === filter);
   const columns: ColumnSpec<Invoice>[] = [
     {
       id: "number",
@@ -44,13 +38,19 @@ export function InvoicesTable({
       value: (i) => invoiceStateLabel(invoiceState(i, today)),
       cell: (i) => <InvoiceStatePill state={invoiceState(i, today)} />,
     },
-    { id: "total", header: "Total", kind: "money", value: (i) => i.total },
-    { id: "balance", header: "Balance", kind: "money", value: (i) => (i.isReturn ? "0" : balance(i).toString()) },
+    { id: "total", header: "Total", kind: "money", value: (i) => i.total, total: true },
+    {
+      id: "balance",
+      header: "Balance",
+      kind: "money",
+      value: (i) => (i.isReturn ? "0" : balance(i).toString()),
+      total: true,
+    },
   ];
   return (
     <DataTable
       id="sales-invoices"
-      rows={rows}
+      rows={invoices}
       columns={columns}
       getRowId={(i) => i.id}
       onRowClick={(i) => router.push(`/sales/invoices/${i.id}`)}
@@ -58,24 +58,7 @@ export function InvoicesTable({
       searchPlaceholder="Search invoices and customers"
       csvName="invoices"
       initialSort={{ id: "issued", desc: true }}
-      empty={{ message: "No invoices match this filter." }}
-      toolbar={
-        <Select
-          value={filter}
-          onValueChange={(v) => router.replace(`/sales?view=invoices${v === "all" ? "" : `&status=${v}`}`)}
-        >
-          <SelectTrigger className="bg-surface h-9 w-40" aria-label="Status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTERS.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f === "all" ? "All statuses" : invoiceStateLabel(f)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      }
+      empty={{ message: "No invoices yet. Convert a quote to create one." }}
     />
   );
 }

@@ -7,6 +7,7 @@ import {
   type Access,
   type PermissionKey,
   type ProductKey,
+  filteredHref,
 } from "@workspace/shared";
 import type { ApiClient } from "./api/contract";
 
@@ -52,7 +53,7 @@ const CHECKS: Check[] = [
       return {
         count,
         label: plural(count, "overdue invoice", "overdue invoices"),
-        href: "/sales?view=invoices&status=overdue",
+        href: filteredHref("/sales?view=invoices", "sales-invoices", "state", ["Overdue"]),
         tone: "danger",
       };
     },
@@ -69,7 +70,7 @@ const CHECKS: Check[] = [
       return {
         count,
         label: `${plural(count, "roll", "rolls")} under ${LOW_ROLL_FT} ft`,
-        href: "/inventory?view=rolls&filter=low",
+        href: filteredHref("/inventory?view=rolls", "inventory-rolls", "type", ["Low"]),
         tone: "warning",
       };
     },
@@ -88,7 +89,7 @@ const CHECKS: Check[] = [
       return {
         count,
         label: `${plural(count, "certificate", "certificates")} expiring`,
-        href: "/sales?view=customers&filter=certificates",
+        href: filteredHref("/sales?view=customers", "sales-customers", "certificate", ["Expires soon"]),
         tone: "warning",
       };
     },

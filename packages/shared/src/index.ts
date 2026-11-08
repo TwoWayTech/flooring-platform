@@ -23,3 +23,4 @@ export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
 export * from "./migrations";
+export * from "./table-filters";

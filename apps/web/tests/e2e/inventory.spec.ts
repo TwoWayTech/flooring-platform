@@ -36,8 +36,8 @@ test.describe("inventory", () => {
   });
 
   test("lists rolls under 20 ft from the attention link", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/inventory?view=rolls&filter=low");
-    await expect(page.getByText("3 of 3")).toBeVisible();
+    await signInAs(page, SUMMIT_OWNER, "/inventory?view=rolls&inventory-rolls.f.type=Low");
+    await expect(page.getByText("3 of 60")).toBeVisible();
   });
 
   test("hides costs when viewing as Sales", async ({ page }) => {

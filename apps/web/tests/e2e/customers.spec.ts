@@ -3,8 +3,8 @@ import { signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("customers and receivables", () => {
   test("lists expiring certificates from the attention link and opens a statement", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/sales?view=customers&filter=certificates");
-    await expect(page.getByText("2 of 2")).toBeVisible();
+    await signInAs(page, SUMMIT_OWNER, "/sales?view=customers&sales-customers.f.certificate=Expires%20soon");
+    await expect(page.getByText("2 of 80")).toBeVisible();
     await expect(page.getByText(/^Expires in \d+ days$/).first()).toBeVisible();
     await expect(page.getByRole("region", { name: "Receivables aging" })).toContainText("Over 90 days");
 

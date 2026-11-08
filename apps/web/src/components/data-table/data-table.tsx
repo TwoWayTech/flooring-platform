@@ -11,7 +11,8 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { Columns3, Download, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { isActive, matchesFilter, sum, type ColumnFilter, type FilterKind } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
@@ -27,11 +28,17 @@ import { cn } from "@workspace/ui/lib/utils";
 import { api } from "@/lib/api";
 import { ColumnMenu } from "./column-menu";
 import { downloadText, toCsv } from "./csv";
+import { FilterChips } from "./filter-chips";
+import { filterKindOf, optionsOf } from "./filter-kinds";
 import type { ColumnSpec } from "./types";
 import { useTablePrefs } from "./use-table-prefs";
+import { useTableView } from "./use-table-view";
+
+/** How long typing in the search waits before the address is updated. */
+const SEARCH_DELAY_MS = 300;
 
 interface DataTableProps<T> {
-  /** Stable id; column preferences are remembered under it. */
+  /** Stable id; column preferences and the remembered view are kept under it. */
   id: string;
   rows: T[];
   columns: ColumnSpec<T>[];
@@ -40,7 +47,7 @@ interface DataTableProps<T> {
   /** Accessible name of a clickable row, e.g. "Open roll NM-4471". */
   rowLabel?: (row: T) => string;
   searchPlaceholder?: string;
-  /** Filters shown beside the search. */
+  /** Controls shown beside the search, such as a New button. */
   toolbar?: ReactNode;
   /** File name stem for CSV export; omit to hide the export. */
   csvName?: string;
@@ -51,8 +58,10 @@ interface DataTableProps<T> {
 }
 
 /**
- * The table pattern from the design brief: sticky header, column menu (sort, hide, more or
- * fewer decimals), row click, bulk select and CSV export. 36 px rows, numbers right-aligned.
+ * The table pattern from the design brief, the same everywhere (spec A2): global search, a
+ * filter on every column, sort, show and hide columns, active filters as chips with Clear
+ * filters, a result count, the view in the URL and remembered per person, CSV of the filtered
+ * rows, and a totals row for money columns. Also row click, bulk select and More/Fewer decimals.
  */
 export function DataTable<T>({
   id,
@@ -72,10 +81,52 @@ export function DataTable<T>({
     id,
     columns.filter((c) => c.hidden).map((c) => c.id),
   );
-  const [sorting, setSorting] = useState<SortingState>(initialSort ? [initialSort] : []);
-  const [search, setSearch] = useState("");
+  const kinds = useMemo(() => {
+    const out: Record<string, FilterKind> = {};
+    for (const spec of columns) {
+      const kind = filterKindOf(spec, rows);
+      if (kind) out[spec.id] = kind;
+    }
+    return out;
+  }, [columns, rows]);
+  const [view, setView] = useTableView(id, kinds, initialSort ?? null);
+  const [search, setSearch] = useState(view.search);
   const [selection, setSelection] = useState<RowSelectionState>({});
   const selectable = Boolean(bulkActions);
+  const sortId = view.sort?.id;
+  const sortDesc = view.sort?.desc;
+  const sorting = useMemo<SortingState>(() => (sortId ? [{ id: sortId, desc: !!sortDesc }] : []), [sortId, sortDesc]);
+
+  useEffect(() => setSearch(view.search), [view.search]);
+  useEffect(() => {
+    if (search === view.search) return;
+    const timer = setTimeout(() => setView({ ...view, search }), SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [search, view, setView]);
+
+  const filtered = useMemo(() => {
+    const active = Object.entries(view.filters).filter(([, f]) => isActive(f));
+    if (active.length === 0) return rows;
+    return rows.filter((row) =>
+      active.every(([columnId, filter]) => {
+        const spec = columns.find((c) => c.id === columnId);
+        return !spec || matchesFilter(spec.value(row), filter);
+      }),
+    );
+  }, [rows, columns, view.filters]);
+  const filtering = search.trim() !== "" || Object.values(view.filters).some(isActive);
+
+  function setFilter(columnId: string, filter: ColumnFilter | null) {
+    const filters = { ...view.filters };
+    if (filter && isActive(filter)) filters[columnId] = filter;
+    else delete filters[columnId];
+    setView({ ...view, filters });
+  }
+
+  function clearAll() {
+    setSearch("");
+    setView({ ...view, search: "", filters: {} });
+  }
 
   const defs = useMemo<ColumnDef<T>[]>(() => {
     const data: ColumnDef<T>[] = columns.map((spec) => ({
@@ -118,7 +169,7 @@ export function DataTable<T>({
   // TanStack Table returns mutable objects the React Compiler cannot memoize; it skips this component.
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
-    data: rows,
+    data: filtered,
     columns: defs,
     getRowId,
     state: {
@@ -127,10 +178,15 @@ export function DataTable<T>({
       rowSelection: selection,
       columnVisibility: Object.fromEntries(prefs.hidden.map((c) => [c, false])),
     },
-    onSortingChange: setSorting,
+    onSortingChange: (change) => {
+      const next = typeof change === "function" ? change(sorting) : change;
+      setView({ ...view, sort: next[0] ?? null });
+    },
     onGlobalFilterChange: setSearch,
     onRowSelectionChange: setSelection,
     enableRowSelection: selectable,
+    // There is no pagination; without this, a re-render with new sort or filter objects resets a page index forever.
+    autoResetAll: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -139,6 +195,9 @@ export function DataTable<T>({
   const specOf = (columnId: string) => columns.find((c) => c.id === columnId);
   const visibleRows = table.getRowModel().rows;
   const selected = table.getSelectedRowModel().rows.map((r) => r.original);
+  const showTotals = visibleRows.length > 0 && columns.some((c) => c.total && !prefs.hidden.includes(c.id));
+  const totalOf = (spec: ColumnSpec<T>) =>
+    sum(visibleRows.map((r) => spec.value(r.original)).filter((v): v is string | number => v !== null)).toString();
 
   function exportCsv() {
     const visible = columns.filter((c) => !prefs.hidden.includes(c.id));
@@ -168,7 +227,7 @@ export function DataTable<T>({
           />
         </div>
         {toolbar}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-9">
@@ -203,6 +262,18 @@ export function DataTable<T>({
         </div>
       </div>
 
+      <FilterChips
+        columns={columns}
+        filters={view.filters}
+        search={search}
+        onRemove={(columnId) => setFilter(columnId, null)}
+        onClearSearch={() => {
+          setSearch("");
+          setView({ ...view, search: "" });
+        }}
+        onClearAll={clearAll}
+      />
+
       {selectable && selected.length > 0 ? (
         <div
           className="bg-brand-soft text-brand-ink flex flex-wrap items-center gap-3 rounded-md px-3 py-2 text-sm"
@@ -235,13 +306,18 @@ export function DataTable<T>({
                     >
                       {spec && !spec.visualOnly ? (
                         <ColumnMenu
+                          id={`${id}-${spec.id}`}
                           label={spec.header}
                           sorted={header.column.getIsSorted()}
                           numeric={spec.kind}
                           delta={prefs.deltas[spec.id] ?? 0}
-                          onSort={(desc) => setSorting([{ id: spec.id, desc }])}
+                          filterKind={kinds[spec.id] ?? null}
+                          filter={view.filters[spec.id]}
+                          options={kinds[spec.id] === "select" ? optionsOf(spec, rows) : []}
+                          onSort={(desc) => setView({ ...view, sort: { id: spec.id, desc } })}
                           onDelta={(d) => updatePrefs((p) => ({ ...p, deltas: { ...p.deltas, [spec.id]: d } }))}
                           onHide={() => updatePrefs((p) => ({ ...p, hidden: [...p.hidden, spec.id] }))}
+                          onFilter={(filter) => setFilter(spec.id, filter)}
                         />
                       ) : (
                         flexRender(header.column.columnDef.header, header.getContext())
@@ -291,11 +367,40 @@ export function DataTable<T>({
               </tr>
             ))}
           </tbody>
+          {showTotals ? (
+            <tfoot className="bg-raised sticky bottom-0">
+              <tr className="border-hairline border-t font-semibold">
+                {table.getVisibleLeafColumns().map((column, index) => {
+                  const spec = specOf(column.id);
+                  return (
+                    <td
+                      key={column.id}
+                      className={cn("h-9 px-3 whitespace-nowrap", spec?.kind && "text-right tabular-nums")}
+                    >
+                      {spec?.total && spec.kind ? (
+                        <Num kind={spec.kind} value={totalOf(spec)} delta={prefs.deltas[spec.id] ?? 0} />
+                      ) : index === 0 ? (
+                        "Total"
+                      ) : null}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
         {visibleRows.length === 0 ? (
           <EmptyState
-            message={search ? "Nothing matches your search." : empty.message}
-            action={search ? undefined : empty.action}
+            message={filtering ? "Nothing matches these filters." : empty.message}
+            action={
+              filtering ? (
+                <Button variant="outline" onClick={clearAll}>
+                  Clear filters
+                </Button>
+              ) : (
+                empty.action
+              )
+            }
           />
         ) : null}
       </div>

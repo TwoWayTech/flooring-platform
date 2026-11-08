@@ -7,12 +7,10 @@ import {
   UNIT_SINGULAR,
   type Location,
   type Product,
-  type ProductCategory,
   type Roll,
   type StockMovement,
 } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Swatch } from "@workspace/ui/components/swatch";
 import { DataTable } from "@/components/data-table/data-table";
@@ -21,8 +19,6 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { CATEGORY_LABELS } from "@/lib/labels";
 import { ProductDrawer } from "./product-drawer";
 import { stockLevel } from "./stock";
-
-const ALL = "all";
 
 interface ProductsTableProps {
   products: Product[];
@@ -33,12 +29,10 @@ interface ProductsTableProps {
   warehouseId: string | null;
 }
 
-/** The product list with category filter; a row opens the product drawer. Cost needs view_sensitive. */
+/** The product list; a row opens the product drawer. Cost needs view_sensitive. */
 export function ProductsTable({ products, rolls, movements, locations, warehouseId }: ProductsTableProps) {
   const can = useCan();
-  const [category, setCategory] = useState<ProductCategory | typeof ALL>(ALL);
   const [open, setOpen] = useState<Product | null>(null);
-  const rows = products.filter((p) => category === ALL || p.category === category);
 
   const columns: ColumnSpec<Product>[] = [
     {
@@ -93,30 +87,15 @@ export function ProductsTable({ products, rolls, movements, locations, warehouse
     <>
       <DataTable
         id="inventory-products"
-        rows={rows}
+        rows={products}
         columns={columns}
         getRowId={(p) => p.id}
         onRowClick={setOpen}
         rowLabel={(p) => `Open ${p.name}`}
         searchPlaceholder="Search products"
         csvName="products"
-        empty={{ message: "No products in this category." }}
+        empty={{ message: "No products yet." }}
         initialSort={{ id: "name", desc: false }}
-        toolbar={
-          <Select value={category} onValueChange={(v) => setCategory(v as ProductCategory | typeof ALL)}>
-            <SelectTrigger className="bg-surface h-9 w-52" aria-label="Category">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All categories</SelectItem>
-              {(Object.keys(CATEGORY_LABELS) as ProductCategory[]).map((c) => (
-                <SelectItem key={c} value={c}>
-                  {CATEGORY_LABELS[c]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
       />
       <ProductDrawer
         product={open}

@@ -261,6 +261,14 @@ export const FEATURES = {
     enabled: true,
     screens: [],
   },
+  "shell.tables": {
+    title: "Table filters and saved views",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
   "shell.notifications": {
     title: "Notifications",
     product: "both",

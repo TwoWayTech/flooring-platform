@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { NumberKind } from "@workspace/shared";
+import type { FilterKind, NumberKind } from "@workspace/shared";
 
 /** One column of a DataTable. */
 export interface ColumnSpec<T> {
@@ -14,8 +14,15 @@ export interface ColumnSpec<T> {
   unit?: string;
   /** Starts hidden; people can show it again from the Columns menu. */
   hidden?: boolean;
-  /** Fixed narrow columns such as a gauge; skipped by search and CSV. */
+  /** Fixed narrow columns such as a gauge; skipped by search, filters and CSV. */
   visualOnly?: boolean;
+  /**
+   * The column's filter (spec A2). Left out, it is chosen from the values: a range for numbers and
+   * dates, a multi-select for few repeating values, otherwise text contains. False turns it off.
+   */
+  filter?: FilterKind | false;
+  /** Sums the column over the filtered rows in a totals row; for money columns where a sum means something. */
+  total?: boolean;
   className?: string;
 }
 

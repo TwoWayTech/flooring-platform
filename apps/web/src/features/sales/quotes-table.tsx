@@ -47,7 +47,7 @@ export function QuotesTable({ quotes, customers, users, locations }: QuotesTable
       value: (q) => users.find((u) => u.id === q.salesRepId)?.name ?? "",
       hidden: true,
     },
-    { id: "total", header: "Total", kind: "money", value: (q) => q.total },
+    { id: "total", header: "Total", kind: "money", value: (q) => q.total, total: true },
   ];
   return (
     <DataTable

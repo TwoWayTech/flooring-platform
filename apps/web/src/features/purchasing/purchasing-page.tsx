@@ -114,7 +114,9 @@ export function PurchasingPage() {
       value: (p) => poStatusLabel(p.status),
       cell: (p) => <PoStatusPill status={p.status} />,
     },
-    ...(money ? [{ id: "total", header: "Total", kind: "money" as const, value: (p: PurchaseOrder) => p.total }] : []),
+    ...(money
+      ? [{ id: "total", header: "Total", kind: "money" as const, value: (p: PurchaseOrder) => p.total, total: true }]
+      : []),
   ];
   const billColumns: ColumnSpec<Bill>[] = [
     {
@@ -133,8 +135,8 @@ export function PurchasingPage() {
       value: (b) => billState(b, today).label,
       cell: (b) => <StatusPill {...billState(b, today)} />,
     },
-    { id: "total", header: "Total", kind: "money", value: (b) => b.total },
-    { id: "balance", header: "Balance", kind: "money", value: (b) => balance(b).toString() },
+    { id: "total", header: "Total", kind: "money", value: (b) => b.total, total: true },
+    { id: "balance", header: "Balance", kind: "money", value: (b) => balance(b).toString(), total: true },
     ...(can("purchasing.payment.record")
       ? [
           {
