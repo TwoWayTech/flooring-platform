@@ -27,6 +27,7 @@ export class GenContext {
       city: place.city,
       state: place.state,
       zip: `${place.zipPrefix}${String(this.rng.int(1, 99)).padStart(2, "0")}`,
+      county: place.county,
     };
   }
 }

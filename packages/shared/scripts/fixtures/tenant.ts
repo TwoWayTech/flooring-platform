@@ -5,6 +5,7 @@ import { PRODUCT_ROLES, roleTemplate } from "../../src/permissions/roles";
 import { PRODUCT_MODULES } from "../../src/products";
 import type { Company, CompanySettings, Employee, Role, User } from "../../src/types";
 import { EXAMPLE_TAX_RULES } from "../../src/us-pack/tax";
+import { EXAMPLE_COMPANY_DEFAULT, EXAMPLE_JURISDICTIONS } from "../../src/us-pack/tax-examples";
 import { ANCHOR_DATE, type CompanySeed } from "./companies";
 import type { GenContext } from "./context";
 import { branchWarehouse } from "./locations";
@@ -123,6 +124,8 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         pricesInclude: "exclusive",
         rounding: "invoice",
         rules: EXAMPLE_TAX_RULES.map((r) => ({ ...r, taxable: { ...r.taxable } })),
+        jurisdictions: EXAMPLE_JURISDICTIONS.map((j) => ({ ...j })),
+        companyDefault: { ...EXAMPLE_COMPANY_DEFAULT, taxable: { ...EXAMPLE_COMPANY_DEFAULT.taxable } },
         filing: seed.statesOfOperation.map((state) => ({ state, frequency: "monthly" as const })),
         certificateTypes: ["Resale certificate", "Exemption certificate"],
       },

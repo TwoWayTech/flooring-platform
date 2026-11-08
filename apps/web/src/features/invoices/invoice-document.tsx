@@ -116,13 +116,18 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
             </>
           ) : null}
         </div>
-        <dl className="divide-hairline w-full max-w-xs divide-y">
-          <TotalRow label="Subtotal" value={model.subtotal} />
-          <TotalRow label={model.taxLabel} value={model.tax} />
-          <TotalRow label="Total" value={model.total} strong />
-          <TotalRow label="Paid" value={model.paid} />
-          <TotalRow label="Balance due" value={model.balanceDue} strong />
-        </dl>
+        <div className="w-full max-w-xs">
+          <dl className="divide-hairline divide-y">
+            <TotalRow label="Subtotal" value={model.subtotal} />
+            <TotalRow label={model.taxLabel} value={model.tax} />
+            <TotalRow label="Total" value={model.total} strong />
+            <TotalRow label="Paid" value={model.paid} />
+            <TotalRow label="Balance due" value={model.balanceDue} strong />
+          </dl>
+          {model.taxSource ? (
+            <p className="text-muted-foreground pt-2 text-xs print:hidden">Tax rate: {model.taxSource}</p>
+          ) : null}
+        </div>
       </div>
 
       <footer className="text-muted-foreground border-hairline border-t pt-4 text-xs">{model.footer}</footer>

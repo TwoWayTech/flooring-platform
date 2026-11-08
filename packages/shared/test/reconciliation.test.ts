@@ -15,6 +15,7 @@ import {
   lineAmount,
   moneyString,
   openInvoices,
+  resolveTaxRule,
   rollAreaSqFt,
   splitOvertime,
   sum,
@@ -43,10 +44,11 @@ describe("fixed seed", () => {
 });
 
 describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reconcile (spec section 4)", (_, f) => {
-  it("invoice total = sum of lines + tax, recomputed with the stored tax rule", () => {
-    const rules = f.settings.localization.tax.rules;
+  it("invoice total = sum of lines + tax, recomputed with the tax rule for its job site and date", () => {
+    const { tax, region } = f.settings.localization;
     for (const inv of f.invoices) {
-      const rule = inv.taxRule ? rules.find((r) => r.state === inv.taxRule!.state) : undefined;
+      const { rule } = resolveTaxRule(tax, region.statesOfOperation, inv.jobSite, inv.issuedAt);
+      expect(rule?.ratePct ?? null, inv.number).toBe(inv.taxRule?.ratePct ?? null);
       const quote = f.quotes.find((q) => q.id === inv.quoteId);
       const totals = computeTotals(inv.lines, {
         rule,

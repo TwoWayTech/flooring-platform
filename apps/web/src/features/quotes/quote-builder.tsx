@@ -52,6 +52,7 @@ export function newQuote(user: User, settings: CompanySettings, today: string, l
     lines: [],
     depositPct: settings.localization.documents.defaultDepositPct,
     lumpSum: false,
+    taxOverride: null,
     invoiceId: null,
     total: "0.00",
     notes: "",
@@ -89,11 +90,12 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
   const editable = !draft.invoiceId && can(draft.number ? "sales.quote.edit" : "sales.quote.create");
   const customer = customers.find((c) => c.id === draft.customerId);
   const ctx = taxContextFor(
-    settings.localization.tax,
-    draft.jobSite.state,
+    settings.localization,
+    draft.jobSite,
     customer ?? { taxExempt: false, certificate: null },
     api.today(),
     draft.lumpSum,
+    draft.taxOverride,
   );
   const totals = computeTotals(draft.lines, ctx);
   const dirty = draft !== savedDraft;
@@ -223,6 +225,9 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
           <QuoteSummary
             totals={totals}
             ctx={ctx}
+            override={draft.taxOverride}
+            canOverride={editable && can("sales.tax.override")}
+            onOverride={(override) => dispatch({ type: "taxOverride", override })}
             state={draft.jobSite.state}
             depositPct={draft.depositPct}
             editable={editable}

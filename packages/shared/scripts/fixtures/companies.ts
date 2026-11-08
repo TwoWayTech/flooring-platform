@@ -8,6 +8,8 @@ export interface Place {
   city: string;
   state: string;
   zipPrefix: string;
+  /** The county, which picks a jurisdiction tax rate (spec A5). */
+  county: string;
 }
 
 /** A named person who becomes a user of the company (and the persona for their role). */
@@ -77,14 +79,14 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
       { id: "sm-br-springs", name: "Colorado Springs", city: "Colorado Springs", state: "CO" },
     ],
     places: [
-      { city: "Denver", state: "CO", zipPrefix: "802" },
-      { city: "Aurora", state: "CO", zipPrefix: "800" },
-      { city: "Lakewood", state: "CO", zipPrefix: "802" },
-      { city: "Littleton", state: "CO", zipPrefix: "801" },
-      { city: "Arvada", state: "CO", zipPrefix: "800" },
-      { city: "Boulder", state: "CO", zipPrefix: "803" },
+      { city: "Denver", state: "CO", zipPrefix: "802", county: "Denver" },
+      { city: "Aurora", state: "CO", zipPrefix: "800", county: "Arapahoe" },
+      { city: "Lakewood", state: "CO", zipPrefix: "802", county: "Jefferson" },
+      { city: "Littleton", state: "CO", zipPrefix: "801", county: "Arapahoe" },
+      { city: "Arvada", state: "CO", zipPrefix: "800", county: "Jefferson" },
+      { city: "Boulder", state: "CO", zipPrefix: "803", county: "Boulder" },
     ],
-    statesOfOperation: ["CO"],
+    statesOfOperation: ["CO", "WY"],
     ceilingExclusions: ["customers.customer.delete", "inventory.product.delete"],
     people: [
       { name: "Dana Whitfield", title: "Owner", role: "owner", branch: 0, lastLoginDaysAgo: 0 },
@@ -136,14 +138,14 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
       { id: "ks-br-lancaster", name: "Lancaster", city: "Lancaster", state: "PA" },
     ],
     places: [
-      { city: "Harrisburg", state: "PA", zipPrefix: "171" },
-      { city: "Lancaster", state: "PA", zipPrefix: "176" },
-      { city: "York", state: "PA", zipPrefix: "174" },
-      { city: "Carlisle", state: "PA", zipPrefix: "170" },
-      { city: "Cherry Hill", state: "NJ", zipPrefix: "080" },
-      { city: "Trenton", state: "NJ", zipPrefix: "086" },
-      { city: "Frederick", state: "MD", zipPrefix: "217" },
-      { city: "Baltimore", state: "MD", zipPrefix: "212" },
+      { city: "Harrisburg", state: "PA", zipPrefix: "171", county: "Dauphin" },
+      { city: "Lancaster", state: "PA", zipPrefix: "176", county: "Lancaster" },
+      { city: "York", state: "PA", zipPrefix: "174", county: "York" },
+      { city: "Carlisle", state: "PA", zipPrefix: "170", county: "Cumberland" },
+      { city: "Cherry Hill", state: "NJ", zipPrefix: "080", county: "Camden" },
+      { city: "Trenton", state: "NJ", zipPrefix: "086", county: "Mercer" },
+      { city: "Frederick", state: "MD", zipPrefix: "217", county: "Frederick" },
+      { city: "Baltimore", state: "MD", zipPrefix: "212", county: "Baltimore City" },
     ],
     statesOfOperation: ["PA", "NJ", "MD"],
     ceilingExclusions: ["customers.customer.delete", "reports.financial.export", "retail.room.measure"],
@@ -186,9 +188,9 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
       { id: "hb-br-sandiego", name: "San Diego placements", city: "San Diego", state: "CA" },
     ],
     places: [
-      { city: "Tampa", state: "FL", zipPrefix: "336" },
-      { city: "St. Petersburg", state: "FL", zipPrefix: "337" },
-      { city: "San Diego", state: "CA", zipPrefix: "921" },
+      { city: "Tampa", state: "FL", zipPrefix: "336", county: "Hillsborough" },
+      { city: "St. Petersburg", state: "FL", zipPrefix: "337", county: "Pinellas" },
+      { city: "San Diego", state: "CA", zipPrefix: "921", county: "San Diego" },
     ],
     statesOfOperation: ["FL", "CA"],
     ceilingExclusions: ["hr.payroll.export"],

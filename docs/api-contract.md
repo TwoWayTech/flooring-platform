@@ -73,7 +73,7 @@ Added with their screens below.
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
 | `cutRoll(rollId, lengthFt, reference)` | `POST /rolls/:id/cuts` | Refuses lengths of 0 or more than is left. Records the cut with the user and time. A full roll's leftover under 12 ft becomes a remnant (new roll record, parent linked) and the roll is used up. Audited. |
-| `saveQuote(quote)` | `PUT /quotes/:id` | A new quote gets the next number with the company's quote prefix. Audited. |
+| `saveQuote(quote)` | `PUT /quotes/:id` | A new quote gets the next number with the company's quote prefix. A changed `taxOverride` needs `sales.tax.override` and writes its own audit entry with the reason. Audited. |
 | `convertQuoteToInvoice(quoteId)` | `POST /quotes/:id/invoice` | Refuses quotes already invoiced or without lines. Recomputes totals under the job-site state's tax rule, stores the rule version, numbers the invoice with the invoice prefix, dates it today with the customer's terms, and marks the quote invoiced. Audited. |
 | `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. `locationId` is the receive-into warehouse. Audited. |
 | `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons become receipt lines in the stock ledger at the receive-into warehouse; broadloom arrives there as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |

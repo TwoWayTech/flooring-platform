@@ -2,6 +2,7 @@ import { dec, moneyString, pctOf, roundMoney, sum, marginPct, type Dec } from ".
 import type { SellUnit } from "./units";
 import type { Product } from "./types/catalog";
 import type { TaxCategory, TaxRule } from "./us-pack/tax";
+import type { TaxSource } from "./us-pack/tax-defaults";
 
 /** One line of a quote or invoice. Quantities and prices are decimal strings. */
 export interface DocLine {
@@ -30,6 +31,8 @@ export interface TaxContext {
   rounding: "line" | "invoice";
   /** Lump-sum billing makes labor taxable in states that flag it. */
   lumpSum?: boolean;
+  /** Where the rate came from, shown under the tax line (spec A5). */
+  source?: TaxSource;
 }
 
 /** Calculated values of one line. */

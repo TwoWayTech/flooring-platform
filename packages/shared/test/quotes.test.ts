@@ -18,9 +18,15 @@ const tax = {
   pricesInclude: "exclusive",
   rounding: "invoice",
   rules: [...EXAMPLE_TAX_RULES],
+  jurisdictions: [],
+  companyDefault: null,
   filing: [],
   certificateTypes: [],
 } as LocalizationSettings["tax"];
+const localization = { tax, region: { statesOfOperation: ["NJ", "CO"] } } as Pick<
+  LocalizationSettings,
+  "tax" | "region"
+>;
 const lvp = { id: "lvp", unit: "carton", sqFtPerCarton: "23.64", category: "lvp" } as Product;
 const rooms = [
   { id: "living", name: "Living room", x: 0, y: 0, widthFt: 14, lengthFt: 18 },
@@ -72,15 +78,15 @@ describe("quote rules", () => {
 
   it("taxes installation labor in NJ but not in CO (job-site state)", () => {
     const measured = remeasureLines(lines, rooms, [lvp]);
-    const nj = computeTotals(measured, taxContextFor(tax, "NJ", customer, "2026-11-07", false));
-    const co = computeTotals(measured, taxContextFor(tax, "CO", customer, "2026-11-07", false));
+    const nj = computeTotals(measured, taxContextFor(localization, { state: "NJ" }, customer, "2026-11-07", false));
+    const co = computeTotals(measured, taxContextFor(localization, { state: "CO" }, customer, "2026-11-07", false));
     expect(nj.lines.find((l) => l.id === "l")!.taxable).toBe(true);
     expect(co.lines.find((l) => l.id === "l")!.taxable).toBe(false);
     expect(dec(nj.tax).gt(co.tax) || nj.ratePct !== co.ratePct).toBe(true);
   });
 
   it("collects nothing in a state without a rule", () => {
-    expect(taxContextFor(tax, "OR", customer, "2026-11-07", false).rule).toBeUndefined();
+    expect(taxContextFor(localization, { state: "OR" }, customer, "2026-11-07", false).rule).toBeUndefined();
   });
 
   it("numbers the next document after the highest used", () => {
@@ -97,9 +103,17 @@ describe("quote rules", () => {
       jobSite: { street: "", city: "Trenton", state: "NJ", zip: "08601" },
       lines: measured,
       lumpSum: false,
+      taxOverride: null,
     } as Quote;
-    const invoice = invoiceFromQuote(quote, customer, tax, { id: "i1", number: "INV-1228", issuedAt: "2026-11-07" });
-    const expected = computeTotals(measured, taxContextFor(tax, "NJ", customer, "2026-11-07", false));
+    const invoice = invoiceFromQuote(quote, customer, localization, {
+      id: "i1",
+      number: "INV-1228",
+      issuedAt: "2026-11-07",
+    });
+    const expected = computeTotals(
+      measured,
+      taxContextFor(localization, { state: "NJ" }, customer, "2026-11-07", false),
+    );
     expect(invoice.total).toBe(expected.total);
     expect(invoice.dueAt).toBe("2026-12-07");
     expect(invoice.taxRule).toMatchObject({ state: "NJ", version: 1 });

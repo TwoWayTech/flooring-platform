@@ -56,8 +56,8 @@ function totalsFor(
   on: string,
   lumpSum: boolean,
 ) {
-  const ctx = taxContextFor(inputs.settings.localization.tax, site.state, customer, on, lumpSum);
-  return { rule: ctx.rule, exempt: ctx.exempt, totals: computeTotals(lines, ctx) };
+  const ctx = taxContextFor(inputs.settings.localization, site, customer, on, lumpSum);
+  return { rule: ctx.rule, exempt: ctx.exempt, source: ctx.source, totals: computeTotals(lines, ctx) };
 }
 
 /**
@@ -116,6 +116,7 @@ function buildQuote(ctx: GenContext, inputs: SalesInputs, createdAt: string): Qu
     lines,
     depositPct: customer.type === "homeowner" ? inputs.settings.localization.documents.defaultDepositPct : "0",
     lumpSum,
+    taxOverride: null,
     invoiceId: null,
     total: totals.total,
     notes: ctx.rng.chance(0.2)
@@ -134,7 +135,14 @@ function openQuoteStatus(ctx: GenContext, createdAt: string): QuoteStatus {
 function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoice {
   const customer = inputs.customers.find((c) => c.id === quote.customerId)!;
   const issuedAt = [addDays(quote.createdAt, ctx.rng.int(1, 10)), ctx.anchor].sort()[0]!;
-  const { rule, exempt, totals } = totalsFor(inputs, quote.lines, quote.jobSite, customer, issuedAt, quote.lumpSum);
+  const { rule, exempt, source, totals } = totalsFor(
+    inputs,
+    quote.lines,
+    quote.jobSite,
+    customer,
+    issuedAt,
+    quote.lumpSum,
+  );
   return {
     id: ctx.id("inv"),
     number: "",
@@ -152,6 +160,8 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     taxRule: rule
       ? { state: rule.state, jurisdiction: rule.jurisdiction, ratePct: rule.ratePct, version: rule.version }
       : null,
+    taxSource: source,
+    taxOverride: null,
     taxExempt: exempt,
     ...documentAmounts(totals),
     paid: "0.00",

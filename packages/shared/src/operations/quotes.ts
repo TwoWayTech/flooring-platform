@@ -1,10 +1,10 @@
 import { addDays } from "../dates";
 import { computeTotals, type DocLine, type TaxContext } from "../documents";
 import { dec } from "../money";
-import type { Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
+import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
 import { quantityForArea, roomAreaSqFt } from "../units";
-import { ruleForState } from "../us-pack/tax";
+import { resolveTaxRule, withOverride, type TaxOverride, type TaxSource } from "../us-pack/tax-defaults";
 
 /** Days until payment is due, per payment term. */
 export const PAYMENT_TERM_DAYS: Record<PaymentTerms, number> = {
@@ -28,19 +28,23 @@ export function dueDate(issuedAt: string, terms: PaymentTerms): string {
 }
 
 /**
- * Tax context for a document (blueprint "Sales tax engine"): the job-site state picks the rule,
- * and the company collects in a state only when its tax settings hold a rule for it. A customer
- * is exempt only while their certificate is valid on the document date.
+ * Tax context for a document (blueprint "Sales tax engine", spec A5): the job site picks the rule
+ * through jurisdiction, state default and company default, and a rate changed on the document
+ * wins over all three. A customer is exempt only while their certificate is valid on the date.
  */
 export function taxContextFor(
-  tax: LocalizationSettings["tax"],
-  jobSiteState: string,
+  localization: Pick<LocalizationSettings, "tax" | "region">,
+  site: Pick<Address, "state" | "county">,
   customer: Pick<Customer, "taxExempt" | "certificate">,
   on: string,
   lumpSum: boolean,
-): TaxContext {
+  override: TaxOverride | null = null,
+): TaxContext & { source: TaxSource } {
+  const { tax, region } = localization;
+  const resolved = resolveTaxRule(tax, region.statesOfOperation, site, on);
+  const { rule, source } = withOverride(resolved, site.state, override);
   const exempt = customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on;
-  return { rule: ruleForState(tax.rules, jobSiteState), exempt, rounding: tax.rounding, lumpSum };
+  return { rule, exempt, rounding: tax.rounding, lumpSum, source };
 }
 
 /** Total area of the given rooms in sq ft. */
@@ -87,10 +91,10 @@ export function nextNumber(prefix: string, existing: readonly string[], start: n
 export function invoiceFromQuote(
   quote: Quote,
   customer: Customer,
-  tax: LocalizationSettings["tax"],
+  localization: Pick<LocalizationSettings, "tax" | "region">,
   input: { id: string; number: string; issuedAt: string },
 ): Invoice {
-  const ctx = taxContextFor(tax, quote.jobSite.state, customer, input.issuedAt, quote.lumpSum);
+  const ctx = taxContextFor(localization, quote.jobSite, customer, input.issuedAt, quote.lumpSum, quote.taxOverride);
   const totals = computeTotals(quote.lines, ctx);
   return {
     id: input.id,
@@ -114,6 +118,8 @@ export function invoiceFromQuote(
           version: ctx.rule.version,
         }
       : null,
+    taxSource: ctx.source,
+    taxOverride: quote.taxOverride,
     taxExempt: ctx.exempt,
     subtotal: totals.subtotal,
     tax: totals.tax,

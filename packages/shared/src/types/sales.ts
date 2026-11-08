@@ -1,5 +1,6 @@
 import type { DocLine } from "../documents";
 import type { TaxRule } from "../us-pack/tax";
+import type { TaxOverride, TaxSource } from "../us-pack/tax-defaults";
 import type { Address } from "./company";
 
 /** Customer segments. */
@@ -61,6 +62,8 @@ export interface Quote {
   lines: DocLine[];
   depositPct: string;
   lumpSum: boolean;
+  /** A rate changed on this quote by someone with sales.tax.override, with the reason (spec A5). */
+  taxOverride: TaxOverride | null;
   invoiceId: string | null;
   total: string;
   notes: string;
@@ -86,6 +89,9 @@ export interface Invoice {
   jobSite: Address;
   lines: DocLine[];
   taxRule: Pick<TaxRule, "state" | "jurisdiction" | "ratePct" | "version"> | null;
+  /** Where the rate came from when the invoice was made (spec A5). */
+  taxSource: TaxSource;
+  taxOverride: TaxOverride | null;
   taxExempt: boolean;
   subtotal: string;
   tax: string;

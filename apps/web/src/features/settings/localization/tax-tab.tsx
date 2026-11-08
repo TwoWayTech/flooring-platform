@@ -19,6 +19,7 @@ import { Choice } from "../form/choice";
 import { ScrollRegion } from "@/components/scroll-region";
 import { SettingRow } from "../form/setting-row";
 import type { SectionProps } from "./simple-tabs";
+import { CompanyDefaultRow, JurisdictionsTable } from "./tax-defaults-section";
 
 type Tax = LocalizationSettings["tax"];
 const CATEGORIES: TaxCategory[] = ["material", "labor", "freight", "service"];
@@ -38,8 +39,9 @@ function newRule(state: StateCode): TaxRule {
 }
 
 /**
- * The Sales tax tab (blueprint "Localization, currency and tax settings"): rules per state with
- * a combined rate and what is taxable. The quote builder uses these rules for the job-site state.
+ * The Sales tax tab (blueprint "Localization, currency and tax settings", spec A5): state default
+ * rules with a combined rate, what is taxable and from when, county rates on top, and a company
+ * default. Documents resolve job site → county → state → company default.
  */
 export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
   const setRule = (i: number, rule: TaxRule) =>
@@ -73,6 +75,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
       <p className="bg-warning/14 text-warning-ink rounded-md px-3 py-2 text-sm">
         {EXAMPLE_RULE_NOTE}. Rates and taxability are examples.
       </p>
+      <CompanyDefaultRow draft={draft} setDraft={setDraft} changed={changed} />
       <ScrollRegion label="Tax rules by state" className="border-hairline rounded-md border">
         <table className="w-full min-w-[46rem] text-sm">
           <thead className="bg-raised text-muted-foreground text-xs">
@@ -85,6 +88,9 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
               </th>
               <th scope="col" className="px-3 text-right font-medium">
                 Rate
+              </th>
+              <th scope="col" className="px-3 text-left font-medium">
+                Valid from
               </th>
               {CATEGORIES.map((c) => (
                 <th key={c} scope="col" className="px-2 text-center font-medium">
@@ -121,6 +127,15 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
                     />
                     <span className="text-muted-foreground text-xs">%</span>
                   </span>
+                </td>
+                <td className="px-3 py-2">
+                  <Input
+                    type="date"
+                    aria-label={`${stateName(rule.state)} valid from`}
+                    value={rule.validFrom}
+                    onChange={(e) => setRule(i, { ...rule, validFrom: e.target.value })}
+                    className="h-8 w-40"
+                  />
                 </td>
                 {CATEGORIES.map((c) => (
                   <td key={c} className="px-2 text-center">
@@ -162,6 +177,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
           ))}
         </SelectContent>
       </Select>
+      <JurisdictionsTable draft={draft} setDraft={setDraft} changed={changed} />
     </>
   );
 }

@@ -70,6 +70,16 @@ export const SETTINGS = {
     helper: "What is taxable where, at which rate. Every rule is an example: confirm with your accountant.",
     href: TAX,
   },
+  "tax.companyDefault": {
+    label: "Company default rate",
+    helper: "Applies in your states of operation that have no state rule; elsewhere tax is not collected.",
+    href: TAX,
+  },
+  "tax.jurisdictions": {
+    label: "County rates",
+    helper: "Replace the state rate for job sites in one county, from a start date.",
+    href: TAX,
+  },
   "payroll.overtimeRule": {
     label: "Overtime rule",
     helper: "Workers in California follow the California rule whatever is chosen here.",

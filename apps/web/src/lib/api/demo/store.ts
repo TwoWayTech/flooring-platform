@@ -336,6 +336,9 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     const isNew = !quote.number;
     await this.assertCan(db, [isNew ? "sales.quote.create" : "sales.quote.edit"]);
+    const before = quote.id ? db.get("quotes", quote.id) : undefined;
+    const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
+    if (taxChanged) await this.assertCan(db, ["sales.tax.override"]);
     const prefix = db.settings.localization.documents.quotePrefix;
     const saved = isNew
       ? {
@@ -356,6 +359,15 @@ export class DemoStore implements ApiClient {
       before: null,
       after: `total ${saved.total}`,
     });
+    if (taxChanged) {
+      this.appendAudit(db, {
+        category: "data",
+        action: "Changed tax on a document",
+        target: saved.number,
+        before: before?.taxOverride ? `${before.taxOverride.ratePct}%` : "default rate",
+        after: saved.taxOverride ? `${saved.taxOverride.ratePct}%: ${saved.taxOverride.reason}` : "default rate",
+      });
+    }
     this.emit();
     return saved;
   }
@@ -369,7 +381,7 @@ export class DemoStore implements ApiClient {
     if (quote.lines.length === 0) throw new DemoRuleError("Add at least one line before converting to an invoice.");
     const customer = db.get("customers", quote.customerId)!;
     const prefix = db.settings.localization.documents.invoicePrefix;
-    const invoice = invoiceFromQuote(quote, customer, db.settings.localization.tax, {
+    const invoice = invoiceFromQuote(quote, customer, db.settings.localization, {
       id: newId(db.companyId, "inv"),
       number: nextNumber(
         prefix,

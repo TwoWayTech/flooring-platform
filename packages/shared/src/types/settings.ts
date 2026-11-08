@@ -2,6 +2,7 @@ import type { NumberSettings } from "../numbers";
 import type { AreaUnit } from "../units";
 import type { OvertimeRule } from "../us-pack/overtime";
 import type { TaxRule } from "../us-pack/tax";
+import type { CompanyDefaultRate, JurisdictionRate } from "../us-pack/tax-defaults";
 import type { Address, Branding } from "./company";
 import type { PaymentTerms } from "./sales";
 
@@ -43,7 +44,12 @@ export interface LocalizationSettings {
   tax: {
     pricesInclude: "exclusive" | "inclusive";
     rounding: "line" | "invoice";
+    /** State default rules: what is taxable in a state and at which rate. */
     rules: TaxRule[];
+    /** County rates that replace a state default (spec A5). */
+    jurisdictions: JurisdictionRate[];
+    /** The company's own rate for states of operation without a state rule, or none. */
+    companyDefault: CompanyDefaultRate | null;
     filing: { state: string; frequency: "monthly" | "quarterly" | "annual" }[];
     certificateTypes: string[];
   };

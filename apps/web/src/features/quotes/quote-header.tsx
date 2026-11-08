@@ -46,18 +46,21 @@ export function QuoteHeader({
   onJobSite,
   onLocation,
 }: QuoteHeaderProps) {
-  const field = (key: keyof Address, label: string, className: string) => (
-    <div className={`flex flex-col gap-1.5 ${className}`}>
-      <Label htmlFor={`site-${key}`}>{label}</Label>
-      <Input
-        id={`site-${key}`}
-        defaultValue={jobSite[key]}
-        key={`${key}-${jobSite[key]}`}
-        disabled={!editable}
-        onBlur={(e) => e.target.value !== jobSite[key] && onJobSite({ ...jobSite, [key]: e.target.value })}
-      />
-    </div>
-  );
+  const field = (key: "street" | "city" | "county" | "zip", label: string, className: string) => {
+    const value = jobSite[key] ?? "";
+    return (
+      <div className={`flex flex-col gap-1.5 ${className}`}>
+        <Label htmlFor={`site-${key}`}>{label}</Label>
+        <Input
+          id={`site-${key}`}
+          defaultValue={value}
+          key={`${key}-${value}`}
+          disabled={!editable}
+          onBlur={(e) => e.target.value !== value && onJobSite({ ...jobSite, [key]: e.target.value })}
+        />
+      </div>
+    );
+  };
   return (
     <div className="grid gap-4 sm:grid-cols-6">
       <div className="flex flex-col gap-1.5 sm:col-span-6 lg:col-span-2">
@@ -81,6 +84,7 @@ export function QuoteHeader({
       </div>
       {field("street", "Job site street", "sm:col-span-3 lg:col-span-2")}
       {field("city", "City", "sm:col-span-3 lg:col-span-1")}
+      {field("county", "County", "sm:col-span-3 lg:col-span-1")}
       <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-1">
         <Label htmlFor="site-state">State</Label>
         <Select value={jobSite.state} onValueChange={(state) => onJobSite({ ...jobSite, state })} disabled={!editable}>

@@ -25,6 +25,8 @@ export interface TaxRule {
   /** States where lump-sum billing makes labor taxable even when it is otherwise exempt. */
   lumpSumLaborTaxable: boolean;
   validFrom: string;
+  /** Last day the rule applies; open-ended when absent (spec A5: effective dates). */
+  validTo?: string | null;
   version: number;
   /** Why the rule reads as it does, shown in settings. */
   rationale: string;
@@ -46,7 +48,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "8.81",
     taxable: { material: true, labor: false, freight: false, service: false },
     lumpSumLaborTaxable: true,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Separately stated installation and delivery are not taxed; materials are.",
   },
@@ -56,7 +58,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "6",
     taxable: { material: true, labor: false, freight: true, service: false },
     lumpSumLaborTaxable: false,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Floor installation is a real-property improvement; materials and delivery are taxed.",
   },
@@ -66,7 +68,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "7.5",
     taxable: { material: true, labor: false, freight: true, service: false },
     lumpSumLaborTaxable: true,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Separately stated installation is not taxed; materials and delivery are.",
   },
@@ -76,7 +78,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "6.625",
     taxable: { material: true, labor: true, freight: true, service: true },
     lumpSumLaborTaxable: true,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Floor-covering installation is a taxable service in New Jersey.",
   },
@@ -86,7 +88,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "6",
     taxable: { material: true, labor: false, freight: false, service: false },
     lumpSumLaborTaxable: false,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Labor to install real property is not taxed in Maryland.",
   },
@@ -96,7 +98,7 @@ export const EXAMPLE_TAX_RULES: readonly TaxRule[] = [
     ratePct: "8.25",
     taxable: { material: true, labor: false, freight: true, service: false },
     lumpSumLaborTaxable: false,
-    validFrom: "2026-01-01",
+    validFrom: "2025-01-01",
     version: 1,
     rationale: "Residential hard-floor installation is a real-property improvement; labor is untaxed.",
   },

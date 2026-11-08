@@ -43,6 +43,8 @@ export interface InvoiceModel {
   lines: ModelLine[];
   subtotal: string;
   taxLabel: string;
+  /** Where the rate came from (spec A5); shown on screen, not printed for the customer. */
+  taxSource: string;
   tax: string;
   total: string;
   paid: string;
@@ -109,6 +111,7 @@ export function buildInvoiceModel(
     })),
     subtotal: fmt(invoice.subtotal, "money"),
     taxLabel: taxLabel(invoice, fmt),
+    taxSource: invoice.taxExempt ? "" : invoice.taxSource.label,
     tax: fmt(invoice.tax, "money"),
     total: fmt(invoice.total, "money"),
     paid: fmt(invoice.paid, "money"),

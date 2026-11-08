@@ -1,5 +1,6 @@
 import { dec, sum } from "../money";
 import type { Location, StockMovement } from "../types";
+import { stateName } from "../us-pack/states";
 import type { RecordStep, StoredOverlay, StoredRecords, UpgradeContext } from "./overlay";
 
 /** Branch ids renamed when warehouses were added (plan K-4). */
@@ -96,7 +97,28 @@ function upgradeLocations(records: StoredOverlay["records"], ctx: UpgradeContext
 }
 
 /**
+ * Quotes gain an empty tax override and invoices the source of their rate (spec A5). An old
+ * invoice either used its state rule or collected nothing.
+ */
+function upgradeTaxFields(records: StoredOverlay["records"]): StoredOverlay["records"] {
+  const next = mapRecords(records, "quotes", (quote) => ({ ...quote, taxOverride: quote.taxOverride ?? null }));
+  return mapRecords(next, "invoices", (invoice) => {
+    const rule = invoice.taxRule as { state: string } | null;
+    const state = rule?.state ?? String((invoice.jobSite as { state?: string } | undefined)?.state ?? "");
+    return {
+      ...invoice,
+      taxOverride: invoice.taxOverride ?? null,
+      taxSource:
+        invoice.taxSource ??
+        (rule
+          ? { kind: "state", label: `Default rate for ${stateName(state)} (example)` }
+          : { kind: "none", label: `Not collected in ${stateName(state)}` }),
+    };
+  });
+}
+
+/**
  * Upgrade steps for saved records, one per model change of feature batch 2, run in order after
  * the role upgrade. Each step reads version 1 shapes and writes version 2 shapes.
  */
-export const V2_RECORD_STEPS: RecordStep[] = [stockFromCounts, upgradeLocations];
+export const V2_RECORD_STEPS: RecordStep[] = [stockFromCounts, upgradeLocations, upgradeTaxFields];

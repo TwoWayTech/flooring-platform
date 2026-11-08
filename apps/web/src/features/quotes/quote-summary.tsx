@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Pencil, Undo2 } from "lucide-react";
 import {
   depositAmount,
   dec,
@@ -9,11 +10,14 @@ import {
   stateName,
   type DocumentTotals,
   type TaxContext,
+  type TaxOverride,
 } from "@workspace/shared";
+import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
 import { useCan } from "@/components/workspace/workspace-context";
+import { TaxOverrideDialog } from "./tax-override-dialog";
 
 function Row({
   label,
@@ -40,12 +44,16 @@ function Row({
   );
 }
 
-/** How tax applies at this job site, in plain words, for the summary. */
+/**
+ * How tax applies at this job site, in plain words: where the rate came from (spec A5), then
+ * whether installation labor is taxed there.
+ */
 function taxNote(ctx: TaxContext, state: string): string {
   if (ctx.exempt) return "Customer holds a valid resale certificate.";
-  if (!ctx.rule) return `No sales tax rule for ${stateName(state)} in your tax settings.`;
+  const source = ctx.source ? `${ctx.source.label}. ` : "";
+  if (!ctx.rule) return `${source}No sales tax rule for ${stateName(state)} in your tax settings.`;
   const labor = ctx.rule.taxable.labor || (ctx.lumpSum && ctx.rule.lumpSumLaborTaxable);
-  return `Installation labor is ${labor ? "taxed" : "not taxed"} in ${stateName(state)}. ${EXAMPLE_RULE_NOTE}.`;
+  return `${source}Installation labor is ${labor ? "taxed" : "not taxed"} in ${stateName(state)}. ${EXAMPLE_RULE_NOTE}.`;
 }
 
 interface QuoteSummaryProps {
@@ -54,6 +62,11 @@ interface QuoteSummaryProps {
   state: string;
   depositPct: string;
   editable: boolean;
+  /** A rate changed on this document, if any (spec A5). */
+  override: TaxOverride | null;
+  /** True for people with sales.tax.override on an editable document. */
+  canOverride: boolean;
+  onOverride: (override: TaxOverride | null) => void;
   onDeposit: (pct: string) => void;
   actions: ReactNode;
 }
@@ -62,8 +75,20 @@ interface QuoteSummaryProps {
  * The quote summary (design brief wireframe): materials, labor, tax for the job-site state,
  * deposit and total, all from the shared calculator. Cost and margin need view_sensitive.
  */
-export function QuoteSummary({ totals, ctx, state, depositPct, editable, onDeposit, actions }: QuoteSummaryProps) {
+export function QuoteSummary({
+  totals,
+  ctx,
+  state,
+  depositPct,
+  editable,
+  override,
+  canOverride,
+  onOverride,
+  onDeposit,
+  actions,
+}: QuoteSummaryProps) {
   const can = useCan();
+  const [changingTax, setChangingTax] = useState(false);
   const deposit = depositAmount(totals.total, depositPct || "0");
   return (
     <div className="flex flex-col gap-4">
@@ -90,7 +115,25 @@ export function QuoteSummary({ totals, ctx, state, depositPct, editable, onDepos
               ) : null}
             </>
           }
-          note={taxNote(ctx, state)}
+          note={
+            <>
+              {taxNote(ctx, state)}
+              {canOverride ? (
+                <span className="mt-1 flex flex-wrap gap-2">
+                  <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setChangingTax(true)}>
+                    <Pencil />
+                    Change tax
+                  </Button>
+                  {override ? (
+                    <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => onOverride(null)}>
+                      <Undo2 />
+                      Use the default rate
+                    </Button>
+                  ) : null}
+                </span>
+              ) : null}
+            </>
+          }
         >
           <Num kind="money" value={totals.tax} />
         </Row>
@@ -140,6 +183,14 @@ export function QuoteSummary({ totals, ctx, state, depositPct, editable, onDepos
         ) : null}
       </dl>
       <div className="flex flex-col gap-2">{actions}</div>
+      {changingTax ? (
+        <TaxOverrideDialog
+          open
+          currentRatePct={ctx.rule?.ratePct ?? "0"}
+          onOpenChange={setChangingTax}
+          onConfirm={onOverride}
+        />
+      ) : null}
     </div>
   );
 }
