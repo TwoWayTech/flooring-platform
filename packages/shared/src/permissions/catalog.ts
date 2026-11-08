@@ -17,6 +17,12 @@ export type PermissionAction =
   | "sign_off"
   | "request"
   | "measure"
+  | "record"
+  | "refund"
+  | "write_off"
+  | "apply_credit"
+  | "override"
+  | "adjust"
   | "view_sensitive";
 
 /**
@@ -43,14 +49,26 @@ const ROWS: Row[] = [
   ["dashboard.overview", "core", "Dashboard", ["view"]],
   ["sales.quote", "core", "Quotes", ["view", "create", "edit", "delete", "approve"]],
   ["sales.invoice", "core", "Invoices", ["view", "create", "edit", "void", "export"]],
-  ["sales.payment", "core", "Payments", ["view", "create"]],
+  [
+    "sales.payment",
+    "core",
+    "Customer payments",
+    ["view", "record", "approve", "void", "refund", "write_off", "apply_credit"],
+  ],
+  ["sales.tax", "core", "Document sales tax", ["override"]],
+  ["sales.waste", "core", "Waste allowance", ["view"]],
+  ["sales.commission", "core", "Commissions", ["view", "manage"]],
   ["sales.margin", "core", "Margins", ["view_sensitive"]],
   ["customers.customer", "core", "Customers", ["view", "create", "edit", "delete", "export", "view_sensitive"]],
   ["inventory.product", "core", "Products", ["view", "create", "edit", "delete", "export", "view_sensitive"]],
   ["inventory.roll", "core", "Rolls", ["view", "cut", "edit"]],
+  ["inventory.stock", "core", "Stock adjustments", ["adjust", "approve"]],
+  ["inventory.transfer", "core", "Warehouse transfers", ["view", "create", "receive"]],
+  ["inventory.reservation", "core", "Stock reservations", ["override"]],
   ["purchasing.supplier", "core", "Suppliers", ["view", "create", "edit"]],
   ["purchasing.order", "core", "Purchase orders", ["view", "create", "approve", "receive"]],
-  ["purchasing.bill", "core", "Bills", ["view", "create", "pay"]],
+  ["purchasing.bill", "core", "Supplier bills", ["view", "create"]],
+  ["purchasing.payment", "core", "Supplier payments", ["record", "approve", "void"]],
   ["reports.sales", "core", "Sales reports", ["view", "export"]],
   ["reports.financial", "core", "Financial reports", ["view", "export"]],
   ["reports.inventory", "core", "Inventory reports", ["view", "export"]],
@@ -66,7 +84,6 @@ const ROWS: Row[] = [
   ["hr.employee", "hr", "Employees", ["view", "create", "edit", "view_sensitive"]],
   ["hr.timesheet", "hr", "Timesheets", ["view", "edit", "approve"]],
   ["hr.pto", "hr", "Time off", ["view", "request", "approve"]],
-  ["hr.commission", "hr", "Commissions", ["view"]],
   ["hr.payroll", "hr", "Payroll export", ["export"]],
   ["meetings.meeting", "meetings", "Meetings", ["view", "create", "edit", "delete"]],
   ["settings.users", "platform", "Users", ["view", "manage"]],
@@ -76,6 +93,9 @@ const ROWS: Row[] = [
   ["settings.tax", "platform", "Sales tax", ["manage"]],
   ["settings.numbers", "platform", "Number format", ["manage"]],
   ["settings.company", "platform", "Company profile", ["manage"]],
+  ["settings.payments", "platform", "Payment settings", ["manage"]],
+  ["settings.locations", "platform", "Warehouses and showrooms", ["manage"]],
+  ["settings.import", "platform", "Data import", ["manage"]],
   ["settings.audit", "platform", "Audit log", ["view"]],
 ];
 
@@ -95,6 +115,12 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
   sign_off: "Sign off",
   request: "Request",
   measure: "Measure",
+  record: "Record",
+  refund: "Refund",
+  write_off: "Write off",
+  apply_credit: "Apply credit",
+  override: "Override",
+  adjust: "Adjust",
   view_sensitive: "View sensitive",
 };
 
@@ -111,6 +137,16 @@ export const PERMISSIONS: readonly PermissionDef[] = ROWS.flatMap(([base, module
 
 /** Every permission key in catalog order. */
 export const ALL_PERMISSION_KEYS: readonly PermissionKey[] = PERMISSIONS.map((p) => p.key);
+
+/**
+ * Keys retired in feature batch 2 and the key that replaced each one (docs/specs/feature-batch-02-plan.md,
+ * K-2 and K-3). Saved roles and ceilings from an older demo are upgraded with this map.
+ */
+export const RENAMED_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
+  "sales.payment.create": "sales.payment.record",
+  "purchasing.bill.pay": "purchasing.payment.record",
+  "hr.commission.view": "sales.commission.view",
+};
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));
 

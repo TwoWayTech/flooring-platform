@@ -129,7 +129,7 @@ export function PurchasingPage() {
     },
     { id: "total", header: "Total", kind: "money", value: (b) => b.total },
     { id: "balance", header: "Balance", kind: "money", value: (b) => balance(b).toString() },
-    ...(can("purchasing.bill.pay")
+    ...(can("purchasing.payment.record")
       ? [
           {
             id: "pay",

@@ -85,6 +85,11 @@ export interface ApiClient {
   today(): string;
   /** Restores every company to the generated fixtures. */
   resetDemo(): Promise<void>;
+  /**
+   * Messages the data layer has for the person once, such as saved demo changes from an older
+   * version that had to be reset (docs/specs/feature-batch-02-plan.md, 2.3). Reading clears them.
+   */
+  takeNotices(): string[];
 
   /** All companies on the platform (super-admin). */
   listCompanies(): Promise<Company[]>;

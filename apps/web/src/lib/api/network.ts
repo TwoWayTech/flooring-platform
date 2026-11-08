@@ -13,7 +13,7 @@ export const OFFLINE_MESSAGE = "The server did not answer. Check the connection,
  * ApiClient methods the simulation leaves alone: the ones that answer at once, and opening the
  * company, which is the session itself rather than a screen's read.
  */
-const LOCAL_METHODS = new Set<PropertyKey>(["setViewer", "subscribe", "today", "openCompany"]);
+const LOCAL_METHODS = new Set<PropertyKey>(["setViewer", "subscribe", "today", "openCompany", "takeNotices"]);
 
 let mode: NetworkMode = "normal";
 const listeners = new Set<() => void>();

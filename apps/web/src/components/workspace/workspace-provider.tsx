@@ -1,6 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BrandStyle } from "@workspace/ui/components/brand-style";
 import { NumberSettingsProvider } from "@workspace/ui/components/number-settings";
@@ -51,6 +52,7 @@ export function WorkspaceProvider({
   useEffect(() => {
     const stored = featureOn("shell.view-as") ? readViewAs(session.companyId) : null;
     void api.openCompany(session.companyId, { userId: session.userId, viewAsRoleId: stored }).then(() => {
+      for (const notice of api.takeNotices()) toast.info(notice);
       setViewAsState(stored);
       setOpened(true);
     });

@@ -12,11 +12,13 @@ import {
   dateShift,
   escalations,
   shiftDates,
+  upgradeCompany,
   validateCut,
   type AuditEntry,
   type Company,
   type CompanyId,
   type CompanySettings,
+  type PermissionKey,
   type PlatformFixtures,
   type PoLine,
   type Quote,
@@ -38,7 +40,8 @@ import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, pe
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
-import { clearStored, readStored, writeStored } from "./storage";
+import { savePermissions, settingsPermissions } from "./permission-rules";
+import { clearStored, readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
 const PLATFORM_KEY = "platform";
 const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
@@ -63,11 +66,21 @@ export class DemoStore implements ApiClient {
   private current: CompanyDb | null = null;
   private viewer: Viewer | null = null;
   private readonly todayIso = format(new Date(), "yyyy-MM-dd");
+  private notices: string[] = [];
 
   async openCompany(companyId: CompanyId, viewer: Viewer) {
     this.current = await this.db(companyId);
     this.viewer = viewer;
+    if (this.current.upgradeNotice && !this.notices.includes(this.current.upgradeNotice)) {
+      this.notices.push(this.current.upgradeNotice);
+    }
     this.emit();
+  }
+
+  takeNotices() {
+    const pending = this.notices;
+    this.notices = [];
+    return pending;
   }
 
   setViewer(viewer: Viewer) {
@@ -94,15 +107,14 @@ export class DemoStore implements ApiClient {
 
   async listCompanies() {
     const platform = await this.platformData();
-    const changed = readStored<Record<string, Company>>(PLATFORM_KEY) ?? {};
+    const changed = this.changedCompanies();
     return platform.companies.map((c) => changed[c.id] ?? c);
   }
 
   async updateCompanyAccess(companyId: CompanyId, patch: CompanyAccessPatch) {
     const before = (await this.listCompanies()).find((c) => c.id === companyId)!;
     const after: Company = { ...before, ...patch };
-    const changed = readStored<Record<string, Company>>(PLATFORM_KEY) ?? {};
-    writeStored(PLATFORM_KEY, { ...changed, [companyId]: after });
+    writeStored(PLATFORM_KEY, { ...this.changedCompanies(), [companyId]: after });
     const db = await this.db(companyId);
     const { before: was, after: now } = diffSummary(before, after);
     this.appendAudit(
@@ -133,6 +145,7 @@ export class DemoStore implements ApiClient {
 
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
+    await this.assertCan(db, settingsPermissions(section));
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);
@@ -162,6 +175,7 @@ export class DemoStore implements ApiClient {
 
   async save<K extends CollectionName>(collection: K, item: ItemOf<K>, audit?: AuditInput) {
     const db = this.open();
+    await this.assertCan(db, savePermissions(collection));
     db.put(collection, item);
     if (audit) this.appendAudit(db, audit);
     this.emit();
@@ -170,6 +184,7 @@ export class DemoStore implements ApiClient {
 
   async inviteUser(input: InviteUserInput) {
     const db = this.open();
+    await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
     assertSeatAvailable(db.list("users"), company.userLimit);
     const user: User = {
@@ -195,6 +210,7 @@ export class DemoStore implements ApiClient {
 
   async updateUser(userId: string, patch: UserPatch) {
     const db = this.open();
+    await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
     assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
     if (patch.roleIds)
@@ -218,6 +234,7 @@ export class DemoStore implements ApiClient {
 
   async saveRole(role: Role) {
     const db = this.open();
+    await this.assertCan(db, ["settings.roles.manage"]);
     const before = db.get("roles", role.id);
     if (before?.owner) throw new DemoRuleError("The Owner role is locked. It always holds everything in your plan.");
     await this.assertCanGrant(db, role.permissions, before?.permissions ?? []);
@@ -235,6 +252,7 @@ export class DemoStore implements ApiClient {
 
   async deleteRole(roleId: string) {
     const db = this.open();
+    await this.assertCan(db, ["settings.roles.manage"]);
     const role = db.get("roles", roleId)!;
     if (role.system) throw new DemoRuleError("Default roles can be copied but not deleted.");
     if (db.list("users").some((u) => u.roleIds.includes(roleId))) {
@@ -253,6 +271,7 @@ export class DemoStore implements ApiClient {
 
   async cutRoll(rollId: string, lengthFt: string, reference: string) {
     const db = this.open();
+    await this.assertCan(db, ["inventory.roll.cut"]);
     const roll = db.get("rolls", rollId);
     if (!roll) throw new DemoRuleError("This roll no longer exists.");
     const problem = validateCut(roll, lengthFt);
@@ -281,6 +300,7 @@ export class DemoStore implements ApiClient {
   async saveQuote(quote: Quote) {
     const db = this.open();
     const isNew = !quote.number;
+    await this.assertCan(db, [isNew ? "sales.quote.create" : "sales.quote.edit"]);
     const prefix = db.settings.localization.documents.quotePrefix;
     const saved = isNew
       ? {
@@ -307,6 +327,7 @@ export class DemoStore implements ApiClient {
 
   async convertQuoteToInvoice(quoteId: string) {
     const db = this.open();
+    await this.assertCan(db, ["sales.invoice.create"]);
     const quote = db.get("quotes", quoteId);
     if (!quote) throw new DemoRuleError("This quote no longer exists.");
     if (quote.invoiceId) throw new DemoRuleError(`This quote is already invoiced.`);
@@ -337,6 +358,7 @@ export class DemoStore implements ApiClient {
 
   async createPurchaseOrder(input: { supplierId: string; expectedAt: string; lines: PoLine[] }) {
     const db = this.open();
+    await this.assertCan(db, ["purchasing.order.create"]);
     if (input.lines.length === 0) throw new DemoRuleError("Add at least one line to the purchase order.");
     const prefix = db.settings.localization.documents.poPrefix;
     const po = {
@@ -368,6 +390,7 @@ export class DemoStore implements ApiClient {
 
   async receivePurchaseOrder(poId: string) {
     const db = this.open();
+    await this.assertCan(db, ["purchasing.order.receive"]);
     const po = db.get("purchaseOrders", poId)!;
     const result = receivePurchaseOrder(po, db.list("products"), {
       at: nowStamp(),
@@ -390,6 +413,7 @@ export class DemoStore implements ApiClient {
 
   async billPurchaseOrder(poId: string, billNumber: string) {
     const db = this.open();
+    await this.assertCan(db, ["purchasing.bill.create"]);
     const po = db.get("purchaseOrders", poId)!;
     const supplier = db.get("suppliers", po.supplierId)!;
     const bill = billFromPurchaseOrder(po, supplier, {
@@ -412,6 +436,7 @@ export class DemoStore implements ApiClient {
 
   async payBill(billId: string) {
     const db = this.open();
+    await this.assertCan(db, ["purchasing.payment.record"]);
     const bill = db.get("bills", billId)!;
     const open = balance(bill);
     if (open.lte(0)) throw new DemoRuleError(`Bill ${bill.number} is already paid.`);
@@ -449,6 +474,18 @@ export class DemoStore implements ApiClient {
     return this.platform;
   }
 
+  /** Companies the super-admin changed, upgrading what an older demo saved. */
+  private changedCompanies(): Record<string, Company> {
+    const current = readStored<Record<string, Company>>(PLATFORM_KEY);
+    if (current) return current;
+    const legacy = readLegacy<Record<string, Company>>(PLATFORM_KEY);
+    if (!legacy) return {};
+    const upgraded = Object.fromEntries(Object.entries(legacy).map(([id, c]) => [id, upgradeCompany(c)]));
+    writeStored(PLATFORM_KEY, upgraded);
+    removeLegacy(PLATFORM_KEY);
+    return upgraded;
+  }
+
   private async db(companyId: CompanyId): Promise<CompanyDb> {
     let db = this.dbs.get(companyId);
     if (!db) {
@@ -472,6 +509,17 @@ export class DemoStore implements ApiClient {
     const self = db.get("users", this.viewer!.userId)!;
     const company = await this.getCompany();
     return { access: viewerAccess(company, db.list("roles"), self, this.viewer!.viewAsRoleId), company };
+  }
+
+  /**
+   * The save logic's own permission check (CLAUDE.md rule 2, spec section 0.4): the screen hides
+   * what a role cannot do, and the store refuses it anyway. Passes when any listed key is held.
+   */
+  private async assertCan(db: CompanyDb, anyOf: readonly PermissionKey[]) {
+    if (anyOf.length === 0) return;
+    const { access } = await this.granter(db);
+    if (anyOf.some((key) => access.permissions.has(key))) return;
+    throw new DemoRuleError("Your role does not allow this. Ask an Owner to change your security role.");
   }
 
   /** No privilege escalation (blueprint rule 2): every newly granted permission must be held by the granter. */

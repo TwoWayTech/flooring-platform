@@ -1,15 +1,34 @@
-import { dateShift, shiftDates, type CompanyFixtures, type CompanySettings, type DateShift } from "@workspace/shared";
+import {
+  dateShift,
+  OVERLAY_SCHEMA_VERSION,
+  shiftDates,
+  upgradeOverlay,
+  type CompanyFixtures,
+  type CompanySettings,
+  type DateShift,
+  type StoredOverlay,
+} from "@workspace/shared";
 import type { CollectionName, Collections, ItemOf } from "../contract";
-import { readStored, writeStored } from "./storage";
+import { readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
 /** Changes the presenter made to one company, kept in localStorage (spec section 1). */
 interface CompanyOverlay {
+  schemaVersion: number;
   shift: DateShift;
   settings: CompanySettings | null;
   records: Partial<Record<CollectionName, Record<string, unknown>>>;
 }
 
-const emptyOverlay = (shift: DateShift): CompanyOverlay => ({ shift, settings: null, records: {} });
+/** Shown once when saved changes from an older demo could not be upgraded (plan section 2.3). */
+export const UPGRADE_RESET_NOTICE =
+  "Your saved demo changes came from an older version of the demo, so this company was reset to fresh data.";
+
+const emptyOverlay = (shift: DateShift): CompanyOverlay => ({
+  schemaVersion: OVERLAY_SCHEMA_VERSION,
+  shift,
+  settings: null,
+  records: {},
+});
 
 /**
  * One company's data: generated fixtures moved to today, plus the presenter's overlay. Lists
@@ -19,19 +38,39 @@ export class CompanyDb {
   private readonly base: CompanyFixtures;
   private readonly overlay: CompanyOverlay;
   private readonly cache = new Map<CollectionName, unknown[]>();
+  /** Set when saved data from an older demo had to be dropped; the store passes it on once. */
+  readonly upgradeNotice: string | null;
 
   constructor(fixtures: CompanyFixtures, today: string) {
     const shift = dateShift(fixtures.anchorDate, today);
     this.base = shiftDates(fixtures, shift);
-    this.overlay = CompanyDb.loadOverlay(fixtures.companyId, shift);
+    const { overlay, notice } = this.loadOverlay(shift);
+    this.overlay = overlay;
+    this.upgradeNotice = notice;
   }
 
-  /** Reads the stored overlay, moving its dates when the demo is opened on a later day. */
-  private static loadOverlay(companyId: string, shift: DateShift): CompanyOverlay {
-    const stored = readStored<CompanyOverlay>(companyId);
-    if (!stored) return emptyOverlay(shift);
+  /** Reads the stored overlay (upgrading version 1 data), moving its dates to today. */
+  private loadOverlay(shift: DateShift): { overlay: CompanyOverlay; notice: string | null } {
+    const id = this.base.companyId;
+    const current = readStored<CompanyOverlay>(id);
+    if (current) return { overlay: CompanyDb.moved(current, shift), notice: null };
+    const legacy = readLegacy<StoredOverlay>(id);
+    if (!legacy) return { overlay: emptyOverlay(shift), notice: null };
+    removeLegacy(id);
+    try {
+      const upgraded = upgradeOverlay(legacy, { base: this.base }) as unknown as CompanyOverlay;
+      writeStored(id, upgraded);
+      return { overlay: CompanyDb.moved(upgraded, shift), notice: null };
+    } catch {
+      return { overlay: emptyOverlay(shift), notice: UPGRADE_RESET_NOTICE };
+    }
+  }
+
+  /** The overlay with its dates moved from the day it was saved to today. */
+  private static moved(stored: CompanyOverlay, shift: DateShift): CompanyOverlay {
     const delta = { days: shift.days - stored.shift.days, weeks: shift.weeks - stored.shift.weeks };
-    return { ...shiftDates({ settings: stored.settings, records: stored.records }, delta), shift };
+    const { settings, records } = shiftDates({ settings: stored.settings, records: stored.records }, delta);
+    return { schemaVersion: OVERLAY_SCHEMA_VERSION, shift, settings, records };
   }
 
   get companyId() {

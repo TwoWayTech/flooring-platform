@@ -20,3 +20,4 @@ export * from "./operations/quotes";
 export * from "./operations/purchasing";
 export * from "./operations/meetings";
 export * from "./features";
+export * from "./migrations";
