@@ -111,12 +111,18 @@ function attributesFor(ctx: GenContext, category: GoodsCategory, widthFt?: numbe
 }
 
 /** A product of a goods category with price, cost and stock. Cost runs 52 to 68 % of price. */
+/**
+ * A product as the catalog builder makes it: boxed goods also carry the cartons counted on hand,
+ * which the stock builder turns into opening ledger lines (fixtures/stock.ts).
+ */
+export type GeneratedProduct = Product & { cartonsOnHand?: number };
+
 function goodsProduct(
   ctx: GenContext,
   category: GoodsCategory,
   suppliers: readonly Supplier[],
   index: number,
-): Product {
+): GeneratedProduct {
   const { rng } = ctx;
   const pricing = PRICING[category];
   const brand = rng.pick(BRANDS[category]);
@@ -152,7 +158,7 @@ function goodsProduct(
 }
 
 /** The 120-product catalog: goods by category, then services. */
-export function buildProducts(ctx: GenContext, suppliers: readonly Supplier[]): Product[] {
+export function buildProducts(ctx: GenContext, suppliers: readonly Supplier[]): GeneratedProduct[] {
   const goods = (Object.entries(CATEGORY_COUNTS) as [GoodsCategory, number][]).flatMap(([category, count]) =>
     Array.from({ length: count }, (_, i) => goodsProduct(ctx, category, suppliers, i)),
   );

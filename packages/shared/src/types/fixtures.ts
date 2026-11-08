@@ -4,6 +4,7 @@ import type { Commission, Employee, PtoRequest, Timesheet } from "./hr";
 import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
 import type { Bill, BillPayment, Expense, PurchaseOrder, Supplier } from "./purchasing";
+import type { Location, StockMovement, Transfer } from "./locations";
 import type { Customer, Invoice, Payment, Quote } from "./sales";
 import type { AuditEntry, CompanySettings } from "./settings";
 
@@ -15,8 +16,11 @@ export interface CompanyFixtures {
   settings: CompanySettings;
   roles: Role[];
   users: User[];
+  locations: Location[];
   products: Product[];
   rolls: Roll[];
+  stockMovements: StockMovement[];
+  transfers: Transfer[];
   customers: Customer[];
   quotes: Quote[];
   invoices: Invoice[];

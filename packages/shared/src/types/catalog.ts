@@ -27,9 +27,8 @@ export interface Product {
   unit: SellUnit;
   price: string;
   cost: string;
-  /** Boxed goods: sq ft per carton, cartons on hand, reorder point. */
+  /** Boxed goods: sq ft per carton and reorder point. Stock on hand comes from the stock ledger. */
   sqFtPerCarton?: string;
-  cartonsOnHand?: number;
   reorderPoint?: number;
   /** Broadloom: roll width in ft. */
   widthFt?: number;
@@ -57,8 +56,11 @@ export interface Roll {
   originalLengthFt: string;
   remainingLengthFt: string;
   costPerSqFt: string;
-  warehouse: string;
+  /** The warehouse holding the roll; it stays the sender's while the roll is in transit. */
+  locationId: string;
   bin: string;
+  /** Set while the roll travels on a transfer; it cannot be cut or reserved until received. */
+  transferId: string | null;
   isRemnant: boolean;
   parentRollId: string | null;
   receivedAt: string;

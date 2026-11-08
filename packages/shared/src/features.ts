@@ -53,6 +53,22 @@ export const FEATURES = {
     enabled: true,
     screens: ["/inventory?view=rolls", "/inventory/rolls/*"],
   },
+  "inventory.transfers": {
+    title: "Warehouse transfers",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/inventory?view=transfers"],
+  },
+  "inventory.locations": {
+    title: "Warehouses and showrooms",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/locations"],
+  },
   "sales.quotes": {
     title: "Quotes and quote builder",
     product: "flooring",

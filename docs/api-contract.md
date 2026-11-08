@@ -23,6 +23,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `subscribe(listener)` | WebSocket or polling | Called after every change, so screens refresh. |
 | `today()` | server date | Today's date as the data sees it. |
 | `resetDemo()` | none | Demo only: restores the fixtures. |
+| `takeNotices()` | none | Messages for the person once, such as saved demo changes from an older version that had to be reset. Reading clears them. |
 
 ## Platform (super-admin)
 
@@ -43,13 +44,13 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 ## Records
 
-`list`, `get` and `save` work on these collections: `roles`, `users`, `products`, `rolls`, `customers`, `quotes`, `invoices`, `payments`, `suppliers`, `purchaseOrders`, `bills`, `billPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
+`list`, `get` and `save` work on these collections: `roles`, `users`, `locations`, `products`, `rolls`, `stockMovements`, `transfers`, `customers`, `quotes`, `invoices`, `payments`, `suppliers`, `purchaseOrders`, `bills`, `billPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
 | `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments and customers of the user as sales rep; jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. |
 | `get(collection, id)` | `GET /:collection/:id` | Undefined when missing or outside scope. |
-| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Domain actions (cut roll, convert quote) are built on this and documented with their screens. |
+| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `stockMovements`, `transfers`, `expenses`, `commissions` and `audit` are written only by domain actions. |
 
 ## Users and roles
 
@@ -72,8 +73,12 @@ Added with their screens below.
 | `cutRoll(rollId, lengthFt, reference)` | `POST /rolls/:id/cuts` | Refuses lengths of 0 or more than is left. Records the cut with the user and time. A full roll's leftover under 12 ft becomes a remnant (new roll record, parent linked) and the roll is used up. Audited. |
 | `saveQuote(quote)` | `PUT /quotes/:id` | A new quote gets the next number with the company's quote prefix. Audited. |
 | `convertQuoteToInvoice(quoteId)` | `POST /quotes/:id/invoice` | Refuses quotes already invoiced or without lines. Recomputes totals under the job-site state's tax rule, stores the rule version, numbers the invoice with the invoice prefix, dates it today with the customer's terms, and marks the quote invoiced. Audited. |
-| `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. Audited. |
-| `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons go into stock; broadloom arrives as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
+| `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. `locationId` is the receive-into warehouse. Audited. |
+| `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons become receipt lines in the stock ledger at the receive-into warehouse; broadloom arrives there as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
+| `createTransfer(input)` | `POST /transfers` | Needs `inventory.transfer.create`. Both ends must be different warehouses; boxed quantities whole and no more than the sender holds; rolls at the sender and not travelling. Boxed stock leaves the sender at once; rolls are marked in transit. Numbered TR-1001 up. Audited. |
+| `receiveTransfer(id)` | `POST /transfers/:id/receive` | Needs `inventory.transfer.receive`. Boxed stock arrives at the receiver; rolls move there to bin Receiving. Audited. |
+| `saveLocation(location)` | `PUT /locations/:id` | Needs `settings.locations.manage`. Keeps exactly one default, which must be a warehouse; a location holding stock cannot become a showroom. Audited. |
+| `updateMyProfile(patch)` | `PATCH /me` | The signed-in person's own default warehouse (a warehouse, or null for the company default). Audited. |
 | `billPurchaseOrder(poId, billNumber)` | `POST /purchase-orders/:id/bill` | Only received orders; the bill takes the PO total and the supplier's terms. Audited. |
 | `payBill(billId)` | `POST /bills/:id/payments` | Pays the open balance in full and records the bill payment. Audited. |
 

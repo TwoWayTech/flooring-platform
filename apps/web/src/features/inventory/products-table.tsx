@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { TriangleAlert } from "lucide-react";
-import { SENSITIVE, UNIT_SINGULAR, type Product, type ProductCategory, type Roll } from "@workspace/shared";
+import {
+  SENSITIVE,
+  UNIT_SINGULAR,
+  type Location,
+  type Product,
+  type ProductCategory,
+  type Roll,
+  type StockMovement,
+} from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { StatusPill } from "@workspace/ui/components/status-pill";
@@ -16,8 +24,17 @@ import { stockLevel } from "./stock";
 
 const ALL = "all";
 
+interface ProductsTableProps {
+  products: Product[];
+  rolls: Roll[];
+  movements: StockMovement[];
+  locations: Location[];
+  /** Stock is shown at this warehouse, or across all when null (spec A1 warehouse filter). */
+  warehouseId: string | null;
+}
+
 /** The product list with category filter; a row opens the product drawer. Cost needs view_sensitive. */
-export function ProductsTable({ products, rolls }: { products: Product[]; rolls: Roll[] }) {
+export function ProductsTable({ products, rolls, movements, locations, warehouseId }: ProductsTableProps) {
   const can = useCan();
   const [category, setCategory] = useState<ProductCategory | typeof ALL>(ALL);
   const [open, setOpen] = useState<Product | null>(null);
@@ -57,10 +74,10 @@ export function ProductsTable({ products, rolls }: { products: Product[]; rolls:
       id: "stock",
       header: "Stock",
       kind: "quantity",
-      value: (p) => (p.category === "service" ? null : Number(stockLevel(p, rolls).value)),
+      value: (p) => (p.category === "service" ? null : Number(stockLevel(p, rolls, movements, warehouseId).value)),
       cell: (p) => {
         if (p.category === "service") return <span className="text-muted-foreground">Service</span>;
-        const s = stockLevel(p, rolls);
+        const s = stockLevel(p, rolls, movements, warehouseId);
         return (
           <span className="inline-flex items-center gap-2">
             {s.low ? <StatusPill tone="warning" icon={TriangleAlert} label="Low" /> : null}
@@ -101,7 +118,13 @@ export function ProductsTable({ products, rolls }: { products: Product[]; rolls:
           </Select>
         }
       />
-      <ProductDrawer product={open} rolls={rolls} onClose={() => setOpen(null)} />
+      <ProductDrawer
+        product={open}
+        rolls={rolls}
+        movements={movements}
+        locations={locations}
+        onClose={() => setOpen(null)}
+      />
     </>
   );
 }

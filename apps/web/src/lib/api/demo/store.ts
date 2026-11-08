@@ -10,6 +10,12 @@ import {
   invoiceFromQuote,
   nextNumber,
   dateShift,
+  boxedStock,
+  dec,
+  locationName,
+  receiveTransfer,
+  startTransfer,
+  validateTransfer,
   escalations,
   shiftDates,
   upgradeCompany,
@@ -23,6 +29,9 @@ import {
   type PoLine,
   type Quote,
   type Role,
+  type Location,
+  type Transfer,
+  type TransferInput,
   type User,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
@@ -33,6 +42,7 @@ import type {
   CompanyAccessPatch,
   InviteUserInput,
   ItemOf,
+  ProfilePatch,
   UserPatch,
   Viewer,
 } from "../contract";
@@ -107,7 +117,7 @@ export class DemoStore implements ApiClient {
 
   async listCompanies() {
     const platform = await this.platformData();
-    const changed = this.changedCompanies();
+    const changed = this.changedCompanies(platform.companies);
     return platform.companies.map((c) => changed[c.id] ?? c);
   }
 
@@ -195,6 +205,7 @@ export class DemoStore implements ApiClient {
       mfaEnrolled: false,
       lastLoginAt: null,
       employeeId: null,
+      defaultLocationId: null,
     };
     db.put("users", user);
     this.appendAudit(db, {
@@ -356,7 +367,7 @@ export class DemoStore implements ApiClient {
     return invoice;
   }
 
-  async createPurchaseOrder(input: { supplierId: string; expectedAt: string; lines: PoLine[] }) {
+  async createPurchaseOrder(input: { supplierId: string; expectedAt: string; locationId: string; lines: PoLine[] }) {
     const db = this.open();
     await this.assertCan(db, ["purchasing.order.create"]);
     if (input.lines.length === 0) throw new DemoRuleError("Add at least one line to the purchase order.");
@@ -371,6 +382,7 @@ export class DemoStore implements ApiClient {
       supplierId: input.supplierId,
       status: "sent" as const,
       createdAt: this.todayIso,
+      locationId: input.locationId,
       expectedAt: input.expectedAt,
       receivedAt: null,
       lines: input.lines,
@@ -394,18 +406,20 @@ export class DemoStore implements ApiClient {
     const po = db.get("purchaseOrders", poId)!;
     const result = receivePurchaseOrder(po, db.list("products"), {
       at: nowStamp(),
+      byUserId: this.viewer!.userId,
+      movementId: () => newId(db.companyId, "mov"),
       newRollId: () => newId(db.companyId, "roll"),
       rollNumber: (p) => `${p.sku.slice(0, 2)}-${String(Math.floor(Math.random() * 9000) + 1000)}`,
     });
     db.put("purchaseOrders", result.po);
-    for (const p of result.products) db.put("products", p);
+    for (const m of result.movements) db.put("stockMovements", m);
     for (const r of result.rolls) db.put("rolls", r);
     this.appendAudit(db, {
       category: "data",
       action: "Received purchase order",
       target: po.number,
       before: po.status,
-      after: `received, ${result.rolls.length} rolls`,
+      after: `received into ${locationName(db.list("locations"), po.locationId)}, ${result.rolls.length} rolls`,
     });
     this.emit();
     return result.po;
@@ -461,6 +475,119 @@ export class DemoStore implements ApiClient {
     return paid;
   }
 
+  async createTransfer(input: TransferInput) {
+    const db = this.open();
+    await this.assertCan(db, ["inventory.transfer.create"]);
+    const locations = db.list("locations");
+    const problem = validateTransfer(input, locations, db.list("rolls"), db.list("stockMovements"));
+    if (problem) throw new DemoRuleError(problem);
+    const transfer: Transfer = {
+      id: newId(db.companyId, "trf"),
+      number: nextNumber(
+        "TR-",
+        db.list("transfers").map((t) => t.number),
+        1001,
+      ),
+      fromId: input.fromId,
+      toId: input.toId,
+      status: "in_transit",
+      lines: input.lines.map((l) => ({ ...l, id: newId(db.companyId, "trl") })),
+      createdAt: nowStamp(),
+      createdBy: this.viewer!.userId,
+      receivedAt: null,
+      receivedBy: null,
+      note: input.note.trim(),
+    };
+    const ids = { movementId: () => newId(db.companyId, "mov"), at: transfer.createdAt, byUserId: transfer.createdBy };
+    const sent = startTransfer(transfer, db.list("rolls"), ids);
+    db.put("transfers", transfer);
+    for (const m of sent.movements) db.put("stockMovements", m);
+    for (const r of sent.rolls) db.put("rolls", r);
+    this.appendAudit(db, {
+      category: "data",
+      action: "Started transfer",
+      target: transfer.number,
+      before: locationName(locations, transfer.fromId),
+      after: `in transit to ${locationName(locations, transfer.toId)}, ${transfer.lines.length} items`,
+    });
+    this.emit();
+    return transfer;
+  }
+
+  async receiveTransfer(transferId: string) {
+    const db = this.open();
+    await this.assertCan(db, ["inventory.transfer.receive"]);
+    const transfer = db.get("transfers", transferId);
+    if (!transfer) throw new DemoRuleError("This transfer no longer exists.");
+    if (transfer.status !== "in_transit") throw new DemoRuleError(`${transfer.number} was already received.`);
+    const ids = { movementId: () => newId(db.companyId, "mov"), at: nowStamp(), byUserId: this.viewer!.userId };
+    const result = receiveTransfer(transfer, db.list("rolls"), ids);
+    db.put("transfers", result.transfer);
+    for (const m of result.movements) db.put("stockMovements", m);
+    for (const r of result.rolls) db.put("rolls", r);
+    this.appendAudit(db, {
+      category: "data",
+      action: "Received transfer",
+      target: transfer.number,
+      before: "in transit",
+      after: `received at ${locationName(db.list("locations"), transfer.toId)}`,
+    });
+    this.emit();
+    return result.transfer;
+  }
+
+  async saveLocation(location: Location) {
+    const db = this.open();
+    await this.assertCan(db, ["settings.locations.manage"]);
+    const before = db.get("locations", location.id);
+    const holdsStock =
+      db.list("rolls").some((r) => r.locationId === location.id && dec(r.remainingLengthFt).gt(0)) ||
+      [...boxedStock(db.list("stockMovements"), location.id).values()].some((q) => !q.isZero());
+    if (location.kind === "showroom" && holdsStock) {
+      throw new DemoRuleError(`${location.name} holds stock. Transfer it out before making it a showroom.`);
+    }
+    const others = db.list("locations").filter((l) => l.id !== location.id);
+    if (location.kind === "showroom" && location.isDefault) {
+      throw new DemoRuleError("The default must be a warehouse; showrooms hold no sellable stock.");
+    }
+    if (!location.isDefault && !others.some((l) => l.isDefault)) {
+      throw new DemoRuleError("Keep one warehouse as the company default.");
+    }
+    const saved = { ...location, name: location.name.trim() };
+    if (saved.isDefault)
+      for (const l of others.filter((o) => o.isDefault)) db.put("locations", { ...l, isDefault: false });
+    db.put("locations", saved);
+    this.appendAudit(db, {
+      category: "settings",
+      action: before ? "Changed location" : "Added location",
+      target: saved.name,
+      before: before ? `${before.kind}${before.isDefault ? ", default" : ""}` : null,
+      after: `${saved.kind}${saved.isDefault ? ", default" : ""}`,
+    });
+    this.emit();
+    return saved;
+  }
+
+  async updateMyProfile(patch: ProfilePatch) {
+    const db = this.open();
+    const before = db.get("users", this.viewer!.userId)!;
+    const locations = db.list("locations");
+    if (patch.defaultLocationId && locations.find((l) => l.id === patch.defaultLocationId)?.kind !== "warehouse") {
+      throw new DemoRuleError("Choose a warehouse; showrooms hold no sellable stock.");
+    }
+    const after = { ...before, ...patch };
+    db.put("users", after);
+    this.appendAudit(db, {
+      category: "user",
+      action: "Changed own profile",
+      target: before.name,
+      before: `default warehouse ${locationName(locations, before.defaultLocationId) || "company default"}`,
+      after: `default warehouse ${locationName(locations, after.defaultLocationId) || "company default"}`,
+    });
+    this.emit();
+    return after;
+  }
+
   async recordAudit(entry: AuditInput) {
     this.appendAudit(this.open(), entry);
     this.emit();
@@ -475,12 +602,20 @@ export class DemoStore implements ApiClient {
   }
 
   /** Companies the super-admin changed, upgrading what an older demo saved. */
-  private changedCompanies(): Record<string, Company> {
+  private changedCompanies(fresh: readonly Company[] = this.platform?.companies ?? []): Record<string, Company> {
     const current = readStored<Record<string, Company>>(PLATFORM_KEY);
     if (current) return current;
     const legacy = readLegacy<Record<string, Company>>(PLATFORM_KEY);
     if (!legacy) return {};
-    const upgraded = Object.fromEntries(Object.entries(legacy).map(([id, c]) => [id, upgradeCompany(c)]));
+    const upgraded = Object.fromEntries(
+      Object.entries(legacy).map(([id, c]) => [
+        id,
+        upgradeCompany(
+          c,
+          fresh.find((f) => f.id === id),
+        ),
+      ]),
+    );
     writeStored(PLATFORM_KEY, upgraded);
     removeLegacy(PLATFORM_KEY);
     return upgraded;

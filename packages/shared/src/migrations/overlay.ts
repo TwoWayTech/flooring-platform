@@ -65,7 +65,14 @@ export function upgradeOverlay(stored: StoredOverlay, ctx: UpgradeContext): Stor
   }
 }
 
-/** Upgrades a company record the super-admin changed in an older demo (its permission ceiling). */
-export function upgradeCompany(company: Company): Company {
-  return { ...company, ceiling: upgradeCeiling(company.ceiling, company.modules) };
+/**
+ * Upgrades a company record the super-admin changed in an older demo: its permission ceiling
+ * gains the new keys, and its branches take the fresh names (plan K-4).
+ */
+export function upgradeCompany(saved: Company, fresh: Company | undefined): Company {
+  return {
+    ...saved,
+    ceiling: upgradeCeiling(saved.ceiling, saved.modules),
+    branches: fresh?.branches ?? saved.branches,
+  };
 }

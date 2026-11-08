@@ -22,6 +22,7 @@ export function defaultWastePct(product: Product): string {
 export type DraftAction =
   | { type: "customer"; customerId: string; jobSite: Address }
   | { type: "jobSite"; jobSite: Address }
+  | { type: "location"; locationId: string }
   | { type: "addRoom"; room: Room }
   | { type: "updateRoom"; room: Room }
   | { type: "removeRoom"; roomId: string }
@@ -62,6 +63,8 @@ function reducer(products: readonly Product[]) {
         return { ...draft, customerId: action.customerId, jobSite: action.jobSite };
       case "jobSite":
         return { ...draft, jobSite: action.jobSite };
+      case "location":
+        return { ...draft, locationId: action.locationId };
       case "addRoom": {
         // A new room joins every line that is measured from all rooms.
         const all = draft.rooms.map((r) => r.id);

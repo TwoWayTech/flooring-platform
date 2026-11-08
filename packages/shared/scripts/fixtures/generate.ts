@@ -11,7 +11,9 @@ import { buildCommissions, buildEmployees, buildPto, buildTimesheets } from "./h
 import { buildCrews, buildJobs } from "./installation";
 import { buildMeetings } from "./meetings";
 import { buildExpenses, buildPurchasing } from "./purchasing";
+import { buildLocations } from "./locations";
 import { buildRolls } from "./rolls";
+import { buildStock } from "./stock";
 import { buildSales } from "./sales";
 import { buildCompany, buildRoles, buildSettings, buildUsers } from "./tenant";
 
@@ -36,8 +38,10 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
   const employees = buildEmployees(ctx);
   const users = buildUsers(ctx, employees);
   const suppliers = trades ? buildSuppliers(ctx) : [];
-  const products = trades ? buildProducts(ctx, suppliers) : [];
-  const rolls = trades ? buildRolls(ctx, products, users) : [];
+  const generated = trades ? buildProducts(ctx, suppliers) : [];
+  const builtRolls = trades ? buildRolls(ctx, generated, users) : [];
+  const locations = buildLocations(seed.id);
+  const { products, rolls, stockMovements, transfers } = buildStock(ctx, generated, builtRolls, locations, users);
   const customers = trades ? buildCustomers(ctx, users) : [];
   const sales = buildSales(ctx, { products, customers, users, settings });
   const purchasing = buildPurchasing(ctx, suppliers, products);
@@ -49,8 +53,11 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     settings,
     roles,
     users,
+    locations,
     products,
     rolls,
+    stockMovements,
+    transfers,
     customers,
     ...sales,
     suppliers,

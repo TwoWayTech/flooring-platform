@@ -3,7 +3,16 @@
 import { useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { addDays, poTotal, UNIT_LABELS, type PoLine, type Product, type Supplier } from "@workspace/shared";
+import {
+  addDays,
+  defaultWarehouse,
+  poTotal,
+  UNIT_LABELS,
+  type Location,
+  type PoLine,
+  type Product,
+  type Supplier,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -19,6 +28,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/field";
 import { ProductPicker } from "@/features/quotes/product-picker";
 import { api } from "@/lib/api";
+import { WarehouseSelect } from "@/components/warehouse-select";
+import { useWorkspace } from "@/components/workspace/workspace-context";
 
 /** Days a supplier usually takes to deliver, for the expected date. */
 const LEAD_DAYS = 10;
@@ -28,10 +39,13 @@ interface NewOrderDialogProps {
   onOpenChange: (open: boolean) => void;
   suppliers: Supplier[];
   products: Product[];
+  locations: Location[];
 }
 
-/** Orders goods from one supplier: pick lines from that supplier's catalog and quantities. */
-export function NewOrderDialog({ open, onOpenChange, suppliers, products }: NewOrderDialogProps) {
+/** Orders goods from one supplier into one warehouse: pick lines from that supplier's catalog and quantities. */
+export function NewOrderDialog({ open, onOpenChange, suppliers, products, locations }: NewOrderDialogProps) {
+  const { user } = useWorkspace();
+  const [locationId, setLocationId] = useState(defaultWarehouse(locations, user)?.id ?? "");
   const stocked = suppliers.filter((s) => products.some((p) => p.supplierId === s.id && p.category !== "service"));
   const [supplierId, setSupplierId] = useState(stocked[0]?.id ?? "");
   const [lines, setLines] = useState<PoLine[]>([]);
@@ -54,7 +68,12 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products }: NewO
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      const po = await api.createPurchaseOrder({ supplierId, expectedAt: addDays(api.today(), LEAD_DAYS), lines });
+      const po = await api.createPurchaseOrder({
+        supplierId,
+        expectedAt: addDays(api.today(), LEAD_DAYS),
+        locationId,
+        lines,
+      });
       toast.success(`Purchase order ${po.number} created`);
       setLines([]);
       onOpenChange(false);
@@ -90,6 +109,16 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products }: NewO
                 ))}
               </SelectContent>
             </Select>
+          </Field>
+          <Field id="po-location" label="Receive into">
+            <WarehouseSelect
+              id="po-location"
+              label="Receive into"
+              className="w-full"
+              locations={locations}
+              value={locationId}
+              onChange={setLocationId}
+            />
           </Field>
           <ul className="flex flex-col gap-2">
             {lines.map((line, i) => (

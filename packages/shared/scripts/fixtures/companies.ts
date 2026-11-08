@@ -73,8 +73,8 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     domain: "summitfloor.example",
     areaCode: "303",
     branches: [
-      { id: "sm-br-denver", name: "Denver showroom", city: "Denver", state: "CO" },
-      { id: "sm-br-lakewood", name: "Lakewood warehouse", city: "Lakewood", state: "CO" },
+      { id: "sm-br-denver", name: "Denver", city: "Denver", state: "CO" },
+      { id: "sm-br-springs", name: "Colorado Springs", city: "Colorado Springs", state: "CO" },
     ],
     places: [
       { city: "Denver", state: "CO", zipPrefix: "802" },
@@ -132,8 +132,8 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     domain: "keystoneflooring.example",
     areaCode: "717",
     branches: [
-      { id: "ks-br-harrisburg", name: "Harrisburg distribution center", city: "Harrisburg", state: "PA" },
-      { id: "ks-br-lancaster", name: "Lancaster cash and carry", city: "Lancaster", state: "PA" },
+      { id: "ks-br-harrisburg", name: "Harrisburg", city: "Harrisburg", state: "PA" },
+      { id: "ks-br-lancaster", name: "Lancaster", city: "Lancaster", state: "PA" },
     ],
     places: [
       { city: "Harrisburg", state: "PA", zipPrefix: "171" },

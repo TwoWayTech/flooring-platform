@@ -13,6 +13,7 @@ import {
   type Bill,
   type PurchaseOrder,
   type Supplier,
+  locationName,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -53,13 +54,14 @@ export function PurchasingPage() {
   const [openPo, setOpenPo] = useState<PurchaseOrder | null>(null);
   const [creating, setCreating] = useState(false);
   const data = useApiQuery(async (client) => {
-    const [suppliers, purchaseOrders, bills, products] = await Promise.all([
+    const [suppliers, purchaseOrders, bills, products, locations] = await Promise.all([
       client.list("suppliers"),
       client.list("purchaseOrders"),
       client.list("bills"),
       client.list("products"),
+      client.list("locations"),
     ]);
-    return { suppliers, purchaseOrders, bills, products };
+    return { suppliers, purchaseOrders, bills, products, locations };
   }, []);
   if (!can("purchasing.order.view") && !can("purchasing.bill.view")) return <NoAccess />;
   const money = can(SENSITIVE.productCost) || can("purchasing.bill.view");
@@ -67,6 +69,8 @@ export function PurchasingPage() {
   const view: View = requested ?? (can("purchasing.order.view") ? "orders" : "bills");
   const today = api.today();
   const supplierOf = (id: string) => data.data?.suppliers.find((s) => s.id === id);
+  const warehouseOf = (poId: string | null) =>
+    locationName(data.data?.locations ?? [], data.data?.purchaseOrders.find((p) => p.id === poId)?.locationId);
 
   async function pay(bill: Bill) {
     await api.payBill(bill.id);
@@ -103,6 +107,7 @@ export function PurchasingPage() {
     { id: "supplier", header: "Supplier", value: (p) => supplierOf(p.supplierId)?.name ?? "" },
     { id: "created", header: "Ordered", value: (p) => p.createdAt, cell: (p) => formatDate(p.createdAt) },
     { id: "expected", header: "Expected", value: (p) => p.expectedAt, cell: (p) => formatDate(p.expectedAt) },
+    { id: "warehouse", header: "Receive into", value: (p) => warehouseOf(p.id) },
     {
       id: "status",
       header: "Status",
@@ -121,6 +126,7 @@ export function PurchasingPage() {
     { id: "supplier", header: "Supplier", value: (b) => supplierOf(b.supplierId)?.name ?? "" },
     { id: "issued", header: "Issued", value: (b) => b.issuedAt, cell: (b) => formatDate(b.issuedAt) },
     { id: "due", header: "Due", value: (b) => b.dueAt, cell: (b) => formatDate(b.dueAt) },
+    { id: "warehouse", header: "Warehouse", value: (b) => warehouseOf(b.poId), hidden: true },
     {
       id: "state",
       header: "Status",
@@ -221,6 +227,7 @@ export function PurchasingPage() {
           onOpenChange={setCreating}
           suppliers={data.data.suppliers}
           products={data.data.products}
+          locations={data.data.locations}
         />
       ) : null}
     </>

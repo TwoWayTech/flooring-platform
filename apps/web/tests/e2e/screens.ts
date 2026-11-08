@@ -3,6 +3,7 @@ export const FLOORING_SCREENS = [
   "/",
   "/inventory",
   "/inventory?view=rolls",
+  "/inventory?view=transfers",
   "/inventory/rolls/sm-roll-0004",
   "/sales",
   "/sales?view=invoices",
@@ -22,6 +23,7 @@ export const FLOORING_SCREENS = [
   "/settings/localization",
   "/settings/number-format",
   "/settings/company",
+  "/settings/locations",
   "/settings/audit",
 ];
 

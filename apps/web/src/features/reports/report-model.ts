@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
 import {
   inventoryByCategory,
+  type BoxedStock,
   monthlyPnl,
   salesByCategory,
   salesTaxByJurisdiction,
@@ -30,13 +31,15 @@ export interface Report {
   totals: Record<string, string> | null;
 }
 
-/** The documents a report reads, already filtered by date and branch. */
+/** The documents a report reads, already filtered by date and warehouse. */
 export interface ReportInput {
   months: string[];
   invoices: Invoice[];
   expenses: Expense[];
   products: Product[];
   rolls: Roll[];
+  /** Boxed stock on hand at the chosen warehouse, or across all. */
+  boxed: BoxedStock;
   category: string | null;
   showCost: boolean;
 }
@@ -121,8 +124,8 @@ export function salesTaxReport({ invoices }: ReportInput): Report {
 }
 
 /** Inventory value by category: rolls at their own cost, boxed goods at average cost. */
-export function inventoryReport({ products, rolls, category }: ReportInput): Report {
-  const rows = inventoryByCategory(products, rolls)
+export function inventoryReport({ products, rolls, boxed, category }: ReportInput): Report {
+  const rows = inventoryByCategory(products, rolls, boxed)
     .filter((r) => !category || r.category === category)
     .map((r) => ({ category: categoryLabel(r.category), value: r.value }));
   return {

@@ -3,6 +3,7 @@ import { dec } from "../../src/money";
 import { REMNANT_THRESHOLD_FT, SQ_FT_PER_SQ_YD } from "../../src/units";
 import type { Product, Roll, RollCut, User } from "../../src/types";
 import type { GenContext } from "./context";
+import { warehouseIds } from "./locations";
 import { brandCode } from "./vocabulary";
 
 const FULL_ROLLS = 45;
@@ -45,6 +46,7 @@ export function buildRolls(ctx: GenContext, products: readonly Product[], users:
   const { rng } = ctx;
   const carpets = products.filter((p) => p.category === "carpet");
   const cutters = users.filter((u) => u.roleIds.some((r) => r.endsWith("warehouse") || r.endsWith("manager")));
+  const sites = warehouseIds(ctx.company.id);
   const full: Roll[] = Array.from({ length: FULL_ROLLS }, (_, i) => {
     const product = carpets[i % carpets.length]!;
     const original = rng.int(100, 150);
@@ -63,7 +65,8 @@ export function buildRolls(ctx: GenContext, products: readonly Product[], users:
       originalLengthFt: String(original),
       remainingLengthFt: String(remaining),
       costPerSqFt: costPerSqFt.toDecimalPlaces(4).toFixed(4),
-      warehouse: rng.pick(["Main warehouse", "Main warehouse", "Annex"]),
+      locationId: sites[rng.pick([0, 0, 1])]!,
+      transferId: null,
       bin: `${rng.pick(["A", "B", "C", "D"])}-${String(rng.int(1, 24)).padStart(2, "0")}`,
       isRemnant: false,
       parentRollId: null,

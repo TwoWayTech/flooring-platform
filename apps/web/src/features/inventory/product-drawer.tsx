@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { SENSITIVE, UNIT_SINGULAR, type Product, type Roll } from "@workspace/shared";
+import {
+  SENSITIVE,
+  UNIT_SINGULAR,
+  type Product,
+  type Roll,
+  type Location,
+  type StockMovement,
+  warehousesOf,
+} from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
@@ -41,10 +49,14 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export function ProductDrawer({
   product,
   rolls,
+  movements,
+  locations,
   onClose,
 }: {
   product: Product | null;
   rolls: Roll[];
+  movements: StockMovement[];
+  locations: Location[];
   onClose: () => void;
 }) {
   const can = useCan();
@@ -78,14 +90,16 @@ export function ProductDrawer({
                   <Num kind="quantity" value={product.sqFtPerCarton} unit="sq ft per carton" />
                 </Fact>
               ) : null}
-              {product.category !== "service" ? (
-                <Fact label="In stock">
-                  {(() => {
-                    const s = stockLevel(product, rolls);
-                    return <Num kind={s.unit === "ft" ? "quantity" : "count"} value={s.value} unit={s.unit} />;
-                  })()}
-                </Fact>
-              ) : null}
+              {product.category !== "service"
+                ? warehousesOf(locations).map((w) => {
+                    const s = stockLevel(product, rolls, movements, w.id);
+                    return (
+                      <Fact key={w.id} label={`In stock at ${w.name}`}>
+                        <Num kind={s.unit === "ft" ? "quantity" : "count"} value={s.value} unit={s.unit} />
+                      </Fact>
+                    );
+                  })
+                : null}
               {Object.entries(product.attributes)
                 .filter(([key]) => key !== "taxCategory")
                 .map(([key, value]) => (

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  boxedStock,
   dec,
   inventoryByCategory,
   inventoryValuation,
@@ -34,8 +35,9 @@ describe("reports reconcile with the documents", () => {
   });
 
   it("inventory by category adds up to the inventory valuation", () => {
-    expect(sum(inventoryByCategory(summit.products, summit.rolls).map((r) => r.value)).toFixed(2)).toBe(
-      inventoryValuation(summit.rolls, summit.products).total,
+    const boxed = boxedStock(summit.stockMovements);
+    expect(sum(inventoryByCategory(summit.products, summit.rolls, boxed).map((r) => r.value)).toFixed(2)).toBe(
+      inventoryValuation(summit.rolls, summit.products, boxed).total,
     );
   });
 });

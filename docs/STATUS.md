@@ -70,11 +70,11 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 #### Phase 0: plan
 - [x] Spec moved to docs/specs/ and committed
 - [x] Plan: map of the code, data-model changes, DemoStore migration, assumptions and conflicts with recommendations
-- [ ] Owner's OK on the plan
+- [x] Owner's OK on the plan
 
 #### Batch A: foundations
-- [ ] A0. Groundwork (from the plan): overlay `schemaVersion` 2 and v1-to-v2 migration with a reset-and-message fallback; permission checks inside every DemoStore action; new permission keys and actions in the catalog and default roles; stored ceilings and roles upgraded
-- [ ] A1. Warehouses and showrooms: `locations`, user default warehouse, rolls and carton stock per warehouse and bin (stock movements ledger), transfers (In transit / Received), Fulfilled from / Receive into on quotes, invoices, POs and receipts, warehouse filter and column on every listed screen
+- [x] A0. Groundwork (from the plan): overlay `schemaVersion` 2 and v1-to-v2 migration with a reset-and-message fallback; permission checks inside every DemoStore action; new permission keys and actions in the catalog and default roles; stored ceilings and roles upgraded
+- [x] A1. Warehouses and showrooms: `locations`, user default warehouse, rolls and carton stock per warehouse and bin (stock movements ledger), transfers (In transit / Received), Fulfilled from / Receive into on quotes, invoices, POs and receipts, warehouse filter and column on every listed screen
 - [ ] A2. Filters on every table: global search, per-column filters (text, multi-select, ranges), sort, show / hide, chips + result count + Clear filters, filters in the URL, last view per user per table, CSV respects filters, totals row for money
 - [ ] A3. Company admins control roles and pages: page-permission map (menu, route gate, no-access state), action permissions on buttons, System badge, Reset to default, Duplicate, effective access preview in Settings, new permissions in the matrix inside the ceiling
 - [ ] A4. Settings easy to read: grouped settings home, plain title + one sentence per page, helper line per control, changed-field highlight, sticky Save / Discard, Reset to default per section, settings search, every change audited (both products)

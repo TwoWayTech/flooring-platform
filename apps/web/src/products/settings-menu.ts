@@ -1,4 +1,4 @@
-import { Building2, Hash, History, Languages, Palette, ShieldCheck, Users } from "lucide-react";
+import { Building2, Hash, History, Languages, Palette, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { MenuItem } from "./types";
 
 /** Settings pages both products share (blueprint: the HR host keeps its own Users, Roles and Settings). */
@@ -30,6 +30,13 @@ export const SETTINGS_MENU: MenuItem[] = [
     icon: Languages,
     anyOf: ["settings.localization.manage", "settings.tax.manage"],
     features: ["settings.localization"],
+  },
+  {
+    label: "Warehouses and showrooms",
+    href: "/settings/locations",
+    icon: Warehouse,
+    anyOf: ["settings.locations.manage"],
+    features: ["inventory.locations"],
   },
   {
     label: "Number format",

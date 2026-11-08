@@ -18,6 +18,7 @@ import {
   type Product,
   type ProductSales,
   type SlowMover,
+  boxedStock,
 } from "@workspace/shared";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useWorkspace } from "@/components/workspace/workspace-context";
@@ -57,7 +58,7 @@ export function useDashboardData() {
   return useApiQuery(
     async (client): Promise<DashboardData> => {
       const today = client.today();
-      const [invoices, quotes, expenses, products, rolls, jobs, crews, customers] = await Promise.all([
+      const [invoices, quotes, expenses, products, rolls, jobs, crews, customers, stockMovements] = await Promise.all([
         client.list("invoices"),
         client.list("quotes"),
         client.list("expenses"),
@@ -66,6 +67,7 @@ export function useDashboardData() {
         client.list("jobs"),
         client.list("crews"),
         client.list("customers"),
+        client.list("stockMovements"),
       ]);
       const months = monthlyPnl(last12Months(today), invoices, expenses);
       const revenue = sum(months.map((m) => m.revenue));
@@ -81,7 +83,10 @@ export function useDashboardData() {
           openQuotes: moneyString(sum(open.map((q) => q.total))),
         },
         best: withProduct(bestSellers(invoices, addDays(today, -BEST_SELLER_DAYS), LIST_LENGTH), products),
-        slow: withProduct(slowMovers(products, rolls, invoices, today, LIST_LENGTH), products),
+        slow: withProduct(
+          slowMovers(products, rolls, invoices, today, LIST_LENGTH, boxedStock(stockMovements)),
+          products,
+        ),
         jobsToday: jobs
           .filter((j) => j.date === today)
           .sort((a, b) => a.startHour - b.startHour)

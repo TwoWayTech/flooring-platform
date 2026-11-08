@@ -1,6 +1,7 @@
 /** Domain types shared by fixtures, the DemoStore and screens, grouped by area. */
 export * from "./company";
 export * from "./catalog";
+export * from "./locations";
 export * from "./sales";
 export * from "./purchasing";
 export * from "./installation";

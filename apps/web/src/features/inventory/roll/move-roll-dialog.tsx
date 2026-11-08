@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { Roll } from "@workspace/shared";
@@ -13,35 +14,40 @@ import {
   DialogTitle,
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
-import { Label } from "@workspace/ui/components/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
+import { Field } from "@/components/field";
 import { api } from "@/lib/api";
 
-const WAREHOUSES = ["Main warehouse", "Annex"];
-
-/** Moves a roll to another warehouse or bin; the move is audited. */
+/**
+ * Moves a roll to another bin in the same warehouse; the move is audited. Another warehouse
+ * goes through a transfer, so stock never changes place without a document (plan K-11).
+ */
 export function MoveRollDialog({
   roll,
+  location,
   open,
   onOpenChange,
 }: {
   roll: Roll;
+  location: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [warehouse, setWarehouse] = useState(roll.warehouse);
   const [bin, setBin] = useState(roll.bin);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const before = `${roll.warehouse}, bin ${roll.bin}`;
-    const after = `${warehouse}, bin ${bin.trim()}`;
     await api.save(
       "rolls",
-      { ...roll, warehouse, bin: bin.trim() },
-      { category: "data", action: "Moved roll", target: `Roll ${roll.rollNumber}`, before, after },
+      { ...roll, bin: bin.trim() },
+      {
+        category: "data",
+        action: "Moved roll",
+        target: `Roll ${roll.rollNumber}`,
+        before: `${location}, bin ${roll.bin}`,
+        after: `${location}, bin ${bin.trim()}`,
+      },
     );
-    toast.success(`Moved ${roll.rollNumber} to ${after}`);
+    toast.success(`Moved ${roll.rollNumber} to bin ${bin.trim()}`);
     onOpenChange(false);
   }
 
@@ -52,28 +58,30 @@ export function MoveRollDialog({
           <DialogHeader>
             <DialogTitle>Move roll {roll.rollNumber}</DialogTitle>
             <DialogDescription>
-              Now in {roll.warehouse}, bin {roll.bin}.
+              Now in {location}, bin {roll.bin}.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="move-warehouse">Warehouse</Label>
-            <Select value={warehouse} onValueChange={setWarehouse}>
-              <SelectTrigger id="move-warehouse" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {WAREHOUSES.map((w) => (
-                  <SelectItem key={w} value={w}>
-                    {w}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="move-bin">Bin</Label>
-            <Input id="move-bin" value={bin} onChange={(e) => setBin(e.target.value)} required />
-          </div>
+          <Field
+            id="move-bin"
+            label="Bin"
+            hint={
+              <>
+                To send it to another warehouse, start a{" "}
+                <Link href="/inventory?view=transfers" className="underline underline-offset-2">
+                  transfer
+                </Link>
+                .
+              </>
+            }
+          >
+            <Input
+              id="move-bin"
+              value={bin}
+              onChange={(e) => setBin(e.target.value)}
+              required
+              aria-describedby="move-bin-hint"
+            />
+          </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel

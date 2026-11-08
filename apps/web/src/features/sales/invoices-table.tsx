@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { balance, type Customer, type Invoice } from "@workspace/shared";
+import { balance, locationName, type Customer, type Invoice, type Location } from "@workspace/shared";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -12,7 +12,15 @@ import { useFormatDate } from "@/lib/use-format-date";
 const FILTERS: (InvoiceState | "all")[] = ["all", "open", "overdue", "partial", "paid", "return"];
 
 /** Invoices with their state today; `?status=overdue` comes from "Needs attention". */
-export function InvoicesTable({ invoices, customers }: { invoices: Invoice[]; customers: Customer[] }) {
+export function InvoicesTable({
+  invoices,
+  customers,
+  locations,
+}: {
+  invoices: Invoice[];
+  customers: Customer[];
+  locations: Location[];
+}) {
   const router = useRouter();
   const params = useSearchParams();
   const formatDate = useFormatDate();
@@ -29,6 +37,7 @@ export function InvoicesTable({ invoices, customers }: { invoices: Invoice[]; cu
     { id: "customer", header: "Customer", value: (i) => customers.find((c) => c.id === i.customerId)?.name ?? "" },
     { id: "issued", header: "Issued", value: (i) => i.issuedAt, cell: (i) => formatDate(i.issuedAt) },
     { id: "due", header: "Due", value: (i) => i.dueAt, cell: (i) => formatDate(i.dueAt) },
+    { id: "warehouse", header: "Warehouse", value: (i) => locationName(locations, i.locationId) },
     {
       id: "state",
       header: "Status",

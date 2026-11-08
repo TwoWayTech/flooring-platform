@@ -21,14 +21,15 @@ export function SalesPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [quotes, invoices, customers, users, payments] = await Promise.all([
+    const [quotes, invoices, customers, users, payments, locations] = await Promise.all([
       client.list("quotes"),
       client.list("invoices"),
       client.list("customers"),
       client.list("users"),
       client.list("payments"),
+      client.list("locations"),
     ]);
-    return { quotes, invoices, customers, users, payments };
+    return { quotes, invoices, customers, users, payments, locations };
   }, []);
   const canQuotes = can("sales.quote.view") && featureOn("sales.quotes");
   const canInvoices = can("sales.invoice.view") && featureOn("sales.invoices");
@@ -71,9 +72,18 @@ export function SalesPage() {
               payments={data.data.payments}
             />
           ) : view === "invoices" ? (
-            <InvoicesTable invoices={data.data.invoices} customers={data.data.customers} />
+            <InvoicesTable
+              invoices={data.data.invoices}
+              customers={data.data.customers}
+              locations={data.data.locations}
+            />
           ) : (
-            <QuotesTable quotes={data.data.quotes} customers={data.data.customers} users={data.data.users} />
+            <QuotesTable
+              quotes={data.data.quotes}
+              customers={data.data.customers}
+              users={data.data.users}
+              locations={data.data.locations}
+            />
           )}
         </TabsContent>
       </Tabs>

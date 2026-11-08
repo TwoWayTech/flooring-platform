@@ -17,11 +17,14 @@ import { rollSqYd } from "../stock";
 /** A 4 × 2 in roll label preview; Print sends only the label to the printer (see print styles). */
 export function LabelDialog({
   roll,
+  location,
   product,
   open,
   onOpenChange,
 }: {
   roll: Roll;
+  /** Warehouse and bin, e.g. "Denver Central, bin A-21". */
+  location: string;
   product: Product | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,9 +58,7 @@ export function LabelDialog({
                 <Num kind="quantity" value={roll.remainingLengthFt} unit="ft" />
               </strong>
             </span>
-            <span className="col-span-2">
-              {roll.warehouse}, bin {roll.bin}
-            </span>
+            <span className="col-span-2">{location}</span>
             <span>
               <Num kind="quantity" value={rollSqYd(roll)} unit="sq yd" />
             </span>

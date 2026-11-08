@@ -94,7 +94,7 @@ const ROWS: Row[] = [
   ["settings.numbers", "platform", "Number format", ["manage"]],
   ["settings.company", "platform", "Company profile", ["manage"]],
   ["settings.payments", "platform", "Payment settings", ["manage"]],
-  ["settings.locations", "platform", "Warehouses and showrooms", ["manage"]],
+  ["settings.locations", "core", "Warehouses and showrooms", ["manage"]],
   ["settings.import", "platform", "Data import", ["manage"]],
   ["settings.audit", "platform", "Audit log", ["view"]],
 ];

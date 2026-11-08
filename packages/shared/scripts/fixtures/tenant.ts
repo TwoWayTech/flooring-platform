@@ -7,6 +7,7 @@ import type { Company, CompanySettings, Employee, Role, User } from "../../src/t
 import { EXAMPLE_TAX_RULES } from "../../src/us-pack/tax";
 import { ANCHOR_DATE, type CompanySeed } from "./companies";
 import type { GenContext } from "./context";
+import { branchWarehouse } from "./locations";
 import { emailFor } from "./random";
 
 const TIME_ZONES: Record<string, string> = { CO: "America/Denver", PA: "America/New_York", FL: "America/New_York" };
@@ -82,6 +83,8 @@ export function buildUsers(ctx: GenContext, employees: readonly Employee[]): Use
           ? null
           : `${addDays(ctx.anchor, -person.lastLoginDaysAgo)}T${String(rng.int(7, 17)).padStart(2, "0")}:${String(rng.int(0, 59)).padStart(2, "0")}`,
       employeeId: employees[i]?.id ?? null,
+      defaultLocationId:
+        person.role === "warehouse" ? branchWarehouse(seed.id, seed.branches[person.branch]!.id) : null,
     };
   });
 }

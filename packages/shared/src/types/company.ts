@@ -8,12 +8,15 @@ export type CompanyId = "summit" | "keystone" | "harbor";
 /** Laying patterns used as each company's signature element. */
 export type FloorPattern = "herringbone" | "running-bond" | "basketweave";
 
-/** A street address. */
+/** A street address. County picks the tax jurisdiction; coordinates come from address suggestions (spec A5, A6). */
 export interface Address {
   street: string;
   city: string;
   state: string;
   zip: string;
+  county?: string;
+  lat?: number;
+  lng?: number;
 }
 
 /** A branch (store or warehouse) of a company. */
@@ -87,4 +90,6 @@ export interface User {
   mfaEnrolled: boolean;
   lastLoginAt: string | null;
   employeeId: string | null;
+  /** The warehouse new documents start from (spec A1); null falls back to the company default. */
+  defaultLocationId: string | null;
 }

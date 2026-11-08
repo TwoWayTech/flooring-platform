@@ -14,6 +14,7 @@ import type {
 } from "../../src/types";
 import { dueDate, taxContextFor } from "../../src/operations/quotes";
 import type { GenContext } from "./context";
+import { branchWarehouse } from "./locations";
 import { buildRooms, roomLines, tradeLines } from "./sales-lines";
 
 /** Relative sales volume by calendar month: spring and fall peaks (spec section 4). */
@@ -109,6 +110,7 @@ function buildQuote(ctx: GenContext, inputs: SalesInputs, createdAt: string): Qu
     branchId: rep.branchId,
     status: "draft",
     createdAt,
+    locationId: branchWarehouse(ctx.company.id, rep.branchId),
     jobSite,
     rooms,
     lines,
@@ -140,6 +142,7 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     customerId: customer.id,
     salesRepId: quote.salesRepId,
     branchId: quote.branchId,
+    locationId: quote.locationId,
     issuedAt,
     dueAt: dueDate(issuedAt, customer.terms),
     status: "open",

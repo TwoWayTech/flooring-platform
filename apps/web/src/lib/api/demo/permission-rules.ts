@@ -9,8 +9,11 @@ import type { CollectionName } from "../contract";
 const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   roles: ["settings.roles.manage"],
   users: ["settings.users.manage"],
+  locations: ["settings.locations.manage"],
   products: ["inventory.product.create", "inventory.product.edit"],
   rolls: ["inventory.roll.edit"],
+  stockMovements: [],
+  transfers: [],
   customers: ["customers.customer.create", "customers.customer.edit"],
   quotes: ["sales.quote.create", "sales.quote.edit"],
   invoices: ["sales.invoice.create", "sales.invoice.edit"],

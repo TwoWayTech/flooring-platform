@@ -35,6 +35,8 @@ export interface PurchaseOrder {
   supplierId: string;
   status: PoStatus;
   createdAt: string;
+  /** Receive into: the warehouse the goods arrive at (spec A1). */
+  locationId: string;
   expectedAt: string;
   receivedAt: string | null;
   lines: PoLine[];

@@ -1,4 +1,13 @@
-import { dec, sqFtToSqYd, type Product, type Roll } from "@workspace/shared";
+import {
+  boxedOnHand,
+  dec,
+  rollsAt,
+  sqFtToSqYd,
+  stockUnit,
+  type Product,
+  type Roll,
+  type StockMovement,
+} from "@workspace/shared";
 
 /** Stock of one product: cartons or items for boxed goods, ft across rolls for broadloom. */
 export interface StockLevel {
@@ -9,21 +18,28 @@ export interface StockLevel {
 }
 
 /**
- * Stock on hand. Boxed goods are low at or below their reorder point; broadloom stock is the
- * sum of remaining ft on its rolls and remnants (CLAUDE.md rule 4: lengths in ft).
+ * Stock on hand at one warehouse, or across all when none is given (spec A1). Boxed goods come
+ * from the stock ledger and are low at or below their reorder point; broadloom stock is the sum
+ * of remaining ft on its rolls and remnants (CLAUDE.md rule 4: lengths in ft).
  */
-export function stockLevel(product: Product, rolls: readonly Roll[]): StockLevel {
-  if (product.unit === "sq_yd" && product.category === "carpet") {
-    const own = rolls.filter((r) => r.productId === product.id && dec(r.remainingLengthFt).gt(0));
+export function stockLevel(
+  product: Product,
+  rolls: readonly Roll[],
+  movements: readonly StockMovement[],
+  locationId?: string | null,
+): StockLevel {
+  const unit = stockUnit(product) ?? "each";
+  if (unit === "ft") {
+    const own = rollsAt(rolls, locationId).filter((r) => r.productId === product.id);
     const feet = own.reduce((s, r) => s.plus(r.remainingLengthFt), dec(0));
-    return { value: feet.toString(), unit: "ft", rolls: own.length, low: own.length === 0 };
+    return { value: feet.toString(), unit, rolls: own.length, low: own.length === 0 };
   }
-  const onHand = product.cartonsOnHand ?? 0;
+  const onHand = boxedOnHand(movements, product.id, locationId);
   return {
-    value: String(onHand),
-    unit: product.unit === "each" ? "each" : "cartons",
+    value: onHand.toString(),
+    unit,
     rolls: 0,
-    low: product.reorderPoint !== undefined && onHand <= product.reorderPoint,
+    low: product.reorderPoint !== undefined && onHand.lte(product.reorderPoint),
   };
 }
 

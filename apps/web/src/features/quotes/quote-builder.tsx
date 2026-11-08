@@ -11,6 +11,7 @@ import {
   taxContextFor,
   type CompanySettings,
   type Customer,
+  type Location,
   type Product,
   type Quote,
   type Room,
@@ -32,8 +33,11 @@ import { useQuoteDraft } from "./use-quote-draft";
 
 const localId = (kind: string) => `${kind}-${crypto.randomUUID().slice(0, 8)}`;
 
-/** A blank quote for the signed-in rep, with the company's default deposit and home state. */
-export function newQuote(user: User, settings: CompanySettings, today: string): Quote {
+/**
+ * A blank quote for the signed-in rep, with the company's default deposit and home state, fulfilled
+ * from the rep's default warehouse (spec A1).
+ */
+export function newQuote(user: User, settings: CompanySettings, today: string, locationId: string): Quote {
   return {
     id: "",
     number: "",
@@ -42,6 +46,7 @@ export function newQuote(user: User, settings: CompanySettings, today: string): 
     branchId: user.branchId,
     status: "draft",
     createdAt: today,
+    locationId,
     jobSite: { street: "", city: "", state: settings.localization.region.primaryState, zip: "" },
     rooms: [],
     lines: [],
@@ -64,6 +69,7 @@ interface QuoteBuilderProps {
   products: Product[];
   customers: Customer[];
   settings: CompanySettings;
+  locations: Location[];
 }
 
 /**
@@ -71,7 +77,7 @@ interface QuoteBuilderProps {
  * lines measured from them, tax by job-site state, deposit, and Convert to invoice. Totals come
  * from the shared decimal calculator, the same one that invoices and the PDF use.
  */
-export function QuoteBuilder({ initial, products, customers, settings }: QuoteBuilderProps) {
+export function QuoteBuilder({ initial, products, customers, settings, locations }: QuoteBuilderProps) {
   const router = useRouter();
   const can = useCan();
   const formatDate = useFormatDate();
@@ -146,6 +152,9 @@ export function QuoteBuilder({ initial, products, customers, settings }: QuoteBu
           customers={customers}
           customerId={draft.customerId}
           jobSite={draft.jobSite}
+          locations={locations}
+          locationId={draft.locationId}
+          onLocation={(locationId) => dispatch({ type: "location", locationId })}
           editable={editable}
           taxedStates={settings.localization.tax.rules.map((r) => r.state)}
           onCustomer={(c) => dispatch({ type: "customer", customerId: c.id, jobSite: { ...c.address } })}

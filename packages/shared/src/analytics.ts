@@ -66,18 +66,21 @@ export function rollValue(roll: Roll): Dec {
   return rollAreaSqFt(roll.widthFt, roll.remainingLengthFt).times(roll.costPerSqFt);
 }
 
+/** Boxed stock on hand per product id, from the stock ledger (stock.ts `boxedStock`). */
+export type BoxedStock = ReadonlyMap<string, Dec>;
+
 /**
  * Inventory valuation (spec section 4): rolls remaining × their cost plus cartons × average
- * cost. Boxed goods use weighted average cost, stored as the product cost.
+ * cost. Boxed goods use weighted average cost, stored as the product cost; their quantities come
+ * from the stock ledger.
  */
 export function inventoryValuation(
   rolls: readonly Roll[],
   products: readonly Product[],
+  boxed: BoxedStock,
 ): { rolls: string; boxed: string; total: string } {
   const rollTotal = sum(rolls.map(rollValue));
-  const boxedTotal = sum(
-    products.filter((p) => p.cartonsOnHand !== undefined).map((p) => dec(p.cartonsOnHand ?? 0).times(p.cost)),
-  );
+  const boxedTotal = sum(products.map((p) => (boxed.get(p.id) ?? dec(0)).times(p.cost)));
   return {
     rolls: moneyString(rollTotal),
     boxed: moneyString(boxedTotal),
@@ -182,6 +185,7 @@ export function slowMovers(
   invoices: readonly Invoice[],
   today: string,
   limit: number,
+  boxed: BoxedStock,
 ): SlowMover[] {
   const lastSale = new Map<string, string>();
   for (const inv of invoices) {
@@ -198,7 +202,7 @@ export function slowMovers(
     .filter((p) => p.category !== "service")
     .map((p) => {
       const feet = rollFeet.get(p.id);
-      const onHand = feet ?? dec(p.cartonsOnHand ?? 0);
+      const onHand = feet ?? boxed.get(p.id) ?? dec(0);
       const sold = lastSale.get(p.id) ?? null;
       return {
         productId: p.id,
@@ -383,14 +387,21 @@ export interface CategoryValuation {
  * Inventory valuation by category (spec section 4): rolls at remaining area × their own cost,
  * boxed goods at cartons × average cost. The categories add up to inventoryValuation's total.
  */
-export function inventoryByCategory(products: readonly Product[], rolls: readonly Roll[]): CategoryValuation[] {
+export function inventoryByCategory(
+  products: readonly Product[],
+  rolls: readonly Roll[],
+  boxed: BoxedStock,
+): CategoryValuation[] {
   const totals = new Map<string, Dec>();
   const add = (category: string, value: Dec) => totals.set(category, (totals.get(category) ?? dec(0)).plus(value));
   for (const roll of rolls) {
     const product = products.find((p) => p.id === roll.productId);
     if (product) add(product.category, rollValue(roll));
   }
-  for (const p of products) if (p.cartonsOnHand !== undefined) add(p.category, dec(p.cartonsOnHand).times(p.cost));
+  for (const p of products) {
+    const onHand = boxed.get(p.id);
+    if (onHand) add(p.category, onHand.times(p.cost));
+  }
   return [...totals.entries()]
     .map(([category, v]) => ({ category, value: moneyString(v) }))
     .sort((a, b) => Number(b.value) - Number(a.value));

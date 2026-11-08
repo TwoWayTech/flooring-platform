@@ -99,6 +99,7 @@ export function invoiceFromQuote(
     customerId: customer.id,
     salesRepId: quote.salesRepId,
     branchId: quote.branchId,
+    locationId: quote.locationId,
     issuedAt: input.issuedAt,
     dueAt: dueDate(input.issuedAt, customer.terms),
     status: "open",

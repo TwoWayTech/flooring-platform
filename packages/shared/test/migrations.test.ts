@@ -69,7 +69,7 @@ describe("saved demo data upgrade (plan section 2.3)", () => {
   it("adds the new keys of the company's modules to a saved ceiling", () => {
     const company = platform.companies.find((c) => c.id === "summit")!;
     const old = { ...company, ceiling: company.ceiling.filter((k) => !ADDED_IN_V2.includes(k)) };
-    const upgraded = upgradeCompany({ ...old, ceiling: [...old.ceiling, "purchasing.bill.pay" as never] });
+    const upgraded = upgradeCompany({ ...old, ceiling: [...old.ceiling, "purchasing.bill.pay" as never] }, company);
     expect(upgraded.ceiling).toContain("purchasing.payment.record");
     expect(upgraded.ceiling).toContain("sales.payment.approve");
     expect(upgraded.ceiling.every((k) => ALL_PERMISSION_KEYS.includes(k))).toBe(true);
@@ -80,5 +80,42 @@ describe("saved demo data upgrade (plan section 2.3)", () => {
     expect(() => upgradeOverlay({ schemaVersion: 9, shift, settings: null, records: {} }, { base: summit })).toThrow(
       OverlayUpgradeError,
     );
+  });
+});
+
+describe("saved demo data upgrade: warehouses (spec A1)", () => {
+  const legacyRoll: Record<string, unknown> & { id: string } = { ...summit.rolls[5]!, warehouse: "Annex" };
+  delete legacyRoll.locationId;
+  delete legacyRoll.transferId;
+  const product = summit.products.find((p) => summit.stockMovements.some((m) => m.productId === p.id))!;
+  const opening = summit.stockMovements
+    .filter((m) => m.productId === product.id && m.kind === "opening")
+    .reduce((s, m) => s + Number(m.quantity), 0);
+
+  it("moves a saved roll to the matching warehouse and keeps it out of transit", () => {
+    const out = upgradeOverlay(
+      { shift, settings: null, records: { rolls: { [legacyRoll.id]: legacyRoll } } },
+      { base: summit },
+    );
+    expect(out.records.rolls![legacyRoll.id]).toMatchObject({ locationId: "sm-loc-springs", transferId: null });
+  });
+
+  it("keeps cartons received in the old demo as a receipt in the ledger", () => {
+    const saved = { ...product, cartonsOnHand: opening + 40 };
+    const out = upgradeOverlay(
+      { shift, settings: null, records: { products: { [product.id]: saved } } },
+      { base: summit },
+    );
+    expect(out.records.products![product.id]).not.toHaveProperty("cartonsOnHand");
+    expect(Object.values(out.records.stockMovements!)).toEqual([
+      expect.objectContaining({ productId: product.id, quantity: "40", kind: "receipt", locationId: "sm-loc-denver" }),
+    ]);
+  });
+
+  it("renames the old Lakewood branch and gives saved quotes a warehouse", () => {
+    const quote: Record<string, unknown> = { ...summit.quotes[0]!, branchId: "sm-br-lakewood" };
+    delete quote.locationId;
+    const out = upgradeOverlay({ shift, settings: null, records: { quotes: { q1: quote } } }, { base: summit });
+    expect(out.records.quotes!.q1).toMatchObject({ branchId: "sm-br-springs", locationId: "sm-loc-springs" });
   });
 });

@@ -4,7 +4,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Download, FileDown } from "lucide-react";
 import { toast } from "sonner";
-import { addDays, last12Months, SENSITIVE, type PermissionKey, type ProductCategory } from "@workspace/shared";
+import {
+  addDays,
+  boxedStock,
+  last12Months,
+  locationName,
+  SENSITIVE,
+  type PermissionKey,
+  type ProductCategory,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -17,6 +25,7 @@ import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useApiQuery } from "@/lib/api/use-api";
 import { CATEGORY_LABELS } from "@/lib/labels";
 import {
@@ -95,16 +104,18 @@ export function ReportsPage() {
   const params = useSearchParams();
   const { company, settings } = useWorkspace();
   const [range, setRange] = useState<Range>("12m");
-  const [branch, setBranch] = useState("all");
+  const [warehouse, setWarehouse] = useState(ALL_WAREHOUSES);
   const [category, setCategory] = useState("all");
   const data = useApiQuery(async (client) => {
-    const [invoices, expenses, products, rolls] = await Promise.all([
+    const [invoices, expenses, products, rolls, stockMovements, locations] = await Promise.all([
       client.list("invoices"),
       client.list("expenses"),
       client.list("products"),
       client.list("rolls"),
+      client.list("stockMovements"),
+      client.list("locations"),
     ]);
-    return { invoices, expenses, products, rolls };
+    return { invoices, expenses, products, rolls, stockMovements, locations };
   }, []);
 
   const allowed = (Object.keys(REPORTS) as ReportKey[]).filter((k) => can(REPORTS[k].view));
@@ -114,12 +125,13 @@ export function ReportsPage() {
   const spec = REPORTS[key];
   const today = api.today();
   const months = monthsFor(range, today);
+  const warehouseId = warehouse === ALL_WAREHOUSES ? null : warehouse;
 
   let report: Report | null = null;
   if (data.status === "ready") {
     const from = `${months[0]}-01`;
     const invoices = data.data.invoices.filter(
-      (i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1) && (branch === "all" || i.branchId === branch),
+      (i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1) && (!warehouseId || i.locationId === warehouseId),
     );
     const expenses = data.data.expenses.filter((e) => e.at >= from);
     report = spec.build({
@@ -127,12 +139,15 @@ export function ReportsPage() {
       invoices,
       expenses,
       products: data.data.products,
-      rolls: data.data.rolls,
+      rolls: data.data.rolls.filter((r) => !warehouseId || r.locationId === warehouseId),
+      boxed: boxedStock(data.data.stockMovements, warehouseId),
       category: spec.categories && category !== "all" ? category : null,
       showCost: can(SENSITIVE.productCost),
     });
   }
-  const filters = `${RANGES[range]}, ${branch === "all" ? "all branches" : company.branches.find((b) => b.id === branch)?.name}${spec.categories && category !== "all" ? `, ${CATEGORY_LABELS[category as ProductCategory]}` : ""}.`;
+  const warehouseLabel =
+    data.status === "ready" && warehouseId ? locationName(data.data.locations, warehouseId) : "all warehouses";
+  const filters = `${RANGES[range]}, ${warehouseLabel}${spec.categories && category !== "all" ? `, ${CATEGORY_LABELS[category as ProductCategory]}` : ""}.`;
   const fileStem = `${key}-${today}`;
 
   function exportCsv() {
@@ -224,21 +239,15 @@ export function ReportsPage() {
                 </Select>
               </Filter>
             ) : null}
-            {key !== "inventory" ? (
-              <Filter label="Branch">
-                <Select value={branch} onValueChange={setBranch}>
-                  <SelectTrigger className="h-9 w-52" aria-label="Branch">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All branches</SelectItem>
-                    {company.branches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {data.status === "ready" ? (
+              <Filter label="Warehouse">
+                <WarehouseSelect
+                  label="Warehouse"
+                  extraOption={ALL_WAREHOUSES_OPTION}
+                  locations={data.data.locations}
+                  value={warehouse}
+                  onChange={setWarehouse}
+                />
               </Filter>
             ) : null}
             {spec.categories ? (
@@ -285,7 +294,7 @@ export function ReportsPage() {
                   {report.rows.length === 0 ? (
                     <tr>
                       <td colSpan={report.columns.length} className="text-muted-foreground h-16 px-3">
-                        No figures for these filters. Choose a wider date range or all branches.
+                        No figures for these filters. Choose a wider date range or all warehouses.
                       </td>
                     </tr>
                   ) : null}

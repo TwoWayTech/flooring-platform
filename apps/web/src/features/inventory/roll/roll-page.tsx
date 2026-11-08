@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, MoveRight, Printer, Scissors } from "lucide-react";
-import { dec, rollAreaSqFt, SENSITIVE } from "@workspace/shared";
+import { dec, locationName, rollAreaSqFt, SENSITIVE } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -41,10 +41,12 @@ export function RollPage({ rollId }: { rollId: string }) {
   const [dialog, setDialog] = useState<"cut" | "move" | "label" | null>(null);
   const data = useApiQuery(
     async (client) => {
-      const [rolls, products, users] = await Promise.all([
+      const [rolls, products, users, locations, transfers] = await Promise.all([
         client.list("rolls"),
         client.list("products"),
         client.list("users"),
+        client.list("locations"),
+        client.list("transfers"),
       ]);
       const roll = rolls.find((r) => r.id === rollId);
       return {
@@ -52,6 +54,8 @@ export function RollPage({ rollId }: { rollId: string }) {
         product: products.find((p) => p.id === roll?.productId),
         remnants: rolls.filter((r) => r.parentRollId === rollId),
         users,
+        locations,
+        transfer: transfers.find((t) => t.id === roll?.transferId),
       };
     },
     [rollId],
@@ -59,13 +63,14 @@ export function RollPage({ rollId }: { rollId: string }) {
 
   if (!can("inventory.roll.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading roll" />;
-  const { roll, product, remnants, users } = data.data;
+  const { roll, product, remnants, users, locations, transfer } = data.data;
   if (!roll)
     return (
       <p className="text-muted-foreground">
         This roll does not exist. It may have been removed when the demo was reset.
       </p>
     );
+  const location = `${locationName(locations, roll.locationId)}, bin ${roll.bin}`;
 
   const userName = (id: string) => users.find((u) => u.id === id)?.name ?? "Unknown";
   const used = dec(roll.originalLengthFt).minus(roll.remainingLengthFt);
@@ -94,13 +99,13 @@ export function RollPage({ rollId }: { rollId: string }) {
         actions={
           <>
             {can("inventory.roll.cut") ? (
-              <Button onClick={() => setDialog("cut")} disabled={dec(roll.remainingLengthFt).isZero()}>
+              <Button onClick={() => setDialog("cut")} disabled={dec(roll.remainingLengthFt).isZero() || !!transfer}>
                 <Scissors />
                 Cut roll
               </Button>
             ) : null}
             {can("inventory.roll.edit") ? (
-              <Button variant="outline" onClick={() => setDialog("move")}>
+              <Button variant="outline" onClick={() => setDialog("move")} disabled={!!transfer}>
                 <MoveRight />
                 Move
               </Button>
@@ -139,7 +144,12 @@ export function RollPage({ rollId }: { rollId: string }) {
             <Num kind="quantity" value={used.toString()} unit="ft" />
           </Fact>
           <Fact label="Location">
-            {roll.warehouse}, bin {roll.bin}
+            {location}
+            {transfer ? (
+              <span className="text-muted-foreground block text-xs font-normal">
+                In transit to {locationName(locations, transfer.toId)} on {transfer.number}
+              </span>
+            ) : null}
           </Fact>
           {can(SENSITIVE.productCost) ? (
             <Fact label="Cost">
@@ -220,13 +230,15 @@ export function RollPage({ rollId }: { rollId: string }) {
 
       <CutRollDialog roll={roll} open={dialog === "cut"} onOpenChange={(o) => setDialog(o ? "cut" : null)} />
       <MoveRollDialog
-        key={`${roll.warehouse}-${roll.bin}`}
+        key={roll.bin}
         roll={roll}
+        location={locationName(locations, roll.locationId)}
         open={dialog === "move"}
         onOpenChange={(o) => setDialog(o ? "move" : null)}
       />
       <LabelDialog
         roll={roll}
+        location={location}
         product={product}
         open={dialog === "label"}
         onOpenChange={(o) => setDialog(o ? "label" : null)}

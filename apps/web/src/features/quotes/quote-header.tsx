@@ -1,8 +1,9 @@
 "use client";
 
-import { US_STATES, type Address, type Customer } from "@workspace/shared";
+import { US_STATES, type Address, type Customer, type Location } from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
+import { WarehouseSelect } from "@/components/warehouse-select";
 import {
   Select,
   SelectContent,
@@ -18,22 +19,32 @@ interface QuoteHeaderProps {
   customers: Customer[];
   customerId: string;
   jobSite: Address;
+  locations: Location[];
+  /** Fulfilled from (spec A1). */
+  locationId: string;
   editable: boolean;
   /** States the company has tax rules for, marked in the state list. */
   taxedStates: string[];
   onCustomer: (customer: Customer) => void;
   onJobSite: (jobSite: Address) => void;
+  onLocation: (locationId: string) => void;
 }
 
-/** Customer and job site. The job-site state picks the tax rule (spec "Quote builder"). */
+/**
+ * Customer, job site and the warehouse the goods ship from. The job-site state picks the tax rule
+ * (spec "Quote builder", A1).
+ */
 export function QuoteHeader({
   customers,
   customerId,
   jobSite,
+  locations,
+  locationId,
   editable,
   taxedStates,
   onCustomer,
   onJobSite,
+  onLocation,
 }: QuoteHeaderProps) {
   const field = (key: keyof Address, label: string, className: string) => (
     <div className={`flex flex-col gap-1.5 ${className}`}>
@@ -96,6 +107,18 @@ export function QuoteHeader({
             </SelectGroup>
           </SelectContent>
         </Select>
+      </div>
+      <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
+        <Label htmlFor="quote-location">Fulfilled from</Label>
+        <WarehouseSelect
+          id="quote-location"
+          label="Fulfilled from"
+          className="w-full"
+          locations={locations}
+          value={locationId}
+          onChange={onLocation}
+          disabled={!editable}
+        />
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { addDays, daysBetween, last12Months } from "../../src/dates";
 import { dec, moneyString, roundMoney, sum } from "../../src/money";
 import type { Bill, BillPayment, Expense, PoLine, Product, PurchaseOrder, Supplier } from "../../src/types";
+import { warehouseIds } from "./locations";
 import type { GenContext } from "./context";
 import { dueDate } from "../../src/operations/quotes";
 import { brandCode } from "./vocabulary";
@@ -87,6 +88,7 @@ export function buildPurchasing(
         supplierId: supplier.id,
         status,
         createdAt,
+        locationId: warehouseIds(ctx.company.id)[i % 3 === 2 ? 1 : 0]!,
         expectedAt,
         receivedAt: received ? [addDays(expectedAt, ctx.rng.int(-2, 2)), ctx.anchor].sort()[0]! : null,
         lines,

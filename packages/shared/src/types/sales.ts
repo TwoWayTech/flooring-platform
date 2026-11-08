@@ -54,6 +54,8 @@ export interface Quote {
   branchId: string;
   status: QuoteStatus;
   createdAt: string;
+  /** Fulfilled from: the warehouse the goods ship from (spec A1). */
+  locationId: string;
   jobSite: Address;
   rooms: Room[];
   lines: DocLine[];
@@ -79,6 +81,8 @@ export interface Invoice {
   dueAt: string;
   status: InvoiceStatus;
   isReturn: boolean;
+  /** Fulfilled from: the warehouse the goods ship from (spec A1). */
+  locationId: string;
   jobSite: Address;
   lines: DocLine[];
   taxRule: Pick<TaxRule, "state" | "jurisdiction" | "ratePct" | "version"> | null;

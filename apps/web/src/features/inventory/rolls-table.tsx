@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Scissors, TriangleAlert } from "lucide-react";
-import { SENSITIVE, type Product, type Roll } from "@workspace/shared";
+import { Scissors, Truck, TriangleAlert } from "lucide-react";
+import { locationName, SENSITIVE, type Location, type Product, type Roll } from "@workspace/shared";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Swatch } from "@workspace/ui/components/swatch";
@@ -25,8 +25,16 @@ function matches(roll: Roll, filter: RollFilter): boolean {
   return true;
 }
 
+interface RollsTableProps {
+  rolls: Roll[];
+  products: Product[];
+  locations: Location[];
+  /** Only rolls at this warehouse, or every roll when null (spec A1 warehouse filter). */
+  warehouseId: string | null;
+}
+
 /** The roll list with mini roll gauges (spec "Inventory"); a row opens the roll page. */
-export function RollsTable({ rolls, products }: { rolls: Roll[]; products: Product[] }) {
+export function RollsTable({ rolls, products, locations, warehouseId }: RollsTableProps) {
   const can = useCan();
   const router = useRouter();
   const params = useSearchParams();
@@ -82,16 +90,18 @@ export function RollsTable({ rolls, products }: { rolls: Roll[]; products: Produ
     },
     { id: "width", header: "Width", kind: "quantity", unit: "ft", value: (r) => r.widthFt },
     { id: "area", header: "Area", kind: "quantity", unit: "sq yd", value: (r) => rollSqYd(r) },
-    { id: "location", header: "Location", value: (r) => `${r.warehouse}, bin ${r.bin}` },
+    { id: "warehouse", header: "Warehouse", value: (r) => locationName(locations, r.locationId) },
+    { id: "bin", header: "Bin", value: (r) => r.bin },
     ...(can(SENSITIVE.productCost)
       ? [{ id: "cost", header: "Cost per sq ft", kind: "unitCost" as const, value: (r: Roll) => r.costPerSqFt }]
       : []),
     {
       id: "type",
       header: "Type",
-      value: (r) => (r.isRemnant ? "Remnant" : "Roll"),
+      value: (r) => (r.transferId ? "In transit" : r.isRemnant ? "Remnant" : "Roll"),
       cell: (r) => {
         const left = Number(r.remainingLengthFt);
+        if (r.transferId) return <StatusPill tone="brand" icon={Truck} label="In transit" />;
         if (r.isRemnant) return <StatusPill tone="neutral" icon={Scissors} label="Remnant" />;
         if (left > 0 && left < LOW_ROLL_FT) return <StatusPill tone="warning" icon={TriangleAlert} label="Low" />;
         return left === 0 ? <span className="text-muted-foreground">Used up</span> : "Roll";
@@ -102,7 +112,7 @@ export function RollsTable({ rolls, products }: { rolls: Roll[]; products: Produ
   return (
     <DataTable
       id="inventory-rolls"
-      rows={rolls.filter((r) => matches(r, filter))}
+      rows={rolls.filter((r) => matches(r, filter) && (!warehouseId || r.locationId === warehouseId))}
       columns={columns}
       getRowId={(r) => r.id}
       onRowClick={(r) => router.push(`/inventory/rolls/${r.id}`)}
@@ -116,7 +126,11 @@ export function RollsTable({ rolls, products }: { rolls: Roll[]; products: Produ
           label="Show"
           options={Object.entries(FILTERS) as [RollFilter, string][]}
           value={filter}
-          onChange={(v) => router.replace(`/inventory?view=rolls&filter=${v}`)}
+          onChange={(v) => {
+            const next = new URLSearchParams(params);
+            next.set("filter", v);
+            router.replace(`/inventory?${next.toString()}`);
+          }}
         />
       }
     />

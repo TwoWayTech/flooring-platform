@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bestSellers, customerStatement, dec, jobCosting, lineAmount, slowMovers, type CompanyFixtures } from "../src";
+import {
+  bestSellers,
+  boxedStock,
+  customerStatement,
+  dec,
+  jobCosting,
+  lineAmount,
+  slowMovers,
+  type CompanyFixtures,
+} from "../src";
 
 const summit = JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "summit.json"), "utf8")) as CompanyFixtures;
 const today = summit.anchorDate;
@@ -22,7 +31,14 @@ describe("best sellers and slow movers", () => {
   });
 
   it("lists stocked products that sell least recently, without services", () => {
-    const slow = slowMovers(summit.products, summit.rolls, summit.invoices, today, 5);
+    const slow = slowMovers(
+      summit.products,
+      summit.rolls,
+      summit.invoices,
+      today,
+      5,
+      boxedStock(summit.stockMovements),
+    );
     expect(slow).toHaveLength(5);
     expect(slow.every((s) => dec(s.onHand).gt(0))).toBe(true);
     expect(slow.map((s) => s.daysWithoutSale)).toEqual([...slow.map((s) => s.daysWithoutSale)].sort((a, b) => b - a));

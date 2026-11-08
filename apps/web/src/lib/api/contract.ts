@@ -11,6 +11,9 @@ import type {
   Invoice,
   Quote,
   CompanySettings,
+  Transfer,
+  TransferInput,
+  Location,
   ModuleKey,
   PermissionKey,
   Role,
@@ -56,6 +59,9 @@ export interface InviteUserInput {
   roleIds: string[];
   branchId: string;
 }
+
+/** What a person may change on their own profile (spec A1: default warehouse). */
+export type ProfilePatch = Partial<Pick<User, "defaultLocationId">>;
 
 /** Fields an admin may change on a user. Users are disabled, never deleted. */
 export type UserPatch = Partial<Pick<User, "roleIds" | "status" | "mfaEnrolled" | "branchId" | "title">>;
@@ -136,13 +142,32 @@ export interface ApiClient {
    */
   convertQuoteToInvoice(quoteId: string): Promise<Invoice>;
   /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
-  createPurchaseOrder(input: { supplierId: string; expectedAt: string; lines: PoLine[] }): Promise<PurchaseOrder>;
-  /** Receives a purchase order: cartons go into stock and broadloom arrives as new rolls. Audited. */
+  createPurchaseOrder(input: {
+    supplierId: string;
+    expectedAt: string;
+    locationId: string;
+    lines: PoLine[];
+  }): Promise<PurchaseOrder>;
+  /** Receives a purchase order into its warehouse: cartons go into the ledger, broadloom arrives as rolls. Audited. */
   receivePurchaseOrder(poId: string): Promise<PurchaseOrder>;
   /** Enters the supplier's bill for a received purchase order. Audited. */
   billPurchaseOrder(poId: string, billNumber: string): Promise<Bill>;
   /** Pays a bill's open balance in full. Audited. */
   payBill(billId: string): Promise<Bill>;
+  /**
+   * Starts a transfer between two warehouses (spec A1): boxed stock leaves the sender at once and
+   * rolls are marked in transit. Needs inventory.transfer.create. Audited.
+   */
+  createTransfer(input: TransferInput): Promise<Transfer>;
+  /** Receives a transfer at its destination. Needs inventory.transfer.receive. Audited. */
+  receiveTransfer(transferId: string): Promise<Transfer>;
+  /**
+   * Creates or changes a warehouse or showroom (spec A1). Exactly one warehouse is the company
+   * default, and a location holding stock cannot become a showroom. Needs settings.locations.manage. Audited.
+   */
+  saveLocation(location: Location): Promise<Location>;
+  /** Changes the signed-in person's own profile, such as their default warehouse. Audited. */
+  updateMyProfile(patch: ProfilePatch): Promise<User>;
   /** Appends an entry to the open company's audit log as the signed-in user. */
   recordAudit(entry: AuditInput): Promise<void>;
 }

@@ -6,6 +6,7 @@ import {
   addDays,
   agingSummary,
   balance,
+  boxedStock,
   computeTotals,
   daysBetween,
   dec,
@@ -85,8 +86,9 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
 
   it("inventory valuation = rolls remaining × their cost + cartons × average cost", () => {
     const rolls = sum(f.rolls.map((r) => rollAreaSqFt(r.widthFt, r.remainingLengthFt).times(r.costPerSqFt)));
-    const boxed = sum(f.products.map((p) => dec(p.cartonsOnHand ?? 0).times(p.cost)));
-    const valuation = inventoryValuation(f.rolls, f.products);
+    const onHand = boxedStock(f.stockMovements);
+    const boxed = sum(f.products.map((p) => (onHand.get(p.id) ?? dec(0)).times(p.cost)));
+    const valuation = inventoryValuation(f.rolls, f.products, onHand);
     expect(valuation.rolls).toBe(moneyString(rolls));
     expect(valuation.boxed).toBe(moneyString(boxed));
     expect(valuation.total).toBe(moneyString(rolls.plus(boxed)));
@@ -100,6 +102,27 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
       expect(bill.total).toBe(f.purchaseOrders.find((po) => po.id === bill.poId)!.total);
     }
     expect(f.bills.some((b) => balance(b).gt(0))).toBe(true);
+  });
+
+  it("stock by warehouse = movements: never negative, never in a showroom, transfers balance", () => {
+    const warehouses = new Set(f.locations.filter((l) => l.kind === "warehouse").map((l) => l.id));
+    for (const m of f.stockMovements) expect(warehouses.has(m.locationId), m.id).toBe(true);
+    for (const id of warehouses) {
+      for (const [productId, qty] of boxedStock(f.stockMovements, id)) expect(qty.gte(0), productId).toBe(true);
+    }
+    for (const t of f.transfers) {
+      const lines = f.stockMovements.filter((m) => m.source.id === t.id);
+      const net = sum(lines.map((m) => m.quantity));
+      const boxedQty = sum(t.lines.filter((l) => !l.rollId).map((l) => l.quantity));
+      expect(net.toString(), t.number).toBe(t.status === "received" ? "0" : boxedQty.negated().toString());
+    }
+    for (const roll of f.rolls) {
+      expect(warehouses.has(roll.locationId), roll.rollNumber).toBe(true);
+      const travelling = f.transfers.find((t) =>
+        t.lines.some((l) => l.rollId === roll.id && t.status === "in_transit"),
+      );
+      expect(roll.transferId, roll.rollNumber).toBe(travelling?.id ?? null);
+    }
   });
 
   it("rolls: remaining = original - cuts, and remnants are under 12 ft", () => {
