@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { addDays, type Employee } from "@workspace/shared";
+import { featureOn, addDays, type Employee } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -100,25 +100,27 @@ export function HrDashboard() {
         </div>
         <div className="order-first flex min-w-0 flex-col gap-6 lg:order-none">
           <AttentionPanel />
-          <Panel title="Time off, next 30 days" bodyClassName="p-0">
-            {upcoming.length === 0 ? (
-              <p className="text-muted-foreground p-4">Nobody is off in the next 30 days.</p>
-            ) : (
-              <ul className="divide-hairline divide-y text-sm">
-                {upcoming.slice(0, 8).map((p) => (
-                  <li key={p.id}>
-                    <Link href="/hr/time-off" className="hover:bg-raised flex justify-between gap-3 px-4 py-2.5">
-                      <span>{employees.find((e) => e.id === p.employeeId)?.name}</span>
-                      <span className="text-muted-foreground">
-                        {formatDate(p.start)}
-                        {p.status === "pending" ? ", pending" : ""}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
+          {featureOn("hr.time-off") ? (
+            <Panel title="Time off, next 30 days" bodyClassName="p-0">
+              {upcoming.length === 0 ? (
+                <p className="text-muted-foreground p-4">Nobody is off in the next 30 days.</p>
+              ) : (
+                <ul className="divide-hairline divide-y text-sm">
+                  {upcoming.slice(0, 8).map((p) => (
+                    <li key={p.id}>
+                      <Link href="/hr/time-off" className="hover:bg-raised flex justify-between gap-3 px-4 py-2.5">
+                        <span>{employees.find((e) => e.id === p.employeeId)?.name}</span>
+                        <span className="text-muted-foreground">
+                          {formatDate(p.start)}
+                          {p.status === "pending" ? ", pending" : ""}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          ) : null}
         </div>
       </div>
     </>

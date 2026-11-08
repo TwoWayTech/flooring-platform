@@ -2,12 +2,14 @@
 
 import { Menu, Presentation, Search } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
+import { cn } from "@workspace/ui/lib/utils";
 import { Monogram } from "@workspace/ui/components/monogram";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { usePresenterGuide } from "@/features/presenter/use-presenter-guide";
 import { Notifications } from "./notifications";
 import { UserMenu } from "./user-menu";
+import { featureOn } from "@workspace/shared";
 
 interface TopBarProps {
   onOpenPalette: () => void;
@@ -33,33 +35,37 @@ export function TopBar({ onOpenPalette, onOpenMenu }: TopBarProps) {
         name={branding.displayName}
         className="size-7 text-[10px] lg:hidden"
       />
-      <button
-        type="button"
-        onClick={onOpenPalette}
-        className="bg-surface border-hairline text-muted-foreground hover:border-foreground/30 ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors sm:w-80 lg:mr-auto lg:ml-0"
-        aria-keyshortcuts="Control+K Meta+K"
-      >
-        <Search aria-hidden="true" className="size-4" />
-        <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search or run a command</span>
-        <kbd
-          aria-hidden="true"
-          className="bg-raised hidden rounded-sm px-1.5 py-0.5 font-sans text-xs font-medium sm:inline"
+      {featureOn("shell.command-palette") ? (
+        <button
+          type="button"
+          onClick={onOpenPalette}
+          className="bg-surface border-hairline text-muted-foreground hover:border-foreground/30 ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors sm:w-80 lg:mr-auto lg:ml-0"
+          aria-keyshortcuts="Control+K Meta+K"
         >
-          Ctrl K
-        </kbd>
-      </button>
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Presenter guide"
-          aria-pressed={guideOpen}
-          className={guideOpen ? "bg-brand-soft text-brand-ink" : undefined}
-          onClick={() => setGuideOpen(!guideOpen)}
-        >
-          <Presentation />
-        </Button>
-        <Notifications />
+          <Search aria-hidden="true" className="size-4" />
+          <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left">Search or run a command</span>
+          <kbd
+            aria-hidden="true"
+            className="bg-raised hidden rounded-sm px-1.5 py-0.5 font-sans text-xs font-medium sm:inline"
+          >
+            Ctrl K
+          </kbd>
+        </button>
+      ) : null}
+      <div className={cn("flex items-center gap-1", !featureOn("shell.command-palette") && "ml-auto")}>
+        {featureOn("shell.presenter-guide") ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Presenter guide"
+            aria-pressed={guideOpen}
+            className={guideOpen ? "bg-brand-soft text-brand-ink" : undefined}
+            onClick={() => setGuideOpen(!guideOpen)}
+          >
+            <Presentation />
+          </Button>
+        ) : null}
+        {featureOn("shell.notifications") ? <Notifications /> : null}
         <ThemeToggle />
         <UserMenu />
       </div>

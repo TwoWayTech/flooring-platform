@@ -9,6 +9,7 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { NoAccess } from "@/components/no-access";
 import { ProductsTable } from "./products-table";
 import { RollsTable } from "./rolls-table";
+import { featureOn } from "@workspace/shared";
 
 /** Inventory (spec "Inventory and roll detail"): products and rolls, filterable, with mini roll gauges. */
 export function InventoryPage() {
@@ -19,8 +20,8 @@ export function InventoryPage() {
     const [products, rolls] = await Promise.all([client.list("products"), client.list("rolls")]);
     return { products, rolls };
   }, []);
-  const canProducts = can("inventory.product.view");
-  const canRolls = can("inventory.roll.view");
+  const canProducts = can("inventory.product.view") && featureOn("inventory.products");
+  const canRolls = can("inventory.roll.view") && featureOn("inventory.rolls");
   if (!canProducts && !canRolls) return <NoAccess />;
   const view = params.get("view") === "rolls" || !canProducts ? "rolls" : "products";
 

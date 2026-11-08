@@ -2,11 +2,13 @@
 
 import { Suspense, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@workspace/ui/components/sheet";
+import { FeatureGate } from "@/components/feature-gate";
 import { PresenterGuide } from "@/features/presenter/presenter-guide";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { ViewAsBanner } from "./view-as";
+import { featureOn } from "@workspace/shared";
 
 /**
  * The app shell (design brief "Layout"): sidebar on the Limestone canvas from 1024 px, a drawer
@@ -42,13 +44,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           className="flex w-full max-w-[1400px] flex-1 flex-col gap-6 px-4 pt-2 pb-12 lg:px-8"
         >
           <ViewAsBanner />
-          {children}
+          <FeatureGate>{children}</FeatureGate>
         </main>
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-      <Suspense fallback={null}>
-        <PresenterGuide />
-      </Suspense>
+      {featureOn("shell.command-palette") ? <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} /> : null}
+      {featureOn("shell.presenter-guide") ? (
+        <Suspense fallback={null}>
+          <PresenterGuide />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

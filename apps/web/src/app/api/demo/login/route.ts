@@ -3,6 +3,7 @@ import { z } from "zod";
 import { PRODUCT_HEADER } from "@/lib/product";
 import { companyProduct } from "@/lib/api/demo/company-products";
 import { SESSION_COOKIE, SESSION_MAX_AGE_SECONDS, signSession, type DemoSession } from "@/lib/session/session";
+import { featureOn } from "@workspace/shared";
 
 const LoginBody = z.discriminatedUnion("kind", [
   z.object({
@@ -23,6 +24,9 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Pick a company and a persona." }, { status: 400 });
   const product = request.headers.get(PRODUCT_HEADER) === "hr" ? "hr" : "flooring";
   const body = parsed.data;
+  if (body.kind === "platform" && !featureOn("admin.access")) {
+    return NextResponse.json({ error: "Platform admin is switched off in this demo." }, { status: 403 });
+  }
   if (body.kind === "company" && companyProduct(body.companyId) !== product) {
     return NextResponse.json(
       { error: "This company uses the other product. Sign in on its own host." },

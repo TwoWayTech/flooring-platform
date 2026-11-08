@@ -1,4 +1,4 @@
-import type { PermissionKey, ProductKey } from "@workspace/shared";
+import { type FeatureKey, type PermissionKey, type ProductKey } from "@workspace/shared";
 
 /** One step of the demo: the screen to open and what to show there (spec Tier 3 "Presenter guide"). */
 export interface GuideStep {
@@ -8,6 +8,8 @@ export interface GuideStep {
   href: string;
   /** The screen needs any one of these; a role without them sees the step greyed out. */
   anyOf: PermissionKey[];
+  /** The feature behind a step whose screen does not tell it, such as View as on an ordinary page. */
+  feature?: FeatureKey;
 }
 
 const VIEW_AS: PermissionKey[] = ["settings.roles.manage"];
@@ -35,6 +37,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Invoice and PDF",
+      feature: "sales.invoices",
       say: "Convert an accepted quote to an invoice and download its PDF.",
       href: "/sales?view=quotes",
       anyOf: ["sales.quote.view"],
@@ -71,6 +74,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "View as Sales",
+      feature: "shell.view-as",
       say: "In the sidebar, pick View as, then Sales: costs and margins disappear.",
       href: "/inventory",
       anyOf: VIEW_AS,
@@ -139,6 +143,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "View as Employee",
+      feature: "shell.view-as",
       say: "In the sidebar, pick View as, then Employee: only their own timesheets and time off remain.",
       href: "/hr/timesheets",
       anyOf: VIEW_AS,

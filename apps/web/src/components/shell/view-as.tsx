@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsUpDown, Eye } from "lucide-react";
-import { SENSITIVE, type PermissionKey, type Role } from "@workspace/shared";
+import { featureOn, SENSITIVE, type PermissionKey, type Role } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   DropdownMenu,
@@ -17,7 +17,7 @@ import { useWorkspace } from "@/components/workspace/workspace-context";
 export function useCanViewAs(): boolean {
   const { user, roles } = useWorkspace();
   const held = roles.filter((r) => user.roleIds.includes(r.id));
-  return held.some((r) => r.owner || r.permissions.includes("settings.roles.manage"));
+  return featureOn("shell.view-as") && held.some((r) => r.owner || r.permissions.includes("settings.roles.manage"));
 }
 
 /** What the viewed-as role cannot see, phrased for the banner. */

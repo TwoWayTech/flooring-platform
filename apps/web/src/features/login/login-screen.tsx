@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import type { ProductKey } from "@workspace/shared";
+import { featureOn, type ProductKey } from "@workspace/shared";
+import { Button } from "@workspace/ui/components/button";
 import { BrandStyle } from "@workspace/ui/components/brand-style";
 import { FloorPattern } from "@workspace/ui/components/floor-pattern";
 import { Skeleton } from "@workspace/ui/components/skeleton";
@@ -175,24 +176,26 @@ export function LoginScreen({ product }: { product: ProductKey }) {
                     />
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setChoice({ kind: "platform" })}
-                  aria-pressed={choice?.kind === "platform"}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md border border-dashed p-3 text-left transition-colors",
-                    choice?.kind === "platform" ? "border-brand bg-brand-soft" : "border-hairline hover:bg-raised",
-                  )}
-                >
-                  <ShieldCheck aria-hidden="true" className="text-muted-foreground size-5 shrink-0" />
-                  <span>
-                    <span className="block text-sm font-semibold">Platform admin (you)</span>
-                    <span className="text-muted-foreground block text-xs">Companies, plans, modules and access</span>
-                  </span>
-                </button>
+                {featureOn("admin.access") ? (
+                  <button
+                    type="button"
+                    onClick={() => setChoice({ kind: "platform" })}
+                    aria-pressed={choice?.kind === "platform"}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md border border-dashed p-3 text-left transition-colors",
+                      choice?.kind === "platform" ? "border-brand bg-brand-soft" : "border-hairline hover:bg-raised",
+                    )}
+                  >
+                    <ShieldCheck aria-hidden="true" className="text-muted-foreground size-5 shrink-0" />
+                    <span>
+                      <span className="block text-sm font-semibold">Platform admin (you)</span>
+                      <span className="text-muted-foreground block text-xs">Companies, plans, modules and access</span>
+                    </span>
+                  </button>
+                ) : null}
               </Step>
 
-              {choice ? (
+              {choice && featureOn("auth.mfa") ? (
                 <Step n={3} title="Verify it is you">
                   <CodeStep
                     key={choice.kind === "platform" ? "platform" : choice.persona.user.id}
@@ -201,6 +204,12 @@ export function LoginScreen({ product }: { product: ProductKey }) {
                     onSubmit={() => void complete()}
                   />
                 </Step>
+              ) : choice ? (
+                <Button size="lg" className="h-10 self-start" disabled={pending} onClick={() => void complete()}>
+                  {pending
+                    ? "Signing in"
+                    : `Sign in as ${choice.kind === "platform" ? "platform admin" : choice.persona.user.name}`}
+                </Button>
               ) : null}
             </>
           )}

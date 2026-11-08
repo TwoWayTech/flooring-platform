@@ -13,6 +13,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { CustomersTable } from "@/features/customers/customers-table";
 import { InvoicesTable } from "./invoices-table";
 import { QuotesTable } from "./quotes-table";
+import { featureOn } from "@workspace/shared";
 
 /** Sales: quotes and invoices, limited to the viewer's data scope by the ApiClient. */
 export function SalesPage() {
@@ -29,9 +30,9 @@ export function SalesPage() {
     ]);
     return { quotes, invoices, customers, users, payments };
   }, []);
-  const canQuotes = can("sales.quote.view");
-  const canInvoices = can("sales.invoice.view");
-  const canCustomers = can("customers.customer.view");
+  const canQuotes = can("sales.quote.view") && featureOn("sales.quotes");
+  const canInvoices = can("sales.invoice.view") && featureOn("sales.invoices");
+  const canCustomers = can("customers.customer.view") && featureOn("sales.customers");
   if (!canQuotes && !canInvoices && !canCustomers) return <NoAccess />;
   const requested = params.get("view");
   const allowed = { quotes: canQuotes, invoices: canInvoices, customers: canCustomers };
@@ -44,7 +45,7 @@ export function SalesPage() {
       <PageHeader
         title="Sales"
         actions={
-          can("sales.quote.create") ? (
+          canQuotes && can("sales.quote.create") ? (
             <Button asChild>
               <Link href="/sales/quotes/new">
                 <FilePlus2 />

@@ -3,7 +3,7 @@
 import { Check, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { Company } from "@workspace/shared";
+import { featureOn, type Company } from "@workspace/shared";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,12 +41,26 @@ function CompanyMark() {
   );
 }
 
+/** The company's mark, name and product, as the sidebar shows them. */
+function CompanyLabel() {
+  const { settings, product } = useWorkspace();
+  return (
+    <>
+      <CompanyMark />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm leading-tight font-semibold">{settings.branding.displayName}</span>
+        <span className="text-muted-foreground block truncate text-xs">{product.name}</span>
+      </span>
+    </>
+  );
+}
+
 /**
  * Switches the presenter to the same persona in another company of this product. The new
  * session reloads the shell with that company's logo, name, colors and pattern (spec "App shell").
  */
 export function CompanySwitcher() {
-  const { company, settings, session, product } = useWorkspace();
+  const { company, session } = useWorkspace();
   const [switching, setSwitching] = useState(false);
   const { switchCompany } = useSessionActions();
   const companies = useApiQuery((client) => client.listCompanies(), []);
@@ -64,18 +78,22 @@ export function CompanySwitcher() {
     }
   }
 
+  if (!featureOn("shell.company-switcher")) {
+    return (
+      <div className="flex items-center gap-3 p-1.5">
+        <CompanyLabel />
+      </div>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={switching}
         className="hover:bg-raised flex w-full items-center gap-3 rounded-md p-1.5 text-left transition-colors"
       >
-        <CompanyMark />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm leading-tight font-semibold">{settings.branding.displayName}</span>
-          <span className="text-muted-foreground block truncate text-xs">{product.name}</span>
-          <span className="sr-only">, switch company</span>
-        </span>
+        <CompanyLabel />
+        <span className="sr-only">, switch company</span>
         <ChevronsUpDown aria-hidden="true" className="text-muted-foreground size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">

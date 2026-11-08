@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FilePlus2 } from "lucide-react";
-import { dataScope } from "@workspace/shared";
+import { featureOn, dataScope } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Skeleton } from "@workspace/ui/components/skeleton";
@@ -31,7 +31,7 @@ export function DashboardPage() {
       <PageHeader
         title="Dashboard"
         actions={
-          can("sales.quote.create") ? (
+          can("sales.quote.create") && featureOn("sales.quotes") ? (
             <Button asChild>
               <Link href="/sales/quotes/new">
                 <FilePlus2 />
@@ -64,7 +64,9 @@ export function DashboardPage() {
           {/* On phones what needs action comes first; on desktop it is the side column. */}
           <div className="order-first flex min-w-0 flex-col gap-6 lg:order-none">
             <AttentionPanel />
-            {can("installation.job.view") ? <TodaysJobs jobs={data.data.jobsToday} /> : null}
+            {can("installation.job.view") && featureOn("installation.calendar") ? (
+              <TodaysJobs jobs={data.data.jobsToday} />
+            ) : null}
           </div>
         </div>
       )}

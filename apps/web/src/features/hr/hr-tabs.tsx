@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@workspace/ui/lib/utils";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { pathOn } from "@workspace/shared";
 
 const TABS = [
   { href: "/hr", label: "Overview", permission: "hr.overview.view" },
@@ -24,7 +25,7 @@ export function HrTabs() {
   return (
     <nav aria-label="HR" className="scrollbar-none -mx-4 overflow-x-auto px-4">
       <ul className="border-hairline flex gap-4 border-b">
-        {TABS.filter((t) => can(t.permission)).map((t) => {
+        {TABS.filter((t) => can(t.permission) && pathOn(product.key, t.href)).map((t) => {
           const active = t.href === "/hr" ? pathname === "/hr" : pathname.startsWith(t.href);
           return (
             <li key={t.href}>

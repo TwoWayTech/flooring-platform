@@ -11,6 +11,7 @@ import { viewerAccess } from "@/lib/access";
 import type { CompanySession } from "@/lib/session/session";
 import { PRODUCTS } from "@/products";
 import { WorkspaceContext, type Workspace } from "./workspace-context";
+import { featureOn } from "@workspace/shared";
 
 const viewAsKey = (companyId: string) => `fp-view-as:${companyId}`;
 
@@ -48,7 +49,7 @@ export function WorkspaceProvider({
   const [viewAs, setViewAsState] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = readViewAs(session.companyId);
+    const stored = featureOn("shell.view-as") ? readViewAs(session.companyId) : null;
     void api.openCompany(session.companyId, { userId: session.userId, viewAsRoleId: stored }).then(() => {
       setViewAsState(stored);
       setOpened(true);

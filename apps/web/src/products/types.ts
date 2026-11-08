@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { FloorPattern, PermissionKey, ProductKey } from "@workspace/shared";
+import { type FeatureKey, type FloorPattern, type PermissionKey, type ProductKey } from "@workspace/shared";
 
 /** One entry in the sidebar, shown when the user holds any of its permissions. */
 export interface MenuItem {
@@ -8,6 +8,8 @@ export interface MenuItem {
   icon: LucideIcon;
   /** Holding any one of these shows the item. Effective access already reflects modules and ceiling. */
   anyOf: PermissionKey[];
+  /** Feature switches behind the item (docs/FEATURES.md); it shows while any of them is on. */
+  features: FeatureKey[];
 }
 
 /** What a product host shows: its name, menus and the branding used before a company is picked. */

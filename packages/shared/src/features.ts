@@ -1,0 +1,339 @@
+import type { ModuleKey, ProductKey } from "./products";
+
+/**
+ * Where a feature stands in docs/FEATURES.md: shown in the demo, confirmed for the real build,
+ * deferred, or dropped. A removed feature is always switched off.
+ */
+export type FeatureStatus = "demo" | "build" | "later" | "removed";
+
+/** The product a feature belongs to; "both" marks platform features every product has. */
+export type FeatureProduct = ProductKey | "both";
+
+/** One feature of the demo, switchable by its key (docs/FEATURES.md holds the full register). */
+export interface Feature {
+  title: string;
+  product: FeatureProduct;
+  module: ModuleKey;
+  status: FeatureStatus;
+  /** The switch. Off hides the feature's screens, menu items, tabs, buttons and actions. */
+  enabled: boolean;
+  /**
+   * Routes the feature owns. "/path" matches that path with any query, "/path?view=x" matches
+   * that view of it, and "/path/*" matches every page below it. Shell features own no route.
+   */
+  screens: readonly string[];
+}
+
+/**
+ * The feature register. To switch a feature off, set `enabled: false`; every screen, menu item,
+ * tab, button and command of that feature then disappears (.claude/commands/feature-change.md).
+ */
+export const FEATURES = {
+  "dashboard.store": {
+    title: "Store dashboard",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/"],
+  },
+  "inventory.products": {
+    title: "Product catalog",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/inventory?view=products"],
+  },
+  "inventory.rolls": {
+    title: "Rolls, cuts and remnants",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/inventory?view=rolls", "/inventory/rolls/*"],
+  },
+  "sales.quotes": {
+    title: "Quotes and quote builder",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/sales?view=quotes", "/sales/quotes/*"],
+  },
+  "sales.invoices": {
+    title: "Invoices and invoice PDF",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/sales?view=invoices", "/sales/invoices/*"],
+  },
+  "sales.customers": {
+    title: "Customers and receivables",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/sales?view=customers"],
+  },
+  "purchasing.orders": {
+    title: "Suppliers, purchase orders and payables",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/purchasing"],
+  },
+  "installation.calendar": {
+    title: "Installation calendar and job cards",
+    product: "flooring",
+    module: "installation",
+    status: "demo",
+    enabled: true,
+    screens: ["/installation"],
+  },
+  "reports.hub": {
+    title: "Reports hub",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/reports"],
+  },
+  "hr.dashboard": {
+    title: "HR dashboard",
+    product: "hr",
+    module: "hr",
+    status: "demo",
+    enabled: true,
+    screens: ["/", "/hr"],
+  },
+  "hr.employees": {
+    title: "Employees",
+    product: "hr",
+    module: "hr",
+    status: "demo",
+    enabled: true,
+    screens: ["/hr/employees"],
+  },
+  "hr.timesheets": {
+    title: "Timesheets and overtime",
+    product: "hr",
+    module: "hr",
+    status: "demo",
+    enabled: true,
+    screens: ["/hr/timesheets"],
+  },
+  "hr.time-off": {
+    title: "Time off",
+    product: "hr",
+    module: "hr",
+    status: "demo",
+    enabled: true,
+    screens: ["/hr/time-off"],
+  },
+  "meetings.calendar": {
+    title: "Meetings calendar",
+    product: "both",
+    module: "meetings",
+    status: "demo",
+    enabled: true,
+    screens: ["/meetings"],
+  },
+  "settings.users": {
+    title: "Users and seats",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/users"],
+  },
+  "settings.roles": {
+    title: "Security roles",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/roles"],
+  },
+  "settings.branding": {
+    title: "Branding",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/branding"],
+  },
+  "settings.localization": {
+    title: "Localization and sales tax",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/localization"],
+  },
+  "settings.number-format": {
+    title: "Number format",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/number-format"],
+  },
+  "settings.company": {
+    title: "Company profile",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/company"],
+  },
+  "settings.audit": {
+    title: "Audit log",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/audit"],
+  },
+  "admin.access": {
+    title: "Platform admin: plans, modules and ceilings",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/admin", "/admin/*"],
+  },
+  "auth.mfa": {
+    title: "Sign-in code step",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "auth.step-up": {
+    title: "Code check before high-impact changes",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.company-switcher": {
+    title: "Company switcher",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.view-as": {
+    title: "View as a role",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.command-palette": {
+    title: "Command palette",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.notifications": {
+    title: "Notifications",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.presenter-guide": {
+    title: "Presenter guide",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "shell.network-simulation": {
+    title: "Simulated slow or offline network",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "demo.reset": {
+    title: "Reset demo data",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+} as const satisfies Record<string, Feature>;
+
+/** A feature's key, the name used in code, docs/FEATURES.md and feature-change ADRs. */
+export type FeatureKey = keyof typeof FEATURES;
+
+/** Every feature key, in register order. */
+export const FEATURE_KEYS = Object.keys(FEATURES) as FeatureKey[];
+
+/** The register as plain data; tests pass a modified copy to try a switch. */
+export type FeatureRegister = Record<FeatureKey, Feature>;
+
+/** True when the feature is switched on. A removed feature is off whatever its switch says. */
+export function featureOn(key: FeatureKey, register: FeatureRegister = FEATURES): boolean {
+  const feature = register[key];
+  return feature.enabled && feature.status !== "removed";
+}
+
+/** How closely a screen pattern matches a page: 0 for no match, higher for a more specific match. */
+function matchScore(pattern: string, pathname: string, view: string | null): number {
+  if (pattern.endsWith("/*")) return pathname.startsWith(pattern.slice(0, -1)) ? 3 : 0;
+  const [path, query = ""] = pattern.split("?");
+  if (path !== pathname) return 0;
+  const patternView = new URLSearchParams(query).get("view");
+  if (!patternView) return 1;
+  return patternView === view ? 2 : 0;
+}
+
+/** Features of the product itself win over the other product's on a shared path such as "/". */
+function productScore(feature: Feature, product: ProductKey): number {
+  if (feature.product === product) return 2;
+  return feature.product === "both" ? 1 : 0;
+}
+
+/**
+ * The feature that owns a page or link (for example "/sales?view=invoices&status=overdue"), or
+ * null for pages no feature owns, such as sign-in or a section that holds several features.
+ */
+export function featureForPath(
+  product: ProductKey,
+  href: string,
+  register: FeatureRegister = FEATURES,
+): FeatureKey | null {
+  const [pathname = "", query = ""] = href.split("?");
+  const view = new URLSearchParams(query).get("view");
+  let best: { key: FeatureKey; rank: number } | null = null;
+  for (const key of FEATURE_KEYS) {
+    const feature = register[key];
+    const score = Math.max(0, ...feature.screens.map((s) => matchScore(s, pathname, view)));
+    if (score === 0) continue;
+    const rank = productScore(feature, product) * 10 + score;
+    if (!best || rank > best.rank) best = { key, rank };
+  }
+  return best?.key ?? null;
+}
+
+/** True when the page or link may be shown: no feature owns it, or the feature that does is on. */
+export function pathOn(product: ProductKey, href: string, register: FeatureRegister = FEATURES): boolean {
+  const key = featureForPath(product, href, register);
+  return key === null || featureOn(key, register);
+}

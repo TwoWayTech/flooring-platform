@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useEffect } from "react";
 import { Building2, Eye, FilePlus2, LogOut, Moon, Presentation, RotateCcw, Scissors, UserPlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { PermissionKey } from "@workspace/shared";
+import { featureOn, type FeatureKey, type PermissionKey } from "@workspace/shared";
 import {
   Command,
   CommandDialog,
@@ -29,6 +29,8 @@ interface PaletteAction {
   icon: LucideIcon;
   /** Shown only with this permission; actions without one are open to everyone. */
   permission?: PermissionKey;
+  /** Shown only while this feature is switched on. */
+  feature?: FeatureKey;
   run: () => void;
 }
 
@@ -71,30 +73,36 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       label: "New quote",
       icon: FilePlus2,
       permission: "sales.quote.create",
+      feature: "sales.quotes",
       run: () => router.push("/sales/quotes/new"),
     },
     {
       label: "Cut a roll",
       icon: Scissors,
       permission: "inventory.roll.cut",
+      feature: "inventory.rolls",
       run: () => router.push("/inventory?view=rolls"),
     },
     {
       label: "Invite user",
       icon: UserPlus,
       permission: "settings.users.manage",
+      feature: "settings.users",
       run: () => router.push("/settings/users?invite=1"),
     },
     {
       label: guideOpen ? "Hide presenter guide" : "Show presenter guide",
       icon: Presentation,
+      feature: "shell.presenter-guide",
       run: () => setGuideOpen(!guideOpen),
     },
     { label: "Toggle theme", icon: Moon, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
-    { label: "Reset demo data", icon: RotateCcw, run: () => void resetDemo() },
+    { label: "Reset demo data", icon: RotateCcw, feature: "demo.reset", run: () => void resetDemo() },
     { label: "Sign out", icon: LogOut, run: () => void signOut() },
   ];
-  const actions = allActions.filter((a) => !a.permission || access.permissions.has(a.permission));
+  const actions = allActions.filter(
+    (a) => (!a.permission || access.permissions.has(a.permission)) && (!a.feature || featureOn(a.feature)),
+  );
   const canViewAs = useCanViewAs();
 
   return (
@@ -129,7 +137,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               </CommandItem>
             ))}
           </CommandGroup>
-          {otherCompanies.length > 0 ? (
+          {otherCompanies.length > 0 && featureOn("shell.company-switcher") ? (
             <>
               <CommandSeparator />
               <CommandGroup heading="Switch company">

@@ -1,4 +1,6 @@
 import {
+  featureOn,
+  type FeatureKey,
   daysBetween,
   isOverdue,
   splitOvertime,
@@ -25,6 +27,8 @@ export interface AttentionItem {
 
 interface Check {
   key: string;
+  /** The feature whose screen handles the item; the check runs only while it is switched on. */
+  feature: FeatureKey;
   permission: PermissionKey;
   products: ProductKey[];
   load: (client: ApiClient, today: string) => Promise<Omit<AttentionItem, "key">>;
@@ -40,6 +44,7 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 const CHECKS: Check[] = [
   {
     key: "overdue",
+    feature: "sales.invoices",
     permission: "sales.invoice.view",
     products: ["flooring"],
     load: async (client, today) => {
@@ -54,6 +59,7 @@ const CHECKS: Check[] = [
   },
   {
     key: "low-rolls",
+    feature: "inventory.rolls",
     permission: "inventory.roll.view",
     products: ["flooring"],
     load: async (client) => {
@@ -70,6 +76,7 @@ const CHECKS: Check[] = [
   },
   {
     key: "certificates",
+    feature: "sales.customers",
     permission: "customers.customer.view",
     products: ["flooring"],
     load: async (client, today) => {
@@ -88,6 +95,7 @@ const CHECKS: Check[] = [
   },
   {
     key: "jobs-today",
+    feature: "installation.calendar",
     permission: "installation.job.view",
     products: ["flooring"],
     load: async (client, today) => {
@@ -97,6 +105,7 @@ const CHECKS: Check[] = [
   },
   {
     key: "pto",
+    feature: "hr.time-off",
     permission: "hr.pto.approve",
     products: ["flooring", "hr"],
     load: async (client) => {
@@ -111,6 +120,7 @@ const CHECKS: Check[] = [
   },
   {
     key: "overtime",
+    feature: "hr.timesheets",
     permission: "hr.timesheet.approve",
     products: ["hr"],
     load: async (client) => {
@@ -132,7 +142,9 @@ const CHECKS: Check[] = [
 /** Attention items for the viewer, skipping checks they cannot act on and checks with nothing to show. */
 export async function loadAttention(client: ApiClient, access: Access, product: ProductKey): Promise<AttentionItem[]> {
   const today = client.today();
-  const allowed = CHECKS.filter((c) => c.products.includes(product) && access.permissions.has(c.permission));
+  const allowed = CHECKS.filter(
+    (c) => featureOn(c.feature) && c.products.includes(product) && access.permissions.has(c.permission),
+  );
   const results = await Promise.all(allowed.map(async (c) => ({ key: c.key, ...(await c.load(client, today)) })));
   return results.filter((r) => r.count > 0);
 }

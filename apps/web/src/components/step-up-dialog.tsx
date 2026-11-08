@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ShieldCheck } from "lucide-react";
+import { featureOn } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -22,14 +23,37 @@ interface StepUpDialogProps {
   onConfirm: () => Promise<void> | void;
 }
 
+/** Confirms once per opening, without asking for a code, while the auth.step-up feature is off. */
+function useSkipWhenSwitchedOff(
+  open: boolean,
+  onOpenChange: (open: boolean) => void,
+  onConfirm: () => Promise<void> | void,
+): boolean {
+  const skip = !featureOn("auth.step-up");
+  const confirmed = useRef(false);
+  useEffect(() => {
+    if (!skip) return;
+    if (!open) {
+      confirmed.current = false;
+      return;
+    }
+    if (confirmed.current) return;
+    confirmed.current = true;
+    void Promise.resolve(onConfirm()).finally(() => onOpenChange(false));
+  }, [skip, open, onConfirm, onOpenChange]);
+  return skip;
+}
+
 /**
  * Simulated step-up MFA (blueprint rule 5): changing a role, a user's roles or MFA settings asks
- * for a fresh authenticator code. Any six digits pass in the demo.
+ * for a fresh authenticator code. Any six digits pass in the demo. With the auth.step-up feature
+ * switched off, opening it confirms at once.
  */
 export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDialogProps) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const skipped = useSkipWhenSwitchedOff(open, onOpenChange, onConfirm);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -47,6 +71,7 @@ export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDi
     }
   }
 
+  if (skipped) return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-surface sm:max-w-sm">

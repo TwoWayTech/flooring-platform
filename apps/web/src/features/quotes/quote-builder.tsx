@@ -6,6 +6,7 @@ import { useState } from "react";
 import { FileText, Save } from "lucide-react";
 import { toast } from "sonner";
 import {
+  featureOn,
   computeTotals,
   taxContextFor,
   type CompanySettings,
@@ -130,7 +131,7 @@ export function QuoteBuilder({ initial, products, customers, settings }: QuoteBu
           </span>
         }
         actions={
-          draft.invoiceId ? (
+          draft.invoiceId && featureOn("sales.invoices") ? (
             <Button asChild variant="outline">
               <Link href={`/sales/invoices/${draft.invoiceId}`}>
                 <FileText />
@@ -225,7 +226,7 @@ export function QuoteBuilder({ initial, products, customers, settings }: QuoteBu
                     <Save />
                     Save quote
                   </Button>
-                  {can("sales.invoice.create") ? (
+                  {can("sales.invoice.create") && featureOn("sales.invoices") ? (
                     <Button onClick={() => void convert()} disabled={pending || draft.lines.length === 0}>
                       <FileText />
                       Convert to invoice

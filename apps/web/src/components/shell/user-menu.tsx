@@ -13,6 +13,7 @@ import {
 import { api } from "@/lib/api";
 import { useSessionActions } from "@/lib/session/use-session-actions";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { featureOn } from "@workspace/shared";
 
 /** Initials for the avatar: first letters of the first and last name. */
 export function initials(name: string): string {
@@ -48,10 +49,12 @@ export function UserMenu() {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void resetDemo()}>
-          <RotateCcw />
-          Reset demo data
-        </DropdownMenuItem>
+        {featureOn("demo.reset") ? (
+          <DropdownMenuItem onSelect={() => void resetDemo()}>
+            <RotateCcw />
+            Reset demo data
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut />
           Sign out
