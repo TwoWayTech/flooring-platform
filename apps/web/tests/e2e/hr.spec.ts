@@ -1,26 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 const HARBOR_HR = { companyId: "harbor", userId: "hb-usr-02", roleKey: "hr" } as const;
 const HARBOR_EMPLOYEE = { companyId: "harbor", userId: "hb-usr-03", roleKey: "employee" } as const;
 
-test.describe("HR", () => {
+test.describe("HR Suite", { tag: HR_TAG }, () => {
   test("HR host home is the HR dashboard", async ({ page }) => {
     await signInAs(page, HARBOR_OWNER);
     await expect(page.getByRole("heading", { name: "HR dashboard" })).toBeVisible();
     await expect(page.getByText("Headcount", { exact: true })).toBeVisible();
   });
 
-  test("pay rate shows only with HR's sensitive permission", async ({ page }) => {
+  test("the HR manager sees pay rates", async ({ page }) => {
     await signInAs(page, HARBOR_HR, "/hr/employees");
     await expect(page.getByRole("button", { name: "Pay rate, column options" })).toBeVisible();
-
-    await signInAs(page, SUMMIT_OWNER, "/hr/employees");
-    await page.keyboard.press("Control+k");
-    await page.getByPlaceholder("Search or run a command").fill("View as Manager");
-    await page.getByRole("option", { name: "View as Manager" }).click();
-    await expect(page.getByRole("button", { name: "Department, column options" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pay rate, column options" })).toHaveCount(0);
   });
 
   test("flags overtime with the California rule for California workers", async ({ page }) => {
@@ -42,5 +35,16 @@ test.describe("HR", () => {
     await expect(page.getByRole("rowheader")).toHaveCount(await page.getByRole("rowheader").count());
     const names = await page.getByRole("rowheader").allInnerTexts();
     expect(names.every((n) => n.startsWith("Mia Chen"))).toBe(true);
+  });
+});
+
+test.describe("HR module in the Flooring Suite", () => {
+  test("pay rate is hidden from a role without HR's sensitive permission", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/hr/employees");
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Manager");
+    await page.getByRole("option", { name: "View as Manager" }).click();
+    await expect(page.getByRole("button", { name: "Department, column options" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pay rate, column options" })).toHaveCount(0);
   });
 });

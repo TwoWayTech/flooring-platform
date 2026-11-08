@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { HR_TAG, PHONE } from "./helpers";
 
 /** Each persona and the home it should land on (spec section 2: "Each persona lands on its allowed home"). */
 const FLOORING_PERSONAS: [name: string, home: RegExp][] = [
@@ -34,7 +35,7 @@ test.describe("login", () => {
   }
 
   for (const [persona, home] of HR_PERSONAS) {
-    test(`HR host: ${persona} lands on their home`, async ({ page }) => {
+    test(`HR host: ${persona} lands on their home`, { tag: HR_TAG }, async ({ page }) => {
       await page.goto("/login?product=hr");
       await expect(page.getByText("HR Suite").first()).toBeVisible();
       await expect(page.getByRole("button", { name: /Harbor Staffing Co./ })).toBeVisible();
@@ -59,8 +60,12 @@ test.describe("login", () => {
     await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
   });
+});
 
-  test("lays out on a phone @phone", async ({ page }) => {
+test.describe("login on a phone", () => {
+  test.use(PHONE);
+
+  test("lays out on a phone", async ({ page }) => {
     await page.goto("/login?product=flooring");
     await expect(page.getByRole("radio", { name: /Dana Whitfield/ })).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { HARBOR_OWNER, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER } from "./helpers";
 import { ADMIN_SCREENS, FLOORING_SCREENS, HR_SCREENS } from "./screens";
 
 /** WCAG 2.1 A and AA, the accessibility bar in CLAUDE.md rule 6 and spec Tier 3. */
@@ -37,7 +37,7 @@ for (const theme of THEMES) {
     }
 
     for (const path of HR_SCREENS) {
-      test(`HR ${path}`, async ({ page }) => {
+      test(`HR ${path}`, { tag: HR_TAG }, async ({ page }) => {
         await signInAs(page, HARBOR_OWNER, path);
         await expectNoViolations(page);
       });
@@ -50,12 +50,15 @@ for (const theme of THEMES) {
       });
     }
 
-    for (const product of ["flooring", "hr"]) {
-      test(`login, ${product}`, async ({ page }) => {
-        await page.goto(`/login?product=${product}`);
-        await expectNoViolations(page);
-      });
-    }
+    test("login, flooring", async ({ page }) => {
+      await page.goto("/login?product=flooring");
+      await expectNoViolations(page);
+    });
+
+    test("login, hr", { tag: HR_TAG }, async ({ page }) => {
+      await page.goto("/login?product=hr");
+      await expectNoViolations(page);
+    });
   });
 }
 

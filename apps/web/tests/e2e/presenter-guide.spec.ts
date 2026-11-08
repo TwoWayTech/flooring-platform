@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("presenter guide", () => {
   test("lists the demo steps, links to each screen and stays open after a reload", async ({ page }) => {
@@ -32,7 +32,7 @@ test.describe("presenter guide", () => {
     await expect(guide.getByText("Not open to this role").first()).toBeVisible();
   });
 
-  test("the HR Suite has its own steps", async ({ page }) => {
+  test("the HR Suite has its own steps", { tag: HR_TAG }, async ({ page }) => {
     await signInAs(page, HARBOR_OWNER, "/");
     await page.getByRole("button", { name: "Presenter guide" }).click();
     const guide = page.getByRole("complementary", { name: "Demo steps" });

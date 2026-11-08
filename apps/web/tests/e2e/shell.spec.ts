@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, PHONE, signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("app shell", () => {
   test("shows flooring menus for a flooring company", async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe("app shell", () => {
     await expect(page.getByRole("button", { name: /Summit Floor Co..*switch company/ })).toBeVisible();
   });
 
-  test("HR host shows only HR menus", async ({ page }) => {
+  test("HR host shows only HR menus", { tag: HR_TAG }, async ({ page }) => {
     await signInAs(page, HARBOR_OWNER);
     await expect(page).toHaveTitle(/HR Suite/);
     const nav = page.getByRole("navigation", { name: "Main" });
@@ -46,8 +46,12 @@ test.describe("app shell", () => {
     await expect(page.getByRole("button", { name: /Keystone Flooring Supply.*switch company/ })).toBeVisible();
     await expect.poll(brand).not.toBe(summitBrand);
   });
+});
 
-  test("opens the menu drawer on a phone @phone", async ({ page }) => {
+test.describe("app shell on a phone", () => {
+  test.use(PHONE);
+
+  test("opens the menu drawer", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER);
     await page.getByRole("button", { name: "Open menu" }).click();
     await expect(page.getByRole("dialog").getByRole("link", { name: "Inventory" })).toBeVisible();

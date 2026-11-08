@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("meetings", () => {
   test("shows this week's recurring meetings with attendees and the reminder", async ({ page }) => {
@@ -28,7 +28,7 @@ test.describe("meetings", () => {
     await expect(page.getByRole("dialog").getByText("(supplier)")).toBeVisible();
   });
 
-  test("the HR Suite has its own meetings", async ({ page }) => {
+  test("the HR Suite has its own meetings", { tag: HR_TAG }, async ({ page }) => {
     await signInAs(page, HARBOR_OWNER, "/meetings");
     await expect(page.getByRole("button", { name: /Weekly recruiter standup/ })).toBeVisible();
   });

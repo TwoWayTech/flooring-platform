@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { devices, expect, type Page } from "@playwright/test";
 
 /** A persona to sign in as, by company and role. */
 export interface Persona {
@@ -47,3 +47,20 @@ export async function signInAsPlatformAdmin(page: Page, path = "/admin") {
   expect(status).toBe(200);
   await page.goto(path);
 }
+
+const pixel = devices["Pixel 7"];
+
+/**
+ * A phone (Pixel 7 at 390 px) for layout tests. Set it with `test.use(PHONE)` in a describe, so
+ * both product projects run their own phone checks.
+ */
+export const PHONE = {
+  viewport: { width: 390, height: 844 },
+  userAgent: pixel.userAgent,
+  deviceScaleFactor: pixel.deviceScaleFactor,
+  isMobile: pixel.isMobile,
+  hasTouch: pixel.hasTouch,
+};
+
+/** Tag for tests that belong to the HR Suite project, which runs them on the HR host. */
+export const HR_TAG = "@hr";
