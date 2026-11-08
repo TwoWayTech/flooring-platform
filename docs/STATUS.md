@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: done (all phases shipped)
-- Next step: none required. Optional: set DEMO_SESSION_SECRET on Vercel (`vercel env add DEMO_SESSION_SECRET production`, then `vercel deploy --prod`), and grant the Vercel GitHub app access to TwoWayTech/flooring-platform, then run `vercel git connect` so pushes deploy automatically.
+- Current phase: post-demo setup done; waiting for the client demo
+- Next step: redeploy so production runs the feature switches (`vercel deploy --prod` from the repository root; ask before running it), then rerun the suite against production. After the client demo, fill in docs/feedback-demo.md and run `/feature-change` for each decided request. Optional: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
-- Last session log: docs/sessions/2026-11-07-2330-phase5-ship.md
+- Last session log: docs/sessions/2026-11-08-post-demo-setup.md
 
 ## Checklist
 
@@ -55,6 +55,14 @@
 - [x] All tests green, production build passes
 - [x] docs/demo-script.md
 - [x] Deployed: Flooring and HR hosts
+
+### Post-demo setup
+- [x] Playwright: one project per product, passing against production (189 tests)
+- [x] docs/FEATURES.md and a switch per feature in packages/shared
+- [x] docs/feedback-demo.md template
+- [x] /feature-change command and docs/blueprint-delta.md
+- [x] README.demo.md
+- [ ] Production redeployed with the feature switches
 
 ## Decisions
 (see docs/adr/)
