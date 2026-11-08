@@ -11,12 +11,22 @@
 - Switches are code constants, so turning one off needs a redeploy. No runtime override, to keep a single switch per feature.
 - With the auth.step-up switch off, the code dialog confirms at once instead of every caller handling it.
 
-## Not verified
-- The switched-off state was checked by unit tests (route ownership, link filtering, removed features) and by review, not in a browser: the local dev server was stopped earlier for low memory, and production still runs the previous build. All switches are on, so the live demo behaves as before.
+## Switch check in a browser
+- On a throwaway branch (`verify/meetings-off`, in a separate git worktree so the shared folder and its running servers were untouched), `meetings.calendar` was switched off, built with `pnpm build` and served with `next start` on port 3200.
+- Checked with Playwright MCP screenshots, in both products (Summit Owner, Harbor Owner): the Meetings menu item is gone; `/meetings` shows "This feature is switched off in this demo."; the command palette has no Meetings entry; the presenter guide drops the Meetings step and renumbers (Flooring 13 steps, HR Suite 7); no console errors or warnings.
+- The full suite against that build, without retries: 183 passed, 6 failed. All 6 open the Meetings page or its New meeting dialog (meetings.spec x3, two a11y dialog checks and one offline-save check that use the Meetings form), so they fail as expected. The screen checks on `/meetings` (layout, console, accessibility) pass on the switched-off page.
+- Small gap: with a feature off, the browser tab title still names it (for example "Meetings | Flooring Suite"), because the page metadata comes from the route. The page body is correct.
+- The branch was never committed or pushed, and is deleted.
+
+## Production redeploy
+- `vercel deploy --prod` of commit `17161ae` (every switch on): deployment `dpl_46PEHPUwSwyDzNxWk4dpw1XSUhg6`; both hostnames point at it.
+- Full suite against both live addresses: 189 passed in 5.8 minutes, no retries.
+- `.vercelignore` now also leaves out `.claude/settings.local.json`.
+- `.claude/settings.json` now allows `vercel` commands without a prompt, at the owner's request.
 
 ## Commands run
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` (102 unit tests), `pnpm build`: pass.
-- `E2E_FLOORING_URL=… E2E_HR_URL=… pnpm test:e2e` against production: 189 passed.
+- `E2E_FLOORING_URL=… E2E_HR_URL=… pnpm test:e2e` against production: 189 passed (before and after the redeploy).
 
 ## Next
-Redeploy production (ask first), rerun the suite against it, then use docs/feedback-demo.md and `/feature-change` after the client demo.
+After the client demo: fill in docs/feedback-demo.md and run `/feature-change` for each decided request.
