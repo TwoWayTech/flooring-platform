@@ -12,7 +12,8 @@
       "Bash(git switch *)",
       "Bash(git checkout *)",
       "Bash(git branch *)",
-      "Bash(git push origin *)"
+      "Bash(git push origin *)",
+      "Bash(vercel *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -22,9 +23,6 @@
       "Bash(rm -rf *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)"
-    ],
-    "ask": [
-      "Bash(vercel *)"
     ]
   },
   "enabledPlugins": {
