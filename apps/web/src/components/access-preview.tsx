@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Check, Eye, EyeOff, X } from "lucide-react";
 import {
   dataScope,
+  permissionDef,
   resolveAccess,
   SENSITIVE,
   type Company,
@@ -21,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
-import { PRODUCTS, visibleItems } from "@/products";
+import { cn } from "@workspace/ui/lib/utils";
+import { pageList } from "@/products/pages";
 
 const SENSITIVE_LABELS: Record<keyof typeof SENSITIVE, string> = {
   productCost: "Product cost",
@@ -31,18 +33,35 @@ const SENSITIVE_LABELS: Record<keyof typeof SENSITIVE, string> = {
   creditLimit: "Credit limit",
 };
 
+const SCOPE_LABELS = { own: "Own records", branch: "Their branch", all: "Everything" } as const;
+
 interface AccessPreviewProps {
   company: Company;
   roles: Role[];
   users: User[];
-  /** The draft ceiling and modules, so the preview shows the effect before saving. */
+  /** The ceiling and modules to preview under; the super-admin passes the draft plan before saving. */
   ceiling: PermissionKey[];
   modules: ModuleKey[];
 }
 
+/** One line of the preview: a page or action with a tick or a cross, never colour alone. */
+function Allowed({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  const Icon = ok ? Check : X;
+  return (
+    <li className={cn("flex items-center gap-1.5 text-sm", !ok && "text-muted-foreground")}>
+      <Icon aria-hidden="true" className={cn("size-3.5", ok ? "text-success-ink" : "")} />
+      <span>
+        {children}
+        <span className="sr-only">{ok ? ", allowed" : ", not allowed"}</span>
+      </span>
+    </li>
+  );
+}
+
 /**
- * Effective-access preview (blueprint "Company access"): pick a role or a user and see exactly
- * which menus and sensitive fields they get under the plan being edited.
+ * Effective-access preview (blueprint "Company access", spec A3): pick a role or a user and see
+ * every page, action and sensitive field they get. The super-admin uses it with the plan being
+ * edited; a company admin uses it in Security roles with the plan as it is.
  */
 export function AccessPreview({ company, roles, users, ceiling, modules }: AccessPreviewProps) {
   const [subject, setSubject] = useState(`role:${roles.find((r) => r.key === "sales")?.id ?? roles[0]?.id}`);
@@ -52,11 +71,13 @@ export function AccessPreview({ company, roles, users, ceiling, modules }: Acces
       ? roles.filter((r) => r.id === id)
       : roles.filter((r) => users.find((u) => u.id === id)?.roleIds.includes(r.id));
   const access = resolveAccess(held, ceiling, modules);
-  const product = PRODUCTS[company.product];
-  const menus = visibleItems([...product.menu, ...product.settings], access);
+  const pages = pageList(company.product);
+  const actions = [...access.permissions]
+    .map((key) => permissionDef(key)!)
+    .filter((def) => def.action !== "view" && def.action !== "view_sensitive");
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Select value={subject} onValueChange={setSubject}>
         <SelectTrigger className="w-full sm:w-72" aria-label="Preview access for">
           <SelectValue />
@@ -82,22 +103,44 @@ export function AccessPreview({ company, roles, users, ceiling, modules }: Acces
           </SelectGroup>
         </SelectContent>
       </Select>
-      <dl className="grid gap-4 sm:grid-cols-3">
+      <dl className="grid gap-4 sm:grid-cols-2">
         <div>
           <dt className="text-muted-foreground text-xs">Permissions in effect</dt>
           <dd className="font-display text-xl font-semibold tabular-nums">{access.permissions.size}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground text-xs">Data scope</dt>
-          <dd className="text-sm font-medium">
-            {{ own: "Own records", branch: "Their branch", all: "Everything" }[dataScope(held)]}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground text-xs">Menus</dt>
-          <dd className="text-sm">{menus.map((m) => m.label).join(", ") || "None"}</dd>
+          <dd className="text-sm font-medium">{SCOPE_LABELS[dataScope(held)]}</dd>
         </div>
       </dl>
+      <section aria-labelledby="preview-pages">
+        <h3 id="preview-pages" className="mb-2 text-sm font-semibold">
+          Pages
+        </h3>
+        <ul className="grid gap-1 sm:grid-cols-2">
+          {pages.map((page) => (
+            <Allowed key={page.href} ok={page.anyOf.some((k) => access.permissions.has(k))}>
+              {page.label}
+            </Allowed>
+          ))}
+        </ul>
+      </section>
+      <section aria-labelledby="preview-actions">
+        <h3 id="preview-actions" className="mb-2 text-sm font-semibold">
+          Actions ({actions.length})
+        </h3>
+        {actions.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Can only look, not change anything.</p>
+        ) : (
+          <ul className="grid max-h-56 gap-1 overflow-y-auto sm:grid-cols-2">
+            {actions.map((def) => (
+              <Allowed key={def.key} ok>
+                {def.label}
+              </Allowed>
+            ))}
+          </ul>
+        )}
+      </section>
       <ul className="flex flex-wrap gap-2" aria-label="Sensitive fields">
         {(Object.keys(SENSITIVE) as (keyof typeof SENSITIVE)[]).map((field) => {
           const visible = access.permissions.has(SENSITIVE[field]);

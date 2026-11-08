@@ -10,6 +10,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
+import { AccessPreview } from "@/components/access-preview";
 import { RoleEditor } from "./role-editor";
 
 /** A new, unsaved role for this company: copied from another role, or empty. */
@@ -28,8 +29,9 @@ function draftRole(companyId: Role["companyId"], from?: Role): Role {
 }
 
 /**
- * Settings: Security roles (spec Tier 1): the roles with their user counts beside the editor
- * for the selected role. New and copied roles stay unsaved until Save role.
+ * Settings: Security roles (spec Tier 1, A3): the roles with their user counts beside the editor
+ * for the selected role, and the effective access preview. Default roles carry a System badge,
+ * cannot be deleted and can be reset; duplicates stay unsaved until Save role.
  */
 export function RolesPage() {
   const can = useCan();
@@ -83,6 +85,7 @@ export function RolesPage() {
               >
                 {role.owner ? <Lock aria-label="Locked" className="size-3.5" /> : null}
                 <span className="flex-1 truncate">{role.name}</span>
+                {role.system ? <span className="text-muted-foreground text-[0.6875rem]">System</span> : null}
                 <span className="text-muted-foreground text-xs tabular-nums">
                   {role === unsaved ? "Unsaved" : `${holders(role)} ${holders(role) === 1 ? "user" : "users"}`}
                 </span>
@@ -104,6 +107,18 @@ export function RolesPage() {
         }}
         onDeleted={() => setSelectedId(null)}
       />
+      <Panel title="Effective access preview" className="xl:col-start-2">
+        <p className="text-muted-foreground mb-4 max-w-prose text-sm">
+          Pick a role or a person to see every page, action and sensitive field they get under your plan.
+        </p>
+        <AccessPreview
+          company={company}
+          roles={roles}
+          users={users}
+          ceiling={company.ceiling}
+          modules={company.modules}
+        />
+      </Panel>
     </div>
   );
 }

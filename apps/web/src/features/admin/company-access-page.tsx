@@ -25,7 +25,7 @@ import { Field } from "@/components/field";
 import { PermissionMatrix } from "@/features/settings/roles/permission-matrix";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
-import { AccessPreview } from "./access-preview";
+import { AccessPreview } from "@/components/access-preview";
 
 interface Draft {
   modules: ModuleKey[];

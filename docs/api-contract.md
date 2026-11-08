@@ -59,6 +59,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `inviteUser(input)` | `POST /users` | Seat limit: active and invited users count; disabled users free a seat. |
 | `updateUser(id, patch)` | `PATCH /users/:id` | At least one active Owner remains. New roles must hold only permissions the granter holds; only an Owner makes an Owner. |
 | `saveRole(role)` | `PUT /roles/:id` | Owner role is locked. No permission the granter does not hold can be added. |
+| `resetRole(id)` | `POST /roles/:id/reset` | Default roles only, never Owner. Restores the shipped permissions (inside the product), scope, name and description, through the same no-escalation check as a save. Audited. |
 | `deleteRole(id)` | `DELETE /roles/:id` | Default roles cannot be deleted; roles still held cannot be deleted. |
 | `recordAudit(entry)` | `POST /audit` | Appends an entry as the signed-in user. |
 

@@ -127,6 +127,11 @@ export interface ApiClient {
   updateUser(userId: string, patch: UserPatch): Promise<User>;
   /** Creates or updates a role and audits the before and after permissions. */
   saveRole(role: Role): Promise<Role>;
+  /**
+   * Puts a default role back to its shipped permissions, scope and description (spec A3). The
+   * Owner role is locked, and the granter must hold every permission the reset adds. Audited.
+   */
+  resetRole(roleId: string): Promise<Role>;
   /** Deletes a non-system role that no user holds. */
   deleteRole(roleId: string): Promise<void>;
   /**

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Lock, Save, Trash2 } from "lucide-react";
+import { Copy, Lock, RotateCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { permissionDef, type DataScope, type PermissionKey, type Role } from "@workspace/shared";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
@@ -62,6 +63,16 @@ export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted 
     }
   }
 
+  async function reset() {
+    try {
+      const saved = await api.resetRole(role.id);
+      toast.success(`Role ${saved.name} reset to its default permissions`);
+      onSaved(saved);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The role was not reset.");
+    }
+  }
+
   async function remove() {
     try {
       await api.deleteRole(role.id);
@@ -81,7 +92,10 @@ export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted 
             {role.name}
           </span>
         ) : (
-          draft.name || "Unnamed role"
+          <span className="inline-flex items-center gap-2">
+            {draft.name || "Unnamed role"}
+            {role.system ? <Badge variant="secondary">System</Badge> : null}
+          </span>
         )
       }
       actions={
@@ -89,8 +103,14 @@ export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted 
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => onCopy(draft)}>
               <Copy />
-              Copy
+              Duplicate
             </Button>
+            {role.system && !role.owner ? (
+              <Button variant="outline" size="sm" onClick={() => void reset()}>
+                <RotateCcw />
+                Reset to default
+              </Button>
+            ) : null}
             {!role.system && !isNew ? (
               <Button variant="outline" size="sm" onClick={() => void remove()}>
                 <Trash2 />

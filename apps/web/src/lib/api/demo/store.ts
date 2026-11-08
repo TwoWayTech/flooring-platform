@@ -10,6 +10,10 @@ import {
   invoiceFromQuote,
   nextNumber,
   dateShift,
+  isDefaultRoleKey,
+  permissionsForModules,
+  PRODUCT_MODULES,
+  roleTemplate,
   boxedStock,
   dec,
   locationName,
@@ -259,6 +263,22 @@ export class DemoStore implements ApiClient {
     });
     this.emit();
     return role;
+  }
+
+  async resetRole(roleId: string) {
+    const db = this.open();
+    const role = db.get("roles", roleId);
+    if (!role?.system || !isDefaultRoleKey(role.key)) throw new DemoRuleError("Only default roles can be reset.");
+    const company = await this.getCompany();
+    const offered = new Set(permissionsForModules(PRODUCT_MODULES[company.product]));
+    const template = roleTemplate(role.key);
+    return this.saveRole({
+      ...role,
+      name: template.name,
+      description: template.description,
+      dataScope: template.dataScope,
+      permissions: template.permissions.filter((p) => offered.has(p)),
+    });
   }
 
   async deleteRole(roleId: string) {

@@ -318,8 +318,11 @@ export function featureOn(key: FeatureKey, register: FeatureRegister = FEATURES)
   return feature.enabled && feature.status !== "removed";
 }
 
-/** How closely a screen pattern matches a page: 0 for no match, higher for a more specific match. */
-function matchScore(pattern: string, pathname: string, view: string | null): number {
+/**
+ * How closely a screen pattern matches a page: 0 for no match, higher for a more specific match.
+ * Feature screens and page permissions (apps/web/src/products/pages.ts) use the same patterns.
+ */
+export function pagePatternScore(pattern: string, pathname: string, view: string | null): number {
   if (pattern.endsWith("/*")) return pathname.startsWith(pattern.slice(0, -1)) ? 3 : 0;
   const [path, query = ""] = pattern.split("?");
   if (path !== pathname) return 0;
@@ -348,7 +351,7 @@ export function featureForPath(
   let best: { key: FeatureKey; rank: number } | null = null;
   for (const key of FEATURE_KEYS) {
     const feature = register[key];
-    const score = Math.max(0, ...feature.screens.map((s) => matchScore(s, pathname, view)));
+    const score = Math.max(0, ...feature.screens.map((s) => pagePatternScore(s, pathname, view)));
     if (score === 0) continue;
     const rank = productScore(feature, product) * 10 + score;
     if (!best || rank > best.rank) best = { key, rank };

@@ -195,6 +195,11 @@ export const PRODUCT_ROLES: Record<ProductKey, readonly DefaultRoleKey[]> = {
   hr: ["owner", "hr", "employee"],
 };
 
+/** Whether a role key names one of the shipped default roles, which can be reset to their template (spec A3). */
+export function isDefaultRoleKey(key: string): key is DefaultRoleKey {
+  return key in TEMPLATES;
+}
+
 /** Returns a fresh copy of a default role template. */
 export function roleTemplate(key: DefaultRoleKey): RoleTemplate {
   const t = TEMPLATES[key];

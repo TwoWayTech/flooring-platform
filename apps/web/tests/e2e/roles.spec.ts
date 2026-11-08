@@ -31,4 +31,48 @@ test.describe("settings: security roles", () => {
     await expect(branding).toBeDisabled();
     await expect(page.getByRole("checkbox", { name: "View quotes" })).toBeEnabled();
   });
+
+  test("an Owner removes a page from the Sales role, and Sales no longer sees it (spec A3)", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/roles");
+    await page.getByRole("button", { name: /^Sales/ }).click();
+    await expect(page.getByText("System", { exact: true }).first()).toBeVisible();
+    await page.getByRole("checkbox", { name: "View products" }).uncheck();
+    await page.getByRole("checkbox", { name: "View rolls" }).uncheck();
+    await page.getByRole("button", { name: "Save role" }).click();
+    await page.getByLabel("Authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Confirm" }).click();
+    await expect(page.getByText("Role Sales saved")).toBeVisible();
+
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Sales");
+    await page.getByRole("option", { name: "View as Sales" }).click();
+    const nav = page.getByRole("navigation", { name: "Main" });
+    await expect(nav.getByRole("link", { name: "Sales" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Inventory" })).toHaveCount(0);
+    await page.goto("/inventory/rolls/sm-roll-0004");
+    await expect(page.getByText("You don't have access to this page.")).toBeVisible();
+  });
+
+  test("resets a default role, duplicates a role and previews effective access", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/roles");
+    await page.getByRole("button", { name: /^Warehouse/ }).click();
+    await page.getByRole("checkbox", { name: "Cut rolls" }).uncheck();
+    await page.getByRole("button", { name: "Save role" }).click();
+    await page.getByLabel("Authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Confirm" }).click();
+    await expect(page.getByText("Role Warehouse saved")).toBeVisible();
+    await page.getByRole("button", { name: "Reset to default" }).click();
+    await expect(page.getByText("Role Warehouse reset to its default permissions")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Cut rolls" })).toBeChecked();
+
+    await page.getByRole("button", { name: "Duplicate" }).click();
+    await expect(page.getByRole("button", { name: /Copy of Warehouse/ })).toBeVisible();
+
+    const preview = page.getByRole("combobox", { name: "Preview access for" });
+    await preview.click();
+    await page.getByRole("option", { name: "Installer" }).click();
+    const pages = page.getByRole("region", { name: "Pages" });
+    await expect(pages.getByText("Installation, allowed")).toBeAttached();
+    await expect(pages.getByText("Purchasing, not allowed")).toBeAttached();
+  });
 });
