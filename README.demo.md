@@ -58,6 +58,19 @@ In PowerShell, set them first: `$env:E2E_FLOORING_URL="https://flooring-demo-two
 
 Locally Playwright uses your installed Chrome. On a machine without it, run `pnpm --filter web exec playwright install chromium` and set `CI=1`.
 
+## Address suggestions
+
+Address fields suggest full addresses as you type ("123 Main", "Sacramento, Calif"). Without any setup the demo uses its own offline list: about 140 US cities and 300 seeded addresses, plus addresses built from the house number and street you type. Picking one fills street, city, state, ZIP, county (which picks the county tax rate) and coordinates; the fields stay editable for entering an address by hand.
+
+To use Google instead, set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and rebuild. The app then calls Places API (New) Autocomplete with a session token per address, closed by one Place Details call that asks only for the formatted address, address components and location, United States only.
+
+1. In the Google Cloud console, create or pick a project and enable **Places API (New)**.
+2. Under APIs and services, Credentials, create an API key.
+3. Restrict it: application restriction **Websites**, with `https://flooring-demo-twowaytech.vercel.app/*` and `https://hr-demo-twowaytech.vercel.app/*` (add `http://localhost:3000/*` for local use); API restriction **Places API (New)** only.
+4. Add it to the Vercel project as `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (Production and Preview) with `vercel env add`, then redeploy. Locally, put it in your own environment, never in the repository.
+
+The key is visible to browsers by design (the website restriction is what protects it). Remove the variable and redeploy to go back to the offline list.
+
 ## Presenting
 
 - docs/demo-script.md: a 25-minute click path, persona by persona.

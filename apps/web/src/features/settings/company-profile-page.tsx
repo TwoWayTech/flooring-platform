@@ -16,6 +16,8 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { SaveBar } from "./form/save-bar";
+import { AddressSearchField } from "@/components/address/address-search-field";
+import { fillAddress } from "@/components/address/fill-address";
 
 /** How many fields React Hook Form marks dirty, nested ones included. */
 function countDirty(dirty: object): number {
@@ -37,6 +39,7 @@ const ProfileSchema = z.object({
     city: z.string().trim().min(1, "Enter the city."),
     state: z.enum(STATE_CODES, "Use a two-letter state code, for example CO."),
     zip: z.string().regex(ZIP_PATTERN, "Enter a ZIP such as 80202 or 80202-1234."),
+    county: z.string().trim().optional(),
   }),
 });
 
@@ -50,7 +53,8 @@ type FieldPath =
   | "address.street"
   | "address.city"
   | "address.state"
-  | "address.zip";
+  | "address.zip"
+  | "address.county";
 
 const FIELDS: { name: FieldPath; label: string; className?: string }[] = [
   { name: "legalName", label: "Legal name", className: "sm:col-span-2" },
@@ -63,6 +67,7 @@ const FIELDS: { name: FieldPath; label: string; className?: string }[] = [
   { name: "address.city", label: "City" },
   { name: "address.state", label: "State" },
   { name: "address.zip", label: "ZIP" },
+  { name: "address.county", label: "County" },
 ];
 
 /**
@@ -110,6 +115,12 @@ export function CompanyProfilePage() {
         </Button>
       </div>
       <form onSubmit={form.handleSubmit(save)} className="flex flex-col gap-5" noValidate>
+        <AddressSearchField
+          id="profile-address-search"
+          label="Find the company address"
+          near={settings.localization.region.primaryState}
+          onSelect={(address) => fillAddress(form.setValue, address)}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           {FIELDS.map(({ name, label, className }) => {
             const error = errorOf(name);

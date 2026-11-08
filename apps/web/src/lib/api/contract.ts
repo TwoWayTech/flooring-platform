@@ -14,6 +14,7 @@ import type {
   Transfer,
   TransferInput,
   Location,
+  Customer,
   ModuleKey,
   PermissionKey,
   Role,
@@ -58,6 +59,14 @@ export interface InviteUserInput {
   title: string;
   roleIds: string[];
   branchId: string;
+}
+
+/** A customer added from a picker with what the caller knows so far (spec A6: name required). */
+export interface NewCustomerInput {
+  name: string;
+  phone?: string;
+  email?: string;
+  type?: Customer["type"];
 }
 
 /** What a person may change on their own profile (spec A1: default warehouse). */
@@ -141,6 +150,13 @@ export interface ApiClient {
    * leftover under 12 ft becomes a remnant. Audited.
    */
   cutRoll(rollId: string, lengthFt: string, reference: string): Promise<CutResult>;
+  /**
+   * Adds a customer at once from a picker (spec A6), with the company's default terms and no
+   * addresses yet, so it reads as "New, profile incomplete". Needs customers.customer.create. Audited.
+   */
+  createCustomer(input: NewCustomerInput): Promise<Customer>;
+  /** Saves a customer's profile and addresses. Needs customers.customer.edit. Audited. */
+  saveCustomer(customer: Customer): Promise<Customer>;
   /** Saves a quote; a new quote gets the next number from the company's quote prefix. Audited. */
   saveQuote(quote: Quote): Promise<Quote>;
   /**

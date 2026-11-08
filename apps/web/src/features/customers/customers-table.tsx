@@ -14,6 +14,7 @@ import {
   type CustomerType,
   type Invoice,
   type Payment,
+  defaultAddress,
 } from "@workspace/shared";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { DataTable } from "@/components/data-table/data-table";
@@ -23,6 +24,7 @@ import { api } from "@/lib/api";
 import { AgingPanel } from "@/components/aging-panel";
 import { CERTIFICATE_WARNING_DAYS } from "@/lib/attention";
 import { CustomerDrawer } from "./customer-drawer";
+import { IncompleteBadge } from "./customer-picker";
 
 const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" };
 
@@ -56,13 +58,23 @@ export function CustomersTable({
       value: (c) => c.name,
       cell: (c) => (
         <span className="flex flex-col">
-          <span className="font-medium">{c.name}</span>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{c.name}</span>
+            <IncompleteBadge customer={c} />
+          </span>
           <span className="text-muted-foreground text-xs">{c.contactName !== c.name ? c.contactName : c.email}</span>
         </span>
       ),
     },
     { id: "type", header: "Type", value: (c) => TYPES[c.type] },
-    { id: "place", header: "Location", value: (c) => `${c.address.city}, ${c.address.state}` },
+    {
+      id: "place",
+      header: "Location",
+      value: (c) => {
+        const a = defaultAddress(c, "billing");
+        return a ? `${a.city}, ${a.state}` : "";
+      },
+    },
     { id: "terms", header: "Terms", value: (c) => PAYMENT_TERM_LABELS[c.terms], hidden: true },
     ...(can(SENSITIVE.creditLimit)
       ? [{ id: "credit", header: "Credit limit", kind: "money" as const, value: (c: Customer) => c.creditLimit }]
@@ -114,7 +126,12 @@ export function CustomersTable({
         initialSort={{ id: "open", desc: true }}
         empty={{ message: "No customers yet." }}
       />
-      <CustomerDrawer customer={open} invoices={invoices} payments={payments} onClose={() => setOpen(null)} />
+      <CustomerDrawer
+        customer={open ? (customers.find((c) => c.id === open.id) ?? null) : null}
+        invoices={invoices}
+        payments={payments}
+        onClose={() => setOpen(null)}
+      />
     </>
   );
 }

@@ -11,6 +11,8 @@ import {
   type Crew,
   type Customer,
   type Job,
+  defaultAddress,
+  plainAddress,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -21,6 +23,8 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { hourLabel, JobStatusPill } from "./job-status";
+import { CustomerPicker } from "@/features/customers/customer-picker";
+import { Label } from "@workspace/ui/components/label";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -39,17 +43,37 @@ export function JobCard({
   job,
   crew,
   customer,
+  customers,
   onClose,
 }: {
   job: Job | null;
   crew: Crew | undefined;
   customer: Customer | undefined;
+  /** Everyone the job could be for, for the call-centre picker (spec A6). */
+  customers: Customer[];
   onClose: () => void;
 }) {
   const can = useCan();
   const formatDate = useFormatDate();
   const [signer, setSigner] = useState("");
   const costing = job ? jobCosting(job) : null;
+
+  async function changeCustomer(next: Customer) {
+    if (!job || next.id === job.customerId) return;
+    const site = next.addresses.length ? plainAddress(defaultAddress(next, "job_site")) : job.address;
+    await api.save(
+      "jobs",
+      { ...job, customerId: next.id, address: site },
+      {
+        category: "data",
+        action: "Changed job customer",
+        target: job.number,
+        before: customer?.name ?? null,
+        after: next.name,
+      },
+    );
+    toast.success(`${job.number} is now for ${next.name}`);
+  }
 
   async function signOff() {
     if (!job || !signer.trim()) return;
@@ -85,7 +109,19 @@ export function JobCard({
             </SheetHeader>
             <div className="flex flex-col gap-5 px-4 pb-6 text-sm">
               <section>
-                <h3 className="font-semibold">{customer?.name}</h3>
+                {can("installation.job.edit") ? (
+                  <div className="mb-1 flex flex-col gap-1.5">
+                    <Label htmlFor="job-customer">Customer</Label>
+                    <CustomerPicker
+                      id="job-customer"
+                      customers={customers}
+                      value={job.customerId}
+                      onSelect={(c) => void changeCustomer(c)}
+                    />
+                  </div>
+                ) : (
+                  <h3 className="font-semibold">{customer?.name}</h3>
+                )}
                 <p className="text-muted-foreground">
                   {job.address.street}, {job.address.city}, {job.address.state}
                 </p>

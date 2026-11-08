@@ -117,8 +117,20 @@ function upgradeTaxFields(records: StoredOverlay["records"]): StoredOverlay["rec
   });
 }
 
+/** A saved customer's one address becomes a Home or Billing address, default for both uses (spec A6). */
+function upgradeCustomers(records: StoredOverlay["records"]): StoredOverlay["records"] {
+  return mapRecords(records, "customers", (customer) => {
+    if (Array.isArray(customer.addresses)) return customer;
+    const { address, ...rest } = customer as Row & { address?: Record<string, unknown> };
+    if (!address) return { ...rest, addresses: [], defaultBillingId: null, defaultJobSiteId: null };
+    const id = `${String(customer.id)}-addr-1`;
+    const label = customer.type === "homeowner" ? "home" : "billing";
+    return { ...rest, addresses: [{ id, label, ...address }], defaultBillingId: id, defaultJobSiteId: id };
+  });
+}
+
 /**
  * Upgrade steps for saved records, one per model change of feature batch 2, run in order after
  * the role upgrade. Each step reads version 1 shapes and writes version 2 shapes.
  */
-export const V2_RECORD_STEPS: RecordStep[] = [stockFromCounts, upgradeLocations, upgradeTaxFields];
+export const V2_RECORD_STEPS: RecordStep[] = [stockFromCounts, upgradeLocations, upgradeTaxFields, upgradeCustomers];

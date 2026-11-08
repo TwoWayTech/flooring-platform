@@ -1,5 +1,7 @@
 import { addDays } from "../../src/dates";
-import type { Customer, CustomerType, User } from "../../src/types";
+import { plainAddress } from "../../src/customers";
+import { searchDemoAddresses } from "../../src/us-pack/address-search";
+import type { Customer, CustomerAddress, CustomerType, Quote, User } from "../../src/types";
 import type { GenContext } from "./context";
 
 /** Tax-exempt customers with resale certificates, and how many expire within 30 days (spec section 4). */
@@ -45,13 +47,17 @@ export function buildCustomers(ctx: GenContext, users: readonly User[]): Custome
     const expiringSoon = exempt && exemptLeft <= EXPIRING_SOON;
     if (exempt) exemptLeft--;
     const address = ctx.address();
+    const id = ctx.id("cus");
+    const first: CustomerAddress = { id: `${id}-addr-1`, label: type === "homeowner" ? "home" : "billing", ...address };
     return {
-      id: ctx.id("cus"),
+      id,
       type,
       ...customerName(ctx, type),
       email: `${ctx.rng.faker.internet.username().toLowerCase()}@mail.example`,
       phone: ctx.rng.phone(ctx.company.areaCode),
-      address,
+      addresses: [first],
+      defaultBillingId: first.id,
+      defaultJobSiteId: first.id,
       ...accountTerms(ctx, type),
       taxExempt: exempt,
       certificate: exempt
@@ -64,5 +70,44 @@ export function buildCustomers(ctx: GenContext, users: readonly User[]): Custome
       salesRepId: ctx.rng.chance(0.4) ? reps[0]!.id : ctx.rng.pick(reps).id,
       createdAt: addDays(ctx.anchor, -ctx.rng.int(30, 1400)),
     };
+  });
+}
+
+/** A dealer's delivery dock in its own city, from the demo address list (no random numbers drawn). */
+function withDelivery(customer: Customer, index: number): Customer {
+  const home = customer.addresses[0]!;
+  const options = searchDemoAddresses(home.city, { limit: 6 }).filter((m) => m.address.state === home.state);
+  const pick = options[index % Math.max(options.length, 1)];
+  if (!pick) return customer;
+  const delivery: CustomerAddress = { id: `${customer.id}-addr-2`, label: "delivery", ...pick.address };
+  return { ...customer, addresses: [home, delivery], defaultJobSiteId: delivery.id };
+}
+
+/** How many separate job sites a contractor keeps on file. */
+const JOB_SITES_KEPT = 3;
+
+/**
+ * Contractors get the job sites their quotes used as extra addresses (spec A6: many addresses per
+ * customer), the newest one as their default job site. Runs after the sales builder and draws no
+ * random numbers, so every other record stays the same.
+ */
+export function withJobSites(customers: readonly Customer[], quotes: readonly Quote[]): Customer[] {
+  return customers.map((customer, index) => {
+    if (customer.type === "dealer") return index % 3 === 0 ? withDelivery(customer, index) : customer;
+    if (customer.type !== "contractor") return customer;
+    const home = customer.addresses[0]!;
+    const sites = [...quotes]
+      .filter((q) => q.customerId === customer.id && q.jobSite.street !== home.street)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((q) => q.jobSite)
+      .filter((site, i, all) => all.findIndex((s) => s.street === site.street) === i)
+      .slice(0, JOB_SITES_KEPT)
+      .map((site, i): CustomerAddress => ({
+        id: `${customer.id}-addr-${i + 2}`,
+        label: "job_site",
+        ...plainAddress(site),
+      }));
+    if (sites.length === 0) return customer;
+    return { ...customer, addresses: [home, ...sites], defaultJobSiteId: sites[0]!.id };
   });
 }

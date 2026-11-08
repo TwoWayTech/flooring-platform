@@ -269,6 +269,14 @@ export const FEATURES = {
     enabled: true,
     screens: [],
   },
+  "shell.addresses": {
+    title: "Address suggestions",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
   "shell.notifications": {
     title: "Notifications",
     product: "both",

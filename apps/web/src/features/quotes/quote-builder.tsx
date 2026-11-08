@@ -16,6 +16,8 @@ import {
   type Quote,
   type Room,
   type User,
+  defaultAddress,
+  plainAddress,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -159,7 +161,13 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
           onLocation={(locationId) => dispatch({ type: "location", locationId })}
           editable={editable}
           taxedStates={settings.localization.tax.rules.map((r) => r.state)}
-          onCustomer={(c) => dispatch({ type: "customer", customerId: c.id, jobSite: { ...c.address } })}
+          onCustomer={(c) =>
+            dispatch({
+              type: "customer",
+              customerId: c.id,
+              jobSite: c.addresses.length ? plainAddress(defaultAddress(c, "job_site")) : draft.jobSite,
+            })
+          }
           onJobSite={(jobSite) => dispatch({ type: "jobSite", jobSite })}
         />
       </Panel>

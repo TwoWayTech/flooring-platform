@@ -16,6 +16,15 @@ export interface Certificate {
   expiresAt: string;
 }
 
+/** What a customer address is for (spec A6). */
+export type CustomerAddressLabel = "home" | "billing" | "job_site" | "delivery";
+
+/** One of a customer's addresses. */
+export interface CustomerAddress extends Address {
+  id: string;
+  label: CustomerAddressLabel;
+}
+
 /** A customer account. Credit limit is sensitive (customers.customer.view_sensitive). */
 export interface Customer {
   id: string;
@@ -24,7 +33,10 @@ export interface Customer {
   contactName: string;
   email: string;
   phone: string;
-  address: Address;
+  /** Every address of the customer (spec A6); may be empty for one added quickly from a picker. */
+  addresses: CustomerAddress[];
+  defaultBillingId: string | null;
+  defaultJobSiteId: string | null;
   terms: PaymentTerms;
   creditLimit: string;
   taxExempt: boolean;

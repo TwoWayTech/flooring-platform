@@ -15,6 +15,8 @@ import {
   type NumberKind,
   type Payment,
   type Quote,
+  defaultAddress,
+  plainAddress,
 } from "@workspace/shared";
 
 /** One printed invoice line, every value already formatted. */
@@ -98,7 +100,7 @@ export function buildInvoiceModel(
       name: customer.name,
       lines: [
         customer.contactName !== customer.name ? customer.contactName : "",
-        ...addressLines(customer.address),
+        ...addressLines(plainAddress(defaultAddress(customer, "billing"))),
       ].filter(Boolean),
     },
     jobSite: addressLines(invoice.jobSite),

@@ -21,6 +21,8 @@ import { Switch } from "@workspace/ui/components/switch";
 import { Field } from "@/components/field";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { AddressSearchField } from "@/components/address/address-search-field";
+import { fillAddress } from "@/components/address/fill-address";
 
 const STATE_CODES = US_STATES.map(([code]) => code) as [string, ...string[]];
 
@@ -148,6 +150,11 @@ export function LocationDialog({
             />
             {errorText("branchId", errors.branchId?.message)}
           </Field>
+          <AddressSearchField
+            id="loc-address-search"
+            near={company.state}
+            onSelect={(address) => fillAddress(form.setValue, address)}
+          />
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="loc-address.street" label="Street" className="sm:col-span-2">
               <Input id="loc-address.street" {...text("address.street")} />

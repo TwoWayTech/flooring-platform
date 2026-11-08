@@ -1,6 +1,7 @@
 "use client";
 
-import { Download } from "lucide-react";
+import { useState } from "react";
+import { Download, Pencil } from "lucide-react";
 import {
   customerStatement,
   PAYMENT_TERM_LABELS,
@@ -8,6 +9,7 @@ import {
   type Customer,
   type Invoice,
   type Payment,
+  defaultAddress,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
@@ -16,10 +18,16 @@ import { downloadText, toCsv } from "@/components/data-table/csv";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CustomerAddresses } from "./customer-addresses";
+import { IncompleteBadge } from "./customer-picker";
+import { CustomerProfileDialog } from "./customer-profile-dialog";
 
 const TYPES = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" } as const;
 
-/** A customer's account in a drawer: contact, terms, certificate, credit limit (sensitive) and statement. */
+/**
+ * A customer's account in a drawer: contact, terms, certificate, credit limit (sensitive), addresses
+ * and statement. A customer added quickly from a picker is completed here (spec A6).
+ */
 export function CustomerDrawer({
   customer,
   invoices,
@@ -33,7 +41,9 @@ export function CustomerDrawer({
 }) {
   const can = useCan();
   const formatDate = useFormatDate();
+  const [editing, setEditing] = useState(false);
   const lines = customer ? customerStatement(invoices, payments, customer.id) : [];
+  const billing = customer ? defaultAddress(customer, "billing") : undefined;
 
   function exportStatement() {
     if (!customer) return;
@@ -53,16 +63,27 @@ export function CustomerDrawer({
         {customer ? (
           <>
             <SheetHeader>
-              <SheetTitle>{customer.name}</SheetTitle>
+              <SheetTitle className="flex flex-wrap items-center gap-2">
+                {customer.name}
+                <IncompleteBadge customer={customer} />
+              </SheetTitle>
               <SheetDescription>
-                {TYPES[customer.type]}, {customer.address.city}, {customer.address.state}
+                {TYPES[customer.type]}
+                {billing ? `, ${billing.city}, ${billing.state}` : ""}
               </SheetDescription>
+              {can("customers.customer.edit") ? (
+                <Button variant="outline" size="sm" className="self-start" onClick={() => setEditing(true)}>
+                  <Pencil />
+                  Edit profile
+                </Button>
+              ) : null}
             </SheetHeader>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 text-sm">
               <div>
                 <dt className="text-muted-foreground text-xs">Contact</dt>
                 <dd>{customer.contactName}</dd>
-                <dd className="text-muted-foreground text-xs">{customer.phone}</dd>
+                <dd className="text-muted-foreground text-xs">{customer.phone || "No phone"}</dd>
+                <dd className="text-muted-foreground text-xs">{customer.email || "No email"}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground text-xs">Terms</dt>
@@ -85,6 +106,7 @@ export function CustomerDrawer({
                 </dd>
               </div>
             </dl>
+            <CustomerAddresses customer={customer} />
             <section className="flex flex-col gap-2 px-4 pb-6" aria-labelledby="statement-title">
               <div className="flex items-center justify-between">
                 <h3 id="statement-title" className="text-sm font-semibold">
@@ -132,6 +154,7 @@ export function CustomerDrawer({
                 </table>
               )}
             </section>
+            {editing ? <CustomerProfileDialog customer={customer} onClose={() => setEditing(false)} /> : null}
           </>
         ) : null}
       </SheetContent>

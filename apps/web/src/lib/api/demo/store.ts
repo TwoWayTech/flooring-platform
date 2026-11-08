@@ -33,6 +33,7 @@ import {
   type PoLine,
   type Quote,
   type Role,
+  type Customer,
   type Location,
   type Transfer,
   type TransferInput,
@@ -46,6 +47,7 @@ import type {
   CompanyAccessPatch,
   InviteUserInput,
   ItemOf,
+  NewCustomerInput,
   ProfilePatch,
   UserPatch,
   Viewer,
@@ -330,6 +332,71 @@ export class DemoStore implements ApiClient {
     });
     this.emit();
     return result;
+  }
+
+  async createCustomer(input: NewCustomerInput) {
+    const db = this.open();
+    await this.assertCan(db, ["customers.customer.create"]);
+    const name = input.name.trim();
+    if (!name) throw new DemoRuleError("Enter the customer's name.");
+    const customer: Customer = {
+      id: newId(db.companyId, "cus"),
+      type: input.type ?? "homeowner",
+      name,
+      contactName: name,
+      email: input.email?.trim() ?? "",
+      phone: input.phone?.trim() ?? "",
+      addresses: [],
+      defaultBillingId: null,
+      defaultJobSiteId: null,
+      terms: db.settings.localization.documents.defaultTerms,
+      creditLimit: "0.00",
+      taxExempt: false,
+      certificate: null,
+      salesRepId: this.subject(db).user.id,
+      createdAt: this.todayIso,
+    };
+    db.put("customers", customer);
+    this.appendAudit(db, {
+      category: "data",
+      action: "Added customer",
+      target: customer.name,
+      before: null,
+      after: `${customer.type}, profile incomplete`,
+    });
+    this.emit();
+    return customer;
+  }
+
+  async saveCustomer(customer: Customer) {
+    const db = this.open();
+    await this.assertCan(db, ["customers.customer.edit"]);
+    const before = db.get("customers", customer.id);
+    if (!before) throw new DemoRuleError("This customer no longer exists.");
+    if (!customer.name.trim()) throw new DemoRuleError("Enter the customer's name.");
+    const ids = new Set(customer.addresses.map((a) => a.id));
+    const saved: Customer = {
+      ...customer,
+      name: customer.name.trim(),
+      defaultBillingId:
+        customer.defaultBillingId && ids.has(customer.defaultBillingId)
+          ? customer.defaultBillingId
+          : (customer.addresses[0]?.id ?? null),
+      defaultJobSiteId:
+        customer.defaultJobSiteId && ids.has(customer.defaultJobSiteId)
+          ? customer.defaultJobSiteId
+          : (customer.addresses[0]?.id ?? null),
+    };
+    db.put("customers", saved);
+    this.appendAudit(db, {
+      category: "data",
+      action: "Changed customer",
+      target: saved.name,
+      before: `${before.addresses.length} addresses, ${before.email || "no email"}`,
+      after: `${saved.addresses.length} addresses, ${saved.email || "no email"}`,
+    });
+    this.emit();
+    return saved;
   }
 
   async saveQuote(quote: Quote) {

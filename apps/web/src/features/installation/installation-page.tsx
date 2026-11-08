@@ -154,6 +154,7 @@ export function InstallationPage() {
         job={openJob}
         crew={crews.find((c) => c.id === openJob?.crewId)}
         customer={customers.find((c) => c.id === openJob?.customerId)}
+        customers={customers}
         onClose={() => go({})}
       />
     </>

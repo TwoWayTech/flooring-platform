@@ -13,6 +13,7 @@ import type {
   User,
 } from "../../src/types";
 import { dueDate, taxContextFor } from "../../src/operations/quotes";
+import { defaultAddress, plainAddress } from "../../src/customers";
 import type { GenContext } from "./context";
 import { branchWarehouse } from "./locations";
 import { buildRooms, roomLines, tradeLines } from "./sales-lines";
@@ -99,7 +100,8 @@ function buildQuote(ctx: GenContext, inputs: SalesInputs, createdAt: string): Qu
   const measured = ctx.company.modules.includes("retail") && customer.type !== "dealer";
   const rooms = measured ? buildRooms(ctx) : [];
   const lines = measured ? roomLines(ctx, inputs.products, rooms) : tradeLines(ctx, inputs.products);
-  const jobSite = customer.type === "contractor" && measured ? ctx.address() : { ...customer.address };
+  const jobSite =
+    customer.type === "contractor" && measured ? ctx.address() : plainAddress(defaultAddress(customer, "job_site"));
   const lumpSum = ctx.rng.chance(0.05);
   const { totals } = totalsFor(inputs, lines, jobSite, customer, createdAt, lumpSum);
   return {

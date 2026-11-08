@@ -79,7 +79,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] A3. Company admins control roles and pages: page-permission map (menu, route gate, no-access state), action permissions on buttons, System badge, Reset to default, Duplicate, effective access preview in Settings, new permissions in the matrix inside the ceiling
 - [x] A4. Settings easy to read: grouped settings home, plain title + one sentence per page, helper line per control, changed-field highlight, sticky Save / Discard, Reset to default per section, settings search, every change audited (both products)
 - [x] A5. Default tax rates: company default rate, state and jurisdiction defaults with effective dates, resolution job site → jurisdiction → state → company, rate source under the tax line, override with `sales.tax.override` + reason + audit, example labels kept
-- [ ] A6. Customers: call-centre picker with inline "Add as new customer" (profile incomplete badge), many labelled addresses with defaults, address suggestions behind `AddressProvider` (demo provider with ~300 addresses; Google Places (New) with session tokens when the key is set; README steps), used in quote, invoice, job card, supplier form and company profile
+- [x] A6. Customers: call-centre picker with inline "Add as new customer" (profile incomplete badge), many labelled addresses with defaults, address suggestions behind `AddressProvider` (demo provider with ~300 addresses; Google Places (New) with session tokens when the key is set; README steps), used in quote, invoice, job card, supplier form and company profile
 - [ ] Batch A: full suite green
 
 #### Batch B: the sales flow
