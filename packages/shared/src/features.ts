@@ -187,7 +187,7 @@ export const FEATURES = {
     module: "platform",
     status: "demo",
     enabled: true,
-    screens: ["/settings/localization"],
+    screens: ["/settings/localization", "/settings/documents"],
   },
   "settings.number-format": {
     title: "Number format",

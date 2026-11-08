@@ -111,6 +111,8 @@ export interface ApiClient {
   /** Replaces one settings section and audits the change. */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
 
+  /** The company's original settings, for Reset to default on settings pages (spec A4). */
+  getDefaultSettings(): Promise<CompanySettings>;
   /** Restores one settings section to the company's original values and audits it. */
   resetSettings(section: keyof CompanySettings): Promise<CompanySettings>;
 

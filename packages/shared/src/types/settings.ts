@@ -1,4 +1,5 @@
 import type { NumberSettings } from "../numbers";
+import type { AreaUnit } from "../units";
 import type { OvertimeRule } from "../us-pack/overtime";
 import type { TaxRule } from "../us-pack/tax";
 import type { Address, Branding } from "./company";
@@ -31,7 +32,8 @@ export interface LocalizationSettings {
     dateFormat: "MM/dd/yyyy" | "yyyy-MM-dd" | "MMM d, yyyy";
     firstDayOfWeek: "sunday" | "monday";
     fiscalYearStartMonth: number;
-    areaUnit: "sq_ft" | "sq_yd";
+    /** The unit lists and purchase orders show area in first; storage is always sq ft (CLAUDE.md rule 4). */
+    areaUnit: AreaUnit;
   };
   currency: {
     base: "USD";

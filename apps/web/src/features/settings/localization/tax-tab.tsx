@@ -15,8 +15,10 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Switch } from "@workspace/ui/components/switch";
+import { Choice } from "../form/choice";
 import { ScrollRegion } from "@/components/scroll-region";
-import { Field } from "@/components/field";
+import { SettingRow } from "../form/setting-row";
+import type { SectionProps } from "./simple-tabs";
 
 type Tax = LocalizationSettings["tax"];
 const CATEGORIES: TaxCategory[] = ["material", "labor", "freight", "service"];
@@ -39,7 +41,7 @@ function newRule(state: StateCode): TaxRule {
  * The Sales tax tab (blueprint "Localization, currency and tax settings"): rules per state with
  * a combined rate and what is taxable. The quote builder uses these rules for the job-site state.
  */
-export function TaxTab({ draft, setDraft }: { draft: Tax; setDraft: (next: Tax) => void }) {
+export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
   const setRule = (i: number, rule: TaxRule) =>
     setDraft({ ...draft, rules: draft.rules.map((r, j) => (j === i ? { ...rule, version: rule.version } : r)) });
   const unused = US_STATES.filter(([code]) => !draft.rules.some((r) => r.state === code));
@@ -47,31 +49,26 @@ export function TaxTab({ draft, setDraft }: { draft: Tax; setDraft: (next: Tax) 
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="tax-prices" label="Prices are">
-          <Select
-            value={draft.pricesInclude}
-            onValueChange={(v) => setDraft({ ...draft, pricesInclude: v as Tax["pricesInclude"] })}
-          >
-            <SelectTrigger id="tax-prices" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="exclusive">Before tax (tax added on top)</SelectItem>
-              <SelectItem value="inclusive">Tax included</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field id="tax-rounding" label="Round tax">
-          <Select value={draft.rounding} onValueChange={(v) => setDraft({ ...draft, rounding: v as Tax["rounding"] })}>
-            <SelectTrigger id="tax-rounding" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="invoice">Once per invoice</SelectItem>
-              <SelectItem value="line">On each line</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
+        <SettingRow setting="tax.pricesInclude" changed={changed("pricesInclude")}>
+          {(id) => (
+            <Choice
+              id={id}
+              value={draft.pricesInclude}
+              options={{ exclusive: "Before tax (tax added on top)", inclusive: "Tax included" }}
+              onChange={(pricesInclude) => setDraft({ ...draft, pricesInclude })}
+            />
+          )}
+        </SettingRow>
+        <SettingRow setting="tax.rounding" changed={changed("rounding")}>
+          {(id) => (
+            <Choice
+              id={id}
+              value={draft.rounding}
+              options={{ invoice: "Once per invoice", line: "On each line" }}
+              onChange={(rounding) => setDraft({ ...draft, rounding })}
+            />
+          )}
+        </SettingRow>
       </div>
       <p className="bg-warning/14 text-warning-ink rounded-md px-3 py-2 text-sm">
         {EXAMPLE_RULE_NOTE}. Rates and taxability are examples.

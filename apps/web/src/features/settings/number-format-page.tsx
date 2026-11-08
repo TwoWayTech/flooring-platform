@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Minus, Plus, Save } from "lucide-react";
-import { toast } from "sonner";
+import { Minus, Plus } from "lucide-react";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Label } from "@workspace/ui/components/label";
@@ -13,8 +11,13 @@ import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group
 import { Switch } from "@workspace/ui/components/switch";
 import { ScrollRegion } from "@/components/scroll-region";
 import { NoAccess } from "@/components/no-access";
+import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { useApiQuery } from "@/lib/api/use-api";
+import { SettingRow } from "./form/setting-row";
+import { SettingsForm } from "./form/settings-form";
+import type { SectionProps } from "./localization/simple-tabs";
 
 const UNITS: Partial<Record<NumberKind, string>> = { quantity: "sq ft", count: "cartons" };
 
@@ -56,82 +59,59 @@ function DecimalsStepper({
   );
 }
 
-/**
- * Settings: Number format (blueprint "Number display"): decimals per kind, negative style and
- * compact dashboard numbers. Display only: stored values and totals never change, and a
- * rounded number shows its full value on hover.
- */
-export function NumberFormatPage() {
-  const can = useCan();
-  const { settings } = useWorkspace();
-  const [draft, setDraft] = useState<NumberSettings>(settings.numbers);
-  if (!can("settings.numbers.manage")) return <NoAccess />;
-  const dirty = JSON.stringify(draft) !== JSON.stringify(settings.numbers);
-
-  async function save() {
-    await api.updateSettings("numbers", draft);
-    toast.success("Number format saved");
-  }
-
+/** Decimals per kind, negative style and compact figures, previewed with the draft itself. */
+function NumbersSection({ draft, setDraft, changed }: SectionProps<NumberSettings>) {
   return (
     <NumberSettingsProvider settings={draft}>
-      <Panel
-        title="Number format"
-        actions={
-          <Button size="sm" onClick={() => void save()} disabled={!dirty}>
-            <Save />
-            Save number format
-          </Button>
-        }
-        bodyClassName="flex flex-col gap-6"
-      >
-        <p className="text-muted-foreground max-w-prose text-sm">
-          These settings change how numbers look, never what is stored. Totals keep full precision; hover a rounded
-          number to see its full value. People can also add or remove decimals per table column for themselves.
-        </p>
-        <ScrollRegion label="Number formats" className="border-hairline rounded-md border">
-          <table className="w-full min-w-[32rem] text-sm">
-            <thead className="bg-raised text-muted-foreground text-xs">
-              <tr>
-                <th scope="col" className="h-9 px-3 text-left font-medium">
-                  Kind of number
-                </th>
-                <th scope="col" className="px-3 text-left font-medium">
-                  Decimals
-                </th>
-                <th scope="col" className="px-3 text-right font-medium">
-                  Example
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(Object.keys(NUMBER_KINDS) as NumberKind[]).map((kind) => (
-                <tr key={kind} className="border-hairline border-t">
-                  <th scope="row" className="px-3 py-2 text-left font-normal">
-                    {NUMBER_KINDS[kind].label}
-                    <span className="text-muted-foreground block text-xs">
-                      Allowed {NUMBER_KINDS[kind].min} to {NUMBER_KINDS[kind].max}
-                    </span>
+      <SettingRow setting="numbers.decimals" changed={changed("decimals")}>
+        {(id) => (
+          <ScrollRegion label="Number formats" className="border-hairline rounded-md border">
+            <table id={id} className="w-full min-w-[32rem] text-sm">
+              <thead className="bg-raised text-muted-foreground text-xs">
+                <tr>
+                  <th scope="col" className="h-9 px-3 text-left font-medium">
+                    Kind of number
                   </th>
-                  <td className="px-3 py-2">
-                    <DecimalsStepper
-                      kind={kind}
-                      value={draft.decimals[kind]}
-                      onChange={(v) => setDraft({ ...draft, decimals: { ...draft.decimals, [kind]: v } })}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Num kind={kind} value={String(NUMBER_KINDS[kind].example)} unit={UNITS[kind]} />
-                  </td>
+                  <th scope="col" className="px-3 text-left font-medium">
+                    Decimals
+                  </th>
+                  <th scope="col" className="px-3 text-right font-medium">
+                    Example
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </ScrollRegion>
-        <div className="grid gap-6 sm:grid-cols-2">
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Negative numbers</legend>
+              </thead>
+              <tbody>
+                {(Object.keys(NUMBER_KINDS) as NumberKind[]).map((kind) => (
+                  <tr key={kind} className="border-hairline border-t">
+                    <th scope="row" className="px-3 py-2 text-left font-normal">
+                      {NUMBER_KINDS[kind].label}
+                      <span className="text-muted-foreground block text-xs">
+                        Allowed {NUMBER_KINDS[kind].min} to {NUMBER_KINDS[kind].max}
+                      </span>
+                    </th>
+                    <td className="px-3 py-2">
+                      <DecimalsStepper
+                        kind={kind}
+                        value={draft.decimals[kind]}
+                        onChange={(v) => setDraft({ ...draft, decimals: { ...draft.decimals, [kind]: v } })}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Num kind={kind} value={String(NUMBER_KINDS[kind].example)} unit={UNITS[kind]} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollRegion>
+        )}
+      </SettingRow>
+      <div className="grid gap-6 sm:grid-cols-2">
+        <SettingRow setting="numbers.negative" changed={changed("negativeStyle")}>
+          {(id) => (
             <RadioGroup
+              id={id}
+              aria-labelledby={`${id}-label`}
               value={draft.negativeStyle}
               onValueChange={(v) => setDraft({ ...draft, negativeStyle: v as NumberSettings["negativeStyle"] })}
             >
@@ -149,22 +129,51 @@ export function NumberFormatPage() {
                 </div>
               ))}
             </RadioGroup>
-          </fieldset>
-          <div className="flex items-start justify-between gap-4">
-            <Label htmlFor="compact" className="flex flex-col items-start gap-1 font-normal">
-              <span className="font-medium">Compact numbers on dashboards</span>
+          )}
+        </SettingRow>
+        <SettingRow setting="numbers.compact" changed={changed("compactDashboards")}>
+          {(id) => (
+            <span className="flex items-center gap-3">
+              <Switch
+                id={id}
+                aria-describedby={`${id}-hint`}
+                checked={draft.compactDashboards}
+                onCheckedChange={(compactDashboards) => setDraft({ ...draft, compactDashboards })}
+              />
               <span className="text-muted-foreground text-xs">
-                Shows <Num kind="money" value="12480.50" compact /> instead of the full amount.
+                For example <Num kind="money" value="12480.50" compact />
               </span>
-            </Label>
-            <Switch
-              id="compact"
-              checked={draft.compactDashboards}
-              onCheckedChange={(compactDashboards) => setDraft({ ...draft, compactDashboards })}
-            />
-          </div>
-        </div>
-      </Panel>
+            </span>
+          )}
+        </SettingRow>
+      </div>
     </NumberSettingsProvider>
+  );
+}
+
+/**
+ * Settings: Number format (blueprint "Number display", spec A4): decimals per kind, negative
+ * style and compact dashboard numbers. Display only: stored values and totals never change, and
+ * a rounded number shows its full value on hover.
+ */
+export function NumberFormatPage() {
+  const can = useCan();
+  const { settings } = useWorkspace();
+  const defaults = useApiQuery((client) => client.getDefaultSettings(), []);
+  if (!can("settings.numbers.manage")) return <NoAccess />;
+  if (defaults.status !== "ready") return <QueryFallback query={defaults} className="h-96" label="Loading settings" />;
+  return (
+    <Panel bodyClassName="flex flex-col gap-6">
+      <SettingsForm
+        showTitle={false}
+        title="Number format"
+        description="How numbers look, never what is stored. People can also add or remove decimals per table column."
+        initial={settings.numbers}
+        defaults={defaults.data.numbers}
+        onSave={(numbers) => api.updateSettings("numbers", numbers).then(() => {})}
+      >
+        {(draft, setDraft, changed) => <NumbersSection draft={draft} setDraft={setDraft} changed={changed} />}
+      </SettingsForm>
+    </Panel>
   );
 }

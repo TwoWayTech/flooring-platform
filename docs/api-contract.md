@@ -40,6 +40,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `getCompany()` | `GET /company` | The open company's platform record. |
 | `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. |
 | `updateSettings(section, value)` | `PUT /settings/:section` | Replaces one section; audited with a before/after summary. |
+| `getDefaultSettings()` | `GET /settings/defaults` | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. |
 | `resetSettings(section)` | `DELETE /settings/:section` | Restores one section to the company's original values; audited. |
 
 ## Records

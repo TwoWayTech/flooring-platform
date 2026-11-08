@@ -68,6 +68,29 @@ export function quantityForArea(
   return gross.toDecimalPlaces(2, D.ROUND_CEIL);
 }
 
+/** Square feet in one square meter (exact definition: 1 ft = 0.3048 m). */
+export const SQ_FT_PER_M2 = "10.76391041670972";
+
+/** The area units a company can work in (spec D1); storage is always sq ft. */
+export type AreaUnit = "sq_ft" | "sq_yd" | "m2";
+
+/** Short labels of the area units. */
+export const AREA_UNIT_LABELS: Record<AreaUnit, string> = { sq_ft: "sq ft", sq_yd: "sq yd", m2: "m²" };
+
+/** An area in sq ft expressed in another area unit, at full precision. */
+export function fromSqFt(sqFt: DecimalInput, unit: AreaUnit): Dec {
+  if (unit === "sq_yd") return sqFtToSqYd(sqFt);
+  if (unit === "m2") return dec(sqFt).dividedBy(SQ_FT_PER_M2);
+  return dec(sqFt);
+}
+
+/** An area given in any area unit, converted to sq ft for storage. */
+export function toSqFt(value: DecimalInput, unit: AreaUnit): Dec {
+  if (unit === "sq_yd") return sqYdToSqFt(value);
+  if (unit === "m2") return dec(value).times(SQ_FT_PER_M2);
+  return dec(value);
+}
+
 /** Leftover pieces shorter than this become remnants after a cut (spec "Inventory and roll detail"). */
 export const REMNANT_THRESHOLD_FT = 12;
 

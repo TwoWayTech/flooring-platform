@@ -2,17 +2,25 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { Save } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { US_STATES, ZIP_PATTERN, type CompanyProfile } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
+import { cn } from "@workspace/ui/lib/utils";
 import { Field } from "@/components/field";
 import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { useApiQuery } from "@/lib/api/use-api";
+import { SaveBar } from "./form/save-bar";
+
+/** How many fields React Hook Form marks dirty, nested ones included. */
+function countDirty(dirty: object): number {
+  return Object.values(dirty).reduce<number>((n, v) => n + (typeof v === "object" ? countDirty(v) : v ? 1 : 0), 0);
+}
 
 const STATE_CODES = US_STATES.map(([code]) => code) as [string, ...string[]];
 
@@ -57,10 +65,14 @@ const FIELDS: { name: FieldPath; label: string; className?: string }[] = [
   { name: "address.zip", label: "ZIP" },
 ];
 
-/** Settings: Company profile, validated inline; the profile appears on invoices and PDFs. */
+/**
+ * Settings: Company profile (spec A4), validated inline with focus on the first error; changed
+ * fields are marked and saved from the sticky bar. The profile appears on invoices and PDFs.
+ */
 export function CompanyProfilePage() {
   const can = useCan();
   const { settings } = useWorkspace();
+  const defaults = useApiQuery((client) => client.getDefaultSettings(), []);
   const form = useForm<CompanyProfile>({
     resolver: zodResolver(ProfileSchema),
     defaultValues: settings.profile,
@@ -81,13 +93,38 @@ export function CompanyProfilePage() {
   }
 
   return (
-    <Panel title="Company profile">
+    <Panel bodyClassName="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <Button
+          className="ml-auto"
+          variant="ghost"
+          size="sm"
+          disabled={defaults.status !== "ready"}
+          onClick={() =>
+            defaults.status === "ready" &&
+            form.reset(defaults.data.profile, { keepDefaultValues: true, keepDirty: false })
+          }
+        >
+          <RotateCcw />
+          Reset to default
+        </Button>
+      </div>
       <form onSubmit={form.handleSubmit(save)} className="flex flex-col gap-5" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
           {FIELDS.map(({ name, label, className }) => {
             const error = errorOf(name);
+            const changed = form.getFieldState(name).isDirty;
             return (
-              <Field key={name} id={`profile-${name}`} label={label} className={className}>
+              <Field
+                key={name}
+                id={`profile-${name}`}
+                label={changed ? `${label} (changed)` : label}
+                className={cn(
+                  className,
+                  "rounded-md border-l-2 border-transparent pl-3",
+                  changed && "border-brand bg-brand-soft/40",
+                )}
+              >
                 <Input
                   id={`profile-${name}`}
                   aria-invalid={error ? true : undefined}
@@ -103,12 +140,13 @@ export function CompanyProfilePage() {
             );
           })}
         </div>
-        <div className="flex justify-end">
-          <Button type="submit" disabled={!form.formState.isDirty}>
-            <Save />
-            Save company profile
-          </Button>
-        </div>
+        <SaveBar
+          changes={countDirty(form.formState.dirtyFields)}
+          saveLabel="Save company profile"
+          saving={form.formState.isSubmitting}
+          onSave={() => void form.handleSubmit(save)()}
+          onDiscard={() => form.reset()}
+        />
       </form>
     </Panel>
   );

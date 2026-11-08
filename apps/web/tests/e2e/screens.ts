@@ -24,6 +24,7 @@ export const FLOORING_SCREENS = [
   "/settings/number-format",
   "/settings/company",
   "/settings/locations",
+  "/settings/documents",
   "/settings/audit",
 ];
 

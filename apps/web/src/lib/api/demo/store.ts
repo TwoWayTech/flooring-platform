@@ -173,6 +173,10 @@ export class DemoStore implements ApiClient {
     return db.settings;
   }
 
+  async getDefaultSettings() {
+    return this.open().defaultSettings;
+  }
+
   async resetSettings(section: keyof CompanySettings) {
     return this.updateSettings(section, this.open().defaultSettings[section]);
   }

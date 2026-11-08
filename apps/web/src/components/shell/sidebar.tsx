@@ -41,7 +41,9 @@ export function Sidebar({ onNavigate, className }: { onNavigate?: () => void; cl
   const pathname = usePathname();
   const menu = visibleItems(product.menu, access);
   const settings = visibleItems(product.settings, access);
-  const settingsItem: MenuItem | null = settings[0] ? { ...settings[0], label: "Settings", icon: Settings } : null;
+  const settingsItem: MenuItem | null = settings[0]
+    ? { ...settings[0], href: "/settings", label: "Settings", icon: Settings }
+    : null;
 
   return (
     <div className={cn("flex h-full flex-col gap-4 px-3 py-4", className)}>

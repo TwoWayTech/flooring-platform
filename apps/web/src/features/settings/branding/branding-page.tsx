@@ -1,17 +1,21 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
-import { CircleCheck, RotateCcw, Save, TriangleAlert, Upload, X } from "lucide-react";
+import type { ChangeEvent } from "react";
+import { CircleCheck, TriangleAlert, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { checkBrandColor, type Branding, type FloorPattern } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
-import { Label } from "@workspace/ui/components/label";
 import { Panel } from "@workspace/ui/components/panel";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { NoAccess } from "@/components/no-access";
+import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { useApiQuery } from "@/lib/api/use-api";
+import { Choice } from "../form/choice";
+import { SettingRow } from "../form/setting-row";
+import { SettingsForm } from "../form/settings-form";
+import type { SectionProps } from "../localization/simple-tabs";
 import { BrandPreview } from "./brand-preview";
 
 const PATTERNS: Record<FloorPattern, string> = {
@@ -23,24 +27,9 @@ const THEMES = { system: "Follow the device", light: "Light", dark: "Dark" } as 
 /** Logos are kept in this browser's demo storage, so they stay small. */
 const MAX_LOGO_BYTES = 300_000;
 
-/**
- * Settings: Branding (spec Tier 1): logo, brand color with a live preview and contrast check,
- * pattern and default theme. Saving applies the branding across the shell at once.
- */
-export function BrandingPage() {
-  const can = useCan();
-  const { settings } = useWorkspace();
-  const [draft, setDraft] = useState<Branding>(settings.branding);
-  const [hex, setHex] = useState(settings.branding.brandColor);
-  const check = checkBrandColor(hex);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(settings.branding);
-
-  if (!can("settings.branding.manage")) return <NoAccess />;
-
-  function setColor(value: string) {
-    setHex(value);
-    if (checkBrandColor(value).ok) setDraft((d) => ({ ...d, brandColor: value.toUpperCase() }));
-  }
+/** The branding rows, with a live preview that only ever shows a readable color. */
+function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Branding> & { saved: Branding }) {
+  const check = checkBrandColor(draft.brandColor);
 
   function onLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -50,149 +39,150 @@ export function BrandingPage() {
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setDraft((d) => ({ ...d, logoDataUrl: String(reader.result) }));
+    reader.onload = () => setDraft({ ...draft, logoDataUrl: String(reader.result) });
     reader.readAsDataURL(file);
-  }
-
-  async function save() {
-    await api.updateSettings("branding", draft);
-    toast.success("Branding saved");
-  }
-
-  async function reset() {
-    const next = await api.resetSettings("branding");
-    setDraft(next.branding);
-    setHex(next.branding.brandColor);
-    toast.success("Branding reset to the original");
   }
 
   return (
     <>
-      <Panel title="Preview">
-        <BrandPreview branding={draft} />
-      </Panel>
-      <Panel
-        title="Branding"
-        actions={
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void reset()}>
-              <RotateCcw />
-              Reset
-            </Button>
-            <Button size="sm" onClick={() => void save()} disabled={!dirty}>
-              <Save />
-              Save branding
-            </Button>
-          </div>
-        }
-        bodyClassName="grid gap-5 sm:grid-cols-2"
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="brand-name">Display name</Label>
-          <Input
-            id="brand-name"
-            value={draft.displayName}
-            onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="brand-monogram">Monogram letters</Label>
-          <Input
-            id="brand-monogram"
-            value={draft.monogram}
-            maxLength={2}
-            onChange={(e) => setDraft({ ...draft, monogram: e.target.value.toUpperCase() })}
-            className="w-20"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="brand-color">Brand color</Label>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              aria-label="Pick brand color"
-              value={draft.brandColor}
-              onChange={(e) => setColor(e.target.value)}
-              className="border-hairline h-9 w-12 cursor-pointer rounded-md border bg-transparent"
-            />
+      <BrandPreview branding={{ ...draft, brandColor: check.ok ? draft.brandColor : saved.brandColor }} />
+      <div className="grid gap-5 sm:grid-cols-2">
+        <SettingRow setting="branding.displayName" changed={changed("displayName")}>
+          {(id) => (
             <Input
-              id="brand-color"
-              value={hex}
-              onChange={(e) => setColor(e.target.value)}
-              className="w-32 tabular-nums"
-              aria-describedby="brand-color-check"
+              id={id}
+              aria-describedby={`${id}-hint`}
+              value={draft.displayName}
+              onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
             />
-          </div>
-          <p
-            id="brand-color-check"
-            className={
-              check.ok
-                ? "text-success-ink flex items-center gap-1.5 text-xs"
-                : "text-danger-ink flex items-center gap-1.5 text-xs"
-            }
-          >
-            {check.ok ? (
-              <CircleCheck aria-hidden="true" className="size-3.5" />
-            ) : (
-              <TriangleAlert aria-hidden="true" className="size-3.5" />
-            )}
-            {check.message}
-          </p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="brand-pattern">Floor pattern</Label>
-          <Select value={draft.pattern} onValueChange={(v) => setDraft({ ...draft, pattern: v as FloorPattern })}>
-            <SelectTrigger id="brand-pattern" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(PATTERNS) as FloorPattern[]).map((p) => (
-                <SelectItem key={p} value={p}>
-                  {PATTERNS[p]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Logo</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <label>
-                <Upload />
-                Upload logo
-                <input type="file" accept="image/png,image/svg+xml,image/jpeg" className="sr-only" onChange={onLogo} />
-              </label>
-            </Button>
-            {draft.logoDataUrl ? (
-              <Button variant="ghost" size="sm" onClick={() => setDraft({ ...draft, logoDataUrl: null })}>
-                <X />
-                Use the monogram
+          )}
+        </SettingRow>
+        <SettingRow setting="branding.monogram" changed={changed("monogram")}>
+          {(id) => (
+            <Input
+              id={id}
+              aria-describedby={`${id}-hint`}
+              value={draft.monogram}
+              maxLength={2}
+              onChange={(e) => setDraft({ ...draft, monogram: e.target.value.toUpperCase() })}
+              className="w-20"
+            />
+          )}
+        </SettingRow>
+        <SettingRow setting="branding.brandColor" changed={changed("brandColor")}>
+          {(id) => (
+            <>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  aria-label="Pick brand color"
+                  value={check.ok ? draft.brandColor : saved.brandColor}
+                  onChange={(e) => setDraft({ ...draft, brandColor: e.target.value.toUpperCase() })}
+                  className="border-hairline h-9 w-12 cursor-pointer rounded-md border bg-transparent"
+                />
+                <Input
+                  id={id}
+                  value={draft.brandColor}
+                  onChange={(e) => setDraft({ ...draft, brandColor: e.target.value.trim().toUpperCase() })}
+                  className="w-32 tabular-nums"
+                  aria-describedby={`${id}-check ${id}-hint`}
+                  aria-invalid={!check.ok}
+                />
+              </div>
+              <p
+                id={`${id}-check`}
+                className={
+                  check.ok
+                    ? "text-success-ink flex items-center gap-1.5 text-xs"
+                    : "text-danger-ink flex items-center gap-1.5 text-xs"
+                }
+              >
+                {check.ok ? (
+                  <CircleCheck aria-hidden="true" className="size-3.5" />
+                ) : (
+                  <TriangleAlert aria-hidden="true" className="size-3.5" />
+                )}
+                {check.message}
+              </p>
+            </>
+          )}
+        </SettingRow>
+        <SettingRow setting="branding.pattern" changed={changed("pattern")}>
+          {(id) => (
+            <Choice
+              id={id}
+              value={draft.pattern}
+              options={PATTERNS}
+              onChange={(pattern) => setDraft({ ...draft, pattern })}
+            />
+          )}
+        </SettingRow>
+        <SettingRow setting="branding.logo" changed={changed("logoDataUrl")}>
+          {(id) => (
+            <div id={id} className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <label>
+                  <Upload />
+                  Upload logo
+                  <input
+                    type="file"
+                    accept="image/png,image/svg+xml,image/jpeg"
+                    className="sr-only"
+                    onChange={onLogo}
+                  />
+                </label>
               </Button>
-            ) : (
-              <span className="text-muted-foreground text-xs">PNG, SVG or JPEG up to 300 KB</span>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="brand-theme">Default theme</Label>
-          <Select
-            value={draft.defaultTheme}
-            onValueChange={(v) => setDraft({ ...draft, defaultTheme: v as Branding["defaultTheme"] })}
-          >
-            <SelectTrigger id="brand-theme" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(THEMES) as Branding["defaultTheme"][]).map((t) => (
-                <SelectItem key={t} value={t}>
-                  {THEMES[t]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </Panel>
+              {draft.logoDataUrl ? (
+                <Button variant="ghost" size="sm" onClick={() => setDraft({ ...draft, logoDataUrl: null })}>
+                  <X />
+                  Use the monogram
+                </Button>
+              ) : (
+                <span className="text-muted-foreground text-xs">PNG, SVG or JPEG up to 300 KB</span>
+              )}
+            </div>
+          )}
+        </SettingRow>
+        <SettingRow setting="branding.defaultTheme" changed={changed("defaultTheme")}>
+          {(id) => (
+            <Choice
+              id={id}
+              value={draft.defaultTheme}
+              options={THEMES}
+              onChange={(defaultTheme) => setDraft({ ...draft, defaultTheme })}
+            />
+          )}
+        </SettingRow>
+      </div>
     </>
+  );
+}
+
+/**
+ * Settings: Branding (spec Tier 1, A4): logo, brand color with a live preview and contrast check,
+ * pattern and default theme. Saving applies the branding across the shell at once.
+ */
+export function BrandingPage() {
+  const can = useCan();
+  const { settings } = useWorkspace();
+  const defaults = useApiQuery((client) => client.getDefaultSettings(), []);
+  if (!can("settings.branding.manage")) return <NoAccess />;
+  if (defaults.status !== "ready") return <QueryFallback query={defaults} className="h-96" label="Loading settings" />;
+  return (
+    <Panel bodyClassName="flex flex-col gap-6">
+      <SettingsForm
+        showTitle={false}
+        title="Branding"
+        description="How the company looks in the app and on documents: name, logo, color and theme."
+        initial={settings.branding}
+        defaults={defaults.data.branding}
+        canSave={(draft) => checkBrandColor(draft.brandColor).ok}
+        onSave={(branding) => api.updateSettings("branding", branding).then(() => {})}
+      >
+        {(draft, setDraft, changed) => (
+          <BrandingSection draft={draft} setDraft={setDraft} changed={changed} saved={settings.branding} />
+        )}
+      </SettingsForm>
+    </Panel>
   );
 }

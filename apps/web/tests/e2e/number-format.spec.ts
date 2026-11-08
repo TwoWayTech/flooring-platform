@@ -5,10 +5,12 @@ test.describe("settings: number format", () => {
   test("money decimals change the display, not the totals, and hover shows the full value", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/sales?view=invoices");
     await page.getByPlaceholder("Search invoices and customers").fill("INV-1150");
+    // Find the Total column by its header, so added columns do not move the check.
+    const headers = await page.locator("thead th").allTextContents();
     const total = page
       .getByRole("row", { name: /INV-1150/ })
       .getByRole("cell")
-      .nth(5);
+      .nth(headers.findIndex((h) => h.trim() === "Total"));
     await expect(total).toHaveText("$5,036.99");
 
     await page.goto("/settings/number-format");

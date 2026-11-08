@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Plus, Store, Warehouse } from "lucide-react";
 import type { Location } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
-import { PageHeader } from "@workspace/ui/components/page-header";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -57,10 +56,9 @@ export function LocationsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Warehouses and showrooms"
-        description="Where your stock is kept and shown. New quotes, invoices and orders start from a person's own default warehouse, then the company default."
-      />
+      <p className="text-muted-foreground max-w-prose text-sm">
+        New quotes, invoices and orders start from a person&apos;s own default warehouse, then the company default.
+      </p>
       {data.status !== "ready" ? (
         <QueryFallback query={data} className="h-64" label="Loading locations" />
       ) : (
