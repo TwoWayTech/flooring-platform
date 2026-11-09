@@ -52,16 +52,20 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     const dialog = page.getByRole("dialog", { name: "Adjust stock" });
     await dialog.getByLabel("Change").fill("60");
     await dialog.getByRole("button", { name: "Record adjustment" }).click();
-    await expect(page.getByText(/ADJ-\d{4} waits for approval/)).toBeVisible();
+    const toast = page.getByText(/ADJ-\d{4} waits for approval/);
+    await expect(toast).toBeVisible();
+    const number = /ADJ-\d{4}/.exec(await toast.innerText())![0];
 
     await signInAs(page, SUMMIT_OWNER, "/");
     await page
-      .getByRole("link", { name: /stock adjustment to approve/ })
+      .getByRole("link", { name: /stock adjustments? to approve/ })
       .first()
       .click();
     await expect(page).toHaveURL(/view=adjustments/);
-    await page.getByRole("button", { name: /^Approve ADJ-/ }).click();
-    await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `Approve ${number}` }).click();
+    await expect(
+      page.getByRole("row", { name: new RegExp(number) }).getByText("Applied", { exact: true }),
+    ).toBeVisible();
   });
 
   test("products show On hand, Reserved and Available with stock badges in words", async ({ page }) => {

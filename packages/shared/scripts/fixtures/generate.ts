@@ -9,6 +9,7 @@ import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
 import { buildCommissions, buildEmployees, buildPto, buildTimesheets } from "./hr";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
+import { withExtras } from "./extras";
 import { buildReservations } from "./reservations";
 import { buildMeetings } from "./meetings";
 import { buildExpenses, buildPurchasing } from "./purchasing";
@@ -49,7 +50,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
   const purchasing = buildPurchasing(ctx, suppliers, products, users);
   const installers = users.filter((u) => u.roleIds.some((r) => r.endsWith("-role-installer"))).map((u) => u.name);
   const crews = buildCrews(ctx, installers);
-  return {
+  return withExtras(ctx, {
     companyId: seed.id,
     anchorDate: ANCHOR_DATE,
     settings,
@@ -80,7 +81,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     audit: buildAudit(ctx, users),
     importBatches: [],
     importMappings: [],
-  };
+  });
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */

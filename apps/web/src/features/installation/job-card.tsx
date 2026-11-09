@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { FilePlus2, FileText, PenLine } from "lucide-react";
+import { FilePlus2, FileText, PenLine, Play } from "lucide-react";
 import { toast } from "sonner";
 import {
   jobCosting,
@@ -89,6 +89,16 @@ export function JobCard({
       setSigner("");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The sign-off was not saved. Try again.");
+    }
+  }
+
+  async function start() {
+    if (!job) return;
+    try {
+      await api.startJob(job.id);
+      toast.success(`${job.number} started`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The job was not started. Try again.");
     }
   }
 
@@ -217,6 +227,11 @@ export function JobCard({
                 <p className="bg-success/12 text-success-ink rounded-md px-3 py-2">
                   Signed off by {job.signedBy} on {formatDate(job.signedOffAt!)}
                 </p>
+              ) : job.status === "scheduled" && job.date <= api.today() && can("installation.job.edit") ? (
+                <Button className="self-start" onClick={() => void start()}>
+                  <Play />
+                  Start job
+                </Button>
               ) : job.status === "completed" || job.status === "in_progress" ? (
                 can("installation.job.sign_off") ? (
                   <div className="flex items-end gap-2">

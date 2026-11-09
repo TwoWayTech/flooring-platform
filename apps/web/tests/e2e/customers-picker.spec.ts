@@ -1,32 +1,36 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { FLOW_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("customer picker and addresses (spec A6)", () => {
-  test("adds a typed customer and a suggested address from the quote builder", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/sales/quotes/new");
-    await page.getByLabel("Customer", { exact: true }).click();
-    await page.getByLabel("Search customers").fill("Jordan Avery");
-    await page.getByRole("option", { name: "Add “Jordan Avery” as a new customer" }).click();
-    const form = page.getByRole("form", { name: "New customer" });
-    await expect(form.getByLabel("Name")).toHaveValue("Jordan Avery");
-    await form.getByLabel("Phone (optional)").fill("303-555-0144");
-    await form.getByRole("button", { name: "Add customer" }).click();
-    await expect(page.getByLabel("Customer", { exact: true })).toHaveText(/Jordan Avery/);
+  test(
+    "adds a typed customer and a suggested address from the quote builder (flow 3)",
+    { tag: FLOW_TAG },
+    async ({ page }) => {
+      await signInAs(page, SUMMIT_OWNER, "/sales/quotes/new");
+      await page.getByLabel("Customer", { exact: true }).click();
+      await page.getByLabel("Search customers").fill("Jordan Avery");
+      await page.getByRole("option", { name: "Add “Jordan Avery” as a new customer" }).click();
+      const form = page.getByRole("form", { name: "New customer" });
+      await expect(form.getByLabel("Name")).toHaveValue("Jordan Avery");
+      await form.getByLabel("Phone (optional)").fill("303-555-0144");
+      await form.getByRole("button", { name: "Add customer" }).click();
+      await expect(page.getByLabel("Customer", { exact: true })).toHaveText(/Jordan Avery/);
 
-    await page.getByLabel("Job-site address").click();
-    await page.getByRole("option", { name: "Add new address" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Find the address").fill("123 Main");
-    await dialog.getByRole("option").first().click();
-    await expect(dialog.getByLabel("Street")).toHaveValue("123 Main Street");
-    await expect(dialog.getByLabel("County")).not.toHaveValue("");
-    await dialog.getByRole("button", { name: "Save address" }).click();
+      await page.getByLabel("Job-site address").click();
+      await page.getByRole("option", { name: "Add new address" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Find the address").fill("123 Main");
+      await dialog.getByRole("option").first().click();
+      await expect(dialog.getByLabel("Street")).toHaveValue("123 Main Street");
+      await expect(dialog.getByLabel("County")).not.toHaveValue("");
+      await dialog.getByRole("button", { name: "Save address" }).click();
 
-    await expect(page.locator("#site-street")).toHaveValue("123 Main Street");
-    // A new quote saves as a draft (spec B1).
-    await page.getByRole("button", { name: "Save as draft" }).click();
-    await expect(page.getByText(/Quote .* saved/)).toBeVisible();
-  });
+      await expect(page.locator("#site-street")).toHaveValue("123 Main Street");
+      // A new quote saves as a draft (spec B1).
+      await page.getByRole("button", { name: "Save as draft" }).click();
+      await expect(page.getByText(/Quote .* saved/)).toBeVisible();
+    },
+  );
 
   test("marks a quick-added customer as incomplete until the profile is completed", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/sales/quotes/new");

@@ -118,14 +118,14 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch G: full suite green (283 e2e in three chunks on a production build; 209 unit)
 
 #### Batch H: data, tests, docs, deploy
-- [ ] Fixtures: warehouses and showrooms, customers with several addresses, Draft and Pending quotes, payments with proof files, supplier terms, bills and payments, reservations and cuts linked to invoices, commissions, healthy receivables; reconciliation extended (receivables = open invoices, payables = open bills, stock by warehouse = movements, commissions = rules × confirmed payments)
-- [ ] Unit tests: the Appendix A list, quote and PO status rules, reservation and cut rules, area-to-carton conversion, commission calculation, tax default resolution, import validation, permission checks in UI and save logic
-- [ ] E2E 1: quote draft → pending → accepted → invoice → deposit with proof → cut from roll → job complete → final payment → Paid; void one payment → Partly paid
-- [ ] E2E 2: PO draft → ordered → partial receipt → supplier bill → supplier payment with proof
-- [ ] E2E 3: new customer typed in the quote builder with a new address from the demo provider
-- [ ] E2E 4: customer import from CSV with one bad row reported
-- [ ] E2E 5: meeting dragged to a new time
-- [ ] E2E 6: company Owner removes a page from the Sales role; Sales no longer sees it
+- [x] Fixtures: warehouses and showrooms, customers with several addresses, Draft and Pending quotes, payments with proof files, supplier terms, bills and payments, reservations and cuts linked to invoices, commissions, healthy receivables; reconciliation extended (receivables = open invoices, payables = open bills, stock by warehouse = movements, commissions = rules × confirmed payments)
+- [x] Unit tests: the Appendix A list, quote and PO status rules, reservation and cut rules, area-to-carton conversion, commission calculation, tax default resolution, import validation, permission checks in UI and save logic
+- [x] E2E 1: quote draft → pending → accepted → invoice → deposit with proof → cut from roll → job complete → final payment → Paid; void one payment → Partly paid
+- [x] E2E 2: PO draft → ordered → partial receipt → supplier bill → supplier payment with proof
+- [x] E2E 3: new customer typed in the quote builder with a new address from the demo provider
+- [x] E2E 4: customer import from CSV with one bad row reported
+- [x] E2E 5: meeting dragged to a new time
+- [x] E2E 6: company Owner removes a page from the Sales role; Sales no longer sees it
 - [ ] Docs: FEATURES.md rows, ADRs, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter-guide steps, STATUS.md
 
 #### End

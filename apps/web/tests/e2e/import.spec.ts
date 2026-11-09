@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
-import { HARBOR_OWNER, HR_TAG, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER } from "./helpers";
+import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER } from "./helpers";
 
 const CUSTOMERS_CSV = [
   "Account Number,Customer Name,E-mail,Phone,Terms,Credit limit",
@@ -22,43 +22,47 @@ async function startImport(page: Page, kind: string) {
 }
 
 test.describe("data import (spec G1)", () => {
-  test("imports customers from CSV, reports the bad row and undoes the batch", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/settings/import");
-    await startImport(page, "Customers");
-    await upload(page, "customers.csv", "text/csv", Buffer.from(CUSTOMERS_CSV));
-    await expect(page.getByText(/customers\.csv: 3 rows and 6 columns/)).toBeVisible();
-    await page.getByRole("button", { name: "Next" }).click();
+  test(
+    "imports customers from CSV, reports the bad row and undoes the batch (flow 4)",
+    { tag: FLOW_TAG },
+    async ({ page }) => {
+      await signInAs(page, SUMMIT_OWNER, "/settings/import");
+      await startImport(page, "Customers");
+      await upload(page, "customers.csv", "text/csv", Buffer.from(CUSTOMERS_CSV));
+      await expect(page.getByText(/customers\.csv: 3 rows and 6 columns/)).toBeVisible();
+      await page.getByRole("button", { name: "Next" }).click();
 
-    // Headers were matched by name, aliases included.
-    await expect(page.getByRole("combobox", { name: "Name" })).toHaveText("Customer Name");
-    await expect(page.getByRole("combobox", { name: "External ID" })).toHaveText("Account Number");
-    await expect(page.getByRole("combobox", { name: "Email" })).toHaveText("E-mail");
-    await page.getByRole("button", { name: "Check the file" }).click();
+      // Headers were matched by name, aliases included.
+      await expect(page.getByRole("combobox", { name: "Name" })).toHaveText("Customer Name");
+      await expect(page.getByRole("combobox", { name: "External ID" })).toHaveText("Account Number");
+      await expect(page.getByRole("combobox", { name: "Email" })).toHaveText("E-mail");
+      await page.getByRole("button", { name: "Check the file" }).click();
 
-    await expect(page.getByText("Creates 2, updates 0, skips 0; 1 row has errors and is left out.")).toBeVisible();
-    await expect(page.getByText("Email: “not-an-email” is not an email address.")).toBeVisible();
-    await expect(page.getByText("Credit limit: “lots” is not an amount. Write it like 1250.00.")).toBeVisible();
-    await page.getByRole("button", { name: "Import 2 rows" }).click();
+      await expect(page.getByText("Creates 2, updates 0, skips 0; 1 row has errors and is left out.")).toBeVisible();
+      await expect(page.getByText("Email: “not-an-email” is not an email address.")).toBeVisible();
+      await expect(page.getByText("Credit limit: “lots” is not an amount. Write it like 1250.00.")).toBeVisible();
+      await page.getByRole("button", { name: "Import 2 rows" }).click();
 
-    await expect(page.getByText(/^IMP-1001 imported from customers\.csv$/)).toBeVisible();
-    const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Download error report" }).click();
-    expect((await download).suggestedFilename()).toBe("IMP-1001-errors.csv");
+      await expect(page.getByText(/^IMP-1001 imported from customers\.csv$/)).toBeVisible();
+      const download = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Download error report" }).click();
+      expect((await download).suggestedFilename()).toBe("IMP-1001-errors.csv");
 
-    await page.goto("/sales?view=customers");
-    await page.getByLabel("Search customers").fill("Maple Row");
-    await expect(page.getByText("Maple Row Builders")).toBeVisible();
+      await page.goto("/sales?view=customers");
+      await page.getByLabel("Search customers").fill("Maple Row");
+      await expect(page.getByText("Maple Row Builders")).toBeVisible();
 
-    await page.goto("/settings/import");
-    const history = page.getByRole("region", { name: "Import history" });
-    await expect(history.getByRole("row", { name: /IMP-1001.*Customers.*customers\.csv/ })).toBeVisible();
-    await history.getByRole("button", { name: "Undo IMP-1001" }).click();
-    await page.getByRole("dialog", { name: "Undo IMP-1001?" }).getByRole("button", { name: "Undo import" }).click();
-    await expect(page.getByText("IMP-1001 undone")).toBeVisible();
-    await page.goto("/sales?view=customers");
-    await page.getByLabel("Search customers").fill("Maple Row");
-    await expect(page.getByText("Maple Row Builders")).toHaveCount(0);
-  });
+      await page.goto("/settings/import");
+      const history = page.getByRole("region", { name: "Import history" });
+      await expect(history.getByRole("row", { name: /IMP-1001.*Customers.*customers\.csv/ })).toBeVisible();
+      await history.getByRole("button", { name: "Undo IMP-1001" }).click();
+      await page.getByRole("dialog", { name: "Undo IMP-1001?" }).getByRole("button", { name: "Undo import" }).click();
+      await expect(page.getByText("IMP-1001 undone")).toBeVisible();
+      await page.goto("/sales?view=customers");
+      await page.getByLabel("Search customers").fill("Maple Row");
+      await expect(page.getByText("Maple Row Builders")).toHaveCount(0);
+    },
+  );
 
   test("a second import updates instead of duplicating, with the saved columns", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/import");

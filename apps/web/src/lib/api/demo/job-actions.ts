@@ -2,14 +2,69 @@ import {
   invoiceAfterInstallation,
   invoiceFromJob,
   invoiceLedger,
+  jobFromInvoice,
   linesFromJob,
   moneyString,
   nextNumber,
   type Job,
 } from "@workspace/shared";
+import type { ScheduleJobInput } from "../contract";
 import { DemoRuleError } from "./admin-rules";
 import { reserveFor } from "./inventory-actions";
 import type { ActionContext } from "./payment-actions";
+
+/**
+ * Schedules the installation of an invoice that has no job yet (feature batch 2, H flow 1): one
+ * crew, a day from today on and a start hour; the job is costed from the invoice. Audited.
+ */
+export async function scheduleJob(ctx: ActionContext, input: ScheduleJobInput): Promise<Job> {
+  await ctx.assertCan(["installation.job.create"]);
+  const invoice = ctx.db.get("invoices", input.invoiceId);
+  if (!invoice || invoice.voidedAt || invoice.isReturn) {
+    throw new DemoRuleError("Only an open sale can get an installation job.");
+  }
+  const jobs = ctx.db.list("jobs");
+  const existing = jobs.find((j) => j.invoiceId === invoice.id);
+  if (existing) throw new DemoRuleError(`${invoice.number} already has job ${existing.number}.`);
+  const crew = ctx.db.get("crews", input.crewId);
+  if (!crew) throw new DemoRuleError("Choose a crew.");
+  if (input.date < ctx.today) throw new DemoRuleError("Choose today or a later day.");
+  if (!Number.isInteger(input.startHour) || input.startHour < 6 || input.startHour > 17) {
+    throw new DemoRuleError("Start between 6 AM and 5 PM.");
+  }
+  const job = jobFromInvoice(invoice, crew, {
+    id: ctx.newId("job"),
+    number: nextNumber(
+      "J-",
+      jobs.map((j) => j.number),
+      4001,
+    ),
+    date: input.date,
+    startHour: input.startHour,
+  });
+  ctx.db.put("jobs", job);
+  ctx.audit({
+    category: "data",
+    action: "Scheduled installation",
+    target: job.number,
+    before: null,
+    after: `${invoice.number}, ${crew.name}, ${input.date}`,
+  });
+  return job;
+}
+
+/** Starts a scheduled job on or after its day, so the crew can finish and the customer sign off. Audited. */
+export async function startJob(ctx: ActionContext, jobId: string): Promise<Job> {
+  await ctx.assertCan(["installation.job.edit"]);
+  const job = ctx.db.get("jobs", jobId);
+  if (!job) throw new DemoRuleError("This job no longer exists.");
+  if (job.status !== "scheduled") throw new DemoRuleError(`${job.number} has already started.`);
+  if (job.date > ctx.today) throw new DemoRuleError(`${job.number} is planned for a later day.`);
+  const started: Job = { ...job, status: "in_progress" };
+  ctx.db.put("jobs", started);
+  ctx.audit({ category: "data", action: "Started job", target: job.number, before: "scheduled", after: "in progress" });
+  return started;
+}
 
 /**
  * Records the customer's sign-off (spec B6): the job is complete, and its invoice moves forward:

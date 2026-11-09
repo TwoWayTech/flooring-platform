@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
+import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 test.describe("meetings", () => {
   test("shows this week's recurring meetings with attendees and the reminder", async ({ page }) => {
@@ -43,27 +43,31 @@ function hourLater(time: string): string {
 }
 
 test.describe("meetings calendar (spec F)", () => {
-  test("drags a repeating meeting an hour later for this event only, and Undo puts it back", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/meetings");
-    const meeting = page.getByRole("button", { name: /Weekly sales huddle/ }).first();
-    const before = (await meeting.innerText()).trim().split(/\s*\n\s*/)[0]!;
-    const box = (await meeting.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + 8);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2, box.y + 8 + 24, { steps: 4 });
-    await page.mouse.move(box.x + box.width / 2, box.y + 8 + 48, { steps: 4 });
-    await page.mouse.up();
-    const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
-    await ask.getByLabel("This event").check();
-    await ask.getByRole("button", { name: "Move" }).click();
-    await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: new RegExp(`^${hourLater(before)}.*Weekly sales huddle`) }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "Undo" }).click();
-    await expect(page.getByText("Move undone")).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle`) })).toBeVisible();
-  });
+  test(
+    "drags a repeating meeting an hour later for this event only, and Undo puts it back (flow 5)",
+    { tag: FLOW_TAG },
+    async ({ page }) => {
+      await signInAs(page, SUMMIT_OWNER, "/meetings");
+      const meeting = page.getByRole("button", { name: /Weekly sales huddle/ }).first();
+      const before = (await meeting.innerText()).trim().split(/\s*\n\s*/)[0]!;
+      const box = (await meeting.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 8);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + 8 + 24, { steps: 4 });
+      await page.mouse.move(box.x + box.width / 2, box.y + 8 + 48, { steps: 4 });
+      await page.mouse.up();
+      const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
+      await ask.getByLabel("This event").check();
+      await ask.getByRole("button", { name: "Move" }).click();
+      await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: new RegExp(`^${hourLater(before)}.*Weekly sales huddle`) }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await expect(page.getByText("Move undone")).toBeVisible();
+      await expect(page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle`) })).toBeVisible();
+    },
+  );
 
   test("reschedules from the form, and shows month and agenda views", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");

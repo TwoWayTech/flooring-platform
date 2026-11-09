@@ -23,6 +23,13 @@ import {
   rollAreaSqFt,
   splitOvertime,
   sum,
+  adjustmentNeedsApproval,
+  billLedgerIndex,
+  payablesSummary,
+  rateFor,
+  roundMoney,
+  ruleFor,
+  teamStats,
   type CompanyFixtures,
   type PlatformFixtures,
 } from "../src";
@@ -126,6 +133,24 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
       expect(p.files.length, p.number).toBeGreaterThan(0);
     }
     expect(f.bills.some((x) => dec(billLedger(x, f.supplierPayments, today).balance).gt(0))).toBe(true);
+    const owed = sum(f.bills.map((x) => billLedger(x, f.supplierPayments, today).balance));
+    expect(payablesSummary(f.bills, billLedgerIndex(f.bills, f.supplierPayments, today), today).total).toBe(
+      moneyString(owed),
+    );
+  });
+
+  it("every stock adjustment has a reason, and only approved ones moved stock", () => {
+    expect(f.stockAdjustments.length).toBeGreaterThan(0);
+    for (const a of f.stockAdjustments) {
+      const moved = f.stockMovements.filter((m) => m.source.kind === "adjustment" && m.source.id === a.id);
+      expect(
+        moved.map((m) => m.quantity),
+        a.number,
+      ).toEqual(a.status === "approved" ? [a.quantity] : []);
+      expect(a.status === "pending", a.number).toBe(
+        adjustmentNeedsApproval(a.quantity, f.settings.inventory.adjustmentApprovalQty),
+      );
+    }
   });
 
   it("stock by warehouse = movements: never negative, never in a showroom, transfers balance", () => {
@@ -159,7 +184,34 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     }
   });
 
-  it("commissions are 4 % of each rep's net invoiced sales", () => {
+  it("commissions earned = the rule's rate × the revenue in each rep's confirmed payments", () => {
+    const ledgers = ledgerIndex(f.invoices, { payments: f.payments, adjustments: f.invoiceAdjustments }, today);
+    const range = { from: addDays(today, -89), to: today, today };
+    const rows = teamStats({ ...f, rules: f.settings.commissions.rules, ledgers }, range);
+    for (const row of rows) {
+      const user = f.users.find((u) => u.id === row.userId)!;
+      const rule = ruleFor(user, f.roles, f.settings.commissions.rules);
+      const own = new Map(f.invoices.filter((i) => i.salesRepId === user.id && !i.voidedAt).map((i) => [i.id, i]));
+      const paid = f.payments.filter(
+        (p) => p.status === "confirmed" && own.has(p.invoiceId) && p.date >= range.from && p.date <= range.to,
+      );
+      const revenue = sum(
+        paid.map((p) => {
+          const invoice = own.get(p.invoiceId)!;
+          return dec(invoice.total).isZero()
+            ? dec(0)
+            : roundMoney(dec(p.amount).times(invoice.subtotal).div(invoice.total));
+        }),
+      );
+      expect(row.paidRevenue, row.name).toBe(moneyString(revenue));
+      if (rule?.basis === "paid_revenue") {
+        expect(row.earned, row.name).toBe(moneyString(revenue.times(rateFor(rule, revenue)).div(100)));
+      }
+    }
+    expect(rows.some((r) => dec(r.earned).gt(0))).toBe(true);
+  });
+
+  it("HR commissions are 4 % of each rep's net invoiced sales", () => {
     for (const c of f.commissions) expect(c.amount).toBe(moneyString(dec(c.sales).times(c.ratePct).dividedBy(100)));
   });
 });
@@ -193,14 +245,17 @@ describe("spec section 4 volumes", () => {
     expect(summit.invoices.length - sales.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("has 4 crews, 3 subcontractors and 40 jobs in the past, today and upcoming", () => {
+  it("has 4 crews, 3 subcontractors and 40 jobs in the past, today and upcoming, plus one not invoiced", () => {
     expect(summit.crews.filter((c) => c.kind === "crew")).toHaveLength(4);
     expect(summit.crews.filter((c) => c.kind === "subcontractor")).toHaveLength(3);
-    expect(summit.jobs).toHaveLength(40);
+    expect(summit.jobs.filter((j) => j.invoiceId)).toHaveLength(40);
+    const unbilled = summit.jobs.filter((j) => !j.invoiceId);
+    expect(unbilled).toHaveLength(1);
+    expect(summit.quotes.some((q) => q.customerId === unbilled[0]!.customerId && q.status === "accepted")).toBe(true);
     expect(summit.jobs.filter((j) => j.date < today).length).toBeGreaterThan(0);
     expect(summit.jobs.filter((j) => j.date === today).length).toBeGreaterThan(0);
     expect(summit.jobs.filter((j) => j.date > today).length).toBeGreaterThan(0);
-    for (const job of summit.jobs) {
+    for (const job of summit.jobs.filter((j) => j.invoiceId)) {
       expect(job.revenue).toBe(summit.invoices.find((i) => i.id === job.invoiceId)!.subtotal);
     }
   });

@@ -1,15 +1,13 @@
 import { addDays } from "../../src/dates";
-import { dec, moneyString, roundMoney } from "../../src/money";
+import { dec } from "../../src/money";
 import type { Crew, Customer, Invoice, Job, JobStatus, Quote } from "../../src/types";
 import { dueDate } from "../../src/operations/quotes";
+import { jobCostFrom, laborLines } from "../../src/operations/jobs";
 import type { GenContext } from "./context";
 import { COLORWAYS, PHOTO_CAPTIONS } from "./vocabulary";
 
 const SUBCONTRACTORS = ["Pinecrest Installs LLC", "Front Range Flooring Services", "Mesa Carpet Works"];
 const CREW_NAMES = ["North crew", "Foothills crew", "Metro crew", "Tile crew"];
-/** Loaded hourly cost of a W-2 crew; subcontractors charge 62 % of the labor billed instead. */
-const CREW_HOURLY_COST = "38.00";
-const SUB_SHARE_OF_LABOR = "0.62";
 const PAST_JOBS = 25;
 const TODAY_JOBS = 4;
 const UPCOMING_JOBS = 11;
@@ -36,11 +34,6 @@ export function buildCrews(ctx: GenContext, installerNames: readonly string[]): 
   return [...crews, ...subs];
 }
 
-/** Labor billed on an invoice: the lines taxed as installation labor. */
-function laborLines(invoice: Invoice) {
-  return invoice.lines.filter((l) => l.category === "labor");
-}
-
 function jobStatus(ctx: GenContext, date: string): JobStatus {
   if (date < ctx.anchor) return ctx.rng.chance(0.8) ? "signed_off" : "completed";
   if (date === ctx.anchor) return ctx.rng.chance(0.5) ? "in_progress" : "scheduled";
@@ -59,31 +52,6 @@ function jobDate(ctx: GenContext, invoice: Invoice, index: number): string {
   }
   if (index < PAST_JOBS + TODAY_JOBS) return ctx.anchor;
   return addDays(ctx.anchor, ctx.rng.int(1, 13));
-}
-
-/**
- * Job costing (spec "Installation"): materials at the invoice's unit cost, labor at crew hours
- * or the subcontractor's share, revenue as the invoice subtotal. Margin is derived, not stored.
- */
-function costJob(invoice: Invoice, crew: Crew) {
-  const labor = laborLines(invoice);
-  const installSqFt = labor.filter((l) => l.unit === "sq_ft").reduce((s, l) => s.plus(l.quantity), dec(0));
-  const laborHours = installSqFt.dividedBy(100).times("2.2").plus(2).toDecimalPlaces(1);
-  const billedLabor = labor.reduce((s, l) => s.plus(roundMoney(dec(l.quantity).times(l.unitPrice))), dec(0));
-  const laborCost = crew.kind === "crew" ? laborHours.times(CREW_HOURLY_COST) : billedLabor.times(SUB_SHARE_OF_LABOR);
-  return {
-    materials: invoice.lines
-      .filter((l) => l.category === "material")
-      .map((l) => ({
-        description: l.description,
-        quantity: l.quantity,
-        unit: l.unit,
-        cost: moneyString(dec(l.quantity).times(l.unitCost)),
-      })),
-    laborHours: laborHours.toString(),
-    laborCost: moneyString(laborCost),
-    revenue: invoice.subtotal,
-  };
 }
 
 /** A crew with no job yet on that date, so no crew is booked twice in a day; any crew once all are booked. */
@@ -129,7 +97,7 @@ export function buildJobs(
       status,
       address: invoice.jobSite,
       scope: `${material?.description ?? "Installation"} in ${rooms.map((r) => r.name).join(", ") || "the home"}`,
-      ...costJob(invoice, crew),
+      ...jobCostFrom(invoice, crew),
       photos: done
         ? ctx.rng
             .sample(PHOTO_CAPTIONS, ctx.rng.int(2, 4))

@@ -145,7 +145,13 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
           </Button>
         ) : null}
       </div>
-      <InvoiceSummary invoice={invoice} ledger={ledger} locations={locations} job={installs ? job : undefined} />
+      <InvoiceSummary
+        invoice={invoice}
+        ledger={ledger}
+        locations={locations}
+        job={installs ? job : undefined}
+        canSchedule={installs && can("installation.job.create") && !invoice.voidedAt && !invoice.isReturn}
+      />
       <InvoiceTimeline steps={timelineSteps(invoice, ledger, payments, job, users, installs)} />
       {paymentsOn && can("sales.payment.view") ? (
         <PaymentsSection

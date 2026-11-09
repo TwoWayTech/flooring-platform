@@ -50,6 +50,7 @@ import type {
   CollectionName,
   CompanyAccessPatch,
   DatabaseTestInput,
+  ScheduleJobInput,
   InviteUserInput,
   ItemOf,
   NewCustomerInput,
@@ -74,7 +75,7 @@ import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
 import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
-import { createInvoiceFromJob, signOffJob } from "./job-actions";
+import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-actions";
 import { rescheduleMeeting, undoReschedule } from "./meeting-actions";
 import {
   cancelOrder,
@@ -665,6 +666,14 @@ export class DemoStore implements ApiClient {
 
   async createInvoiceFromJob(jobId: string) {
     return this.act((ctx) => createInvoiceFromJob(ctx, jobId));
+  }
+
+  async scheduleJob(input: ScheduleJobInput) {
+    return this.act((ctx) => scheduleJob(ctx, input));
+  }
+
+  async startJob(jobId: string) {
+    return this.act((ctx) => startJob(ctx, jobId));
   }
 
   async getFile(fileId: string) {

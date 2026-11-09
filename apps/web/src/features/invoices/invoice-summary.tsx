@@ -14,6 +14,7 @@ import { Panel } from "@workspace/ui/components/panel";
 import { InvoiceStatusPills } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 import { HELD_LABEL } from "./invoice-model";
+import { ScheduleJob } from "./schedule-job";
 
 /** One money figure of the summary; Remaining is the largest. */
 function Figure({ label, value, large }: { label: string; value: string; large?: boolean }) {
@@ -36,11 +37,14 @@ export function InvoiceSummary({
   ledger,
   locations,
   job,
+  canSchedule,
 }: {
   invoice: Invoice;
   ledger: InvoiceLedger;
   locations: Location[];
   job: Job | undefined;
+  /** Whether the viewer may schedule an installation job for this invoice. */
+  canSchedule: boolean;
 }) {
   const formatDate = useFormatDate();
   return (
@@ -80,6 +84,8 @@ export function InvoiceSummary({
               >
                 {job.number}, {formatDate(job.date)}
               </Link>
+            ) : canSchedule ? (
+              <ScheduleJob invoice={invoice} />
             ) : (
               "None"
             )}

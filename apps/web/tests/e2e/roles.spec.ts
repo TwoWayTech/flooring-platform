@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { FLOW_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 const SUMMIT_MANAGER = { companyId: "summit", userId: "sm-usr-02", roleKey: "manager" } as const;
 
@@ -32,26 +32,30 @@ test.describe("settings: security roles", () => {
     await expect(page.getByRole("checkbox", { name: "View quotes" })).toBeEnabled();
   });
 
-  test("an Owner removes a page from the Sales role, and Sales no longer sees it (spec A3)", async ({ page }) => {
-    await signInAs(page, SUMMIT_OWNER, "/settings/roles");
-    await page.getByRole("button", { name: /^Sales/ }).click();
-    await expect(page.getByText("System", { exact: true }).first()).toBeVisible();
-    await page.getByRole("checkbox", { name: "View products" }).uncheck();
-    await page.getByRole("checkbox", { name: "View rolls" }).uncheck();
-    await page.getByRole("button", { name: "Save role" }).click();
-    await page.getByLabel("Authenticator code").fill("123456");
-    await page.getByRole("button", { name: "Confirm" }).click();
-    await expect(page.getByText("Role Sales saved")).toBeVisible();
+  test(
+    "an Owner removes a page from the Sales role, and Sales no longer sees it (spec A3, flow 6)",
+    { tag: FLOW_TAG },
+    async ({ page }) => {
+      await signInAs(page, SUMMIT_OWNER, "/settings/roles");
+      await page.getByRole("button", { name: /^Sales/ }).click();
+      await expect(page.getByText("System", { exact: true }).first()).toBeVisible();
+      await page.getByRole("checkbox", { name: "View products" }).uncheck();
+      await page.getByRole("checkbox", { name: "View rolls" }).uncheck();
+      await page.getByRole("button", { name: "Save role" }).click();
+      await page.getByLabel("Authenticator code").fill("123456");
+      await page.getByRole("button", { name: "Confirm" }).click();
+      await expect(page.getByText("Role Sales saved")).toBeVisible();
 
-    await page.keyboard.press("Control+k");
-    await page.getByPlaceholder("Search or run a command").fill("View as Sales");
-    await page.getByRole("option", { name: "View as Sales" }).click();
-    const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav.getByRole("link", { name: "Sales" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Inventory" })).toHaveCount(0);
-    await page.goto("/inventory/rolls/sm-roll-0004");
-    await expect(page.getByText("You don't have access to this page.")).toBeVisible();
-  });
+      await page.keyboard.press("Control+k");
+      await page.getByPlaceholder("Search or run a command").fill("View as Sales");
+      await page.getByRole("option", { name: "View as Sales" }).click();
+      const nav = page.getByRole("navigation", { name: "Main" });
+      await expect(nav.getByRole("link", { name: "Sales" })).toBeVisible();
+      await expect(nav.getByRole("link", { name: "Inventory" })).toHaveCount(0);
+      await page.goto("/inventory/rolls/sm-roll-0004");
+      await expect(page.getByText("You don't have access to this page.")).toBeVisible();
+    },
+  );
 
   test("resets a default role, duplicates a role and previews effective access", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/roles");

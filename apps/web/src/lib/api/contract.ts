@@ -202,6 +202,14 @@ export interface DatabaseSample {
   tables: SampleTable[];
 }
 
+/** What scheduling an invoice's installation needs (feature batch 2, H flow 1). */
+export interface ScheduleJobInput {
+  invoiceId: string;
+  crewId: string;
+  date: string;
+  startHour: number;
+}
+
 /** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
 export type PaymentDecision = { action: "confirm" } | { action: "reject"; reason: string };
 
@@ -384,6 +392,10 @@ export interface ApiClient {
   signOffJob(jobId: string, signer: string): Promise<Job>;
   /** Creates and links the invoice of a job that has none, from its materials and labor. Audited. */
   createInvoiceFromJob(jobId: string): Promise<Invoice>;
+  /** Schedules the installation of an invoice without a job, costed from it. Needs installation.job.create. Audited. */
+  scheduleJob(input: ScheduleJobInput): Promise<Job>;
+  /** Starts a scheduled job on or after its day. Needs installation.job.edit. Audited. */
+  startJob(jobId: string): Promise<Job>;
   /**
    * Moves or resizes one occurrence, this and following, or all (spec F). Needs meetings.meeting.edit.
    * Returns the saved meetings, attendee conflicts at the new time and the Undo record. Audited.

@@ -64,3 +64,6 @@ export const PHONE = {
 
 /** Tag for tests that belong to the HR Suite project, which runs them on the HR host. */
 export const HR_TAG = "@hr";
+
+/** Tag for the named end-to-end flows of feature batch 2, H; run them with `--grep @flow`. */
+export const FLOW_TAG = "@flow";
