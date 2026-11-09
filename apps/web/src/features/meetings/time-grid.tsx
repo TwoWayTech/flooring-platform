@@ -201,7 +201,6 @@ export function TimeGrid({
                         onPointerMove={move}
                         onPointerUp={() => end(o)}
                         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(o))}
-                        aria-label={`${o.meeting.title}, ${timeOf(o.start)}, ${o.durationMin} minutes`}
                       >
                         <span className="flex w-full items-center justify-between gap-1 font-medium tabular-nums">
                           {timeOf(shown.start)}
@@ -214,6 +213,7 @@ export function TimeGrid({
                           ) : null}
                         </span>
                         <span className="line-clamp-2">{o.meeting.title}</span>
+                        <span className="sr-only">, {o.durationMin} minutes</span>
                       </button>
                       {canEdit ? (
                         <span

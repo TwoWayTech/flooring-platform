@@ -34,11 +34,19 @@ test.describe("meetings", () => {
   });
 });
 
+/** "2:00 PM" an hour later. */
+function hourLater(time: string): string {
+  const [hm, ap] = time.split(" ") as [string, string];
+  const [h, m] = hm.split(":").map(Number) as [number, number];
+  const h24 = (h % 12) + (ap === "PM" ? 12 : 0) + 1;
+  return `${h24 % 12 === 0 ? 12 : h24 % 12}:${String(m).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+}
+
 test.describe("meetings calendar (spec F)", () => {
   test("drags a repeating meeting an hour later for this event only, and Undo puts it back", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
-    const meeting = page.getByRole("button", { name: /^Weekly sales huddle, / }).first();
-    const before = (await meeting.getAttribute("aria-label"))!;
+    const meeting = page.getByRole("button", { name: /Weekly sales huddle/ }).first();
+    const before = (await meeting.innerText()).trim().split(/\s*\n\s*/)[0]!;
     const box = (await meeting.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 8);
     await page.mouse.down();
@@ -49,22 +57,27 @@ test.describe("meetings calendar (spec F)", () => {
     await ask.getByLabel("This event").check();
     await ask.getByRole("button", { name: "Move" }).click();
     await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
-    await expect(page.getByRole("button", { name: before })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${hourLater(before)}.*Weekly sales huddle`) }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Undo" }).click();
     await expect(page.getByText("Move undone")).toBeVisible();
-    await expect(page.getByRole("button", { name: before })).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle`) })).toBeVisible();
   });
 
   test("reschedules from the form, and shows month and agenda views", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
-    await page.getByRole("button", { name: /^Weekly sales huddle, / }).first().click();
+    await page
+      .getByRole("button", { name: /Weekly sales huddle/ })
+      .first()
+      .click();
     const drawer = page.getByRole("dialog", { name: "Weekly sales huddle" });
     await drawer.getByLabel("Start").fill("16:00");
     await drawer.getByRole("button", { name: "Move meeting" }).click();
     await page.getByRole("dialog", { name: "Move a repeating meeting" }).getByRole("button", { name: "Move" }).click();
     await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("button", { name: /^Weekly sales huddle, 4:00 PM/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^4:00 PM.*Weekly sales huddle/ })).toBeVisible();
 
     await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Month" }).click();
     await expect(page.getByRole("button", { name: "Next month" })).toBeVisible();

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: run the Batch F suite, tick it, then G1 (import wizard: kinds, templates, CSV and Excel parsed in a Web Worker with Papa Parse and SheetJS, mapping, validation, preview and dry run, import with error CSV, history with Undo) and G2 (Connect a database screen with a simulated test; docs/specs/data-integration.md).
+- Next step: G1 (import wizard: kinds, templates, CSV and Excel parsed in a Web Worker with Papa Parse and SheetJS, mapping, validation, preview and dry run, import with error CSV, history with Undo) and G2 (Connect a database screen with a simulated test; docs/specs/data-integration.md).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -110,7 +110,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 
 #### Batch F: meetings calendar
 - [x] F. Day, week, month and agenda views; drag to move, drag the edge to resize, click an empty slot to create; recurring edit scope (this, this and following, all); attendee conflict warning; Undo toast; keyboard and form alternative; reminders and time zones follow the move
-- [ ] Batch F: full suite green
+- [x] Batch F: full suite green (all specs on a production build in chunks; meeting buttons are named by their visible time and title)
 
 #### Batch G: data import and database integration
 - [ ] G1. Import wizard (Platform admin → Company → Data import; Settings → Data import with `settings.import.manage`): choose kind, download template (CSV / Excel), upload (10 MB) parsed in a Web Worker (Papa Parse, SheetJS), map columns with saved mappings, validate per row and cell, preview 50 rows and dry run, import with result report and error CSV, import history with Undo; match on external ID, SKU or email
