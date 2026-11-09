@@ -8,6 +8,7 @@ import {
   type Job,
 } from "@workspace/shared";
 import { DemoRuleError } from "./admin-rules";
+import { reserveFor } from "./inventory-actions";
 import type { ActionContext } from "./payment-actions";
 
 /**
@@ -71,6 +72,7 @@ export async function createInvoiceFromJob(ctx: ActionContext, jobId: string) {
     locationId: location?.id ?? "",
   });
   ctx.db.put("invoices", invoice);
+  reserveFor(ctx, invoice);
   ctx.db.put("jobs", { ...job, invoiceId: invoice.id });
   ctx.audit({
     category: "data",

@@ -167,6 +167,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       paymentPrefix: "PAY-",
       refundPrefix: "RF-",
     },
+    inventory: { adjustmentApprovalQty: "50" },
     profile: {
       legalName: seed.legalName,
       dba: seed.name,

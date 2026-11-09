@@ -1,8 +1,22 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { dec, REMNANT_THRESHOLD_FT, validateCut, type Roll } from "@workspace/shared";
+import {
+  ADJUSTMENT_REASON_LABELS,
+  dec,
+  mayIssue,
+  REMNANT_THRESHOLD_FT,
+  rollAvailable,
+  validateCut,
+  type AdjustmentReason,
+  type Customer,
+  type InvoiceLedger,
+  type Invoice,
+  type Reservation,
+  type Roll,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -15,7 +29,14 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { Num } from "@workspace/ui/components/num";
+import { RadioGroup, RadioGroupItem } from "@workspace/ui/components/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
+import { Segmented } from "@workspace/ui/components/segmented";
+import { Textarea } from "@workspace/ui/components/textarea";
+import { Field } from "@/components/field";
+import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { CustomerPicker } from "@/features/customers/customer-picker";
 
 /** What the cut will leave, in words, before the person confirms it. */
 function Preview({ roll, length }: { roll: Roll; length: string }) {
@@ -39,86 +60,234 @@ function Preview({ roll, length }: { roll: Roll; length: string }) {
   );
 }
 
+type Mode = "invoice" | "new" | "adjust";
+
+interface CutRollDialogProps {
+  roll: Roll;
+  reservations: Reservation[];
+  invoices: Invoice[];
+  ledgers: ReadonlyMap<string, InvoiceLedger>;
+  customers: Customer[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
 /**
- * "Cut roll" (spec "Inventory and roll detail"): enter a length; the gauge animates the cut, the
- * remaining length updates, and a leftover under 12 ft becomes a remnant.
+ * Cut roll (spec C1, C2): every cut has a source. Cut for an invoice that holds this roll (once
+ * its deposit or payment is confirmed, or with an override reason), create a new invoice for a
+ * length of it, or, with inventory.stock.adjust, record an adjustment with a reason.
  */
 export function CutRollDialog({
   roll,
+  reservations,
+  invoices,
+  ledgers,
+  customers,
   open,
   onOpenChange,
-}: {
-  roll: Roll;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+}: CutRollDialogProps) {
+  const can = useCan();
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("invoice");
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string>("");
+  const [override, setOverride] = useState("");
+  const [customerId, setCustomerId] = useState("");
   const [length, setLength] = useState("");
-  const [reference, setReference] = useState("");
+  const [reason, setReason] = useState<AdjustmentReason>("damage");
+  const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (validateCut(roll, length)) return;
+  const held = reservations.filter((r) => r.rollId === roll.id && r.status === "active");
+  const invoiceOf = (r: Reservation) => invoices.find((i) => i.id === r.invoiceId);
+  const customerOf = (i: Invoice | undefined) => customers.find((c) => c.id === i?.customerId);
+  const shown = held.filter((r) => {
+    const i = invoiceOf(r);
+    const text = `${i?.number ?? ""} ${customerOf(i)?.name ?? ""}`.toLowerCase();
+    return text.includes(query.trim().toLowerCase());
+  });
+  const chosen = held.find((r) => r.id === picked);
+  const chosenInvoice = chosen ? invoiceOf(chosen) : undefined;
+  const paid = chosenInvoice ? mayIssue(ledgers.get(chosenInvoice.id)!) : false;
+  const free = rollAvailable(roll, reservations).toString();
+  const modes: (readonly [Mode, string])[] = [
+    ["invoice", "For an invoice"],
+    ...(can("sales.invoice.create") ? [["new", "New invoice"] as const] : []),
+    ...(can("inventory.stock.adjust") ? [["adjust", "Adjustment"] as const] : []),
+  ];
+
+  async function run(work: () => Promise<string>) {
     setPending(true);
     try {
-      const result = await api.cutRoll(roll.id, length, reference.trim());
-      toast.success(`Cut ${length} ft from ${roll.rollNumber}`, {
-        description: result.remnant
-          ? `Remnant ${result.remnant.rollNumber} created with ${result.remnant.remainingLengthFt} ft.`
-          : undefined,
-      });
-      setLength("");
-      setReference("");
+      const done = await work();
+      toast.success(done);
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The cut was not saved. Try again.");
+      toast.error(error instanceof Error ? error.message : "Not saved. Try again.");
     } finally {
       setPending(false);
     }
   }
 
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (mode === "invoice" && chosen && chosenInvoice) {
+      void run(async () => {
+        await api.issueReservation(chosen.id, paid ? undefined : override);
+        return `Cut ${chosen.quantity} ft for ${chosenInvoice.number}`;
+      });
+    } else if (mode === "new") {
+      void run(async () => {
+        const invoice = await api.createRollInvoice({ rollId: roll.id, customerId, lengthFt: length });
+        router.push(`/sales/invoices/${invoice.id}`);
+        return `Invoice ${invoice.number} created; the roll is held for it`;
+      });
+    } else if (mode === "adjust") {
+      void run(async () => {
+        const adj = await api.recordAdjustment({
+          productId: roll.productId,
+          rollId: roll.id,
+          locationId: roll.locationId,
+          quantity: `-${length}`,
+          reason,
+          note,
+        });
+        return adj.status === "pending" ? `${adj.number} waits for approval` : `${adj.number} recorded`;
+      });
+    }
+  }
+
+  const ready =
+    mode === "invoice"
+      ? !!chosen && (paid || (can("inventory.reservation.override") && override.trim().length >= 3))
+      : mode === "new"
+        ? !!customerId && !!length && !validateCut(roll, length)
+        : !!length && !validateCut(roll, length) && (reason !== "other" || note.trim().length >= 3);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface sm:max-w-md">
+      <DialogContent className="bg-surface sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Cut roll {roll.rollNumber}</DialogTitle>
             <DialogDescription>
-              <Num kind="quantity" value={roll.remainingLengthFt} unit="ft" /> left on a {roll.widthFt} ft wide roll.
+              <Num kind="quantity" value={roll.remainingLengthFt} unit="ft" /> left,{" "}
+              <Num kind="quantity" value={free} unit="ft" /> not held for an invoice. Every cut needs an invoice or a
+              reason.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cut-length">Length to cut</Label>
-            <div className="relative">
-              <Input
-                id="cut-length"
-                inputMode="decimal"
-                value={length}
-                onChange={(e) => setLength(e.target.value.replace(/[^\d.]/g, ""))}
-                className="pr-10 tabular-nums"
-                aria-describedby="cut-preview"
-              />
-              <span className="text-muted-foreground absolute top-1/2 right-3 -translate-y-1/2 text-sm">ft</span>
+          {modes.length > 1 ? (
+            <Segmented label="Cut for" value={mode} options={modes} onChange={(v) => setMode(v as Mode)} />
+          ) : null}
+          {mode === "invoice" ? (
+            <div className="flex flex-col gap-3">
+              <Field id="cut-search" label="Find the invoice">
+                <Input
+                  id="cut-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Invoice number or customer"
+                />
+              </Field>
+              {held.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No invoice holds this roll yet. Create a new invoice, or pick this roll on the quote.
+                </p>
+              ) : (
+                <RadioGroup value={picked} onValueChange={setPicked} aria-label="Invoices holding this roll">
+                  {shown.map((r) => {
+                    const i = invoiceOf(r);
+                    return (
+                      <label key={r.id} className="flex items-center gap-3 text-sm">
+                        <RadioGroupItem value={r.id} />
+                        <span className="flex-1">
+                          {i?.number}, {customerOf(i)?.name}
+                        </span>
+                        <Num kind="quantity" value={r.quantity} unit="ft" />
+                      </label>
+                    );
+                  })}
+                </RadioGroup>
+              )}
+              {chosen ? <Preview roll={roll} length={chosen.quantity} /> : null}
+              {chosen && !paid ? (
+                can("inventory.reservation.override") ? (
+                  <Field id="cut-override" label="Cut before payment: reason">
+                    <Textarea
+                      id="cut-override"
+                      rows={2}
+                      value={override}
+                      onChange={(e) => setOverride(e.target.value)}
+                    />
+                    <p className="text-warning-ink text-xs">
+                      {chosenInvoice?.number} has no confirmed payment yet. The override is audited.
+                    </p>
+                  </Field>
+                ) : (
+                  <p className="text-warning-ink text-sm">
+                    {chosenInvoice?.number} has no confirmed payment yet. Cut once the deposit is in.
+                  </p>
+                )
+              ) : null}
             </div>
-            <div id="cut-preview" className="text-xs" aria-live="polite">
+          ) : (
+            <div className="flex flex-col gap-3">
+              {mode === "new" ? (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="cut-customer">Customer</Label>
+                  <CustomerPicker
+                    id="cut-customer"
+                    customers={customers}
+                    value={customerId}
+                    onSelect={(c) => setCustomerId(c.id)}
+                  />
+                </div>
+              ) : null}
+              <Field id="cut-length" label={mode === "new" ? "Length to sell" : "Length to remove"}>
+                <Input
+                  id="cut-length"
+                  inputMode="decimal"
+                  value={length}
+                  onChange={(e) => setLength(e.target.value.replace(/[^\d.]/g, ""))}
+                  className="w-32 tabular-nums"
+                />
+              </Field>
               <Preview roll={roll} length={length} />
+              {mode === "adjust" ? (
+                <>
+                  <Field id="cut-reason" label="Reason">
+                    <Select value={reason} onValueChange={(v) => setReason(v as AdjustmentReason)}>
+                      <SelectTrigger id="cut-reason" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(ADJUSTMENT_REASON_LABELS) as AdjustmentReason[]).map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {ADJUSTMENT_REASON_LABELS[r]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field id="cut-note" label={reason === "other" ? "What happened" : "Note (optional)"}>
+                    <Textarea id="cut-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+                  </Field>
+                </>
+              ) : null}
             </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cut-reference">For</Label>
-            <Input
-              id="cut-reference"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Invoice or job, for example INV-1042"
-            />
-          </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending || !length || !!validateCut(roll, length)}>
-              Cut roll
+            <Button type="submit" disabled={pending || !ready}>
+              {mode === "invoice"
+                ? chosenInvoice
+                  ? `Cut for ${chosenInvoice.number}`
+                  : "Cut"
+                : mode === "new"
+                  ? "Create invoice"
+                  : "Record adjustment"}
             </Button>
           </DialogFooter>
         </form>

@@ -44,6 +44,8 @@ export interface RollCut {
   lengthFt: string;
   reference: string;
   byUserId: string;
+  /** The invoice or stock adjustment behind the cut (spec C1); older cuts carry only a reference. */
+  source?: { kind: "invoice" | "adjustment"; id: string; number: string };
 }
 
 /** A carpet roll or remnant. Lengths in ft, cost per sq ft (CLAUDE.md rule 4). */

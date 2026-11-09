@@ -9,6 +9,7 @@ import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
 import { buildCommissions, buildEmployees, buildPto, buildTimesheets } from "./hr";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
+import { buildReservations } from "./reservations";
 import { buildMeetings } from "./meetings";
 import { buildExpenses, buildPurchasing } from "./purchasing";
 import { buildLocations } from "./locations";
@@ -59,6 +60,11 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     rolls,
     stockMovements,
     transfers,
+    reservations: buildReservations(() => ctx.id("res"), ANCHOR_DATE, sales.invoices, sales.payments, products, {
+      rolls,
+      movements: stockMovements,
+    }),
+    stockAdjustments: [],
     customers,
     ...sales,
     suppliers,

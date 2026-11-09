@@ -16,6 +16,7 @@ import { useRecordPaymentRequest } from "@/lib/record-payment-request";
 import { creditOf, loadSalesLedger } from "@/lib/sales-ledger";
 import { InvoiceDocument } from "./invoice-document";
 import { buildInvoiceModel, type InvoiceModel } from "./invoice-model";
+import { InvoiceStock } from "./invoice-stock";
 import { InvoiceSummary } from "./invoice-summary";
 import { InvoiceTimeline, timelineSteps } from "./invoice-timeline";
 import { saveBlob } from "./payments/file-viewer-dialog";
@@ -55,17 +56,21 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
     async (client) => {
       const invoice = await client.get("invoices", invoiceId);
       if (!invoice) return null;
-      const [customer, quote, sales, settings, locations, jobs, users] = await Promise.all([
-        client.get("customers", invoice.customerId),
-        invoice.quoteId ? client.get("quotes", invoice.quoteId) : Promise.resolve(undefined),
-        loadSalesLedger(client),
-        client.getSettings(),
-        client.list("locations"),
-        client.list("jobs"),
-        client.list("users"),
-      ]);
+      const [customer, quote, sales, settings, locations, jobs, users, reservations, products, rolls] =
+        await Promise.all([
+          client.get("customers", invoice.customerId),
+          invoice.quoteId ? client.get("quotes", invoice.quoteId) : Promise.resolve(undefined),
+          loadSalesLedger(client),
+          client.getSettings(),
+          client.list("locations"),
+          client.list("jobs"),
+          client.list("users"),
+          client.list("reservations"),
+          client.list("products"),
+          client.list("rolls"),
+        ]);
       const job = jobs.find((j) => j.invoiceId === invoiceId);
-      return { invoice, customer, quote, sales, settings, locations, job, users };
+      return { invoice, customer, quote, sales, settings, locations, job, users, reservations, products, rolls };
     },
     [invoiceId],
   );
@@ -75,7 +80,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   if (!data.data || !data.data.customer) {
     return <p className="text-muted-foreground">This invoice does not exist or is outside what you can see.</p>;
   }
-  const { invoice, customer, quote, sales, settings, locations, job, users } = data.data;
+  const { invoice, customer, quote, sales, settings, locations, job, users, reservations, products, rolls } = data.data;
   const ledger = sales.ledgers.get(invoiceId)!;
   const payments = sales.payments.filter((p) => p.invoiceId === invoiceId);
   const model = buildInvoiceModel(invoice, ledger, customer, quote, payments, settings);
@@ -171,6 +176,14 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
           }}
         />
       ) : null}
+      <InvoiceStock
+        invoice={invoice}
+        ledger={ledger}
+        reservations={reservations}
+        products={products}
+        rolls={rolls}
+        locations={locations}
+      />
       <InvoiceDocument model={model} logoUrl={settings.branding.logoDataUrl} />
       {recording && canRecord ? (
         <RecordPaymentSheet

@@ -9,11 +9,12 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useCan } from "@/components/workspace/workspace-context";
 import { NoAccess } from "@/components/no-access";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
+import { AdjustmentsPanel } from "./adjustments-panel";
 import { ProductsTable } from "./products-table";
 import { RollsTable } from "./rolls-table";
 import { TransfersPanel } from "./transfers/transfers-panel";
 
-type InventoryView = "products" | "rolls" | "transfers";
+type InventoryView = "products" | "rolls" | "transfers" | "adjustments";
 
 /**
  * Inventory (spec "Inventory and roll detail", A1): products and rolls, filterable by warehouse,
@@ -24,20 +25,26 @@ export function InventoryPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [products, rolls, stockMovements, locations, transfers, users] = await Promise.all([
-      client.list("products"),
-      client.list("rolls"),
-      client.list("stockMovements"),
-      client.list("locations"),
-      client.list("transfers"),
-      client.list("users"),
-    ]);
-    return { products, rolls, stockMovements, locations, transfers, users };
+    const [products, rolls, stockMovements, reservations, locations, transfers, users, adjustments] = await Promise.all(
+      [
+        client.list("products"),
+        client.list("rolls"),
+        client.list("stockMovements"),
+        client.list("reservations"),
+        client.list("locations"),
+        client.list("transfers"),
+        client.list("users"),
+        client.list("stockAdjustments"),
+      ],
+    );
+    return { products, rolls, stockMovements, reservations, locations, transfers, users, adjustments };
   }, []);
   const allowed: Record<InventoryView, boolean> = {
     products: can("inventory.product.view") && featureOn("inventory.products"),
     rolls: can("inventory.roll.view") && featureOn("inventory.rolls"),
     transfers: can("inventory.transfer.view") && featureOn("inventory.transfers"),
+    adjustments:
+      (can("inventory.stock.adjust") || can("inventory.stock.approve")) && featureOn("inventory.adjustments"),
   };
   const views = (Object.keys(allowed) as InventoryView[]).filter((v) => allowed[v]);
   if (views.length === 0) return <NoAccess />;
@@ -71,8 +78,9 @@ export function InventoryPage() {
             {allowed.products ? <TabsTrigger value="products">Products</TabsTrigger> : null}
             {allowed.rolls ? <TabsTrigger value="rolls">Rolls and remnants</TabsTrigger> : null}
             {allowed.transfers ? <TabsTrigger value="transfers">Transfers</TabsTrigger> : null}
+            {allowed.adjustments ? <TabsTrigger value="adjustments">Adjustments</TabsTrigger> : null}
           </TabsList>
-          {view !== "transfers" && data.status === "ready" ? (
+          {(view === "products" || view === "rolls") && data.status === "ready" ? (
             <WarehouseSelect
               label="Warehouse"
               extraOption={ALL_WAREHOUSES_OPTION}
@@ -87,8 +95,16 @@ export function InventoryPage() {
             <QueryFallback query={data} className="h-96" label="Loading inventory" />
           ) : view === "transfers" ? (
             <TransfersPanel {...data.data} />
+          ) : view === "adjustments" ? (
+            <AdjustmentsPanel
+              adjustments={data.data.adjustments}
+              products={data.data.products}
+              rolls={data.data.rolls}
+              locations={data.data.locations}
+            />
           ) : view === "rolls" ? (
             <RollsTable
+              reservations={data.data.reservations}
               rolls={data.data.rolls}
               products={data.data.products}
               locations={data.data.locations}
@@ -99,6 +115,7 @@ export function InventoryPage() {
               products={data.data.products}
               rolls={data.data.rolls}
               movements={data.data.stockMovements}
+              reservations={data.data.reservations}
               locations={data.data.locations}
               warehouseId={warehouseId}
             />

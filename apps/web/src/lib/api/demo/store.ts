@@ -3,7 +3,6 @@ import {
   canAssignRole,
   balance,
   billFromPurchaseOrder,
-  cutRoll,
   moneyString,
   poTotal,
   receivePurchaseOrder,
@@ -23,7 +22,6 @@ import {
   escalations,
   shiftDates,
   upgradeCompany,
-  validateCut,
   QUOTE_ACTION_STATUS,
   quoteActions,
   quoteDraftProblem,
@@ -57,8 +55,11 @@ import type {
   InviteUserInput,
   ItemOf,
   NewCustomerInput,
+  AdjustmentDecision,
+  AdjustmentInput,
   PaymentDecision,
   ProfilePatch,
+  RollInvoiceInput,
   QuoteStatusChange,
   UserPatch,
   Viewer,
@@ -67,9 +68,17 @@ import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, pe
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
-import { savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
+import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, signOffJob } from "./job-actions";
+import {
+  createRollInvoice,
+  issueReservation,
+  recordAdjustment,
+  reserveFor,
+  reservationSummary,
+  reviewAdjustment,
+} from "./inventory-actions";
 import {
   applyCredit,
   markInvoiceSent,
@@ -88,6 +97,7 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   numbers: "Number format",
   profile: "Company profile",
   payments: "Payments",
+  inventory: "Stock rules",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
@@ -224,6 +234,7 @@ export class DemoStore implements ApiClient {
   async save<K extends CollectionName>(collection: K, item: ItemOf<K>, audit?: AuditInput) {
     const db = this.open();
     await this.assertCan(db, savePermissions(collection));
+    if (collection === "rolls") assertRollEditOnly(db.get("rolls", item.id), item as ItemOf<"rolls">);
     db.put(collection, item);
     if (audit) this.appendAudit(db, audit);
     this.emit();
@@ -332,34 +343,6 @@ export class DemoStore implements ApiClient {
       after: null,
     });
     this.emit();
-  }
-
-  async cutRoll(rollId: string, lengthFt: string, reference: string) {
-    const db = this.open();
-    await this.assertCan(db, ["inventory.roll.cut"]);
-    const roll = db.get("rolls", rollId);
-    if (!roll) throw new DemoRuleError("This roll no longer exists.");
-    const problem = validateCut(roll, lengthFt);
-    if (problem) throw new DemoRuleError(problem);
-    const result = cutRoll(
-      roll,
-      { lengthFt, at: nowStamp(), reference, byUserId: this.viewer!.userId },
-      { cutId: newId(db.companyId, "cut"), remnantId: newId(db.companyId, "roll") },
-    );
-    db.put("rolls", result.roll);
-    if (result.remnant) db.put("rolls", result.remnant);
-    const after = result.remnant
-      ? `0 ft, remnant ${result.remnant.rollNumber} of ${result.remnant.remainingLengthFt} ft`
-      : `${result.roll.remainingLengthFt} ft`;
-    this.appendAudit(db, {
-      category: "data",
-      action: `Cut ${lengthFt} ft`,
-      target: `Roll ${roll.rollNumber}`,
-      before: `${roll.remainingLengthFt} ft`,
-      after,
-    });
-    this.emit();
-    return result;
   }
 
   async createCustomer(input: NewCustomerInput) {
@@ -536,6 +519,7 @@ export class DemoStore implements ApiClient {
       holdUntilInstalled: (await this.granter(db)).company.modules.includes("installation"),
     });
     db.put("invoices", invoice);
+    const held = reserveFor(this.actionContext(db), invoice);
     db.put("quotes", {
       ...quote,
       status: "converted",
@@ -548,7 +532,7 @@ export class DemoStore implements ApiClient {
       action: "Converted quote to invoice",
       target: quote.number,
       before: quoteStateLabel(quoteState(quote, this.todayIso)),
-      after: invoice.number,
+      after: `${invoice.number}; ${reservationSummary(held)}`,
     });
     this.emit();
     return invoice;
@@ -588,6 +572,22 @@ export class DemoStore implements ApiClient {
 
   async refundCredit(input: RefundInput, files: File[]) {
     return this.act((ctx) => refundCredit(ctx, input, files));
+  }
+
+  async issueReservation(reservationId: string, overrideReason?: string) {
+    return this.act((ctx) => issueReservation(ctx, reservationId, overrideReason));
+  }
+
+  async recordAdjustment(input: AdjustmentInput) {
+    return this.act((ctx) => recordAdjustment(ctx, input));
+  }
+
+  async reviewAdjustment(adjustmentId: string, decision: AdjustmentDecision) {
+    return this.act((ctx) => reviewAdjustment(ctx, adjustmentId, decision));
+  }
+
+  async createRollInvoice(input: RollInvoiceInput) {
+    return this.act((ctx) => createRollInvoice(ctx, input));
   }
 
   async signOffJob(jobId: string, signer: string) {

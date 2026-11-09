@@ -23,6 +23,7 @@ export * from "./operations/payments";
 export * from "./operations/jobs";
 export * from "./ledger";
 export * from "./receivables";
+export * from "./reservations";
 export * from "./file-types";
 export * from "./operations/purchasing";
 export * from "./operations/meetings";

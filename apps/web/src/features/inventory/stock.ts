@@ -1,45 +1,47 @@
 import {
-  boxedOnHand,
+  availability,
   dec,
   rollsAt,
   sqFtToSqYd,
+  stockStatus,
   stockUnit,
   type Product,
+  type Reservation,
   type Roll,
   type StockMovement,
 } from "@workspace/shared";
 
-/** Stock of one product: cartons or items for boxed goods, ft across rolls for broadloom. */
+/** Stock of one product: on hand, reserved for invoices and available (spec C2), and its status (C3). */
 export interface StockLevel {
-  value: string;
+  onHand: string;
+  reserved: string;
+  available: string;
   unit: "cartons" | "each" | "ft";
   rolls: number;
-  low: boolean;
+  status: "out" | "low" | "ok";
 }
 
 /**
- * Stock on hand at one warehouse, or across all when none is given (spec A1). Boxed goods come
- * from the stock ledger and are low at or below their reorder point; broadloom stock is the sum
- * of remaining ft on its rolls and remnants (CLAUDE.md rule 4: lengths in ft).
+ * Stock at one warehouse, or across all when none is given (spec A1, C2, C3). Boxed goods come
+ * from the stock ledger, broadloom from the rolls' remaining ft (CLAUDE.md rule 4); reserved is
+ * what invoices hold, and the status reads Out of stock at zero available and Low stock at or
+ * below the reorder point.
  */
 export function stockLevel(
   product: Product,
-  rolls: readonly Roll[],
-  movements: readonly StockMovement[],
+  stock: { rolls: readonly Roll[]; movements: readonly StockMovement[]; reservations: readonly Reservation[] },
   locationId?: string | null,
 ): StockLevel {
   const unit = stockUnit(product) ?? "each";
-  if (unit === "ft") {
-    const own = rollsAt(rolls, locationId).filter((r) => r.productId === product.id);
-    const feet = own.reduce((s, r) => s.plus(r.remainingLengthFt), dec(0));
-    return { value: feet.toString(), unit, rolls: own.length, low: own.length === 0 };
-  }
-  const onHand = boxedOnHand(movements, product.id, locationId);
+  const level = availability(product, stock, locationId);
+  const rolls = unit === "ft" ? rollsAt(stock.rolls, locationId).filter((r) => r.productId === product.id).length : 1;
   return {
-    value: onHand.toString(),
+    onHand: level.onHand.toString(),
+    reserved: level.reserved.toString(),
+    available: level.available.toString(),
     unit,
-    rolls: 0,
-    low: product.reorderPoint !== undefined && onHand.lte(product.reorderPoint),
+    rolls: unit === "ft" ? rolls : 0,
+    status: stockStatus(product, level.available, rolls),
   };
 }
 

@@ -12,10 +12,13 @@ import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
 import { LocationDialog } from "./location-dialog";
+import { StockRulesForm } from "./stock-rules-form";
+import { Panel } from "@workspace/ui/components/panel";
 
 /**
  * Settings: Warehouses and showrooms (spec A1). Warehouses hold sellable stock and ship to
  * customers; showrooms only display samples (plan A-1). One warehouse is the company default.
+ * The stock rules below say when an adjustment needs approval (spec C1).
  */
 export function LocationsPage() {
   const can = useCan();
@@ -79,6 +82,9 @@ export function LocationsPage() {
           }
         />
       )}
+      <Panel bodyClassName="flex flex-col gap-8">
+        <StockRulesForm />
+      </Panel>
       {editing ? (
         <LocationDialog
           location={editing === "new" ? null : editing}

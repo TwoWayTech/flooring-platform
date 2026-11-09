@@ -2,7 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { Scissors, Truck, TriangleAlert } from "lucide-react";
-import { locationName, SENSITIVE, type Location, type Product, type Roll } from "@workspace/shared";
+import {
+  locationName,
+  reservedOnRoll,
+  rollAvailable,
+  SENSITIVE,
+  type Location,
+  type Product,
+  type Reservation,
+  type Roll,
+} from "@workspace/shared";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { Swatch } from "@workspace/ui/components/swatch";
@@ -22,6 +31,8 @@ function rollType(roll: Roll): "In transit" | "Remnant" | "Used up" | "Low" | "R
 }
 
 interface RollsTableProps {
+  /** Invoices' holds on the rolls, for Reserved and Available (spec C2). */
+  reservations: Reservation[];
   rolls: Roll[];
   products: Product[];
   locations: Location[];
@@ -30,7 +41,7 @@ interface RollsTableProps {
 }
 
 /** The roll list with mini roll gauges (spec "Inventory"); a row opens the roll page. */
-export function RollsTable({ rolls, products, locations, warehouseId }: RollsTableProps) {
+export function RollsTable({ rolls, products, locations, warehouseId, reservations }: RollsTableProps) {
   const can = useCan();
   const router = useRouter();
   const productOf = (roll: Roll) => products.find((p) => p.id === roll.productId);
@@ -74,6 +85,20 @@ export function RollsTable({ rolls, products, locations, warehouseId }: RollsTab
       ),
     },
     { id: "remaining", header: "Remaining", kind: "quantity", unit: "ft", value: (r) => r.remainingLengthFt },
+    {
+      id: "reserved",
+      header: "Reserved",
+      kind: "quantity",
+      unit: "ft",
+      value: (r) => reservedOnRoll(r.id, reservations).toString(),
+    },
+    {
+      id: "available",
+      header: "Available",
+      kind: "quantity",
+      unit: "ft",
+      value: (r) => rollAvailable(r, reservations).toString(),
+    },
     {
       id: "original",
       header: "Original",

@@ -1,6 +1,7 @@
-import { computeTotals, type DocLine } from "../documents";
+import { computeTotals, productTaxCategory, type DocLine } from "../documents";
 import { dec, maxDec, moneyString, sum } from "../money";
-import type { Customer, Invoice, Job, PaymentTerms, Product } from "../types";
+import { defaultAddress, plainAddress } from "../customers";
+import type { Customer, Invoice, Job, PaymentTerms, Product, Roll } from "../types";
 import type { LocalizationSettings } from "../types/settings";
 import { dueDate, taxContextFor } from "./quotes";
 
@@ -110,4 +111,35 @@ export function invoiceFromJob(
     total: totals.total,
     cost: totals.cost,
   };
+}
+
+/**
+ * A one-line invoice for a length cut from a roll (spec C1 "Create a new invoice"): the roll's
+ * product by the sq yd (length × width ÷ 9), its price, the roll's own cost, taxed by the
+ * customer's job site, tied to the roll so the reservation holds it.
+ */
+export function invoiceFromRoll(
+  roll: Pick<Roll, "id" | "widthFt" | "costPerSqFt" | "locationId">,
+  product: Product,
+  customer: Customer,
+  lengthFt: string,
+  localization: Pick<LocalizationSettings, "tax" | "region">,
+  input: { id: string; lineId: string; number: string; issuedAt: string; createdBy: string; branchId: string },
+): Invoice {
+  // To the nearest cent of a sq yd, so the length reserved back from it is the length sold.
+  const sqYd = dec(lengthFt).times(roll.widthFt).div(9).toDecimalPlaces(2);
+  const line: DocLine = {
+    id: input.lineId,
+    productId: product.id,
+    description: `${product.brand} ${product.name}`,
+    category: productTaxCategory(product),
+    unit: "sq_yd",
+    quantity: sqYd.toString(),
+    unitPrice: product.price,
+    unitCost: moneyString(dec(roll.costPerSqFt).times(9)),
+    rollId: roll.id,
+  };
+  const site = plainAddress(defaultAddress(customer, "job_site"));
+  const job = { address: site, signedOffAt: null } as unknown as Job;
+  return invoiceFromJob(job, customer, [line], localization, { ...input, locationId: roll.locationId });
 }

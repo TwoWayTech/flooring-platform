@@ -19,6 +19,8 @@ export interface DocLine {
   wastePct?: string;
   /** Room ids this line was measured from (quote builder). */
   roomIds?: string[];
+  /** The roll a carpet line should be cut from, picked in the quote builder (spec C2). */
+  rollId?: string;
 }
 
 /** What the tax engine needs to tax a document. */

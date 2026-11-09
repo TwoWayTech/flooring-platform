@@ -1,22 +1,29 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
 import {
   SENSITIVE,
   UNIT_SINGULAR,
+  isBoxed,
   type Product,
+  type Reservation,
   type Roll,
   type Location,
   type StockMovement,
   warehousesOf,
 } from "@workspace/shared";
+import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { Swatch } from "@workspace/ui/components/swatch";
 import { useCan } from "@/components/workspace/workspace-context";
 import { CATEGORY_LABELS } from "@/lib/labels";
+import { AdjustStockDialog } from "./adjust-stock-dialog";
 import { stockLevel } from "./stock";
+import { StockBadge } from "./stock-badge";
 
 /** Attribute keys as people say them. */
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -45,21 +52,27 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-/** A product's details in a side drawer: price, stock, attributes, and its rolls for broadloom. */
+/**
+ * A product's details in a side drawer: price, available and on-hand stock per warehouse with its
+ * status (spec C2, C3), attributes, its rolls for broadloom, and Adjust stock for boxed goods (C1).
+ */
 export function ProductDrawer({
   product,
   rolls,
   movements,
+  reservations,
   locations,
   onClose,
 }: {
   product: Product | null;
   rolls: Roll[];
   movements: StockMovement[];
+  reservations: Reservation[];
   locations: Location[];
   onClose: () => void;
 }) {
   const can = useCan();
+  const [adjusting, setAdjusting] = useState(false);
   const own = product ? rolls.filter((r) => r.productId === product.id) : [];
   return (
     <Sheet open={!!product} onOpenChange={(open) => !open && onClose()}>
@@ -74,6 +87,12 @@ export function ProductDrawer({
               <SheetDescription>
                 {product.brand}, {CATEGORY_LABELS[product.category]}
               </SheetDescription>
+              {isBoxed(product) && can("inventory.stock.adjust") ? (
+                <Button variant="outline" size="sm" className="self-start" onClick={() => setAdjusting(true)}>
+                  <SlidersHorizontal />
+                  Adjust stock
+                </Button>
+              ) : null}
             </SheetHeader>
             <dl className="divide-hairline divide-y px-4 text-sm">
               <Fact label="SKU">{product.sku}</Fact>
@@ -92,10 +111,17 @@ export function ProductDrawer({
               ) : null}
               {product.category !== "service"
                 ? warehousesOf(locations).map((w) => {
-                    const s = stockLevel(product, rolls, movements, w.id);
+                    const s = stockLevel(product, { rolls, movements, reservations }, w.id);
+                    const kind = s.unit === "ft" ? "quantity" : "count";
                     return (
-                      <Fact key={w.id} label={`In stock at ${w.name}`}>
-                        <Num kind={s.unit === "ft" ? "quantity" : "count"} value={s.value} unit={s.unit} />
+                      <Fact key={w.id} label={`Available at ${w.name}`}>
+                        <span className="inline-flex items-center gap-2">
+                          <StockBadge status={s.status} />
+                          <Num kind={kind} value={s.available} unit={s.unit} />
+                        </span>
+                        <span className="text-muted-foreground block text-xs">
+                          <Num kind={kind} value={s.onHand} /> on hand, <Num kind={kind} value={s.reserved} /> reserved
+                        </span>
                       </Fact>
                     );
                   })
@@ -133,6 +159,9 @@ export function ProductDrawer({
                   ))}
                 </ul>
               </section>
+            ) : null}
+            {adjusting ? (
+              <AdjustStockDialog product={product} locations={locations} onClose={() => setAdjusting(false)} />
             ) : null}
           </>
         ) : null}

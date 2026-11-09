@@ -5,6 +5,7 @@ import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
 import type { Bill, BillPayment, Expense, PurchaseOrder, Supplier } from "./purchasing";
 import type { Location, StockMovement, Transfer } from "./locations";
+import type { Reservation, StockAdjustment } from "./stock";
 import type { Customer, Invoice, InvoiceAdjustment, Payment, Quote, Refund } from "./sales";
 import type { AuditEntry, CompanySettings } from "./settings";
 
@@ -21,6 +22,8 @@ export interface CompanyFixtures {
   rolls: Roll[];
   stockMovements: StockMovement[];
   transfers: Transfer[];
+  reservations: Reservation[];
+  stockAdjustments: StockAdjustment[];
   customers: Customer[];
   quotes: Quote[];
   invoices: Invoice[];

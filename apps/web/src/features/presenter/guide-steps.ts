@@ -25,7 +25,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Cut a roll",
-      say: "Open a carpet roll and cut 12 ft: the length drops and a remnant appears.",
+      say: "Every cut has a source: open a roll, Cut roll, New invoice; once the deposit is in, cut it from the invoice's Stock panel.",
       href: "/inventory?view=rolls",
       anyOf: ["inventory.roll.view"],
     },

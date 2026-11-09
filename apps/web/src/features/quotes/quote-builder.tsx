@@ -15,6 +15,8 @@ import {
   type Location,
   type Product,
   type Quote,
+  type Reservation,
+  type Roll,
   type Room,
   type User,
   defaultAddress,
@@ -96,6 +98,9 @@ interface QuoteBuilderProps {
   locations: Location[];
   /** The ledger of the invoice the quote became, so its status shows here. */
   invoiceLedger?: InvoiceLedger;
+  /** Rolls and their holds, for the roll picker on carpet lines (spec C2). */
+  rolls: Roll[];
+  reservations: Reservation[];
 }
 
 /**
@@ -105,7 +110,16 @@ interface QuoteBuilderProps {
  * converting validate the whole quote first. Totals come from the shared decimal calculator, the
  * same one that invoices and the PDF use.
  */
-export function QuoteBuilder({ initial, products, customers, settings, locations, invoiceLedger }: QuoteBuilderProps) {
+export function QuoteBuilder({
+  initial,
+  products,
+  customers,
+  settings,
+  locations,
+  invoiceLedger,
+  rolls,
+  reservations,
+}: QuoteBuilderProps) {
   const router = useRouter();
   const can = useCan();
   const formatDate = useFormatDate();
@@ -300,6 +314,7 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
               onRemove={(lineId) => dispatch({ type: "removeLine", lineId })}
               error={problems.lines}
               showWaste={can("sales.waste.view")}
+              rollStock={{ rolls, reservations, locationId: draft.locationId }}
             />
           </Panel>
         </div>

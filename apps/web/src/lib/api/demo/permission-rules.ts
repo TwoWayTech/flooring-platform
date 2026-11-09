@@ -1,9 +1,11 @@
+import { DemoRuleError } from "./admin-rules";
 import {
   defaultWastePct,
   type CompanySettings,
   type PermissionKey,
   type Product,
   type Quote,
+  type Roll,
   type WasteCategory,
 } from "@workspace/shared";
 import type { CollectionName } from "../contract";
@@ -21,6 +23,9 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   rolls: ["inventory.roll.edit"],
   stockMovements: [],
   transfers: [],
+  // Reservations and adjustments change only through their own store calls (spec C1, C2).
+  reservations: [],
+  stockAdjustments: [],
   customers: ["customers.customer.create", "customers.customer.edit"],
   quotes: ["sales.quote.create", "sales.quote.edit"],
   invoices: ["sales.invoice.create", "sales.invoice.edit"],
@@ -58,6 +63,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   numbers: ["settings.numbers.manage"],
   profile: ["settings.company.manage"],
   payments: ["settings.payments.manage"],
+  inventory: ["settings.locations.manage"],
 };
 
 /** Permissions that allow changing one settings section. */
@@ -82,4 +88,18 @@ export function wasteChanged(
     const product = products.find((p) => p.id === line.productId);
     return !!product && (defaultWastePct(product, defaults) ?? "0") !== line.wastePct;
   });
+}
+
+/**
+ * Rolls are edited only for their bin and labels (spec C1: no free editing of stock): length,
+ * cuts and warehouse change only through invoices, adjustments and transfers.
+ */
+export function assertRollEditOnly(before: Roll | undefined, after: Roll) {
+  if (!before) throw new DemoRuleError("New rolls arrive through a purchase receipt.");
+  const changed =
+    before.remainingLengthFt !== after.remainingLengthFt ||
+    before.locationId !== after.locationId ||
+    before.cuts.length !== after.cuts.length;
+  if (changed)
+    throw new DemoRuleError("Stock changes through an invoice, a receipt, a transfer or a stock adjustment.");
 }

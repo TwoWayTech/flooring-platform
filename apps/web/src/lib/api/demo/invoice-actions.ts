@@ -12,6 +12,7 @@ import {
   type RefundInput,
 } from "@workspace/shared";
 import { DemoRuleError } from "./admin-rules";
+import { releaseFor } from "./inventory-actions";
 import { describeFiles, invoiceWithLedger, storeFiles, type ActionContext } from "./payment-actions";
 
 const dollars = (amount: string) => `$${moneyString(amount)}`;
@@ -98,12 +99,14 @@ export async function voidInvoice(ctx: ActionContext, invoiceId: string, reason:
   }
   const voided = { ...invoice, voidedAt: ctx.today, voidReason: why };
   ctx.db.put("invoices", voided);
+  // Voiding gives back the stock it held (spec C2).
+  const released = releaseFor(ctx, invoiceId);
   ctx.audit({
     category: "data",
     action: "Voided invoice",
     target: invoice.number,
     before: `${dollars(invoice.total)}, ${ledger.state}`,
-    after: `void: ${why}`,
+    after: `void: ${why}${released ? `; ${released} reservations released` : ""}`,
   });
   return voided;
 }

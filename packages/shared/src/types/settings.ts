@@ -90,6 +90,12 @@ export interface PaymentSettings {
   refundPrefix: string;
 }
 
+/** Stock rules (spec C1): adjustments above this quantity wait for an Owner or Manager. */
+export interface InventorySettings {
+  /** In the product's stock unit (ft, cartons or items); empty means no approval. */
+  adjustmentApprovalQty: string;
+}
+
 /** Company profile in Settings: Company profile. */
 export interface CompanyProfile {
   legalName: string;
@@ -108,4 +114,5 @@ export interface CompanySettings {
   numbers: NumberSettings;
   profile: CompanyProfile;
   payments: PaymentSettings;
+  inventory: InventorySettings;
 }

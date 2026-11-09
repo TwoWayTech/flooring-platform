@@ -5,7 +5,6 @@ import type {
   CompanyFixtures,
   CompanyId,
   Bill,
-  CutResult,
   PoLine,
   PurchaseOrder,
   Invoice,
@@ -26,6 +25,9 @@ import type {
   Refund,
   RefundInput,
   Job,
+  AdjustmentReason,
+  Reservation,
+  StockAdjustment,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -69,6 +71,27 @@ export interface InviteUserInput {
 }
 
 /** A customer added from a picker with what the caller knows so far (spec A6: name required). */
+/** What a stock adjustment records (spec C1): signed quantity in the stock unit and a reason. */
+export interface AdjustmentInput {
+  productId: string;
+  /** For a roll; null for boxed goods at `locationId`. */
+  rollId: string | null;
+  locationId: string;
+  quantity: string;
+  reason: AdjustmentReason;
+  note: string;
+}
+
+/** An Owner's or Manager's decision on an adjustment that waits. */
+export type AdjustmentDecision = { action: "approve" } | { action: "reject"; reason: string };
+
+/** A quick invoice for a length of one roll (spec C1). */
+export interface RollInvoiceInput {
+  rollId: string;
+  customerId: string;
+  lengthFt: string;
+}
+
 /** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
 export type PaymentDecision = { action: "confirm" } | { action: "reject"; reason: string };
 
@@ -163,10 +186,18 @@ export interface ApiClient {
   /** Deletes a non-system role that no user holds. */
   deleteRole(roleId: string): Promise<void>;
   /**
-   * Cuts a length from a roll as the signed-in user (spec "Inventory and roll detail"); a
-   * leftover under 12 ft becomes a remnant. Audited.
+   * Cuts or issues stock reserved for an invoice (spec C1, C2): only once the invoice has a
+   * confirmed payment, unless an override reason is given by someone with
+   * inventory.reservation.override. A roll cut keeps the remnant rule and links the invoice.
+   * Needs inventory.roll.cut. Audited.
    */
-  cutRoll(rollId: string, lengthFt: string, reference: string): Promise<CutResult>;
+  issueReservation(reservationId: string, overrideReason?: string): Promise<Reservation>;
+  /** Records a stock adjustment with a reason; above the company's quantity it waits for approval. Audited. */
+  recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;
+  /** Approves or rejects a waiting adjustment; needs inventory.stock.approve and someone else. Audited. */
+  reviewAdjustment(adjustmentId: string, decision: AdjustmentDecision): Promise<StockAdjustment>;
+  /** Creates an invoice for a length of a roll and reserves the roll for it (spec C1). Audited. */
+  createRollInvoice(input: RollInvoiceInput): Promise<Invoice>;
   /**
    * Adds a customer at once from a picker (spec A6), with the company's default terms and no
    * addresses yet, so it reads as "New, profile incomplete". Needs customers.customer.create. Audited.

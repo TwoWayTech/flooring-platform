@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import {
   lineAmount,
   quantityKind,
+  stockUnit,
   TAX_CATEGORY_LABELS,
   UNIT_LABELS,
   type DocLine,
@@ -15,6 +16,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { ProductPicker } from "./product-picker";
+import { RollPicker, type RollStock } from "./roll-picker";
 import { ScrollRegion } from "@/components/scroll-region";
 
 interface LinesEditorProps {
@@ -30,6 +32,27 @@ interface LinesEditorProps {
   error?: string;
   /** Waste % is internal (spec B3): without sales.waste.view the column is gone and defaults apply. */
   showWaste: boolean;
+  /** Rolls at the quote's warehouse, for the roll picker on carpet lines (spec C2). */
+  rollStock?: RollStock;
+}
+
+/** The roll picker for a line whose product comes off a roll; nothing for boxed goods. */
+function RollLine({
+  line,
+  products,
+  stock,
+  onChange,
+}: {
+  line: DocLine;
+  products: readonly Product[];
+  stock: RollStock;
+  onChange: (line: DocLine) => void;
+}) {
+  const product = products.find((p) => p.id === line.productId);
+  if (!product || stockUnit(product) !== "ft") return null;
+  return (
+    <RollPicker line={line} product={product} stock={stock} onChange={(rollId) => onChange({ ...line, rollId })} />
+  );
 }
 
 /** Which rooms a line is measured from, in words. */
@@ -57,6 +80,7 @@ export function LinesEditor({
   onRemove,
   error,
   showWaste,
+  rollStock,
 }: LinesEditorProps) {
   const goods = products.filter((p) => p.category !== "service");
   const services = products.filter((p) => p.category === "service");
@@ -101,6 +125,9 @@ export function LinesEditor({
                       {taxable ? ", taxed" : ", not taxed"}
                       {linked ? `, from ${linked}` : ""}
                     </span>
+                    {editable && rollStock && line.category === "material" ? (
+                      <RollLine line={line} products={products} stock={rollStock} onChange={onChange} />
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {linked || !editable ? (

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: C1 (every stock change has a source document: issue through an invoice, receipt through a PO, transfer, or a Stock adjustment with a reason and approval above a set quantity; Cut roll picks an invoice, creates a quick invoice, or records an adjustment). Test locally against a production build in chunks with 2 workers; stop the server afterwards.
+- Next step: run the Batch C suite (production build, chunks, 2 workers), tick it, then D1 (purchase orders: Save as draft, statuses, layout fix for long names, area units with cartons calculated).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -92,9 +92,9 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch B: full suite green (244 of 244 on a production build, in four chunks; customers-picker.spec now saves a new quote with Save as draft, as B1 intends)
 
 #### Batch C: inventory linked to invoices
-- [ ] C1. Every stock change has a source document: out by invoice, in by receipt, moves by transfer, otherwise a stock adjustment (reason, `inventory.stock.adjust`, approval above a set quantity); Cut roll picks or creates an invoice, or records an adjustment
-- [ ] C2. Reserve on invoice, cut after money: reservations on issue (On hand / Reserved / Available), cut only when Deposit paid / Partly paid / Paid, cut in roll history linked to the invoice, remnant rule kept, void releases, return reverses through a credit note, audited overrides, roll picker by warehouse and dye lot with suggestions
-- [ ] C3. Stock status display: Out of stock (red) and Low stock (amber) badges with words, warehouse filter and column on products and rolls
+- [x] C1. Every stock change has a source document: out by invoice, in by receipt, moves by transfer, otherwise a stock adjustment (reason, `inventory.stock.adjust`, approval above a set quantity); Cut roll picks or creates an invoice, or records an adjustment
+- [x] C2. Reserve on invoice, cut after money: reservations on issue (On hand / Reserved / Available), cut only when Deposit paid / Partly paid / Paid, cut in roll history linked to the invoice, remnant rule kept, void releases, return reverses through a credit note, audited overrides, roll picker by warehouse and dye lot with suggestions
+- [x] C3. Stock status display: Out of stock (red) and Low stock (amber) badges with words, warehouse filter and column on products and rolls
 - [ ] Batch C: full suite green
 
 #### Batch D: purchasing

@@ -96,6 +96,21 @@ const CHECKS: Check[] = [
     },
   },
   {
+    key: "approve-adjustments",
+    feature: "inventory.adjustments",
+    permission: "inventory.stock.approve",
+    products: ["flooring"],
+    load: async (client) => {
+      const count = (await client.list("stockAdjustments")).filter((a) => a.status === "pending").length;
+      return {
+        count,
+        label: plural(count, "stock adjustment to approve", "stock adjustments to approve"),
+        href: "/inventory?view=adjustments",
+        tone: "warning",
+      };
+    },
+  },
+  {
     key: "verify-payments",
     feature: "sales.invoices",
     permission: "sales.payment.approve",

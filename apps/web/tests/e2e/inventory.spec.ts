@@ -6,33 +6,28 @@ test.describe("inventory", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
   });
 
-  test("cutting a roll updates the remaining length and creates a remnant", async ({ page }) => {
+  // Spec C1: a cut always has a source. Cutting for an invoice is in stock.spec.ts; here, an adjustment.
+  test("a cut without an invoice is a stock adjustment with a reason", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/inventory/rolls/sm-roll-0004");
     await expect(page.getByText("93.00 ft").first()).toBeVisible();
-
     await page.getByRole("button", { name: "Cut roll" }).click();
-    await page.getByLabel("Length to cut").fill("20");
-    await expect(page.getByText("Leaves 73.00 ft on the roll.")).toBeVisible();
-    await page.getByLabel("For").fill("INV-1042");
-    await page.getByRole("dialog").getByRole("button", { name: "Cut roll" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Adjustment" }).click();
+    await dialog.getByLabel("Length to remove").fill("20");
+    await expect(dialog.getByText("Leaves 73.00 ft on the roll.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Record adjustment" }).click();
     await expect(page.getByText("73.00 ft").first()).toBeVisible();
-    await expect(page.getByRole("cell", { name: "INV-1042" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Cut roll" }).click();
-    await page.getByLabel("Length to cut").fill("65");
-    await expect(page.getByText(/which becomes a remnant/)).toBeVisible();
-    await page.getByRole("dialog").getByRole("button", { name: "Cut roll" }).click();
-    const remnants = page.getByRole("region", { name: "Remnants from this roll" });
-    await expect(remnants.getByText("8.00 ft")).toBeVisible();
-    await expect(page.getByText("0.00 ft").first()).toBeVisible();
+    await expect(page.getByRole("cell", { name: /^ADJ-\d{4}$/ })).toBeVisible();
   });
 
   test("refuses a cut longer than the roll", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/inventory/rolls/sm-roll-0004");
     await page.getByRole("button", { name: "Cut roll" }).click();
-    await page.getByLabel("Length to cut").fill("500");
-    await expect(page.getByText("Only 93 ft is left on this roll.")).toBeVisible();
-    await expect(page.getByRole("dialog").getByRole("button", { name: "Cut roll" })).toBeDisabled();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Adjustment" }).click();
+    await dialog.getByLabel("Length to remove").fill("500");
+    await expect(dialog.getByText("Only 93 ft is left on this roll.")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Record adjustment" })).toBeDisabled();
   });
 
   test("lists rolls under 20 ft from the attention link", async ({ page }) => {

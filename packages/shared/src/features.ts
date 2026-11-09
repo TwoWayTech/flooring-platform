@@ -61,6 +61,14 @@ export const FEATURES = {
     enabled: true,
     screens: ["/inventory?view=transfers"],
   },
+  "inventory.adjustments": {
+    title: "Stock adjustments and reservations",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/inventory?view=adjustments"],
+  },
   "inventory.locations": {
     title: "Warehouses and showrooms",
     product: "flooring",

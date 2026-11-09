@@ -48,6 +48,7 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
     scope === "own" ? item.salesRepId === user.id : db.get("users", item.salesRepId)?.branchId === user.branchId,
   payments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
   invoiceAdjustments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
+  reservations: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
   refunds: (item: { customerId: string }, subject, db) => {
     const customer = db.get("customers", item.customerId);
     return !!customer && FILTERS.customers!(customer as never, subject, db);
