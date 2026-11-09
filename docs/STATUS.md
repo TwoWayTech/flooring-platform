@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: run the Batch G suite in chunks on a production build, tick it, then Batch H (fixtures: draft and pending quotes, a job without an invoice, adjustments; extended reconciliation; the six named e2e flows; docs: README.demo.md, demo-script, presenter guide), then redeploy and run the suite against both live sites.
+- Next step: redeploy production (npx vercel deploy --prod from the repository root) and run the suite in chunks against both live sites (E2E_FLOORING_URL, E2E_HR_URL); then the final report.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -126,7 +126,8 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] E2E 4: customer import from CSV with one bad row reported
 - [x] E2E 5: meeting dragged to a new time
 - [x] E2E 6: company Owner removes a page from the Sales role; Sales no longer sees it
-- [ ] Docs: FEATURES.md rows, ADRs, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter-guide steps, STATUS.md
+- [x] Docs: FEATURES.md rows, ADRs, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter-guide steps, STATUS.md
+- [x] Batch H: full suite green (284 e2e in three chunks on a production build; 213 unit)
 
 #### End
 - [ ] Redeploy production

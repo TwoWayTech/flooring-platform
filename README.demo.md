@@ -7,6 +7,10 @@ This file covers the demo only. The full README for the real product will live i
 - Flooring Suite: https://flooring-demo-twowaytech.vercel.app
 - HR Suite: https://hr-demo-twowaytech.vercel.app
 
+## What the demo shows
+
+The original demo plus feature batch 2 (docs/specs/feature-batch-02.md): warehouses and showrooms with transfers; table filters and saved views; company admins controlling roles and pages; quotes in Draft and Pending; invoices whose status comes from payments, with proof files, a two-person check, voids, write-offs, credits and refunds; stock reserved by invoices and cut after payment, with adjustments and approval; purchase orders, receipts, matched supplier bills and supplier payments; a dashboard by period with commissions and a sales team view; a meetings calendar with drag and resize; and a data import wizard with a database connection planner. docs/FEATURES.md lists every feature with its screens and tests.
+
 ## Run it on your computer
 
 You need Git, Node.js 22 or newer (24 recommended) and Google Chrome. pnpm comes through Corepack, which ships with Node.
@@ -41,8 +45,12 @@ Run these from the repository root.
 | `pnpm lint` | ESLint and Prettier |
 | `pnpm typecheck` | TypeScript in every package |
 | `pnpm test` | Unit tests (Vitest) for the business rules, fixtures and feature register |
-| `pnpm test:e2e` | Playwright tests; starts the dev server if it is not running |
+| `pnpm test:e2e` | Playwright tests against a production build: run `pnpm build` first; it starts `pnpm start` if no server is running. Two workers by default (`E2E_WORKERS` to change) |
 | `pnpm fixtures` | Regenerates the demo data from its fixed seed |
+
+### End-to-end tests on a computer with little memory
+
+Build once, then run the suite in parts by spec file, keeping one server: for example `pnpm --filter web exec playwright test tests/e2e/a11y.spec.ts tests/e2e/import.spec.ts`, then the next group. `--grep @flow` runs the six named flows of feature batch 2 (quote to paid invoice, purchase order to supplier payment, a new customer in the quote builder, a customer import with a bad row, a dragged meeting, and an Owner removing a page from the Sales role). Stop the server when you are done.
 
 ### End-to-end tests against the live site
 
@@ -71,9 +79,13 @@ To use Google instead, set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` and rebuild. The ap
 
 The key is visible to browsers by design (the website restriction is what protects it). Remove the variable and redeploy to go back to the offline list.
 
+## Data import
+
+Settings, **Data import** (Owners, or roles with Manage data import), and Platform admin, a company, **Data import**: customers, customer addresses, suppliers, products, rolls and stock, open customer invoices, open supplier bills and employees (by the company's modules). Each kind has a CSV and an Excel template. Files are read in the browser by a Web Worker (Papa Parse and SheetJS), up to 10 MB and 2,000 rows in the demo; nothing is uploaded anywhere. Rows match on external ID, SKU or email, so importing the same file again updates instead of adding twice. Every import can be undone from its history unless its records were changed or used since. **Connect a database** shows the plan for a live connection with a simulated test; docs/specs/data-integration.md is the design for the real product.
+
 ## Presenting
 
-- docs/demo-script.md: a 25-minute click path, persona by persona.
+- docs/demo-script.md: a 35-minute click path, persona by persona.
 - The presenter guide (presentation icon in the top bar) lists the same steps inside the app.
 - docs/feedback-demo.md: the template for notes from each demo.
 

@@ -19,7 +19,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
   flooring: [
     {
       title: "Dashboard",
-      say: "Today's sales, open quotes and what needs attention, all computed from documents.",
+      say: "Pick a period: figure cards with their change and trend, receivables, payments to verify and best sellers, all computed from documents.",
       href: "/",
       anyOf: ["dashboard.overview.view"],
     },
@@ -31,7 +31,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Quote a job",
-      say: "Draw a room, add carpet and labor; tax follows the job-site state.",
+      say: "Draw a room, add carpet and labor; tax follows the job-site state. Save as draft, then Send: the quote is Pending until accepted.",
       href: "/sales/quotes/new",
       anyOf: ["sales.quote.create"],
     },
@@ -51,7 +51,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Receivables",
-      say: "Open a customer for their statement and aging buckets.",
+      say: "Current, Overdue and Due in the next 7 days, with Overdue only; open a customer for their statement.",
       href: "/sales?view=customers",
       anyOf: ["customers.customer.view"],
     },
@@ -62,8 +62,15 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
       anyOf: ["purchasing.order.view"],
     },
     {
+      title: "Stock adjustments",
+      feature: "inventory.adjustments",
+      say: "A found pallet above the approval quantity waits here; approve it and on hand follows.",
+      href: "/inventory?view=adjustments",
+      anyOf: ["inventory.stock.approve", "inventory.stock.adjust"],
+    },
+    {
       title: "Installation",
-      say: "Crews by day; a job card shows materials, labor and margin.",
+      say: "Crews by day; a job card shows materials, labor and margin. Sign off a job and its held balance becomes due; a job without an invoice gets one in a click.",
       href: "/installation",
       anyOf: ["installation.job.view"],
     },
@@ -75,9 +82,23 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Meetings",
-      say: "Recurring meetings with staff, customers and suppliers, with reminders.",
+      say: "Drag a meeting to a new time or its edge to a new length; a repeating one asks this, following or all, and Undo puts it back.",
       href: "/meetings",
       anyOf: ["meetings.meeting.view"],
+    },
+    {
+      title: "Sales team",
+      feature: "sales.team",
+      say: "Sales, paid revenue and commission per salesperson for the period; rules live in Settings, Commissions.",
+      href: "/sales?view=team",
+      anyOf: ["sales.commission.view"],
+    },
+    {
+      title: "Data import",
+      feature: "settings.import",
+      say: "Bring customers over from CSV or Excel: columns match by name, the dry run marks bad cells, and each import can be undone.",
+      href: "/settings/import",
+      anyOf: ["settings.import.manage"],
     },
     {
       title: "View as Sales",
@@ -154,6 +175,13 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
       say: "In the sidebar, pick View as, then Employee: only their own timesheets and time off remain.",
       href: "/hr/timesheets",
       anyOf: VIEW_AS,
+    },
+    {
+      title: "Data import",
+      feature: "settings.import",
+      say: "Bring employees over from a spreadsheet; a second import updates them by email instead of adding twice.",
+      href: "/settings/import",
+      anyOf: ["settings.import.manage"],
     },
     {
       title: "Audit log",
