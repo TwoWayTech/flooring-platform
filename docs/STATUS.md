@@ -115,7 +115,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 #### Batch G: data import and database integration
 - [x] G1. Import wizard (Platform admin → Company → Data import; Settings → Data import with `settings.import.manage`): choose kind, download template (CSV / Excel), upload (10 MB) parsed in a Web Worker (Papa Parse, SheetJS), map columns with saved mappings, validate per row and cell, preview 50 rows and dry run, import with result report and error CSV, import history with Undo; match on external ID, SKU or email
 - [x] G2. Connect a database: engine, host, port, database, read-only user, SSL, table-to-entity mapping with sample preview, schedule; simulated test with banner; no credentials stored in the browser; docs/specs/data-integration.md
-- [ ] Batch G: full suite green
+- [x] Batch G: full suite green (283 e2e in three chunks on a production build; 209 unit)
 
 #### Batch H: data, tests, docs, deploy
 - [ ] Fixtures: warehouses and showrooms, customers with several addresses, Draft and Pending quotes, payments with proof files, supplier terms, bills and payments, reservations and cuts linked to invoices, commissions, healthy receivables; reconciliation extended (receivables = open invoices, payables = open bills, stock by warehouse = movements, commissions = rules × confirmed payments)
