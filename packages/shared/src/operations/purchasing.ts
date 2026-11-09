@@ -336,6 +336,10 @@ export function payablesSummary(bills: readonly Bill[], ledgers: ReadonlyMap<str
 }
 
 /** Every bill's ledger at once, keyed by bill id. */
-export function billLedgerIndex(bills: readonly Bill[], payments: readonly SupplierPayment[], today: string): Map<string, BillLedger> {
+export function billLedgerIndex(
+  bills: readonly Bill[],
+  payments: readonly SupplierPayment[],
+  today: string,
+): Map<string, BillLedger> {
   return new Map(bills.map((b) => [b.id, billLedger(b, payments, today)]));
 }

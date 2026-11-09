@@ -1,5 +1,6 @@
 import {
   Banknote,
+  BadgePercent,
   Building2,
   FileText,
   Hash,
@@ -122,5 +123,14 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["sales.payments"],
     group: "payments",
     description: "The two-person check on payments, small write-offs and payment numbering.",
+  },
+  {
+    label: "Commissions",
+    href: "/settings/commissions",
+    icon: BadgePercent,
+    anyOf: ["sales.commission.manage"],
+    features: ["sales.team"],
+    group: "commissions",
+    description: "Commission rules per role or person: on paid revenue or margin, with tiers.",
   },
 ];

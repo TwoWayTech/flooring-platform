@@ -106,6 +106,7 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   profile: "Company profile",
   payments: "Payments",
   inventory: "Stock rules",
+  commissions: "Commissions",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");

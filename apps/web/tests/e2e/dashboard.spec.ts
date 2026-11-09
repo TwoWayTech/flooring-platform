@@ -40,7 +40,8 @@ test.describe("dashboard", () => {
   test("key figures match the fixtures", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER);
     const expected = expectedFigures();
-    const figures = page.locator("dl").first();
+    // The 12-month totals sit in the revenue panel; the card row above follows the period (spec E1).
+    const figures = page.getByRole("region", { name: /last 12 months/ }).locator("dl");
     await expect(figures).toContainText(expected.revenue);
     await expect(figures).toContainText(expected.margin);
     await expect(page.getByText("overdue invoices")).toBeVisible();
@@ -62,5 +63,26 @@ test.describe("dashboard", () => {
     await page.getByRole("button", { name: "Show table" }).click();
     await expect(page.getByRole("columnheader", { name: "Gross margin" })).toBeVisible();
     await expect(page.getByRole("row")).toHaveCount(13);
+  });
+
+  test("one period selector drives the cards; best sellers have their own filters", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER);
+    const filters = page.getByRole("group", { name: "Dashboard filters" });
+    await expect(page.getByText(/vs previous period|No earlier period/).first()).toBeVisible();
+    await filters.getByLabel("Period").click();
+    await page.getByRole("option", { name: "Year to date" }).click();
+    await expect(page.getByRole("region", { name: "Employee of the year" })).toBeVisible();
+    const best = page.getByRole("region", { name: "Best sellers" });
+    await best.getByRole("button", { name: "Quantity" }).click();
+    await best.getByRole("button", { name: "Show best sellers as a table" }).click();
+    await expect(best.getByRole("columnheader", { name: "Quantity" })).toBeVisible();
+  });
+
+  test("Sales → Team shows commission earned, paid and pending", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/sales?view=team");
+    for (const name of ["Paid revenue", "Commission earned", "Commission pending"]) {
+      await expect(page.getByRole("button", { name: `${name}, column options` })).toBeVisible();
+    }
+    await expect(page.locator("tbody tr").first()).toBeVisible();
   });
 });

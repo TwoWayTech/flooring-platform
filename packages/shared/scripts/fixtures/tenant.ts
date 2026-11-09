@@ -168,6 +168,18 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       refundPrefix: "RF-",
     },
     inventory: { adjustmentApprovalQty: "50" },
+    // Sales earn 5 % of paid revenue, 6 % once a period passes $50,000 (spec E2).
+    commissions: {
+      rules: [
+        {
+          id: "com-rule-sales",
+          appliesTo: { kind: "role", roleKey: "sales" },
+          basis: "paid_revenue",
+          ratePct: "5",
+          tiers: [{ fromAmount: "50000", ratePct: "6" }],
+        },
+      ],
+    },
     profile: {
       legalName: seed.legalName,
       dba: seed.name,

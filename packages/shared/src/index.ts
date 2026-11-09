@@ -24,6 +24,8 @@ export * from "./operations/jobs";
 export * from "./ledger";
 export * from "./receivables";
 export * from "./reservations";
+export * from "./dashboard";
+export * from "./commissions";
 export * from "./file-types";
 export * from "./operations/purchasing";
 export * from "./operations/meetings";

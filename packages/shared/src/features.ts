@@ -101,6 +101,14 @@ export const FEATURES = {
     enabled: true,
     screens: ["/settings/payments"],
   },
+  "sales.team": {
+    title: "Sales team and commissions",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/sales?view=team", "/settings/commissions"],
+  },
   "sales.customers": {
     title: "Customers and receivables",
     product: "flooring",

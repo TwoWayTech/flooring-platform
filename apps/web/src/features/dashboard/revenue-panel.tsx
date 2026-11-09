@@ -2,19 +2,15 @@
 
 import { useState } from "react";
 import { BarChart3, Table2 } from "lucide-react";
-import { filteredHref, formatNumber, SENSITIVE } from "@workspace/shared";
+import { SENSITIVE } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
-import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { Panel } from "@workspace/ui/components/panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { useCan } from "@/components/workspace/workspace-context";
 import { KeyFigure } from "./key-figure";
 import { monthLabel, RevenueChart } from "./revenue-chart";
 import type { DashboardData } from "./use-dashboard-data";
-
-/** The quotes list filtered to Pending, behind the Pending quotes figure (spec B1). */
-const PENDING_QUOTES_HREF = filteredHref("/sales?view=quotes", "sales-quotes", "status", ["Pending"]);
 
 function Legend({ showMargin }: { showMargin: boolean }) {
   const items = [
@@ -71,29 +67,14 @@ function MonthsTable({ data, showMargin }: { data: DashboardData; showMargin: bo
 }
 
 /**
- * The dashboard's large panel (design brief "Dashboard"): key figures in one row above the
- * 12-month chart they summarise, with a table view of the same numbers. Margins need view_sensitive.
+ * Revenue and gross margin over the last 12 months (spec E1 widget, design brief "Dashboard"): the
+ * totals above the chart they summarise, with a table view of the same numbers. Margins need view_sensitive.
  */
 export function RevenuePanel({ data, ownScope }: { data: DashboardData; ownScope: boolean }) {
   const can = useCan();
   const showMargin = can(SENSITIVE.margin);
   const [asTable, setAsTable] = useState(false);
-  const { totals, pending } = data;
-  const numbers = useNumberSettings();
-  const formatCount = (n: number) => formatNumber(String(n), "count", numbers);
-  const pendingFigure = (
-    <KeyFigure
-      label="Pending quotes"
-      value={pending.total}
-      kind="money"
-      href={PENDING_QUOTES_HREF}
-      note={
-        pending.count === 0
-          ? "None waiting"
-          : `${formatCount(pending.count)} waiting, oldest ${formatCount(pending.oldestDays ?? 0)} days`
-      }
-    />
-  );
+  const { totals } = data;
   return (
     <Panel
       title={
@@ -113,9 +94,8 @@ export function RevenuePanel({ data, ownScope }: { data: DashboardData; ownScope
     >
       <dl className="divide-hairline grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:divide-x [&>div]:sm:px-4 [&>div:first-child]:sm:pl-0">
         <KeyFigure label="Revenue" value={totals.revenue} kind="money" />
-        {showMargin ? <KeyFigure label="Gross margin" value={totals.marginPct} kind="percent" /> : pendingFigure}
-        <KeyFigure label="Receivables" value={totals.receivables} kind="money" />
-        {showMargin ? pendingFigure : null}
+        {showMargin ? <KeyFigure label="Gross margin" value={totals.marginPct} kind="percent" /> : null}
+        {showMargin ? <KeyFigure label="Gross profit" value={totals.grossMargin} kind="money" /> : null}
       </dl>
       {asTable ? (
         <MonthsTable data={data} showMargin={showMargin} />

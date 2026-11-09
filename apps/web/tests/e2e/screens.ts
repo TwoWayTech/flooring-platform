@@ -26,6 +26,8 @@ export const FLOORING_SCREENS = [
   "/settings/locations",
   "/settings/documents",
   "/settings/payments",
+  "/settings/commissions",
+  "/sales?view=team",
   "/settings/audit",
 ];
 

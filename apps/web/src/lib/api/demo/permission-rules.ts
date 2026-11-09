@@ -66,6 +66,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   profile: ["settings.company.manage"],
   payments: ["settings.payments.manage"],
   inventory: ["settings.locations.manage"],
+  commissions: ["sales.commission.manage"],
 };
 
 /** Permissions that allow changing one settings section. */

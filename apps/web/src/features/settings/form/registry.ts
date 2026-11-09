@@ -21,6 +21,7 @@ const BRANDING = "/settings/branding";
 const PROFILE = "/settings/company";
 const PAYMENTS = "/settings/payments";
 const LOCATIONS = "/settings/locations";
+const COMMISSIONS = "/settings/commissions";
 
 export const SETTINGS = {
   "region.country": { label: "Country", helper: "The US pack: 50 states and DC, imperial units, USD.", href: REGION },
@@ -147,6 +148,11 @@ export const SETTINGS = {
     label: "Adjustments that need approval",
     helper: "Above this many ft, cartons or items, an Owner or Manager approves the change. Empty: never.",
     href: LOCATIONS,
+  },
+  "commissions.rules": {
+    label: "Commission rules",
+    helper: "Earned when payments are confirmed; the highest tier a period reaches sets the rate for all of it.",
+    href: COMMISSIONS,
   },
   "payments.approvalRequired": {
     label: "Payments need approval",
