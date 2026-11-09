@@ -1,6 +1,6 @@
 # Status
 
-- Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
+- Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md) is complete: Batches A to H built, pushed and deployed; 284 e2e tests pass locally on a production build and against both live sites; 213 unit tests pass.
 - Next step: feature batch 2 is complete and live. Next: take notes from the next demo in docs/feedback-demo.md, then plan the next batch.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-09-batch2-g-h-deploy.md
