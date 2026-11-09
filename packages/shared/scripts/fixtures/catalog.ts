@@ -70,7 +70,9 @@ export function buildSuppliers(ctx: GenContext): Supplier[] {
     contactName: ctx.rng.personName(),
     email: `orders@${name.toLowerCase().replace(/[^a-z]/g, "")}.example`,
     phone: ctx.rng.phone(String(ctx.rng.int(201, 989))),
-    terms: ctx.rng.pick(["net_30", "net_30", "net_45", "net_15"] as const),
+    // Same draw as before (four choices), so later fixtures stay put; the terms are the batch 2 ones.
+    terms: ctx.rng.pick(["net_30", "net_30", "net_60", "cod"] as const),
+    creditLimit: "0",
     categories: brandCategories.get(name) ?? [],
     address: {
       street: ctx.rng.faker.location.streetAddress(),
@@ -162,6 +164,9 @@ export function buildProducts(ctx: GenContext, suppliers: readonly Supplier[]): 
   const goods = (Object.entries(CATEGORY_COUNTS) as [GoodsCategory, number][]).flatMap(([category, count]) =>
     Array.from({ length: count }, (_, i) => goodsProduct(ctx, category, suppliers, i)),
   );
+  // One product with a long name (60+ characters), so wrapping and truncation can be checked (spec D1).
+  const long = goods.filter((p) => p.category === "lvp").at(-1);
+  if (long) long.name = `${long.name} Wide Plank Rigid Core with Attached Cork Pad`;
   const house = suppliers.find((s) => s.name === "Meridian Distribution")!;
   const services: Product[] = SERVICES.map((s) => ({
     id: ctx.id("prd"),

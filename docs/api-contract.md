@@ -45,7 +45,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 ## Records
 
-`list`, `get` and `save` work on these collections: `roles`, `users`, `locations`, `products`, `rolls`, `stockMovements`, `transfers`, `customers`, `quotes`, `invoices`, `payments`, `invoiceAdjustments`, `refunds`, `reservations`, `stockAdjustments`, `suppliers`, `purchaseOrders`, `bills`, `billPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
+`list`, `get` and `save` work on these collections: `roles`, `users`, `locations`, `products`, `rolls`, `stockMovements`, `transfers`, `customers`, `quotes`, `invoices`, `payments`, `invoiceAdjustments`, `refunds`, `reservations`, `stockAdjustments`, `suppliers`, `purchaseOrders`, `receipts`, `bills`, `supplierPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
@@ -93,14 +93,16 @@ Added with their screens below.
 | `recordAdjustment(input)` | `POST /stock-adjustments` | Needs `inventory.stock.adjust`; a reason (a note for Other); a roll cannot lose more than its free length. Above `settings.inventory.adjustmentApprovalQty` it waits, else it applies at once. Audited. |
 | `reviewAdjustment(id, decision)` | `POST /stock-adjustments/:id/review` | Needs `inventory.stock.approve`; not the requester; a rejection needs a reason; approval applies it. Audited. |
 | `createRollInvoice({ rollId, customerId, lengthFt })` | `POST /rolls/:id/invoice` | Needs `sales.invoice.create`; up to the roll's free length; one line by the sq yd at the product's price, taxed by the customer's job site, reserving the roll. Audited. |
-| `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. `locationId` is the receive-into warehouse. Audited. |
-| `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons become receipt lines in the stock ledger at the receive-into warehouse; broadloom arrives there as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
+| `createPurchaseOrder({ supplierId, expectedAt, locationId, lines, asDraft })` | `POST /purchase-orders` | Needs `purchasing.order.create`; saved as a draft or ordered at once; numbered with the PO prefix. Audited. |
+| `markOrdered(poId)` / `cancelOrder(poId, reason)` | `POST /purchase-orders/:id/order`, `/cancel` | A draft is ordered; an order nothing has arrived for is cancelled with a reason. Audited. |
+| `recordReceipt(poId, { locationId, lines, note })` | `POST /purchase-orders/:id/receipts` | Needs `purchasing.order.receive`; good and damaged units per line, never more than is still to come; writes receipt movements and rolls. Audited. |
+| `enterBill(poId, { number, issuedAt, total }, files)` | `POST /purchase-orders/:id/bills` (multipart) | Needs `purchasing.bill.create`; only for unbilled receipts; a total different from the goods received is flagged; the supplier's file is required. Audited. |
+| `recordSupplierPayment(input, files)` | `POST /supplier-payments` (multipart) | Needs `purchasing.payment.record`; reference except for cash, proof required, not more than the bills owe; allocated oldest due first; approval as for customer payments. Audited. |
+| `reviewSupplierPayment(id, decision)` / `voidSupplierPayment(id, reason)` | `POST /supplier-payments/:id/review`, `/void` | `purchasing.payment.approve` by someone else, or `purchasing.payment.void` with a reason. Audited. |
 | `createTransfer(input)` | `POST /transfers` | Needs `inventory.transfer.create`. Both ends must be different warehouses; boxed quantities whole and no more than the sender holds; rolls at the sender and not travelling. Boxed stock leaves the sender at once; rolls are marked in transit. Numbered TR-1001 up. Audited. |
 | `receiveTransfer(id)` | `POST /transfers/:id/receive` | Needs `inventory.transfer.receive`. Boxed stock arrives at the receiver; rolls move there to bin Receiving. Audited. |
 | `saveLocation(location)` | `PUT /locations/:id` | Needs `settings.locations.manage`. Keeps exactly one default, which must be a warehouse; a location holding stock cannot become a showroom. Audited. |
 | `updateMyProfile(patch)` | `PATCH /me` | The signed-in person's own default warehouse (a warehouse, or null for the company default). Audited. |
-| `billPurchaseOrder(poId, billNumber)` | `POST /purchase-orders/:id/bill` | Only received orders; the bill takes the PO total and the supplier's terms. Audited. |
-| `payBill(billId)` | `POST /bills/:id/payments` | Pays the open balance in full and records the bill payment. Audited. |
 
 ## Errors and the simulated network
 

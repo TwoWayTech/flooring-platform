@@ -162,3 +162,47 @@ describe("saved demo data upgrade: invoices and payments (spec Appendix A)", () 
     });
   });
 });
+
+describe("saved demo data upgrade: purchasing (spec D1 to D3)", () => {
+  const shift = { days: 0, weeks: 0 };
+  it("gives a received order its receipt, and turns bill payments into supplier payments", () => {
+    const po = {
+      ...summit.purchaseOrders[0]!,
+      id: "po-x",
+      number: "PO-9001",
+      status: "received",
+      receivedAt: "2026-10-02",
+    } as Record<string, unknown>;
+    delete po.orderedAt;
+    delete po.cancelledAt;
+    const bill = {
+      id: "b-x",
+      number: "S-1",
+      supplierId: po.supplierId,
+      poId: "po-x",
+      issuedAt: "2026-10-02",
+      dueAt: "2026-11-01",
+      total: "10.00",
+      paid: "10.00",
+    };
+    const old = { id: "bp-x", billId: "b-x", supplierId: po.supplierId, at: "2026-10-05", amount: "10.00" };
+    const out = upgradeOverlay(
+      {
+        schemaVersion: 2,
+        shift,
+        settings: null,
+        records: { purchaseOrders: { "po-x": po }, bills: { "b-x": bill }, billPayments: { "bp-x": old } },
+      },
+      { base: summit },
+    );
+    expect(out.records.purchaseOrders!["po-x"]).toMatchObject({ status: "ordered", orderedAt: expect.any(String) });
+    expect(out.records.receipts!["po-x-gr"]).toMatchObject({ poId: "po-x" });
+    expect(out.records.bills!["b-x"]).toMatchObject({ receiptIds: ["po-x-gr"], matchIssues: [] });
+    expect(out.records.bills!["b-x"]).not.toHaveProperty("paid");
+    expect(out.records.supplierPayments!["bp-x"]).toMatchObject({
+      status: "confirmed",
+      allocations: [{ billId: "b-x", amount: "10.00" }],
+    });
+    expect(out.records).not.toHaveProperty("billPayments");
+  });
+});

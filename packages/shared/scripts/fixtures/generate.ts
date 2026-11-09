@@ -46,7 +46,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
   const baseCustomers = trades ? buildCustomers(ctx, users) : [];
   const sales = buildSales(ctx, { products, customers: baseCustomers, users, settings });
   const customers = withJobSites(baseCustomers, sales.quotes);
-  const purchasing = buildPurchasing(ctx, suppliers, products);
+  const purchasing = buildPurchasing(ctx, suppliers, products, users);
   const installers = users.filter((u) => u.roleIds.some((r) => r.endsWith("-role-installer"))).map((u) => u.name);
   const crews = buildCrews(ctx, installers);
   return {

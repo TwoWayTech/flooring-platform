@@ -6,6 +6,7 @@ import { Download, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   addDays,
+  billLedgerIndex,
   boxedStock,
   last12Months,
   locationName,
@@ -35,6 +36,7 @@ import { saveBlob } from "@/features/invoices/payments/file-viewer-dialog";
 import { CATEGORY_LABELS } from "@/lib/labels";
 import {
   agingReport,
+  payablesAgingReport,
   inventoryReport,
   paymentsReport,
   pnlReport,
@@ -79,6 +81,13 @@ const REPORTS = {
     view: "reports.financial.view",
     export: "reports.financial.export",
     build: agingReport,
+    categories: false,
+  },
+  payables: {
+    label: "Payables aging",
+    view: "reports.financial.view",
+    export: "reports.financial.export",
+    build: payablesAgingReport,
     categories: false,
   },
   payments: {
@@ -131,7 +140,19 @@ export function ReportsPage() {
   const [method, setMethod] = useState<PaymentMethod | "all">("all");
   const [customerQuery, setCustomerQuery] = useState("");
   const data = useApiQuery(async (client) => {
-    const [sales, expenses, products, rolls, stockMovements, locations, payments, customers] = await Promise.all([
+    const [
+      sales,
+      expenses,
+      products,
+      rolls,
+      stockMovements,
+      locations,
+      payments,
+      customers,
+      bills,
+      supplierPayments,
+      suppliers,
+    ] = await Promise.all([
       loadSalesLedger(client),
       client.list("expenses"),
       client.list("products"),
@@ -140,6 +161,9 @@ export function ReportsPage() {
       client.list("locations"),
       client.list("payments"),
       client.list("customers"),
+      client.list("bills"),
+      client.list("supplierPayments"),
+      client.list("suppliers"),
     ]);
     return {
       invoices: sales.invoices,
@@ -151,6 +175,9 @@ export function ReportsPage() {
       locations,
       payments,
       customers,
+      bills,
+      supplierPayments,
+      suppliers,
     };
   }, []);
 
@@ -192,6 +219,9 @@ export function ReportsPage() {
       dateFormat: settings.localization.region.dateFormat,
       ledgers: data.data.ledgers,
       today,
+      bills: data.data.bills,
+      billLedgers: billLedgerIndex(data.data.bills, data.data.supplierPayments, today),
+      suppliers: data.data.suppliers,
     });
   }
   const warehouseLabel =
@@ -271,7 +301,7 @@ export function ReportsPage() {
           bodyClassName="flex flex-col gap-4"
         >
           <div className="flex flex-wrap gap-3">
-            {key !== "inventory" && key !== "aging" ? (
+            {key !== "inventory" && key !== "aging" && key !== "payables" ? (
               <Filter label="Dates">
                 <Select value={range} onValueChange={(v) => setRange(v as Range)}>
                   <SelectTrigger className="h-9 w-44" aria-label="Dates">

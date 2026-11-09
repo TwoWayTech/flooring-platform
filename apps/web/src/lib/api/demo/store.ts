@@ -1,11 +1,6 @@
 import { format } from "date-fns";
 import {
   canAssignRole,
-  balance,
-  billFromPurchaseOrder,
-  moneyString,
-  poTotal,
-  receivePurchaseOrder,
   invoiceFromQuote,
   nextNumber,
   dateShift,
@@ -35,7 +30,6 @@ import {
   type CompanySettings,
   type PermissionKey,
   type PlatformFixtures,
-  type PoLine,
   type Quote,
   type RecordPaymentInput,
   type RefundInput,
@@ -57,6 +51,10 @@ import type {
   NewCustomerInput,
   AdjustmentDecision,
   AdjustmentInput,
+  BillInput,
+  NewPurchaseOrderInput,
+  ReceiptInput,
+  SupplierPaymentInput,
   PaymentDecision,
   ProfilePatch,
   RollInvoiceInput,
@@ -71,6 +69,16 @@ import { applyScope, scopeSubject } from "./scope";
 import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, signOffJob } from "./job-actions";
+import {
+  cancelOrder,
+  createPurchaseOrder,
+  enterBill,
+  markOrdered,
+  recordReceipt,
+  recordSupplierPayment,
+  reviewSupplierPayment,
+  voidSupplierPayment,
+} from "./purchasing-actions";
 import {
   createRollInvoice,
   issueReservation,
@@ -604,112 +612,36 @@ export class DemoStore implements ApiClient {
     return readFile(this.actionContext(db), fileId);
   }
 
-  async createPurchaseOrder(input: { supplierId: string; expectedAt: string; locationId: string; lines: PoLine[] }) {
-    const db = this.open();
-    await this.assertCan(db, ["purchasing.order.create"]);
-    if (input.lines.length === 0) throw new DemoRuleError("Add at least one line to the purchase order.");
-    const prefix = db.settings.localization.documents.poPrefix;
-    const po = {
-      id: newId(db.companyId, "po"),
-      number: nextNumber(
-        prefix,
-        db.list("purchaseOrders").map((p) => p.number),
-        3001,
-      ),
-      supplierId: input.supplierId,
-      status: "sent" as const,
-      createdAt: this.todayIso,
-      locationId: input.locationId,
-      expectedAt: input.expectedAt,
-      receivedAt: null,
-      lines: input.lines,
-      total: poTotal(input.lines),
-    };
-    db.put("purchaseOrders", po);
-    this.appendAudit(db, {
-      category: "data",
-      action: "Created purchase order",
-      target: po.number,
-      before: null,
-      after: `total ${po.total}`,
-    });
-    this.emit();
-    return po;
+  async createPurchaseOrder(input: NewPurchaseOrderInput) {
+    return this.act((ctx) => createPurchaseOrder(ctx, input));
   }
 
-  async receivePurchaseOrder(poId: string) {
-    const db = this.open();
-    await this.assertCan(db, ["purchasing.order.receive"]);
-    const po = db.get("purchaseOrders", poId)!;
-    const result = receivePurchaseOrder(po, db.list("products"), {
-      at: nowStamp(),
-      byUserId: this.viewer!.userId,
-      movementId: () => newId(db.companyId, "mov"),
-      newRollId: () => newId(db.companyId, "roll"),
-      rollNumber: (p) => `${p.sku.slice(0, 2)}-${String(Math.floor(Math.random() * 9000) + 1000)}`,
-    });
-    db.put("purchaseOrders", result.po);
-    for (const m of result.movements) db.put("stockMovements", m);
-    for (const r of result.rolls) db.put("rolls", r);
-    this.appendAudit(db, {
-      category: "data",
-      action: "Received purchase order",
-      target: po.number,
-      before: po.status,
-      after: `received into ${locationName(db.list("locations"), po.locationId)}, ${result.rolls.length} rolls`,
-    });
-    this.emit();
-    return result.po;
+  async markOrdered(poId: string) {
+    return this.act((ctx) => markOrdered(ctx, poId));
   }
 
-  async billPurchaseOrder(poId: string, billNumber: string) {
-    const db = this.open();
-    await this.assertCan(db, ["purchasing.bill.create"]);
-    const po = db.get("purchaseOrders", poId)!;
-    const supplier = db.get("suppliers", po.supplierId)!;
-    const bill = billFromPurchaseOrder(po, supplier, {
-      id: newId(db.companyId, "bill"),
-      number: billNumber,
-      issuedAt: this.todayIso,
-    });
-    db.put("bills", bill);
-    db.put("purchaseOrders", { ...po, status: "billed" });
-    this.appendAudit(db, {
-      category: "data",
-      action: "Entered bill",
-      target: `${bill.number} for ${po.number}`,
-      before: null,
-      after: `total ${bill.total}`,
-    });
-    this.emit();
-    return bill;
+  async cancelOrder(poId: string, reason: string) {
+    return this.act((ctx) => cancelOrder(ctx, poId, reason));
   }
 
-  async payBill(billId: string) {
-    const db = this.open();
-    await this.assertCan(db, ["purchasing.payment.record"]);
-    const bill = db.get("bills", billId)!;
-    const open = balance(bill);
-    if (open.lte(0)) throw new DemoRuleError(`Bill ${bill.number} is already paid.`);
-    const amount = moneyString(open);
-    db.put("billPayments", {
-      id: newId(db.companyId, "bpay"),
-      billId,
-      supplierId: bill.supplierId,
-      at: this.todayIso,
-      amount,
-    });
-    const paid = { ...bill, paid: bill.total };
-    db.put("bills", paid);
-    this.appendAudit(db, {
-      category: "data",
-      action: "Paid bill",
-      target: bill.number,
-      before: `${amount} open`,
-      after: "paid",
-    });
-    this.emit();
-    return paid;
+  async recordReceipt(poId: string, input: ReceiptInput) {
+    return this.act((ctx) => recordReceipt(ctx, poId, input));
+  }
+
+  async enterBill(poId: string, input: BillInput, files: File[]) {
+    return this.act((ctx) => enterBill(ctx, poId, input, files));
+  }
+
+  async recordSupplierPayment(input: SupplierPaymentInput, files: File[]) {
+    return this.act((ctx) => recordSupplierPayment(ctx, input, files));
+  }
+
+  async reviewSupplierPayment(paymentId: string, decision: PaymentDecision) {
+    return this.act((ctx) => reviewSupplierPayment(ctx, paymentId, decision));
+  }
+
+  async voidSupplierPayment(paymentId: string, reason: string) {
+    return this.act((ctx) => voidSupplierPayment(ctx, paymentId, reason));
   }
 
   async createTransfer(input: TransferInput) {

@@ -5,7 +5,7 @@ import { generateFixtures } from "../scripts/fixtures/generate";
 import {
   addDays,
   agingSummary,
-  balance,
+  billLedger,
   ledgerIndex,
   openAmounts,
   boxedStock,
@@ -18,6 +18,7 @@ import {
   moneyString,
   openInvoices,
   receivablesSummary,
+  receivedValue,
   resolveTaxRule,
   rollAreaSqFt,
   splitOvertime,
@@ -112,14 +113,19 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     expect(valuation.total).toBe(moneyString(rolls.plus(boxed)));
   });
 
-  it("bills, bill payments and purchase orders add up", () => {
+  it("payables = open bills: bills match their receipts, supplier payments never exceed a bill", () => {
     for (const bill of f.bills) {
-      const paid = sum(f.billPayments.filter((p) => p.billId === bill.id).map((p) => p.amount));
-      expect(moneyString(paid), bill.number).toBe(bill.paid);
-      expect(paid.lte(bill.total), bill.number).toBe(true);
-      expect(bill.total).toBe(f.purchaseOrders.find((po) => po.id === bill.poId)!.total);
+      const ledger = billLedger(bill, f.supplierPayments, today);
+      expect(dec(ledger.paid).lte(bill.total), bill.number).toBe(true);
+      const po = f.purchaseOrders.find((p) => p.id === bill.poId)!;
+      const receipts = f.receipts.filter((r) => bill.receiptIds.includes(r.id));
+      expect(moneyString(receivedValue(po, receipts)), bill.number).toBe(bill.total);
     }
-    expect(f.bills.some((b) => balance(b).gt(0))).toBe(true);
+    for (const p of f.supplierPayments) {
+      expect(moneyString(sum(p.allocations.map((x) => x.amount))), p.number).toBe(p.amount);
+      expect(p.files.length, p.number).toBeGreaterThan(0);
+    }
+    expect(f.bills.some((x) => dec(billLedger(x, f.supplierPayments, today).balance).gt(0))).toBe(true);
   });
 
   it("stock by warehouse = movements: never negative, never in a showroom, transfers balance", () => {

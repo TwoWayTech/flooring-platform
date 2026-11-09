@@ -57,7 +57,7 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Purchasing",
-      say: "Receive a purchase order into stock, then turn it into a bill.",
+      say: "Receive part of a purchase order, enter the supplier's bill against it, then pay it with proof.",
       href: "/purchasing?view=orders",
       anyOf: ["purchasing.order.view"],
     },

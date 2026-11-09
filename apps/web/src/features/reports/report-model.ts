@@ -5,10 +5,14 @@ import {
   dec,
   inventoryByCategory,
   openAmounts,
+  openBillAmounts,
   PAYMENT_METHOD_LABELS,
   type BoxedStock,
+  type Bill,
+  type BillLedger,
   type Customer,
   type InvoiceLedger,
+  type Supplier,
   type Payment,
   type PaymentMethod,
   monthlyPnl,
@@ -61,6 +65,10 @@ export interface ReportInput {
   /** Every invoice's ledger, for balances (aging). */
   ledgers: ReadonlyMap<string, InvoiceLedger>;
   today: string;
+  /** Supplier bills and their ledgers, for payables aging. */
+  bills: Bill[];
+  billLedgers: ReadonlyMap<string, BillLedger>;
+  suppliers: Supplier[];
 }
 
 /** A category key as people say it: product categories and, for services, the tax category. */
@@ -137,6 +145,28 @@ export function agingReport({ invoices, customers, ledgers, today }: ReportInput
     ],
     rows,
     totals: Object.fromEntries([["customer", "Total"], ...[...keys, "total"].map((id) => [id, total(rows, id)])]),
+  };
+}
+
+/** Payables aging by supplier (spec D3: detailed aging in Reports), as of today. */
+export function payablesAgingReport({ bills, billLedgers, suppliers, today }: ReportInput): Report {
+  const keys = AGING_BUCKETS.map((b) => b.key);
+  const rows = suppliers
+    .map((supplier) => {
+      const own = bills.filter((b) => b.supplierId === supplier.id);
+      return { supplier: supplier.name, ...agingSummary(openBillAmounts(own, billLedgers), today) };
+    })
+    .filter((r) => dec(r.total).gt(0))
+    .sort((a, b) => dec(b.total).comparedTo(a.total));
+  return {
+    title: "Payables aging",
+    columns: [
+      { id: "supplier", header: "Supplier" },
+      ...AGING_BUCKETS.map((b) => ({ id: b.key, header: b.label, kind: "money" as const })),
+      { id: "total", header: "Total", kind: "money" },
+    ],
+    rows,
+    totals: Object.fromEntries([["supplier", "Total"], ...[...keys, "total"].map((id) => [id, total(rows, id)])]),
   };
 }
 

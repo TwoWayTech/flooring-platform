@@ -1,6 +1,6 @@
 import { addDays } from "../dates";
 import { mapRecords, type Row } from "./map-records";
-import type { RecordStep, StoredOverlay, UpgradeContext } from "./overlay";
+import type { RecordStep, StoredOverlay, StoredRecords, UpgradeContext } from "./overlay";
 
 /** Old quote statuses and the batch 2 status they became (spec B1). */
 const QUOTE_STATUS: Readonly<Record<string, string>> = { sent: "pending", invoiced: "converted" };
@@ -94,8 +94,102 @@ function upgradePayments(records: StoredOverlay["records"]): StoredOverlay["reco
   });
 }
 
+/** Old supplier terms and the batch 2 term with the same days or the nearest (spec D3). */
+const SUPPLIER_TERMS: Readonly<Record<string, string>> = { net_15: "cod", net_45: "net_60", due_on_receipt: "cod" };
+
+/**
+ * Purchasing moves to receipts, bills against them and supplier payments (spec D1 to D3). A saved
+ * order that was received gets one receipt for everything it ordered (its stock arrived then),
+ * a bill points at that receipt and loses its stored paid, and a bill payment becomes a confirmed
+ * supplier payment with one allocation.
+ */
+function upgradePurchasing(records: StoredOverlay["records"], ctx: UpgradeContext): StoredOverlay["records"] {
+  const synthesized: Record<string, Row> = {};
+  let next = mapRecords(records, "purchaseOrders", (po: Row) => {
+    if ("orderedAt" in po) return po;
+    const rest: Row = { ...po };
+    delete rest.receivedAt;
+    const status = String(po.status);
+    const receivedAt = po.receivedAt ? String(po.receivedAt) : null;
+    if (receivedAt) {
+      const id = `${String(po.id)}-gr`;
+      synthesized[id] = {
+        id,
+        number: `GR-${String(po.number).replace(/\D/g, "")}`,
+        poId: po.id,
+        supplierId: po.supplierId,
+        locationId: po.locationId,
+        receivedAt: `${receivedAt}T00:00`,
+        receivedById: "",
+        receivedBy: "Earlier demo",
+        note: "Received in an earlier version of the demo.",
+        lines: ((po.lines as Row[]) ?? []).map((l) => ({
+          poLineId: l.id,
+          productId: l.productId,
+          received: l.quantity,
+          damaged: "0",
+          rolls: [],
+        })),
+      };
+    }
+    return {
+      ...rest,
+      status: status === "draft" ? "draft" : "ordered",
+      orderedAt: status === "draft" ? null : String(po.createdAt ?? ""),
+      cancelledAt: null,
+    };
+  });
+  if (Object.keys(synthesized).length) next = { ...next, receipts: { ...(next.receipts ?? {}), ...synthesized } };
+  next = mapRecords(next, "bills", (bill: Row) => {
+    if ("receiptIds" in bill) return bill;
+    const rest: Row = { ...bill };
+    delete rest.paid;
+    const receiptId = `${String(bill.poId)}-gr`;
+    const known = next.receipts?.[receiptId] || ctx.base.receipts.some((r) => r.id === receiptId);
+    return { ...rest, receiptIds: known ? [receiptId] : [], matchIssues: [], files: [] };
+  });
+  const old = records.billPayments;
+  if (old) {
+    const payments: StoredRecords = { ...(next.supplierPayments ?? {}) };
+    for (const [id, row] of Object.entries(old)) {
+      if (row === null) continue;
+      const p = row as Row;
+      const date = String(p.at ?? "").slice(0, 10);
+      payments[id] = {
+        id,
+        number: `EARLIER-${id.slice(-6)}`,
+        supplierId: p.supplierId,
+        date,
+        method: "ach",
+        reference: "",
+        note: "Paid in an earlier version of the demo.",
+        files: [],
+        allocations: [{ billId: p.billId, amount: p.amount }],
+        amount: p.amount,
+        status: "confirmed",
+        recordedById: "",
+        recordedBy: "Earlier demo",
+        recordedAt: `${date}T00:00`,
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectReason: null,
+        voidedBy: null,
+        voidedAt: null,
+        voidReason: null,
+      };
+    }
+    next = { ...next, supplierPayments: payments };
+    delete next.billPayments;
+  }
+  return mapRecords(next, "suppliers", (supplier: Row) =>
+    "creditLimit" in supplier
+      ? supplier
+      : { ...supplier, terms: SUPPLIER_TERMS[String(supplier.terms)] ?? supplier.terms, creditLimit: "0.00" },
+  );
+}
+
 /**
  * Upgrade steps from schema version 2 to 3 (feature batch 2, Batch B), run in order. Each step
  * leaves records that already have the new shape alone, so it is safe on any saved version.
  */
-export const V3_RECORD_STEPS: RecordStep[] = [upgradeQuoteStatus, upgradeInvoices, upgradePayments];
+export const V3_RECORD_STEPS: RecordStep[] = [upgradeQuoteStatus, upgradeInvoices, upgradePayments, upgradePurchasing];

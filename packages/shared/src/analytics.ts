@@ -3,12 +3,8 @@ import { daysBetween } from "./dates";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
 import type { InvoiceLedger } from "./ledger";
+import type { BillLedger } from "./operations/purchasing";
 import type { Bill, Expense, Invoice, InvoiceAdjustment, Job, Payment, Product, Refund, Roll } from "./types";
-
-/** Open balance of a bill: total minus payments. Invoices use their ledger (ledger.ts). */
-export function balance(doc: { total: string; paid: string }): Dec {
-  return dec(doc.total).minus(doc.paid);
-}
 
 /** Aging buckets by days past due (spec "Customers and receivables": current, 30, 60, 90+). */
 export const AGING_BUCKETS = [
@@ -62,9 +58,11 @@ export function openAmounts(invoices: readonly Invoice[], ledgers: ReadonlyMap<s
   return openInvoices(invoices, ledgers).map((i) => ({ dueAt: i.dueAt, balance: ledgers.get(i.id)!.balance }));
 }
 
-/** Open bills: balance above zero. */
-export function openBills(bills: readonly Bill[]): Bill[] {
-  return bills.filter((b) => balance(b).gt(0));
+/** What each open bill still owes and when it is due, for payables aging (spec D3). */
+export function openBillAmounts(bills: readonly Bill[], ledgers: ReadonlyMap<string, BillLedger>): OpenAmount[] {
+  return bills
+    .filter((b) => dec(ledgers.get(b.id)?.balance ?? "0").gt(0))
+    .map((b) => ({ dueAt: b.dueAt, balance: ledgers.get(b.id)!.balance }));
 }
 
 /** Value of one roll on hand: remaining area × its own cost (blueprint "Costing": each roll carries its own cost). */

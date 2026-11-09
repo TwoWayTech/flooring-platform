@@ -26,6 +26,10 @@ import type {
   RefundInput,
   Job,
   AdjustmentReason,
+  GoodsReceipt,
+  PaymentMethod,
+  ReceiptLine,
+  SupplierPayment,
   Reservation,
   StockAdjustment,
 } from "@workspace/shared";
@@ -90,6 +94,41 @@ export interface RollInvoiceInput {
   rollId: string;
   customerId: string;
   lengthFt: string;
+}
+
+/** A new purchase order (spec D1): lines in their selling unit, with the area for area goods. */
+export interface NewPurchaseOrderInput {
+  supplierId: string;
+  expectedAt: string;
+  locationId: string;
+  lines: PoLine[];
+  /** Save as draft instead of ordering at once. */
+  asDraft: boolean;
+}
+
+/** What arrived (spec D2). */
+export interface ReceiptInput {
+  locationId: string;
+  lines: ReceiptLine[];
+  note: string;
+}
+
+/** The supplier's bill as it arrived (spec D2). */
+export interface BillInput {
+  number: string;
+  issuedAt: string;
+  total: string;
+}
+
+/** A payment to a supplier (spec D3); without bill ids it covers the oldest open bills first. */
+export interface SupplierPaymentInput {
+  supplierId: string;
+  amount: string;
+  date: string;
+  method: PaymentMethod;
+  reference: string;
+  note: string;
+  billIds?: string[];
 }
 
 /** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
@@ -253,19 +292,25 @@ export interface ApiClient {
   signOffJob(jobId: string, signer: string): Promise<Job>;
   /** Creates and links the invoice of a job that has none, from its materials and labor. Audited. */
   createInvoiceFromJob(jobId: string): Promise<Invoice>;
-  /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
-  createPurchaseOrder(input: {
-    supplierId: string;
-    expectedAt: string;
-    locationId: string;
-    lines: PoLine[];
-  }): Promise<PurchaseOrder>;
-  /** Receives a purchase order into its warehouse: cartons go into the ledger, broadloom arrives as rolls. Audited. */
-  receivePurchaseOrder(poId: string): Promise<PurchaseOrder>;
-  /** Enters the supplier's bill for a received purchase order. Audited. */
-  billPurchaseOrder(poId: string, billNumber: string): Promise<Bill>;
-  /** Pays a bill's open balance in full. Audited. */
-  payBill(billId: string): Promise<Bill>;
+  /** Creates a purchase order as a draft or ordered at once (spec D1). Needs purchasing.order.create. Audited. */
+  createPurchaseOrder(input: NewPurchaseOrderInput): Promise<PurchaseOrder>;
+  /** Sends a draft purchase order to the supplier. Audited. */
+  markOrdered(poId: string): Promise<PurchaseOrder>;
+  /** Cancels a purchase order nothing has arrived for, with a reason. Audited. */
+  cancelOrder(poId: string, reason: string): Promise<PurchaseOrder>;
+  /**
+   * Records a goods receipt (spec D2): good and damaged units per line, rolls with numbers and dye
+   * lots, the receiving warehouse. Writes stock movements and rolls. Needs purchasing.order.receive. Audited.
+   */
+  recordReceipt(poId: string, input: ReceiptInput): Promise<GoodsReceipt>;
+  /** Enters the supplier's bill against unbilled receipts, flags differences, attaches the file. Audited. */
+  enterBill(poId: string, input: BillInput, files: File[]): Promise<Bill>;
+  /** Pays a supplier over its open bills with mandatory proof; approval as for customer payments. Audited. */
+  recordSupplierPayment(input: SupplierPaymentInput, files: File[]): Promise<SupplierPayment>;
+  /** Confirms or rejects a supplier payment that waits; needs purchasing.payment.approve. Audited. */
+  reviewSupplierPayment(paymentId: string, decision: PaymentDecision): Promise<SupplierPayment>;
+  /** Voids a supplier payment with a reason; needs purchasing.payment.void. Audited. */
+  voidSupplierPayment(paymentId: string, reason: string): Promise<SupplierPayment>;
   /**
    * Starts a transfer between two warehouses (spec A1): boxed stock leaves the sender at once and
    * rolls are marked in transit. Needs inventory.transfer.create. Audited.
