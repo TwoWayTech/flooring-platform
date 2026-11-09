@@ -48,6 +48,9 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   commissions: [],
   meetings: ["meetings.meeting.create", "meetings.meeting.edit"],
   audit: [],
+  // Imports and saved mappings change only through the import calls (spec G1).
+  importBatches: [],
+  importMappings: [],
 };
 
 /** Permissions that allow a generic save to a collection; empty means no role may. */

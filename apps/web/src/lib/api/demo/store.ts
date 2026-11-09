@@ -39,6 +39,9 @@ import {
   type Transfer,
   type TransferInput,
   type User,
+  type ColumnMapping,
+  type ImportKind,
+  type ImportRequest,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -46,6 +49,7 @@ import type {
   AuditInput,
   CollectionName,
   CompanyAccessPatch,
+  DatabaseTestInput,
   InviteUserInput,
   ItemOf,
   NewCustomerInput,
@@ -98,6 +102,15 @@ import {
   voidPayment,
   writeOffBalance,
 } from "./invoice-actions";
+import { sampleDatabase } from "./sample-database";
+import {
+  importOverview,
+  previewImport,
+  runImport,
+  saveImportMapping,
+  undoImport,
+  type ImportScope,
+} from "./import-actions";
 import { attachPaymentFiles, readFile, recordPayment, reviewPayment, type ActionContext } from "./payment-actions";
 import { clearStored, readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
@@ -198,6 +211,42 @@ export class DemoStore implements ApiClient {
   async listCompanyDirectory(companyId: CompanyId) {
     const db = await this.db(companyId);
     return { roles: db.list("roles"), users: db.list("users"), branding: db.settings.branding };
+  }
+
+  closeCompany() {
+    this.current = null;
+    this.viewer = null;
+  }
+
+  async importOverview(companyId: CompanyId) {
+    return importOverview(await this.importScope(companyId));
+  }
+
+  async previewImport(companyId: CompanyId, request: ImportRequest) {
+    return previewImport(await this.importScope(companyId), request);
+  }
+
+  async runImport(companyId: CompanyId, request: ImportRequest) {
+    const result = runImport(await this.importScope(companyId), request);
+    this.emit();
+    return result;
+  }
+
+  async undoImport(companyId: CompanyId, batchId: string) {
+    const batch = undoImport(await this.importScope(companyId), batchId);
+    this.emit();
+    return batch;
+  }
+
+  async testDatabaseConnection(companyId: CompanyId, input: DatabaseTestInput) {
+    await this.importScope(companyId);
+    return sampleDatabase(input);
+  }
+
+  async saveImportMapping(companyId: CompanyId, kind: ImportKind, columns: ColumnMapping) {
+    const mapping = saveImportMapping(await this.importScope(companyId), kind, columns);
+    this.emit();
+    return mapping;
   }
 
   async getCompany() {
@@ -823,6 +872,33 @@ export class DemoStore implements ApiClient {
       assertCan: (anyOf) => this.assertCan(db, anyOf),
       audit: (entry) => this.appendAudit(db, { category: "payment", ...entry }),
       newId: (kind) => newId(db.companyId, kind),
+    };
+  }
+
+  /**
+   * Who imports into a company (spec G1): a user of the open company needs settings.import.manage
+   * and may import only there; with no company open the caller is the platform admin (the
+   * platform pages close it), who may import into any company.
+   */
+  private async importScope(companyId: CompanyId): Promise<ImportScope> {
+    const company = (await this.listCompanies()).find((c) => c.id === companyId);
+    if (!company) throw new DemoRuleError("This company does not exist.");
+    const db = await this.db(companyId);
+    let actor: ImportScope["actor"] = { userId: null, name: "Platform admin" };
+    if (this.viewer) {
+      if (this.current?.companyId !== companyId) throw new DemoRuleError("You can import only into your own company.");
+      await this.assertCan(db, ["settings.import.manage"]);
+      const self = db.get("users", this.viewer.userId)!;
+      actor = { userId: self.id, name: self.name };
+    }
+    return {
+      db,
+      today: this.todayIso,
+      now: nowStamp(),
+      actor,
+      modules: company.modules,
+      newId: (kind) => newId(companyId, kind),
+      audit: (entry) => this.appendAudit(db, entry),
     };
   }
 

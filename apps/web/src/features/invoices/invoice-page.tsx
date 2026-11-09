@@ -19,7 +19,7 @@ import { buildInvoiceModel, type InvoiceModel } from "./invoice-model";
 import { InvoiceStock } from "./invoice-stock";
 import { InvoiceSummary } from "./invoice-summary";
 import { InvoiceTimeline, timelineSteps } from "./invoice-timeline";
-import { saveBlob } from "./payments/file-viewer-dialog";
+import { saveBlob } from "@/lib/save-blob";
 import { PaymentsSection } from "./payments/payments-section";
 import type { ReceiptModel } from "./payments/receipt-pdf";
 import { RecordPaymentSheet } from "./payments/record-payment-sheet";

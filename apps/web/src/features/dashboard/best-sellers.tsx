@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Swatch } from "@workspace/ui/components/swatch";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 
 const WINDOWS = { "7": "7 days", "30": "30 days", "90": "90 days", "365": "12 months", custom: "Custom" } as const;
 type Window = keyof typeof WINDOWS;

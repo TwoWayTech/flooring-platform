@@ -18,6 +18,8 @@ export interface Supplier {
   creditLimit: string;
   categories: ProductCategory[];
   address: Address;
+  /** The id the supplier had in the previous system, set by an import (spec G1). */
+  externalId?: string;
 }
 
 /** One line of a purchase order. */

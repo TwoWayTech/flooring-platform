@@ -35,6 +35,13 @@ import type {
   Conflict,
   Meeting,
   MoveScope,
+  ColumnMapping,
+  ImportBatch,
+  ImportKind,
+  ImportMapping,
+  ImportPlan,
+  ImportRequest,
+  PlannedRow,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -150,6 +157,51 @@ export interface MeetingUndo {
   createdIds: string[];
 }
 
+/** The import wizard's starting point (spec G1): the kinds this company can import, saved mappings and history, newest first. */
+export interface ImportOverview {
+  kinds: ImportKind[];
+  mappings: ImportMapping[];
+  batches: ImportBatch[];
+}
+
+/** The dry run of a file: what each row would do (spec G1 steps 5 and 6). */
+export type ImportPreview = Pick<ImportPlan, "rows" | "counts">;
+
+/** An import done: the batch kept for Undo, and every row for the result report and error file. */
+export interface ImportResult {
+  batch: ImportBatch;
+  rows: PlannedRow[];
+}
+
+/** Database engines the full product can read from (spec G2). */
+export type DatabaseEngine = "sqlserver" | "mysql" | "postgres";
+
+/** What a connection test needs. The password is not part of it: it never leaves the form in the demo. */
+export interface DatabaseTestInput {
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  ssl: boolean;
+}
+
+/** One table the test found, with a few sample rows and the import kind it most likely holds. */
+export interface SampleTable {
+  key: string;
+  name: string;
+  rows: number;
+  columns: string[];
+  sample: string[][];
+  suggested: ImportKind | null;
+}
+
+/** The answer of a (simulated) connection test: the server and its tables. */
+export interface DatabaseSample {
+  server: string;
+  tables: SampleTable[];
+}
+
 /** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
 export type PaymentDecision = { action: "confirm" } | { action: "reject"; reason: string };
 
@@ -210,6 +262,27 @@ export interface ApiClient {
   updateCompanyAccess(companyId: CompanyId, patch: CompanyAccessPatch): Promise<Company>;
   /** Roles, users and branding of any company, read-only (login personas, super-admin "Company access"). */
   listCompanyDirectory(companyId: CompanyId): Promise<CompanyDirectory>;
+  /** Closes the company the store has open: the platform admin's pages act as the platform, not a company user. */
+  closeCompany(): void;
+
+  /**
+   * Data import (spec G1) for a company: from Settings by a user with settings.import.manage in the
+   * open company, or from Platform admin → Company by the platform admin. Kinds follow its modules.
+   */
+  importOverview(companyId: CompanyId): Promise<ImportOverview>;
+  /** Checks a file and returns the dry run; writes nothing. */
+  previewImport(companyId: CompanyId, request: ImportRequest): Promise<ImportPreview>;
+  /** Imports the valid rows, keeps the batch for history and Undo. Audited. */
+  runImport(companyId: CompanyId, request: ImportRequest): Promise<ImportResult>;
+  /** Undoes an import unless its records changed or are used since. Audited. */
+  undoImport(companyId: CompanyId, batchId: string): Promise<ImportBatch>;
+  /** Saves the column mapping for the next file of a kind. */
+  saveImportMapping(companyId: CompanyId, kind: ImportKind, columns: ColumnMapping): Promise<ImportMapping>;
+  /**
+   * Tests a database connection (spec G2). Simulated in the demo: it answers with a sample
+   * dataset and stores nothing. Same access as data import.
+   */
+  testDatabaseConnection(companyId: CompanyId, input: DatabaseTestInput): Promise<DatabaseSample>;
 
   /** The open company's record (modules, ceiling, limits). */
   getCompany(): Promise<Company>;

@@ -43,6 +43,8 @@ export interface Customer {
   certificate: Certificate | null;
   salesRepId: string;
   createdAt: string;
+  /** The id the customer had in the previous system, set by an import (spec G1); imports match on it. */
+  externalId?: string;
 }
 
 /** A room rectangle drawn on the quote canvas; dimensions in ft. */

@@ -8,6 +8,7 @@ import type { Location, StockMovement, Transfer } from "./locations";
 import type { Reservation, StockAdjustment } from "./stock";
 import type { Customer, Invoice, InvoiceAdjustment, Payment, Quote, Refund } from "./sales";
 import type { AuditEntry, CompanySettings } from "./settings";
+import type { ImportBatch, ImportMapping } from "../import/types";
 
 /** The fixtures for one company, as the generator writes them. */
 export interface CompanyFixtures {
@@ -44,6 +45,10 @@ export interface CompanyFixtures {
   commissions: Commission[];
   meetings: Meeting[];
   audit: AuditEntry[];
+  /** Imports run in the demo, for the history and Undo (spec G1); none are generated. */
+  importBatches: ImportBatch[];
+  /** Column mappings saved per import kind (spec G1). */
+  importMappings: ImportMapping[];
 }
 
 /** Platform-level fixtures: the companies the super-admin manages. */

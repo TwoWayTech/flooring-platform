@@ -20,7 +20,7 @@ import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { Swatch } from "@workspace/ui/components/swatch";
 import { useCan } from "@/components/workspace/workspace-context";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 import { AdjustStockDialog } from "./adjust-stock-dialog";
 import { stockLevel } from "./stock";
 import { StockBadge } from "./stock-badge";

@@ -29,10 +29,17 @@ export const FLOORING_SCREENS = [
   "/settings/commissions",
   "/sales?view=team",
   "/settings/audit",
+  "/settings/import",
+  "/settings/database",
 ];
 
 /** HR Suite screens, opened as Harbor Staffing's Owner on the HR host. */
-export const HR_SCREENS = ["/", "/hr/employees", "/hr/timesheets", "/hr/time-off", "/meetings"];
+export const HR_SCREENS = ["/", "/hr/employees", "/hr/timesheets", "/hr/time-off", "/meetings", "/settings/import"];
 
 /** Platform admin screens. */
-export const ADMIN_SCREENS = ["/admin", "/admin/companies/summit"];
+export const ADMIN_SCREENS = [
+  "/admin",
+  "/admin/companies/summit",
+  "/admin/companies/summit/import",
+  "/admin/companies/harbor/database",
+];

@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: G1 (import wizard: kinds, templates, CSV and Excel parsed in a Web Worker with Papa Parse and SheetJS, mapping, validation, preview and dry run, import with error CSV, history with Undo) and G2 (Connect a database screen with a simulated test; docs/specs/data-integration.md).
+- Next step: run the Batch G suite in chunks on a production build, tick it, then Batch H (fixtures: draft and pending quotes, a job without an invoice, adjustments; extended reconciliation; the six named e2e flows; docs: README.demo.md, demo-script, presenter guide), then redeploy and run the suite against both live sites.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -113,8 +113,8 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch F: full suite green (all specs on a production build in chunks; meeting buttons are named by their visible time and title)
 
 #### Batch G: data import and database integration
-- [ ] G1. Import wizard (Platform admin → Company → Data import; Settings → Data import with `settings.import.manage`): choose kind, download template (CSV / Excel), upload (10 MB) parsed in a Web Worker (Papa Parse, SheetJS), map columns with saved mappings, validate per row and cell, preview 50 rows and dry run, import with result report and error CSV, import history with Undo; match on external ID, SKU or email
-- [ ] G2. Connect a database: engine, host, port, database, read-only user, SSL, table-to-entity mapping with sample preview, schedule; simulated test with banner; no credentials stored in the browser; docs/specs/data-integration.md
+- [x] G1. Import wizard (Platform admin → Company → Data import; Settings → Data import with `settings.import.manage`): choose kind, download template (CSV / Excel), upload (10 MB) parsed in a Web Worker (Papa Parse, SheetJS), map columns with saved mappings, validate per row and cell, preview 50 rows and dry run, import with result report and error CSV, import history with Undo; match on external ID, SKU or email
+- [x] G2. Connect a database: engine, host, port, database, read-only user, SSL, table-to-entity mapping with sample preview, schedule; simulated test with banner; no credentials stored in the browser; docs/specs/data-integration.md
 - [ ] Batch G: full suite green
 
 #### Batch H: data, tests, docs, deploy

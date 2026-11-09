@@ -15,7 +15,7 @@ import {
 import { Num } from "@workspace/ui/components/num";
 import { Popover, PopoverContent, PopoverTrigger } from "@workspace/ui/components/popover";
 import { Swatch } from "@workspace/ui/components/swatch";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 
 /** A searchable list of products or services that adds the chosen one to the quote. */
 export function ProductPicker({

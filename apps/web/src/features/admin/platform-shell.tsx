@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import { LogOut, ShieldCheck } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { api } from "@/lib/api";
 import { useSessionActions } from "@/lib/session/use-session-actions";
 
 /** The platform admin's frame: no company branding, just the platform and its companies. */
 export function PlatformShell({ children }: { children: ReactNode }) {
   const { signOut } = useSessionActions();
+  // Before any page below reads data, the platform admin acts as the platform rather than as a
+  // company user left open by an earlier sign-in in this tab (spec G1). Layout effects run first.
+  useLayoutEffect(() => api.closeCompany(), []);
   return (
     <div className="min-h-dvh">
       <header className="border-hairline flex h-14 items-center gap-3 border-b px-4 lg:px-8">

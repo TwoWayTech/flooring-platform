@@ -32,6 +32,13 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `listCompanies()` | `GET /platform/companies` | Status, plan, products, modules, ceiling, limits. |
 | `updateCompanyAccess(id, patch)` | `PATCH /platform/companies/:id/access` | Modules, ceiling, user and branch limits. Takes effect at once and is written to the company's audit log as "Platform admin". |
 | `listCompanyDirectory(id)` | `GET /platform/companies/:id/directory` | Roles, users and branding, read-only. Used by the login page and the company access page. |
+| `closeCompany()` | none (session) | The platform pages close the company the store had open, so the platform admin acts as the platform. |
+| `importOverview(id)` | `GET /companies/:id/imports` | Import kinds the company's modules allow, saved column mappings and the import history. Company users need `settings.import.manage` in their own company; the platform admin may use any company. |
+| `previewImport(id, request)` | `POST /companies/:id/imports/preview` | The dry run of a parsed file and its mapping: each row's result (create, update, skip, error with problems per cell). Writes nothing. |
+| `runImport(id, request)` | `POST /companies/:id/imports` | Plans again on the server, writes the valid rows, keeps the batch (IMP-1001) with the replaced versions, audits it. Refused when nothing would be written or the file has more than 2,000 rows (demo). |
+| `undoImport(id, batchId)` | `POST /companies/:id/imports/:batchId/undo` | Removes created records and restores replaced ones; refused when any changed since or a new record is used elsewhere. Audited. |
+| `saveImportMapping(id, kind, columns)` | `PUT /companies/:id/import-mappings/:kind` | Remembers which header feeds each field for the next file. |
+| `testDatabaseConnection(id, input)` | `POST /companies/:id/database/test` | Real build: a server-side worker connects with the encrypted credentials (docs/specs/data-integration.md). Demo: checks the fields and answers with a sample database; the password is never sent and nothing is stored. |
 
 ## Company and settings
 

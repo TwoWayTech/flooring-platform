@@ -78,6 +78,8 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     commissions: buildCommissions(ctx, users, sales.invoices),
     meetings: buildMeetings(ctx, users, customers, suppliers),
     audit: buildAudit(ctx, users),
+    importBatches: [],
+    importMappings: [],
   };
 }
 

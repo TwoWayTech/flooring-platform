@@ -17,6 +17,8 @@ export interface Employee {
   status: "active" | "on_leave" | "terminated";
   ptoBalanceHours: string;
   managerId: string | null;
+  /** The id the employee had in the previous system, set by an import (spec G1). */
+  externalId?: string;
 }
 
 /** One week of hours for one employee, Monday first. */

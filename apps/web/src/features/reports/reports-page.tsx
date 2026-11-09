@@ -32,8 +32,8 @@ import { api } from "@/lib/api";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useApiQuery } from "@/lib/api/use-api";
 import { loadSalesLedger } from "@/lib/sales-ledger";
-import { saveBlob } from "@/features/invoices/payments/file-viewer-dialog";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { saveBlob } from "@/lib/save-blob";
+import { CATEGORY_LABELS } from "@workspace/shared";
 import {
   agingReport,
   payablesAgingReport,

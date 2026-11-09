@@ -6,7 +6,7 @@ import {
   type PaymentTerms,
   type WasteCategory,
 } from "@workspace/shared";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
 import { Textarea } from "@workspace/ui/components/textarea";

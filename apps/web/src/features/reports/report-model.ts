@@ -27,7 +27,7 @@ import {
   type Roll,
   type TaxCategory,
 } from "@workspace/shared";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 
 /** A report column; numeric columns carry the number kind used to format them. */
 export interface ReportColumn {

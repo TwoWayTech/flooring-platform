@@ -15,7 +15,7 @@ import { Swatch } from "@workspace/ui/components/swatch";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { CATEGORY_LABELS } from "@workspace/shared";
 import { ProductDrawer } from "./product-drawer";
 import { stockLevel, type StockLevel } from "./stock";
 import { StockBadge } from "./stock-badge";

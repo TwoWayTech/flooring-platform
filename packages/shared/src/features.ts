@@ -229,6 +229,22 @@ export const FEATURES = {
     enabled: true,
     screens: ["/settings/company"],
   },
+  "settings.import": {
+    title: "Data import wizard",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/import", "/admin/companies/*/import"],
+  },
+  "settings.database": {
+    title: "Connect a database (simulated test)",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/database", "/admin/companies/*/database"],
+  },
   "settings.audit": {
     title: "Audit log",
     product: "both",

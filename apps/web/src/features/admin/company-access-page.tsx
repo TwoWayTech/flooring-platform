@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import { toast } from "sonner";
 import {
   MODULES,
@@ -26,6 +25,7 @@ import { PermissionMatrix } from "@/features/settings/roles/permission-matrix";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { AccessPreview } from "@/components/access-preview";
+import { BackToCompanies, CompanyAdminNav } from "./company-admin-nav";
 
 interface Draft {
   modules: ModuleKey[];
@@ -68,6 +68,7 @@ function AccessEditor({ company, roles, users }: { company: Company; roles: Role
           </Button>
         }
       />
+      <CompanyAdminNav companyId={company.id} />
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <Panel title="Modules and limits" bodyClassName="flex flex-col gap-4">
           <ul className="divide-hairline divide-y">
@@ -184,13 +185,7 @@ export function CompanyAccessPage({ companyId }: { companyId: CompanyId }) {
   if (!company) return <p className="text-muted-foreground">This company does not exist.</p>;
   return (
     <>
-      <Link
-        href="/admin"
-        className="text-muted-foreground hover:text-foreground -mb-3 inline-flex items-center gap-1 text-sm"
-      >
-        <ArrowLeft aria-hidden="true" className="size-4" />
-        Companies
-      </Link>
+      <BackToCompanies />
       <AccessEditor key={JSON.stringify(company)} company={company} roles={roles} users={users} />
     </>
   );

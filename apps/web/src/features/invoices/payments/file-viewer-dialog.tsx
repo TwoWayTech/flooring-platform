@@ -14,16 +14,7 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { api } from "@/lib/api";
-
-/** Saves a blob under a file name through a temporary link. */
-export function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+import { saveBlob } from "@/lib/save-blob";
 
 /**
  * Shows an attached file (spec Appendix A "attachment link opens a viewer; download allowed"):

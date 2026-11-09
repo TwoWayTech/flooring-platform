@@ -1,6 +1,6 @@
-import type { ProductCategory } from "@workspace/shared";
+import type { ProductCategory } from "./types";
 
-/** Plain-language names for catalog categories (spec section 4). */
+/** Plain-language names for catalog categories (spec section 4), shared by screens and the importer. */
 export const CATEGORY_LABELS: Record<ProductCategory, string> = {
   carpet: "Carpet",
   carpet_tile: "Carpet tile",
