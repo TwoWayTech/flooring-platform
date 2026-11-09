@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: run the Batch E suite (production build, chunks, 2 workers), tick it, then F (meetings calendar: day, week, month and agenda views; drag to move and resize; recurring this / following / all; conflicts; Undo; keyboard and form alternative).
+- Next step: F (meetings calendar: day, week, month and agenda views; drag to move and drag the edge to resize; click an empty slot to create; recurring asks this / this and following / all; attendee conflicts; Undo toast; keyboard and form alternative).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -106,7 +106,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 #### Batch E: dashboard and sales team
 - [x] E1. Dashboard redesign: auto-fit key-figure cards (label, compact value, change vs previous period, sparkline), one period selector and warehouse filter, widgets (revenue and margin with chart / table toggle, pending quotes, receivables, payments to verify, best sellers with own period, metric, category and chart / table toggle, slow movers, today's jobs, top performer)
 - [x] E2. Sales performance and commissions: Settings → Commissions rules (paid revenue or gross margin, tiers), Sales → Team per salesperson, Top performer / Employee of the year widget and leaderboard, commission permissions, commission totals in the payroll export
-- [ ] Batch E: full suite green
+- [x] Batch E: full suite green (all specs on a production build in chunks)
 
 #### Batch F: meetings calendar
 - [ ] F. Day, week, month and agenda views; drag to move, drag the edge to resize, click an empty slot to create; recurring edit scope (this, this and following, all); attendee conflict warning; Undo toast; keyboard and form alternative; reminders and time zones follow the move

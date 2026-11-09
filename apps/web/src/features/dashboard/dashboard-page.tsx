@@ -139,10 +139,10 @@ function FigureRow({
         />
       ) : null}
       <FigureCard
-        label="Overdue receivables"
+        label="Overdue"
         value={receivables.overdue}
         kind="money"
-        note={`of ${formatNumber(receivables.total, "money", numbers, { compact: true })} open`}
+        note={`of ${formatNumber(receivables.total, "money", numbers, { compact: true })} owed by customers`}
       />
     </dl>
   );

@@ -73,7 +73,7 @@ export function BestSellers({
           aria-label={asTable ? "Show best sellers as a chart" : "Show best sellers as a table"}
         >
           {asTable ? <BarChart3 /> : <Table2 />}
-          {asTable ? "Show chart" : "Show table"}
+          {asTable ? "Chart" : "Table"}
         </Button>
       }
       bodyClassName="flex flex-col gap-3"
