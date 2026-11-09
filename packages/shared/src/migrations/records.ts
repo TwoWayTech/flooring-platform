@@ -1,21 +1,11 @@
 import { dec, sum } from "../money";
 import type { Location, StockMovement } from "../types";
 import { stateName } from "../us-pack/states";
+import { mapRecords, type Row } from "./map-records";
 import type { RecordStep, StoredOverlay, StoredRecords, UpgradeContext } from "./overlay";
 
 /** Branch ids renamed when warehouses were added (plan K-4). */
 const RENAMED_BRANCHES: Readonly<Record<string, string>> = { "sm-br-lakewood": "sm-br-springs" };
-
-type Row = Record<string, unknown>;
-
-/** Applies a change to every saved (non-deleted) record of one collection. */
-function mapRecords(records: StoredOverlay["records"], name: string, change: (row: Row) => Row) {
-  const saved = records[name];
-  if (!saved) return records;
-  const next: StoredRecords = {};
-  for (const [id, row] of Object.entries(saved)) next[id] = row === null ? null : change(row as Row);
-  return { ...records, [name]: next };
-}
 
 const branchOf = (row: Row) => {
   const branchId = String(row.branchId ?? "");

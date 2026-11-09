@@ -18,6 +18,7 @@ export * from "./us-pack/tax-defaults";
 export * from "./us-pack/overtime";
 export * from "./operations/rolls";
 export * from "./operations/quotes";
+export * from "./operations/quote-status";
 export * from "./operations/purchasing";
 export * from "./operations/meetings";
 export * from "./operations/transfers";

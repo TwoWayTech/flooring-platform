@@ -112,6 +112,8 @@ function buildQuote(ctx: GenContext, inputs: SalesInputs, createdAt: string): Qu
     branchId: rep.branchId,
     status: "draft",
     createdAt,
+    sentAt: null,
+    expiresAt: null,
     locationId: branchWarehouse(ctx.company.id, rep.branchId),
     jobSite,
     rooms,
@@ -127,11 +129,21 @@ function buildQuote(ctx: GenContext, inputs: SalesInputs, createdAt: string): Qu
   };
 }
 
-/** Status of a quote that was not invoiced: recent quotes are still open, old ones declined. */
+/**
+ * Status of a quote that was not invoiced (spec B1): recent quotes are drafts, pending or accepted;
+ * old ones mostly declined, the rest still pending and so expired.
+ */
 function openQuoteStatus(ctx: GenContext, createdAt: string): QuoteStatus {
   const age = daysBetween(createdAt, ctx.anchor);
-  if (age <= 14) return ctx.rng.pick(["draft", "sent", "sent", "accepted"]);
-  return ctx.rng.chance(0.7) ? "declined" : "sent";
+  if (age <= 14) return ctx.rng.pick(["draft", "pending", "pending", "accepted"]);
+  return ctx.rng.chance(0.7) ? "declined" : "pending";
+}
+
+/** A quote that left draft was sent the day it was made and is valid for the company's expiry days. */
+function markSent(quote: Quote, expiryDays: number) {
+  if (quote.status === "draft") return;
+  quote.sentAt = quote.createdAt;
+  quote.expiresAt = addDays(quote.createdAt, expiryDays);
 }
 
 function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoice {
@@ -256,13 +268,15 @@ export function buildSales(ctx: GenContext, inputs: SalesInputs): SalesFixtures 
   for (const quote of quotes) {
     if (!converted.has(quote.id)) {
       quote.status = openQuoteStatus(ctx, quote.createdAt);
+      markSent(quote, inputs.settings.localization.documents.quoteExpiryDays);
       continue;
     }
     const invoice = buildInvoice(ctx, inputs, quote);
     const paid = paymentsFor(ctx, invoice, quote, settlementFor(ctx, invoice));
     invoice.paid = moneyString(paid.reduce((s, p) => s.plus(p.amount), dec(0)));
     invoice.status = invoice.paid === invoice.total ? "paid" : dec(invoice.paid).gt(0) ? "partial" : "open";
-    quote.status = "invoiced";
+    quote.status = "converted";
+    markSent(quote, inputs.settings.localization.documents.quoteExpiryDays);
     quote.invoiceId = invoice.id;
     invoices.push(invoice);
     payments.push(...paid);

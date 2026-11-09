@@ -143,6 +143,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         poPrefix: "PO-",
         legalFooter: `${seed.legalName}. Licensed and insured in ${seed.statesOfOperation.join(", ")}.`,
         defaultDepositPct: retail ? "50" : "0",
+        quoteExpiryDays: 30,
       },
     },
     numbers: defaultNumberSettings(),

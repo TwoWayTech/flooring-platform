@@ -2,15 +2,19 @@
 
 import { useState } from "react";
 import { BarChart3, Table2 } from "lucide-react";
-import { SENSITIVE } from "@workspace/shared";
+import { filteredHref, formatNumber, SENSITIVE } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
+import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { Panel } from "@workspace/ui/components/panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@workspace/ui/components/table";
 import { useCan } from "@/components/workspace/workspace-context";
 import { KeyFigure } from "./key-figure";
 import { monthLabel, RevenueChart } from "./revenue-chart";
 import type { DashboardData } from "./use-dashboard-data";
+
+/** The quotes list filtered to Pending, behind the Pending quotes figure (spec B1). */
+const PENDING_QUOTES_HREF = filteredHref("/sales?view=quotes", "sales-quotes", "status", ["Pending"]);
 
 function Legend({ showMargin }: { showMargin: boolean }) {
   const items = [
@@ -74,7 +78,22 @@ export function RevenuePanel({ data, ownScope }: { data: DashboardData; ownScope
   const can = useCan();
   const showMargin = can(SENSITIVE.margin);
   const [asTable, setAsTable] = useState(false);
-  const { totals } = data;
+  const { totals, pending } = data;
+  const numbers = useNumberSettings();
+  const formatCount = (n: number) => formatNumber(String(n), "count", numbers);
+  const pendingFigure = (
+    <KeyFigure
+      label="Pending quotes"
+      value={pending.total}
+      kind="money"
+      href={PENDING_QUOTES_HREF}
+      note={
+        pending.count === 0
+          ? "None waiting"
+          : `${formatCount(pending.count)} waiting, oldest ${formatCount(pending.oldestDays ?? 0)} days`
+      }
+    />
+  );
   return (
     <Panel
       title={
@@ -94,13 +113,9 @@ export function RevenuePanel({ data, ownScope }: { data: DashboardData; ownScope
     >
       <dl className="divide-hairline grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:divide-x [&>div]:sm:px-4 [&>div:first-child]:sm:pl-0">
         <KeyFigure label="Revenue" value={totals.revenue} kind="money" />
-        {showMargin ? (
-          <KeyFigure label="Gross margin" value={totals.marginPct} kind="percent" />
-        ) : (
-          <KeyFigure label="Open quotes" value={totals.openQuotes} kind="money" />
-        )}
+        {showMargin ? <KeyFigure label="Gross margin" value={totals.marginPct} kind="percent" /> : pendingFigure}
         <KeyFigure label="Receivables" value={totals.receivables} kind="money" />
-        {showMargin ? <KeyFigure label="Open quotes" value={totals.openQuotes} kind="money" /> : null}
+        {showMargin ? pendingFigure : null}
       </dl>
       {asTable ? (
         <MonthsTable data={data} showMargin={showMargin} />

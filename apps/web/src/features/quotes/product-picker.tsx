@@ -19,10 +19,13 @@ import { CATEGORY_LABELS } from "@/lib/labels";
 
 /** A searchable list of products or services that adds the chosen one to the quote. */
 export function ProductPicker({
+  id,
   label,
   products,
   onPick,
 }: {
+  /** Lets a validation error focus the picker. */
+  id?: string;
   label: string;
   products: Product[];
   onPick: (product: Product) => void;
@@ -32,7 +35,7 @@ export function ProductPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button id={id} variant="outline" size="sm">
           <Plus />
           {label}
         </Button>

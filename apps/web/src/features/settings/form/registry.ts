@@ -111,6 +111,11 @@ export const SETTINGS = {
     helper: "The share of the total asked for when a quote is accepted.",
     href: DOCUMENTS,
   },
+  "documents.quoteExpiryDays": {
+    label: "Quotes valid for",
+    helper: "Days a sent quote stays valid by default; after that it reads Expired.",
+    href: DOCUMENTS,
+  },
   "documents.quotePrefix": {
     label: "Quote number prefix",
     helper: "New quotes are numbered after it.",

@@ -62,6 +62,28 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
       </SettingRow>
       {pct("lateFeePct")}
       {pct("defaultDepositPct")}
+      <SettingRow setting="documents.quoteExpiryDays" changed={changed("quoteExpiryDays")}>
+        {(id) => (
+          <span className="flex items-center gap-1.5">
+            <Input
+              id={id}
+              type="number"
+              min={1}
+              max={365}
+              aria-describedby={`${id}-hint`}
+              value={draft.quoteExpiryDays}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  quoteExpiryDays: Math.min(365, Math.max(1, Math.round(Number(e.target.value) || 1))),
+                })
+              }
+              className="w-24 text-right tabular-nums"
+            />
+            <span className="text-muted-foreground text-sm">days</span>
+          </span>
+        )}
+      </SettingRow>
       {text("quotePrefix")}
       {text("invoicePrefix")}
       {text("poPrefix")}
@@ -95,7 +117,7 @@ export function DocumentsPage() {
       <SettingsForm
         showTitle={false}
         title="Documents"
-        description="Payment terms, deposit, late fee and numbering for quotes, invoices and purchase orders."
+        description="Payment terms, deposit, late fee, how long quotes stay valid, and numbering for quotes, invoices and purchase orders."
         initial={settings.localization.documents}
         defaults={defaults.data.localization.documents}
         onSave={(documents) =>

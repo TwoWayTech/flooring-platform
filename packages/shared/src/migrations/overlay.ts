@@ -3,12 +3,13 @@ import type { Company, CompanyFixtures } from "../types";
 import { upgradeCeiling, upgradeRole } from "./permissions";
 import { mergeDefaults } from "./merge";
 import { V2_RECORD_STEPS } from "./records";
+import { V3_RECORD_STEPS } from "./records-v3";
 
 /**
  * The version of the saved demo data the code expects (docs/specs/feature-batch-02-plan.md,
- * section 2.3). Version 1 data had no version field.
+ * section 2.3). Version 1 data had no version field; version 2 is Batch A, version 3 Batch B.
  */
-export const OVERLAY_SCHEMA_VERSION = 2;
+export const OVERLAY_SCHEMA_VERSION = 3;
 
 /** Saved records of one collection, by id; null marks a deleted fixture record. */
 export type StoredRecords = Record<string, unknown>;
@@ -44,18 +45,26 @@ function upgradeRoles(records: StoredOverlay["records"], ctx: UpgradeContext): S
   return { ...records, roles: upgraded };
 }
 
+/** The record steps that lead to each schema version, run in order from the saved version up. */
+const STEPS_TO: Readonly<Record<number, readonly RecordStep[]>> = {
+  2: [upgradeRoles, ...V2_RECORD_STEPS],
+  3: V3_RECORD_STEPS,
+};
+
 /**
- * Brings a company's saved changes up to the current schema. Version 1 changes are upgraded
- * step by step; anything unexpected throws OverlayUpgradeError, so a half-upgraded overlay is
- * never used.
+ * Brings a company's saved changes up to the current schema, one version at a time, and fills
+ * settings with fields added since. Anything unexpected throws OverlayUpgradeError, so a
+ * half-upgraded overlay is never used.
  */
 export function upgradeOverlay(stored: StoredOverlay, ctx: UpgradeContext): StoredOverlay {
   if (stored.schemaVersion === OVERLAY_SCHEMA_VERSION) return stored;
-  if (stored.schemaVersion !== undefined && stored.schemaVersion !== 1) {
+  const from = stored.schemaVersion ?? 1;
+  if (!Number.isInteger(from) || from < 1 || from > OVERLAY_SCHEMA_VERSION) {
     throw new OverlayUpgradeError(`Unknown saved data version ${String(stored.schemaVersion)}.`);
   }
   try {
-    const steps: RecordStep[] = [upgradeRoles, ...V2_RECORD_STEPS];
+    const steps: RecordStep[] = [];
+    for (let version = from + 1; version <= OVERLAY_SCHEMA_VERSION; version++) steps.push(...(STEPS_TO[version] ?? []));
     const records = steps.reduce((acc, step) => step(acc, ctx), stored.records ?? {});
     const settings = stored.settings ? mergeDefaults(ctx.base.settings, stored.settings) : null;
     return { schemaVersion: OVERLAY_SCHEMA_VERSION, shift: stored.shift, settings, records };

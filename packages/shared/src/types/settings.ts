@@ -67,6 +67,8 @@ export interface LocalizationSettings {
     poPrefix: string;
     legalFooter: string;
     defaultDepositPct: string;
+    /** Days a sent quote stays valid by default (spec B1). */
+    quoteExpiryDays: number;
   };
 }
 

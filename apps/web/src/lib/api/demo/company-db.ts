@@ -49,14 +49,19 @@ export class CompanyDb {
     this.upgradeNotice = notice;
   }
 
-  /** Reads the stored overlay (upgrading version 1 data), moving its dates to today. */
+  /**
+   * Reads the stored overlay, moving its dates to today. Data saved by an older version (under
+   * the version 1 key, or an older schema under the current key) is upgraded first.
+   */
   private loadOverlay(shift: DateShift): { overlay: CompanyOverlay; notice: string | null } {
     const id = this.base.companyId;
-    const current = readStored<CompanyOverlay>(id);
-    if (current) return { overlay: CompanyDb.moved(current, shift), notice: null };
-    const legacy = readLegacy<StoredOverlay>(id);
+    const current = readStored<StoredOverlay>(id);
+    if (current?.schemaVersion === OVERLAY_SCHEMA_VERSION) {
+      return { overlay: CompanyDb.moved(current as unknown as CompanyOverlay, shift), notice: null };
+    }
+    const legacy = current ?? readLegacy<StoredOverlay>(id);
     if (!legacy) return { overlay: emptyOverlay(shift), notice: null };
-    removeLegacy(id);
+    if (!current) removeLegacy(id);
     try {
       const upgraded = upgradeOverlay(legacy, { base: this.base }) as unknown as CompanyOverlay;
       writeStored(id, upgraded);

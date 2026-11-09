@@ -24,6 +24,13 @@ import {
   shiftDates,
   upgradeCompany,
   validateCut,
+  QUOTE_ACTION_STATUS,
+  quoteActions,
+  quoteDraftProblem,
+  quoteIsOpen,
+  quoteSendProblems,
+  quoteState,
+  quoteStateLabel,
   type AuditEntry,
   type Company,
   type CompanyId,
@@ -49,6 +56,7 @@ import type {
   ItemOf,
   NewCustomerInput,
   ProfilePatch,
+  QuoteStatusChange,
   UserPatch,
   Viewer,
 } from "../contract";
@@ -399,11 +407,23 @@ export class DemoStore implements ApiClient {
     return saved;
   }
 
-  async saveQuote(quote: Quote) {
+  async saveQuote(input: Quote) {
     const db = this.open();
-    const isNew = !quote.number;
+    const isNew = !input.number;
     await this.assertCan(db, [isNew ? "sales.quote.create" : "sales.quote.edit"]);
-    const before = quote.id ? db.get("quotes", quote.id) : undefined;
+    const before = input.id ? db.get("quotes", input.id) : undefined;
+    if (before && !quoteIsOpen(before))
+      throw new DemoRuleError(`Quote ${before.number} is closed and can't be changed.`);
+    const draftProblem = quoteDraftProblem(input);
+    if (draftProblem) throw new DemoRuleError(draftProblem);
+    // Status, sending and conversion change only through their own calls (spec B1).
+    const quote: Quote = {
+      ...input,
+      status: before?.status ?? "draft",
+      sentAt: before?.sentAt ?? null,
+      expiresAt: before?.expiresAt ?? null,
+      invoiceId: before?.invoiceId ?? null,
+    };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
     if (taxChanged) await this.assertCan(db, ["sales.tax.override"]);
     const prefix = db.settings.localization.documents.quotePrefix;
@@ -439,13 +459,46 @@ export class DemoStore implements ApiClient {
     return saved;
   }
 
+  async updateQuoteStatus(quoteId: string, change: QuoteStatusChange) {
+    const db = this.open();
+    await this.assertCan(db, ["sales.quote.edit"]);
+    const quote = db.get("quotes", quoteId);
+    if (!quote) throw new DemoRuleError("This quote no longer exists.");
+    if (!quoteActions(quote, this.todayIso).includes(change.action)) {
+      throw new DemoRuleError(`Quote ${quote.number} can't be changed that way in its current state.`);
+    }
+    const expiresAt = change.action === "send" ? (change.expiresAt ?? null) : quote.expiresAt;
+    if (change.action === "send") {
+      const problem = Object.values(quoteSendProblems(quote, expiresAt, this.todayIso))[0];
+      if (problem) throw new DemoRuleError(problem);
+    }
+    const saved: Quote = {
+      ...quote,
+      status: QUOTE_ACTION_STATUS[change.action],
+      sentAt: quote.sentAt ?? (change.action === "send" ? this.todayIso : null),
+      expiresAt,
+    };
+    db.put("quotes", saved);
+    this.appendAudit(db, {
+      category: "data",
+      action: `Marked quote ${quoteStateLabel(quoteState(saved, this.todayIso)).toLowerCase()}`,
+      target: quote.number,
+      before: quoteStateLabel(quoteState(quote, this.todayIso)),
+      after: expiresAt && change.action === "send" ? `expires ${expiresAt}` : quoteStateLabel(saved.status),
+    });
+    this.emit();
+    return saved;
+  }
+
   async convertQuoteToInvoice(quoteId: string) {
     const db = this.open();
     await this.assertCan(db, ["sales.invoice.create"]);
     const quote = db.get("quotes", quoteId);
     if (!quote) throw new DemoRuleError("This quote no longer exists.");
     if (quote.invoiceId) throw new DemoRuleError(`This quote is already invoiced.`);
-    if (quote.lines.length === 0) throw new DemoRuleError("Add at least one line before converting to an invoice.");
+    if (!quoteIsOpen(quote)) throw new DemoRuleError(`Quote ${quote.number} was declined; it can't be invoiced.`);
+    const problem = Object.values(quoteSendProblems(quote, null, this.todayIso))[0];
+    if (problem) throw new DemoRuleError(problem);
     const customer = db.get("customers", quote.customerId)!;
     const prefix = db.settings.localization.documents.invoicePrefix;
     const invoice = invoiceFromQuote(quote, customer, db.settings.localization, {
@@ -458,12 +511,18 @@ export class DemoStore implements ApiClient {
       issuedAt: this.todayIso,
     });
     db.put("invoices", invoice);
-    db.put("quotes", { ...quote, status: "invoiced", invoiceId: invoice.id, total: invoice.total });
+    db.put("quotes", {
+      ...quote,
+      status: "converted",
+      sentAt: quote.sentAt ?? this.todayIso,
+      invoiceId: invoice.id,
+      total: invoice.total,
+    });
     this.appendAudit(db, {
       category: "data",
       action: "Converted quote to invoice",
       target: quote.number,
-      before: quote.status,
+      before: quoteStateLabel(quoteState(quote, this.todayIso)),
       after: invoice.number,
     });
     this.emit();

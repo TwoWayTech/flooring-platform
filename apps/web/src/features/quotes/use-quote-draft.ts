@@ -32,7 +32,9 @@ export type DraftAction =
   | { type: "updateLine"; line: DocLine }
   | { type: "removeLine"; lineId: string }
   | { type: "deposit"; depositPct: string }
-  | { type: "notes"; notes: string };
+  | { type: "notes"; notes: string }
+  /** The quote as the store saved it, e.g. after a status change. */
+  | { type: "saved"; quote: Quote };
 
 /** Whether a product is measured from the rooms: goods sold by area, and labor sold per sq ft. */
 function measuredFromRooms(product: Product): boolean {
@@ -97,6 +99,8 @@ function reducer(products: readonly Product[]) {
         return { ...draft, depositPct: action.depositPct };
       case "notes":
         return { ...draft, notes: action.notes };
+      case "saved":
+        return action.quote;
     }
   };
 }

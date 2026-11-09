@@ -9,11 +9,13 @@ import {
   moneyString,
   monthlyPnl,
   openInvoices,
+  pendingQuotes,
   slowMovers,
   sum,
   type Crew,
   type Customer,
   type Job,
+  type PendingQuotesSummary,
   type PnlMonth,
   type Product,
   type ProductSales,
@@ -37,7 +39,9 @@ export interface TimelineJob {
 /** Everything the dashboard shows, computed from documents, never typed by hand (spec section 4). */
 export interface DashboardData {
   months: PnlMonth[];
-  totals: { revenue: string; grossMargin: string; marginPct: string; receivables: string; openQuotes: string };
+  totals: { revenue: string; grossMargin: string; marginPct: string; receivables: string };
+  /** Quotes waiting for the customer (spec B1). */
+  pending: PendingQuotesSummary;
   best: (ProductSales & { product: Product })[];
   slow: (SlowMover & { product: Product })[];
   jobsToday: TimelineJob[];
@@ -72,7 +76,6 @@ export function useDashboardData() {
       const months = monthlyPnl(last12Months(today), invoices, expenses);
       const revenue = sum(months.map((m) => m.revenue));
       const cogs = sum(months.map((m) => m.cogs));
-      const open = quotes.filter((q) => q.status === "sent" || q.status === "accepted");
       return {
         months,
         totals: {
@@ -80,8 +83,8 @@ export function useDashboardData() {
           grossMargin: moneyString(revenue.minus(cogs)),
           marginPct: marginPct(revenue, cogs).toString(),
           receivables: moneyString(sum(openInvoices(invoices).map(balance))),
-          openQuotes: moneyString(sum(open.map((q) => q.total))),
         },
+        pending: pendingQuotes(quotes, today),
         best: withProduct(bestSellers(invoices, addDays(today, -BEST_SELLER_DAYS), LIST_LENGTH), products),
         slow: withProduct(
           slowMovers(products, rolls, invoices, today, LIST_LENGTH, boxedStock(stockMovements)),

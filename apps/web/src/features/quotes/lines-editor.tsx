@@ -26,6 +26,8 @@ interface LinesEditorProps {
   onAdd: (product: Product) => void;
   onChange: (line: DocLine) => void;
   onRemove: (lineId: string) => void;
+  /** Full validation's message when the quote has no lines (spec B1). */
+  error?: string;
 }
 
 /** Which rooms a line is measured from, in words. */
@@ -42,7 +44,17 @@ function roomsNote(line: DocLine, rooms: readonly Room[]): string | null {
  * Quote lines (spec "Quote builder"): materials in sq yd or cartons with a waste %, labor and
  * services. Lines measured from rooms update when a room changes; others take a typed quantity.
  */
-export function LinesEditor({ lines, rooms, products, totals, editable, onAdd, onChange, onRemove }: LinesEditorProps) {
+export function LinesEditor({
+  lines,
+  rooms,
+  products,
+  totals,
+  editable,
+  onAdd,
+  onChange,
+  onRemove,
+  error,
+}: LinesEditorProps) {
   const goods = products.filter((p) => p.category !== "service");
   const services = products.filter((p) => p.category === "service");
   return (
@@ -151,9 +163,14 @@ export function LinesEditor({ lines, rooms, products, totals, editable, onAdd, o
       </ScrollRegion>
       {editable ? (
         <div className="flex flex-wrap gap-2">
-          <ProductPicker label="Add product" products={goods} onPick={onAdd} />
+          <ProductPicker id="quote-add-product" label="Add product" products={goods} onPick={onAdd} />
           <ProductPicker label="Add labor or service" products={services} onPick={onAdd} />
         </div>
+      ) : null}
+      {error ? (
+        <p id="quote-add-product-error" className="text-danger-ink text-xs">
+          {error}
+        </p>
       ) : null}
     </div>
   );

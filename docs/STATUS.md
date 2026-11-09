@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: B1 (quote statuses Draft / Pending / Accepted / Converted / Declined, Expired derived). Then B2: merge or cherry-pick branch `wip/batch-b-payments` (ledger, proof-file checks, payment rules, IndexedDB file store, unit tests), which needs the B2 types (Payment, InvoiceAdjustment, Refund, PaymentSettings) before it typechecks. Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
+- Next step: B2: merge or cherry-pick branch `wip/batch-b-payments` (ledger, proof-file checks, payment rules, IndexedDB file store, unit tests), which needs the B2 types (Payment, InvoiceAdjustment, Refund, PaymentSettings) before it typechecks. Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -83,7 +83,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch A: full suite green (222 of 222 on a production build, in four chunks; number-format waits for the search to reach the address before hovering)
 
 #### Batch B: the sales flow
-- [ ] B1. Quotes Draft and Pending: Draft → Pending → Accepted → Converted / Declined / Expired, Save as draft anywhere, Send runs full validation, list columns (value, salesperson, warehouse, expiry, age) and status filter
+- [x] B1. Quotes Draft and Pending: Draft → Pending → Accepted → Converted / Declined / Expired, Save as draft anywhere, Send runs full validation, list columns (value, salesperson, warehouse, expiry, age) and status filter
 - [ ] B2. Invoice lifecycle and payments (Appendix A in full): ledger-derived status and balance; Record payment with mandatory proof (IndexedDB file store behind an interface), duplicate-reference warning, overpayment to credit; approval (two-person check, threshold); Payments section, PDF with payments and PAID mark, receipt PDF; void, refund, write-off, apply credit, void invoice, lines locked after a confirmed payment; Update status menu with valid next actions only; Deposit paid label; lifecycle timeline; invoice header (warehouse, job site, job, money summary); everything that must update (lists, customers, statement, dashboard, notifications, Payments received report, quote View invoice, audit, command palette, presenter step); permissions in UI and save logic
 - [ ] B3. Waste internal only: `sales.waste.view` (Sales off), default waste % per category in settings, customer-facing documents show the billed quantity with waste included and no waste line
 - [ ] B4. Invoices table: Paid, Remaining, Last payment, Warehouse columns, filterable, totals row

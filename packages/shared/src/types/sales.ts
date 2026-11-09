@@ -55,8 +55,11 @@ export interface Room {
   lengthFt: number;
 }
 
-/** Quote lifecycle. */
-export type QuoteStatus = "draft" | "sent" | "accepted" | "invoiced" | "declined";
+/**
+ * Quote lifecycle (spec B1): Draft (saved, not sent) → Pending (sent, waiting for the customer) →
+ * Accepted → Converted, or Declined. Expired is derived from `expiresAt` (operations/quote-status).
+ */
+export type QuoteStatus = "draft" | "pending" | "accepted" | "converted" | "declined";
 
 /** A quote. Totals are recomputed from lines; the stored ones are a snapshot for lists. */
 export interface Quote {
@@ -67,6 +70,10 @@ export interface Quote {
   branchId: string;
   status: QuoteStatus;
   createdAt: string;
+  /** When the quote was first sent (marked pending); null while a draft. */
+  sentAt: string | null;
+  /** Optional expiry date; a pending quote past it reads Expired. */
+  expiresAt: string | null;
   /** Fulfilled from: the warehouse the goods ship from (spec A1). */
   locationId: string;
   jobSite: Address;

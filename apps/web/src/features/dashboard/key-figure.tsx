@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { animate } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { formatNumber, type NumberKind } from "@workspace/shared";
@@ -61,14 +62,24 @@ interface KeyFigureProps {
   value: string;
   kind: NumberKind;
   note?: string;
+  /** Makes the label a link to the list behind the figure. */
+  href?: string;
 }
 
 /** One key figure in the revenue panel's row: a small label over a figure in Unbounded. */
-export function KeyFigure({ label, value, kind, note }: KeyFigureProps) {
+export function KeyFigure({ label, value, kind, note, href }: KeyFigureProps) {
   const { compactDashboards } = useNumberSettings();
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
+      <dt className="text-muted-foreground text-xs">
+        {href ? (
+          <Link href={href} className="text-brand-ink underline-offset-4 hover:underline">
+            {label}
+          </Link>
+        ) : (
+          label
+        )}
+      </dt>
       <dd className="font-display text-xl font-semibold tracking-[-0.01em] sm:text-2xl">
         <CountUp value={value} kind={kind} compact={compactDashboards && kind === "money"} />
       </dd>

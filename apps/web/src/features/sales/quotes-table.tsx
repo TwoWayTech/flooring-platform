@@ -3,12 +3,22 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FilePlus2 } from "lucide-react";
-import { locationName, type Customer, type Location, type Quote, type User } from "@workspace/shared";
+import {
+  locationName,
+  quoteAgeDays,
+  quoteState,
+  quoteStateLabel,
+  type Customer,
+  type Location,
+  type Quote,
+  type User,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
-import { QuoteStatusPill, quoteStatusLabel } from "@/lib/document-status";
+import { api } from "@/lib/api";
+import { QuoteStatusPill } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 
 interface QuotesTableProps {
@@ -18,11 +28,15 @@ interface QuotesTableProps {
   locations: Location[];
 }
 
-/** Quotes, newest first; a row opens the quote builder. */
+/**
+ * Quotes, newest first; a row opens the quote builder. Status reads Expired for a pending quote
+ * past its expiry date, and Age counts days since it was made (spec B1).
+ */
 export function QuotesTable({ quotes, customers, users, locations }: QuotesTableProps) {
   const router = useRouter();
   const can = useCan();
   const formatDate = useFormatDate();
+  const today = api.today();
   const customer = (q: Quote) => customers.find((c) => c.id === q.customerId);
   const columns: ColumnSpec<Quote>[] = [
     {
@@ -38,15 +52,17 @@ export function QuotesTable({ quotes, customers, users, locations }: QuotesTable
     {
       id: "status",
       header: "Status",
-      value: (q) => quoteStatusLabel(q.status),
-      cell: (q) => <QuoteStatusPill status={q.status} />,
+      value: (q) => quoteStateLabel(quoteState(q, today)),
+      cell: (q) => <QuoteStatusPill state={quoteState(q, today)} />,
     },
+    { id: "rep", header: "Salesperson", value: (q) => users.find((u) => u.id === q.salesRepId)?.name ?? "" },
     {
-      id: "rep",
-      header: "Sales rep",
-      value: (q) => users.find((u) => u.id === q.salesRepId)?.name ?? "",
-      hidden: true,
+      id: "expires",
+      header: "Expires",
+      value: (q) => q.expiresAt,
+      cell: (q) => (q.expiresAt ? formatDate(q.expiresAt) : <span className="text-muted-foreground">None</span>),
     },
+    { id: "age", header: "Age", kind: "count", unit: "days", value: (q) => quoteAgeDays(q, today) },
     { id: "total", header: "Total", kind: "money", value: (q) => q.total, total: true },
   ];
   return (

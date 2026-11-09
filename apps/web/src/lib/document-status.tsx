@@ -4,6 +4,7 @@ import {
   CircleDot,
   Clock,
   FileText,
+  Hourglass,
   Receipt,
   Send,
   TriangleAlert,
@@ -11,17 +12,18 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { balance, isOverdue, type Invoice, type QuoteStatus } from "@workspace/shared";
+import { balance, isOverdue, QUOTE_STATE_LABELS, type Invoice, type QuoteState } from "@workspace/shared";
 import { StatusPill, type StatusTone } from "@workspace/ui/components/status-pill";
 
 type PillSpec = { tone: StatusTone; icon: LucideIcon; label: string };
 
-const QUOTE: Record<QuoteStatus, PillSpec> = {
-  draft: { tone: "neutral", icon: CircleDashed, label: "Draft" },
-  sent: { tone: "brand", icon: Send, label: "Sent" },
-  accepted: { tone: "success", icon: CircleCheck, label: "Accepted" },
-  invoiced: { tone: "brand", icon: FileText, label: "Invoiced" },
-  declined: { tone: "neutral", icon: XCircle, label: "Declined" },
+const QUOTE: Record<QuoteState, Omit<PillSpec, "label">> = {
+  draft: { tone: "neutral", icon: CircleDashed },
+  pending: { tone: "brand", icon: Send },
+  accepted: { tone: "success", icon: CircleCheck },
+  converted: { tone: "brand", icon: FileText },
+  declined: { tone: "neutral", icon: XCircle },
+  expired: { tone: "warning", icon: Hourglass },
 };
 
 /** What an invoice's state is today, for its pill and for filters. */
@@ -50,17 +52,12 @@ export function invoiceStateLabel(state: InvoiceState): string {
   return INVOICE[state].label;
 }
 
-/** A quote's status as an icon and a word (design brief "Status pills"). */
-export function QuoteStatusPill({ status }: { status: QuoteStatus }) {
-  return <StatusPill {...QUOTE[status]} />;
+/** A quote's state as an icon and a word (design brief "Status pills", spec B1). */
+export function QuoteStatusPill({ state }: { state: QuoteState }) {
+  return <StatusPill {...QUOTE[state]} label={QUOTE_STATE_LABELS[state]} />;
 }
 
 /** An invoice's state as an icon and a word. */
 export function InvoiceStatePill({ state }: { state: InvoiceState }) {
   return <StatusPill {...INVOICE[state]} />;
-}
-
-/** Label of a quote status, for filters and CSV. */
-export function quoteStatusLabel(status: QuoteStatus): string {
-  return QUOTE[status].label;
 }

@@ -124,6 +124,9 @@ interface CustomerPickerProps {
   value: string;
   disabled?: boolean;
   onSelect: (customer: Customer) => void;
+  /** Set by a form whose validation found a problem with the customer. */
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }
 
 /**
@@ -131,7 +134,15 @@ interface CustomerPickerProps {
  * result shows its type and primary address. The last option adds what was typed as a new
  * customer, saved at once and completed later from the customer drawer.
  */
-export function CustomerPicker({ id, customers, value, disabled, onSelect }: CustomerPickerProps) {
+export function CustomerPicker({
+  id,
+  customers,
+  value,
+  disabled,
+  onSelect,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+}: CustomerPickerProps) {
   const can = useCan();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -161,6 +172,8 @@ export function CustomerPicker({ id, customers, value, disabled, onSelect }: Cus
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-invalid={ariaInvalid}
+          aria-describedby={ariaDescribedBy}
           disabled={disabled}
           className="w-full justify-between font-normal"
         >

@@ -19,6 +19,7 @@ import type {
   PermissionKey,
   Role,
   User,
+  QuoteAction,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -62,6 +63,13 @@ export interface InviteUserInput {
 }
 
 /** A customer added from a picker with what the caller knows so far (spec A6: name required). */
+/** A status change on a quote (spec B1); sending may set an expiry date. */
+export interface QuoteStatusChange {
+  action: QuoteAction;
+  /** Send only: the date the quote stops being valid, or null for no expiry. */
+  expiresAt?: string | null;
+}
+
 export interface NewCustomerInput {
   name: string;
   phone?: string;
@@ -157,11 +165,20 @@ export interface ApiClient {
   createCustomer(input: NewCustomerInput): Promise<Customer>;
   /** Saves a customer's profile and addresses. Needs customers.customer.edit. Audited. */
   saveCustomer(customer: Customer): Promise<Customer>;
-  /** Saves a quote; a new quote gets the next number from the company's quote prefix. Audited. */
+  /**
+   * Saves a quote's content (spec B1). A new quote is a Draft with the next number from the quote
+   * prefix and needs only a customer; the status changes only through updateQuoteStatus. Audited.
+   */
   saveQuote(quote: Quote): Promise<Quote>;
   /**
-   * Converts a quote into an invoice dated today (spec "Quote builder → invoice"): totals are
-   * recomputed under the job site's tax rule, and the quote is marked invoiced. Audited.
+   * Moves a quote on (spec B1): send (Pending, after full validation, with an optional expiry
+   * date), accept or decline, as quoteActions allows in its state. Needs sales.quote.edit. Audited.
+   */
+  updateQuoteStatus(quoteId: string, change: QuoteStatusChange): Promise<Quote>;
+  /**
+   * Converts an open quote into an invoice dated today (spec "Quote builder → invoice", B1) after
+   * full validation: totals are recomputed under the job site's tax rule, and the quote is marked
+   * Converted. Audited.
    */
   convertQuoteToInvoice(quoteId: string): Promise<Invoice>;
   /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
