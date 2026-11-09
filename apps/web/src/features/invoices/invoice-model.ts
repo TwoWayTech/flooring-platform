@@ -20,6 +20,9 @@ import {
   plainAddress,
 } from "@workspace/shared";
 
+/** What a balance held until installation reads as its due date (spec B6). */
+export const HELD_LABEL = "After installation";
+
 /** One printed invoice line, every value already formatted. */
 export interface ModelLine {
   id: string;
@@ -94,7 +97,7 @@ export function buildInvoiceModel(
     number: invoice.number,
     quoteNumber: quote?.number ?? null,
     issued: date(invoice.issuedAt),
-    due: date(invoice.dueAt),
+    due: invoice.dueAt ? date(invoice.dueAt) : HELD_LABEL,
     terms: PAYMENT_TERM_LABELS[customer.terms],
     company: {
       name: branding.displayName,

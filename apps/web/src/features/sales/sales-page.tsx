@@ -66,7 +66,12 @@ export function SalesPage() {
           {data.status !== "ready" ? (
             <QueryFallback query={data} className="h-96" label="Loading sales" />
           ) : view === "customers" ? (
-            <CustomersTable customers={data.data.customers} sales={data.data.sales} />
+            <CustomersTable
+              customers={data.data.customers}
+              sales={data.data.sales}
+              users={data.data.users}
+              locations={data.data.locations}
+            />
           ) : view === "invoices" ? (
             <InvoicesTable sales={data.data.sales} customers={data.data.customers} locations={data.data.locations} />
           ) : (

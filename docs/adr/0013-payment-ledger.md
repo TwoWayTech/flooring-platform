@@ -15,6 +15,8 @@ Feature batch 2, item B2 builds Appendix A: customers' payments with mandatory p
 - Fixtures: every seeded payment gets a number, a reference for its method, a placeholder proof PDF and its recorder (the accountant, else the owner); at Summit the owner confirmed payments above the threshold, and the latest three still wait, so "payments to verify" shows. No random numbers are drawn, so no invoice changed and every invoice's derived state equals its old stored status.
 - Saved data (schema version 3): invoices drop `status` and `paid` and gain the lifecycle fields (sent when issued; a void one keeps its date); an older payment becomes a confirmed `EARLIER-` payment.
 
+- Receivables (B5): `receivablesSummary` (current, overdue, due in 7 days) and `customerReceivable` in `packages/shared/src/receivables.ts`. `Invoice.dueAt` may be null: with a deposit and an installation to come, the balance is held until the job is done (B6 sets the date) and counts as current. The generator gives such invoices a due date two weeks after issue, holds those whose job is not signed off, and settles late invoices mostly (90 %) so the seed data looks like a healthy business; the reconciliation test checks under 15 % overdue and under 3 % over 90 days.
+
 ## Consequences
 - Bills keep a stored `paid` until supplier payments (D3) move them onto the same rules.
 - A screen that needs a balance must load the ledger; there is no balance field to read by mistake.

@@ -25,15 +25,17 @@ import { buildRooms, roomLines, tradeLines } from "./sales-lines";
 const MONTH_WEIGHTS = [0.6, 0.65, 1.1, 1.35, 1.3, 0.95, 0.85, 0.9, 1.25, 1.35, 1.0, 0.7];
 /**
  * Chance a past-due invoice is still unpaid, by days past due. Recent ones are often still
- * open and old ones rarely, so aging looks real and about 12 % of invoices end up overdue
- * (spec section 4).
+ * open and old ones rarely, so aging looks real: about 12 % of invoices overdue by count, but
+ * most of the open balance current and very little over 90 days (spec section 4, B5).
  */
 const UNPAID_CHANCE_BY_AGE: readonly [maxDaysPastDue: number, chance: number][] = [
-  [30, 0.45],
-  [60, 0.3],
-  [90, 0.18],
-  [Infinity, 0.06],
+  [30, 0.75],
+  [60, 0.4],
+  [90, 0.15],
+  [Infinity, 0.02],
 ];
+/** A homeowner job is installed about two weeks after the invoice; the balance is due then (spec B6). */
+const INSTALL_LEAD_DAYS = 14;
 /** Share of invoices later partly returned (spec section 4). */
 const RETURN_SHARE = 0.03;
 
@@ -171,7 +173,13 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     branchId: quote.branchId,
     locationId: quote.locationId,
     issuedAt,
-    dueAt: dueDate(issuedAt, customer.terms),
+    // With a deposit, the rest is due once the job is installed (spec B6); jobs not yet done hold it.
+    dueAt: dueDate(
+      dec(quote.depositPct).gt(0) && ctx.company.modules.includes("installation")
+        ? addDays(issuedAt, INSTALL_LEAD_DAYS)
+        : issuedAt,
+      customer.terms,
+    ),
     createdBy: quote.salesRepId,
     // Seeded invoices went to the customer the day they were made.
     sentAt: issuedAt,
@@ -198,14 +206,20 @@ function documentAmounts(totals: DocumentTotals) {
   return { subtotal: totals.subtotal, tax: totals.tax, total: totals.total, cost: totals.cost };
 }
 
-/** How much of an invoice gets paid: everything, a deposit or part, or nothing (overdue or current). */
-type Settlement = "paid" | "partial" | "unpaid";
+/**
+ * How much of an invoice gets paid: everything, a deposit or part, most of it (a late payer with a
+ * small remainder), or nothing yet.
+ */
+type Settlement = "paid" | "partial" | "mostly" | "unpaid";
+/** The share a late payer has paid when a small remainder is left (spec B5: little old debt). */
+const MOSTLY_PAID = "0.9";
 
 function settlementFor(ctx: GenContext, invoice: Invoice): Settlement {
-  const daysPastDue = daysBetween(invoice.dueAt, ctx.anchor);
-  if (daysPastDue <= 0) return ctx.rng.pick(["paid", "partial", "unpaid", "unpaid"]);
+  const daysPastDue = daysBetween(invoice.dueAt!, ctx.anchor);
+  if (daysPastDue <= 0) return ctx.rng.pick(["unpaid", "partial", "unpaid", "paid"]);
   const [, chance] = UNPAID_CHANCE_BY_AGE.find(([max]) => daysPastDue <= max)!;
-  return ctx.rng.chance(chance) ? ctx.rng.pick(["partial", "unpaid"]) : "paid";
+  // A late payer has usually paid most of it, so little of the open balance is overdue (spec B5).
+  return ctx.rng.chance(chance) ? ctx.rng.pick<Settlement>(["mostly", "mostly"]) : "paid";
 }
 
 /**
@@ -218,7 +232,12 @@ function paymentsFor(ctx: GenContext, invoice: Invoice, quote: Quote, settlement
   const hasDeposit = dec(quote.depositPct).gt(0);
   const first = hasDeposit ? depositAmount(invoice.total, quote.depositPct) : moneyString(total.times("0.4"));
   const fullPayment = hasDeposit ? [first, moneyString(total.minus(first))] : [invoice.total];
-  const amounts = settlement === "partial" ? [first] : fullPayment;
+  const amounts =
+    settlement === "partial"
+      ? [first]
+      : settlement === "mostly"
+        ? [moneyString(total.times(MOSTLY_PAID))]
+        : fullPayment;
   const method = ctx.rng.pick(["card", "check", "ach", "cash"] as const);
   return amounts
     .filter((a) => dec(a).gt(0))

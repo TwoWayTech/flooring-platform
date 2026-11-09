@@ -13,6 +13,7 @@ import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { InvoiceStatusPills } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
+import { HELD_LABEL } from "./invoice-model";
 
 /** One money figure of the summary; Remaining is the largest. */
 function Figure({ label, value, large }: { label: string; value: string; large?: boolean }) {
@@ -65,7 +66,7 @@ export function InvoiceSummary({
         <div>
           <dt className="text-xs">Due</dt>
           <dd className="text-foreground">
-            {formatDate(invoice.dueAt)}
+            {invoice.dueAt ? formatDate(invoice.dueAt) : HELD_LABEL}
             {ledger.overdue ? `, ${ledger.daysOverdue} days overdue` : ""}
           </dd>
         </div>

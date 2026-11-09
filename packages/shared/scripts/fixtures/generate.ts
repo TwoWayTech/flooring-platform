@@ -8,7 +8,7 @@ import { ANCHOR_DATE, COMPANY_SEEDS, type CompanySeed } from "./companies";
 import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
 import { buildCommissions, buildEmployees, buildPto, buildTimesheets } from "./hr";
-import { buildCrews, buildJobs } from "./installation";
+import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
 import { buildMeetings } from "./meetings";
 import { buildExpenses, buildPurchasing } from "./purchasing";
 import { buildLocations } from "./locations";
@@ -65,7 +65,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     ...purchasing,
     expenses: buildExpenses(ctx, trades ? averageMonthlyGross(sales, ANCHOR_DATE) : dec(0).toFixed(2)),
     crews,
-    jobs: buildJobs(ctx, crews, sales.invoices, sales.quotes, customers),
+    jobs: holdUntilInstalled(buildJobs(ctx, crews, sales.invoices, sales.quotes, customers), sales.invoices, customers),
     employees,
     timesheets: buildTimesheets(ctx, employees),
     ptoRequests: buildPto(ctx, employees),

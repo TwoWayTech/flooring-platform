@@ -3,42 +3,67 @@
 import { useState } from "react";
 import { CircleAlert, ShieldCheck } from "lucide-react";
 import {
+  customerReceivable,
   daysBetween,
-  openAmounts,
+  locationName,
   PAYMENT_TERM_LABELS,
   SENSITIVE,
-  sum,
   type Customer,
   type CustomerType,
+  type Location,
+  type User,
   defaultAddress,
 } from "@workspace/shared";
+import { Label } from "@workspace/ui/components/label";
+import { Switch } from "@workspace/ui/components/switch";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
-import { AgingPanel } from "@/components/aging-panel";
 import { CERTIFICATE_WARNING_DAYS } from "@/lib/attention";
 import type { SalesLedger } from "@/lib/sales-ledger";
+import { useFormatDate } from "@/lib/use-format-date";
 import { CustomerDrawer } from "./customer-drawer";
 import { IncompleteBadge } from "./customer-picker";
+import { ReceivablesSummary } from "./receivables-summary";
 
 const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" };
 
 /**
- * Customers and receivables (spec Tier 2): homeowners, dealers and contractors with open and
- * overdue balances, certificates and the aging above. Credit limit needs view_sensitive.
+ * Customers and receivables (spec Tier 2, B5): Current, Overdue and Due in the next 7 days above a
+ * simple list of who owes what: open balance, overdue amount, oldest days overdue, next due date and
+ * last payment, filterable by type, warehouse, salesperson, or overdue only. Credit limit needs
+ * view_sensitive; the detailed aging is in Reports.
  */
-export function CustomersTable({ customers, sales }: { customers: Customer[]; sales: SalesLedger }) {
+export function CustomersTable({
+  customers,
+  sales,
+  users,
+  locations,
+}: {
+  customers: Customer[];
+  sales: SalesLedger;
+  users: User[];
+  locations: Location[];
+}) {
   const can = useCan();
   const [open, setOpen] = useState<Customer | null>(null);
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const formatDate = useFormatDate();
   const today = api.today();
   const daysLeft = (c: Customer) => (c.certificate ? daysBetween(today, c.certificate.expiresAt) : null);
   const expiringSoon = (c: Customer) => {
     const d = daysLeft(c);
     return d !== null && d >= 0 && d <= CERTIFICATE_WARNING_DAYS;
   };
-  const own = (c: Customer) => sales.invoices.filter((i) => i.customerId === c.id).map((i) => sales.ledgers.get(i.id)!);
+  const owed = new Map(customers.map((c) => [c.id, customerReceivable(c.id, sales.invoices, sales.ledgers)]));
+  const owes = (c: Customer) => owed.get(c.id)!;
+  // A customer's warehouse is where their latest invoice ships from.
+  const latest = (c: Customer) =>
+    sales.invoices.filter((i) => i.customerId === c.id).sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
+  const date = (iso: string | null) => (iso ? formatDate(iso) : <span className="text-muted-foreground">None</span>);
+  const rows = overdueOnly ? customers.filter((c) => owes(c).overdue !== "0.00") : customers;
 
   const columns: ColumnSpec<Customer>[] = [
     {
@@ -68,23 +93,22 @@ export function CustomersTable({ customers, sales }: { customers: Customer[]; sa
     ...(can(SENSITIVE.creditLimit)
       ? [{ id: "credit", header: "Credit limit", kind: "money" as const, value: (c: Customer) => c.creditLimit }]
       : []),
+    { id: "open", header: "Open balance", kind: "money", value: (c) => owes(c).open, total: true },
+    { id: "overdue", header: "Overdue", kind: "money", value: (c) => owes(c).overdue, total: true },
+    { id: "daysOverdue", header: "Days overdue", kind: "count", value: (c) => owes(c).oldestDaysOverdue },
+    { id: "nextDue", header: "Next due", value: (c) => owes(c).nextDueAt, cell: (c) => date(owes(c).nextDueAt) },
     {
-      id: "open",
-      header: "Open balance",
-      kind: "money",
-      value: (c) => sum(own(c).map((l) => l.balance)).toString(),
-      total: true,
+      id: "lastPayment",
+      header: "Last payment",
+      value: (c) => owes(c).lastPaymentAt,
+      cell: (c) => date(owes(c).lastPaymentAt),
     },
+    { id: "warehouse", header: "Warehouse", value: (c) => locationName(locations, latest(c)?.locationId) || null },
     {
-      id: "overdue",
-      header: "Overdue",
-      kind: "money",
-      value: (c) =>
-        sum(
-          own(c)
-            .filter((l) => l.overdue)
-            .map((l) => l.balance),
-        ).toString(),
+      id: "rep",
+      header: "Salesperson",
+      value: (c) => users.find((u) => u.id === c.salesRepId)?.name ?? null,
+      hidden: true,
     },
     {
       id: "certificate",
@@ -102,10 +126,14 @@ export function CustomersTable({ customers, sales }: { customers: Customer[]; sa
 
   return (
     <>
-      <AgingPanel title="Receivables aging" docs={openAmounts(sales.invoices, sales.ledgers)} today={today} />
+      <ReceivablesSummary invoices={sales.invoices} ledgers={sales.ledgers} />
+      <div className="flex items-center gap-2">
+        <Switch id="customers-overdue-only" checked={overdueOnly} onCheckedChange={setOverdueOnly} />
+        <Label htmlFor="customers-overdue-only">Overdue only</Label>
+      </div>
       <DataTable
         id="sales-customers"
-        rows={customers}
+        rows={rows}
         columns={columns}
         getRowId={(c) => c.id}
         onRowClick={setOpen}

@@ -30,9 +30,11 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useApiQuery } from "@/lib/api/use-api";
+import { loadSalesLedger } from "@/lib/sales-ledger";
 import { saveBlob } from "@/features/invoices/payments/file-viewer-dialog";
 import { CATEGORY_LABELS } from "@/lib/labels";
 import {
+  agingReport,
   inventoryReport,
   paymentsReport,
   pnlReport,
@@ -71,6 +73,13 @@ const REPORTS = {
     export: "reports.inventory.export",
     build: inventoryReport,
     categories: true,
+  },
+  aging: {
+    label: "Receivables aging",
+    view: "reports.financial.view",
+    export: "reports.financial.export",
+    build: agingReport,
+    categories: false,
   },
   payments: {
     label: "Payments received",
@@ -122,8 +131,8 @@ export function ReportsPage() {
   const [method, setMethod] = useState<PaymentMethod | "all">("all");
   const [customerQuery, setCustomerQuery] = useState("");
   const data = useApiQuery(async (client) => {
-    const [invoices, expenses, products, rolls, stockMovements, locations, payments, customers] = await Promise.all([
-      client.list("invoices"),
+    const [sales, expenses, products, rolls, stockMovements, locations, payments, customers] = await Promise.all([
+      loadSalesLedger(client),
       client.list("expenses"),
       client.list("products"),
       client.list("rolls"),
@@ -132,7 +141,17 @@ export function ReportsPage() {
       client.list("payments"),
       client.list("customers"),
     ]);
-    return { invoices, expenses, products, rolls, stockMovements, locations, payments, customers };
+    return {
+      invoices: sales.invoices,
+      ledgers: sales.ledgers,
+      expenses,
+      products,
+      rolls,
+      stockMovements,
+      locations,
+      payments,
+      customers,
+    };
   }, []);
 
   const allowed = (Object.keys(REPORTS) as ReportKey[]).filter((k) => can(REPORTS[k].view));
@@ -147,9 +166,10 @@ export function ReportsPage() {
   let report: Report | null = null;
   if (data.status === "ready") {
     const from = `${months[0]}-01`;
-    const invoices = data.data.invoices.filter(
-      (i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1) && (!warehouseId || i.locationId === warehouseId),
-    );
+    const inWarehouse = data.data.invoices.filter((i) => !warehouseId || i.locationId === warehouseId);
+    // Aging is as of today over every open invoice; the other reports cover the chosen dates.
+    const invoices =
+      key === "aging" ? inWarehouse : inWarehouse.filter((i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1));
     const expenses = data.data.expenses.filter((e) => e.at >= from);
     // Payments count on their payment date, in the warehouse of their invoice (Appendix A: cash dates).
     const shipsFrom = new Map(data.data.invoices.map((i) => [i.id, i.locationId]));
@@ -170,6 +190,8 @@ export function ReportsPage() {
       method: method === "all" ? null : method,
       customerQuery,
       dateFormat: settings.localization.region.dateFormat,
+      ledgers: data.data.ledgers,
+      today,
     });
   }
   const warehouseLabel =
@@ -249,7 +271,7 @@ export function ReportsPage() {
           bodyClassName="flex flex-col gap-4"
         >
           <div className="flex flex-wrap gap-3">
-            {key !== "inventory" ? (
+            {key !== "inventory" && key !== "aging" ? (
               <Filter label="Dates">
                 <Select value={range} onValueChange={(v) => setRange(v as Range)}>
                   <SelectTrigger className="h-9 w-44" aria-label="Dates">

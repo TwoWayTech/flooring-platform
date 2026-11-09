@@ -22,15 +22,17 @@ export const AGING_BUCKETS = [
 /** Key of an aging bucket. */
 export type AgingKey = (typeof AGING_BUCKETS)[number]["key"];
 
-/** The bucket a due date falls in today. */
-export function agingBucket(dueAt: string, today: string): AgingKey {
+/** The bucket a due date falls in today; a balance held until installation is current. */
+export function agingBucket(dueAt: string | null, today: string): AgingKey {
+  if (!dueAt) return "current";
   const late = daysBetween(dueAt, today);
   return AGING_BUCKETS.find((b) => late >= b.min && late <= b.max)!.key;
 }
 
 /** A document that is owed: its due date and what is still open on it. */
 export interface OpenAmount {
-  dueAt: string;
+  /** Null while the balance waits for installation (spec B6). */
+  dueAt: string | null;
   balance: string;
 }
 

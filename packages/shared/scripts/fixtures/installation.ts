@@ -1,6 +1,7 @@
 import { addDays } from "../../src/dates";
 import { dec, moneyString, roundMoney } from "../../src/money";
 import type { Crew, Customer, Invoice, Job, JobStatus, Quote } from "../../src/types";
+import { dueDate } from "../../src/operations/quotes";
 import type { GenContext } from "./context";
 import { COLORWAYS, PHOTO_CAPTIONS } from "./vocabulary";
 
@@ -142,5 +143,19 @@ export function buildJobs(
     };
   });
   [...jobs].sort((a, b) => a.date.localeCompare(b.date)).forEach((j, i) => (j.number = `J-${4001 + i}`));
+  return jobs;
+}
+
+/**
+ * A deposit invoice's balance waits for its job (spec B6): until the customer signs off it has no
+ * due date; after sign-off it is due under the customer's terms from that day. Returns the jobs.
+ */
+export function holdUntilInstalled(jobs: Job[], invoices: Invoice[], customers: readonly Customer[]): Job[] {
+  for (const job of jobs) {
+    const invoice = invoices.find((i) => i.id === job.invoiceId);
+    if (!invoice || dec(invoice.depositPct).isZero()) continue;
+    const terms = customers.find((c) => c.id === invoice.customerId)!.terms;
+    invoice.dueAt = job.signedOffAt ? dueDate(job.signedOffAt.slice(0, 10), terms) : null;
+  }
   return jobs;
 }

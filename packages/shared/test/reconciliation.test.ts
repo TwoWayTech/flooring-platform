@@ -10,12 +10,14 @@ import {
   openAmounts,
   boxedStock,
   computeTotals,
+  customerReceivable,
   daysBetween,
   dec,
   inventoryValuation,
   lineAmount,
   moneyString,
   openInvoices,
+  receivablesSummary,
   resolveTaxRule,
   rollAreaSqFt,
   splitOvertime,
@@ -226,4 +228,25 @@ describe("spec section 4 volumes", () => {
     expect(summit.invoices.every((i) => i.issuedAt <= today)).toBe(true);
     expect(summit.jobs.every((j) => j.date <= addDays(today, 14))).toBe(true);
   });
+});
+
+describe("receivables (spec B5)", () => {
+  for (const f of [summit, keystone]) {
+    const today = f.anchorDate;
+    const ledgers = ledgerIndex(f.invoices, { payments: f.payments, adjustments: f.invoiceAdjustments }, today);
+    const summary = receivablesSummary(f.invoices, ledgers, today);
+
+    it(`${f.companyId}: current and overdue add up to the open balance and the aging`, () => {
+      expect(moneyString(dec(summary.current).plus(summary.overdue))).toBe(summary.total);
+      expect(agingSummary(openAmounts(f.invoices, ledgers), today).total).toBe(summary.total);
+      const byCustomer = sum(f.customers.map((c) => customerReceivable(c.id, f.invoices, ledgers).open));
+      expect(moneyString(byCustomer)).toBe(summary.total);
+    });
+
+    it(`${f.companyId}: looks like a healthy business, under 15 % overdue and little over 90 days`, () => {
+      const aging = agingSummary(openAmounts(f.invoices, ledgers), today);
+      expect(dec(summary.overdue).div(summary.total).toNumber()).toBeLessThan(0.15);
+      expect(dec(aging.d90plus).div(summary.total).toNumber()).toBeLessThan(0.03);
+    });
+  }
 });

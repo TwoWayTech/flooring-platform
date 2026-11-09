@@ -101,7 +101,8 @@ export interface Invoice {
   salesRepId: string;
   branchId: string;
   issuedAt: string;
-  dueAt: string;
+  /** When the balance is due; null while a deposit job waits for installation (spec B6). */
+  dueAt: string | null;
   /** Who made the invoice (a user id), for the lifecycle timeline (spec B2). */
   createdBy: string;
   /** When and by whom it was marked as sent to the customer; null until then. */

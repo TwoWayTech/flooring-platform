@@ -532,6 +532,7 @@ export class DemoStore implements ApiClient {
       ),
       issuedAt: this.todayIso,
       createdBy: this.viewer!.userId,
+      holdUntilInstalled: (await this.granter(db)).company.modules.includes("installation"),
     });
     db.put("invoices", invoice);
     db.put("quotes", {

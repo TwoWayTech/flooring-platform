@@ -21,6 +21,7 @@ export * from "./operations/quotes";
 export * from "./operations/quote-status";
 export * from "./operations/payments";
 export * from "./ledger";
+export * from "./receivables";
 export * from "./file-types";
 export * from "./operations/purchasing";
 export * from "./operations/meetings";

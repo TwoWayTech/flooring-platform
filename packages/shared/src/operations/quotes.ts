@@ -103,7 +103,7 @@ export function invoiceFromQuote(
   quote: Quote,
   customer: Customer,
   localization: Pick<LocalizationSettings, "tax" | "region">,
-  input: { id: string; number: string; issuedAt: string; createdBy: string },
+  input: { id: string; number: string; issuedAt: string; createdBy: string; holdUntilInstalled?: boolean },
 ): Invoice {
   const ctx = taxContextFor(localization, quote.jobSite, customer, input.issuedAt, quote.lumpSum, quote.taxOverride);
   const totals = computeTotals(quote.lines, ctx);
@@ -116,7 +116,8 @@ export function invoiceFromQuote(
     branchId: quote.branchId,
     locationId: quote.locationId,
     issuedAt: input.issuedAt,
-    dueAt: dueDate(input.issuedAt, customer.terms),
+    // With a deposit and an installation to come, the rest is due once the job is done (spec B6).
+    dueAt: input.holdUntilInstalled && dec(quote.depositPct).gt(0) ? null : dueDate(input.issuedAt, customer.terms),
     createdBy: input.createdBy,
     sentAt: null,
     sentBy: null,

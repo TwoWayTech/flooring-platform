@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: B5 (Customers and receivables: Current / Overdue / Due in 7 days, simple list with filters, info tooltip; Reports → Receivables aging; healthy seed receivables). Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
+- Next step: B6 (job Complete with sign-off moves the invoice forward: Installed on the timeline, held balance due = completion + terms, marks sent, notifies payment recorders; Create invoice from this job). Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -87,7 +87,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] B2. Invoice lifecycle and payments (Appendix A in full): ledger-derived status and balance; Record payment with mandatory proof (IndexedDB file store behind an interface), duplicate-reference warning, overpayment to credit; approval (two-person check, threshold); Payments section, PDF with payments and PAID mark, receipt PDF; void, refund, write-off, apply credit, void invoice, lines locked after a confirmed payment; Update status menu with valid next actions only; Deposit paid label; lifecycle timeline; invoice header (warehouse, job site, job, money summary); everything that must update (lists, customers, statement, dashboard, notifications, Payments received report, quote View invoice, audit, command palette, presenter step); permissions in UI and save logic
 - [x] B3. Waste internal only: `sales.waste.view` (Sales off), default waste % per category in settings, customer-facing documents show the billed quantity with waste included and no waste line
 - [x] B4. Invoices table: Paid, Remaining, Last payment, Warehouse columns, filterable, totals row
-- [ ] B5. Customers and receivables simplified: Current / Overdue / Due in 7 days, simple list with filters, info tooltip, detailed aging in Reports → Receivables aging, healthy seeded mix
+- [x] B5. Customers and receivables simplified: Current / Overdue / Due in 7 days, simple list with filters, info tooltip, detailed aging in Reports → Receivables aging, healthy seeded mix
 - [ ] B6. Installation complete moves the invoice forward: sign-off adds Installed, sets the held due date, marks sent, notifies payment recorders; Create invoice from this job
 - [ ] Batch B: full suite green
 

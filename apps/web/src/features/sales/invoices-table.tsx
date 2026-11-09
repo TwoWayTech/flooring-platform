@@ -6,6 +6,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { InvoiceStatusPills } from "@/lib/document-status";
 import type { SalesLedger } from "@/lib/sales-ledger";
+import { HELD_LABEL } from "@/features/invoices/invoice-model";
 import { useFormatDate } from "@/lib/use-format-date";
 
 /**
@@ -34,7 +35,12 @@ export function InvoicesTable({
     },
     { id: "customer", header: "Customer", value: (i) => customers.find((c) => c.id === i.customerId)?.name ?? "" },
     { id: "issued", header: "Issued", value: (i) => i.issuedAt, cell: (i) => formatDate(i.issuedAt) },
-    { id: "due", header: "Due", value: (i) => i.dueAt, cell: (i) => formatDate(i.dueAt) },
+    {
+      id: "due",
+      header: "Due",
+      value: (i) => i.dueAt,
+      cell: (i) => (i.dueAt ? formatDate(i.dueAt) : <span className="text-muted-foreground">{HELD_LABEL}</span>),
+    },
     {
       id: "state",
       header: "Status",

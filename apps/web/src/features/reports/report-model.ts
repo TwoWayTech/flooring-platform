@@ -1,9 +1,14 @@
 import { format, parseISO } from "date-fns";
 import {
+  AGING_BUCKETS,
+  agingSummary,
+  dec,
   inventoryByCategory,
+  openAmounts,
   PAYMENT_METHOD_LABELS,
   type BoxedStock,
   type Customer,
+  type InvoiceLedger,
   type Payment,
   type PaymentMethod,
   monthlyPnl,
@@ -53,6 +58,9 @@ export interface ReportInput {
   /** Part of a customer's name; empty means every customer. */
   customerQuery: string;
   dateFormat: string;
+  /** Every invoice's ledger, for balances (aging). */
+  ledgers: ReadonlyMap<string, InvoiceLedger>;
+  today: string;
 }
 
 /** A category key as people say it: product categories and, for services, the tax category. */
@@ -102,6 +110,33 @@ export function paymentsReport({
     ],
     rows,
     totals: { date: "Total", amount: total(rows, "amount") },
+  };
+}
+
+/**
+ * Receivables aging (spec B5, moved here from the customers page): each customer's open balance
+ * in the current, 1–30, 31–60, 61–90 and over-90-days buckets, adding up to their total and to
+ * the company's open receivables.
+ */
+export function agingReport({ invoices, customers, ledgers, today }: ReportInput): Report {
+  const keys = AGING_BUCKETS.map((b) => b.key);
+  const rows = customers
+    .map((customer) => {
+      const own = invoices.filter((i) => i.customerId === customer.id);
+      const aging = agingSummary(openAmounts(own, ledgers), today);
+      return { customer: customer.name, ...aging };
+    })
+    .filter((r) => dec(r.total).gt(0))
+    .sort((a, b) => dec(b.total).comparedTo(a.total));
+  return {
+    title: "Receivables aging",
+    columns: [
+      { id: "customer", header: "Customer" },
+      ...AGING_BUCKETS.map((b) => ({ id: b.key, header: b.label, kind: "money" as const })),
+      { id: "total", header: "Total", kind: "money" },
+    ],
+    rows,
+    totals: Object.fromEntries([["customer", "Total"], ...[...keys, "total"].map((id) => [id, total(rows, id)])]),
   };
 }
 
