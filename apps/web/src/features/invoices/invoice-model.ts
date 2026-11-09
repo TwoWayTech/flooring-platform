@@ -1,7 +1,7 @@
 import { format, parseISO } from "date-fns";
 import {
-  balance,
   formatNumber,
+  PAYMENT_METHOD_LABELS,
   lineAmount,
   PAYMENT_TERM_LABELS,
   quantityKind,
@@ -12,6 +12,7 @@ import {
   type Customer,
   type DecimalInput,
   type Invoice,
+  type InvoiceLedger,
   type NumberKind,
   type Payment,
   type Quote,
@@ -55,13 +56,6 @@ export interface InvoiceModel {
   footer: string;
 }
 
-const METHOD_LABELS: Record<Payment["method"], string> = {
-  card: "Card",
-  check: "Check",
-  ach: "Bank transfer",
-  cash: "Cash",
-};
-
 function addressLines(a: Address): string[] {
   return [a.street, `${a.city}, ${a.state} ${a.zip}`.trim()].filter((l) => l.replace(/[ ,]/g, ""));
 }
@@ -73,9 +67,14 @@ function taxLabel(invoice: Invoice, fmt: (v: DecimalInput, k: NumberKind) => str
   return `Sales tax, ${invoice.taxRule.jurisdiction} ${fmt(invoice.taxRule.ratePct, "taxRate")}`;
 }
 
-/** Builds the invoice model from the invoice, its customer, quote, payments and company settings. */
+/**
+ * Builds the invoice model from the invoice, its ledger, customer, quote, payments and company
+ * settings. Only confirmed payments are printed; paid and balance due come from the ledger
+ * (spec Appendix A "Payments on the invoice").
+ */
 export function buildInvoiceModel(
   invoice: Invoice,
+  ledger: InvoiceLedger,
   customer: Customer,
   quote: Quote | undefined,
   payments: readonly Payment[],
@@ -116,14 +115,16 @@ export function buildInvoiceModel(
     taxSource: invoice.taxExempt ? "" : invoice.taxSource.label,
     tax: fmt(invoice.tax, "money"),
     total: fmt(invoice.total, "money"),
-    paid: fmt(invoice.paid, "money"),
-    balanceDue: fmt(invoice.isReturn ? "0" : balance(invoice), "money"),
-    payments: payments.map((p) => ({
-      id: p.id,
-      date: date(p.at),
-      method: METHOD_LABELS[p.method],
-      amount: fmt(p.amount, "money"),
-    })),
+    paid: fmt(ledger.paid, "money"),
+    balanceDue: fmt(ledger.balance, "money"),
+    payments: payments
+      .filter((p) => p.invoiceId === invoice.id && p.status === "confirmed")
+      .map((p) => ({
+        id: p.id,
+        date: date(p.date),
+        method: PAYMENT_METHOD_LABELS[p.method],
+        amount: fmt(p.amount, "money"),
+      })),
     footer: settings.localization.documents.legalFooter,
   };
 }

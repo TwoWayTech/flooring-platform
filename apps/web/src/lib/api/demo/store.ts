@@ -73,6 +73,7 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   localization: "Localization and tax",
   numbers: "Number format",
   profile: "Company profile",
+  payments: "Payments",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
@@ -509,6 +510,7 @@ export class DemoStore implements ApiClient {
         1001,
       ),
       issuedAt: this.todayIso,
+      createdBy: this.viewer!.userId,
     });
     db.put("invoices", invoice);
     db.put("quotes", {

@@ -185,7 +185,7 @@ export function buildCommissions(ctx: GenContext, users: readonly User[], invoic
     reps.map((rep) => {
       const sales = sum(
         invoices
-          .filter((i) => i.salesRepId === rep.id && i.status !== "void" && i.issuedAt.startsWith(month))
+          .filter((i) => i.salesRepId === rep.id && !i.voidedAt && i.issuedAt.startsWith(month))
           .map((i) => (i.isReturn ? dec(i.subtotal).negated() : i.subtotal)),
       );
       return {

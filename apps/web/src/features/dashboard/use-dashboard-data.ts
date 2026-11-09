@@ -2,7 +2,6 @@
 
 import {
   addDays,
-  balance,
   bestSellers,
   last12Months,
   marginPct,
@@ -23,6 +22,7 @@ import {
   boxedStock,
 } from "@workspace/shared";
 import { useApiQuery } from "@/lib/api/use-api";
+import { loadSalesLedger } from "@/lib/sales-ledger";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 
 /** Best sellers look back one quarter, so the list reflects the current season. */
@@ -62,8 +62,8 @@ export function useDashboardData() {
   return useApiQuery(
     async (client): Promise<DashboardData> => {
       const today = client.today();
-      const [invoices, quotes, expenses, products, rolls, jobs, crews, customers, stockMovements] = await Promise.all([
-        client.list("invoices"),
+      const [sales, quotes, expenses, products, rolls, jobs, crews, customers, stockMovements] = await Promise.all([
+        loadSalesLedger(client),
         client.list("quotes"),
         client.list("expenses"),
         client.list("products"),
@@ -73,6 +73,7 @@ export function useDashboardData() {
         client.list("customers"),
         client.list("stockMovements"),
       ]);
+      const { invoices } = sales;
       const months = monthlyPnl(last12Months(today), invoices, expenses);
       const revenue = sum(months.map((m) => m.revenue));
       const cogs = sum(months.map((m) => m.cogs));
@@ -82,7 +83,9 @@ export function useDashboardData() {
           revenue: moneyString(revenue),
           grossMargin: moneyString(revenue.minus(cogs)),
           marginPct: marginPct(revenue, cogs).toString(),
-          receivables: moneyString(sum(openInvoices(invoices).map(balance))),
+          receivables: moneyString(
+            sum(openInvoices(invoices, sales.ledgers).map((i) => sales.ledgers.get(i.id)!.balance)),
+          ),
         },
         pending: pendingQuotes(quotes, today),
         best: withProduct(bestSellers(invoices, addDays(today, -BEST_SELLER_DAYS), LIST_LENGTH), products),

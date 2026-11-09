@@ -147,6 +147,14 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       },
     },
     numbers: defaultNumberSettings(),
+    payments: {
+      // Summit checks larger payments twice; Keystone confirms at once (spec Appendix A "Approval").
+      approvalRequired: retail,
+      approvalThreshold: retail ? "1000.00" : "",
+      writeOffMax: "5.00",
+      paymentPrefix: "PAY-",
+      refundPrefix: "RF-",
+    },
     profile: {
       legalName: seed.legalName,
       dba: seed.name,

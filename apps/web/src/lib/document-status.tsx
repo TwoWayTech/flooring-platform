@@ -3,6 +3,9 @@ import {
   CircleDashed,
   CircleDot,
   Clock,
+  Coins,
+  HandCoins,
+  ScanSearch,
   FileText,
   Hourglass,
   Receipt,
@@ -12,12 +15,19 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { balance, isOverdue, QUOTE_STATE_LABELS, type Invoice, type QuoteState } from "@workspace/shared";
+import {
+  INVOICE_STATUS_LABELS,
+  invoiceStatus,
+  QUOTE_STATE_LABELS,
+  type InvoiceLedger,
+  type InvoiceStatusKey,
+  type QuoteState,
+} from "@workspace/shared";
 import { StatusPill, type StatusTone } from "@workspace/ui/components/status-pill";
 
-type PillSpec = { tone: StatusTone; icon: LucideIcon; label: string };
+type PillSpec = { tone: StatusTone; icon: LucideIcon };
 
-const QUOTE: Record<QuoteState, Omit<PillSpec, "label">> = {
+const QUOTE: Record<QuoteState, PillSpec> = {
   draft: { tone: "neutral", icon: CircleDashed },
   pending: { tone: "brand", icon: Send },
   accepted: { tone: "success", icon: CircleCheck },
@@ -26,38 +36,40 @@ const QUOTE: Record<QuoteState, Omit<PillSpec, "label">> = {
   expired: { tone: "warning", icon: Hourglass },
 };
 
-/** What an invoice's state is today, for its pill and for filters. */
-export type InvoiceState = "paid" | "overdue" | "partial" | "open" | "void" | "return";
-
-const INVOICE: Record<InvoiceState, PillSpec> = {
-  paid: { tone: "success", icon: Receipt, label: "Paid" },
-  overdue: { tone: "danger", icon: TriangleAlert, label: "Overdue" },
-  partial: { tone: "warning", icon: Clock, label: "Partly paid" },
-  open: { tone: "brand", icon: CircleDot, label: "Open" },
-  void: { tone: "neutral", icon: XCircle, label: "Void" },
-  return: { tone: "neutral", icon: Undo2, label: "Return" },
+const INVOICE: Record<InvoiceStatusKey, PillSpec> = {
+  paid: { tone: "success", icon: Receipt },
+  overpaid: { tone: "success", icon: HandCoins },
+  overdue: { tone: "danger", icon: TriangleAlert },
+  partial: { tone: "warning", icon: Clock },
+  deposit: { tone: "warning", icon: Coins },
+  pending: { tone: "warning", icon: ScanSearch },
+  open: { tone: "brand", icon: CircleDot },
+  void: { tone: "neutral", icon: XCircle },
+  return: { tone: "neutral", icon: Undo2 },
 };
-
-/** An invoice's state: overdue is derived from the due date and balance (spec "Customers and receivables"). */
-export function invoiceState(invoice: Invoice, today: string): InvoiceState {
-  if (invoice.isReturn) return "return";
-  if (invoice.status === "void") return "void";
-  if (isOverdue(invoice, today)) return "overdue";
-  if (balance(invoice).lte(0)) return "paid";
-  return invoice.status === "partial" ? "partial" : "open";
-}
-
-/** Label of an invoice state, for filters and CSV. */
-export function invoiceStateLabel(state: InvoiceState): string {
-  return INVOICE[state].label;
-}
 
 /** A quote's state as an icon and a word (design brief "Status pills", spec B1). */
 export function QuoteStatusPill({ state }: { state: QuoteState }) {
   return <StatusPill {...QUOTE[state]} label={QUOTE_STATE_LABELS[state]} />;
 }
 
-/** An invoice's state as an icon and a word. */
-export function InvoiceStatePill({ state }: { state: InvoiceState }) {
-  return <StatusPill {...INVOICE[state]} />;
+/** One invoice status as an icon and a word. */
+function InvoiceStatusPill({ status }: { status: InvoiceStatusKey }) {
+  return <StatusPill {...INVOICE[status]} label={INVOICE_STATUS_LABELS[status]} />;
+}
+
+/**
+ * An invoice's status from its ledger (spec Appendix A, B2): the leading status, then the labels
+ * that sit beside it, such as Overdue with Partly paid, or Deposit paid.
+ */
+export function InvoiceStatusPills({ ledger }: { ledger: InvoiceLedger }) {
+  const { main, extras } = invoiceStatus(ledger);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <InvoiceStatusPill status={main} />
+      {extras.map((key) => (
+        <InvoiceStatusPill key={key} status={key} />
+      ))}
+    </span>
+  );
 }

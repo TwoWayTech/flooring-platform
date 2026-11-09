@@ -2,7 +2,8 @@ import {
   featureOn,
   type FeatureKey,
   daysBetween,
-  isOverdue,
+  INVOICE_STATUS_LABELS,
+  invoiceStatus,
   splitOvertime,
   type Access,
   type PermissionKey,
@@ -10,6 +11,7 @@ import {
   filteredHref,
 } from "@workspace/shared";
 import type { ApiClient } from "./api/contract";
+import { loadSalesLedger } from "./sales-ledger";
 
 /** Rolls shorter than this are flagged so the warehouse can reorder (spec "Dashboard"). */
 export const LOW_ROLL_FT = 20;
@@ -40,7 +42,8 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
  * The "Needs attention" checks (spec "Dashboard": overdue invoices, low rolls, expiring
- * certificates, today's jobs) plus HR approvals. Each runs only for people allowed to act on it.
+ * certificates, today's jobs; Appendix A: payments to verify) plus HR approvals. Each runs only
+ * for people allowed to act on it. Nothing is stored: an item is gone once it is handled.
  */
 const CHECKS: Check[] = [
   {
@@ -48,13 +51,30 @@ const CHECKS: Check[] = [
     feature: "sales.invoices",
     permission: "sales.invoice.view",
     products: ["flooring"],
-    load: async (client, today) => {
-      const count = (await client.list("invoices")).filter((i) => isOverdue(i, today)).length;
+    load: async (client) => {
+      // Counted by leading status, so the count matches the list the link opens.
+      const { ledgers } = await loadSalesLedger(client);
+      const count = [...ledgers.values()].filter((l) => invoiceStatus(l).main === "overdue").length;
       return {
         count,
         label: plural(count, "overdue invoice", "overdue invoices"),
-        href: filteredHref("/sales?view=invoices", "sales-invoices", "state", ["Overdue"]),
+        href: filteredHref("/sales?view=invoices", "sales-invoices", "state", [INVOICE_STATUS_LABELS.overdue]),
         tone: "danger",
+      };
+    },
+  },
+  {
+    key: "verify-payments",
+    feature: "sales.invoices",
+    permission: "sales.payment.approve",
+    products: ["flooring"],
+    load: async (client) => {
+      const count = (await client.list("payments")).filter((p) => p.status === "pending").length;
+      return {
+        count,
+        label: plural(count, "payment to verify", "payments to verify"),
+        href: filteredHref("/sales?view=invoices", "sales-invoices", "state", [INVOICE_STATUS_LABELS.pending]),
+        tone: "warning",
       };
     },
   },

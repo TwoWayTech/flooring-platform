@@ -6,16 +6,19 @@ import type {
   CompanySettings,
   Customer,
   Invoice,
+  InvoiceAdjustment,
   Payment,
   Product,
   Quote,
   QuoteStatus,
+  Refund,
   User,
 } from "../../src/types";
 import { dueDate, taxContextFor } from "../../src/operations/quotes";
 import { defaultAddress, plainAddress } from "../../src/customers";
 import type { GenContext } from "./context";
 import { branchWarehouse } from "./locations";
+import { finishPayments, type DrawnPayment } from "./payments";
 import { buildRooms, roomLines, tradeLines } from "./sales-lines";
 
 /** Relative sales volume by calendar month: spring and fall peaks (spec section 4). */
@@ -39,6 +42,8 @@ export interface SalesFixtures {
   quotes: Quote[];
   invoices: Invoice[];
   payments: Payment[];
+  invoiceAdjustments: InvoiceAdjustment[];
+  refunds: Refund[];
 }
 
 interface SalesInputs {
@@ -167,8 +172,16 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     locationId: quote.locationId,
     issuedAt,
     dueAt: dueDate(issuedAt, customer.terms),
-    status: "open",
+    createdBy: quote.salesRepId,
+    // Seeded invoices went to the customer the day they were made.
+    sentAt: issuedAt,
+    sentBy: quote.salesRepId,
+    voidedAt: null,
+    voidReason: null,
+    depositPct: quote.depositPct,
     isReturn: false,
+    creditForInvoiceId: null,
+    refundedAt: null,
     jobSite: quote.jobSite,
     lines: quote.lines,
     taxRule: rule
@@ -178,7 +191,6 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
     taxOverride: null,
     taxExempt: exempt,
     ...documentAmounts(totals),
-    paid: "0.00",
   };
 }
 
@@ -200,7 +212,7 @@ function settlementFor(ctx: GenContext, invoice: Invoice): Settlement {
  * Payments for an invoice. A homeowner deposit is paid at issue; the balance follows before the
  * anchor date. Payments never exceed the invoice total (spec section 4 reconciliation).
  */
-function paymentsFor(ctx: GenContext, invoice: Invoice, quote: Quote, settlement: Settlement): Payment[] {
+function paymentsFor(ctx: GenContext, invoice: Invoice, quote: Quote, settlement: Settlement): DrawnPayment[] {
   if (settlement === "unpaid") return [];
   const total = dec(invoice.total);
   const hasDeposit = dec(quote.depositPct).gt(0);
@@ -214,7 +226,7 @@ function paymentsFor(ctx: GenContext, invoice: Invoice, quote: Quote, settlement
       id: ctx.id("pay"),
       invoiceId: invoice.id,
       customerId: invoice.customerId,
-      at: i === 0 ? invoice.issuedAt : [addDays(invoice.issuedAt, ctx.rng.int(3, 40)), ctx.anchor].sort()[0]!,
+      date: i === 0 ? invoice.issuedAt : [addDays(invoice.issuedAt, ctx.rng.int(3, 40)), ctx.anchor].sort()[0]!,
       amount,
       method,
     }));
@@ -238,11 +250,14 @@ function buildReturn(ctx: GenContext, inputs: SalesInputs, original: Invoice): I
     quoteId: null,
     issuedAt,
     dueAt: issuedAt,
-    status: "paid",
+    sentAt: issuedAt,
+    depositPct: "0",
     isReturn: true,
+    // The credit was refunded on the spot, so it never becomes customer credit.
+    creditForInvoiceId: original.id,
+    refundedAt: issuedAt,
     lines,
     ...documentAmounts(totals),
-    paid: totals.total,
   };
 }
 
@@ -257,14 +272,15 @@ function number<T extends { number: string }>(docs: T[], prefix: string, start: 
  */
 export function buildSales(ctx: GenContext, inputs: SalesInputs): SalesFixtures {
   const plan = ctx.company.sales;
-  if (!plan) return { quotes: [], invoices: [], payments: [] };
+  if (!plan) return { quotes: [], invoices: [], payments: [], invoiceAdjustments: [], refunds: [] };
   const quotes = Array.from({ length: plan.quotes }, () => seasonalDate(ctx))
     .sort()
     .map((date) => buildQuote(ctx, inputs, date));
   const convertible = quotes.filter((q) => daysBetween(q.createdAt, ctx.anchor) >= 2);
   const converted = new Set(ctx.rng.sample(convertible, plan.invoices).map((q) => q.id));
   const invoices: Invoice[] = [];
-  const payments: Payment[] = [];
+  const drawn: DrawnPayment[] = [];
+  const fullyPaid = new Set<string>();
   for (const quote of quotes) {
     if (!converted.has(quote.id)) {
       quote.status = openQuoteStatus(ctx, quote.createdAt);
@@ -273,15 +289,14 @@ export function buildSales(ctx: GenContext, inputs: SalesInputs): SalesFixtures 
     }
     const invoice = buildInvoice(ctx, inputs, quote);
     const paid = paymentsFor(ctx, invoice, quote, settlementFor(ctx, invoice));
-    invoice.paid = moneyString(paid.reduce((s, p) => s.plus(p.amount), dec(0)));
-    invoice.status = invoice.paid === invoice.total ? "paid" : dec(invoice.paid).gt(0) ? "partial" : "open";
+    if (moneyString(paid.reduce((s, p) => s.plus(p.amount), dec(0))) === invoice.total) fullyPaid.add(invoice.id);
     quote.status = "converted";
     markSent(quote, inputs.settings.localization.documents.quoteExpiryDays);
     quote.invoiceId = invoice.id;
     invoices.push(invoice);
-    payments.push(...paid);
+    drawn.push(...paid);
   }
-  const returnable = invoices.filter((i) => i.status === "paid");
+  const returnable = invoices.filter((i) => fullyPaid.has(i.id));
   const returns = ctx.rng
     .sample(returnable, Math.round(invoices.length * RETURN_SHARE))
     .map((inv) => buildReturn(ctx, inputs, inv))
@@ -289,5 +304,6 @@ export function buildSales(ctx: GenContext, inputs: SalesInputs): SalesFixtures 
   number(quotes, inputs.settings.localization.documents.quotePrefix, 2001, (q) => q.createdAt);
   number(invoices, inputs.settings.localization.documents.invoicePrefix, 1001, (i) => i.issuedAt);
   number(returns, "CR-", 5001, (i) => i.issuedAt);
-  return { quotes, invoices: [...invoices, ...returns], payments };
+  const payments = finishPayments(drawn, invoices, inputs.users, inputs.settings, ctx.anchor);
+  return { quotes, invoices: [...invoices, ...returns], payments, invoiceAdjustments: [], refunds: [] };
 }

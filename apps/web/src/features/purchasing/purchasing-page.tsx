@@ -190,7 +190,11 @@ export function PurchasingPage() {
             />
           ) : view === "bills" ? (
             <>
-              <AgingPanel title="Payables aging" docs={data.data.bills.filter((b) => balance(b).gt(0))} today={today} />
+              <AgingPanel
+                title="Payables aging"
+                docs={data.data.bills.map((b) => ({ dueAt: b.dueAt, balance: balance(b).toString() }))}
+                today={today}
+              />
               <DataTable
                 id="purchasing-bills"
                 rows={data.data.bills}

@@ -3,17 +3,13 @@
 import { useState } from "react";
 import { CircleAlert, ShieldCheck } from "lucide-react";
 import {
-  balance,
   daysBetween,
-  isOverdue,
-  openInvoices,
+  openAmounts,
   PAYMENT_TERM_LABELS,
   SENSITIVE,
   sum,
   type Customer,
   type CustomerType,
-  type Invoice,
-  type Payment,
   defaultAddress,
 } from "@workspace/shared";
 import { StatusPill } from "@workspace/ui/components/status-pill";
@@ -23,6 +19,7 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { AgingPanel } from "@/components/aging-panel";
 import { CERTIFICATE_WARNING_DAYS } from "@/lib/attention";
+import type { SalesLedger } from "@/lib/sales-ledger";
 import { CustomerDrawer } from "./customer-drawer";
 import { IncompleteBadge } from "./customer-picker";
 
@@ -32,15 +29,7 @@ const TYPES: Record<CustomerType, string> = { homeowner: "Homeowner", dealer: "D
  * Customers and receivables (spec Tier 2): homeowners, dealers and contractors with open and
  * overdue balances, certificates and the aging above. Credit limit needs view_sensitive.
  */
-export function CustomersTable({
-  customers,
-  invoices,
-  payments,
-}: {
-  customers: Customer[];
-  invoices: Invoice[];
-  payments: Payment[];
-}) {
+export function CustomersTable({ customers, sales }: { customers: Customer[]; sales: SalesLedger }) {
   const can = useCan();
   const [open, setOpen] = useState<Customer | null>(null);
   const today = api.today();
@@ -49,7 +38,7 @@ export function CustomersTable({
     const d = daysLeft(c);
     return d !== null && d >= 0 && d <= CERTIFICATE_WARNING_DAYS;
   };
-  const own = (c: Customer) => invoices.filter((i) => i.customerId === c.id && !i.isReturn && i.status !== "void");
+  const own = (c: Customer) => sales.invoices.filter((i) => i.customerId === c.id).map((i) => sales.ledgers.get(i.id)!);
 
   const columns: ColumnSpec<Customer>[] = [
     {
@@ -83,7 +72,7 @@ export function CustomersTable({
       id: "open",
       header: "Open balance",
       kind: "money",
-      value: (c) => sum(own(c).map(balance)).toString(),
+      value: (c) => sum(own(c).map((l) => l.balance)).toString(),
       total: true,
     },
     {
@@ -93,8 +82,8 @@ export function CustomersTable({
       value: (c) =>
         sum(
           own(c)
-            .filter((i) => isOverdue(i, today))
-            .map(balance),
+            .filter((l) => l.overdue)
+            .map((l) => l.balance),
         ).toString(),
     },
     {
@@ -113,7 +102,7 @@ export function CustomersTable({
 
   return (
     <>
-      <AgingPanel title="Receivables aging" docs={openInvoices(invoices)} today={today} />
+      <AgingPanel title="Receivables aging" docs={openAmounts(sales.invoices, sales.ledgers)} today={today} />
       <DataTable
         id="sales-customers"
         rows={customers}
@@ -128,8 +117,7 @@ export function CustomersTable({
       />
       <CustomerDrawer
         customer={open ? (customers.find((c) => c.id === open.id) ?? null) : null}
-        invoices={invoices}
-        payments={payments}
+        sales={sales}
         onClose={() => setOpen(null)}
       />
     </>

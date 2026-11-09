@@ -72,6 +72,18 @@ export interface LocalizationSettings {
   };
 }
 
+/** How customer payments are numbered, checked and closed (spec Appendix A, Settings → Payments). */
+export interface PaymentSettings {
+  /** Payments wait for a second person before they count (two-person check). */
+  approvalRequired: boolean;
+  /** With approval on, only payments above this amount wait; empty means every payment. */
+  approvalThreshold: string;
+  /** The largest leftover balance that may be written off; empty means no limit. */
+  writeOffMax: string;
+  paymentPrefix: string;
+  refundPrefix: string;
+}
+
 /** Company profile in Settings: Company profile. */
 export interface CompanyProfile {
   legalName: string;
@@ -89,4 +101,5 @@ export interface CompanySettings {
   localization: LocalizationSettings;
   numbers: NumberSettings;
   profile: CompanyProfile;
+  payments: PaymentSettings;
 }

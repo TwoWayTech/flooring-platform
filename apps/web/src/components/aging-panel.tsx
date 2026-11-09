@@ -1,6 +1,6 @@
 "use client";
 
-import { AGING_BUCKETS, agingSummary } from "@workspace/shared";
+import { AGING_BUCKETS, agingSummary, type OpenAmount } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { cn } from "@workspace/ui/lib/utils";
@@ -14,18 +14,11 @@ const TONE: Record<(typeof AGING_BUCKETS)[number]["key"], string> = {
   d90plus: "bg-danger",
 };
 
-/** A document with a due date and a balance: an open invoice or a supplier bill. */
-interface AgingDoc {
-  dueAt: string;
-  total: string;
-  paid: string;
-}
-
 /**
  * Aging by bucket (spec: current, 30, 60, 90+) for receivables or payables. The buckets always
  * add up to the open balance, which the reconciliation test checks on the fixtures.
  */
-export function AgingPanel({ title, docs, today }: { title: string; docs: readonly AgingDoc[]; today: string }) {
+export function AgingPanel({ title, docs, today }: { title: string; docs: readonly OpenAmount[]; today: string }) {
   const aging = agingSummary(docs, today);
   const total = Number(aging.total) || 1;
   return (

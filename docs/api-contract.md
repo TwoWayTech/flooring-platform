@@ -45,13 +45,13 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 ## Records
 
-`list`, `get` and `save` work on these collections: `roles`, `users`, `locations`, `products`, `rolls`, `stockMovements`, `transfers`, `customers`, `quotes`, `invoices`, `payments`, `suppliers`, `purchaseOrders`, `bills`, `billPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
+`list`, `get` and `save` work on these collections: `roles`, `users`, `locations`, `products`, `rolls`, `stockMovements`, `transfers`, `customers`, `quotes`, `invoices`, `payments`, `invoiceAdjustments`, `refunds`, `suppliers`, `purchaseOrders`, `bills`, `billPayments`, `expenses`, `crews`, `jobs`, `employees`, `timesheets`, `ptoRequests`, `commissions`, `meetings`, `audit`.
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
-| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments and customers of the user as sales rep; jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. |
+| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments, credits, write-offs, refunds and customers of the user as sales rep (payments and adjustments follow their invoice, refunds their customer); jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. |
 | `get(collection, id)` | `GET /:collection/:id` | Undefined when missing or outside scope. |
-| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `stockMovements`, `transfers`, `expenses`, `commissions` and `audit` are written only by domain actions. |
+| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `stockMovements`, `transfers`, `payments`, `invoiceAdjustments`, `refunds`, `expenses`, `commissions` and `audit` are written only by domain actions. Invoices store no status or paid amount: both come from the ledger (`packages/shared/src/ledger.ts`, ADR 0013). |
 
 ## Users and roles
 

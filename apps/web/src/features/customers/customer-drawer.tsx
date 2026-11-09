@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Download, Pencil } from "lucide-react";
 import {
   customerStatement,
+  dec,
   PAYMENT_TERM_LABELS,
   SENSITIVE,
   type Customer,
-  type Invoice,
-  type Payment,
+  type StatementLine,
   defaultAddress,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { downloadText, toCsv } from "@/components/data-table/csv";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { creditOf, type SalesLedger } from "@/lib/sales-ledger";
 import { useFormatDate } from "@/lib/use-format-date";
 import { CustomerAddresses } from "./customer-addresses";
 import { IncompleteBadge } from "./customer-picker";
@@ -24,32 +25,40 @@ import { CustomerProfileDialog } from "./customer-profile-dialog";
 
 const TYPES = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" } as const;
 
+/** What a statement line was, in words (spec Appendix A: statement with payment lines). */
+const LINE_KINDS: Record<StatementLine["kind"], string> = {
+  invoice: "Invoice",
+  credit: "Credit note",
+  payment: "Payment",
+  write_off: "Write-off",
+  refund: "Refund",
+};
+
 /**
  * A customer's account in a drawer: contact, terms, certificate, credit limit (sensitive), addresses
  * and statement. A customer added quickly from a picker is completed here (spec A6).
  */
 export function CustomerDrawer({
   customer,
-  invoices,
-  payments,
+  sales,
   onClose,
 }: {
   customer: Customer | null;
-  invoices: Invoice[];
-  payments: Payment[];
+  sales: SalesLedger;
   onClose: () => void;
 }) {
   const can = useCan();
   const formatDate = useFormatDate();
   const [editing, setEditing] = useState(false);
-  const lines = customer ? customerStatement(invoices, payments, customer.id) : [];
+  const lines = customer ? customerStatement(sales, customer.id) : [];
+  const credit = customer ? creditOf(sales, customer.id) : "0.00";
   const billing = customer ? defaultAddress(customer, "billing") : undefined;
 
   function exportStatement() {
     if (!customer) return;
     const csv = toCsv(lines, [
       { id: "date", header: "Date", value: (l) => l.date },
-      { id: "kind", header: "Type", value: (l) => l.kind },
+      { id: "kind", header: "Type", value: (l) => LINE_KINDS[l.kind] },
       { id: "reference", header: "Reference", value: (l) => l.reference },
       { id: "amount", header: "Amount", value: (l) => l.amount },
       { id: "balance", header: "Balance", value: (l) => l.balance },
@@ -97,6 +106,14 @@ export function CustomerDrawer({
                   </dd>
                 </div>
               ) : null}
+              {dec(credit).gt(0) ? (
+                <div>
+                  <dt className="text-muted-foreground text-xs">Customer credit</dt>
+                  <dd>
+                    <Num kind="money" value={credit} />
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="text-muted-foreground text-xs">Tax status</dt>
                 <dd>
@@ -141,7 +158,9 @@ export function CustomerDrawer({
                     {lines.map((l, i) => (
                       <tr key={i} className="border-hairline border-b">
                         <td className="py-1.5 whitespace-nowrap">{formatDate(l.date)}</td>
-                        <td className="py-1.5">{l.kind === "invoice" ? l.reference : `Payment, ${l.reference}`}</td>
+                        <td className="py-1.5">
+                          {l.kind === "invoice" ? l.reference : `${LINE_KINDS[l.kind]}, ${l.reference}`}
+                        </td>
                         <td className="py-1.5 text-right">
                           <Num kind="money" value={l.amount} />
                         </td>

@@ -6,12 +6,13 @@ import {
   addDays,
   agingSummary,
   balance,
+  ledgerIndex,
+  openAmounts,
   boxedStock,
   computeTotals,
   daysBetween,
   dec,
   inventoryValuation,
-  isOverdue,
   lineAmount,
   moneyString,
   openInvoices,
@@ -62,26 +63,39 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     }
   });
 
-  it("payments match each invoice's paid amount and never exceed its total", () => {
+  const ledgers = ledgerIndex(f.invoices, { payments: f.payments, adjustments: f.invoiceAdjustments }, today);
+
+  it("payments never exceed an invoice's total, and each has a number, a reference and proof", () => {
     for (const inv of f.invoices.filter((i) => !i.isReturn)) {
       const paid = sum(f.payments.filter((p) => p.invoiceId === inv.id).map((p) => p.amount));
-      expect(moneyString(paid), inv.number).toBe(inv.paid);
       expect(paid.lte(inv.total), inv.number).toBe(true);
-      expect(f.payments.every((p) => p.at <= today)).toBe(true);
     }
+    for (const p of f.payments) {
+      expect(p.date <= today, p.number).toBe(true);
+      expect(p.files.length, p.number).toBeGreaterThan(0);
+      expect(p.method === "cash" || p.reference !== "", p.number).toBe(true);
+    }
+    expect(new Set(f.payments.map((p) => p.number)).size).toBe(f.payments.length);
   });
 
-  it("settles returns by refund: paid equals total and no customer payment is recorded", () => {
+  it("settles returns by refund: they owe nothing, give no credit and have no customer payment", () => {
     for (const ret of f.invoices.filter((i) => i.isReturn)) {
-      expect(ret.paid).toBe(ret.total);
+      expect(ledgers.get(ret.id)).toMatchObject({ state: "return", balance: "0.00" });
+      expect(ret.refundedAt).not.toBeNull();
       expect(f.payments.some((p) => p.invoiceId === ret.id)).toBe(false);
     }
   });
 
-  it("receivables aging sums to the open invoices", () => {
-    const open = openInvoices(f.invoices);
-    const aging = agingSummary(open, today);
-    expect(aging.total).toBe(moneyString(sum(open.map(balance))));
+  it("receivables = open invoices: the ledger balances, which aging adds up to", () => {
+    const open = openInvoices(f.invoices, ledgers);
+    const aging = agingSummary(openAmounts(f.invoices, ledgers), today);
+    expect(aging.total).toBe(moneyString(sum(open.map((i) => ledgers.get(i.id)!.balance))));
+    for (const inv of open) {
+      const settled = sum(
+        f.payments.filter((p) => p.invoiceId === inv.id && p.status === "confirmed").map((p) => p.amount),
+      );
+      expect(ledgers.get(inv.id)!.balance, inv.number).toBe(moneyString(dec(inv.total).minus(settled)));
+    }
     const buckets = sum([aging.current, aging.d30, aging.d60, aging.d90, aging.d90plus]);
     expect(moneyString(buckets)).toBe(aging.total);
   });
@@ -164,7 +178,8 @@ describe("spec section 4 volumes", () => {
     const sales = summit.invoices.filter((i) => !i.isReturn);
     expect(summit.quotes).toHaveLength(300);
     expect(sales).toHaveLength(220);
-    const overdue = sales.filter((i) => isOverdue(i, today)).length / sales.length;
+    const summitLedgers = ledgerIndex(summit.invoices, { payments: summit.payments, adjustments: [] }, today);
+    const overdue = sales.filter((i) => summitLedgers.get(i.id)!.overdue).length / sales.length;
     expect(overdue).toBeGreaterThan(0.08);
     expect(overdue).toBeLessThan(0.16);
     expect(summit.invoices.length - sales.length).toBeGreaterThanOrEqual(5);

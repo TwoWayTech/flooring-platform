@@ -92,7 +92,7 @@ export function invoiceFromQuote(
   quote: Quote,
   customer: Customer,
   localization: Pick<LocalizationSettings, "tax" | "region">,
-  input: { id: string; number: string; issuedAt: string },
+  input: { id: string; number: string; issuedAt: string; createdBy: string },
 ): Invoice {
   const ctx = taxContextFor(localization, quote.jobSite, customer, input.issuedAt, quote.lumpSum, quote.taxOverride);
   const totals = computeTotals(quote.lines, ctx);
@@ -106,8 +106,15 @@ export function invoiceFromQuote(
     locationId: quote.locationId,
     issuedAt: input.issuedAt,
     dueAt: dueDate(input.issuedAt, customer.terms),
-    status: "open",
+    createdBy: input.createdBy,
+    sentAt: null,
+    sentBy: null,
+    voidedAt: null,
+    voidReason: null,
+    depositPct: quote.depositPct,
     isReturn: false,
+    creditForInvoiceId: null,
+    refundedAt: null,
     jobSite: quote.jobSite,
     lines: quote.lines,
     taxRule: ctx.rule
@@ -125,6 +132,5 @@ export function invoiceFromQuote(
     tax: totals.tax,
     total: totals.total,
     cost: totals.cost,
-    paid: "0.00",
   };
 }

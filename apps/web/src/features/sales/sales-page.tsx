@@ -10,6 +10,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
+import { loadSalesLedger } from "@/lib/sales-ledger";
 import { CustomersTable } from "@/features/customers/customers-table";
 import { InvoicesTable } from "./invoices-table";
 import { QuotesTable } from "./quotes-table";
@@ -21,15 +22,14 @@ export function SalesPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [quotes, invoices, customers, users, payments, locations] = await Promise.all([
+    const [quotes, sales, customers, users, locations] = await Promise.all([
       client.list("quotes"),
-      client.list("invoices"),
+      loadSalesLedger(client),
       client.list("customers"),
       client.list("users"),
-      client.list("payments"),
       client.list("locations"),
     ]);
-    return { quotes, invoices, customers, users, payments, locations };
+    return { quotes, sales, customers, users, locations };
   }, []);
   const canQuotes = can("sales.quote.view") && featureOn("sales.quotes");
   const canInvoices = can("sales.invoice.view") && featureOn("sales.invoices");
@@ -66,17 +66,9 @@ export function SalesPage() {
           {data.status !== "ready" ? (
             <QueryFallback query={data} className="h-96" label="Loading sales" />
           ) : view === "customers" ? (
-            <CustomersTable
-              customers={data.data.customers}
-              invoices={data.data.invoices}
-              payments={data.data.payments}
-            />
+            <CustomersTable customers={data.data.customers} sales={data.data.sales} />
           ) : view === "invoices" ? (
-            <InvoicesTable
-              invoices={data.data.invoices}
-              customers={data.data.customers}
-              locations={data.data.locations}
-            />
+            <InvoicesTable sales={data.data.sales} customers={data.data.customers} locations={data.data.locations} />
           ) : (
             <QuotesTable
               quotes={data.data.quotes}

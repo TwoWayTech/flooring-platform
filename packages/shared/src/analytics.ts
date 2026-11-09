@@ -2,16 +2,12 @@ import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money"
 import { daysBetween } from "./dates";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
-import type { Bill, Expense, Invoice, Job, Product, Roll } from "./types";
+import type { InvoiceLedger } from "./ledger";
+import type { Bill, Expense, Invoice, InvoiceAdjustment, Job, Payment, Product, Refund, Roll } from "./types";
 
-/** Open balance of an invoice or bill: total minus payments, never below zero for a sale. */
+/** Open balance of a bill: total minus payments. Invoices use their ledger (ledger.ts). */
 export function balance(doc: { total: string; paid: string }): Dec {
   return dec(doc.total).minus(doc.paid);
-}
-
-/** An invoice is overdue when it has a balance and its due date has passed (spec "Needs attention"). */
-export function isOverdue(inv: Invoice, today: string): boolean {
-  return inv.status !== "void" && !inv.isReturn && balance(inv).gt(0) && daysBetween(inv.dueAt, today) > 0;
 }
 
 /** Aging buckets by days past due (spec "Customers and receivables": current, 30, 60, 90+). */
@@ -32,14 +28,17 @@ export function agingBucket(dueAt: string, today: string): AgingKey {
   return AGING_BUCKETS.find((b) => late >= b.min && late <= b.max)!.key;
 }
 
+/** A document that is owed: its due date and what is still open on it. */
+export interface OpenAmount {
+  dueAt: string;
+  balance: string;
+}
+
 /** Sums open balances per aging bucket. The buckets always add up to total open receivables. */
-export function agingSummary(
-  docs: readonly { dueAt: string; total: string; paid: string }[],
-  today: string,
-): Record<AgingKey, string> & { total: string } {
+export function agingSummary(docs: readonly OpenAmount[], today: string): Record<AgingKey, string> & { total: string } {
   const totals: Record<AgingKey, Dec> = { current: dec(0), d30: dec(0), d60: dec(0), d90: dec(0), d90plus: dec(0) };
   for (const doc of docs) {
-    const open = balance(doc);
+    const open = dec(doc.balance);
     if (open.lte(0)) continue;
     const key = agingBucket(doc.dueAt, today);
     totals[key] = totals[key].plus(open);
@@ -51,9 +50,14 @@ export function agingSummary(
   return { ...out, total: moneyString(sum(Object.values(totals))) };
 }
 
-/** Open invoices: not void, not a return, with a balance. */
-export function openInvoices(invoices: readonly Invoice[]): Invoice[] {
-  return invoices.filter((i) => i.status !== "void" && !i.isReturn && balance(i).gt(0));
+/** Open invoices: a balance remains on their ledger (void invoices and returns owe nothing). */
+export function openInvoices(invoices: readonly Invoice[], ledgers: ReadonlyMap<string, InvoiceLedger>): Invoice[] {
+  return invoices.filter((i) => dec(ledgers.get(i.id)?.balance ?? "0").gt(0));
+}
+
+/** What each open invoice still owes and when it was due, for aging (spec B5, Reports). */
+export function openAmounts(invoices: readonly Invoice[], ledgers: ReadonlyMap<string, InvoiceLedger>): OpenAmount[] {
+  return openInvoices(invoices, ledgers).map((i) => ({ dueAt: i.dueAt, balance: ledgers.get(i.id)!.balance }));
 }
 
 /** Open bills: balance above zero. */
@@ -116,7 +120,7 @@ export function monthlyPnl(
   expenses: readonly Expense[],
 ): PnlMonth[] {
   return months.map((month) => {
-    const inMonth = invoices.filter((i) => i.status !== "void" && i.issuedAt.startsWith(month));
+    const inMonth = invoices.filter((i) => !i.voidedAt && i.issuedAt.startsWith(month));
     const revenue = sum(inMonth.map(signedSubtotal));
     const cogs = sum(inMonth.map(signedCost));
     const opex = sum(expenses.filter((e) => e.at.startsWith(month)).map((e) => e.amount));
@@ -147,7 +151,7 @@ export interface ProductSales {
 export function bestSellers(invoices: readonly Invoice[], since: string, limit: number): ProductSales[] {
   const totals = new Map<string, { revenue: Dec; quantity: Dec }>();
   for (const inv of invoices) {
-    if (inv.status === "void" || inv.issuedAt < since) continue;
+    if (inv.voidedAt || inv.issuedAt < since) continue;
     const sign = inv.isReturn ? -1 : 1;
     for (const line of inv.lines) {
       if (line.category !== "material" || !line.productId) continue;
@@ -189,7 +193,7 @@ export function slowMovers(
 ): SlowMover[] {
   const lastSale = new Map<string, string>();
   for (const inv of invoices) {
-    if (inv.isReturn || inv.status === "void") continue;
+    if (inv.isReturn || inv.voidedAt) continue;
     for (const line of inv.lines) {
       if (line.productId && (lastSale.get(line.productId) ?? "") < inv.issuedAt)
         lastSale.set(line.productId, inv.issuedAt);
@@ -220,35 +224,57 @@ export function slowMovers(
 /** One line of a customer statement. Amounts are signed: invoices add, payments subtract. */
 export interface StatementLine {
   date: string;
-  kind: "invoice" | "payment";
+  kind: "invoice" | "credit" | "payment" | "write_off" | "refund";
   reference: string;
   amount: string;
   balance: string;
 }
 
+/** The records a customer statement reads. */
+export interface StatementDocs {
+  invoices: readonly Invoice[];
+  payments: readonly Payment[];
+  adjustments: readonly InvoiceAdjustment[];
+  refunds: readonly Refund[];
+}
+
 /**
- * A customer statement (spec "Customers and receivables"): invoices and payments in date order
- * with a running balance, closing at the customer's open invoice balances. Returns are refunded
- * on the spot, so they never change what the customer owes and are left out.
+ * A customer statement (spec "Customers and receivables", Appendix A): invoices, confirmed
+ * payments, write-offs, credit notes and refunds in date order with a running balance. It closes
+ * at the customer's open balances minus their credit. Credit applied to an invoice only moves
+ * credit the statement already shows, so it is not a line of its own; credit notes refunded on
+ * the spot change nothing and are left out.
  */
-export function customerStatement(
-  invoices: readonly Invoice[],
-  payments: readonly { invoiceId: string; at: string; amount: string; customerId: string }[],
-  customerId: string,
-): StatementLine[] {
-  const events = [
-    ...invoices
-      .filter((i) => i.customerId === customerId && i.status !== "void" && !i.isReturn)
+export function customerStatement(docs: StatementDocs, customerId: string): StatementLine[] {
+  const own = docs.invoices.filter((i) => i.customerId === customerId && !i.voidedAt);
+  const numberOf = (invoiceId: string) => docs.invoices.find((i) => i.id === invoiceId)?.number ?? "";
+  const events: { date: string; kind: StatementLine["kind"]; reference: string; amount: Dec }[] = [
+    ...own
+      .filter((i) => !i.isReturn)
       .map((i) => ({ date: i.issuedAt, kind: "invoice" as const, reference: i.number, amount: dec(i.total) })),
-    ...payments
-      .filter((p) => p.customerId === customerId)
+    ...own
+      .filter((i) => i.isReturn && !i.refundedAt)
+      .map((i) => ({ date: i.issuedAt, kind: "credit" as const, reference: i.number, amount: dec(i.total).negated() })),
+    ...docs.payments
+      .filter((p) => p.customerId === customerId && p.status === "confirmed")
       .map((p) => ({
-        date: p.at.slice(0, 10),
+        date: p.date,
         kind: "payment" as const,
-        reference: invoices.find((i) => i.id === p.invoiceId)?.number ?? "",
+        reference: `${p.number} for ${numberOf(p.invoiceId)}`,
         amount: dec(p.amount).negated(),
       })),
-  ].sort((a, b) => a.date.localeCompare(b.date) || (a.kind === "invoice" ? -1 : 1));
+    ...docs.adjustments
+      .filter((a) => a.customerId === customerId && a.kind === "write_off")
+      .map((a) => ({
+        date: a.at.slice(0, 10),
+        kind: "write_off" as const,
+        reference: numberOf(a.invoiceId),
+        amount: dec(a.amount).negated(),
+      })),
+    ...docs.refunds
+      .filter((r) => r.customerId === customerId && r.status === "completed")
+      .map((r) => ({ date: r.date, kind: "refund" as const, reference: r.number, amount: dec(r.amount) })),
+  ].sort((a, b) => a.date.localeCompare(b.date) || STATEMENT_ORDER[a.kind] - STATEMENT_ORDER[b.kind]);
   let running = dec(0);
   return events.map((e) => {
     running = running.plus(e.amount);
@@ -261,6 +287,15 @@ export function customerStatement(
     };
   });
 }
+
+/** On the same day, what was billed comes before what settled it. */
+const STATEMENT_ORDER: Record<StatementLine["kind"], number> = {
+  invoice: 0,
+  credit: 1,
+  payment: 2,
+  write_off: 3,
+  refund: 4,
+};
 
 /** What an installation job cost and earned. */
 export interface JobCosting {
@@ -304,7 +339,7 @@ export interface CategorySales {
 export function salesByCategory(invoices: readonly Invoice[], products: readonly Product[]): CategorySales[] {
   const groups = new Map<string, { revenue: Dec; cost: Dec }>();
   for (const inv of invoices) {
-    if (inv.status === "void") continue;
+    if (inv.voidedAt) continue;
     const sign = inv.isReturn ? -1 : 1;
     for (const line of inv.lines) {
       const product = products.find((p) => p.id === line.productId);
@@ -346,7 +381,7 @@ export function salesTaxByJurisdiction(invoices: readonly Invoice[]): TaxJurisdi
     { state: string; jurisdiction: string; ratePct: string; sales: Dec; exempt: Dec; tax: Dec }
   >();
   for (const inv of invoices) {
-    if (inv.status === "void") continue;
+    if (inv.voidedAt) continue;
     const sign = inv.isReturn ? -1 : 1;
     const key = inv.taxRule ? `${inv.taxRule.state}|${inv.taxRule.jurisdiction}` : `${inv.jobSite.state}|Not collected`;
     const r = rows.get(key) ?? {

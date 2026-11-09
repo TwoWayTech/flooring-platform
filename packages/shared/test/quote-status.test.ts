@@ -100,3 +100,65 @@ describe("saved demo data upgrade: quote statuses (spec B1)", () => {
     expect(out.records.quotes!.a).toMatchObject({ status: "pending", taxOverride: null });
   });
 });
+
+describe("saved demo data upgrade: invoices and payments (spec Appendix A)", () => {
+  const shift = { days: 0, weeks: 0 };
+  const quote = summit.quotes.find((q) => q.invoiceId && q.depositPct !== "0")!;
+  const oldInvoice = (status: string) => {
+    const row: Record<string, unknown> = {
+      ...summit.invoices.find((i) => i.id === quote.invoiceId)!,
+      status,
+      paid: "0.00",
+    };
+    for (const key of [
+      "createdBy",
+      "sentAt",
+      "sentBy",
+      "voidedAt",
+      "voidReason",
+      "depositPct",
+      "creditForInvoiceId",
+      "refundedAt",
+    ])
+      delete row[key];
+    return row;
+  };
+
+  it("drops stored status and paid, keeps a void date and takes the deposit from the quote", () => {
+    const out = upgradeOverlay(
+      {
+        schemaVersion: 2,
+        shift,
+        settings: null,
+        records: { invoices: { a: oldInvoice("open"), b: oldInvoice("void") } },
+      },
+      { base: summit },
+    );
+    const a = out.records.invoices!.a as Record<string, unknown>;
+    expect(a).not.toHaveProperty("status");
+    expect(a).not.toHaveProperty("paid");
+    expect(a).toMatchObject({ depositPct: quote.depositPct, voidedAt: null, sentAt: a.issuedAt });
+    expect(out.records.invoices!.b).toMatchObject({ voidedAt: a.issuedAt });
+  });
+
+  it("turns an old payment into a confirmed one that still counts", () => {
+    const old = {
+      id: "sm-pay-x",
+      invoiceId: "i",
+      customerId: "c",
+      at: "2026-10-02T10:00",
+      amount: "10.00",
+      method: "cash",
+    };
+    const out = upgradeOverlay(
+      { schemaVersion: 2, shift, settings: null, records: { payments: { x: old } } },
+      { base: summit },
+    );
+    expect(out.records.payments!.x).toMatchObject({
+      date: "2026-10-02",
+      status: "confirmed",
+      files: [],
+      amount: "10.00",
+    });
+  });
+});

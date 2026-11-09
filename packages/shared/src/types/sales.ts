@@ -88,10 +88,11 @@ export interface Quote {
   notes: string;
 }
 
-/** Invoice lifecycle; overdue is derived from the due date and balance. */
-export type InvoiceStatus = "open" | "partial" | "paid" | "void";
-
-/** An invoice; stores the tax rule version it used so history never changes. */
+/**
+ * An invoice; stores the tax rule version it used so history never changes. Its status, paid
+ * amount and balance are never stored: they come from its payments, credits and write-offs
+ * (ledger.ts, spec Appendix A "Core rule"). It keeps only lifecycle facts.
+ */
 export interface Invoice {
   id: string;
   number: string;
@@ -101,8 +102,20 @@ export interface Invoice {
   branchId: string;
   issuedAt: string;
   dueAt: string;
-  status: InvoiceStatus;
+  /** Who made the invoice (a user id), for the lifecycle timeline (spec B2). */
+  createdBy: string;
+  /** When and by whom it was marked as sent to the customer; null until then. */
+  sentAt: string | null;
+  sentBy: string | null;
+  /** Set when the invoice was voided (only while nothing is confirmed), with the reason. */
+  voidedAt: string | null;
+  voidReason: string | null;
+  /** The deposit the quote asked for, as a percent of the total; "0" for none. */
+  depositPct: string;
   isReturn: boolean;
+  /** Credit notes (returns): the invoice they credit, and when the credit was refunded on the spot (else it is customer credit). */
+  creditForInvoiceId: string | null;
+  refundedAt: string | null;
   /** Fulfilled from: the warehouse the goods ship from (spec A1). */
   locationId: string;
   jobSite: Address;
@@ -116,15 +129,84 @@ export interface Invoice {
   tax: string;
   total: string;
   cost: string;
-  paid: string;
 }
 
-/** A customer payment against one invoice. */
+/** How a customer paid (spec Appendix A "Record payment"). */
+export type PaymentMethod = "cash" | "check" | "ach" | "card" | "other";
+
+/** Where a payment stands: only confirmed payments reduce the balance (spec Appendix A "Approval"). */
+export type PaymentStatus = "pending" | "confirmed" | "rejected" | "voided";
+
+/**
+ * A file attached to a record (proof of payment, a supplier's invoice). The bytes live in the
+ * file store (IndexedDB in the demo, object storage later); the record keeps only this.
+ */
+export interface FileMeta {
+  id: string;
+  name: string;
+  /** The real type, read from the file's first bytes, e.g. application/pdf. */
+  type: string;
+  size: number;
+  uploadedBy: string;
+  uploadedAt: string;
+}
+
+/**
+ * A customer payment against one invoice (spec Appendix A). Never edited or deleted after it is
+ * confirmed: corrections void it and record a new one. Card payments keep the last 4 digits only.
+ */
 export interface Payment {
+  id: string;
+  /** PAY-0001, with the company's payment prefix. */
+  number: string;
+  invoiceId: string;
+  customerId: string;
+  kind: "payment" | "deposit";
+  amount: string;
+  /** The day the customer paid. */
+  date: string;
+  method: PaymentMethod;
+  checkNumber: string;
+  cardLast4: string;
+  /** Reference or transaction ID; may be empty only for cash. */
+  reference: string;
+  note: string;
+  files: FileMeta[];
+  status: PaymentStatus;
+  recordedBy: string;
+  recordedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  voidedBy: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+}
+
+/** A write-off of a small leftover, or customer credit applied to an invoice (spec Appendix A "Corrections"). */
+export interface InvoiceAdjustment {
   id: string;
   invoiceId: string;
   customerId: string;
-  at: string;
+  kind: "write_off" | "credit_applied";
   amount: string;
-  method: "card" | "check" | "ach" | "cash";
+  reason: string;
+  byName: string;
+  at: string;
+}
+
+/** Customer credit paid back to the customer, with mandatory proof (spec Appendix A "Refund"). */
+export interface Refund {
+  id: string;
+  number: string;
+  customerId: string;
+  amount: string;
+  date: string;
+  method: PaymentMethod;
+  reference: string;
+  note: string;
+  files: FileMeta[];
+  status: "completed" | "voided";
+  byName: string;
+  at: string;
 }

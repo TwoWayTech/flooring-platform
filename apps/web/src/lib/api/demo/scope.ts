@@ -29,6 +29,12 @@ type Filter = (item: never, subject: ScopeSubject, db: CompanyDb) => boolean;
 const byRep: Filter = (item: { salesRepId: string; branchId: string }, { user, scope }) =>
   scope === "own" ? item.salesRepId === user.id : item.branchId === user.branchId;
 
+/** Payments, credits and write-offs follow the invoice they belong to. */
+function invoiceInScope(invoiceId: string, subject: ScopeSubject, db: CompanyDb): boolean {
+  const invoice = db.get("invoices", invoiceId);
+  return !!invoice && byRep(invoice as never, subject, db);
+}
+
 const byEmployee: Filter = (item: { employeeId: string }, { user }) => item.employeeId === user.employeeId;
 
 /**
@@ -40,9 +46,11 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
   invoices: byRep,
   customers: (item: { salesRepId: string }, { user, scope }, db) =>
     scope === "own" ? item.salesRepId === user.id : db.get("users", item.salesRepId)?.branchId === user.branchId,
-  payments: (item: { invoiceId: string }, subject, db) => {
-    const invoice = db.get("invoices", item.invoiceId);
-    return !!invoice && byRep(invoice as never, subject, db);
+  payments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
+  invoiceAdjustments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
+  refunds: (item: { customerId: string }, subject, db) => {
+    const customer = db.get("customers", item.customerId);
+    return !!customer && FILTERS.customers!(customer as never, subject, db);
   },
   jobs: (item: { crewId: string }, { user, scope }, db) =>
     scope !== "own" || db.get("crews", item.crewId)?.lead === user.name,

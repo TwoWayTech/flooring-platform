@@ -5,7 +5,7 @@ import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
 import type { Bill, BillPayment, Expense, PurchaseOrder, Supplier } from "./purchasing";
 import type { Location, StockMovement, Transfer } from "./locations";
-import type { Customer, Invoice, Payment, Quote } from "./sales";
+import type { Customer, Invoice, InvoiceAdjustment, Payment, Quote, Refund } from "./sales";
 import type { AuditEntry, CompanySettings } from "./settings";
 
 /** The fixtures for one company, as the generator writes them. */
@@ -25,6 +25,8 @@ export interface CompanyFixtures {
   quotes: Quote[];
   invoices: Invoice[];
   payments: Payment[];
+  invoiceAdjustments: InvoiceAdjustment[];
+  refunds: Refund[];
   suppliers: Supplier[];
   purchaseOrders: PurchaseOrder[];
   bills: Bill[];

@@ -8,9 +8,9 @@ import { Button } from "@workspace/ui/components/button";
 import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
-import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
-import { invoiceState, InvoiceStatePill } from "@/lib/document-status";
+import { InvoiceStatusPills } from "@/lib/document-status";
+import { loadSalesLedger } from "@/lib/sales-ledger";
 import { buildInvoiceModel, type InvoiceModel } from "./invoice-model";
 import { InvoiceDocument } from "./invoice-document";
 
@@ -34,13 +34,14 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
     async (client) => {
       const invoice = await client.get("invoices", invoiceId);
       if (!invoice) return null;
-      const [customer, quote, payments, settings] = await Promise.all([
+      const [customer, quote, sales, settings] = await Promise.all([
         client.get("customers", invoice.customerId),
         invoice.quoteId ? client.get("quotes", invoice.quoteId) : Promise.resolve(undefined),
-        client.list("payments"),
+        loadSalesLedger(client),
         client.getSettings(),
       ]);
-      return { invoice, customer, quote, payments: payments.filter((p) => p.invoiceId === invoiceId), settings };
+      const payments = sales.payments.filter((p) => p.invoiceId === invoiceId);
+      return { invoice, customer, quote, payments, ledger: sales.ledgers.get(invoiceId)!, settings };
     },
     [invoiceId],
   );
@@ -50,8 +51,8 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   if (!data.data || !data.data.customer) {
     return <p className="text-muted-foreground">This invoice does not exist or is outside what you can see.</p>;
   }
-  const { invoice, customer, quote, payments, settings } = data.data;
-  const model = buildInvoiceModel(invoice, customer, quote, payments, settings);
+  const { invoice, customer, quote, payments, ledger, settings } = data.data;
+  const model = buildInvoiceModel(invoice, ledger, customer, quote, payments, settings);
 
   async function onDownload() {
     setPending(true);
@@ -75,7 +76,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         Invoices
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <InvoiceStatePill state={invoiceState(invoice, api.today())} />
+        <InvoiceStatusPills ledger={ledger} />
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => window.print()}>
             <Printer />

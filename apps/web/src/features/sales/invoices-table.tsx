@@ -1,26 +1,29 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { balance, locationName, type Customer, type Invoice, type Location } from "@workspace/shared";
+import { invoiceStatusLabel, locationName, type Customer, type Invoice, type Location } from "@workspace/shared";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
-import { api } from "@/lib/api";
-import { invoiceState, InvoiceStatePill, invoiceStateLabel } from "@/lib/document-status";
+import { InvoiceStatusPills } from "@/lib/document-status";
+import type { SalesLedger } from "@/lib/sales-ledger";
 import { useFormatDate } from "@/lib/use-format-date";
 
-/** Invoices with their state today; "Needs attention" links here filtered to Overdue (spec A2). */
+/**
+ * Invoices with their status and balance from the ledger (spec Appendix A); "Needs attention"
+ * links here filtered to Overdue or Pending verification (spec A2).
+ */
 export function InvoicesTable({
-  invoices,
+  sales,
   customers,
   locations,
 }: {
-  invoices: Invoice[];
+  sales: SalesLedger;
   customers: Customer[];
   locations: Location[];
 }) {
   const router = useRouter();
   const formatDate = useFormatDate();
-  const today = api.today();
+  const ledger = (i: Invoice) => sales.ledgers.get(i.id)!;
   const columns: ColumnSpec<Invoice>[] = [
     {
       id: "number",
@@ -35,22 +38,16 @@ export function InvoicesTable({
     {
       id: "state",
       header: "Status",
-      value: (i) => invoiceStateLabel(invoiceState(i, today)),
-      cell: (i) => <InvoiceStatePill state={invoiceState(i, today)} />,
+      value: (i) => invoiceStatusLabel(ledger(i)),
+      cell: (i) => <InvoiceStatusPills ledger={ledger(i)} />,
     },
     { id: "total", header: "Total", kind: "money", value: (i) => i.total, total: true },
-    {
-      id: "balance",
-      header: "Balance",
-      kind: "money",
-      value: (i) => (i.isReturn ? "0" : balance(i).toString()),
-      total: true,
-    },
+    { id: "balance", header: "Balance", kind: "money", value: (i) => ledger(i).balance, total: true },
   ];
   return (
     <DataTable
       id="sales-invoices"
-      rows={invoices}
+      rows={sales.invoices}
       columns={columns}
       getRowId={(i) => i.id}
       onRowClick={(i) => router.push(`/sales/invoices/${i.id}`)}

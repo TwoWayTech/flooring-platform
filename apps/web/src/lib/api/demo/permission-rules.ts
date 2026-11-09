@@ -17,7 +17,10 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   customers: ["customers.customer.create", "customers.customer.edit"],
   quotes: ["sales.quote.create", "sales.quote.edit"],
   invoices: ["sales.invoice.create", "sales.invoice.edit"],
-  payments: ["sales.payment.record"],
+  // Payments, credits, write-offs and refunds change only through their own store calls (spec Appendix A).
+  payments: [],
+  invoiceAdjustments: [],
+  refunds: [],
   suppliers: ["purchasing.supplier.create", "purchasing.supplier.edit"],
   purchaseOrders: ["purchasing.order.create"],
   bills: ["purchasing.bill.create"],
@@ -47,6 +50,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   localization: ["settings.localization.manage", "settings.tax.manage"],
   numbers: ["settings.numbers.manage"],
   profile: ["settings.company.manage"],
+  payments: ["settings.payments.manage"],
 };
 
 /** Permissions that allow changing one settings section. */

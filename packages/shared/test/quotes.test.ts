@@ -109,6 +109,7 @@ describe("quote rules", () => {
       id: "i1",
       number: "INV-1228",
       issuedAt: "2026-11-07",
+      createdBy: "u1",
     });
     const expected = computeTotals(
       measured,
@@ -117,6 +118,7 @@ describe("quote rules", () => {
     expect(invoice.total).toBe(expected.total);
     expect(invoice.dueAt).toBe("2026-12-07");
     expect(invoice.taxRule).toMatchObject({ state: "NJ", version: 1 });
-    expect(invoice.paid).toBe("0.00");
+    expect(invoice).toMatchObject({ sentAt: null, voidedAt: null, depositPct: quote.depositPct, createdBy: "u1" });
+    expect(invoice).not.toHaveProperty("paid");
   });
 });

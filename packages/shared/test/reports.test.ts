@@ -17,7 +17,7 @@ const keystone = JSON.parse(
   readFileSync(join(__dirname, "..", "fixtures", "keystone.json"), "utf8"),
 ) as CompanyFixtures;
 const signed = (f: CompanyFixtures, key: "subtotal" | "tax") =>
-  sum(f.invoices.filter((i) => i.status !== "void").map((i) => dec(i[key]).times(i.isReturn ? -1 : 1)));
+  sum(f.invoices.filter((i) => !i.voidedAt).map((i) => dec(i[key]).times(i.isReturn ? -1 : 1)));
 
 describe("reports reconcile with the documents", () => {
   it("sales by category add up to net invoiced sales", () => {
