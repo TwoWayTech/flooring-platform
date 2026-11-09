@@ -1,11 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Building2, CalendarPlus, ChevronLeft, ChevronRight, Repeat, Truck, UserRound } from "lucide-react";
+import {
+  BellRing,
+  Building2,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
+  Repeat,
+  Truck,
+  UserRound,
+} from "lucide-react";
 import { addDays, meetingOccurrences, mondayOf, type Attendee, type MeetingOccurrence } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
+import { Segmented } from "@workspace/ui/components/segmented";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { cn } from "@workspace/ui/lib/utils";
 import { QueryFallback } from "@/components/query-fallback";
@@ -15,15 +26,26 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { NewMeetingDialog, RECURRENCE } from "./new-meeting-dialog";
+import { RescheduleForm } from "./reschedule-form";
+import { timeOf, TimeGrid } from "./time-grid";
+import { useReschedule } from "./use-reschedule";
 
-const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const ATTENDEE_ICON = { staff: UserRound, customer: Building2, supplier: Truck } as const;
-
-/** "9:00 AM" from an ISO date-time. */
-function timeOf(iso: string): string {
-  const [h, m] = iso.slice(11, 16).split(":").map(Number) as [number, number];
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
-}
+type View = "day" | "week" | "month" | "agenda";
+const VIEWS: (readonly [View, string])[] = [
+  ["day", "Day"],
+  ["week", "Week"],
+  ["month", "Month"],
+  ["agenda", "Agenda"],
+];
+/** How far Previous and Next go, and what they are called, per view. */
+const STEP: Record<View, { days: number; noun: string }> = {
+  day: { days: 1, noun: "day" },
+  week: { days: 7, noun: "week" },
+  month: { days: 0, noun: "month" },
+  agenda: { days: 7, noun: "week" },
+};
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function AttendeeChip({ attendee }: { attendee: Attendee }) {
   const Icon = ATTENDEE_ICON[attendee.kind];
@@ -36,16 +58,29 @@ function AttendeeChip({ attendee }: { attendee: Attendee }) {
   );
 }
 
+/** The first day of the month a date is in, and of the month after. */
+const monthOf = (iso: string) => `${iso.slice(0, 7)}-01`;
+function shiftMonth(iso: string, by: number) {
+  const [y, m] = iso.split("-").map(Number) as [number, number];
+  const d = new Date(Date.UTC(y, m - 1 + by, 1));
+  return d.toISOString().slice(0, 10);
+}
+
 /**
- * Meetings (spec Tier 2): a week calendar of meetings with staff, customers and suppliers,
- * recurring meetings expanded into their dates, and reminders.
+ * Meetings (spec Tier 2, F): day, week, month and agenda views of meetings with staff, customers
+ * and suppliers. Drag a meeting to move it, drag its edge to change its length, click an empty
+ * slot to schedule; a repeating meeting asks this event, this and following, or all. Conflicts
+ * are named, every move has Undo, and the drawer's Reschedule form does the same by keyboard.
  */
 export function MeetingsPage() {
   const can = useCan();
   const formatDate = useFormatDate();
-  const [week, setWeek] = useState(mondayOf(api.today()));
+  const today = api.today();
+  const [view, setView] = useState<View>("week");
+  const [anchor, setAnchor] = useState(today);
   const [open, setOpen] = useState<MeetingOccurrence | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<string | null>(null);
+  const { reschedule, dialog } = useReschedule();
   const data = useApiQuery(async (client) => {
     const [meetings, users, customers, suppliers] = await Promise.all([
       client.list("meetings"),
@@ -56,9 +91,39 @@ export function MeetingsPage() {
     return { meetings, users, customers, suppliers };
   }, []);
   if (!can("meetings.meeting.view")) return <NoAccess />;
-  const today = api.today();
-  const days = DAY_NAMES.map((_, i) => addDays(week, i));
-  const occurrences = data.data ? meetingOccurrences(data.data.meetings, days[0]!, days[6]!) : [];
+  const canEdit = can("meetings.meeting.edit");
+
+  const week = mondayOf(anchor);
+  const days = view === "day" ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const monthStart = monthOf(anchor);
+  const gridStart = mondayOf(monthStart);
+  const monthDays = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  const range =
+    view === "month"
+      ? [gridStart, monthDays[41]!]
+      : view === "agenda"
+        ? [anchor, addDays(anchor, 29)]
+        : [days[0]!, days.at(-1)!];
+  const occurrences = data.data ? meetingOccurrences(data.data.meetings, range[0]!, range[1]!) : [];
+  const step = STEP[view];
+  const go = (by: number) => setAnchor(view === "month" ? shiftMonth(anchor, by) : addDays(anchor, by * step.days));
+  const title =
+    view === "day"
+      ? formatDate(anchor)
+      : view === "month"
+        ? new Date(`${monthStart}T00:00:00Z`).toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : view === "agenda"
+          ? `Next 30 days from ${formatDate(anchor)}`
+          : `Week of ${formatDate(week)}`;
+  const shortDay = (day: string) =>
+    `${WEEKDAYS[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7]} ${formatDate(day).replace(/,? \d{4}$/, "")}`;
+  const current = open
+    ? (occurrences.find((o) => o.meeting.id === open.meeting.id && o.planned === open.planned) ?? open)
+    : null;
 
   return (
     <>
@@ -66,7 +131,7 @@ export function MeetingsPage() {
         title="Meetings"
         actions={
           can("meetings.meeting.create") ? (
-            <Button onClick={() => setCreating(true)}>
+            <Button onClick={() => setCreating(`${today}T09:00`)}>
               <CalendarPlus />
               New meeting
             </Button>
@@ -74,122 +139,155 @@ export function MeetingsPage() {
         }
       />
       <Panel
-        title={`Week of ${formatDate(week)}`}
+        title={title}
         actions={
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Previous week"
-              onClick={() => setWeek(addDays(week, -7))}
-            >
-              <ChevronLeft />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setWeek(mondayOf(today))}>
-              This week
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => setWeek(addDays(week, 7))}>
-              <ChevronRight />
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented label="Calendar view" value={view} options={VIEWS} onChange={(v) => setView(v as View)} />
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon-sm" aria-label={`Previous ${step.noun}`} onClick={() => go(-1)}>
+                <ChevronLeft />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setAnchor(today)}>
+                Today
+              </Button>
+              <Button variant="ghost" size="icon-sm" aria-label={`Next ${step.noun}`} onClick={() => go(1)}>
+                <ChevronRight />
+              </Button>
+            </div>
           </div>
         }
       >
         {data.status !== "ready" ? (
           <QueryFallback query={data} className="h-64" label="Loading meetings" />
-        ) : (
-          <ol className="grid grid-cols-1 gap-3 md:grid-cols-7">
-            {days.map((day, i) => {
+        ) : view === "day" || view === "week" ? (
+          <TimeGrid
+            days={days}
+            occurrences={occurrences}
+            today={today}
+            canEdit={canEdit}
+            onOpen={setOpen}
+            onMove={reschedule}
+            onCreate={(start) => can("meetings.meeting.create") && setCreating(start)}
+            dayLabel={shortDay}
+          />
+        ) : view === "month" ? (
+          <ol className="grid grid-cols-7 gap-px text-xs" aria-label={title}>
+            {monthDays.map((day) => {
               const items = occurrences.filter((o) => o.start.startsWith(day));
               return (
                 <li
                   key={day}
                   className={cn(
-                    "flex flex-col gap-2 rounded-md p-2 md:min-h-24",
-                    day === today ? "bg-brand-soft/50" : "bg-raised/60",
+                    "bg-raised/60 flex min-h-20 flex-col gap-1 p-1",
+                    day.slice(0, 7) !== monthStart.slice(0, 7) && "opacity-50",
+                    day === today && "bg-brand-soft/50",
                   )}
                 >
-                  <h3 className={cn("text-xs font-medium", day === today ? "text-brand-ink" : "text-muted-foreground")}>
-                    {DAY_NAMES[i]} {formatDate(day).replace(/,? \d{4}$/, "")}
-                  </h3>
-                  {items.length === 0 ? <p className="text-muted-foreground text-xs md:sr-only">No meetings</p> : null}
+                  <span className={cn("font-medium", day === today ? "text-brand-ink" : "text-muted-foreground")}>
+                    {Number(day.slice(8))}
+                  </span>
                   {items.map((o) => (
                     <button
-                      key={`${o.meeting.id}-${o.start}`}
+                      key={`${o.meeting.id}-${o.planned}`}
                       type="button"
                       onClick={() => setOpen(o)}
-                      className="bg-surface border-hairline hover:bg-raised flex flex-col gap-0.5 rounded-sm border p-2 text-left text-xs"
+                      className="bg-surface hover:bg-raised truncate rounded-sm px-1 text-left"
                     >
-                      <span className="flex items-center justify-between gap-1 font-medium tabular-nums">
-                        {timeOf(o.start)}
-                        {o.meeting.recurrence !== "none" ? (
-                          <Repeat
-                            role="img"
-                            aria-label={RECURRENCE[o.meeting.recurrence]}
-                            className="text-muted-foreground size-3"
-                          />
-                        ) : null}
-                      </span>
-                      <span className="line-clamp-2">{o.meeting.title}</span>
-                      <span className="text-muted-foreground truncate">
-                        {o.meeting.durationMin} min, {o.meeting.location}
-                      </span>
+                      {timeOf(o.start)} {o.meeting.title}
                     </button>
                   ))}
                 </li>
               );
             })}
           </ol>
+        ) : (
+          <ol className="flex flex-col gap-4">
+            {[...new Set(occurrences.map((o) => o.start.slice(0, 10)))].map((day) => (
+              <li key={day}>
+                <h3 className="text-muted-foreground mb-1 text-xs font-medium">{shortDay(day)}</h3>
+                <ul className="flex flex-col gap-1">
+                  {occurrences
+                    .filter((o) => o.start.startsWith(day))
+                    .map((o) => (
+                      <li key={`${o.meeting.id}-${o.planned}`}>
+                        <button
+                          type="button"
+                          onClick={() => setOpen(o)}
+                          className="hover:bg-raised flex w-full gap-3 rounded-sm px-2 py-1.5 text-left text-sm"
+                        >
+                          <span className="w-20 shrink-0 tabular-nums">{timeOf(o.start)}</span>
+                          <span className="flex-1">{o.meeting.title}</span>
+                          <span className="text-muted-foreground">{o.durationMin} min</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </li>
+            ))}
+            {occurrences.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No meetings in the next 30 days.</p>
+            ) : null}
+          </ol>
         )}
-        {data.status === "ready" && occurrences.length === 0 ? (
-          <p className="text-muted-foreground mt-3 hidden text-sm md:block">
-            No meetings this week. Use New meeting to schedule one.
-          </p>
-        ) : null}
       </Panel>
-      <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+      <Sheet open={!!current} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md">
-          {open ? (
+          {current ? (
             <>
               <SheetHeader>
-                <SheetTitle>{open.meeting.title}</SheetTitle>
+                <SheetTitle>{current.meeting.title}</SheetTitle>
                 <SheetDescription>
-                  {formatDate(open.start)}, {timeOf(open.start)} for {open.meeting.durationMin} minutes,{" "}
-                  {open.meeting.location}
+                  {formatDate(current.start.slice(0, 10))}, {timeOf(current.start)} for {current.durationMin} minutes,{" "}
+                  {current.meeting.location}
                 </SheetDescription>
               </SheetHeader>
               <div className="flex flex-col gap-4 px-4 pb-6 text-sm">
                 <p className="flex items-center gap-2">
                   <BellRing aria-hidden="true" className="text-brand-ink size-4" />
-                  Reminder {open.meeting.reminderMin} minutes before
+                  Reminder {current.meeting.reminderMin} minutes before
                 </p>
                 <p className="flex items-center gap-2">
                   <Repeat aria-hidden="true" className="text-muted-foreground size-4" />
-                  {RECURRENCE[open.meeting.recurrence]}
+                  {RECURRENCE[current.meeting.recurrence]}
+                </p>
+                <p className="flex items-center gap-2">
+                  <Globe aria-hidden="true" className="text-muted-foreground size-4" />
+                  Times in {current.meeting.timeZone.replace("_", " ")}
                 </p>
                 <section aria-labelledby="attendees-title">
                   <h3 id="attendees-title" className="mb-2 font-semibold">
                     Attendees
                   </h3>
                   <ul className="flex flex-wrap gap-1.5">
-                    {open.meeting.attendees.map((a) => (
+                    {current.meeting.attendees.map((a) => (
                       <AttendeeChip key={`${a.kind}-${a.id}`} attendee={a} />
                     ))}
                   </ul>
                 </section>
+                {canEdit ? (
+                  <RescheduleForm
+                    key={`${current.meeting.id}-${current.planned}`}
+                    occurrence={current}
+                    onSubmit={(start, minutes) => reschedule(current, start, minutes)}
+                  />
+                ) : null}
               </div>
             </>
           ) : null}
         </SheetContent>
       </Sheet>
-      {data.data ? (
+      {data.data && creating ? (
         <NewMeetingDialog
-          open={creating}
-          onOpenChange={setCreating}
+          key={creating}
+          open
+          onOpenChange={(o) => !o && setCreating(null)}
           users={data.data.users}
           customers={data.data.customers}
           suppliers={data.data.suppliers}
+          initialStart={creating}
         />
       ) : null}
+      {dialog}
     </>
   );
 }

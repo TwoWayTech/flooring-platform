@@ -39,14 +39,23 @@ interface NewMeetingDialogProps {
   users: User[];
   customers: Customer[];
   suppliers: Supplier[];
+  /** The slot clicked on the calendar, "2026-11-09T10:00"; empty starts today at 9:00. */
+  initialStart?: string;
 }
 
 /** Schedules a meeting with staff and, optionally, a customer or supplier; it can repeat and remind. */
-export function NewMeetingDialog({ open, onOpenChange, users, customers, suppliers }: NewMeetingDialogProps) {
-  const { user } = useWorkspace();
+export function NewMeetingDialog({
+  open,
+  onOpenChange,
+  users,
+  customers,
+  suppliers,
+  initialStart,
+}: NewMeetingDialogProps) {
+  const { user, settings } = useWorkspace();
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(api.today());
-  const [time, setTime] = useState("09:00");
+  const [date, setDate] = useState(initialStart?.slice(0, 10) ?? api.today());
+  const [time, setTime] = useState(initialStart?.slice(11, 16) ?? "09:00");
   const [duration, setDuration] = useState("30");
   const [location, setLocation] = useState("Conference room");
   const [staff, setStaff] = useState<string[]>([user.id]);
@@ -76,6 +85,9 @@ export function NewMeetingDialog({ open, onOpenChange, users, customers, supplie
       attendees,
       recurrence,
       reminderMin: Number(reminder),
+      timeZone: settings.localization.region.timeZone,
+      until: null,
+      exceptions: [],
       ownerUserId: user.id,
       notes: "",
     };

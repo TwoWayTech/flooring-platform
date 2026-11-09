@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: F (meetings calendar: day, week, month and agenda views; drag to move and drag the edge to resize; click an empty slot to create; recurring asks this / this and following / all; attendee conflicts; Undo toast; keyboard and form alternative).
+- Next step: run the Batch F suite, tick it, then G1 (import wizard: kinds, templates, CSV and Excel parsed in a Web Worker with Papa Parse and SheetJS, mapping, validation, preview and dry run, import with error CSV, history with Undo) and G2 (Connect a database screen with a simulated test; docs/specs/data-integration.md).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -109,7 +109,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch E: full suite green (all specs on a production build in chunks)
 
 #### Batch F: meetings calendar
-- [ ] F. Day, week, month and agenda views; drag to move, drag the edge to resize, click an empty slot to create; recurring edit scope (this, this and following, all); attendee conflict warning; Undo toast; keyboard and form alternative; reminders and time zones follow the move
+- [x] F. Day, week, month and agenda views; drag to move, drag the edge to resize, click an empty slot to create; recurring edit scope (this, this and following, all); attendee conflict warning; Undo toast; keyboard and form alternative; reminders and time zones follow the move
 - [ ] Batch F: full suite green
 
 #### Batch G: data import and database integration

@@ -11,7 +11,12 @@ import type { GenContext } from "./context";
 import { branchWarehouse } from "./locations";
 import { emailFor } from "./random";
 
-const TIME_ZONES: Record<string, string> = { CO: "America/Denver", PA: "America/New_York", FL: "America/New_York" };
+/** The time zone of each seed state. */
+export const TIME_ZONES: Record<string, string> = {
+  CO: "America/Denver",
+  PA: "America/New_York",
+  FL: "America/New_York",
+};
 
 /**
  * The company record the super-admin manages. The ceiling is every permission the product

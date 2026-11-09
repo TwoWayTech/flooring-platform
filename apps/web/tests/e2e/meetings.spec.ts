@@ -33,3 +33,42 @@ test.describe("meetings", () => {
     await expect(page.getByRole("button", { name: /Weekly recruiter standup/ })).toBeVisible();
   });
 });
+
+test.describe("meetings calendar (spec F)", () => {
+  test("drags a repeating meeting an hour later for this event only, and Undo puts it back", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    const meeting = page.getByRole("button", { name: /^Weekly sales huddle, / }).first();
+    const before = (await meeting.getAttribute("aria-label"))!;
+    const box = (await meeting.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + 8 + 24, { steps: 4 });
+    await page.mouse.move(box.x + box.width / 2, box.y + 8 + 48, { steps: 4 });
+    await page.mouse.up();
+    const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
+    await ask.getByLabel("This event").check();
+    await ask.getByRole("button", { name: "Move" }).click();
+    await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
+    await expect(page.getByRole("button", { name: before })).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(page.getByText("Move undone")).toBeVisible();
+    await expect(page.getByRole("button", { name: before })).toBeVisible();
+  });
+
+  test("reschedules from the form, and shows month and agenda views", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    await page.getByRole("button", { name: /^Weekly sales huddle, / }).first().click();
+    const drawer = page.getByRole("dialog", { name: "Weekly sales huddle" });
+    await drawer.getByLabel("Start").fill("16:00");
+    await drawer.getByRole("button", { name: "Move meeting" }).click();
+    await page.getByRole("dialog", { name: "Move a repeating meeting" }).getByRole("button", { name: "Move" }).click();
+    await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /^Weekly sales huddle, 4:00 PM/ })).toBeVisible();
+
+    await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Month" }).click();
+    await expect(page.getByRole("button", { name: "Next month" })).toBeVisible();
+    await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Agenda" }).click();
+    await expect(page.getByText(/^Next 30 days from/)).toBeVisible();
+  });
+});

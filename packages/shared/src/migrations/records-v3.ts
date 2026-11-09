@@ -192,4 +192,18 @@ function upgradePurchasing(records: StoredOverlay["records"], ctx: UpgradeContex
  * Upgrade steps from schema version 2 to 3 (feature batch 2, Batch B), run in order. Each step
  * leaves records that already have the new shape alone, so it is safe on any saved version.
  */
-export const V3_RECORD_STEPS: RecordStep[] = [upgradeQuoteStatus, upgradeInvoices, upgradePayments, upgradePurchasing];
+/** Meetings gain a time zone (the company's), no end date and no moved occurrences (spec F). */
+function upgradeMeetings(records: StoredOverlay["records"], ctx: UpgradeContext): StoredOverlay["records"] {
+  const timeZone = ctx.base.settings.localization.region.timeZone;
+  return mapRecords(records, "meetings", (meeting: Row) =>
+    "exceptions" in meeting ? meeting : { ...meeting, timeZone, until: null, exceptions: [] },
+  );
+}
+
+export const V3_RECORD_STEPS: RecordStep[] = [
+  upgradeQuoteStatus,
+  upgradeInvoices,
+  upgradePayments,
+  upgradePurchasing,
+  upgradeMeetings,
+];

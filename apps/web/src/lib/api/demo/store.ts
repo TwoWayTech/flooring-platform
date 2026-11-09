@@ -51,6 +51,8 @@ import type {
   NewCustomerInput,
   AdjustmentDecision,
   AdjustmentInput,
+  MeetingMove,
+  MeetingUndo,
   BillInput,
   NewPurchaseOrderInput,
   ReceiptInput,
@@ -69,6 +71,7 @@ import { applyScope, scopeSubject } from "./scope";
 import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, signOffJob } from "./job-actions";
+import { rescheduleMeeting, undoReschedule } from "./meeting-actions";
 import {
   cancelOrder,
   createPurchaseOrder,
@@ -597,6 +600,14 @@ export class DemoStore implements ApiClient {
 
   async createRollInvoice(input: RollInvoiceInput) {
     return this.act((ctx) => createRollInvoice(ctx, input));
+  }
+
+  async rescheduleMeeting(move: MeetingMove) {
+    return this.act((ctx) => rescheduleMeeting(ctx, move));
+  }
+
+  async undoReschedule(undo: MeetingUndo) {
+    return this.act((ctx) => undoReschedule(ctx, undo));
   }
 
   async signOffJob(jobId: string, signer: string) {

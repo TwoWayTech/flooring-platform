@@ -32,6 +32,9 @@ import type {
   SupplierPayment,
   Reservation,
   StockAdjustment,
+  Conflict,
+  Meeting,
+  MoveScope,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -129,6 +132,22 @@ export interface SupplierPaymentInput {
   reference: string;
   note: string;
   billIds?: string[];
+}
+
+/** A drag, a resize or the reschedule form on one occurrence (spec F). */
+export interface MeetingMove {
+  meetingId: string;
+  /** The date-time the series planned the occurrence for. */
+  planned: string;
+  start: string;
+  durationMin: number;
+  scope: MoveScope;
+}
+
+/** What Undo needs to put a meeting back after a move. */
+export interface MeetingUndo {
+  previous: Meeting;
+  createdIds: string[];
 }
 
 /** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
@@ -292,6 +311,13 @@ export interface ApiClient {
   signOffJob(jobId: string, signer: string): Promise<Job>;
   /** Creates and links the invoice of a job that has none, from its materials and labor. Audited. */
   createInvoiceFromJob(jobId: string): Promise<Invoice>;
+  /**
+   * Moves or resizes one occurrence, this and following, or all (spec F). Needs meetings.meeting.edit.
+   * Returns the saved meetings, attendee conflicts at the new time and the Undo record. Audited.
+   */
+  rescheduleMeeting(move: MeetingMove): Promise<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>;
+  /** Undoes a move. Audited. */
+  undoReschedule(undo: MeetingUndo): Promise<Meeting>;
   /** Creates a purchase order as a draft or ordered at once (spec D1). Needs purchasing.order.create. Audited. */
   createPurchaseOrder(input: NewPurchaseOrderInput): Promise<PurchaseOrder>;
   /** Sends a draft purchase order to the supplier. Audited. */

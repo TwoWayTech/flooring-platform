@@ -1,4 +1,5 @@
 import { addDays, mondayOf } from "../../src/dates";
+import { TIME_ZONES } from "./tenant";
 import type { Attendee, Customer, Meeting, Supplier, User } from "../../src/types";
 import type { GenContext } from "./context";
 
@@ -68,6 +69,7 @@ export function buildMeetings(
   customers: readonly Customer[],
   suppliers: readonly Supplier[],
 ): Meeting[] {
+  const timeZone = TIME_ZONES[ctx.company.state] ?? "America/New_York";
   return (TEMPLATES[ctx.company.id] ?? []).map((template) => {
     const attendees = staff(users, ctx.rng.int(2, 4), ctx);
     let title = template.title;
@@ -97,6 +99,9 @@ export function buildMeetings(
       reminderMin: ctx.rng.pick([10, 15, 30, 60]),
       ownerUserId: attendees[0]!.id,
       notes: "",
+      timeZone,
+      until: null,
+      exceptions: [],
     };
   });
 }
