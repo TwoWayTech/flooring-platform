@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { PenLine } from "lucide-react";
+import { FilePlus2, FileText, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import {
   jobCosting,
@@ -36,8 +38,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /**
- * The job card (spec "Installation"): scope, materials, labor, margin for permitted roles,
- * placeholder photos and the customer's sign-off.
+ * The job card (spec "Installation", B6): scope, materials, labor, margin for permitted roles,
+ * placeholder photos, the customer's sign-off (which makes the invoice's balance due), and the
+ * job's invoice, or Create invoice from this job.
  */
 export function JobCard({
   job,
@@ -54,6 +57,7 @@ export function JobCard({
   onClose: () => void;
 }) {
   const can = useCan();
+  const router = useRouter();
   const formatDate = useFormatDate();
   const [signer, setSigner] = useState("");
   const costing = job ? jobCosting(job) : null;
@@ -77,19 +81,26 @@ export function JobCard({
 
   async function signOff() {
     if (!job || !signer.trim()) return;
-    await api.save(
-      "jobs",
-      { ...job, status: "signed_off", signedBy: signer.trim(), signedOffAt: `${api.today()}T16:30` },
-      {
-        category: "data",
-        action: "Recorded sign-off",
-        target: job.number,
-        before: job.status,
-        after: `signed off by ${signer.trim()}`,
-      },
-    );
-    toast.success(`${job.number} signed off by ${signer.trim()}`);
-    setSigner("");
+    try {
+      await api.signOffJob(job.id, signer);
+      toast.success(`${job.number} signed off by ${signer.trim()}`, {
+        description: job.invoiceId ? "Its invoice's balance is now due." : undefined,
+      });
+      setSigner("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The sign-off was not saved. Try again.");
+    }
+  }
+
+  async function createInvoice() {
+    if (!job) return;
+    try {
+      const invoice = await api.createInvoiceFromJob(job.id);
+      toast.success(`Invoice ${invoice.number} created for ${job.number}`);
+      router.push(`/sales/invoices/${invoice.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The invoice was not created. Try again.");
+    }
   }
 
   return (
@@ -188,6 +199,19 @@ export function JobCard({
                     ))}
                   </ul>
                 </section>
+              ) : null}
+              {job.invoiceId && can("sales.invoice.view") ? (
+                <Button asChild variant="outline" className="self-start">
+                  <Link href={`/sales/invoices/${job.invoiceId}`}>
+                    <FileText />
+                    View invoice
+                  </Link>
+                </Button>
+              ) : !job.invoiceId && can("sales.invoice.create") ? (
+                <Button variant="outline" className="self-start" onClick={() => void createInvoice()}>
+                  <FilePlus2 />
+                  Create invoice from this job
+                </Button>
               ) : null}
               {job.status === "signed_off" ? (
                 <p className="bg-success/12 text-success-ink rounded-md px-3 py-2">

@@ -25,6 +25,7 @@ import type {
   InvoiceAdjustment,
   Refund,
   RefundInput,
+  Job,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -214,6 +215,13 @@ export interface ApiClient {
   applyCredit(invoiceId: string): Promise<InvoiceAdjustment>;
   /** Refunds customer credit with mandatory proof. Needs sales.payment.refund. Audited. */
   refundCredit(input: RefundInput, files: File[]): Promise<Refund>;
+  /**
+   * Records a job's sign-off; its invoice's held balance becomes due and it is marked sent (spec B6).
+   * Needs installation.job.sign_off. Audited.
+   */
+  signOffJob(jobId: string, signer: string): Promise<Job>;
+  /** Creates and links the invoice of a job that has none, from its materials and labor. Audited. */
+  createInvoiceFromJob(jobId: string): Promise<Invoice>;
   /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
   createPurchaseOrder(input: {
     supplierId: string;

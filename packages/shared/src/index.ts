@@ -20,6 +20,7 @@ export * from "./operations/rolls";
 export * from "./operations/quotes";
 export * from "./operations/quote-status";
 export * from "./operations/payments";
+export * from "./operations/jobs";
 export * from "./ledger";
 export * from "./receivables";
 export * from "./file-types";

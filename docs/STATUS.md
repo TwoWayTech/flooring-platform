@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: B6 (job Complete with sign-off moves the invoice forward: Installed on the timeline, held balance due = completion + terms, marks sent, notifies payment recorders; Create invoice from this job). Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
+- Next step: run the full Batch B suite (production build, chunks of specs, 2 workers), tick "Batch B: full suite green", then C1 (every stock change has a source document; Cut roll picks an invoice or records an adjustment). Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -88,7 +88,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] B3. Waste internal only: `sales.waste.view` (Sales off), default waste % per category in settings, customer-facing documents show the billed quantity with waste included and no waste line
 - [x] B4. Invoices table: Paid, Remaining, Last payment, Warehouse columns, filterable, totals row
 - [x] B5. Customers and receivables simplified: Current / Overdue / Due in 7 days, simple list with filters, info tooltip, detailed aging in Reports → Receivables aging, healthy seeded mix
-- [ ] B6. Installation complete moves the invoice forward: sign-off adds Installed, sets the held due date, marks sent, notifies payment recorders; Create invoice from this job
+- [x] B6. Installation complete moves the invoice forward: sign-off adds Installed, sets the held due date, marks sent, notifies payment recorders; Create invoice from this job
 - [ ] Batch B: full suite green
 
 #### Batch C: inventory linked to invoices

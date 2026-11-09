@@ -29,3 +29,20 @@ test.describe("installation", () => {
     }
   });
 });
+
+test.describe("installation complete moves the invoice forward (spec B6)", () => {
+  test("signing off a job makes the held balance due and marks Installed", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/sales/invoices/sm-inv-0171");
+    const summary = page.getByRole("heading", { name: /^Invoice INV-/ }).locator("../..");
+    await expect(summary.getByText("After installation")).toBeVisible();
+    await summary.getByRole("link", { name: /^J-4020/ }).click();
+    const card = page.getByRole("dialog", { name: /Job J-4020/ });
+    await card.getByLabel("Customer signs as").fill("Pat Homeowner");
+    await card.getByRole("button", { name: "Record sign-off" }).click();
+    await expect(card.getByText(/Signed off by Pat Homeowner/)).toBeVisible();
+    await card.getByRole("link", { name: "View invoice" }).click();
+    await expect(summary.getByText("After installation")).toHaveCount(0);
+    const timeline = page.getByRole("region", { name: "Timeline" });
+    await expect(timeline.getByText("Installed").locator("..")).toContainText("Pat Homeowner");
+  });
+});

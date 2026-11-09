@@ -15,6 +15,8 @@ import { loadSalesLedger } from "./sales-ledger";
 
 /** Rolls shorter than this are flagged so the warehouse can reorder (spec "Dashboard"). */
 export const LOW_ROLL_FT = 20;
+/** Jobs signed off within this many days, with a balance, are flagged for collection (spec B6). */
+const COMPLETED_JOB_DAYS = 7;
 /** Certificates expiring within this many days are flagged (spec section 4). */
 export const CERTIFICATE_WARNING_DAYS = 30;
 
@@ -60,6 +62,36 @@ const CHECKS: Check[] = [
         label: plural(count, "overdue invoice", "overdue invoices"),
         href: filteredHref("/sales?view=invoices", "sales-invoices", "state", [INVOICE_STATUS_LABELS.overdue]),
         tone: "danger",
+      };
+    },
+  },
+  {
+    key: "completed-jobs",
+    feature: "installation.calendar",
+    permission: "sales.payment.record",
+    products: ["flooring"],
+    load: async (client, today) => {
+      // Jobs signed off this week whose invoice still has a balance: time to collect (spec B6).
+      const [jobs, { ledgers }] = await Promise.all([client.list("jobs"), loadSalesLedger(client)]);
+      const due = jobs.filter(
+        (j) =>
+          j.signedOffAt &&
+          j.invoiceId &&
+          daysBetween(j.signedOffAt.slice(0, 10), today) <= COMPLETED_JOB_DAYS &&
+          Number(ledgers.get(j.invoiceId)?.balance ?? "0") > 0,
+      );
+      const [first] = due;
+      return {
+        count: due.length,
+        label:
+          due.length === 1 && first
+            ? `job completed with a balance due (${first.number})`
+            : "jobs completed with a balance due",
+        href:
+          due.length === 1 && first
+            ? `/sales/invoices/${first.invoiceId}`
+            : filteredHref("/sales?view=invoices", "sales-invoices", "state", [INVOICE_STATUS_LABELS.open]),
+        tone: "brand",
       };
     },
   },

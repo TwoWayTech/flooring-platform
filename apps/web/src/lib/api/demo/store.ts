@@ -69,6 +69,7 @@ import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
 import { savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
+import { createInvoiceFromJob, signOffJob } from "./job-actions";
 import {
   applyCredit,
   markInvoiceSent,
@@ -587,6 +588,14 @@ export class DemoStore implements ApiClient {
 
   async refundCredit(input: RefundInput, files: File[]) {
     return this.act((ctx) => refundCredit(ctx, input, files));
+  }
+
+  async signOffJob(jobId: string, signer: string) {
+    return this.act((ctx) => signOffJob(ctx, jobId, signer));
+  }
+
+  async createInvoiceFromJob(jobId: string) {
+    return this.act((ctx) => createInvoiceFromJob(ctx, jobId));
   }
 
   async getFile(fileId: string) {
