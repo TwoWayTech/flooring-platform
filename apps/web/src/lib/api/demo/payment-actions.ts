@@ -31,7 +31,8 @@ export interface ActionContext {
   files: FileStore;
   can: (key: PermissionKey) => Promise<boolean>;
   assertCan: (anyOf: readonly PermissionKey[]) => Promise<void>;
-  audit: (entry: Omit<AuditInput, "category">) => void;
+  /** Writes an audit entry, under Payments unless a category is given. */
+  audit: (entry: Omit<AuditInput, "category"> & Partial<Pick<AuditInput, "category">>) => void;
   newId: (kind: string) => string;
 }
 
@@ -49,7 +50,7 @@ export function invoiceWithLedger(ctx: ActionContext, invoiceId: string): { invo
  * Checks proof files by their real type and size (spec Appendix A "Files and storage") and
  * describes them for the record; nothing is stored yet.
  */
-async function describeFiles(ctx: ActionContext, ownerId: string, files: readonly File[], already = 0) {
+export async function describeFiles(ctx: ActionContext, ownerId: string, files: readonly File[], already = 0) {
   const heads = await Promise.all(files.map(async (f) => new Uint8Array(await f.slice(0, 16).arrayBuffer())));
   const problem = proofFilesProblem(files.map((f, i) => ({ name: f.name, size: f.size, head: heads[i]! })));
   if (problem) throw new DemoRuleError(problem);
@@ -67,7 +68,7 @@ async function describeFiles(ctx: ActionContext, ownerId: string, files: readonl
 }
 
 /** Stores the files, or none of them: a failure removes what was already written (no orphan files). */
-async function storeFiles(ctx: ActionContext, metas: readonly FileMeta[], files: readonly File[]) {
+export async function storeFiles(ctx: ActionContext, metas: readonly FileMeta[], files: readonly File[]) {
   const written: string[] = [];
   try {
     for (const [i, meta] of metas.entries()) {

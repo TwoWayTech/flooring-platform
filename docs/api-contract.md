@@ -82,6 +82,12 @@ Added with their screens below.
 | `reviewPayment(paymentId, { action: "confirm" } | { action: "reject", reason })` | `POST /payments/:id/review` | Needs `sales.payment.approve`; only a pending payment, never by the person who recorded it; a rejection needs a reason. Audited. |
 | `attachPaymentFiles(paymentId, files)` | `POST /payments/:id/files` | Needs `sales.payment.record`; not on voided or rejected payments; at most three files in all. Audited. |
 | `getFile(fileId)` | `GET /files/:id` | Needs `sales.payment.view`. Bytes from the file store (IndexedDB in the demo); a seeded payment's proof is a generated placeholder PDF. |
+| `voidPayment(paymentId, reason)` | `POST /payments/:id/void` | Needs `sales.payment.void`; a confirmed or pending payment becomes Voided with the reason, stays visible with its files, and the balance comes back. Audited. |
+| `markInvoiceSent(invoiceId)` | `POST /invoices/:id/sent` | Needs `sales.invoice.edit`; once, not on a void invoice. Audited. |
+| `voidInvoice(invoiceId, reason)` | `POST /invoices/:id/void` | Needs `sales.invoice.void`; refused once any payment is confirmed; pending payments on it are voided too. Audited. |
+| `writeOffBalance(invoiceId, reason)` | `POST /invoices/:id/write-off` | Needs `sales.payment.write_off`; the whole remaining balance, up to the company's write-off maximum. Audited. |
+| `applyCredit(invoiceId)` | `POST /invoices/:id/credit` | Needs `sales.payment.apply_credit`; applies the customer's credit (overpayments, open credit notes) up to the balance. Audited. |
+| `refundCredit(input, files)` | `POST /customers/:id/refunds` (multipart) | Needs `sales.payment.refund`; not above the customer's credit, reference except for cash, proof required; numbered with the refund prefix. Audited. |
 | `createPurchaseOrder(input)` | `POST /purchase-orders` | Numbers the order with the PO prefix, totals lines in cents, starts as sent. `locationId` is the receive-into warehouse. Audited. |
 | `receivePurchaseOrder(poId)` | `POST /purchase-orders/:id/receive` | Cartons become receipt lines in the stock ledger at the receive-into warehouse; broadloom arrives there as new rolls measured in ft (sq yd × 9 ÷ width) with cost per sq ft. Audited. |
 | `createTransfer(input)` | `POST /transfers` | Needs `inventory.transfer.create`. Both ends must be different warehouses; boxed quantities whole and no more than the sender holds; rolls at the sender and not travelling. Boxed stock leaves the sender at once; rolls are marked in transit. Numbered TR-1001 up. Audited. |

@@ -1,55 +1,6 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { brandTokens, DOCUMENT_TOKENS } from "@workspace/shared";
+import { Document, Page, Text, View } from "@react-pdf/renderer";
 import type { InvoiceModel } from "./invoice-model";
-
-/** PDF colors come from the document tokens: Slate text, muted text, Grout lines, the brand accent. */
-const { ink: INK, muted: MUTED, hairline: LINE, onBrand: ON_BRAND } = DOCUMENT_TOKENS;
-
-const styles = StyleSheet.create({
-  page: { padding: 40, fontSize: 9, color: INK, fontFamily: "Helvetica" },
-  row: { flexDirection: "row", justifyContent: "space-between" },
-  muted: { color: MUTED },
-  title: { fontSize: 18, fontFamily: "Helvetica-Bold" },
-  bold: { fontFamily: "Helvetica-Bold" },
-  section: { marginTop: 22 },
-  label: { color: MUTED, fontSize: 8, marginBottom: 3 },
-  th: { color: MUTED, fontSize: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: LINE },
-  td: { paddingVertical: 5, borderBottomWidth: 0.5, borderBottomColor: LINE },
-  desc: { flex: 1, paddingRight: 8 },
-  num: { width: 80, textAlign: "right" },
-  totals: { width: 220, marginLeft: "auto", marginTop: 16 },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
-  footer: {
-    position: "absolute",
-    left: 40,
-    right: 40,
-    bottom: 30,
-    color: MUTED,
-    fontSize: 8,
-    borderTopWidth: 0.5,
-    borderTopColor: LINE,
-    paddingTop: 6,
-  },
-});
-
-function Monogram({ model }: { model: InvoiceModel }) {
-  const fill = brandTokens(model.company.brandColor).light.accent;
-  return (
-    <View
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: 4,
-        backgroundColor: fill,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 10,
-      }}
-    >
-      <Text style={{ color: ON_BRAND, fontFamily: "Helvetica-Bold", fontSize: 11 }}>{model.company.monogram}</Text>
-    </View>
-  );
-}
+import { LINE, MUTED, Monogram, PAID, styles } from "./pdf-parts";
 
 /** The invoice as a PDF, generated in the browser from the same model the screen shows. */
 export function InvoicePdf({ model }: { model: InvoiceModel }) {
@@ -58,7 +9,7 @@ export function InvoicePdf({ model }: { model: InvoiceModel }) {
       <Page size="LETTER" style={styles.page}>
         <View style={styles.row}>
           <View style={{ flexDirection: "row" }}>
-            <Monogram model={model} />
+            <Monogram company={model.company} />
             <View>
               <Text style={styles.bold}>{model.company.name}</Text>
               {model.company.lines.map((l) => (
@@ -74,6 +25,11 @@ export function InvoicePdf({ model }: { model: InvoiceModel }) {
             <Text style={styles.muted}>Due {model.due}</Text>
             <Text style={styles.muted}>Terms {model.terms}</Text>
             {model.quoteNumber ? <Text style={styles.muted}>Quote {model.quoteNumber}</Text> : null}
+            {model.paidOn ? (
+              <Text style={[styles.stamp, { color: PAID, borderColor: PAID }]}>PAID {model.paidOn}</Text>
+            ) : model.voided ? (
+              <Text style={[styles.stamp, { color: MUTED, borderColor: MUTED }]}>VOID</Text>
+            ) : null}
           </View>
         </View>
 
@@ -127,6 +83,18 @@ export function InvoicePdf({ model }: { model: InvoiceModel }) {
             <Text>Paid</Text>
             <Text>{model.paid}</Text>
           </View>
+          {model.credited ? (
+            <View style={styles.totalRow}>
+              <Text>Credit applied</Text>
+              <Text>{model.credited}</Text>
+            </View>
+          ) : null}
+          {model.writtenOff ? (
+            <View style={styles.totalRow}>
+              <Text>Written off</Text>
+              <Text>{model.writtenOff}</Text>
+            </View>
+          ) : null}
           <View style={[styles.totalRow, styles.bold]}>
             <Text>Balance due</Text>
             <Text>{model.balanceDue}</Text>

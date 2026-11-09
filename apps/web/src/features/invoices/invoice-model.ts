@@ -51,7 +51,14 @@ export interface InvoiceModel {
   tax: string;
   total: string;
   paid: string;
+  /** Credit applied and amounts written off, shown only when there are some. */
+  credited: string | null;
+  writtenOff: string | null;
   balanceDue: string;
+  /** The day the invoice was settled, for the PAID mark (spec Appendix A); null while a balance is due. */
+  paidOn: string | null;
+  /** A void invoice prints VOID instead. */
+  voided: boolean;
   payments: { id: string; date: string; method: string; amount: string }[];
   footer: string;
 }
@@ -116,7 +123,11 @@ export function buildInvoiceModel(
     tax: fmt(invoice.tax, "money"),
     total: fmt(invoice.total, "money"),
     paid: fmt(ledger.paid, "money"),
+    credited: ledger.credited === "0.00" ? null : fmt(ledger.credited, "money"),
+    writtenOff: ledger.writtenOff === "0.00" ? null : fmt(ledger.writtenOff, "money"),
     balanceDue: fmt(ledger.balance, "money"),
+    paidOn: (ledger.state === "paid" || ledger.state === "overpaid") && ledger.paidAt ? date(ledger.paidAt) : null,
+    voided: ledger.state === "void",
     payments: payments
       .filter((p) => p.invoiceId === invoice.id && p.status === "confirmed")
       .map((p) => ({

@@ -250,4 +250,6 @@ export const DOCUMENT_TOKENS = {
   muted: "#5B6A6E",
   hairline: "#CDD3CD",
   onBrand: "#FFFFFF",
+  /** The PAID mark: Moss ink, as --success-ink in the light theme. */
+  paid: "#2F6E41",
 } as const;

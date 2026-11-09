@@ -22,6 +22,9 @@ import type {
   QuoteAction,
   Payment,
   RecordPaymentInput,
+  InvoiceAdjustment,
+  Refund,
+  RefundInput,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -199,6 +202,18 @@ export interface ApiClient {
   attachPaymentFiles(paymentId: string, files: File[]): Promise<Payment>;
   /** A stored file's bytes, for the viewer and downloads; seeded proofs are generated placeholders. */
   getFile(fileId: string): Promise<Blob>;
+  /** Voids a confirmed or pending payment with a reason; the balance comes back. Needs sales.payment.void. Audited. */
+  voidPayment(paymentId: string, reason: string): Promise<Payment>;
+  /** Marks an invoice as sent to the customer. Needs sales.invoice.edit. Audited. */
+  markInvoiceSent(invoiceId: string): Promise<Invoice>;
+  /** Voids an invoice without confirmed payments, with a reason. Needs sales.invoice.void. Audited. */
+  voidInvoice(invoiceId: string, reason: string): Promise<Invoice>;
+  /** Writes off the remaining balance up to the company's maximum, with a reason. Needs sales.payment.write_off. Audited. */
+  writeOffBalance(invoiceId: string, reason: string): Promise<InvoiceAdjustment>;
+  /** Applies the customer's credit to an invoice, up to its balance. Needs sales.payment.apply_credit. Audited. */
+  applyCredit(invoiceId: string): Promise<InvoiceAdjustment>;
+  /** Refunds customer credit with mandatory proof. Needs sales.payment.refund. Audited. */
+  refundCredit(input: RefundInput, files: File[]): Promise<Refund>;
   /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
   createPurchaseOrder(input: {
     supplierId: string;

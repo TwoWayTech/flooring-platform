@@ -22,6 +22,7 @@ import { useFormatDate } from "@/lib/use-format-date";
 import { CustomerAddresses } from "./customer-addresses";
 import { IncompleteBadge } from "./customer-picker";
 import { CustomerProfileDialog } from "./customer-profile-dialog";
+import { RefundSheet } from "./refund-sheet";
 
 const TYPES = { homeowner: "Homeowner", dealer: "Dealer", contractor: "Contractor" } as const;
 
@@ -50,6 +51,7 @@ export function CustomerDrawer({
   const can = useCan();
   const formatDate = useFormatDate();
   const [editing, setEditing] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const lines = customer ? customerStatement(sales, customer.id) : [];
   const credit = customer ? creditOf(sales, customer.id) : "0.00";
   const billing = customer ? defaultAddress(customer, "billing") : undefined;
@@ -112,6 +114,18 @@ export function CustomerDrawer({
                   <dd>
                     <Num kind="money" value={credit} />
                   </dd>
+                  {can("sales.payment.refund") ? (
+                    <dd>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="text-brand-ink h-auto px-0 text-xs"
+                        onClick={() => setRefunding(true)}
+                      >
+                        Refund credit
+                      </Button>
+                    </dd>
+                  ) : null}
                 </div>
               ) : null}
               <div>
@@ -174,6 +188,7 @@ export function CustomerDrawer({
               )}
             </section>
             {editing ? <CustomerProfileDialog customer={customer} onClose={() => setEditing(false)} /> : null}
+            {refunding ? <RefundSheet customer={customer} credit={credit} onClose={() => setRefunding(false)} /> : null}
           </>
         ) : null}
       </SheetContent>

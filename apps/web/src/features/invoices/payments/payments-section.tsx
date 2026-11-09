@@ -170,7 +170,12 @@ export function PaymentsSection({
                             <Button size="sm" aria-label={`Confirm ${p.number}`} onClick={() => void confirm(p)}>
                               Confirm
                             </Button>
-                            <Button size="sm" variant="outline" aria-label={`Reject ${p.number}`} onClick={() => setRejecting(p)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              aria-label={`Reject ${p.number}`}
+                              onClick={() => setRejecting(p)}
+                            >
                               Reject
                             </Button>
                           </>

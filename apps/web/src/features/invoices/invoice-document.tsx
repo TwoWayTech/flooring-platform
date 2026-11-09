@@ -48,6 +48,15 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
         </div>
         <div className="text-right">
           <p className="font-display text-2xl font-semibold tracking-[-0.01em]">Invoice {model.number}</p>
+          {model.paidOn ? (
+            <p className="border-success text-success-ink mt-2 inline-block rounded border-2 px-2 py-0.5 text-sm font-bold tracking-widest">
+              PAID {model.paidOn}
+            </p>
+          ) : model.voided ? (
+            <p className="border-hairline text-muted-foreground mt-2 inline-block rounded border-2 px-2 py-0.5 text-sm font-bold tracking-widest">
+              VOID
+            </p>
+          ) : null}
           <dl className="text-muted-foreground mt-2 grid grid-cols-[auto_auto] justify-end gap-x-4 gap-y-0.5 text-xs">
             <dt>Issued</dt>
             <dd className="text-foreground">{model.issued}</dd>
@@ -122,6 +131,8 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
             <TotalRow label={model.taxLabel} value={model.tax} />
             <TotalRow label="Total" value={model.total} strong />
             <TotalRow label="Paid" value={model.paid} />
+            {model.credited ? <TotalRow label="Credit applied" value={model.credited} /> : null}
+            {model.writtenOff ? <TotalRow label="Written off" value={model.writtenOff} /> : null}
             <TotalRow label="Balance due" value={model.balanceDue} strong />
           </dl>
           {model.taxSource ? (

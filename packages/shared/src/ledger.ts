@@ -1,5 +1,5 @@
 import { daysBetween } from "./dates";
-import { dec, moneyString, pctOf, roundMoney, sum, type Dec } from "./money";
+import { dec, maxDec, moneyString, pctOf, roundMoney, sum, type Dec } from "./money";
 import type { Invoice, InvoiceAdjustment, Payment, Refund } from "./types";
 
 /**
@@ -91,10 +91,6 @@ export function invoiceLedger(
       balance.isZero() && settled.gt(0) ? latest([lastPaymentAt, ...adjustments.map((a) => a.at.slice(0, 10))]) : null,
     locked: paid.gt(0),
   };
-}
-
-function maxDec(a: Dec, b: Dec): Dec {
-  return a.gt(b) ? a : b;
 }
 
 function latest(dates: readonly (string | null)[]): string | null {

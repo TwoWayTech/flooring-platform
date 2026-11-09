@@ -40,6 +40,7 @@ import {
   type PoLine,
   type Quote,
   type RecordPaymentInput,
+  type RefundInput,
   type Role,
   type Customer,
   type Location,
@@ -68,6 +69,14 @@ import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
 import { savePermissions, settingsPermissions } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
+import {
+  applyCredit,
+  markInvoiceSent,
+  refundCredit,
+  voidInvoice,
+  voidPayment,
+  writeOffBalance,
+} from "./invoice-actions";
 import { attachPaymentFiles, readFile, recordPayment, reviewPayment, type ActionContext } from "./payment-actions";
 import { clearStored, readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
@@ -550,6 +559,30 @@ export class DemoStore implements ApiClient {
 
   async attachPaymentFiles(paymentId: string, files: File[]) {
     return this.act((ctx) => attachPaymentFiles(ctx, paymentId, files));
+  }
+
+  async voidPayment(paymentId: string, reason: string) {
+    return this.act((ctx) => voidPayment(ctx, paymentId, reason));
+  }
+
+  async markInvoiceSent(invoiceId: string) {
+    return this.act((ctx) => markInvoiceSent(ctx, invoiceId));
+  }
+
+  async voidInvoice(invoiceId: string, reason: string) {
+    return this.act((ctx) => voidInvoice(ctx, invoiceId, reason));
+  }
+
+  async writeOffBalance(invoiceId: string, reason: string) {
+    return this.act((ctx) => writeOffBalance(ctx, invoiceId, reason));
+  }
+
+  async applyCredit(invoiceId: string) {
+    return this.act((ctx) => applyCredit(ctx, invoiceId));
+  }
+
+  async refundCredit(input: RefundInput, files: File[]) {
+    return this.act((ctx) => refundCredit(ctx, input, files));
   }
 
   async getFile(fileId: string) {

@@ -48,3 +48,13 @@ export function marginPct(revenue: DecimalInput, cost: DecimalInput): Dec {
   if (r.isZero()) return dec(0);
   return r.minus(cost).dividedBy(r).times(100);
 }
+
+/** The smaller of two amounts, e.g. credit applied up to the balance. */
+export function minDec(a: DecimalInput, b: DecimalInput): Dec {
+  return D.min(dec(a), dec(b));
+}
+
+/** The larger of two amounts, e.g. a balance that never goes below zero. */
+export function maxDec(a: DecimalInput, b: DecimalInput): Dec {
+  return D.max(dec(a), dec(b));
+}

@@ -67,6 +67,39 @@ export function validatePayment(
   return errors;
 }
 
+/** What a person fills in to refund customer credit (spec Appendix A "Refund"); proof travels beside it. */
+export interface RefundInput {
+  customerId: string;
+  amount: string;
+  date: string;
+  method: PaymentMethod;
+  reference: string;
+  note: string;
+}
+
+/** Field errors of a refund form. */
+export type RefundErrors = Partial<Record<"amount" | "date" | "reference", string>>;
+
+/**
+ * Why a refund cannot be recorded (spec Appendix A): an amount above zero and not above the
+ * customer's credit, a date not in the future, and a reference for anything but cash.
+ */
+export function validateRefund(
+  input: RefundInput,
+  context: { credit: string; today: string; formatMoney: (v: string) => string },
+): RefundErrors {
+  const errors: RefundErrors = {};
+  const amount = dec(/^\d+(\.\d{1,2})?$/.test(input.amount.trim()) ? input.amount.trim() : "0");
+  if (amount.lte(0)) errors.amount = "Enter an amount above zero, with at most two decimals.";
+  else if (amount.gt(context.credit))
+    errors.amount = `The customer has ${context.formatMoney(context.credit)} of credit; refund at most that.`;
+  if (!input.date) errors.date = "Enter the refund date.";
+  else if (daysBetween(context.today, input.date) > 0) errors.date = "The refund date cannot be in the future.";
+  if (input.method !== "cash" && !input.reference.trim())
+    errors.reference = "Enter the reference or transaction ID of the refund.";
+  return errors;
+}
+
 /** A payment in this company that already uses the reference, for the duplicate warning. */
 export function duplicateReference(reference: string, payments: readonly Payment[]): Payment | undefined {
   const ref = reference.trim().toLowerCase();
