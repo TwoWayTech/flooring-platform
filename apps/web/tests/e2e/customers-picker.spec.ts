@@ -23,7 +23,8 @@ test.describe("customer picker and addresses (spec A6)", () => {
     await dialog.getByRole("button", { name: "Save address" }).click();
 
     await expect(page.locator("#site-street")).toHaveValue("123 Main Street");
-    await page.getByRole("button", { name: /^Save quote/ }).click();
+    // A new quote saves as a draft (spec B1).
+    await page.getByRole("button", { name: "Save as draft" }).click();
     await expect(page.getByText(/Quote .* saved/)).toBeVisible();
   });
 
