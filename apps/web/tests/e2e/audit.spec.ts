@@ -13,14 +13,16 @@ test.describe("settings: company profile and audit log", () => {
     await expect(page.getByText("Company profile saved")).toBeVisible();
 
     await page.goto("/inventory/rolls/sm-roll-0004");
+    // A cut without an invoice is a stock adjustment (spec C1).
     await page.getByRole("button", { name: "Cut roll" }).click();
-    await page.getByLabel("Length to cut").fill("10");
-    await page.getByRole("dialog").getByRole("button", { name: "Cut roll" }).click();
-    await expect(page.getByText(/^Cut 10 ft from/)).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: "Adjustment" }).click();
+    await page.getByLabel("Length to remove").fill("10");
+    await page.getByRole("dialog").getByRole("button", { name: "Record adjustment" }).click();
+    await expect(page.getByText(/^ADJ-\d{4} recorded$/)).toBeVisible();
 
     await page.goto("/settings/audit");
     await expect(page.getByRole("cell", { name: "Changed company profile" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Cut 10 ft" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Adjusted stock" })).toBeVisible();
     await expect(page.getByRole("cell", { name: /ein: 84-1234567/ })).toBeVisible();
   });
 });

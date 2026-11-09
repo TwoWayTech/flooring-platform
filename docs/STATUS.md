@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: run the Batch C suite (production build, chunks, 2 workers), tick it, then D1 (purchase orders: Save as draft, statuses, layout fix for long names, area units with cartons calculated).
+- Next step: D1 (purchase orders: Save as draft; statuses Draft → Ordered → Partly received → Received → Billed → Partly paid / Paid, Cancelled; layout fix for long names; order area goods in the area unit with cartons calculated).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -95,7 +95,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] C1. Every stock change has a source document: out by invoice, in by receipt, moves by transfer, otherwise a stock adjustment (reason, `inventory.stock.adjust`, approval above a set quantity); Cut roll picks or creates an invoice, or records an adjustment
 - [x] C2. Reserve on invoice, cut after money: reservations on issue (On hand / Reserved / Available), cut only when Deposit paid / Partly paid / Paid, cut in roll history linked to the invoice, remnant rule kept, void releases, return reverses through a credit note, audited overrides, roll picker by warehouse and dye lot with suggestions
 - [x] C3. Stock status display: Out of stock (red) and Low stock (amber) badges with words, warehouse filter and column on products and rolls
-- [ ] Batch C: full suite green
+- [x] Batch C: full suite green (all specs on a production build in four chunks; audit.spec records its cut as an adjustment, since C1 removes the free cut)
 
 #### Batch D: purchasing
 - [ ] D1. Purchase orders: Save as draft; Draft → Ordered → Partly received → Received → Billed → Partly paid / Paid, Cancelled; layout fix (wrap then truncate with tooltip, own horizontal scroll, sticky header and totals; tested with 60-character names at 1440 and 390 px); order in area units with cartons calculated beside
