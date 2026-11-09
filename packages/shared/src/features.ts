@@ -85,6 +85,14 @@ export const FEATURES = {
     enabled: true,
     screens: ["/sales?view=invoices", "/sales/invoices/*"],
   },
+  "sales.payments": {
+    title: "Customer payments",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/payments"],
+  },
   "sales.customers": {
     title: "Customers and receivables",
     product: "flooring",

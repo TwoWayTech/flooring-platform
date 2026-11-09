@@ -39,6 +39,7 @@ import {
   type PlatformFixtures,
   type PoLine,
   type Quote,
+  type RecordPaymentInput,
   type Role,
   type Customer,
   type Location,
@@ -55,6 +56,7 @@ import type {
   InviteUserInput,
   ItemOf,
   NewCustomerInput,
+  PaymentDecision,
   ProfilePatch,
   QuoteStatusChange,
   UserPatch,
@@ -65,6 +67,8 @@ import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
 import { savePermissions, settingsPermissions } from "./permission-rules";
+import { indexedDbFileStore, type FileStore } from "./file-store";
+import { attachPaymentFiles, readFile, recordPayment, reviewPayment, type ActionContext } from "./payment-actions";
 import { clearStored, readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
 const PLATFORM_KEY = "platform";
@@ -92,6 +96,9 @@ export class DemoStore implements ApiClient {
   private viewer: Viewer | null = null;
   private readonly todayIso = format(new Date(), "yyyy-MM-dd");
   private notices: string[] = [];
+
+  /** Proof files live outside the overlay, behind the FileStore interface (spec Appendix A). */
+  constructor(private readonly files: FileStore = indexedDbFileStore) {}
 
   async openCompany(companyId: CompanyId, viewer: Viewer) {
     this.current = await this.db(companyId);
@@ -124,6 +131,8 @@ export class DemoStore implements ApiClient {
 
   async resetDemo() {
     clearStored();
+    // Reset demo data clears payment files too (spec Appendix A "Files and storage").
+    await this.files.clear().catch(() => undefined);
     this.dbs.clear();
     this.platform = null;
     if (this.current) this.current = await this.db(this.current.companyId);
@@ -531,6 +540,24 @@ export class DemoStore implements ApiClient {
     return invoice;
   }
 
+  async recordPayment(input: RecordPaymentInput, files: File[]) {
+    return this.act((ctx) => recordPayment(ctx, input, files));
+  }
+
+  async reviewPayment(paymentId: string, decision: PaymentDecision) {
+    return this.act((ctx) => reviewPayment(ctx, paymentId, decision));
+  }
+
+  async attachPaymentFiles(paymentId: string, files: File[]) {
+    return this.act((ctx) => attachPaymentFiles(ctx, paymentId, files));
+  }
+
+  async getFile(fileId: string) {
+    const db = this.open();
+    await this.assertCan(db, ["sales.payment.view"]);
+    return readFile(this.actionContext(db), fileId);
+  }
+
   async createPurchaseOrder(input: { supplierId: string; expectedAt: string; locationId: string; lines: PoLine[] }) {
     const db = this.open();
     await this.assertCan(db, ["purchasing.order.create"]);
@@ -792,6 +819,28 @@ export class DemoStore implements ApiClient {
       this.dbs.set(companyId, db);
     }
     return db;
+  }
+
+  /** What a domain action module needs from the store (payment-actions.ts and the like). */
+  private actionContext(db: CompanyDb): ActionContext {
+    return {
+      db,
+      today: this.todayIso,
+      now: nowStamp(),
+      actor: db.get("users", this.viewer!.userId)!,
+      files: this.files,
+      can: async (key) => (await this.granter(db)).access.permissions.has(key),
+      assertCan: (anyOf) => this.assertCan(db, anyOf),
+      audit: (entry) => this.appendAudit(db, { category: "payment", ...entry }),
+      newId: (kind) => newId(db.companyId, kind),
+    };
+  }
+
+  /** Runs a domain action on the open company, then tells screens that data changed. */
+  private async act<T>(action: (ctx: ActionContext) => Promise<T>): Promise<T> {
+    const result = await action(this.actionContext(this.open()));
+    this.emit();
+    return result;
   }
 
   private open(): CompanyDb {

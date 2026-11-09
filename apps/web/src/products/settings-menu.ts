@@ -1,4 +1,15 @@
-import { Building2, FileText, Hash, History, Languages, Palette, ShieldCheck, Users, Warehouse } from "lucide-react";
+import {
+  Banknote,
+  Building2,
+  FileText,
+  Hash,
+  History,
+  Languages,
+  Palette,
+  ShieldCheck,
+  Users,
+  Warehouse,
+} from "lucide-react";
 import type { MenuItem } from "./types";
 
 /** The groups of the settings home (spec A4), in display order. */
@@ -102,5 +113,14 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["settings.localization"],
     group: "tax",
     description: "Region, currency, sales tax rules and payroll rules.",
+  },
+  {
+    label: "Payments",
+    href: "/settings/payments",
+    icon: Banknote,
+    anyOf: ["settings.payments.manage"],
+    features: ["sales.payments"],
+    group: "payments",
+    description: "The two-person check on payments, small write-offs and payment numbering.",
   },
 ];

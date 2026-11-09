@@ -16,6 +16,7 @@ const CATEGORIES: Record<AuditCategory, string> = {
   settings: "Settings",
   data: "Records",
   security: "Security",
+  payment: "Payments",
 };
 
 /**

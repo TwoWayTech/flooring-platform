@@ -20,6 +20,8 @@ import type {
   Role,
   User,
   QuoteAction,
+  Payment,
+  RecordPaymentInput,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -63,6 +65,9 @@ export interface InviteUserInput {
 }
 
 /** A customer added from a picker with what the caller knows so far (spec A6: name required). */
+/** A reviewer's decision on a payment waiting for verification (spec Appendix A "Approval"). */
+export type PaymentDecision = { action: "confirm" } | { action: "reject"; reason: string };
+
 /** A status change on a quote (spec B1); sending may set an expiry date. */
 export interface QuoteStatusChange {
   action: QuoteAction;
@@ -181,6 +186,19 @@ export interface ApiClient {
    * Converted. Audited.
    */
   convertQuoteToInvoice(quoteId: string): Promise<Invoice>;
+  /**
+   * Records a customer payment with its proof files (spec Appendix A "Record payment"). Needs
+   * sales.payment.record; the extra above the balance becomes credit only with
+   * sales.payment.apply_credit. Files are checked by their real type and stored with the payment,
+   * or not at all. With approval on, the payment waits for verification. Audited.
+   */
+  recordPayment(input: RecordPaymentInput, files: File[]): Promise<Payment>;
+  /** Confirms or rejects a pending payment; needs sales.payment.approve and a different person. Audited. */
+  reviewPayment(paymentId: string, decision: PaymentDecision): Promise<Payment>;
+  /** Adds proof files to a payment that is not voided or rejected. Audited. */
+  attachPaymentFiles(paymentId: string, files: File[]): Promise<Payment>;
+  /** A stored file's bytes, for the viewer and downloads; seeded proofs are generated placeholders. */
+  getFile(fileId: string): Promise<Blob>;
   /** Creates a purchase order with the next number; it starts as sent to the supplier. Audited. */
   createPurchaseOrder(input: {
     supplierId: string;

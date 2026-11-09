@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Download, Printer } from "lucide-react";
+import { ArrowLeft, Banknote, Download, Printer } from "lucide-react";
+import { dec, featureOn } from "@workspace/shared";
 import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { QueryFallback } from "@/components/query-fallback";
@@ -13,23 +14,24 @@ import { InvoiceStatusPills } from "@/lib/document-status";
 import { loadSalesLedger } from "@/lib/sales-ledger";
 import { buildInvoiceModel, type InvoiceModel } from "./invoice-model";
 import { InvoiceDocument } from "./invoice-document";
+import { saveBlob } from "./payments/file-viewer-dialog";
+import { PaymentsSection } from "./payments/payments-section";
+import { RecordPaymentSheet } from "./payments/record-payment-sheet";
 
 /** Renders the PDF in the browser and saves it; @react-pdf/renderer loads only when asked. */
 async function downloadPdf(model: InvoiceModel) {
   const [{ pdf }, { InvoicePdf }] = await Promise.all([import("@react-pdf/renderer"), import("./invoice-pdf")]);
-  const blob = await pdf(<InvoicePdf model={model} />).toBlob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${model.number}.pdf`;
-  link.click();
-  URL.revokeObjectURL(url);
+  saveBlob(await pdf(<InvoicePdf model={model} />).toBlob(), `${model.number}.pdf`);
 }
 
-/** An invoice as a document with Download PDF and Print (spec "Quote builder → invoice"). */
+/**
+ * An invoice as a document with Print and Download PDF (spec "Quote builder → invoice"), Record
+ * payment while a balance is due, and its payments (spec Appendix A).
+ */
 export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   const can = useCan();
   const [pending, setPending] = useState(false);
+  const [recording, setRecording] = useState(false);
   const data = useApiQuery(
     async (client) => {
       const invoice = await client.get("invoices", invoiceId);
@@ -41,7 +43,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         client.getSettings(),
       ]);
       const payments = sales.payments.filter((p) => p.invoiceId === invoiceId);
-      return { invoice, customer, quote, payments, ledger: sales.ledgers.get(invoiceId)!, settings };
+      return { invoice, customer, quote, payments, sales, ledger: sales.ledgers.get(invoiceId)!, settings };
     },
     [invoiceId],
   );
@@ -51,7 +53,14 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   if (!data.data || !data.data.customer) {
     return <p className="text-muted-foreground">This invoice does not exist or is outside what you can see.</p>;
   }
-  const { invoice, customer, quote, payments, ledger, settings } = data.data;
+  const { invoice, customer, quote, payments, sales, ledger, settings } = data.data;
+  const paymentsOn = featureOn("sales.payments");
+  const canRecord =
+    paymentsOn &&
+    can("sales.payment.record") &&
+    dec(ledger.balance).gt(0) &&
+    ledger.state !== "void" &&
+    ledger.state !== "return";
   const model = buildInvoiceModel(invoice, ledger, customer, quote, payments, settings);
 
   async function onDownload() {
@@ -82,12 +91,29 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
             <Printer />
             Print
           </Button>
-          <Button onClick={() => void onDownload()} disabled={pending}>
+          <Button variant={canRecord ? "outline" : "default"} onClick={() => void onDownload()} disabled={pending}>
             <Download />
             {pending ? "Preparing PDF" : "Download PDF"}
           </Button>
+          {canRecord ? (
+            <Button onClick={() => setRecording(true)}>
+              <Banknote />
+              Record payment
+            </Button>
+          ) : null}
         </div>
       </div>
+      {paymentsOn && can("sales.payment.view") ? <PaymentsSection payments={payments} ledger={ledger} /> : null}
+      {recording ? (
+        <RecordPaymentSheet
+          invoice={invoice}
+          ledger={ledger}
+          payments={sales.payments}
+          adjustments={sales.adjustments}
+          settings={settings.payments}
+          onClose={() => setRecording(false)}
+        />
+      ) : null}
       <InvoiceDocument model={model} logoUrl={settings.branding.logoDataUrl} />
     </div>
   );

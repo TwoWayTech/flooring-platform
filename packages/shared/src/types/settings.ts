@@ -7,7 +7,7 @@ import type { Address, Branding } from "./company";
 import type { PaymentTerms } from "./sales";
 
 /** Categories of audit entries. */
-export type AuditCategory = "role" | "user" | "ceiling" | "settings" | "data" | "security";
+export type AuditCategory = "role" | "user" | "ceiling" | "settings" | "data" | "security" | "payment";
 
 /** One audit log entry with before and after values (blueprint "Users, roles", rule 8). */
 export interface AuditEntry {

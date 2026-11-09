@@ -173,6 +173,8 @@ export interface Payment {
   note: string;
   files: FileMeta[];
   status: PaymentStatus;
+  /** Who recorded it: the reviewer must be someone else (two-person check). */
+  recordedById: string;
   recordedBy: string;
   recordedAt: string;
   reviewedBy: string | null;

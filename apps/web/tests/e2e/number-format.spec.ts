@@ -29,6 +29,6 @@ test.describe("settings: number format", () => {
     await expect(page.getByRole("tooltip")).toContainText("$5,036.99");
 
     await page.goto("/sales/invoices/sm-inv-0150");
-    await expect(page.getByText("Balance due").locator("..")).toContainText("$0");
+    await expect(page.getByRole("article").getByText("Balance due").locator("..")).toContainText("$0");
   });
 });

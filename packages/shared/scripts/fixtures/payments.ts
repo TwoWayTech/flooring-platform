@@ -106,6 +106,7 @@ export function finishPayments(
         },
       ],
       status: waiting.has(p.id) ? "pending" : "confirmed",
+      recordedById: recorder.id,
       recordedBy: recorder.name,
       recordedAt,
       reviewedBy: reviewed ? approver.name : null,

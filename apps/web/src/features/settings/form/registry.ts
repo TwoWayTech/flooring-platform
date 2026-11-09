@@ -19,6 +19,7 @@ const DOCUMENTS = "/settings/documents";
 const NUMBERS = "/settings/number-format";
 const BRANDING = "/settings/branding";
 const PROFILE = "/settings/company";
+const PAYMENTS = "/settings/payments";
 
 export const SETTINGS = {
   "region.country": { label: "Country", helper: "The US pack: 50 states and DC, imperial units, USD.", href: REGION },
@@ -135,6 +136,31 @@ export const SETTINGS = {
     label: "Legal footer",
     helper: "Printed at the bottom of quotes, invoices and receipts.",
     href: DOCUMENTS,
+  },
+  "payments.approvalRequired": {
+    label: "Payments need approval",
+    helper: "A recorded payment waits until someone else with approval permission confirms it.",
+    href: PAYMENTS,
+  },
+  "payments.approvalThreshold": {
+    label: "Only above this amount",
+    helper: "Smaller payments are confirmed at once. Leave empty to check every payment.",
+    href: PAYMENTS,
+  },
+  "payments.writeOffMax": {
+    label: "Largest write-off",
+    helper: "Write off remaining balance is offered only up to this amount. Leave empty for no limit.",
+    href: PAYMENTS,
+  },
+  "payments.paymentPrefix": {
+    label: "Payment number prefix",
+    helper: "Payments are numbered after it, for example PAY-0001.",
+    href: PAYMENTS,
+  },
+  "payments.refundPrefix": {
+    label: "Refund number prefix",
+    helper: "Refunds of customer credit are numbered after it.",
+    href: PAYMENTS,
   },
   "numbers.decimals": {
     label: "Decimals per kind of number",

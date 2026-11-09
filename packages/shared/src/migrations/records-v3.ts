@@ -81,6 +81,7 @@ function upgradePayments(records: StoredOverlay["records"]): StoredOverlay["reco
       note: "Recorded in an earlier version of the demo.",
       files: [],
       status: "confirmed",
+      recordedById: "",
       recordedBy: "Earlier demo",
       recordedAt: `${date}T00:00`,
       reviewedBy: null,
