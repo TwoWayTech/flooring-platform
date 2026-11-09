@@ -6,6 +6,7 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { defaultWarehouse } from "@workspace/shared";
+import { loadSalesLedger } from "@/lib/sales-ledger";
 import { newQuote, QuoteBuilder } from "./quote-builder";
 
 /** Loads a quote (or starts a new one) with the catalog and customers, then opens the builder. */
@@ -21,13 +22,15 @@ export function QuotePage({ quoteId }: { quoteId: string | null }) {
         client.getSettings(),
         client.list("locations"),
       ]);
-      return { quote, products, customers, settings, locations };
+      // A converted quote shows its invoice's status from the ledger (spec Appendix A "Quote").
+      const invoiceLedger = quote?.invoiceId ? (await loadSalesLedger(client)).ledgers.get(quote.invoiceId) : undefined;
+      return { quote, products, customers, settings, locations, invoiceLedger };
     },
     [quoteId],
   );
   if (!can("sales.quote.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-[32rem]" label="Loading quote" />;
-  const { quote, products, customers, settings, locations } = data.data;
+  const { quote, products, customers, settings, locations, invoiceLedger } = data.data;
   if (quoteId && !quote)
     return <p className="text-muted-foreground">This quote does not exist or is outside what you can see.</p>;
   const initial = quote ?? newQuote(user, settings, api.today(), defaultWarehouse(locations, user)?.id ?? "");
@@ -39,6 +42,7 @@ export function QuotePage({ quoteId }: { quoteId: string | null }) {
       customers={customers}
       settings={settings}
       locations={locations}
+      invoiceLedger={invoiceLedger}
     />
   );
 }

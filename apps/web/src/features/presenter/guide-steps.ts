@@ -43,6 +43,13 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
       anyOf: ["sales.quote.view"],
     },
     {
+      title: "Record a payment with proof",
+      feature: "sales.payments",
+      say: "On an open invoice, Record payment with the receipt attached; above $1,000 a second person confirms it before the balance drops.",
+      href: "/sales?view=invoices",
+      anyOf: ["sales.payment.view"],
+    },
+    {
       title: "Receivables",
       say: "Open a customer for their statement and aging buckets.",
       href: "/sales?view=customers",

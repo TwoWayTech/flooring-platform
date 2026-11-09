@@ -1,9 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
-import { Building2, Eye, FilePlus2, LogOut, Moon, Presentation, RotateCcw, Scissors, UserPlus } from "lucide-react";
+import {
+  Banknote,
+  Building2,
+  Eye,
+  FilePlus2,
+  LogOut,
+  Moon,
+  Presentation,
+  RotateCcw,
+  Scissors,
+  UserPlus,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { featureOn, type FeatureKey, type PermissionKey } from "@workspace/shared";
 import {
@@ -17,6 +28,7 @@ import {
   CommandSeparator,
 } from "@workspace/ui/components/command";
 import { useApiQuery } from "@/lib/api/use-api";
+import { requestRecordPayment } from "@/lib/record-payment-request";
 import { useSessionActions } from "@/lib/session/use-session-actions";
 import { visibleItems } from "@/products";
 import { useWorkspace } from "@/components/workspace/workspace-context";
@@ -50,11 +62,12 @@ function useHotkey(onOpen: () => void) {
 
 /**
  * The ⌘K palette (design brief "Components and patterns"): every page the viewer may open, plus
- * actions such as New quote, Cut a roll, Invite user, the presenter guide, View as role, Toggle
- * theme and Sign out.
+ * actions such as New quote, Record payment (on an invoice), Cut a roll, Invite user, the presenter
+ * guide, View as role, Toggle theme and Sign out.
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const { product, access, roles, setViewAs, viewAsRole, company, session } = useWorkspace();
   const companies = useApiQuery((client) => client.listCompanies(), []);
@@ -76,6 +89,17 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       feature: "sales.quotes",
       run: () => router.push("/sales/quotes/new"),
     },
+    ...(pathname.startsWith("/sales/invoices/")
+      ? [
+          {
+            label: "Record payment",
+            icon: Banknote,
+            permission: "sales.payment.record" as const,
+            feature: "sales.payments" as const,
+            run: requestRecordPayment,
+          },
+        ]
+      : []),
     {
       label: "Cut a roll",
       icon: Scissors,

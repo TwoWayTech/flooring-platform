@@ -1,7 +1,11 @@
 import { format, parseISO } from "date-fns";
 import {
   inventoryByCategory,
+  PAYMENT_METHOD_LABELS,
   type BoxedStock,
+  type Customer,
+  type Payment,
+  type PaymentMethod,
   monthlyPnl,
   salesByCategory,
   salesTaxByJurisdiction,
@@ -42,6 +46,13 @@ export interface ReportInput {
   boxed: BoxedStock;
   category: string | null;
   showCost: boolean;
+  /** Payments of the chosen dates and warehouse, with the customers they came from (Payments received). */
+  payments: Payment[];
+  customers: Customer[];
+  method: PaymentMethod | null;
+  /** Part of a customer's name; empty means every customer. */
+  customerQuery: string;
+  dateFormat: string;
 }
 
 /** A category key as people say it: product categories and, for services, the tax category. */
@@ -50,6 +61,49 @@ export function categoryLabel(key: string): string {
 }
 
 const total = (rows: Record<string, string>[], id: string) => sum(rows.map((r) => r[id] ?? "0")).toString();
+
+/**
+ * Payments received (spec Appendix A "Reports"): confirmed payments by their payment date, with
+ * method and customer filters. The CSV and PDF print these same rows, so they match the table.
+ */
+export function paymentsReport({
+  payments,
+  invoices,
+  customers,
+  method,
+  customerQuery,
+  dateFormat,
+}: ReportInput): Report {
+  const query = customerQuery.trim().toLowerCase();
+  const nameOf = (id: string) => customers.find((c) => c.id === id)?.name ?? "";
+  const rows = payments
+    .filter((p) => p.status === "confirmed" && (!method || p.method === method))
+    .filter((p) => !query || nameOf(p.customerId).toLowerCase().includes(query))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number))
+    .map((p) => ({
+      date: format(parseISO(p.date), dateFormat),
+      number: p.number,
+      customer: nameOf(p.customerId),
+      invoice: invoices.find((i) => i.id === p.invoiceId)?.number ?? "",
+      method: PAYMENT_METHOD_LABELS[p.method],
+      reference: p.reference,
+      amount: p.amount,
+    }));
+  return {
+    title: "Payments received",
+    columns: [
+      { id: "date", header: "Date" },
+      { id: "number", header: "Payment" },
+      { id: "customer", header: "Customer" },
+      { id: "invoice", header: "Invoice" },
+      { id: "method", header: "Method" },
+      { id: "reference", header: "Reference" },
+      { id: "amount", header: "Amount", kind: "money" },
+    ],
+    rows,
+    totals: { date: "Total", amount: total(rows, "amount") },
+  };
+}
 
 /** Profit and loss by month, computed from invoices and expenses, never typed by hand (spec section 4). */
 export function pnlReport({ months, invoices, expenses }: ReportInput): Report {

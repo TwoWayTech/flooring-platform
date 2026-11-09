@@ -11,6 +11,7 @@ import {
   taxContextFor,
   type CompanySettings,
   type Customer,
+  type InvoiceLedger,
   type Location,
   type Product,
   type Quote,
@@ -32,7 +33,7 @@ import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { api } from "@/lib/api";
-import { QuoteStatusPill } from "@/lib/document-status";
+import { InvoiceStatusPills, QuoteStatusPill } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 import { useCan } from "@/components/workspace/workspace-context";
 import { LinesEditor } from "./lines-editor";
@@ -93,6 +94,8 @@ interface QuoteBuilderProps {
   customers: Customer[];
   settings: CompanySettings;
   locations: Location[];
+  /** The ledger of the invoice the quote became, so its status shows here. */
+  invoiceLedger?: InvoiceLedger;
 }
 
 /**
@@ -102,7 +105,7 @@ interface QuoteBuilderProps {
  * converting validate the whole quote first. Totals come from the shared decimal calculator, the
  * same one that invoices and the PDF use.
  */
-export function QuoteBuilder({ initial, products, customers, settings, locations }: QuoteBuilderProps) {
+export function QuoteBuilder({ initial, products, customers, settings, locations, invoiceLedger }: QuoteBuilderProps) {
   const router = useRouter();
   const can = useCan();
   const formatDate = useFormatDate();
@@ -207,12 +210,15 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
         }
         actions={
           draft.invoiceId && featureOn("sales.invoices") ? (
-            <Button asChild variant="outline">
-              <Link href={`/sales/invoices/${draft.invoiceId}`}>
-                <FileText />
-                View invoice
-              </Link>
-            </Button>
+            <span className="flex flex-wrap items-center gap-2">
+              {invoiceLedger ? <InvoiceStatusPills ledger={invoiceLedger} /> : null}
+              <Button asChild variant="outline">
+                <Link href={`/sales/invoices/${draft.invoiceId}`}>
+                  <FileText />
+                  View invoice
+                </Link>
+              </Button>
+            </span>
           ) : null
         }
       />

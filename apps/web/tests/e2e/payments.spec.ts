@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
 
@@ -84,5 +85,29 @@ test.describe("customer payments (spec Appendix A)", () => {
     await signInAs(page, SUMMIT_SALES, "/sales/invoices/sm-inv-0198");
     await expect(page.getByRole("region", { name: "Payments" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Record payment" })).toHaveCount(0);
+  });
+
+  test("the palette opens Record payment on an invoice", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/sales/invoices/sm-inv-0198");
+    await page.getByRole("button", { name: "Search or run a command" }).click();
+    await page.getByPlaceholder("Search or run a command").fill("Record payment");
+    await page.getByRole("option", { name: "Record payment" }).click();
+    await expect(sheet(page)).toBeVisible();
+  });
+
+  test("Payments received lists confirmed payments by method and exports the same rows", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports?report=payments");
+    const table = page.getByRole("region", { name: "Payments received table" });
+    await expect(table.locator("tbody tr").first()).toBeVisible();
+    await page.getByLabel("Method").click();
+    await page.getByRole("option", { name: "Check" }).click();
+    const methods = await table.locator("tbody tr td:nth-child(5)").allTextContents();
+    expect(methods.length).toBeGreaterThan(0);
+    expect(new Set(methods)).toEqual(new Set(["Check"]));
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    const csv = readFileSync(await (await download).path(), "utf8");
+    // Header, one line per payment, and the totals row.
+    expect(csv.trim().split(/\r?\n/)).toHaveLength(methods.length + 2);
   });
 });

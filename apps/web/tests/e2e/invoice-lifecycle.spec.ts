@@ -29,7 +29,7 @@ async function newInvoice(page: Page) {
 async function pay(page: Page, share: "all" | "half", reference: string) {
   await page.getByRole("button", { name: "Record payment" }).click();
   const amount = sheet(page).getByLabel("Amount");
-  if (share === "half") await amount.fill((Number(await amount.inputValue()) / 2).toFixed(2));
+  if (share === "half") await amount.fill(String(Math.round(Number(await amount.inputValue()) * 50) / 100));
   await sheet(page).getByLabel("Reference or transaction ID").fill(reference);
   await sheet(page).locator("input[type=file]").setInputFiles(PDF);
   await sheet(page).getByRole("button", { name: "Save payment" }).click();
@@ -76,7 +76,7 @@ test.describe("invoice lifecycle (spec Appendix A, B2)", () => {
     const balance = Number(await sheet(page).getByLabel("Amount").inputValue());
     await sheet(page)
       .getByLabel("Amount")
-      .fill((balance - 3).toFixed(2));
+      .fill(String(Math.round((balance - 3) * 100) / 100));
     await sheet(page).getByLabel("Reference or transaction ID").fill("ACH-LIFE-3");
     await sheet(page).locator("input[type=file]").setInputFiles(PDF);
     await sheet(page).getByRole("button", { name: "Save payment" }).click();

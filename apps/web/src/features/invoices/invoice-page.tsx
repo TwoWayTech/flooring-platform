@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ArrowLeft, Ban, Banknote, Download, FileDown, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { dec, featureOn, type Payment } from "@workspace/shared";
@@ -12,6 +12,7 @@ import { ReasonDialog } from "@/components/reason-dialog";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
+import { useRecordPaymentRequest } from "@/lib/record-payment-request";
 import { creditOf, loadSalesLedger } from "@/lib/sales-ledger";
 import { InvoiceDocument } from "./invoice-document";
 import { buildInvoiceModel, type InvoiceModel } from "./invoice-model";
@@ -48,6 +49,8 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   const [pending, setPending] = useState(false);
   const [recording, setRecording] = useState<"payment" | "deposit" | null>(null);
   const [voiding, setVoiding] = useState<Payment | null>(null);
+  // The palette's Record payment opens the drawer; the page decides whether a payment is possible.
+  useRecordPaymentRequest(useCallback(() => setRecording("payment"), []));
   const data = useApiQuery(
     async (client) => {
       const invoice = await client.get("invoices", invoiceId);
@@ -169,7 +172,7 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         />
       ) : null}
       <InvoiceDocument model={model} logoUrl={settings.branding.logoDataUrl} />
-      {recording ? (
+      {recording && canRecord ? (
         <RecordPaymentSheet
           invoice={invoice}
           ledger={ledger}

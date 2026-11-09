@@ -9,11 +9,14 @@ import {
   boxedStock,
   last12Months,
   locationName,
+  PAYMENT_METHOD_LABELS,
   SENSITIVE,
+  type PaymentMethod,
   type PermissionKey,
   type ProductCategory,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
+import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -27,9 +30,11 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useApiQuery } from "@/lib/api/use-api";
+import { saveBlob } from "@/features/invoices/payments/file-viewer-dialog";
 import { CATEGORY_LABELS } from "@/lib/labels";
 import {
   inventoryReport,
+  paymentsReport,
   pnlReport,
   salesByCategoryReport,
   salesTaxReport,
@@ -67,6 +72,13 @@ const REPORTS = {
     build: inventoryReport,
     categories: true,
   },
+  payments: {
+    label: "Payments received",
+    view: "reports.financial.view",
+    export: "reports.financial.export",
+    build: paymentsReport,
+    categories: false,
+  },
 } satisfies Record<
   string,
   { label: string; view: PermissionKey; export: PermissionKey; build: (i: ReportInput) => Report; categories: boolean }
@@ -95,8 +107,9 @@ function Filter({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
- * The reports hub (spec Tier 2): P&L, sales by category, sales tax by jurisdiction and inventory
- * valuation, with date, branch and category filters and real CSV and PDF exports.
+ * The reports hub (spec Tier 2): P&L, sales by category, sales tax by jurisdiction, inventory
+ * valuation and payments received (Appendix A), with date, warehouse, category, method and
+ * customer filters and real CSV and PDF exports.
  */
 export function ReportsPage() {
   const can = useCan();
@@ -106,16 +119,20 @@ export function ReportsPage() {
   const [range, setRange] = useState<Range>("12m");
   const [warehouse, setWarehouse] = useState(ALL_WAREHOUSES);
   const [category, setCategory] = useState("all");
+  const [method, setMethod] = useState<PaymentMethod | "all">("all");
+  const [customerQuery, setCustomerQuery] = useState("");
   const data = useApiQuery(async (client) => {
-    const [invoices, expenses, products, rolls, stockMovements, locations] = await Promise.all([
+    const [invoices, expenses, products, rolls, stockMovements, locations, payments, customers] = await Promise.all([
       client.list("invoices"),
       client.list("expenses"),
       client.list("products"),
       client.list("rolls"),
       client.list("stockMovements"),
       client.list("locations"),
+      client.list("payments"),
+      client.list("customers"),
     ]);
-    return { invoices, expenses, products, rolls, stockMovements, locations };
+    return { invoices, expenses, products, rolls, stockMovements, locations, payments, customers };
   }, []);
 
   const allowed = (Object.keys(REPORTS) as ReportKey[]).filter((k) => can(REPORTS[k].view));
@@ -134,6 +151,11 @@ export function ReportsPage() {
       (i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1) && (!warehouseId || i.locationId === warehouseId),
     );
     const expenses = data.data.expenses.filter((e) => e.at >= from);
+    // Payments count on their payment date, in the warehouse of their invoice (Appendix A: cash dates).
+    const shipsFrom = new Map(data.data.invoices.map((i) => [i.id, i.locationId]));
+    const payments = data.data.payments.filter(
+      (p) => p.date >= from && p.date <= today && (!warehouseId || shipsFrom.get(p.invoiceId) === warehouseId),
+    );
     report = spec.build({
       months,
       invoices,
@@ -143,11 +165,20 @@ export function ReportsPage() {
       boxed: boxedStock(data.data.stockMovements, warehouseId),
       category: spec.categories && category !== "all" ? category : null,
       showCost: can(SENSITIVE.productCost),
+      payments,
+      customers: data.data.customers,
+      method: method === "all" ? null : method,
+      customerQuery,
+      dateFormat: settings.localization.region.dateFormat,
     });
   }
   const warehouseLabel =
     data.status === "ready" && warehouseId ? locationName(data.data.locations, warehouseId) : "all warehouses";
-  const filters = `${RANGES[range]}, ${warehouseLabel}${spec.categories && category !== "all" ? `, ${CATEGORY_LABELS[category as ProductCategory]}` : ""}.`;
+  const paymentFilters =
+    key === "payments"
+      ? `${method === "all" ? "" : `, ${PAYMENT_METHOD_LABELS[method]}`}${customerQuery.trim() ? `, customers matching “${customerQuery.trim()}”` : ""}`
+      : "";
+  const filters = `${RANGES[range]}, ${warehouseLabel}${spec.categories && category !== "all" ? `, ${CATEGORY_LABELS[category as ProductCategory]}` : ""}${paymentFilters}.`;
   const fileStem = `${key}-${today}`;
 
   function exportCsv() {
@@ -172,12 +203,7 @@ export function ReportsPage() {
     const blob = await pdf(
       <ReportPdf report={report} company={company.name} filters={filters} settings={settings.numbers} />,
     ).toBlob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${fileStem}.pdf`;
-    link.click();
-    URL.revokeObjectURL(url);
+    saveBlob(blob, `${fileStem}.pdf`);
     toast.success(`${fileStem}.pdf downloaded`);
   }
 
@@ -268,6 +294,34 @@ export function ReportsPage() {
                   </SelectContent>
                 </Select>
               </Filter>
+            ) : null}
+            {key === "payments" ? (
+              <>
+                <Filter label="Method">
+                  <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod | "all")}>
+                    <SelectTrigger className="h-9 w-48" aria-label="Method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All methods</SelectItem>
+                      {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {PAYMENT_METHOD_LABELS[m]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Filter>
+                <Filter label="Customer">
+                  <Input
+                    aria-label="Customer"
+                    value={customerQuery}
+                    onChange={(e) => setCustomerQuery(e.target.value)}
+                    placeholder="Any customer"
+                    className="h-9 w-52"
+                  />
+                </Filter>
+              </>
             ) : null}
           </div>
           {!report ? (
