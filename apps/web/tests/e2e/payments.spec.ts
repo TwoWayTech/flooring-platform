@@ -111,3 +111,16 @@ test.describe("customer payments (spec Appendix A)", () => {
     expect(csv.trim().split(/\r?\n/)).toHaveLength(methods.length + 2);
   });
 });
+
+test.describe("invoices table (spec B4)", () => {
+  test("shows Paid, Remaining, Last payment and Warehouse, with totals for the filtered rows", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/sales?view=invoices&sales-invoices.f.state=Paid");
+    const headers = (await page.locator("thead th").allTextContents()).map((h) => h.trim());
+    for (const name of ["Status", "Due", "Paid", "Remaining", "Last payment", "Warehouse"])
+      expect(headers).toContain(name);
+    const totals = page.locator("tfoot tr").first().getByRole("cell");
+    await expect(totals.nth(headers.indexOf("Remaining"))).toHaveText("$0.00");
+    const total = await totals.nth(headers.indexOf("Total")).innerText();
+    await expect(totals.nth(headers.indexOf("Paid"))).toHaveText(total);
+  });
+});

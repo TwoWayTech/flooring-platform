@@ -9,8 +9,9 @@ import type { SalesLedger } from "@/lib/sales-ledger";
 import { useFormatDate } from "@/lib/use-format-date";
 
 /**
- * Invoices with their status and balance from the ledger (spec Appendix A); "Needs attention"
- * links here filtered to Overdue or Pending verification (spec A2).
+ * Invoices with their status, paid, remaining and last payment from the ledger (spec Appendix A,
+ * B4), each column filterable with totals for the filtered rows; "Needs attention" links here
+ * filtered to Overdue or Pending verification (spec A2).
  */
 export function InvoicesTable({
   sales,
@@ -34,7 +35,6 @@ export function InvoicesTable({
     { id: "customer", header: "Customer", value: (i) => customers.find((c) => c.id === i.customerId)?.name ?? "" },
     { id: "issued", header: "Issued", value: (i) => i.issuedAt, cell: (i) => formatDate(i.issuedAt) },
     { id: "due", header: "Due", value: (i) => i.dueAt, cell: (i) => formatDate(i.dueAt) },
-    { id: "warehouse", header: "Warehouse", value: (i) => locationName(locations, i.locationId) },
     {
       id: "state",
       header: "Status",
@@ -42,7 +42,18 @@ export function InvoicesTable({
       cell: (i) => <InvoiceStatusPills ledger={ledger(i)} />,
     },
     { id: "total", header: "Total", kind: "money", value: (i) => i.total, total: true },
-    { id: "balance", header: "Balance", kind: "money", value: (i) => ledger(i).balance, total: true },
+    { id: "paid", header: "Paid", kind: "money", value: (i) => ledger(i).paid, total: true },
+    { id: "balance", header: "Remaining", kind: "money", value: (i) => ledger(i).balance, total: true },
+    {
+      id: "lastPayment",
+      header: "Last payment",
+      value: (i) => ledger(i).lastPaymentAt,
+      cell: (i) => {
+        const at = ledger(i).lastPaymentAt;
+        return at ? formatDate(at) : <span className="text-muted-foreground">None</span>;
+      },
+    },
+    { id: "warehouse", header: "Warehouse", value: (i) => locationName(locations, i.locationId) },
   ];
   return (
     <DataTable
