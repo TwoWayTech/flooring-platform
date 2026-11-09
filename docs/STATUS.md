@@ -1,9 +1,9 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: redeploy production (npx vercel deploy --prod from the repository root) and run the suite in chunks against both live sites (E2E_FLOORING_URL, E2E_HR_URL); then the final report.
+- Next step: feature batch 2 is complete and live. Next: take notes from the next demo in docs/feedback-demo.md, then plan the next batch.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
-- Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
+- Last session log: docs/sessions/2026-11-09-batch2-g-h-deploy.md
 
 ## Checklist
 
@@ -130,9 +130,9 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] Batch H: full suite green (284 e2e in three chunks on a production build; 213 unit)
 
 #### End
-- [ ] Redeploy production
-- [ ] Full suite against both live addresses
-- [ ] Final report: what changed, how to try each item (persona, company, record), anything assumed or left out
+- [x] Redeploy production (Ready, both hosts aliased)
+- [x] Full suite against both live addresses (284 of 284, three chunks)
+- [x] Final report: what changed, how to try each item (persona, company, record), anything assumed or left out (docs/sessions/2026-11-09-batch2-g-h-deploy.md)
 
 ## Decisions
 (see docs/adr/)
