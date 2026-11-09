@@ -117,6 +117,11 @@ export const SETTINGS = {
     helper: "Days a sent quote stays valid by default; after that it reads Expired.",
     href: DOCUMENTS,
   },
+  "documents.defaultWastePct": {
+    label: "Default waste per category",
+    helper: "New material lines start with this allowance. Customers see the billed quantity only, never the waste.",
+    href: DOCUMENTS,
+  },
   "documents.quotePrefix": {
     label: "Quote number prefix",
     helper: "New quotes are numbered after it.",

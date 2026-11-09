@@ -144,6 +144,18 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         legalFooter: `${seed.legalName}. Licensed and insured in ${seed.statesOfOperation.join(", ")}.`,
         defaultDepositPct: retail ? "50" : "0",
         quoteExpiryDays: 30,
+        // Carpet and tile cut more than plank (the waste the quote builder always started with).
+        defaultWastePct: {
+          carpet: "12",
+          carpet_tile: "8",
+          lvp: "8",
+          laminate: "8",
+          engineered_hardwood: "8",
+          solid_hardwood: "8",
+          porcelain_tile: "10",
+          pad: "8",
+          adhesive_trim: "8",
+        },
       },
     },
     numbers: defaultNumberSettings(),

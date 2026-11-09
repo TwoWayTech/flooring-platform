@@ -109,7 +109,7 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
   const router = useRouter();
   const can = useCan();
   const formatDate = useFormatDate();
-  const [draft, dispatch] = useQuoteDraft(initial, products);
+  const [draft, dispatch] = useQuoteDraft(initial, products, settings.localization.documents.defaultWastePct);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [savedDraft, setSavedDraft] = useState(initial);
@@ -299,6 +299,7 @@ export function QuoteBuilder({ initial, products, customers, settings, locations
               onChange={(line) => dispatch({ type: "updateLine", line })}
               onRemove={(lineId) => dispatch({ type: "removeLine", lineId })}
               error={problems.lines}
+              showWaste={can("sales.waste.view")}
             />
           </Panel>
         </div>

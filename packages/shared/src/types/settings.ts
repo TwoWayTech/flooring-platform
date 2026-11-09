@@ -1,4 +1,8 @@
 import type { NumberSettings } from "../numbers";
+import type { ProductCategory } from "./catalog";
+
+/** Product categories that carry waste: every one but services. */
+export type WasteCategory = Exclude<ProductCategory, "service">;
 import type { AreaUnit } from "../units";
 import type { OvertimeRule } from "../us-pack/overtime";
 import type { TaxRule } from "../us-pack/tax";
@@ -69,6 +73,8 @@ export interface LocalizationSettings {
     defaultDepositPct: string;
     /** Days a sent quote stays valid by default (spec B1). */
     quoteExpiryDays: number;
+    /** Waste % a new material line starts with, per product category (spec B3). */
+    defaultWastePct: Record<WasteCategory, string>;
   };
 }
 

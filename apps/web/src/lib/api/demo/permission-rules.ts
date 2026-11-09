@@ -1,4 +1,11 @@
-import type { CompanySettings, PermissionKey } from "@workspace/shared";
+import {
+  defaultWastePct,
+  type CompanySettings,
+  type PermissionKey,
+  type Product,
+  type Quote,
+  type WasteCategory,
+} from "@workspace/shared";
 import type { CollectionName } from "../contract";
 
 /**
@@ -56,4 +63,23 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
 /** Permissions that allow changing one settings section. */
 export function settingsPermissions(section: keyof CompanySettings): readonly PermissionKey[] {
   return SETTINGS_PERMISSIONS[section];
+}
+
+/**
+ * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
+ * keeps its waste unless the person may see it; a new line must carry the company default.
+ */
+export function wasteChanged(
+  quote: Pick<Quote, "lines">,
+  before: Pick<Quote, "lines"> | undefined,
+  products: readonly Product[],
+  defaults: Record<WasteCategory, string>,
+): boolean {
+  return quote.lines.some((line) => {
+    if (line.wastePct === undefined) return false;
+    const saved = before?.lines.find((l) => l.id === line.id);
+    if (saved) return (saved.wastePct ?? "0") !== line.wastePct;
+    const product = products.find((p) => p.id === line.productId);
+    return !!product && (defaultWastePct(product, defaults) ?? "0") !== line.wastePct;
+  });
 }

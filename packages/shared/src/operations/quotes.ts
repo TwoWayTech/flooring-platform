@@ -47,6 +47,17 @@ export function taxContextFor(
   return { rule, exempt, rounding: tax.rounding, lumpSum, source };
 }
 
+/**
+ * The waste % a new line for a product starts with (spec B3): the company's default for its
+ * category; services carry none. People without sales.waste.view never change it.
+ */
+export function defaultWastePct(
+  product: Pick<Product, "category">,
+  defaults: LocalizationSettings["documents"]["defaultWastePct"],
+): string | undefined {
+  return product.category === "service" ? undefined : defaults[product.category];
+}
+
 /** Total area of the given rooms in sq ft. */
 export function roomsArea(rooms: readonly Room[], roomIds?: readonly string[]) {
   return rooms

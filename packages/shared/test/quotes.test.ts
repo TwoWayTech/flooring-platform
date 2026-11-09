@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   computeTotals,
   dec,
+  defaultWastePct,
   EXAMPLE_TAX_RULES,
   invoiceFromQuote,
   nextNumber,
@@ -11,8 +14,13 @@ import {
   type DocLine,
   type LocalizationSettings,
   type Product,
+  type CompanyFixtures,
   type Quote,
 } from "../src";
+
+const summit = JSON.parse(
+  readFileSync(fileURLToPath(new URL("../fixtures/summit.json", import.meta.url)), "utf8"),
+) as CompanyFixtures;
 
 const tax = {
   pricesInclude: "exclusive",
@@ -120,5 +128,15 @@ describe("quote rules", () => {
     expect(invoice.taxRule).toMatchObject({ state: "NJ", version: 1 });
     expect(invoice).toMatchObject({ sentAt: null, voidedAt: null, depositPct: quote.depositPct, createdBy: "u1" });
     expect(invoice).not.toHaveProperty("paid");
+  });
+});
+
+describe("default waste (spec B3)", () => {
+  const defaults = summit.settings.localization.documents.defaultWastePct;
+  it("starts a material line at its category's default and gives services none", () => {
+    expect(defaultWastePct({ category: "carpet" }, defaults)).toBe("12");
+    expect(defaultWastePct({ category: "porcelain_tile" }, defaults)).toBe("10");
+    expect(defaultWastePct({ category: "lvp" }, { ...defaults, lvp: "15" })).toBe("15");
+    expect(defaultWastePct({ category: "service" }, defaults)).toBeUndefined();
   });
 });

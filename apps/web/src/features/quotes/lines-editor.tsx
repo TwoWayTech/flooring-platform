@@ -28,6 +28,8 @@ interface LinesEditorProps {
   onRemove: (lineId: string) => void;
   /** Full validation's message when the quote has no lines (spec B1). */
   error?: string;
+  /** Waste % is internal (spec B3): without sales.waste.view the column is gone and defaults apply. */
+  showWaste: boolean;
 }
 
 /** Which rooms a line is measured from, in words. */
@@ -41,8 +43,8 @@ function roomsNote(line: DocLine, rooms: readonly Room[]): string | null {
 }
 
 /**
- * Quote lines (spec "Quote builder"): materials in sq yd or cartons with a waste %, labor and
- * services. Lines measured from rooms update when a room changes; others take a typed quantity.
+ * Quote lines (spec "Quote builder", B3): materials in sq yd or cartons with a waste % (shown only
+ * with sales.waste.view; the quantity already includes it), labor and services. Lines measured from rooms update when a room changes; others take a typed quantity.
  */
 export function LinesEditor({
   lines,
@@ -54,6 +56,7 @@ export function LinesEditor({
   onChange,
   onRemove,
   error,
+  showWaste,
 }: LinesEditorProps) {
   const goods = products.filter((p) => p.category !== "service");
   const services = products.filter((p) => p.category === "service");
@@ -69,9 +72,11 @@ export function LinesEditor({
               <th scope="col" className="px-3 text-right font-medium">
                 Quantity
               </th>
-              <th scope="col" className="px-3 text-right font-medium">
-                Waste
-              </th>
+              {showWaste ? (
+                <th scope="col" className="px-3 text-right font-medium">
+                  Waste
+                </th>
+              ) : null}
               <th scope="col" className="px-3 text-right font-medium">
                 Price
               </th>
@@ -117,23 +122,27 @@ export function LinesEditor({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {line.category === "material" && line.unit !== "each" && editable ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Input
-                          aria-label={`${line.description} waste percent`}
-                          inputMode="decimal"
-                          defaultValue={line.wastePct ?? "0"}
-                          key={line.wastePct}
-                          onBlur={(e) => onChange({ ...line, wastePct: e.target.value.replace(/[^\d.]/g, "") || "0" })}
-                          className="h-8 w-14 text-right tabular-nums"
-                        />
-                        <span className="text-muted-foreground text-xs">%</span>
-                      </span>
-                    ) : line.wastePct ? (
-                      <Num kind="percent" value={line.wastePct} />
-                    ) : null}
-                  </td>
+                  {showWaste ? (
+                    <td className="px-3 py-2 text-right">
+                      {line.category === "material" && line.unit !== "each" && editable ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Input
+                            aria-label={`${line.description} waste percent`}
+                            inputMode="decimal"
+                            defaultValue={line.wastePct ?? "0"}
+                            key={line.wastePct}
+                            onBlur={(e) =>
+                              onChange({ ...line, wastePct: e.target.value.replace(/[^\d.]/g, "") || "0" })
+                            }
+                            className="h-8 w-14 text-right tabular-nums"
+                          />
+                          <span className="text-muted-foreground text-xs">%</span>
+                        </span>
+                      ) : line.wastePct ? (
+                        <Num kind="percent" value={line.wastePct} />
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2 text-right">
                     <Num kind="money" value={line.unitPrice} />
                   </td>

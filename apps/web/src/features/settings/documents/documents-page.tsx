@@ -1,6 +1,12 @@
 "use client";
 
-import { PAYMENT_TERM_LABELS, type LocalizationSettings, type PaymentTerms } from "@workspace/shared";
+import {
+  PAYMENT_TERM_LABELS,
+  type LocalizationSettings,
+  type PaymentTerms,
+  type WasteCategory,
+} from "@workspace/shared";
+import { CATEGORY_LABELS } from "@/lib/labels";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
 import { Textarea } from "@workspace/ui/components/textarea";
@@ -87,6 +93,41 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
       {text("quotePrefix")}
       {text("invoicePrefix")}
       {text("poPrefix")}
+      <SettingRow setting="documents.defaultWastePct" changed={changed("defaultWastePct")} className="sm:col-span-3">
+        {(id) => (
+          <div
+            id={id}
+            role="group"
+            aria-labelledby={`${id}-label`}
+            aria-describedby={`${id}-hint`}
+            className="grid gap-2 sm:grid-cols-3"
+          >
+            {(Object.keys(draft.defaultWastePct) as WasteCategory[]).map((category) => (
+              <label key={category} className="flex items-center justify-between gap-2 text-sm">
+                <span>{CATEGORY_LABELS[category]}</span>
+                <span className="flex items-center gap-1">
+                  <Input
+                    inputMode="decimal"
+                    aria-label={`Waste for ${CATEGORY_LABELS[category]}`}
+                    value={draft.defaultWastePct[category]}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        defaultWastePct: {
+                          ...draft.defaultWastePct,
+                          [category]: e.target.value.replace(/[^\d.]/g, ""),
+                        },
+                      })
+                    }
+                    className="h-8 w-16 text-right tabular-nums"
+                  />
+                  <span className="text-muted-foreground text-xs">%</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+      </SettingRow>
       <SettingRow setting="documents.legalFooter" changed={changed("legalFooter")} className="sm:col-span-3">
         {(id) => (
           <Textarea

@@ -2,6 +2,7 @@
 
 import { useReducer } from "react";
 import {
+  defaultWastePct,
   productTaxCategory,
   remeasureLines,
   type Address,
@@ -10,14 +11,11 @@ import {
   type Quote,
   type Room,
   type TaxOverride,
+  type WasteCategory,
 } from "@workspace/shared";
 
-/** Waste allowance a new material line starts with, by category (design: carpet and tile cut more). */
-export function defaultWastePct(product: Product): string {
-  if (product.category === "carpet") return "12";
-  if (product.category === "porcelain_tile") return "10";
-  return product.category === "service" ? "0" : "8";
-}
+/** The company's waste % per category, for new lines (spec B3). */
+type WasteDefaults = Record<WasteCategory, string>;
 
 /** Changes the builder can make to a quote draft. */
 export type DraftAction =
@@ -43,7 +41,7 @@ function measuredFromRooms(product: Product): boolean {
 }
 
 /** A new line for a product: tied to every room when it is measured by area, otherwise one unit. */
-function lineFor(product: Product, lineId: string, rooms: readonly Room[]): DocLine {
+function lineFor(product: Product, lineId: string, rooms: readonly Room[], waste: WasteDefaults): DocLine {
   const linked = rooms.length > 0 && measuredFromRooms(product);
   return {
     id: lineId,
@@ -54,12 +52,12 @@ function lineFor(product: Product, lineId: string, rooms: readonly Room[]): DocL
     quantity: "1",
     unitPrice: product.price,
     unitCost: product.cost,
-    ...(product.category !== "service" ? { wastePct: defaultWastePct(product) } : {}),
+    ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
     ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
   };
 }
 
-function reducer(products: readonly Product[]) {
+function reducer(products: readonly Product[], waste: WasteDefaults) {
   return (draft: Quote, action: DraftAction): Quote => {
     const remeasure = (q: Quote): Quote => ({ ...q, lines: remeasureLines(q.lines, q.rooms, products) });
     switch (action.type) {
@@ -90,7 +88,10 @@ function reducer(products: readonly Product[]) {
         return remeasure({ ...draft, rooms: draft.rooms.filter((r) => r.id !== action.roomId), lines });
       }
       case "addProduct":
-        return remeasure({ ...draft, lines: [...draft.lines, lineFor(action.product, action.lineId, draft.rooms)] });
+        return remeasure({
+          ...draft,
+          lines: [...draft.lines, lineFor(action.product, action.lineId, draft.rooms, waste)],
+        });
       case "updateLine":
         return remeasure({ ...draft, lines: draft.lines.map((l) => (l.id === action.line.id ? action.line : l)) });
       case "removeLine":
@@ -106,6 +107,6 @@ function reducer(products: readonly Product[]) {
 }
 
 /** Local draft of a quote being built; changes stay on screen until the person saves. */
-export function useQuoteDraft(initial: Quote, products: readonly Product[]) {
-  return useReducer(reducer(products), initial);
+export function useQuoteDraft(initial: Quote, products: readonly Product[], waste: WasteDefaults) {
+  return useReducer(reducer(products, waste), initial);
 }

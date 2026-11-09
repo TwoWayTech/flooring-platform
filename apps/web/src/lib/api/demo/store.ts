@@ -67,7 +67,7 @@ import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, pe
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
-import { savePermissions, settingsPermissions } from "./permission-rules";
+import { savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import {
   applyCredit,
@@ -444,6 +444,9 @@ export class DemoStore implements ApiClient {
       invoiceId: before?.invoiceId ?? null,
     };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
+    if (wasteChanged(quote, before, db.list("products"), db.settings.localization.documents.defaultWastePct)) {
+      await this.assertCan(db, ["sales.waste.view"]);
+    }
     if (taxChanged) await this.assertCan(db, ["sales.tax.override"]);
     const prefix = db.settings.localization.documents.quotePrefix;
     const saved = isNew
