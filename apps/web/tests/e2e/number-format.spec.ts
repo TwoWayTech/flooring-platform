@@ -22,6 +22,8 @@ test.describe("settings: number format", () => {
 
     await page.goto("/sales?view=invoices");
     await page.getByPlaceholder("Search invoices and customers").fill("INV-1150");
+    // The search is written to the address; hover after that re-render, or it closes the tooltip.
+    await expect(page).toHaveURL(/INV-1150/);
     await expect(total).toHaveText("$5,037");
     await total.getByText("$5,037").hover();
     await expect(page.getByRole("tooltip")).toContainText("$5,036.99");

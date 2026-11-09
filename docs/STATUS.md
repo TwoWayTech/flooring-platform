@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built and pushed (A0 to A6); its end-of-batch full e2e run was stopped at 134 of 222 by low memory on this machine
-- Next step: start the dev server (`pnpm dev`), run the full suite (`pnpm test:e2e`, about 10 minutes; run it in the background or with a long timeout) and fix anything red; then tick "Batch A: full suite green". Then start B1, and for B2 merge or cherry-pick branch `wip/batch-b-payments` (ledger, proof-file checks, payment rules, IndexedDB file store, unit tests), which needs the B2 types (Payment, InvoiceAdjustment, Refund, PaymentSettings) before it typechecks. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
+- Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
+- Next step: B1 (quote statuses Draft / Pending / Accepted / Converted / Declined, Expired derived). Then B2: merge or cherry-pick branch `wip/batch-b-payments` (ledger, proof-file checks, payment rules, IndexedDB file store, unit tests), which needs the B2 types (Payment, InvoiceAdjustment, Refund, PaymentSettings) before it typechecks. Test locally against a production build: `pnpm --filter web build`, `pnpm --filter web start`, then Playwright in chunks of a few spec files with 2 workers (E2E_WORKERS); stop the server afterwards. Optional, unchanged: set DEMO_SESSION_SECRET on Vercel, and connect the GitHub repository (`vercel git connect`) so pushes deploy.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -80,7 +80,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] A4. Settings easy to read: grouped settings home, plain title + one sentence per page, helper line per control, changed-field highlight, sticky Save / Discard, Reset to default per section, settings search, every change audited (both products)
 - [x] A5. Default tax rates: company default rate, state and jurisdiction defaults with effective dates, resolution job site → jurisdiction → state → company, rate source under the tax line, override with `sales.tax.override` + reason + audit, example labels kept
 - [x] A6. Customers: call-centre picker with inline "Add as new customer" (profile incomplete badge), many labelled addresses with defaults, address suggestions behind `AddressProvider` (demo provider with ~300 addresses; Google Places (New) with session tokens when the key is set; README steps), used in quote, invoice, job card, supplier form and company profile
-- [ ] Batch A: full suite green (134 of 222 ran before a low-memory stop: 132 passed; the 2 a11y contrast failures on the quote pages are fixed in commit 151833a, not yet re-run)
+- [x] Batch A: full suite green (222 of 222 on a production build, in four chunks; number-format waits for the search to reach the address before hovering)
 
 #### Batch B: the sales flow
 - [ ] B1. Quotes Draft and Pending: Draft → Pending → Accepted → Converted / Declined / Expired, Save as draft anywhere, Send runs full validation, list columns (value, salesperson, warehouse, expiry, age) and status filter
