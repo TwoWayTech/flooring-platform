@@ -1,7 +1,7 @@
 # Status
 
 - Current phase: Feature batch 2 (docs/specs/feature-batch-02.md, plan docs/specs/feature-batch-02-plan.md, approved). Batch A built, pushed and green (222 e2e tests on a production build). Batch B in progress.
-- Next step: run the Batch D suite (production build, chunks, 2 workers), tick it, then E1 (dashboard redesign: card row, one period selector and warehouse filter, widgets).
+- Next step: E1 (dashboard redesign: auto-fit card row with sparklines and change vs previous period, one period selector and a warehouse filter, widgets including Pending quotes, Receivables, Payments to verify, Best sellers with its own filters, Slow movers, Today's jobs, Top performer).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-08-2330-batch2-batch-a.md
 
@@ -101,7 +101,7 @@ Spec: docs/specs/feature-batch-02.md. Map, data model, migration and assumptions
 - [x] D1. Purchase orders: Save as draft; Draft → Ordered → Partly received → Received → Billed → Partly paid / Paid, Cancelled; layout fix (wrap then truncate with tooltip, own horizontal scroll, sticky header and totals; tested with 60-character names at 1440 and 390 px); order in area units with cartons calculated beside
 - [x] D2. Receiving and supplier bills: goods receipts per line (received, damaged, roll numbers, dye lots, warehouse), partial receipts creating stock movements; bills only against received goods, matched to PO and receipt with differences flagged, supplier invoice file attached
 - [x] D3. Supplier terms, balances and payments: Pay on order / COD / On account (Net 30, 60, 90, 180, monthly statement) with credit limit; Remaining per PO and bill; balance owed, credit used and next due per supplier; payables Current vs Overdue with aging in Reports; supplier payments with mandatory proof, optional approval, void, partial, multi-bill allocation; purchasing permissions
-- [ ] Batch D: full suite green
+- [x] Batch D: full suite green (246 of 246 on a production build, three chunks)
 
 #### Batch E: dashboard and sales team
 - [ ] E1. Dashboard redesign: auto-fit key-figure cards (label, compact value, change vs previous period, sparkline), one period selector and warehouse filter, widgets (revenue and margin with chart / table toggle, pending quotes, receivables, payments to verify, best sellers with own period, metric, category and chart / table toggle, slow movers, today's jobs, top performer)
