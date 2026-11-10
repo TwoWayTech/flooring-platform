@@ -2,7 +2,7 @@ import { CalendarClock, CalendarDays, Clock, LayoutDashboard, UsersRound } from 
 import { SETTINGS_MENU, type SettingsGroup } from "./settings-menu";
 
 /** The settings groups an HR-only company uses; sales, stock, payments and commissions are flooring. */
-const HR_SETTINGS_GROUPS: SettingsGroup[] = ["company", "people", "tax", "data"];
+const HR_SETTINGS_GROUPS: SettingsGroup[] = ["company", "people", "tax", "notifications", "data"];
 import type { ProductConfig } from "./types";
 
 /** HR Suite: HR and Meetings only, so an HR-only company never sees flooring menus (spec "HR host"). */

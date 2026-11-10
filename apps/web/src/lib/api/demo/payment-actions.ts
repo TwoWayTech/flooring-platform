@@ -18,6 +18,7 @@ import {
 } from "@workspace/shared";
 import type { AuditInput, PaymentDecision } from "../contract";
 import { DemoRuleError } from "./admin-rules";
+import { notifyPaymentReceipt, notifyPaymentToVerify } from "./notification-actions";
 import type { CompanyDb } from "./company-db";
 import type { FileStore } from "./file-store";
 import { placeholderProof } from "./placeholder-proof";
@@ -128,7 +129,7 @@ export async function recordPayment(ctx: ActionContext, input: RecordPaymentInpu
     reference: input.reference.trim(),
     note: input.note.trim(),
     files: metas,
-    status: needsApproval(settings, input.amount) ? "pending" : "confirmed",
+    status: needsApproval(settings, input.amount) || recordedByOwnScopeRole(ctx) ? "pending" : "confirmed",
     recordedById: ctx.actor.id,
     recordedBy: ctx.actor.name,
     recordedAt: ctx.now,
@@ -148,7 +149,21 @@ export async function recordPayment(ctx: ActionContext, input: RecordPaymentInpu
       payment.status === "pending" ? "pending verification" : "confirmed"
     }, ${metas.length} ${metas.length === 1 ? "file" : "files"}`,
   });
+  if (payment.status === "pending") {
+    await notifyPaymentToVerify(ctx, invoice.number, payment.amount, `/sales/invoices/${invoice.id}`);
+  } else {
+    notifyPaymentReceipt(ctx, payment, invoice, invoiceWithLedger(ctx, invoice.id).ledger.balance);
+  }
   return payment;
+}
+
+/**
+ * Whether the person records only their own sales (plan N-1): what Sales records always waits for
+ * a second person, whatever the amount and whatever the company's approval setting.
+ */
+function recordedByOwnScopeRole(ctx: ActionContext): boolean {
+  const roles = ctx.db.list("roles").filter((r) => ctx.actor.roleIds.includes(r.id));
+  return roles.length > 0 && roles.every((r) => r.dataScope === "own");
 }
 
 /**
@@ -181,6 +196,9 @@ export async function reviewPayment(ctx: ActionContext, paymentId: string, decis
     before: `${dollars(payment.amount)}, pending verification`,
     after: decision.action === "confirm" ? "confirmed" : `rejected: ${reason}`,
   });
+  if (decision.action === "confirm") {
+    notifyPaymentReceipt(ctx, reviewed, invoice, invoiceWithLedger(ctx, invoice.id).ledger.balance);
+  }
   return reviewed;
 }
 

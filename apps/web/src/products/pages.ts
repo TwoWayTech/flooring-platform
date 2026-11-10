@@ -21,6 +21,7 @@ const SUB_PAGES: PageRule[] = [
   { pattern: "/inventory?view=products", anyOf: ["inventory.product.view"] },
   { pattern: "/inventory?view=rolls", anyOf: ["inventory.roll.view"] },
   { pattern: "/inventory/rolls/*", anyOf: ["inventory.roll.view"] },
+  { pattern: "/inventory?view=ready", anyOf: ["inventory.roll.cut"] },
   { pattern: "/inventory?view=transfers", anyOf: ["inventory.transfer.view"] },
   { pattern: "/purchasing?view=orders", anyOf: ["purchasing.order.view"] },
   { pattern: "/purchasing?view=bills", anyOf: ["purchasing.bill.view"] },

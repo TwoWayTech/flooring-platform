@@ -7,7 +7,9 @@ import {
   FileText,
   Hash,
   History,
+  Inbox,
   Languages,
+  Mail,
   Palette,
   ShieldCheck,
   Users,
@@ -24,6 +26,7 @@ export const SETTINGS_GROUPS = {
   tax: "Tax and localization",
   payments: "Payments",
   commissions: "Commissions",
+  notifications: "Email and notifications",
   data: "Data import and integrations",
 } as const;
 
@@ -134,6 +137,24 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["sales.team"],
     group: "commissions",
     description: "Commission rules per role or person: on paid revenue or margin, with tiers.",
+  },
+  {
+    label: "Email and notifications",
+    href: "/settings/notifications",
+    icon: Mail,
+    anyOf: ["settings.notifications.manage"],
+    features: ["settings.notifications"],
+    group: "notifications",
+    description: "Who emails come from, which events notify people, and the wording of each.",
+  },
+  {
+    label: "Outbox",
+    href: "/settings/outbox",
+    icon: Inbox,
+    anyOf: ["settings.outbox.view"],
+    features: ["settings.outbox"],
+    group: "notifications",
+    description: "Every email the system would send, with who it went to and its status.",
   },
   {
     label: "Data import",

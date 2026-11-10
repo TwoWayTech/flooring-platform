@@ -8,5 +8,6 @@ export * from "./purchasing";
 export * from "./installation";
 export * from "./hr";
 export * from "./meetings";
+export * from "./notifications";
 export * from "./settings";
 export * from "./fixtures";

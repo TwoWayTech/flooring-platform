@@ -154,6 +154,21 @@ export const SETTINGS = {
     helper: "Earned when payments are confirmed; the highest tier a period reaches sets the rate for all of it.",
     href: COMMISSIONS,
   },
+  "email.senderName": {
+    label: "Sender name",
+    helper: "The name people see in their inbox.",
+    href: "/settings/notifications",
+  },
+  "email.replyTo": {
+    label: "Reply-to address",
+    helper: "Where replies go.",
+    href: "/settings/notifications",
+  },
+  "email.signature": {
+    label: "Sign-off",
+    helper: "Added to the end of every email.",
+    href: "/settings/notifications",
+  },
   "payments.approvalRequired": {
     label: "Payments need approval",
     helper: "A recorded payment waits until someone else with approval permission confirms it.",

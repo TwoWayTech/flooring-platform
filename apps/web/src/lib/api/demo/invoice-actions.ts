@@ -12,6 +12,7 @@ import {
   type RefundInput,
 } from "@workspace/shared";
 import { DemoRuleError } from "./admin-rules";
+import { notifyInvoiceSent } from "./notification-actions";
 import { releaseFor } from "./inventory-actions";
 import { describeFiles, invoiceWithLedger, storeFiles, type ActionContext } from "./payment-actions";
 
@@ -64,7 +65,7 @@ export async function voidPayment(ctx: ActionContext, paymentId: string, reason:
 
 /** Marks an invoice as sent to the customer, for its timeline (spec B2 "Mark as sent"). */
 export async function markInvoiceSent(ctx: ActionContext, invoiceId: string) {
-  await ctx.assertCan(["sales.invoice.edit"]);
+  await ctx.assertCan(["sales.invoice.edit", "sales.invoice.create"]);
   const { invoice, ledger } = invoiceWithLedger(ctx, invoiceId);
   if (ledger.state === "void") throw new DemoRuleError(`Invoice ${invoice.number} is void.`);
   if (invoice.sentAt) throw new DemoRuleError(`Invoice ${invoice.number} was already sent.`);
@@ -77,6 +78,7 @@ export async function markInvoiceSent(ctx: ActionContext, invoiceId: string) {
     before: null,
     after: ctx.today,
   });
+  notifyInvoiceSent(ctx, sent);
   return sent;
 }
 

@@ -229,6 +229,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         },
       ],
     },
+    email: { senderName: seed.name, replyTo: `office@${seed.domain}`, signature: `The team at ${seed.name}` },
     profile: {
       legalName: seed.legalName,
       dba: seed.name,

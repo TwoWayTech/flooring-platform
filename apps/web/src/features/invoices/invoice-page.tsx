@@ -149,6 +149,8 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         invoice={invoice}
         ledger={ledger}
         locations={locations}
+        customerName={customer?.name ?? ""}
+        quoteNumber={quote?.number ?? null}
         job={installs ? job : undefined}
         canSchedule={installs && can("installation.job.create") && !invoice.voidedAt && !invoice.isReturn}
       />

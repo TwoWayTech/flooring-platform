@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { Bell } from "lucide-react";
+import { featureOn } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@workspace/ui/components/popover";
 import { cn } from "@workspace/ui/lib/utils";
+import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { loadAttention, type AttentionItem } from "@/lib/attention";
 import { useWorkspace } from "@/components/workspace/workspace-context";
@@ -21,11 +23,15 @@ export function useAttention() {
   return useApiQuery((client) => loadAttention(client, access, session.product), [access, session.product]);
 }
 
-/** The bell: what needs the viewer's attention, each item linking to where it is handled. */
+/** The bell (spec A4): the person's stored updates, then what needs attention, each linking to where it is handled. */
 export function Notifications() {
   const attention = useAttention();
+  const updates = useApiQuery((client) => client.listMyNotifications(), []);
   const items = attention.data ?? [];
-  const total = items.length;
+  const mine = (updates.data ?? []).slice(0, 8);
+  const unread = (updates.data ?? []).filter((n) => !n.readAt);
+  const total = items.length + unread.length;
+  const markRead = () => void api.markNotificationsRead(unread.map((n) => n.id));
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -44,8 +50,33 @@ export function Notifications() {
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0">
-        <p className="border-hairline border-b px-4 py-3 text-sm font-semibold">Needs attention</p>
+      <PopoverContent align="end" className="max-h-[32rem] w-80 overflow-y-auto p-0">
+        {featureOn("settings.notifications") && mine.length ? (
+          <>
+            <div className="border-hairline flex items-center justify-between border-b px-4 py-2">
+              <p className="text-sm font-semibold">Updates</p>
+              {unread.length ? (
+                <Button variant="ghost" size="sm" onClick={markRead}>
+                  Mark all read
+                </Button>
+              ) : null}
+            </div>
+            <ul className="py-1">
+              {mine.map((n) => (
+                <li key={n.id}>
+                  <Link
+                    href={n.href}
+                    onClick={() => void api.markNotificationsRead([n.id])}
+                    className={cn("hover:bg-raised block px-4 py-2 text-sm", n.readAt && "text-muted-foreground")}
+                  >
+                    {n.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        <p className="border-hairline border-y px-4 py-3 text-sm font-semibold">Needs attention</p>
         {attention.status === "error" ? (
           <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm">
             <p className="text-muted-foreground">Notifications could not load. {attention.error.message}</p>
@@ -67,6 +98,11 @@ export function Notifications() {
             ))}
           </ul>
         )}
+        {featureOn("settings.outbox") ? (
+          <Link href="/outbox" className="border-hairline hover:bg-raised block border-t px-4 py-2.5 text-sm">
+            See your Outbox
+          </Link>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

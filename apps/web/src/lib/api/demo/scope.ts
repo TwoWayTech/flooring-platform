@@ -73,6 +73,7 @@ export function applyScope<K extends CollectionName>(
   subject: ScopeSubject,
 ): Collections[K] {
   const filter = FILTERS[name];
+  if (name === "inAppNotifications" || name === "outboxMessages") return [] as unknown as Collections[K];
   if (!filter || subject.scope === "all") return items;
   return (items as never[]).filter((item) => filter(item, subject, db)) as Collections[K];
 }

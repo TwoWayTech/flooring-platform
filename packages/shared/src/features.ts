@@ -93,6 +93,14 @@ export const FEATURES = {
     enabled: true,
     screens: [],
   },
+  "inventory.ready-to-cut": {
+    title: "Ready to cut",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: ["/inventory?view=ready"],
+  },
   "inventory.locations": {
     title: "Warehouses and showrooms",
     product: "flooring",
@@ -364,6 +372,22 @@ export const FEATURES = {
     status: "demo",
     enabled: true,
     screens: [],
+  },
+  "settings.notifications": {
+    title: "Email and notifications",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/notifications"],
+  },
+  "settings.outbox": {
+    title: "Outbox",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/outbox", "/settings/outbox"],
   },
   "shell.company-switcher": {
     title: "Company switcher",

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import {
   dec,
+  maxDec,
   depositAmount,
   duplicateReference,
   formatNumber,
@@ -100,10 +101,12 @@ export function RecordPaymentSheet({
   const today = api.today();
   const deposit = depositAmount(invoice.total, invoice.depositPct);
   const offerDeposit = dec(invoice.depositPct).gt(0) && dec(ledger.paid).isZero() && dec(deposit).lt(ledger.balance);
+  // A payment already waiting for its check is not asked for again (audit U-18).
+  const suggested = moneyString(maxDec(dec(ledger.balance).minus(ledger.pending), 0));
   const [input, setInput] = useState<RecordPaymentInput>({
     invoiceId: invoice.id,
     kind: asDeposit && offerDeposit ? "deposit" : "payment",
-    amount: asDeposit && offerDeposit ? deposit : ledger.balance,
+    amount: asDeposit && offerDeposit ? deposit : suggested,
     date: today,
     method: "ach",
     checkNumber: "",
@@ -194,6 +197,11 @@ export function RecordPaymentSheet({
             <SheetTitle>{input.kind === "deposit" ? "Record deposit" : "Record payment"}</SheetTitle>
             <SheetDescription>
               Invoice {invoice.number}. The balance drops once the payment is confirmed.
+              {ledger.pendingVerification ? (
+                <span className="text-warning-ink mt-1 block">
+                  <Num kind="money" value={ledger.pending} /> is already waiting for verification on this invoice.
+                </span>
+              ) : null}
             </SheetDescription>
           </SheetHeader>
           <div className="flex flex-col gap-4 px-4">

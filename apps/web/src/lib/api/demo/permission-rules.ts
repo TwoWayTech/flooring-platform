@@ -51,6 +51,10 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   // Imports and saved mappings change only through the import calls (spec G1).
   importBatches: [],
   importMappings: [],
+  // Notifications change only through their own store calls (spec A4).
+  notificationRules: [],
+  outboxMessages: [],
+  inAppNotifications: [],
 };
 
 /** Permissions that allow a generic save to a collection; empty means no role may. */
@@ -70,6 +74,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   payments: ["settings.payments.manage"],
   inventory: ["settings.locations.manage"],
   commissions: ["sales.commission.manage"],
+  email: ["settings.notifications.manage"],
 };
 
 /** Permissions that allow changing one settings section. */

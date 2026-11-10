@@ -41,6 +41,7 @@ import { FigureCard } from "./figure-card";
 import { RevenuePanel } from "./revenue-panel";
 import { SlowMovers } from "./sellers-panels";
 import { TodaysJobs } from "./todays-jobs";
+import { WarehouseToday } from "./warehouse-today";
 import { useDashboardData, type DashboardData } from "./use-dashboard-data";
 
 const PENDING_QUOTES_HREF = filteredHref("/sales?view=quotes", "sales-quotes", "status", ["Pending"]);
@@ -217,7 +218,9 @@ export function DashboardPage() {
   const ownScope =
     (viewAsRole ? viewAsRole.dataScope : dataScope(roles.filter((r) => user.roleIds.includes(r.id)))) === "own";
   const sales = can("sales.invoice.view");
-  const toVerify = data.data?.sales.payments.filter((p) => p.status === "pending").length ?? 0;
+  const pendingPayments = data.data?.sales.payments.filter((p) => p.status === "pending") ?? [];
+  const toVerify = pendingPayments.filter((p) => p.recordedById !== user.id).length;
+  const waitingOnOthers = pendingPayments.length - toVerify;
 
   return (
     <>
@@ -327,7 +330,13 @@ export function DashboardPage() {
                       <span className="font-display text-2xl font-semibold">
                         <Num kind="count" value={toVerify} />
                       </span>{" "}
-                      waiting for a second person
+                      {toVerify === 1 ? "waits for you" : "wait for you"}
+                      {waitingOnOthers ? (
+                        <span className="text-muted-foreground block text-xs">
+                          <Num kind="count" value={waitingOnOthers} /> you recorded{" "}
+                          {waitingOnOthers === 1 ? "waits" : "wait"} for someone else
+                        </span>
+                      ) : null}
                     </span>
                     <Link href={TO_VERIFY_HREF} className="text-brand-ink underline-offset-4 hover:underline">
                       Review
@@ -335,6 +344,7 @@ export function DashboardPage() {
                   </p>
                 </Panel>
               ) : null}
+              {can("inventory.roll.cut") ? <WarehouseToday /> : null}
               {can("sales.commission.view") && sales ? (
                 <TopPerformer data={data.data} period={range} locationId={locationId} />
               ) : null}

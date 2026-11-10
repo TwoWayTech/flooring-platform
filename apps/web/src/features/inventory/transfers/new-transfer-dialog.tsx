@@ -28,6 +28,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
+import { ProductPicker } from "@/features/quotes/product-picker";
 import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
 import { CartonHint } from "@/components/quantity/carton-hint";
 import { WarehouseSelect } from "@/components/warehouse-select";
@@ -172,31 +173,18 @@ export function NewTransferDialog({
             </ul>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="transfer-add-product" label="Add boxed goods">
-              <Select
-                value=""
-                onValueChange={(id) =>
-                  setLines((ls) => [
-                    ...ls,
-                    { productId: id, rollId: null, quantity: products.find((p) => p.id === id)?.sqFtPerCarton ?? "1" },
-                  ])
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Add boxed goods</span>
+              <ProductPicker
+                label="Add boxed goods"
+                products={boxed.filter((p) => !lines.some((l) => !l.rollId && l.productId === p.id))}
+                stock={{ rolls, movements, reservations: [] }}
+                locationId={fromId}
+                onPick={(p) =>
+                  setLines((ls) => [...ls, { productId: p.id, rollId: null, quantity: p.sqFtPerCarton ?? "1" }])
                 }
-              >
-                <SelectTrigger id="transfer-add-product" className="w-full">
-                  <SelectValue placeholder="Choose a product" />
-                </SelectTrigger>
-                <SelectContent>
-                  {boxed
-                    .filter((p) => !lines.some((l) => !l.rollId && l.productId === p.id))
-                    .map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} ({boxedOnHand(movements, p.id, fromId).toString()}
-                        {p.sqFtPerCarton ? " sq ft" : ""} on hand)
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </Field>
+              />
+            </div>
             <Field id="transfer-add-roll" label="Add a roll">
               <Select
                 value=""

@@ -376,7 +376,7 @@ export function QuoteBuilder({
                   dirty={dirty}
                   pending={pending}
                   actions={draft.number && !can("sales.quote.edit") ? [] : quoteActions(draft, today)}
-                  canConvert={can("sales.invoice.create") && featureOn("sales.invoices")}
+                  canConvert={draft.status === "accepted" && can("sales.invoice.create") && featureOn("sales.invoices")}
                   onSave={() => void save().catch((e: unknown) => toast.error(message(e, "Not saved. Try again.")))}
                   onAction={(action) => {
                     if (action !== "send") return changeStatus(action);

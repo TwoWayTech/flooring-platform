@@ -7,6 +7,7 @@ import type { OvertimeRule } from "../us-pack/overtime";
 import type { TaxRule } from "../us-pack/tax";
 import type { CompanyDefaultRate, JurisdictionRate } from "../us-pack/tax-defaults";
 import type { Address, Branding } from "./company";
+import type { EmailSettings } from "./notifications";
 import type { PaymentTerms } from "./sales";
 
 /** Categories of audit entries. */
@@ -128,4 +129,6 @@ export interface CompanySettings {
   inventory: InventorySettings;
   /** Settings → Commissions (spec E2). */
   commissions: { rules: CommissionRule[] };
+  /** Sender details on every email (spec A4). */
+  email: EmailSettings;
 }

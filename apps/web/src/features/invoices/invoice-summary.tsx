@@ -38,12 +38,16 @@ export function InvoiceSummary({
   ledger,
   locations,
   job,
+  customerName,
+  quoteNumber,
   canSchedule,
 }: {
   invoice: Invoice;
   ledger: InvoiceLedger;
   locations: Location[];
   job: Job | undefined;
+  customerName: string;
+  quoteNumber: string | null;
   /** Whether the viewer may schedule an installation job for this invoice. */
   canSchedule: boolean;
 }) {
@@ -60,6 +64,30 @@ export function InvoiceSummary({
         <Figure label="Remaining" value={ledger.balance} large />
       </dl>
       <dl className="text-muted-foreground grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        <div>
+          <dt className="text-xs">Customer</dt>
+          <dd>
+            <Link
+              href={`/sales?view=customers&customer=${invoice.customerId}`}
+              className="text-brand-ink underline-offset-4 hover:underline"
+            >
+              {customerName}
+            </Link>
+          </dd>
+        </div>
+        {invoice.quoteId && quoteNumber ? (
+          <div>
+            <dt className="text-xs">Quote</dt>
+            <dd>
+              <Link
+                href={`/sales/quotes/${invoice.quoteId}`}
+                className="text-brand-ink underline-offset-4 hover:underline"
+              >
+                {quoteNumber}
+              </Link>
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-xs">Fulfilled from</dt>
           <dd className="text-foreground">{locationName(locations, invoice.locationId) || "Not set"}</dd>

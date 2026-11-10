@@ -81,6 +81,9 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     audit: buildAudit(ctx, users),
     importBatches: [],
     importMappings: [],
+    notificationRules: [],
+    outboxMessages: [],
+    inAppNotifications: [],
   });
   return withBuyer(ctx, fixtures);
 }

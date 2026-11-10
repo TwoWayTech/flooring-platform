@@ -29,6 +29,10 @@ import type {
   GoodsReceipt,
   PaymentMethod,
   ReceiptLine,
+  InAppNotification,
+  NotificationEventKey,
+  NotificationRule,
+  OutboxMessage,
   SupplierPayment,
   Reservation,
   StockAdjustment,
@@ -361,7 +365,25 @@ export interface ApiClient {
    * Needs inventory.roll.cut. Audited.
    */
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
+  /** The signed-in user's id. */
+  whoAmI(): Promise<string>;
   listStockHolds(): Promise<StockHold[]>;
+  /** Saves one event's switch, channels and template (spec A4). Needs settings.notifications.manage. Audited. */
+  saveNotificationRule(rule: Omit<NotificationRule, "updatedAt" | "updatedBy">): Promise<NotificationRule>;
+  /** Puts one event back to its defaults. Needs settings.notifications.manage. Audited. */
+  resetNotificationRule(key: NotificationEventKey): Promise<void>;
+  /** The Outbox: own rows, or all with settings.outbox.view; restricted rows redacted (spec A4). */
+  listOutbox(all: boolean): Promise<OutboxMessage[]>;
+  /** Sends a failed message again. */
+  retryOutbox(id: string): Promise<OutboxMessage>;
+  /** Cancels a scheduled message. */
+  cancelOutbox(id: string): Promise<OutboxMessage>;
+  /** Presenter tool: marks a sent message as bounced. Needs settings.outbox.view. */
+  simulateBounce(id: string): Promise<OutboxMessage>;
+  /** The signed-in person's stored notifications, newest first. */
+  listMyNotifications(): Promise<InAppNotification[]>;
+  /** Marks the person's own notifications read. */
+  markNotificationsRead(ids: readonly string[]): Promise<void>;
   issueReservation(reservationId: string, overrideReason?: string): Promise<Reservation>;
   /** Records a stock adjustment with a reason; above the company's quantity it waits for approval. Audited. */
   recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;

@@ -116,7 +116,11 @@ const CHECKS: Check[] = [
     permission: "sales.payment.approve",
     products: ["flooring"],
     load: async (client) => {
-      const count = (await client.list("payments")).filter((p) => p.status === "pending").length;
+      // Only what this person may confirm: nobody verifies a payment they recorded themselves (U-16).
+      const me = await client.whoAmI();
+      const count = (await client.list("payments")).filter(
+        (p) => p.status === "pending" && p.recordedById !== me,
+      ).length;
       return {
         count,
         label: plural(count, "payment to verify", "payments to verify"),

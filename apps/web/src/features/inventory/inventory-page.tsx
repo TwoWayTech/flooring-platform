@@ -11,10 +11,11 @@ import { NoAccess } from "@/components/no-access";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { AdjustmentsPanel } from "./adjustments-panel";
 import { ProductsTable } from "./products-table";
+import { ReadyToCut } from "./ready-to-cut";
 import { RollsTable } from "./rolls-table";
 import { TransfersPanel } from "./transfers/transfers-panel";
 
-type InventoryView = "products" | "rolls" | "transfers" | "adjustments";
+type InventoryView = "products" | "rolls" | "ready" | "transfers" | "adjustments";
 
 /**
  * Inventory (spec "Inventory and roll detail", A1): products and rolls, filterable by warehouse,
@@ -37,11 +38,13 @@ export function InventoryPage() {
         client.list("stockAdjustments"),
       ],
     );
-    return { products, rolls, stockMovements, reservations, locations, transfers, users, adjustments };
+    const holds = await client.listStockHolds();
+    return { products, rolls, stockMovements, reservations, locations, transfers, users, adjustments, holds };
   }, []);
   const allowed: Record<InventoryView, boolean> = {
     products: can("inventory.product.view") && featureOn("inventory.products"),
     rolls: can("inventory.roll.view") && featureOn("inventory.rolls"),
+    ready: can("inventory.roll.cut") && featureOn("inventory.reservations"),
     transfers: can("inventory.transfer.view") && featureOn("inventory.transfers"),
     adjustments:
       (can("inventory.stock.adjust") || can("inventory.stock.approve")) && featureOn("inventory.adjustments"),
@@ -77,10 +80,11 @@ export function InventoryPage() {
           <TabsList aria-label="Inventory view">
             {allowed.products ? <TabsTrigger value="products">Products</TabsTrigger> : null}
             {allowed.rolls ? <TabsTrigger value="rolls">Rolls and remnants</TabsTrigger> : null}
+            {allowed.ready ? <TabsTrigger value="ready">Ready to cut</TabsTrigger> : null}
             {allowed.transfers ? <TabsTrigger value="transfers">Transfers</TabsTrigger> : null}
             {allowed.adjustments ? <TabsTrigger value="adjustments">Adjustments</TabsTrigger> : null}
           </TabsList>
-          {(view === "products" || view === "rolls") && data.status === "ready" ? (
+          {(view === "products" || view === "rolls" || view === "ready") && data.status === "ready" ? (
             <WarehouseSelect
               label="Warehouse"
               extraOption={ALL_WAREHOUSES_OPTION}
@@ -93,6 +97,14 @@ export function InventoryPage() {
         <TabsContent value={view} className="flex flex-col gap-6">
           {data.status !== "ready" ? (
             <QueryFallback query={data} className="h-96" label="Loading inventory" />
+          ) : view === "ready" ? (
+            <ReadyToCut
+              holds={data.data.holds}
+              products={data.data.products}
+              rolls={data.data.rolls}
+              locations={data.data.locations}
+              warehouseId={warehouseId}
+            />
           ) : view === "transfers" ? (
             <TransfersPanel {...data.data} />
           ) : view === "adjustments" ? (

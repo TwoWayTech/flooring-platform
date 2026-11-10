@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, MoveRight, Printer, Scissors, ClipboardCheck } from "lucide-react";
-import { dec, featureOn, locationName, reservedOnRoll, rollAreaSqFt, rollAvailable, SENSITIVE } from "@workspace/shared";
+import {
+  dec,
+  featureOn,
+  locationName,
+  reservedOnRoll,
+  rollAreaSqFt,
+  rollAvailable,
+  SENSITIVE,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";

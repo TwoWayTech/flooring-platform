@@ -1,3 +1,4 @@
+import type { InAppNotification, NotificationRule, OutboxMessage } from "./notifications";
 import type { Product, Roll } from "./catalog";
 import type { Company, CompanyId, Role, User } from "./company";
 import type { Commission, Employee, PtoRequest, Timesheet } from "./hr";
@@ -49,6 +50,10 @@ export interface CompanyFixtures {
   importBatches: ImportBatch[];
   /** Column mappings saved per import kind (spec G1). */
   importMappings: ImportMapping[];
+  /** A company's notification choices per event (spec A4); empty means the catalogue's defaults. */
+  notificationRules: NotificationRule[];
+  outboxMessages: OutboxMessage[];
+  inAppNotifications: InAppNotification[];
 }
 
 /** Platform-level fixtures: the companies the super-admin manages. */

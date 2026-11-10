@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 const ACTIONS: Record<InvoiceAction, { label: string; icon: typeof Coins; permission: PermissionKey }> = {
   deposit: { label: "Record deposit", icon: Coins, permission: "sales.payment.record" },
   payment: { label: "Record payment", icon: Receipt, permission: "sales.payment.record" },
-  send: { label: "Mark as sent", icon: Send, permission: "sales.invoice.edit" },
+  send: { label: "Mark as sent", icon: Send, permission: "sales.invoice.create" },
   credit: { label: "Apply credit", icon: HandCoins, permission: "sales.payment.apply_credit" },
   write_off: { label: "Write off remaining balance", icon: Eraser, permission: "sales.payment.write_off" },
   void: { label: "Void invoice", icon: Ban, permission: "sales.invoice.void" },

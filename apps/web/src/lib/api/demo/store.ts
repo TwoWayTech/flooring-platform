@@ -31,6 +31,8 @@ import {
   type CompanySettings,
   type PermissionKey,
   type PlatformFixtures,
+  type NotificationEventKey,
+  type NotificationRule,
   type Quote,
   type RecordPaymentInput,
   type RefundInput,
@@ -75,6 +77,18 @@ import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, pe
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
+import {
+  cancelOutbox,
+  listOutbox,
+  markNotificationsRead,
+  myNotifications,
+  notifyQuoteSent,
+  releaseScheduled,
+  resetNotificationRule,
+  retryOutbox,
+  saveNotificationRule,
+  simulateBounce,
+} from "./notification-actions";
 import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-actions";
@@ -128,6 +142,7 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   payments: "Payments",
   inventory: "Stock rules",
   commissions: "Commissions",
+  email: "Email and notifications",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
@@ -153,6 +168,7 @@ export class DemoStore implements ApiClient {
   async openCompany(companyId: CompanyId, viewer: Viewer) {
     this.current = await this.db(companyId);
     this.viewer = viewer;
+    releaseScheduled(this.actionContext(this.current));
     if (this.current.upgradeNotice && !this.notices.includes(this.current.upgradeNotice)) {
       this.notices.push(this.current.upgradeNotice);
     }
@@ -558,12 +574,16 @@ export class DemoStore implements ApiClient {
       before: quoteStateLabel(quoteState(quote, this.todayIso)),
       after: expiresAt && change.action === "send" ? `expires ${expiresAt}` : quoteStateLabel(saved.status),
     });
+    if (change.action === "send") notifyQuoteSent(this.actionContext(db), saved);
     this.emit();
     return saved;
   }
 
   async convertQuoteToInvoice(quoteId: string) {
     const db = this.open();
+    if (db.get("quotes", quoteId)?.status !== "accepted") {
+      throw new DemoRuleError("Mark the quote accepted before converting it to an invoice.");
+    }
     await this.assertCan(db, ["sales.invoice.create"]);
     const quote = db.get("quotes", quoteId);
     if (!quote) throw new DemoRuleError("This quote no longer exists.");
@@ -640,6 +660,42 @@ export class DemoStore implements ApiClient {
 
   async refundCredit(input: RefundInput, files: File[]) {
     return this.act((ctx) => refundCredit(ctx, input, files));
+  }
+
+  async saveNotificationRule(rule: Omit<NotificationRule, "updatedAt" | "updatedBy">) {
+    return this.act((ctx) => saveNotificationRule(ctx, rule));
+  }
+
+  async resetNotificationRule(key: NotificationEventKey) {
+    return this.act((ctx) => resetNotificationRule(ctx, key));
+  }
+
+  async listOutbox(all: boolean) {
+    return listOutbox(this.actionContext(this.open()), all);
+  }
+
+  async retryOutbox(id: string) {
+    return this.act((ctx) => retryOutbox(ctx, id));
+  }
+
+  async cancelOutbox(id: string) {
+    return this.act((ctx) => cancelOutbox(ctx, id));
+  }
+
+  async simulateBounce(id: string) {
+    return this.act((ctx) => simulateBounce(ctx, id));
+  }
+
+  async listMyNotifications() {
+    return myNotifications(this.actionContext(this.open()));
+  }
+
+  async markNotificationsRead(ids: readonly string[]) {
+    return this.act(async (ctx) => markNotificationsRead(ctx, ids));
+  }
+
+  async whoAmI() {
+    return this.viewer!.userId;
   }
 
   async listStockHolds() {

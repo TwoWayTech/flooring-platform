@@ -24,6 +24,7 @@ import type {
   SupplierPaymentInput,
 } from "../contract";
 import { DemoRuleError } from "./admin-rules";
+import { notify } from "./notification-actions";
 import { describeFiles, storeFiles, type ActionContext } from "./payment-actions";
 
 const dollars = (amount: string) => `$${moneyString(amount)}`;
@@ -65,7 +66,20 @@ export async function createPurchaseOrder(ctx: ActionContext, input: NewPurchase
     before: null,
     after: `total ${po.total}`,
   });
+  if (po.status === "ordered") notifyPoSent(ctx, po);
   return po;
+}
+
+/** Supplier PO sent: goes to the supplier's address until a sales rep is chosen on the order (spec A4, B2). */
+function notifyPoSent(ctx: ActionContext, po: PurchaseOrder) {
+  const supplier = ctx.db.get("suppliers", po.supplierId);
+  notify(ctx, {
+    key: "po.sent",
+    source: { type: "purchaseOrder", id: po.id, href: "/purchasing?view=orders" },
+    values: { "contact.name": supplier?.name ?? "", "po.number": po.number, "po.expected": po.expectedAt },
+    to: [{ kind: "supplier", id: po.supplierId, name: supplier?.name ?? "Supplier", email: supplier?.email ?? "" }],
+    attachments: [{ kind: "pdf", fileName: `${po.number}.pdf`, href: "/purchasing?view=orders" }],
+  });
 }
 
 /** Sends a draft to the supplier (Draft → Ordered). Audited. */
@@ -82,6 +96,7 @@ export async function markOrdered(ctx: ActionContext, poId: string) {
     before: "draft",
     after: "ordered",
   });
+  notifyPoSent(ctx, ordered);
   return ordered;
 }
 

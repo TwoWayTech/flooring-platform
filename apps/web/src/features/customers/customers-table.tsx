@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { CircleAlert, ShieldCheck } from "lucide-react";
 import {
@@ -48,7 +49,9 @@ export function CustomersTable({
   locations: Location[];
 }) {
   const can = useCan();
-  const [open, setOpen] = useState<Customer | null>(null);
+  const params = useSearchParams();
+  const linked = customers.find((c) => c.id === params.get("customer")) ?? null;
+  const [open, setOpen] = useState<Customer | null>(linked);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const formatDate = useFormatDate();
   const today = api.today();

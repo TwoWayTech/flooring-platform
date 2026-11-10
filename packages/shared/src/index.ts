@@ -32,6 +32,8 @@ export * from "./operations/meetings";
 export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
+export * from "./notifications/events";
+export * from "./notifications/render";
 export * from "./migrations";
 export * from "./table-filters";
 export * from "./us-pack/tax-examples";

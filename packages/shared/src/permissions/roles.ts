@@ -126,6 +126,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "sales.invoice.view",
       "sales.invoice.create",
       "sales.payment.view",
+      "sales.payment.record",
       "sales.commission.view",
       "customers.customer.view",
       "customers.customer.create",
