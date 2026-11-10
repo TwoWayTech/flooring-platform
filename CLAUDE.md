@@ -28,3 +28,4 @@ pnpm dev | pnpm build | pnpm lint | pnpm typecheck | pnpm test | pnpm test:e2e |
 12. Push to GitHub after every commit (git push origin <current branch>). Never leave work only on this laptop.
 13. Clean code: small focused files and functions, clear names, no dead or commented-out code, no duplicated logic. Prettier and ESLint must pass.
 14. Comments: every exported function, component, hook and type gets a short JSDoc comment saying what it does and why. Business rules (tax, costing, units, permissions, ledger) get a comment explaining the rule and pointing to the spec section. No comments that only repeat the code.
+15. Low-memory testing, always: test against a production build (pnpm build, then start the app), 2 Playwright workers (1 if memory is tight), e2e in chunks by project or folder, one server at a time, stopped after each run.
