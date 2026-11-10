@@ -1,4 +1,4 @@
-import type { ModuleKey, ProductKey } from "./products";
+import { MODULES, type ModuleInfo, type ModuleKey, type ProductKey } from "./products";
 
 /**
  * Where a feature stands in docs/FEATURES.md: shown in the demo, confirmed for the real build,
@@ -73,9 +73,25 @@ export const FEATURES = {
     title: "Stock adjustments and reservations",
     product: "flooring",
     module: "core",
+    status: "removed",
+    enabled: false,
+    screens: ["/inventory?view=adjustments"],
+  },
+  "inventory.reservations": {
+    title: "Reservations and cuts",
+    product: "flooring",
+    module: "core",
     status: "demo",
     enabled: true,
-    screens: ["/inventory?view=adjustments"],
+    screens: [],
+  },
+  "inventory.stock-correction": {
+    title: "Correct stock count",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
   },
   "inventory.locations": {
     title: "Warehouses and showrooms",
@@ -84,6 +100,14 @@ export const FEATURES = {
     status: "demo",
     enabled: true,
     screens: ["/settings/locations"],
+  },
+  "sales.quote-availability": {
+    title: "Availability per warehouse on quotes",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
   },
   "sales.quotes": {
     title: "Quotes and quote builder",
@@ -137,8 +161,8 @@ export const FEATURES = {
     title: "Installation calendar and job cards",
     product: "flooring",
     module: "installation",
-    status: "demo",
-    enabled: true,
+    status: "removed",
+    enabled: false,
     screens: ["/installation"],
   },
   "reports.hub": {
@@ -148,6 +172,62 @@ export const FEATURES = {
     status: "demo",
     enabled: true,
     screens: ["/reports"],
+  },
+  "reports.pnl": {
+    title: "Profit and loss report",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "reports.sales-category": {
+    title: "Sales by category report",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "reports.payments": {
+    title: "Payments received report",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
+  "reports.tax-jurisdiction": {
+    title: "Sales tax by jurisdiction report",
+    product: "flooring",
+    module: "core",
+    status: "removed",
+    enabled: false,
+    screens: [],
+  },
+  "reports.inventory-valuation": {
+    title: "Inventory valuation report",
+    product: "flooring",
+    module: "core",
+    status: "removed",
+    enabled: false,
+    screens: [],
+  },
+  "reports.receivables-aging": {
+    title: "Receivables aging report",
+    product: "flooring",
+    module: "core",
+    status: "removed",
+    enabled: false,
+    screens: [],
+  },
+  "reports.payables-aging": {
+    title: "Payables aging report",
+    product: "flooring",
+    module: "core",
+    status: "removed",
+    enabled: false,
+    screens: [],
   },
   "hr.dashboard": {
     title: "HR dashboard",
@@ -413,6 +493,14 @@ export function featureForPath(
     if (!best || rank > best.rank) best = { key, rank };
   }
   return best?.key ?? null;
+}
+
+/**
+ * The modules that can be seen and offered: Installation goes with its feature switch, and the
+ * Contracts module takes its place (spec A3).
+ */
+export function visibleModules(register: FeatureRegister = FEATURES): readonly ModuleInfo[] {
+  return MODULES.filter((m) => m.key !== "installation" || featureOn("installation.calendar", register));
 }
 
 /** True when the page or link may be shown: no feature owns it, or the feature that does is on. */

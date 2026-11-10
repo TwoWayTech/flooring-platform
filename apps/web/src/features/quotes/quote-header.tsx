@@ -34,13 +34,13 @@ const NEW_ADDRESS = "__new";
 
 /** The element each validated field focuses, so the first error can take focus (spec quality floor). */
 export const QUOTE_FIELD_IDS: Record<QuoteField, string> = {
+  location: "quote-location",
   customer: "quote-customer",
   lines: "quote-add-product",
   street: "site-street",
   city: "site-city",
   state: "site-state",
   zip: "site-zip",
-  location: "quote-location",
   expiresAt: "quote-expires",
 };
 
@@ -76,7 +76,7 @@ interface QuoteHeaderProps {
 }
 
 /**
- * Customer, job site and the warehouse the goods ship from (spec "Quote builder", A1, A6). The
+ * The warehouse the goods ship from, then customer and job site (spec "Quote builder", A2, A6). The
  * customer picker searches like a call centre and adds new customers inline; the job site comes
  * from the customer's addresses or a new one, and its fields stay editable by hand. The job site
  * picks the tax rule.
@@ -119,6 +119,19 @@ export function QuoteHeader({
   return (
     <div className="grid gap-4 sm:grid-cols-6">
       <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
+        <Label htmlFor="quote-location">Fulfilled from</Label>
+        <WarehouseSelect
+          id="quote-location"
+          label="Fulfilled from"
+          className="w-full"
+          locations={locations}
+          value={locationId}
+          onChange={onLocation}
+          disabled={!editable}
+        />
+        <FieldError field="location" problems={problems} />
+      </div>
+      <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
         <Label htmlFor="quote-customer">Customer</Label>
         <CustomerPicker
           id="quote-customer"
@@ -158,19 +171,6 @@ export function QuoteHeader({
             ) : null}
           </SelectContent>
         </Select>
-      </div>
-      <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
-        <Label htmlFor="quote-location">Fulfilled from</Label>
-        <WarehouseSelect
-          id="quote-location"
-          label="Fulfilled from"
-          className="w-full"
-          locations={locations}
-          value={locationId}
-          onChange={onLocation}
-          disabled={!editable}
-        />
-        <FieldError field="location" problems={problems} />
       </div>
       {field("street", "Job site street", "sm:col-span-3 lg:col-span-2")}
       {field("city", "City", "sm:col-span-3 lg:col-span-1")}

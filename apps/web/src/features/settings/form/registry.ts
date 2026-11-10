@@ -109,6 +109,11 @@ export const SETTINGS = {
     helper: "The share of the total asked for when a quote is accepted.",
     href: DOCUMENTS,
   },
+  "documents.balanceDueDays": {
+    label: "Balance due after a deposit",
+    helper: "Days after issue that the rest of a deposit invoice falls due.",
+    href: DOCUMENTS,
+  },
   "documents.quoteExpiryDays": {
     label: "Quotes valid for",
     helper: "Days a sent quote stays valid by default; after that it reads Expired.",

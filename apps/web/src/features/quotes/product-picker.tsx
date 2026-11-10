@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import type { Product } from "@workspace/shared";
+import { availableToSell, featureOn, UNIT_SINGULAR, type Product, type SaleStock } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Command,
@@ -15,20 +15,29 @@ import {
 import { Num } from "@workspace/ui/components/num";
 import { Popover, PopoverContent, PopoverTrigger } from "@workspace/ui/components/popover";
 import { Swatch } from "@workspace/ui/components/swatch";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { CATEGORY_LABELS } from "@workspace/shared";
 
-/** A searchable list of products or services that adds the chosen one to the quote. */
+/**
+ * A searchable list of products or services that adds the chosen one to the document. Each result
+ * shows brand, SKU and price per unit, and, given stock and a warehouse, what is free there (spec
+ * A2), so two colorways with the same name cannot be confused (audit U-19).
+ */
 export function ProductPicker({
   id,
   label,
   products,
   onPick,
+  stock,
+  locationId,
 }: {
   /** Lets a validation error focus the picker. */
   id?: string;
   label: string;
   products: Product[];
   onPick: (product: Product) => void;
+  stock?: SaleStock;
+  locationId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const groups = [...new Set(products.map((p) => p.category))];
@@ -49,20 +58,41 @@ export function ProductPicker({
               <CommandGroup key={category} heading={CATEGORY_LABELS[category]}>
                 {products
                   .filter((p) => p.category === category)
-                  .map((p) => (
-                    <CommandItem
-                      key={p.id}
-                      value={`${p.name} ${p.brand} ${p.sku}`}
-                      onSelect={() => {
-                        onPick(p);
-                        setOpen(false);
-                      }}
-                    >
-                      <Swatch color={p.swatch} label={p.colorName || p.name} />
-                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                      <Num kind="money" value={p.price} className="text-muted-foreground text-xs" />
-                    </CommandItem>
-                  ))}
+                  .map((p) => {
+                    const free =
+                      stock && locationId && featureOn("sales.quote-availability")
+                        ? availableToSell(p, stock, locationId)
+                        : null;
+                    return (
+                      <CommandItem
+                        key={p.id}
+                        value={`${p.name} ${p.brand} ${p.sku}`}
+                        onSelect={() => {
+                          onPick(p);
+                          setOpen(false);
+                        }}
+                      >
+                        <Swatch color={p.swatch} label={p.colorName || p.name} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{p.name}</span>
+                          <span className="text-muted-foreground block truncate text-xs">
+                            {p.category === "service" ? "Service" : `${p.brand}, ${p.sku}`}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground shrink-0 text-right text-xs">
+                          <span className="block">
+                            <Num kind="money" value={p.price} /> per {UNIT_SINGULAR[p.unit]}
+                          </span>
+                          {free ? (
+                            <span className="block">
+                              <Num kind={p.unit === "each" ? "count" : "quantity"} value={free.toString()} /> free{" "}
+                              <CartonHint quantity={free.toString()} sqFtPerCarton={p.sqFtPerCarton} compact />
+                            </span>
+                          ) : null}
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
               </CommandGroup>
             ))}
           </CommandList>

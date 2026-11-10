@@ -114,16 +114,21 @@ export function buildJobs(
   return jobs;
 }
 
+/** Days after issue that a deposit invoice's balance falls due (the seeded settings value, plan K-3). */
+const BALANCE_DUE_DAYS = 30;
+
 /**
- * A deposit invoice's balance waits for its job (spec B6): until the customer signs off it has no
- * due date; after sign-off it is due under the customer's terms from that day. Returns the jobs.
+ * A deposit invoice's balance is due some days after issue (plan K-3), or under the customer's
+ * terms from the sign-off of a job already done. Returns the jobs.
  */
 export function holdUntilInstalled(jobs: Job[], invoices: Invoice[], customers: readonly Customer[]): Job[] {
   for (const job of jobs) {
     const invoice = invoices.find((i) => i.id === job.invoiceId);
     if (!invoice || dec(invoice.depositPct).isZero()) continue;
     const terms = customers.find((c) => c.id === invoice.customerId)!.terms;
-    invoice.dueAt = job.signedOffAt ? dueDate(job.signedOffAt.slice(0, 10), terms) : null;
+    invoice.dueAt = job.signedOffAt
+      ? dueDate(job.signedOffAt.slice(0, 10), terms)
+      : addDays(invoice.issuedAt, BALANCE_DUE_DAYS);
   }
   return jobs;
 }

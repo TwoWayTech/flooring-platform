@@ -7,10 +7,16 @@ import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
   featureOn,
+  cartonsForArea,
   computeTotals,
+  dec,
+  lineWarehouse,
+  stockAcrossWarehouses,
+  stockUnit,
   taxContextFor,
   type CompanySettings,
   type Customer,
+  type DocLine,
   type InvoiceLedger,
   type Location,
   type Product,
@@ -18,6 +24,7 @@ import {
   type Reservation,
   type Roll,
   type Room,
+  type StockMovement,
   type User,
   defaultAddress,
   defaultQuoteExpiry,
@@ -38,6 +45,7 @@ import { api } from "@/lib/api";
 import { InvoiceStatusPills, QuoteStatusPill } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 import { useCan } from "@/components/workspace/workspace-context";
+import { NewTransferDialog, type TransferPreset } from "@/features/inventory/transfers/new-transfer-dialog";
 import { LinesEditor } from "./lines-editor";
 import { QuoteActions } from "./quote-actions";
 import { QUOTE_FIELD_IDS, QuoteHeader } from "./quote-header";
@@ -101,6 +109,8 @@ interface QuoteBuilderProps {
   /** Rolls and their holds, for the roll picker on carpet lines (spec C2). */
   rolls: Roll[];
   reservations: Reservation[];
+  /** The stock ledger, for availability per warehouse (spec A2). */
+  movements: StockMovement[];
 }
 
 /**
@@ -119,6 +129,7 @@ export function QuoteBuilder({
   invoiceLedger,
   rolls,
   reservations,
+  movements,
 }: QuoteBuilderProps) {
   const router = useRouter();
   const can = useCan();
@@ -129,6 +140,7 @@ export function QuoteBuilder({
   const [savedDraft, setSavedDraft] = useState(initial);
   const [attempted, setAttempted] = useState(false);
   const [sending, setSending] = useState(false);
+  const [transfer, setTransfer] = useState<TransferPreset | null>(null);
   const today = api.today();
 
   const editable = quoteIsOpen(draft) && can(draft.number ? "sales.quote.edit" : "sales.quote.create");
@@ -203,6 +215,29 @@ export function QuoteBuilder({
       toast.success(`Invoice ${invoice.number} created`);
       router.push(`/sales/invoices/${invoice.id}`);
     }, "The invoice was not created. Try again.");
+  }
+
+  const stock = { rolls, movements, reservations };
+
+  /** Opens a transfer into this line's warehouse from the one with the most free (spec A2). */
+  function startTransfer(line: DocLine, product: Product) {
+    const toId = lineWarehouse(line, draft.locationId);
+    const fromId =
+      stockAcrossWarehouses(product, stock, locations).find((w) => w.location.id !== toId)?.location.id ?? "";
+    const pack = product.sqFtPerCarton;
+    const short = dec(line.quantity);
+    setTransfer({
+      fromId,
+      toId,
+      line:
+        stockUnit(product) === "ft"
+          ? null
+          : {
+              productId: product.id,
+              rollId: null,
+              quantity: pack ? dec(cartonsForArea(short, pack)).times(pack).toString() : short.toString(),
+            },
+    });
   }
 
   const measure = can("retail.room.measure");
@@ -315,6 +350,11 @@ export function QuoteBuilder({
               error={problems.lines}
               showWaste={can("sales.waste.view")}
               rollStock={{ rolls, reservations, locationId: draft.locationId }}
+              stock={stock}
+              locationId={draft.locationId}
+              locations={locations}
+              canTransfer={can("inventory.transfer.create")}
+              onTransfer={startTransfer}
             />
           </Panel>
         </div>
@@ -349,6 +389,17 @@ export function QuoteBuilder({
           />
         </Panel>
       </div>
+      {transfer ? (
+        <NewTransferDialog
+          open
+          onOpenChange={(open) => !open && setTransfer(null)}
+          locations={locations}
+          products={products}
+          rolls={rolls}
+          movements={movements}
+          preset={transfer}
+        />
+      ) : null}
       {sending ? (
         <SendQuoteDialog
           today={today}

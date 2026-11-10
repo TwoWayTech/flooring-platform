@@ -151,6 +151,16 @@ export interface StockHold {
   shortBy: string;
 }
 
+/** A physical count that disagrees with the books (plan A-1). */
+export interface StockCorrectionInput {
+  productId: string;
+  rollId: string | null;
+  locationId: string;
+  /** What was counted, in the product's stock unit. */
+  counted: string;
+  reason: string;
+}
+
 export interface SupplierPaymentInput {
   supplierId: string;
   amount: string;
@@ -355,6 +365,8 @@ export interface ApiClient {
   issueReservation(reservationId: string, overrideReason?: string): Promise<Reservation>;
   /** Records a stock adjustment with a reason; above the company's quantity it waits for approval. Audited. */
   recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;
+  /** Sets stock to what was counted, with a reason (plan A-1). Needs inventory.stock.correct. Audited. */
+  correctStockCount(input: StockCorrectionInput): Promise<StockAdjustment>;
   /** Approves or rejects a waiting adjustment; needs inventory.stock.approve and someone else. Audited. */
   reviewAdjustment(adjustmentId: string, decision: AdjustmentDecision): Promise<StockAdjustment>;
   /** Creates an invoice for a length of a roll and reserves the roll for it (spec C1). Audited. */

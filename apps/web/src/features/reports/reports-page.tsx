@@ -12,6 +12,8 @@ import {
   locationName,
   PAYMENT_METHOD_LABELS,
   SENSITIVE,
+  featureOn,
+  type FeatureKey,
   type PaymentMethod,
   type PermissionKey,
   type ProductCategory,
@@ -50,6 +52,7 @@ import {
 const REPORTS = {
   pnl: {
     label: "Profit and loss",
+    feature: "reports.pnl",
     view: "reports.financial.view",
     export: "reports.financial.export",
     build: pnlReport,
@@ -57,6 +60,7 @@ const REPORTS = {
   },
   sales: {
     label: "Sales by category",
+    feature: "reports.sales-category",
     view: "reports.sales.view",
     export: "reports.sales.export",
     build: salesByCategoryReport,
@@ -64,6 +68,7 @@ const REPORTS = {
   },
   tax: {
     label: "Sales tax by jurisdiction",
+    feature: "reports.tax-jurisdiction",
     view: "reports.tax.view",
     export: "reports.tax.export",
     build: salesTaxReport,
@@ -71,6 +76,7 @@ const REPORTS = {
   },
   inventory: {
     label: "Inventory valuation",
+    feature: "reports.inventory-valuation",
     view: "reports.inventory.view",
     export: "reports.inventory.export",
     build: inventoryReport,
@@ -78,6 +84,7 @@ const REPORTS = {
   },
   aging: {
     label: "Receivables aging",
+    feature: "reports.receivables-aging",
     view: "reports.financial.view",
     export: "reports.financial.export",
     build: agingReport,
@@ -85,6 +92,7 @@ const REPORTS = {
   },
   payables: {
     label: "Payables aging",
+    feature: "reports.payables-aging",
     view: "reports.financial.view",
     export: "reports.financial.export",
     build: payablesAgingReport,
@@ -92,6 +100,7 @@ const REPORTS = {
   },
   payments: {
     label: "Payments received",
+    feature: "reports.payments",
     view: "reports.financial.view",
     export: "reports.financial.export",
     build: paymentsReport,
@@ -99,7 +108,14 @@ const REPORTS = {
   },
 } satisfies Record<
   string,
-  { label: string; view: PermissionKey; export: PermissionKey; build: (i: ReportInput) => Report; categories: boolean }
+  {
+    label: string;
+    feature: FeatureKey;
+    view: PermissionKey;
+    export: PermissionKey;
+    build: (i: ReportInput) => Report;
+    categories: boolean;
+  }
 >;
 type ReportKey = keyof typeof REPORTS;
 
@@ -181,7 +197,9 @@ export function ReportsPage() {
     };
   }, []);
 
-  const allowed = (Object.keys(REPORTS) as ReportKey[]).filter((k) => can(REPORTS[k].view));
+  const allowed = (Object.keys(REPORTS) as ReportKey[]).filter(
+    (k) => can(REPORTS[k].view) && featureOn(REPORTS[k].feature),
+  );
   if (allowed.length === 0) return <NoAccess />;
   const requested = params.get("report") as ReportKey | null;
   const key = requested && allowed.includes(requested) ? requested : allowed[0]!;

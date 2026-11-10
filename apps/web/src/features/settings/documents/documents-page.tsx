@@ -90,6 +90,28 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
           </span>
         )}
       </SettingRow>
+      <SettingRow setting="documents.balanceDueDays" changed={changed("balanceDueDays")}>
+        {(id) => (
+          <span className="flex items-center gap-1.5">
+            <Input
+              id={id}
+              type="number"
+              min={0}
+              max={365}
+              aria-describedby={`${id}-hint`}
+              value={draft.balanceDueDays}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  balanceDueDays: Math.min(365, Math.max(0, Math.round(Number(e.target.value) || 0))),
+                })
+              }
+              className="w-24 text-right tabular-nums"
+            />
+            <span className="text-muted-foreground text-sm">days</span>
+          </span>
+        )}
+      </SettingRow>
       {text("quotePrefix")}
       {text("invoicePrefix")}
       {text("poPrefix")}

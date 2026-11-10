@@ -1,6 +1,6 @@
 "use client";
 
-import type { Company, DefaultRoleKey, ProductKey, Role, User } from "@workspace/shared";
+import { featureOn, type Company, type DefaultRoleKey, type ProductKey, type Role, type User } from "@workspace/shared";
 import type { CompanyDirectory } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
 
@@ -26,6 +26,7 @@ export interface LoginCompany {
 /** First active user holding each persona role; roles nobody holds get no card. */
 function personasOf(directory: CompanyDirectory, product: ProductKey): Persona[] {
   return PERSONA_ORDER[product].flatMap((key) => {
+    if (key === "installer" && !featureOn("installation.calendar")) return [];
     const role = directory.roles.find((r) => r.key === key);
     const user = role && directory.users.find((u) => u.status === "active" && u.roleIds.includes(role.id));
     return role && user ? [{ user, role }] : [];

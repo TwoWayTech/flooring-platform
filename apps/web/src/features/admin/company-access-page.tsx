@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
 import {
-  MODULES,
+  visibleModules,
   PRODUCT_LABELS,
   PRODUCT_MODULES,
   type Company,
@@ -49,7 +49,7 @@ function AccessEditor({ company, roles, users }: { company: Company; roles: Role
       userLimit: company.userLimit,
       branchLimit: company.branchLimit,
     });
-  const offered = MODULES.filter((m) => PRODUCT_MODULES[company.product].includes(m.key));
+  const offered = visibleModules().filter((m) => PRODUCT_MODULES[company.product].includes(m.key));
 
   async function save() {
     await api.updateCompanyAccess(company.id, draft);

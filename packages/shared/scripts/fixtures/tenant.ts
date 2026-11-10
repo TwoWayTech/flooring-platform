@@ -192,6 +192,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         legalFooter: `${seed.legalName}. Licensed and insured in ${seed.statesOfOperation.join(", ")}.`,
         defaultDepositPct: retail ? "50" : "0",
         quoteExpiryDays: 30,
+        balanceDueDays: 30,
         // Carpet and tile cut more than plank (the waste the quote builder always started with).
         defaultWastePct: {
           carpet: "12",

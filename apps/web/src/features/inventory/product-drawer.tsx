@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, ClipboardCheck } from "lucide-react";
 import {
   SENSITIVE,
   UNIT_SINGULAR,
+  featureOn,
   isBoxed,
   type Product,
   STOCK_UNIT_LABELS,
@@ -24,6 +25,7 @@ import { Swatch } from "@workspace/ui/components/swatch";
 import { useCan } from "@/components/workspace/workspace-context";
 import { CATEGORY_LABELS } from "@workspace/shared";
 import { AdjustStockDialog } from "./adjust-stock-dialog";
+import { CorrectStockDialog } from "./correct-stock-dialog";
 import { stockLevel } from "./stock";
 import { StockBadge } from "./stock-badge";
 
@@ -75,6 +77,7 @@ export function ProductDrawer({
 }) {
   const can = useCan();
   const [adjusting, setAdjusting] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const own = product ? rolls.filter((r) => r.productId === product.id) : [];
   return (
     <Sheet open={!!product} onOpenChange={(open) => !open && onClose()}>
@@ -89,10 +92,16 @@ export function ProductDrawer({
               <SheetDescription>
                 {product.brand}, {CATEGORY_LABELS[product.category]}
               </SheetDescription>
-              {isBoxed(product) && can("inventory.stock.adjust") ? (
+              {isBoxed(product) && can("inventory.stock.adjust") && featureOn("inventory.adjustments") ? (
                 <Button variant="outline" size="sm" className="self-start" onClick={() => setAdjusting(true)}>
                   <SlidersHorizontal />
                   Adjust stock
+                </Button>
+              ) : null}
+              {isBoxed(product) && can("inventory.stock.correct") && featureOn("inventory.stock-correction") ? (
+                <Button variant="outline" size="sm" className="self-start" onClick={() => setCorrecting(true)}>
+                  <ClipboardCheck />
+                  Correct stock count
                 </Button>
               ) : null}
             </SheetHeader>
@@ -165,6 +174,9 @@ export function ProductDrawer({
             ) : null}
             {adjusting ? (
               <AdjustStockDialog product={product} locations={locations} onClose={() => setAdjusting(false)} />
+            ) : null}
+            {correcting && product ? (
+              <CorrectStockDialog product={product} locations={locations} onClose={() => setCorrecting(false)} />
             ) : null}
           </>
         ) : null}

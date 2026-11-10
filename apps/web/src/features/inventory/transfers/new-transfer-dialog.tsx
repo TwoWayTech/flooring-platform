@@ -41,6 +41,15 @@ interface NewTransferDialogProps {
   products: Product[];
   rolls: Roll[];
   movements: StockMovement[];
+  /** Prefill from a quote line that is short (spec A2). */
+  preset?: TransferPreset;
+}
+
+/** What the quote builder fills in when a line is short (spec A2). */
+export interface TransferPreset {
+  fromId: string;
+  toId: string;
+  line: TransferInput["lines"][number] | null;
 }
 
 /**
@@ -54,13 +63,14 @@ export function NewTransferDialog({
   products,
   rolls,
   movements,
+  preset,
 }: NewTransferDialogProps) {
   const { user } = useWorkspace();
   const warehouses = warehousesOf(locations);
   const start = defaultWarehouse(locations, user);
-  const [fromId, setFromId] = useState(start?.id ?? "");
-  const [toId, setToId] = useState(warehouses.find((w) => w.id !== start?.id)?.id ?? "");
-  const [lines, setLines] = useState<TransferInput["lines"]>([]);
+  const [fromId, setFromId] = useState(preset?.fromId ?? start?.id ?? "");
+  const [toId, setToId] = useState(preset?.toId ?? warehouses.find((w) => w.id !== start?.id)?.id ?? "");
+  const [lines, setLines] = useState<TransferInput["lines"]>(preset?.line ? [preset.line] : []);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

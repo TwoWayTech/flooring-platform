@@ -10,12 +10,15 @@ import {
   UNIT_SINGULAR,
   type DocLine,
   type DocumentTotals,
+  type Location,
   type Product,
   type Room,
+  type SaleStock,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
+import { LineStock } from "./line-stock";
 import { ProductPicker } from "./product-picker";
 import { RollPicker, type RollStock } from "./roll-picker";
 import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
@@ -37,6 +40,12 @@ interface LinesEditorProps {
   showWaste: boolean;
   /** Rolls at the quote's warehouse, for the roll picker on carpet lines (spec C2). */
   rollStock?: RollStock;
+  /** Availability per line (spec A2). */
+  stock: SaleStock;
+  locationId: string;
+  locations: readonly Location[];
+  canTransfer: boolean;
+  onTransfer: (line: DocLine, product: Product) => void;
 }
 
 /** The roll picker for a line whose product comes off a roll; nothing for boxed goods. */
@@ -84,6 +93,11 @@ export function LinesEditor({
   error,
   showWaste,
   rollStock,
+  stock,
+  locationId,
+  locations,
+  canTransfer,
+  onTransfer,
 }: LinesEditorProps) {
   const goods = products.filter((p) => p.category !== "service");
   const services = products.filter((p) => p.category === "service");
@@ -118,6 +132,7 @@ export function LinesEditor({
           <tbody>
             {lines.map((line) => {
               const linked = roomsNote(line, rooms);
+              const product = products.find((p) => p.id === line.productId);
               const taxable = totals.lines.find((t) => t.id === line.id)?.taxable;
               return (
                 <tr key={line.id} className="border-hairline border-b align-top">
@@ -130,6 +145,18 @@ export function LinesEditor({
                     </span>
                     {editable && rollStock && line.category === "material" ? (
                       <RollLine line={line} products={products} stock={rollStock} onChange={onChange} />
+                    ) : null}
+                    {editable && product ? (
+                      <LineStock
+                        line={line}
+                        product={product}
+                        locationId={locationId}
+                        locations={locations}
+                        stock={stock}
+                        canTransfer={canTransfer}
+                        onChange={onChange}
+                        onTransfer={onTransfer}
+                      />
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -200,7 +227,14 @@ export function LinesEditor({
       </ScrollRegion>
       {editable ? (
         <div className="flex flex-wrap gap-2">
-          <ProductPicker id="quote-add-product" label="Add product" products={goods} onPick={onAdd} />
+          <ProductPicker
+            id="quote-add-product"
+            label="Add product"
+            products={goods}
+            onPick={onAdd}
+            stock={stock}
+            locationId={locationId}
+          />
           <ProductPicker label="Add labor or service" products={services} onPick={onAdd} />
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import {
   adjustmentNeedsApproval,
+  boxedOnHand,
   cutRoll,
   dec,
   invoiceLedger,
@@ -16,7 +17,13 @@ import {
   type StockAdjustment,
   type StockMovement,
 } from "@workspace/shared";
-import type { AdjustmentDecision, AdjustmentInput, RollInvoiceInput, StockHold } from "../contract";
+import type {
+  AdjustmentDecision,
+  AdjustmentInput,
+  RollInvoiceInput,
+  StockCorrectionInput,
+  StockHold,
+} from "../contract";
 import { DemoRuleError } from "./admin-rules";
 import type { ActionContext } from "./payment-actions";
 
@@ -166,6 +173,64 @@ function apply(ctx: ActionContext, adjustment: StockAdjustment) {
     source,
     byUserId: adjustment.requestedById,
   });
+}
+
+/**
+ * Corrects stock to what was physically counted (plan A-1): the difference is written as an
+ * approved adjustment with the reason, so on hand still adds up and the change is audited.
+ * Boxed goods must stay whole cartons or items.
+ */
+export async function correctStockCount(ctx: ActionContext, input: StockCorrectionInput) {
+  await ctx.assertCan(["inventory.stock.correct"]);
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw new DemoRuleError("Say why the count is being corrected.");
+  const counted = dec(input.counted);
+  if (counted.lt(0)) throw new DemoRuleError("A count cannot be negative.");
+  const product = ctx.db.get("products", input.productId);
+  if (!product || !stockUnit(product)) throw new DemoRuleError("This product is not stocked.");
+  const roll = input.rollId ? ctx.db.get("rolls", input.rollId) : undefined;
+  if (input.rollId && !roll) throw new DemoRuleError("This roll no longer exists.");
+  if (!roll) {
+    const pack = product.sqFtPerCarton;
+    if (pack ? !counted.dividedBy(pack).isInteger() : !counted.isInteger()) {
+      throw new DemoRuleError(pack ? `Count whole cartons: multiples of ${pack} sq ft.` : "Count whole items.");
+    }
+  }
+  const before = roll
+    ? dec(roll.remainingLengthFt)
+    : boxedOnHand(ctx.db.list("stockMovements"), product.id, input.locationId);
+  const change = counted.minus(before);
+  if (change.isZero()) throw new DemoRuleError("That is what the books already say.");
+  const adjustment: StockAdjustment = {
+    id: ctx.newId("adj"),
+    number: nextPaymentNumber(
+      "ADJ-",
+      ctx.db.list("stockAdjustments").map((a) => a.number),
+    ),
+    productId: product.id,
+    rollId: roll?.id ?? null,
+    locationId: roll?.locationId ?? input.locationId,
+    quantity: change.toString(),
+    reason: "count",
+    note: reason,
+    status: "approved",
+    requestedById: ctx.actor.id,
+    requestedBy: ctx.actor.name,
+    requestedAt: ctx.now,
+    reviewedBy: ctx.actor.name,
+    reviewedAt: ctx.now,
+    rejectReason: null,
+  };
+  ctx.db.put("stockAdjustments", adjustment);
+  apply(ctx, adjustment);
+  ctx.audit({
+    category: "data",
+    action: "Corrected stock count",
+    target: roll ? `Roll ${roll.rollNumber}` : product.name,
+    before: before.toString(),
+    after: `${counted.toString()}: ${reason}`,
+  });
+  return adjustment;
 }
 
 const REASONS: readonly AdjustmentReason[] = ["damage", "count", "samples", "other"];

@@ -9,6 +9,7 @@ import {
   type Job,
   type Location,
 } from "@workspace/shared";
+import { featureOn } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { InvoiceStatusPills } from "@/lib/document-status";
@@ -74,23 +75,25 @@ export function InvoiceSummary({
             {ledger.overdue ? `, ${ledger.daysOverdue} days overdue` : ""}
           </dd>
         </div>
-        <div>
-          <dt className="text-xs">Installation job</dt>
-          <dd className="text-foreground">
-            {job ? (
-              <Link
-                href={`/installation?week=${job.date}&job=${job.id}`}
-                className="text-brand-ink underline-offset-4 hover:underline"
-              >
-                {job.number}, {formatDate(job.date)}
-              </Link>
-            ) : canSchedule ? (
-              <ScheduleJob invoice={invoice} />
-            ) : (
-              "None"
-            )}
-          </dd>
-        </div>
+        {job || canSchedule || featureOn("installation.calendar") ? (
+          <div>
+            <dt className="text-xs">Installation job</dt>
+            <dd className="text-foreground">
+              {job ? (
+                <Link
+                  href={`/installation?week=${job.date}&job=${job.id}`}
+                  className="text-brand-ink underline-offset-4 hover:underline"
+                >
+                  {job.number}, {formatDate(job.date)}
+                </Link>
+              ) : canSchedule ? (
+                <ScheduleJob invoice={invoice} />
+              ) : (
+                "None"
+              )}
+            </dd>
+          </div>
+        ) : null}
       </dl>
     </Panel>
   );

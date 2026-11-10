@@ -97,8 +97,8 @@ function adjustment(
 
 /**
  * Stock adjustments (spec C1): cartons damaged in unloading, a cycle-count correction, boards
- * taken for showroom samples, and a found pallet above the approval quantity that waits for an
- * Owner or Manager. Only cartons that are free are taken out, so no reservation goes short.
+ * taken for showroom samples. They stay as history; nothing waits for approval now that the
+ * Adjustments page is switched off (plan A-1). Only stock that is free is taken out.
  */
 function adjustments(ctx: GenContext, f: CompanyFixtures) {
   const warehouse = f.locations.find((l) => l.isDefault);
@@ -108,7 +108,7 @@ function adjustments(ctx: GenContext, f: CompanyFixtures) {
     (p) => p.sqFtPerCarton && freeStock(f, p.id, warehouse.id).gte(dec(10).times(p.sqFtPerCarton)),
   );
   if (roomy.length < 3) return { adjustments: [], movements: [] };
-  const [a, b, c] = roomy as [(typeof roomy)[0], (typeof roomy)[0], (typeof roomy)[0]];
+  const [a, b] = roomy as [(typeof roomy)[0], (typeof roomy)[0]];
   const cartons = (p: (typeof roomy)[0], count: number) => dec(count).times(p.sqFtPerCarton!).toString();
   const plans = [
     {
@@ -131,13 +131,6 @@ function adjustments(ctx: GenContext, f: CompanyFixtures) {
       reason: "samples" as const,
       note: "Boards for the showroom display.",
       daysAgo: 3,
-    },
-    {
-      productId: c.id,
-      quantity: cartons(c, 60),
-      reason: "count" as const,
-      note: "A pallet found in the yard, not in the system.",
-      daysAgo: 1,
     },
   ];
   const approval = f.settings.inventory.adjustmentApprovalQty;

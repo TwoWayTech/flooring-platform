@@ -73,7 +73,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "meetings.*",
       "settings.users.view",
       "settings.audit.view",
-    ]),
+    ]).filter((key) => key !== "inventory.stock.correct"),
     owner: false,
   },
   accountant: {
@@ -171,7 +171,6 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "dashboard.*",
       "inventory.product.view",
       "inventory.roll.*",
-      "inventory.stock.adjust",
       "inventory.transfer.*",
       "sales.waste.view",
       "purchasing.supplier.view",

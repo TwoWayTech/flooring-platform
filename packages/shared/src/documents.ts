@@ -23,6 +23,8 @@ export interface DocLine {
   rollId?: string;
   /** Coverage of one carton when the line was written, for the carton hint (spec A1). */
   sqFtPerCarton?: string;
+  /** Set when this line ships from another warehouse than the document's (spec A2). */
+  locationId?: string;
 }
 
 /** What the tax engine needs to tax a document. */

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, MoveRight, Printer, Scissors } from "lucide-react";
-import { dec, locationName, reservedOnRoll, rollAreaSqFt, rollAvailable, SENSITIVE } from "@workspace/shared";
+import { ArrowLeft, MoveRight, Printer, Scissors, ClipboardCheck } from "lucide-react";
+import { dec, featureOn, locationName, reservedOnRoll, rollAreaSqFt, rollAvailable, SENSITIVE } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -19,6 +19,7 @@ import { NoAccess } from "@/components/no-access";
 import { rollSqFt } from "../stock";
 import { CutRollDialog } from "./cut-roll-dialog";
 import { LabelDialog } from "./label-dialog";
+import { CorrectStockDialog } from "../correct-stock-dialog";
 import { MoveRollDialog } from "./move-roll-dialog";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -38,7 +39,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 export function RollPage({ rollId }: { rollId: string }) {
   const can = useCan();
   const formatDate = useFormatDate();
-  const [dialog, setDialog] = useState<"cut" | "move" | "label" | null>(null);
+  const [dialog, setDialog] = useState<"cut" | "move" | "label" | "correct" | null>(null);
   const data = useApiQuery(
     async (client) => {
       const [rolls, products, users, locations, transfers, reservations, customers, holds] = await Promise.all([
@@ -120,6 +121,12 @@ export function RollPage({ rollId }: { rollId: string }) {
               <Printer />
               Print label
             </Button>
+            {can("inventory.stock.correct") && featureOn("inventory.stock-correction") ? (
+              <Button variant="outline" onClick={() => setDialog("correct")}>
+                <ClipboardCheck />
+                Correct stock count
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -249,6 +256,9 @@ export function RollPage({ rollId }: { rollId: string }) {
         </Panel>
       </div>
 
+      {dialog === "correct" && product ? (
+        <CorrectStockDialog product={product} roll={roll} locations={locations} onClose={() => setDialog(null)} />
+      ) : null}
       <CutRollDialog
         roll={roll}
         reservations={reservations}

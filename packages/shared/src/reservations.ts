@@ -2,7 +2,7 @@ import type { DocLine } from "./documents";
 import type { InvoiceLedger } from "./ledger";
 import { dec, maxDec, minDec, type Dec } from "./money";
 import { boxedOnHand, stockUnit } from "./stock";
-import type { AdjustmentReason, Invoice, Product, Reservation, Roll, StockMovement } from "./types";
+import type { AdjustmentReason, Invoice, Location, Product, Reservation, Roll, StockMovement } from "./types";
 
 /** Words for adjustment reasons (spec C1). */
 export const ADJUSTMENT_REASON_LABELS: Record<AdjustmentReason, string> = {
@@ -77,6 +77,50 @@ export function availability(
   return { onHand, reserved, available: maxDec(onHand.minus(reserved), 0) };
 }
 
+/** The stock a sale reads: rolls, the ledger and what invoices already hold. */
+export type SaleStock = {
+  rolls: readonly Roll[];
+  movements: readonly StockMovement[];
+  reservations: readonly Reservation[];
+};
+
+/** The warehouse a line ships from: its own when it was moved (spec A2), else the document's. */
+export function lineWarehouse(line: Pick<DocLine, "locationId">, documentLocationId: string): string {
+  return line.locationId ?? documentLocationId;
+}
+
+/**
+ * What a warehouse can still promise of a product, in what its lines are sold in (spec A2): sq ft
+ * for area goods, carpet being each roll's free length times its width, or items. Null for
+ * products that are not stocked.
+ */
+export function availableToSell(product: Product, stock: SaleStock, locationId: string): Dec | null {
+  const unit = stockUnit(product);
+  if (!unit) return null;
+  if (unit !== "ft") return availability(product, stock, locationId).available;
+  return stock.rolls
+    .filter((r) => r.productId === product.id && r.locationId === locationId && !r.transferId)
+    .reduce((area, r) => area.plus(rollAvailable(r, stock.reservations).times(r.widthFt)), dec(0));
+}
+
+/** One warehouse and what it can still promise of a product. */
+export interface WarehouseStock {
+  location: Location;
+  available: Dec;
+}
+
+/** Every warehouse and what it can promise of a product, the most first (spec A2 "another warehouse"). */
+export function stockAcrossWarehouses(
+  product: Product,
+  stock: SaleStock,
+  locations: readonly Location[],
+): WarehouseStock[] {
+  return locations
+    .filter((l) => l.kind === "warehouse")
+    .map((location) => ({ location, available: availableToSell(product, stock, location.id) ?? dec(0) }))
+    .sort((a, b) => b.available.comparedTo(a.available));
+}
+
 /** Stock status for badges (spec C3): out at zero available, low at or below the reorder point. */
 export function stockStatus(product: Product, available: Dec, rollCount = 1): "out" | "low" | "ok" {
   if (available.lte(0) || rollCount === 0) return "out";
@@ -126,6 +170,7 @@ export function planReservations(
     const product = products.find((p) => p.id === line.productId);
     const need = product ? stockNeed(line, product) : null;
     if (!product || !need || need.lte(0)) continue;
+    const fromId = lineWarehouse(line, invoice.locationId);
     const base = {
       invoiceId: invoice.id,
       lineId: line.id,
@@ -139,12 +184,12 @@ export function planReservations(
       held.push({ ...draft, id: `plan-${line.id}-${drafts.length}`, createdAt: "" });
     };
     if (stockUnit(product) !== "ft") {
-      const free = availability(product, { ...stock, reservations: held }, invoice.locationId).available;
+      const free = availability(product, { ...stock, reservations: held }, fromId).available;
       const quantity = minDec(free, need);
       add({
         ...base,
         rollId: null,
-        locationId: invoice.locationId,
+        locationId: fromId,
         quantity: quantity.toString(),
         shortBy: need.minus(quantity).toString(),
       });
@@ -155,20 +200,13 @@ export function planReservations(
     const single =
       chosen && !chosen.transferId && rollAvailable(chosen, held).gte(need)
         ? chosen
-        : rollsForLength(stock.rolls, held, product.id, invoice.locationId, need, chosen?.dyeLot)[0];
+        : rollsForLength(stock.rolls, held, product.id, fromId, need, chosen?.dyeLot)[0];
     if (single) {
       add({ ...base, rollId: single.id, locationId: single.locationId, quantity: need.toString(), shortBy: "0" });
       continue;
     }
     let left = need;
-    const candidates = rollsForLength(
-      stock.rolls,
-      held,
-      product.id,
-      invoice.locationId,
-      dec("0.01"),
-      chosen?.dyeLot,
-    ).reverse();
+    const candidates = rollsForLength(stock.rolls, held, product.id, fromId, dec("0.01"), chosen?.dyeLot).reverse();
     for (const roll of candidates) {
       if (left.lte(0)) break;
       const take = minDec(rollAvailable(roll, held), left);
@@ -181,8 +219,7 @@ export function planReservations(
         shortBy: left.gt(0) ? "pending" : "0",
       });
     }
-    if (left.gt(0))
-      add({ ...base, rollId: null, locationId: invoice.locationId, quantity: "0", shortBy: left.toString() });
+    if (left.gt(0)) add({ ...base, rollId: null, locationId: fromId, quantity: "0", shortBy: left.toString() });
     for (const d of drafts) if (d.lineId === line.id && d.shortBy === "pending") d.shortBy = "0";
   }
   return drafts;

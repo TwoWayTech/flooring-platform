@@ -70,6 +70,8 @@ export interface LocalizationSettings {
     defaultDepositPct: string;
     /** Days a sent quote stays valid by default (spec B1). */
     quoteExpiryDays: number;
+    /** Days after issue that the balance of a deposit invoice falls due (plan K-3). */
+    balanceDueDays: number;
     /** Waste % a new material line starts with, per product category (spec B3). */
     defaultWastePct: Record<WasteCategory, string>;
   };

@@ -120,10 +120,10 @@ describe("feature for a page", () => {
   });
 
   it("hides a switched-off feature's pages and links, and nothing else", () => {
-    const register = withOff("installation.calendar");
-    expect(pathOn("flooring", "/installation", register)).toBe(false);
-    expect(pathOn("flooring", "/installation?job=x", register)).toBe(false);
+    const register = withOff("purchasing.orders");
+    expect(pathOn("flooring", "/purchasing", register)).toBe(false);
+    expect(pathOn("flooring", "/purchasing?view=bills", register)).toBe(false);
     expect(pathOn("flooring", "/inventory", register)).toBe(true);
-    expect(pathOn("flooring", "/installation")).toBe(true);
+    expect(pathOn("flooring", "/purchasing")).toBe(true);
   });
 });

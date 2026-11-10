@@ -6,7 +6,9 @@ import {
   availability,
   boxedOnHand,
   dec,
+  availableToSell,
   mayIssue,
+  stockAcrossWarehouses,
   planReservations,
   rollAvailable,
   stockNeed,
@@ -63,6 +65,29 @@ describe("reservations (spec C2)", () => {
       stock,
     );
     expect(r).toMatchObject({ quantity: onHand.toString(), shortBy: "5" });
+  });
+
+  it("holds a line at its own warehouse when it was moved (spec A2)", () => {
+    const other = summit.locations.find((l) => l.kind === "warehouse" && l.id !== at)!;
+    const moved = { ...line("m", boxed.id, "sq_ft", boxed.sqFtPerCarton!), locationId: other.id };
+    const [r] = planReservations(invoice([moved]), summit.products, stock);
+    expect(r?.locationId).toBe(other.id);
+  });
+
+  it("says what a warehouse can promise, in sq ft, and ranks warehouses by it (spec A2)", () => {
+    const area = availableToSell(carpet, stock, at)!;
+    const expected = summit.rolls
+      .filter((r) => r.productId === carpet.id && r.locationId === at && !r.transferId)
+      .reduce((s, r) => s.plus(rollAvailable(r, []).times(r.widthFt)), dec(0));
+    expect(area.toString()).toBe(expected.toString());
+    expect(availableToSell(boxed, stock, at)!.toString()).toBe(
+      boxedOnHand(summit.stockMovements, boxed.id, at).toString(),
+    );
+    const ranked = stockAcrossWarehouses(boxed, stock, summit.locations);
+    expect(ranked).toHaveLength(2);
+    expect(ranked[0]!.available.gte(ranked[1]!.available)).toBe(true);
+    const service = summit.products.find((p) => p.category === "service")!;
+    expect(availableToSell(service, stock, at)).toBeNull();
   });
 
   it("lets stock leave only after confirmed money, and asks approval above the limit", () => {

@@ -95,6 +95,25 @@ export function nextNumber(prefix: string, existing: readonly string[], start: n
 }
 
 /**
+ * When an invoice from a quote falls due (plan K-3). Every invoice has a date under the customer's
+ * terms, except that a deposit invoice's balance gets at least the company's balance days, or it
+ * would be overdue the day it is issued on "due on receipt" terms. With the Installation module
+ * on, the balance waits for the job instead (spec B6), which is the null date.
+ */
+function invoiceDueDate(
+  quote: Pick<Quote, "depositPct">,
+  terms: PaymentTerms,
+  input: { issuedAt: string; holdUntilInstalled?: boolean; balanceDueDays?: number },
+): string | null {
+  const deposit = dec(quote.depositPct || "0").gt(0);
+  if (input.holdUntilInstalled && deposit) return null;
+  const byTerms = dueDate(input.issuedAt, terms);
+  if (!deposit || !input.balanceDueDays) return byTerms;
+  const byBalance = addDays(input.issuedAt, input.balanceDueDays);
+  return byBalance > byTerms ? byBalance : byTerms;
+}
+
+/**
  * Converts a quote into an invoice (spec "Quote builder → invoice"). Totals are recomputed with
  * decimal math under today's tax rule for the job site; the invoice stores the rule version it
  * used, so later rule changes never alter it.
@@ -103,7 +122,15 @@ export function invoiceFromQuote(
   quote: Quote,
   customer: Customer,
   localization: Pick<LocalizationSettings, "tax" | "region">,
-  input: { id: string; number: string; issuedAt: string; createdBy: string; holdUntilInstalled?: boolean },
+  input: {
+    id: string;
+    number: string;
+    issuedAt: string;
+    createdBy: string;
+    holdUntilInstalled?: boolean;
+    /** Days until the balance of a deposit invoice is due (plan K-3). */
+    balanceDueDays?: number;
+  },
 ): Invoice {
   const ctx = taxContextFor(localization, quote.jobSite, customer, input.issuedAt, quote.lumpSum, quote.taxOverride);
   const totals = computeTotals(quote.lines, ctx);
@@ -116,8 +143,7 @@ export function invoiceFromQuote(
     branchId: quote.branchId,
     locationId: quote.locationId,
     issuedAt: input.issuedAt,
-    // With a deposit and an installation to come, the rest is due once the job is done (spec B6).
-    dueAt: input.holdUntilInstalled && dec(quote.depositPct).gt(0) ? null : dueDate(input.issuedAt, customer.terms),
+    dueAt: invoiceDueDate(quote, customer.terms, input),
     createdBy: input.createdBy,
     sentAt: null,
     sentBy: null,

@@ -6,6 +6,7 @@ import {
   dateShift,
   isDefaultRoleKey,
   permissionsForModules,
+  featureOn,
   PRODUCT_MODULES,
   roleTemplate,
   boxedStock,
@@ -56,6 +57,7 @@ import type {
   NewCustomerInput,
   AdjustmentDecision,
   AdjustmentInput,
+  StockCorrectionInput,
   MeetingMove,
   MeetingUndo,
   BillInput,
@@ -91,6 +93,7 @@ import {
   createRollInvoice,
   issueReservation,
   listStockHolds,
+  correctStockCount,
   recordAdjustment,
   reserveFor,
   reservationSummary,
@@ -579,7 +582,9 @@ export class DemoStore implements ApiClient {
       ),
       issuedAt: this.todayIso,
       createdBy: this.viewer!.userId,
-      holdUntilInstalled: (await this.granter(db)).company.modules.includes("installation"),
+      holdUntilInstalled:
+        featureOn("installation.calendar") && (await this.granter(db)).company.modules.includes("installation"),
+      balanceDueDays: db.settings.localization.documents.balanceDueDays,
     });
     db.put("invoices", invoice);
     const held = reserveFor(this.actionContext(db), invoice);
@@ -643,6 +648,10 @@ export class DemoStore implements ApiClient {
 
   async issueReservation(reservationId: string, overrideReason?: string) {
     return this.act((ctx) => issueReservation(ctx, reservationId, overrideReason));
+  }
+
+  async correctStockCount(input: StockCorrectionInput) {
+    return this.act((ctx) => correctStockCount(ctx, input));
   }
 
   async recordAdjustment(input: AdjustmentInput) {

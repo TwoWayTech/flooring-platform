@@ -3,7 +3,7 @@
 import { Lock } from "lucide-react";
 import {
   actionLabel,
-  MODULES,
+  visibleModules,
   PERMISSIONS,
   PRODUCT_MODULES,
   type ModuleKey,
@@ -57,7 +57,7 @@ interface PermissionMatrixProps {
  * but inactive (blueprint rule 3), so restoring the ceiling restores the access.
  */
 export function PermissionMatrix({ product, granted, lockOf, onToggle }: PermissionMatrixProps) {
-  const modules = MODULES.filter((m) => PRODUCT_MODULES[product].includes(m.key));
+  const modules = visibleModules().filter((m) => PRODUCT_MODULES[product].includes(m.key));
   return (
     <div className="flex flex-col gap-6">
       {modules.map((module) => {

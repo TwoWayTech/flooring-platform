@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { CircleCheck, Clock, CreditCard, PauseCircle } from "lucide-react";
-import { MODULES, PRODUCT_LABELS, type Company } from "@workspace/shared";
+import { PRODUCT_LABELS, visibleModules, type Company } from "@workspace/shared";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { QueryFallback } from "@/components/query-fallback";
@@ -36,7 +36,8 @@ export function CompaniesPage() {
       id: "modules",
       header: "Modules",
       value: (c) =>
-        MODULES.filter((m) => m.key !== "platform" && c.modules.includes(m.key))
+        visibleModules()
+          .filter((m) => m.key !== "platform" && c.modules.includes(m.key))
           .map((m) => m.label)
           .join(", "),
     },

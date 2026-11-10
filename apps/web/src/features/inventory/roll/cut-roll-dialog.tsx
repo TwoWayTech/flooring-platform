@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   ADJUSTMENT_REASON_LABELS,
   dec,
+  featureOn,
   REMNANT_THRESHOLD_FT,
   rollAvailable,
   validateCut,
@@ -97,7 +98,7 @@ export function CutRollDialog({ roll, reservations, holds, customers, open, onOp
   const modes: (readonly [Mode, string])[] = [
     ["invoice", "For an invoice"],
     ...(can("sales.invoice.create") ? [["new", "New invoice"] as const] : []),
-    ...(can("inventory.stock.adjust") ? [["adjust", "Adjustment"] as const] : []),
+    ...(can("inventory.stock.adjust") && featureOn("inventory.adjustments") ? [["adjust", "Adjustment"] as const] : []),
   ];
 
   async function run(work: () => Promise<string>) {
