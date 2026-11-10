@@ -1,6 +1,6 @@
 # ADR 0026: Contracts, schedule-of-values billing and retainage on top of invoices and supplier bills
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 Batch D of feature batch 3 replaces Installation with Contracts, and assumption D-1 makes them two-directional: customer contracts (the business sells to builders, general contractors, property managers and dealers) and subcontractor contracts (the business hires crews and other trades). The spec says each milestone or schedule-of-values line can be invoiced, the invoice holds back retainage, retainage comes back on its own invoice at completion, and batch 2's invoices and payments carry the money. Today an invoice's balance is total minus confirmed payments, credits and write-offs (`ledger.ts`, ADR 0013), a bill's balance is its total minus confirmed allocations (`billLedger`), and "customers owe" is the sum of open invoice balances (`receivables.ts`). This ADR records what US practice and statutes expect, and the exact math, so that retained money neither overstates receivables nor goes missing. Nothing here is legal or tax advice: every state rule below needs the client's counsel and accountant before it is relied on.

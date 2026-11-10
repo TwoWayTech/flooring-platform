@@ -1,6 +1,6 @@
 # ADR 0023: Expenses, shared costs and location profit in the business report
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 
@@ -147,3 +147,7 @@ Seen only as a search snippet, not opened:
 - Intuit: [Upload receipts](https://quickbooks.intuit.com/learn-support/en-us/help-article/import-transactions/upload-receipts-bills-quickbooks-online/L862MmZHn_US_en_US), [Pay sales tax (Desktop)](https://quickbooks.intuit.com/learn-support/en-us/help-article/pay-sales-taxes/pay-sales-tax/L6rrxxRES_US_en_US), [community: cash vs accrual](https://quickbooks.intuit.com/learn-support/en-us/account-management/cash-vs-accrual-when-running-a-profit-and-loss-for-the-same/00/887049)
 - Cost allocation: [OpenStax 9.4](https://openstax.org/books/principles-managerial-accounting/pages/9-4-describe-the-effects-of-various-decisions-on-performance-evaluation-of-responsibility-centers), [DXL 10-K](https://www.sec.gov/Archives/edgar/data/813298/000095017025042703/dxlg-20250201.htm), [Kura Sushi 10-K](https://www.sec.gov/Archives/edgar/data/1772177/000156459019044555/krus-10k_20190831.htm), [Math.Apportionment](https://hackage.haskell.org/package/apportionment-0.0.0.4/docs/Math-Apportionment.html), [Dinero allocate](https://v2.dinerojs.com/docs/api/mutations/allocate)
 - Tax: [Deloitte DART 6.7](https://dart.deloitte.com/USDART/home/codification/revenue/asc606-10/roadmap-revenue-recognition/chapter-6-step-3-determine-transaction/6-7-sales-taxes-similar-taxes) and [Texas STAR ruling 9010L1049C07](https://star.comptroller.texas.gov/view/9010L1049C07) (neither page rendered when opened)
+
+## As built
+
+The "Profit before shared costs" column and the note naming the sections a filter does not reach were not built. docs/product-spec/reports.md describes what each filter changes.

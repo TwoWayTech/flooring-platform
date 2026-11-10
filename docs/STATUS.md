@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to G are done and pushed. Batch H (backbone docs) is next. Live sites are still feature batch 2.
-- Next step: finish the Batch H documents, then redeploy, run the suite against both live addresses and tag demo-v3.
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to H are done and pushed. The redeploy and the live test run are in progress.
+- Next step: redeploy production, run the full suite against both live addresses in chunks, tag demo-v3 and write the final report.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -202,10 +202,10 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch G: full suite green
 
 #### Batch H: the backbone for the real build
-- [ ] H1. docs/product-spec/<module>.md for every module
-- [ ] H2. docs/data-model.md mapped to the blueprint's PostgreSQL tables
-- [ ] H3. docs/api-contract.md up to date
-- [ ] H4. FEATURES.md, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter guide
+- [x] H1. docs/product-spec/<module>.md for every module
+- [x] H2. docs/data-model.md mapped to the blueprint's PostgreSQL tables
+- [x] H3. docs/api-contract.md up to date
+- [x] H4. FEATURES.md, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter guide
 
 #### End
 - [ ] Redeploy production

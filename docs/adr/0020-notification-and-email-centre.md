@@ -1,6 +1,6 @@
 # ADR 0020: Notification and email centre with event rules, templates and a simulated Outbox
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 Feature batch 3, section A4 asks for Settings → Email and notifications (sender name, reply-to, and a list of events each with an on/off toggle, a template with variables and a preview), an Outbox of every email the system would send, and a choice per event of in-app, email or both. Purchasing, HR, contracts and meetings all send through it.

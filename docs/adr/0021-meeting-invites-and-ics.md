@@ -1,6 +1,6 @@
 # ADR 0021: Meeting invites as iCalendar scheduling messages
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 Feature batch 3, Batch E adds guests by email, an invite in the Outbox for each guest with an `.ics` attachment, updates with the same UID and a higher SEQUENCE, cancellations, replies (accept, decline, propose a new time), meeting requests, reminders and private HR meetings. ADR 0020 supplies the Outbox.

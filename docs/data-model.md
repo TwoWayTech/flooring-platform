@@ -1,0 +1,291 @@
+# Data model
+
+Written from the demo code, 2026-11-10.
+
+This file lists every entity the demo's `DemoStore` holds, how the entities relate, and which PostgreSQL table in the blueprint each one maps to. It also lists what the demo changed. Field-level detail and business rules are in `docs/product-spec/<module>.md`.
+
+## How to read this
+
+- **Entity** is the TypeScript type, with the collection name in brackets. Types are in `packages/shared/src/types/`. The list of collections is `CompanyFixtures` in `packages/shared/src/types/fixtures.ts`.
+- **Database** is Control (one shared database) or Company (one database per company), as the blueprint divides them.
+- **Blueprint table** names the table in the blueprint's table lists. "New in this demo" means the blueprint has no such table. The blueprint names tables and some columns only. It does not define most columns, so a mapping means "this record belongs in that table", not "the columns match".
+- **Key fields** are identifiers, status fields and the fields other rules depend on. Money and quantities are decimal strings.
+- **Relationships** use `field -> Entity`. The demo enforces none of them as foreign keys. They hold only because the store actions write them correctly.
+
+## How the demo stores data
+
+There is no database. `DemoStore` (`apps/web/src/lib/api/demo/store.ts`) implements `ApiClient` (`apps/web/src/lib/api/contract.ts`), and `CompanyDb` (`apps/web/src/lib/api/demo/company-db.ts`) holds one company's data.
+
+| Layer | Where | What it holds |
+| --- | --- | --- |
+| Company fixtures | `packages/shared/fixtures/summit.json`, `keystone.json`, `harbor.json`, loaded by `apps/web/src/lib/api/demo/fixtures.ts` | The 53 collections and the settings of one company, generated from a fixed seed |
+| Platform fixtures | `packages/shared/fixtures/platform.json` | The `companies` list |
+| Company overlay | localStorage key `fp-demo:v2:<companyId>` (`storage.ts`) | `schemaVersion` (4, `OVERLAY_SCHEMA_VERSION` in `packages/shared/src/migrations/overlay.ts`), `shift`, `settings`, and `records`: a map of collection to id to record |
+| Platform overlay | localStorage key `fp-demo:v2:platform` | Companies changed by the platform admin |
+| File bytes | IndexedDB database `fp-demo-files`, store `files` (`file-store.ts`) | Uploaded files by id. Records keep only `FileMeta` |
+
+Behaviour that matters when replacing this with a real database:
+
+- `CompanyDb.list` merges fixtures with the overlay. A record in the overlay replaces the fixture record with the same id. A `null` in the overlay is a tombstone that hides a fixture record.
+- Fixture dates are moved to today when loaded (`dateShift`, `shiftDates`). Overlay dates are moved from the day they were saved.
+- An overlay from an older schema is dropped with a notice, and its files are removed (`upgradeOverlay`, `overlayFileIds`).
+- Reset demo clears both localStorage prefixes.
+
+These collections are empty in all three seeded companies, so they only fill during a demo session: `invoiceAdjustments`, `refunds`, `clockEntries`, `meetingResponses`, `commissionAdjustments`, `importBatches`, `importMappings`, `notificationRules`, `inAppNotifications`. Harbor Staffing is an HR-only company, so its flooring collections are also empty. `crews` and `jobs` hold data for Summit only.
+
+## Control database
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Company (`companies`, in `platform.json`) | Control | `tenants`; `tenant_products` for `product`; `tenant_module_overrides` and `plan_modules` for `modules`; `plans`, `plan_limits` and `tenant_subscriptions` for `plan`, `userLimit`, `branchLimit`; `tenant_permission_ceiling` for `ceiling` | `id` (`summit`, `keystone`, `harbor`), `name`, `city`, `state`, `product`, `modules`, `plan`, `status` (`active`, `trial`, `past_due`, `suspended`; the blueprint also has `cancelled`), `userLimit`, `branchLimit`, `ceiling`, `branches`, `createdAt` | Owns one fixtures file, which is one company database. `branches` is embedded here in the demo but belongs in the company database (see Branch) |
+| User, identity part (`users`) | Control | `user`, `account`, `session`, `verification`, `two_factor`, `passkey`, `member`, `invitation` | `id`, `companyId`, `name`, `email`, `status` (`invited`, `active`, `disabled`), `mfaEnrolled`, `lastLoginAt` | One user has one company in the demo. The blueprint keeps one user record per person across companies and products |
+| Branding (`CompanySettings.branding`) | Control | `tenant_branding` | `displayName`, `monogram`, `brandColor`, `pattern`, `logoDataUrl`, `defaultTheme` | Stored with the company settings in the demo. The blueprint needs it in the control database so the login page can show it before sign-in |
+
+The demo has no platform admin record. The platform admin is a session, not a row (`admin.access` in `packages/shared/src/features.ts`).
+
+## Company database
+
+### Organization and access
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Branch (`Company.branches`) | Company | `branches` | `id`, `name`, `city`, `state` | Referenced by `User.branchId`, `Location.branchId`, `Quote.branchId`, `Invoice.branchId`, `Contract.branchId`. Branch drives data scope |
+| Location (`locations`) | Company | `locations` | `id`, `name`, `kind` (`warehouse`, `showroom`), `branchId`, `address`, `isDefault`, `displaySamples`, `floorAreaSqFt` | `branchId -> Branch`. Referenced by stock, documents, expenses, `User.defaultLocationId` and `Employee.homeLocationId` |
+| Role (`roles`) | Company | `roles`, `role_permissions` | `id`, `companyId`, `key`, `name`, `permissions`, `dataScope` (`own`, `branch`, `all`), `system`, `owner` | Linked to users through `User.roleIds` |
+| User, profile part (`users`) | Company | `user_profiles`, `user_roles` | `title`, `roleIds`, `branchId`, `employeeId`, `defaultLocationId` | `roleIds -> Role`, `branchId -> Branch`, `employeeId -> Employee`, `defaultLocationId -> Location`. A user id is the target of `salesRepId`, `recordedById`, `buyerId`, `ownerUserId` and similar fields |
+
+The blueprint lists `user_profiles` twice with different columns: once with "branch, status, employee link" and once with "branch, data scope, status". The demo keeps data scope on the role and uses the widest of a user's roles (`dataScope` in `packages/shared/src/permissions/`).
+
+### Catalog and inventory
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Product (`products`) | Company | `products`; `categories` and `brands` are a fixed list and a text field here | `id`, `sku`, `name`, `brand`, `collection`, `category`, `unit`, `price`, `cost`, `sqFtPerCarton`, `reorderPoint`, `widthFt`, `attributes` | `supplierId -> Supplier` |
+| Roll (`rolls`) | Company | `rolls`; `roll_cuts` for the embedded `cuts` | `id`, `rollNumber`, `dyeLot`, `widthFt`, `originalLengthFt`, `remainingLengthFt`, `costPerSqFt`, `bin`, `isRemnant`, `receivedAt`, `cuts` | `productId -> Product`, `locationId -> Location`, `transferId -> Transfer` (while travelling), `parentRollId -> Roll` (a remnant's source) |
+| StockMovement (`stockMovements`) | Company | `stock_movements` | `id`, `at`, `quantity` (signed), `kind` (`opening`, `receipt`, `issue`, `transfer_out`, `transfer_in`, `adjustment`, `return`), `source` | `productId -> Product`, `locationId -> Location`, `byUserId -> User`. `source.kind` and `source.id` point at a count, receipt, invoice, transfer, adjustment or credit note |
+| Transfer (`transfers`) | Company | New in this demo | `id`, `number`, `status` (`in_transit`, `received`), `lines`, `createdAt`, `receivedAt`, `note` | `fromId`, `toId -> Location`; `createdBy`, `receivedBy -> User`; each line `productId -> Product`, `rollId -> Roll` |
+| Reservation (`reservations`) | Company | New in this demo | `id`, `quantity`, `shortBy`, `status` (`active`, `released`, `issued`), `createdAt`, `closedAt`, `overrideReason` | `invoiceId -> Invoice`, `lineId -> DocLine`, `productId -> Product`, `rollId -> Roll`, `locationId -> Location` |
+| StockAdjustment (`stockAdjustments`) | Company | New in this demo. `stock_counts` is the nearest table | `id`, `number`, `quantity` (signed), `reason` (`damage`, `count`, `samples`, `other`), `status` (`pending`, `approved`, `rejected`), `requestedAt`, `reviewedAt`, `rejectReason` | `productId -> Product`, `rollId -> Roll`, `locationId -> Location`, `requestedById -> User` |
+
+### Customers and sales
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Customer (`customers`) | Company | `customers`; `addresses` for `addresses`; `exemption_certificates` for `certificate` | `id`, `type` (`homeowner`, `dealer`, `contractor`), `name`, `terms`, `creditLimit`, `taxExempt`, `certificate`, `defaultBillingId`, `defaultJobSiteId`, `lifecycle` (`customer`, `lead`), `externalId` | `salesRepId -> User`; `defaultBillingId`, `defaultJobSiteId -> CustomerAddress` |
+| CustomerContact (`customerContacts`) | Company | `contacts` | `id`, `name`, `email`, `phone` | `customerId -> Customer`. Can be a meeting guest (`Attendee` kind `customer-contact`) |
+| Quote (`quotes`) | Company | `quotes`, `quote_lines`; `measurements`, `measurement_rooms` for `rooms` | `id`, `number`, `status` (`draft`, `pending`, `accepted`, `converted`, `declined`), `createdAt`, `sentAt`, `expiresAt`, `jobSite`, `rooms`, `lines`, `depositPct`, `lumpSum`, `taxOverride`, `total`, `notes` | `customerId -> Customer`, `salesRepId -> User`, `branchId -> Branch`, `locationId -> Location` (ships from), `soldAtLocationId -> Location` (optional, falls back to `locationId`), `invoiceId -> Invoice` |
+| Invoice (`invoices`) | Company | `invoices`, `invoice_lines`; a credit note is a row here and not in `credit_notes` | `id`, `number`, `issuedAt`, `dueAt`, `sentAt`, `voidedAt`, `voidReason`, `depositPct`, `isReturn`, `refundedAt`, `jobSite`, `lines`, `taxRule`, `taxSource`, `taxOverride`, `taxExempt`, `subtotal`, `tax`, `total`, `cost`, `retainageWithheld`, `retainageReleased`, `commissionSplit` | `quoteId -> Quote`, `customerId -> Customer`, `salesRepId`, `createdBy`, `sentBy -> User`, `branchId -> Branch`, `locationId -> Location`, `soldAtLocationId -> Location` (optional, falls back to `locationId`), `creditForInvoiceId -> Invoice`, `contractId -> Contract`, `billingId -> ContractBilling`, `commissionSplit[].userId -> User` |
+| Payment (`payments`) | Company | `payments_received`; `deposits` for `kind: deposit` | `id`, `number`, `kind` (`payment`, `deposit`), `amount`, `date`, `method`, `checkNumber`, `cardLast4`, `reference`, `files`, `status` (`pending`, `confirmed`, `rejected`, `voided`), `recordedAt`, `reviewedAt`, `voidedAt` | `invoiceId -> Invoice` (exactly one), `customerId -> Customer`, `recordedById -> User`. Referenced by `LienWaiver.paymentId` |
+| InvoiceAdjustment (`invoiceAdjustments`) | Company | New in this demo | `id`, `kind` (`write_off`, `credit_applied`), `amount`, `reason`, `byName`, `at` | `invoiceId -> Invoice`, `customerId -> Customer` |
+| Refund (`refunds`) | Company | New in this demo | `id`, `number`, `amount`, `date`, `method`, `reference`, `files`, `status` (`completed`, `voided`), `byName`, `at` | `customerId -> Customer` |
+
+### Suppliers and purchasing
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Supplier (`suppliers`) | Company | `suppliers` | `id`, `name`, `type` (`goods`, `services`, `utility`, `government`), `status` (`active`, `inactive`), `accountNumber`, `terms`, `creditLimit`, `categories`, `track1099`, `taxForm`, `externalId` | Parent of `SupplierContact`, `PurchaseOrder`, `GoodsReceipt`, `Bill`, `SupplierPayment`; referenced by `Product`, `Expense`, `RecurringExpense`, `Contract`, `InsuranceCertificate` |
+| SupplierContact (`supplierContacts`) | Company | `contacts` | `id`, `name`, `role`, `mobile`, `officePhone`, `email`, `whatsapp`, `preferredMethod`, `isPrimary`, `status` | `supplierId -> Supplier`. Referenced by `PurchaseOrder.contactId` |
+| PurchaseOrder (`purchaseOrders`) | Company | `purchase_orders`, `po_lines` | `id`, `number`, `status` (`draft`, `ordered`, `cancelled`; the rest is derived), `createdAt`, `expectedAt`, `orderedAt`, `cancelledAt`, `lines`, `total`, `contactSnapshot`, `supplierRef`, `placedVia` (`email`, `phone`) | `supplierId -> Supplier`, `locationId -> Location`, `contactId -> SupplierContact`, `buyerId -> User`; each line `productId -> Product`, `locationId -> Location` (optional) |
+| GoodsReceipt (`receipts`) | Company | `goods_receipts`, `receipt_lines` | `id`, `number`, `receivedAt`, `note`, `lines` (`received`, `damaged`, `rolls`) | `poId -> PurchaseOrder`, `supplierId -> Supplier`, `locationId -> Location`, `receivedById -> User`; each line `poLineId -> PoLine`, `productId -> Product`, `locationId -> Location` (optional) |
+| Bill (`bills`) | Company | `supplier_bills`; `bill_lines` is not used | `id`, `number` (the supplier's), `issuedAt`, `dueAt`, `total`, `matchIssues`, `files`, `kind` (`progress`, `retainage_release`), `gross`, `retainageWithheld`, `retainageReleased` | `supplierId -> Supplier`, `poId -> PurchaseOrder` (null on a contract bill or a pay-later expense bill), `receiptIds -> GoodsReceipt`, `contractId -> Contract`, `billingId -> ContractBilling`. A pay-later expense links through `Expense.billId`; a bill has no field pointing back |
+| SupplierPayment (`supplierPayments`) | Company | `payments_made`, `payment_allocations` | `id`, `number`, `date`, `method`, `reference`, `files`, `allocations`, `amount`, `status` (`pending`, `confirmed`, `rejected`, `voided`), `recordedAt`, `reviewedAt`, `voidedAt` | `supplierId -> Supplier`, `allocations[].billId -> Bill`, `recordedById -> User`. Referenced by `LienWaiver.supplierPaymentId` |
+
+### Expenses
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Expense (`expenses`) | Company | New in this demo. The blueprint has only a posting rule for "Expense entered" | `id`, `number`, `date`, `category`, `amount`, `tax`, `paymentMethod`, `reference`, `files`, `status` (`draft`, `pending`, `confirmed`, `rejected`, `voided`), `settlement` (`paid`, `on_account`), `dueAt`, `period`, `recordedAt`, `reviewedAt`, `voidedAt` | `supplierId -> Supplier`, `locationId -> Location` (null means company-wide), `billId -> Bill` (pay later), `recurringId -> RecurringExpense`, `recordedById -> User` |
+| RecurringExpense (`recurringExpenses`) | Company | New in this demo | `id`, `category`, `amount`, `tax`, `paymentMethod`, `frequency` (`monthly`, `quarterly`, `yearly`), `dayOfMonth`, `startsOn`, `endsOn`, `active` | `supplierId -> Supplier`, `locationId -> Location` |
+
+### Contracts
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Contract (`contracts`) | Company | New in this demo | `id`, `number`, `direction` (`customer`, `subcontractor`), `kind` (`master`, `project`), `title`, `startsAt`, `endsAt`, `renewal`, `originalValue`, `retainagePct`, `storedRetainagePct`, `bondInLieu`, `taxTreatment`, `status` (`draft`, `sent`, `active`, `completed`, `closed`, `terminated`; expired is derived), `signature`, `files` | `masterId`, `parentContractId`, `renewedFromId -> Contract`; `customerId -> Customer`; `supplierId -> Supplier`; `branchId -> Branch`; `locationId -> Location`; `salesRepId -> User` |
+| ContractLine (`contractLines`) | Company | New in this demo | `id`, `code`, `description`, `category`, `billing` (`percent`, `milestone`), `scheduledValue`, `retainagePct`, `storedRetainagePct`, `milestoneDueAt`, `estimatedCost` | `contractId -> Contract`, `changeOrderId -> ChangeOrder` |
+| ChangeOrder (`changeOrders`) | Company | `change_orders`, which the blueprint places under Installation and ties to a job. Here it belongs to a contract | `id`, `number`, `status` (`draft`, `pending`, `approved`, `rejected`, `void`), `reason`, `lines`, `submittedAt`, `decidedAt`, `decidedBy`, `files` | `contractId -> Contract`; each line `lineId -> ContractLine` (null for a new line) |
+| ContractBilling (`contractBillings`) | Company | New in this demo | `id`, `number`, `kind` (`progress`, `release`), `periodEnd`, `status` (`posted`, `void`; there is no draft), `lines`, `releases`, `gross`, `withheld`, `released`, `postedAt`, `postedBy` | `contractId -> Contract`, `invoiceId -> Invoice`, `billId -> Bill`, `lines[].lineId` and `releases[].lineId -> ContractLine` |
+| LienWaiver (`lienWaivers`) | Company | New in this demo | `id`, `direction` (`given`, `received`), `type`, `amount`, `throughDate`, `state`, `statutoryForm`, `signedOn`, `files`, `status` (`requested`, `received`, `superseded`) | `contractId -> Contract`, `paymentId -> Payment`, `supplierPaymentId -> SupplierPayment` |
+| InsuranceCertificate (`insuranceCertificates`) | Company | New in this demo | `id`, `producer`, `holder`, `coverages` (each with its own `expiresOn`), `additionalInsured`, `files` | `supplierId -> Supplier`, `contractId -> Contract` |
+
+### Installation (switched off, data kept)
+
+`installation.calendar` has status `removed` in `packages/shared/src/features.ts`. These records are kept in the code and seed data, and no screen shows them.
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Crew (`crews`) | Company | `crews`, `subcontractors` | `id`, `name`, `kind` (`crew`, `subcontractor`), `lead`, `members`, `phone` | `lead` is a name, compared with `User.name` in `apps/web/src/lib/api/demo/scope.ts`. There is no user id link |
+| Job (`jobs`) | Company | `jobs`, `job_assignments`, `job_materials`, `job_labor`, `job_photos` | `id`, `number`, `date`, `startHour`, `durationHours`, `status` (`scheduled`, `in_progress`, `completed`, `signed_off`), `address`, `scope`, `materials`, `laborHours`, `laborCost`, `revenue`, `photos`, `signedOffAt`, `signedBy` | `customerId -> Customer`, `invoiceId -> Invoice`, `crewId -> Crew` |
+
+### HR
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Employee (`employees`) | Company | `employees`, `pay_rates` | `id`, `companyId`, `name`, `title`, `department`, `workerType` (`w2`, `1099`), `payType` (`hourly`, `salary`, `per_job`), `payRate`, `state`, `hiredAt`, `status` (`active`, `on_leave`, `terminated`), `flsaStatus`, `exemptionBasis`, `salaryHoursPerWeek`, `commissionVisible`, `externalId`, `documents`, `onboarding`, `offboarding` | `managerId -> Employee`, `homeLocationId -> Location`. A user links here through `User.employeeId` |
+| Timesheet (`timesheets`) | Company | `timesheets`; `time_entries` for the seven values in `days` | `id`, `weekStart`, `days`, `status` (`draft`, `submitted`, `approved`, `rejected`), `submittedAt`, `decidedAt`, `rejectionReason`, `source` (`form`, `upload`, `clock`), `history` | `employeeId -> Employee` |
+| ClockEntry (`clockEntries`) | Company | New in this demo | `id`, `date`, `inAt`, `outAt` | `employeeId -> Employee`. A day's punches fill the draft timesheet |
+| PtoRequest (`ptoRequests`) | Company | `pto_requests` | `id`, `start`, `end`, `hours`, `kind`, `status` (`pending`, `approved`, `denied`, `cancelled`), `decidedAt`, `decisionReason` | `employeeId -> Employee`, `policyId -> TimeOffPolicy` |
+| TimeOffPolicy (`timeOffPolicies`) | Company | New in this demo | `id`, `name`, `kind`, `paid`, `accrualMethod`, `accrualRate`, `capHours`, `annualUseLimitHours`, `carryoverHours`, `waitingPeriodDays`, `allowNegative` | Parent of `PtoRequest` and `TimeOffEntry` |
+| TimeOffEntry (`timeOffEntries`) | Company | New in this demo. It replaces `pto_balances` | `id`, `date`, `kind` (`accrual`, `used`, `adjustment`, `carryover`, `forfeit`, `payout`), `hours` (signed), `note` | `employeeId -> Employee`, `policyId -> TimeOffPolicy`, `requestId -> PtoRequest`, `payPeriodId -> PayPeriod` |
+| PayPeriod (`payPeriods`) | Company | New in this demo. `payroll_exports` is the nearest table; here export is a status | `id`, `frequency`, `start`, `end`, `payDate`, `status` (`open`, `in_review`, `approved`, `exported`), `approvedBy`, `approvedAt`, `exportedAt`, `excluded`, `lines` (empty until approved) | `excluded[].employeeId`, `lines[].employeeId -> Employee`. Referenced by `CommissionStatement.payPeriodId` and `TimeOffEntry.payPeriodId` |
+| Bonus (`bonuses`) | Company | New in this demo | `id`, `amount`, `kind` (`production`, `flat_sum`, `discretionary`), `periodStart`, `periodEnd`, `approvedBy`, `reason` | `employeeId -> Employee`. Seed data only: there is no entry screen |
+| ContractorPayment (`contractorPayments`) | Company | New in this demo | `id`, `date`, `description`, `amount`, `status` (`approved`, `paid`) | `employeeId -> Employee` (a 1099 worker). Never part of a pay period |
+
+### Commissions
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| CommissionPlan (`commissionPlans`) | Company | New in this demo. It replaces `commission_rules` | `id`, `name`, `version`, `status` (`draft`, `active`, `retired`), `effectiveFrom`, `effectiveTo`, `basis` (`paid_revenue`, `gross_margin`), `baseRatePct`, `monthlyTarget`, `tierMode` (`marginal`, `retroactive`), `tiers`, `overridePct`, `draw`, `clawbackDays` | Parent of `CommissionAssignment` |
+| CommissionAssignment (`commissionAssignments`) | Company | New in this demo | `id`, `effectiveFrom`, `effectiveTo`, `monthlyTargetOverride`, `acknowledgement` | `userId -> User`, `planId -> CommissionPlan` |
+| CommissionStatement (`commissionStatements`) | Company | New in this demo | `id`, `month`, `status` (`draft`, `approved`, `paid`), `approvedBy`, `approvedAt` | `userId -> User`, `payPeriodId -> PayPeriod`. Figures are derived |
+| CommissionAdjustment (`commissionAdjustments`) | Company | New in this demo | `id`, `month`, `amount`, `reason`, `byName`, `at`, `decides` | `userId -> User`, `invoiceId -> Invoice` (required when negative). `decides.lineId` points at a derived commission line |
+
+The blueprint's `commissions` table has no stored equivalent. Commission lines are computed by `commissionLines` in `packages/shared/src/hr/commission-plans.ts`.
+
+### Meetings
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| Meeting (`meetings`) | Company | `meetings`; `meeting_attendees` for `attendees`; `reminders` for `reminderMin` | `id`, `title`, `start`, `durationMin`, `location`, `recurrence` (`none`, `weekly`, `biweekly`, `monthly`), `reminderMin`, `timeZone`, `until`, `exceptions`, `uid`, `sequence`, `rescheduleSequence`, `status` (`tentative`, `confirmed`, `cancelled`), `kind` (`meeting`, `request`), `private`, `hideGuestList`, `allowProposals` | `ownerUserId -> User`. `attendees[].id` points at a `User`, `Customer`, `Supplier`, `CustomerContact` or `SupplierContact` depending on `attendees[].kind`; for `external` it is not a link |
+| MeetingResponse (`meetingResponses`) | Company | New in this demo | `id`, `method` (`reply`, `counter`), `partStat`, `proposedStart`, `note`, `sequence`, `at`, `stale` | `meetingId -> Meeting`, `attendeeId -> Attendee.id` |
+
+### Notifications and email
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| NotificationRule (`notificationRules`) | Company | New in this demo | `id` (the event key, so one rule per event), `enabled`, `channels`, `subject`, `body`, `updatedAt`, `updatedBy` | With no row, the catalogue's defaults apply (`packages/shared/src/notifications/events.ts`) |
+| OutboxMessage (`outboxMessages`) | Company | New in this demo | `id`, `eventKey`, `recipient`, `fromName`, `replyTo`, `subject`, `bodyText`, `values`, `attachments`, `status` (`scheduled`, `queued`, `sent`, `failed`, `cancelled`), `failureType`, `createdAt`, `scheduledFor`, `sentAt`, `restricted`, `dedupeKey` | `actorUserId -> User`. `sourceType` with `sourceId` and `recipient.kind` with `recipient.id` are polymorphic links |
+| InAppNotification (`inAppNotifications`) | Company | `notifications` | `id`, `eventKey`, `title`, `href`, `createdAt`, `readAt` | `userId -> User` |
+
+### System
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| AuditEntry (`audit`) | Company | `audit_log`. Changes made by the platform admin belong in the control database's `platform_audit_log` | `id`, `at`, `actorName`, `actorRole`, `category` (`role`, `user`, `ceiling`, `settings`, `data`, `security`, `payment`), `action`, `target`, `before`, `after` | None. The actor is a name, not a user id. `updateCompanyAccess` in `store.ts` writes ceiling changes into the company's own list |
+| ImportBatch (`importBatches`) | Company | `import_jobs` | `id`, `number`, `kind`, `fileName`, `at`, `byName`, `mapping`, `counts`, `changes`, `undoneAt`, `undoneBy` | `changes[]` holds a collection, a record id, and the before and after versions, which Undo restores |
+| ImportMapping (`importMappings`) | Company | New in this demo | `id`, `kind`, `columns`, `savedAt`, `savedBy` | One saved column mapping for an import kind |
+| CompanySettings (`settings`, one per company) | Company, except `branding` | See "Settings groups" below | See below | Read by every module |
+
+## Objects stored inside a parent record
+
+| Object | Parent | Blueprint table | Notes |
+| --- | --- | --- | --- |
+| `DocLine` | `Quote.lines`, `Invoice.lines` | `quote_lines`, `invoice_lines` | `productId`, `category`, `unit`, `quantity`, `unitPrice`, `unitCost`, `wastePct`, `roomIds`, `rollId`, `sqFtPerCarton`, `locationId`. `Reservation.lineId` points at its `id` |
+| `Room` | `Quote.rooms` | `measurement_rooms` | Rectangle in ft. Referenced by `DocLine.roomIds` |
+| `CustomerAddress` | `Customer.addresses` | `addresses` | `label` is `home`, `billing`, `job_site` or `delivery` |
+| `Certificate` | `Customer.certificate` | `exemption_certificates` | One per customer in the demo |
+| `TaxOverride` | `Quote.taxOverride`, `Invoice.taxOverride` | New in this demo | `ratePct`, `reason`, `byName`, `at` |
+| `RollCut` | `Roll.cuts` | `roll_cuts` | `source` points at an invoice or adjustment |
+| `TransferLine` | `Transfer.lines` | New in this demo | `rollId` is set when a whole roll moves |
+| `PoLine` | `PurchaseOrder.lines` | `po_lines` | Referenced by `ReceiptLine.poLineId` |
+| `ReceiptLine` | `GoodsReceipt.lines` | `receipt_lines` | Embedded `rolls` create `Roll` records |
+| `FileMeta` | Many records, as `files` or `documents` | `attachments` | `id`, `name`, `type`, `size`, `uploadedBy`, `uploadedAt`. Bytes are in the file store |
+| `SupplierTaxForm` | `Supplier.taxForm` | New in this demo | No tax ID is stored (plan K-9) |
+| `SignatureRecord` | `Contract.signature` | New in this demo | Simulated. Holds document version, hash, signer, consent version and events |
+| `BillingLine` | `ContractBilling.lines` | New in this demo | Cumulative figures with rates snapshotted |
+| `InsuranceCoverage` | `InsuranceCertificate.coverages` | New in this demo | Each coverage has its own expiry |
+| `ChecklistItem` | `Employee.onboarding`, `Employee.offboarding` | New in this demo | |
+| `TimesheetEvent` | `Timesheet.history` | New in this demo | |
+| `PayPeriodLine`, `PayWeek` | `PayPeriod.lines` | New in this demo | Frozen when the period is approved. Computed live before that |
+| `Attendee` | `Meeting.attendees` | `meeting_attendees` | `kind`, `role`, `partStat`, response fields, `proposal` |
+| `MeetingProposal` | `Attendee.proposal` | New in this demo | |
+| `MeetingException` | `Meeting.exceptions` | New in this demo | One occurrence moved, resized or cancelled |
+| `OutboxRecipient`, `OutboxAttachment` | `OutboxMessage` | New in this demo | An `.ics` keeps its text inline |
+| `ImportChange` | `ImportBatch.changes` | Part of `import_jobs` | |
+
+## Settings groups
+
+`CompanySettings` is one object per company (`packages/shared/src/types/settings.ts`).
+
+| Group | Database | Blueprint table |
+| --- | --- | --- |
+| `branding` | Control | `tenant_branding` |
+| `localization.region` | Company | `locale_settings` |
+| `localization.currency` | Company | `currencies_enabled`, `exchange_rates` |
+| `localization.tax.rules` | Company | `tax_rules` |
+| `localization.tax.jurisdictions` | Company | `tax_jurisdictions` |
+| `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |
+| `localization.payroll` | Company | `overtime_rules`, `holiday_calendars` |
+| `localization.documents` | Company | `document_defaults` |
+| `numbers` | Company | `number_format` |
+| `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint |
+| `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold |
+| `sharedCosts`, `hr`, `meetings`, `email` | Company | `settings`. New groups in this demo |
+
+Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to the control tables `country_packs`, `pack_states` and `pack_tax_models`.
+
+## Derived figures: nothing stored
+
+| Figure | Function | File |
+| --- | --- | --- |
+| Invoice paid, balance, status | `invoiceLedger`, `invoiceStatus` | `packages/shared/src/ledger.ts` |
+| Customer credit | `customerCredit` | `packages/shared/src/ledger.ts` |
+| Receivables | `receivablesSummary`, `customerReceivable` | `packages/shared/src/receivables.ts` |
+| Quote expired | `quoteState` | `packages/shared/src/operations/quote-status.ts` |
+| Contract expired | `contractDisplayStatus` | `packages/shared/src/contracts/rules.ts` |
+| Purchase order status past Ordered | `poState` | `packages/shared/src/operations/purchasing.ts` |
+| Bill paid and balance, supplier balance, payables | `billLedger`, `supplierBalance`, `payablesSummary` | `packages/shared/src/operations/purchasing.ts` |
+| Boxed on hand | `boxedStock`, `boxedOnHand` | `packages/shared/src/stock.ts` |
+| Reserved and available | `availability`, `rollAvailable`, `reservedBoxed` | `packages/shared/src/reservations.ts` |
+| Time-off balance | `timeOffBalance` | `packages/shared/src/hr/time-off.ts` |
+| Pay period lines before approval | `grossPay` | `packages/shared/src/hr/pay.ts` |
+| Commission lines | `commissionLines` | `packages/shared/src/hr/commission-plans.ts` |
+| Journal lines | `expenseJournal`, `billPaymentJournal` | `packages/shared/src/journal.ts` |
+| Business report | `businessReport` | `packages/shared/src/business-report.ts` |
+| Next document number | `nextNumber` (highest existing number plus one) | `packages/shared/src/operations/quotes.ts` |
+
+## Changes this demo introduced
+
+| Area | Change from the blueprint | Where | Source |
+| --- | --- | --- | --- |
+| Units | Square feet is the one area unit, including prices. Rolls stay in ft. `sqFtPerCarton` is copied onto document and PO lines. Boxed goods sell in whole cartons | `Product`, `DocLine`, `PoLine` | ADR 0027, plan N-2, K-2 |
+| Warehouses | Warehouses and showrooms are `locations` with a `kind`. Bins are a text field on `Roll` only, while the blueprint's `locations` covers bins | `Location`, `Roll.bin` | ADR 0006 |
+| Stock | Boxed goods use the movement ledger. Rolls do not: a roll's length is stored on the roll, and cuts and roll transfers write no `StockMovement` (`movementsFor` in `operations/transfers.ts` skips roll lines). The blueprint says every stock change is a row in `stock_movements` | `Roll`, `StockMovement` | ADR 0006 |
+| Stock | `stock_levels` is not used. Levels are derived | `stock.ts` | ADR 0006 |
+| Stock | Reservations and transfers are new. Adjustments are kept in the ledger but the screen is off. Corrections are Owner only | `Reservation`, `Transfer`, `StockAdjustment` | ADR 0015, plan A-1 |
+| Sales | Quote goes straight to invoice. `sales_orders` is not used | `Quote`, `Invoice` | Demo spec section 5 |
+| Sales | Invoice status and balance are never stored. They come from the ledger | `ledger.ts` | ADR 0013 |
+| Sales | Credit notes are invoices with `isReturn` and `creditForInvoiceId`. `credit_notes` is not used | `Invoice` | ADR 0013, plan K-11 |
+| Sales | A deposit is a `Payment` with `kind: deposit`, against one invoice. `deposits` is not used. Customer payments have no allocations | `Payment` | ADR 0013 |
+| Sales | `soldAtLocationId` is optional on quotes and invoices and falls back to `locationId` | `Quote`, `Invoice` | ADR 0023 |
+| Sales | Write-offs, applied credit and refunds are new records | `InvoiceAdjustment`, `Refund` | ADR 0013 |
+| Sales | `dueAt` is always set today. The type still allows null: `invoiceDueDate` in `operations/quotes.ts` returns null only if `installation.calendar` is on, and it is off | `Invoice` | Plan K-3 |
+| Sales | Customers can be leads. Customer contacts are their own collection | `Customer.lifecycle`, `CustomerContact` | Plan K-8 |
+| Purchasing | The supplier directory has types, status, W-9 details and contacts as records. No tax ID is stored | `Supplier`, `SupplierContact` | ADR 0022, plan K-9 |
+| Purchasing | Only Draft, Ordered and Cancelled are stored on a PO. A PO keeps a snapshot of the rep | `PurchaseOrder` | ADR 0016, ADR 0022 |
+| Purchasing | Bills have a total and no lines | `Bill` | Code only |
+| Expenses | New. A pay-later expense creates a linked bill with no PO and no receipts. The plan had `Bill.expenseId`; the code has `Expense.billId` instead | `Expense`, `Bill`, `expense-actions.ts` | ADR 0023 |
+| Expenses | One shared-cost rule per company. Per-category rules were left out | `SharedCostSettings` | Plan section 3 |
+| Contracts | New. Billings have no draft and post directly. Retainage stays off `Invoice.total` until a release: `total = subtotal + tax - withheld + released` | `ContractBilling`, `Invoice`, `Bill` | ADR 0026 |
+| HR | Overtime fields, profile fields and checklists on the employee. The single PTO balance is replaced by a ledger. Timesheets gained rejection and history | `Employee`, `Timesheet`, `TimeOffEntry` | ADR 0024 |
+| HR | Pay periods, bonuses and contractor payments are new. Contractors never enter a pay period | `PayPeriod`, `Bonus`, `ContractorPayment` | ADR 0024, plan N-3 |
+| Commissions | Plans with versions replace rules. Lines are derived | `CommissionPlan` and related | ADR 0025, plan N-4 |
+| Meetings | Stable `uid` and `sequence`, replies, proposals, exceptions, private meetings, requests | `Meeting`, `MeetingResponse` | ADR 0018, ADR 0021 |
+| Notifications | Rules per event, one Outbox row per recipient as a snapshot, stored in-app notifications. No real email is sent | `NotificationRule`, `OutboxMessage`, `InAppNotification` | ADR 0020 |
+| Ledger | No accounts or journal tables. Journal lines are derived and exist only for expenses and bill payments | `journal.ts` | ADR 0023 |
+| Import | External ids on customers, suppliers and employees. Batches keep before and after versions for Undo | `externalId`, `ImportBatch` | ADR 0019 |
+| Tenancy | Data scope is on the role. Branding sits in company settings. Branches sit on the company record | `Role`, `CompanySettings`, `Company` | Demo build |
+
+## Blueprint tables with no demo equivalent
+
+| Blueprint tables | What the demo has instead |
+| --- | --- |
+| `tenant_databases` | Nothing. One fixtures file per company |
+| `platform_admins`, `support_access_grants` | A platform admin session only |
+| `price_lists`, `price_list_items`, `customer_groups` | `Product.price` only |
+| `sales_orders`, `order_lines` | Nothing |
+| `credit_notes`, `deposits`, `bill_lines`, `stock_levels` | See "Changes this demo introduced" |
+| `approvals`, `approval_rules`, `sod_rules` | Reviewer fields on each record and thresholds in settings. Who may review is coded in the actions |
+| `tax_categories`, `invoice_tax_lines` | `TaxCategory` is a fixed list. `Invoice` keeps a `taxRule` snapshot and one `tax` amount |
+| `accounts`, `journal_entries`, `journal_lines`, `fiscal_periods` | Derived expense journal only |
+| `document_sequences` | `nextNumber` |
+
+## Points for the real build
+
+- Every blueprint table has `id` (UUID v7), `created_at`, `updated_at`, `created_by` and soft delete. Demo records have string ids and only the dates each type needs.
+- Several "by" fields store a person's name rather than a user id: `recordedBy` (beside `recordedById`), `reviewedBy`, `voidedBy`, `decidedBy`, `approvedBy`, `postedBy`, `byName`, `actorName`, and `Crew.lead`. The real build should store user ids.
+- Users live in the control database, and company records point at them by id. Those links cross databases, so they cannot be foreign keys.
+- `Attendee.id`, `OutboxMessage.sourceId`, `OutboxRecipient.id`, `MovementSource.id` and `ImportChange.id` are polymorphic and need a type column or separate link tables.
+- Money and quantities are decimal strings. The blueprint's column types are `numeric(14,2)` for money, `numeric(14,4)` for unit costs and `numeric(14,3)` for quantities.
+- `nextNumber` takes the highest number in use plus one. It is not safe with concurrent writes, so the real build needs `document_sequences`.
+- Row-level narrowing per collection is in `apps/web/src/lib/api/demo/scope.ts`. The real API must apply the same filters.

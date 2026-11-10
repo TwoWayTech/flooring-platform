@@ -1,6 +1,6 @@
 # ADR 0022: Supplier directory, supplier contacts and the sales rep on a purchase order
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 

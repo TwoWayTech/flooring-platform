@@ -1,6 +1,6 @@
 # ADR 0024: HR timesheets, overtime by workweek on the true regular rate, time off, pay periods and the employee portal
 
-Date: 2026-11-10. Status: proposed (waiting for the owner's OK on the Phase 0 plan).
+Date: 2026-11-10. Status: accepted (the owner approved the Phase 0 plan on 2026-11-10) and built in feature batch 3.
 
 ## Context
 Feature batch 3, Batch C asks for a full HR workspace (timesheets with approval and upload, time off with accrual and caps, pay periods with review and export) and a self-service portal, in both the Flooring Suite and the HR Suite. Assumption C-1 keeps the system to gross pay; taxes and net pay stay with the payroll provider. Assumption C-2 hides commission from employees by default. Commission plans belong to the commission research; this ADR takes approved commission amounts as an input.

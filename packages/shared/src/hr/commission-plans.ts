@@ -257,40 +257,60 @@ function voidReversals(inputs: CommissionInputs, lines: readonly CommissionLine[
     });
 }
 
-/** A credit note reverses each rep's newest lines first, while their window is open (ADR 0025). */
+/**
+ * A credit note reverses commission inside each line's window (ADR 0025): the fall in the base is
+ * split like the sale, then each rep's newest lines go first. Credits run in date order and each
+ * takes only what earlier ones left, so a second credit note never reverses the first one's amount.
+ */
 function creditNoteReversals(inputs: CommissionInputs, lines: readonly CommissionLine[]): CommissionLine[] {
   const out: CommissionLine[] = [];
-  for (const credit of inputs.invoices.filter((c) => c.creditForInvoiceId && !c.voidedAt)) {
+  const taken = new Map<string, Dec>();
+  const leftOn = (line: CommissionLine) => dec(line.base).minus(taken.get(line.id) ?? 0);
+  const credits = inputs.invoices
+    .filter((c) => c.creditForInvoiceId && !c.voidedAt)
+    .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt));
+  for (const credit of credits) {
     const invoice = inputs.invoices.find((i) => i.id === credit.creditForInvoiceId);
     if (!invoice || credit.issuedAt > inputs.today) continue;
     const owned = lines.filter((l) => l.invoiceId === invoice.id && l.kind === "earned");
-    const live = sum(owned.map((l) => l.base));
     if (owned.length === 0) continue;
     const plan = inputs.plans.find((p) => p.id === owned[0]!.planId)!;
     const net = netInvoice(invoice, inputs.invoices, credit.issuedAt);
     const collected = sum(
       inputs.payments.filter((p) => p.invoiceId === invoice.id && p.status === "confirmed").map((p) => p.amount),
     );
-    let remaining = live.minus(baseOf(plan, collected, net));
-    if (remaining.lte(0)) continue;
-    for (const line of [...owned].sort((a, b) => b.confirmedOn.localeCompare(a.confirmedOn))) {
-      if (line.windowEndsOn < credit.issuedAt || remaining.lte(0)) break;
-      const chunk = minDec(remaining, line.base);
-      const reversed = chunk.gte(line.base)
-        ? dec(line.commission)
-        : roundMoney(dec(line.commission).times(chunk).dividedBy(line.base));
-      remaining = remaining.minus(chunk);
-      out.push({
-        ...line,
-        id: `rc-${credit.id}-${line.id}`,
-        month: credit.issuedAt.slice(0, 7),
-        kind: "reversal",
-        confirmedOn: credit.issuedAt,
-        base: moneyString(chunk.negated()),
-        commission: moneyString(reversed.negated()),
-        reversalState: "applied",
-      });
-    }
+    const fall = owned.reduce((total, l) => total.plus(leftOn(l)), dec(0)).minus(baseOf(plan, collected, net));
+    if (fall.lte(0)) continue;
+    const split = splitOf(invoice);
+    let allocated = dec(0);
+    split.forEach((s, i) => {
+      let remaining = i === split.length - 1 ? fall.minus(allocated) : roundMoney(pctOf(fall, s.pct));
+      allocated = allocated.plus(remaining);
+      const newestFirst = owned
+        .filter((l) => l.userId === s.userId)
+        .sort((a, b) => b.confirmedOn.localeCompare(a.confirmedOn));
+      for (const line of newestFirst) {
+        if (line.windowEndsOn < credit.issuedAt || remaining.lte(0)) break;
+        const left = leftOn(line);
+        if (left.lte(0)) continue;
+        const chunk = minDec(remaining, left);
+        const reversed = chunk.gte(line.base)
+          ? dec(line.commission)
+          : roundMoney(dec(line.commission).times(chunk).dividedBy(line.base));
+        remaining = remaining.minus(chunk);
+        taken.set(line.id, dec(line.base).minus(left).plus(chunk));
+        out.push({
+          ...line,
+          id: `rc-${credit.id}-${line.id}`,
+          month: credit.issuedAt.slice(0, 7),
+          kind: "reversal",
+          confirmedOn: credit.issuedAt,
+          base: moneyString(chunk.negated()),
+          commission: moneyString(reversed.negated()),
+          reversalState: "applied",
+        });
+      }
+    });
   }
   return out;
 }

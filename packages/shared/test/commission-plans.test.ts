@@ -171,6 +171,54 @@ describe("commission on collection (spec C1, ADR 0025)", () => {
     expect(none.filter((l) => l.kind === "reversal")).toEqual([]);
   });
 
+  it("a second credit note takes only its own amount", () => {
+    const first = invoice({
+      id: "c1",
+      creditForInvoiceId: "i1",
+      issuedAt: "2027-01-05",
+      subtotal: "1450.00",
+      total: "1578.69",
+      cost: "0",
+    });
+    const second = invoice({
+      id: "c2",
+      creditForInvoiceId: "i1",
+      issuedAt: "2027-01-10",
+      subtotal: "1000.00",
+      total: "1088.75",
+      cost: "0",
+    });
+    const lines = commissionLines(inputs({ invoices: [inv, first, second], payments: pays, today: "2027-01-31" }));
+    expect(lines.filter((l) => l.kind === "reversal").map((l) => l.commission)).toEqual(["-72.50", "-50.00"]);
+  });
+
+  it("a credit note on a split sale reverses each rep by their share", () => {
+    const sale = invoice({
+      subtotal: "8000.00",
+      total: "8000.00",
+      cost: "0",
+      commissionSplit: [
+        { userId: "dana", pct: "60" },
+        { userId: "luis", pct: "40" },
+      ],
+    });
+    const credit = invoice({
+      id: "c1",
+      creditForInvoiceId: "i1",
+      issuedAt: "2026-11-10",
+      subtotal: "1000.00",
+      total: "1000.00",
+      cost: "0",
+    });
+    const lines = commissionLines(
+      inputs({ invoices: [sale, credit], payments: [payment("a", "8000.00", "2026-11-01")] }),
+    );
+    expect(lines.filter((l) => l.kind === "reversal").map((l) => [l.userId, l.base, l.commission])).toEqual([
+      ["dana", "-600.00", "-30.00"],
+      ["luis", "-400.00", "-20.00"],
+    ]);
+  });
+
   it("a void before approval simply does not earn; after approval it reverses, inside or for review outside the window", () => {
     const voided = (at: string) => payment("a", "2000.00", "2026-09-20", { status: "voided", voidedAt: at });
     expect(commissionLines(inputs({ invoices: [inv], payments: [voided("2026-09-25")] }))).toEqual([]);
