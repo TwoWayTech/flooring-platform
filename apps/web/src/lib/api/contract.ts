@@ -33,6 +33,8 @@ import type {
   NotificationEventKey,
   NotificationRule,
   OutboxMessage,
+  Supplier,
+  SupplierContact,
   SupplierPayment,
   Reservation,
   StockAdjustment,
@@ -113,6 +115,11 @@ export interface RollInvoiceInput {
 /** A new purchase order (spec D1): lines in their selling unit, with the area for area goods. */
 export interface NewPurchaseOrderInput {
   supplierId: string;
+  /** The supplier's sales rep the order goes to (spec B2). */
+  contactId: string | null;
+  supplierRef: string;
+  /** How the order reaches the supplier; null for a draft. */
+  placedVia: "email" | "phone" | null;
   expectedAt: string;
   locationId: string;
   lines: PoLine[];
@@ -154,6 +161,27 @@ export interface StockHold {
   quantity: string;
   shortBy: string;
 }
+
+/** What a supplier form sends (spec B1): only the name is required. */
+export interface SupplierInput {
+  id?: string;
+  name: string;
+  type?: Supplier["type"];
+  accountNumber?: string;
+  email?: string;
+  phone?: string;
+  terms?: Supplier["terms"];
+  creditLimit?: string;
+  address?: Supplier["address"];
+  track1099?: boolean;
+  taxForm?: Supplier["taxForm"];
+  notes?: string;
+  /** Where it was added, for the audit entry. */
+  from?: "order";
+}
+
+/** What a contact form sends (spec B1). */
+export type SupplierContactInput = Omit<SupplierContact, "id" | "status"> & { id?: string };
 
 /** A physical count that disagrees with the books (plan A-1). */
 export interface StockCorrectionInput {
@@ -461,8 +489,16 @@ export interface ApiClient {
   undoReschedule(undo: MeetingUndo): Promise<Meeting>;
   /** Creates a purchase order as a draft or ordered at once (spec D1). Needs purchasing.order.create. Audited. */
   createPurchaseOrder(input: NewPurchaseOrderInput): Promise<PurchaseOrder>;
-  /** Sends a draft purchase order to the supplier. Audited. */
-  markOrdered(poId: string): Promise<PurchaseOrder>;
+  /** Sends a draft to the supplier, by email or noted as phoned in (spec B2). Audited. */
+  markOrdered(poId: string, via?: "email" | "phone"): Promise<PurchaseOrder>;
+  /** Adds or edits a supplier (spec B1). Needs purchasing.supplier.create or edit. Audited. */
+  saveSupplier(input: SupplierInput): Promise<Supplier>;
+  /** Deactivates or reactivates a supplier; never deleted. Audited. */
+  setSupplierStatus(id: string, status: Supplier["status"]): Promise<Supplier>;
+  /** Adds or edits a contact, keeping one primary per supplier (spec B1). Audited. */
+  saveSupplierContact(input: SupplierContactInput): Promise<SupplierContact>;
+  /** Deactivates or reactivates a contact; the primary passes on. Audited. */
+  setContactStatus(id: string, status: SupplierContact["status"]): Promise<SupplierContact>;
   /** Cancels a purchase order nothing has arrived for, with a reason. Audited. */
   cancelOrder(poId: string, reason: string): Promise<PurchaseOrder>;
   /**

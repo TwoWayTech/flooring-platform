@@ -155,10 +155,10 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch A: full suite green (283 passed, 7 skipped as switched off, on a production build in six chunks)
 
 #### Batch B: purchasing, suppliers and their sales reps
-- [ ] B1. Suppliers directory (ADR 0022): type, status, account number, 1099 and W-9 flags, terms, credit, balance; contacts with role, phones, email, WhatsApp flag, preferred method, notes, primary; one tap to call, email or copy; add, edit, deactivate (U-10); supplier import updated
-- [ ] B2. Purchase order form: supplier search by name, contact, phone or email with Add new supplier inline; Sales rep picker, primary first, with Add new contact inline; lines in sq ft with carton hint, cost per sq ft and Receive into per line; receipts into several warehouses; rep snapshot; PDF and "PO sent" email to the rep; Mark as ordered by phone; PO ↔ receipt ↔ bill ↔ payment links (U-12); batch 2 statuses and layout fix kept
-- [ ] B3. Finance → Payments to verify (K-7): customer and supplier payments with proof preview, Confirm, Reject, Void; pending state on the bill, no double pay (U-04, U-15); uploader wording, file size and date fixes (U-33 to U-35)
-- [ ] Batch B: full suite green
+- [x] B1. Suppliers directory (ADR 0022): type, status, account number, 1099 and W-9 flags, terms, credit, balance; contacts with role, phones, email, WhatsApp flag, preferred method, notes, primary; one tap to call, email or copy; add, edit, deactivate (U-10); supplier import updated
+- [x] B2. Purchase order form: supplier search by name, contact, phone or email with Add new supplier inline; Sales rep picker, primary first, with Add new contact inline; lines in sq ft with carton hint, cost per sq ft and Receive into per line; receipts into several warehouses; rep snapshot; PDF and "PO sent" email to the rep; Mark as ordered by phone; PO ↔ receipt ↔ bill ↔ payment links (U-12); batch 2 statuses and layout fix kept
+- [x] B3. Finance → Payments to verify (K-7): customer and supplier payments with proof preview, Confirm, Reject, Void; pending state on the bill, no double pay (U-04, U-15); uploader wording, file size and date fixes (U-33 to U-35)
+- [x] Batch B: full suite green (287 passed, 7 skipped as switched off)
 
 #### Batch C: HR, end to end, plus an employee portal
 - [ ] C1a. HR Home: what needs action, birthdays, anniversaries, holidays; submitted timesheets counted (U-17)

@@ -8,8 +8,9 @@ const LONG = "Weathered Pier Sand Dune Wide Plank Rigid Core with Attached Cork 
 async function draftLongLine(page: Page) {
   await page.getByRole("button", { name: "New purchase order" }).click();
   const dialog = page.getByRole("dialog", { name: "New purchase order" });
-  await dialog.getByLabel("Supplier").click();
-  await page.getByRole("option", { name: "Tidewater Vinyl" }).click();
+  await dialog.getByRole("combobox", { name: "Supplier" }).click();
+  await page.getByPlaceholder("Name, contact, phone or email").fill("Tidewater Vinyl");
+  await page.getByRole("option", { name: /^Tidewater Vinyl/ }).click();
   await dialog.getByRole("button", { name: "Add product" }).click();
   await page.getByPlaceholder("Search by name, color or brand").fill("Attached Cork Pad");
   await page.getByRole("option").first().click();

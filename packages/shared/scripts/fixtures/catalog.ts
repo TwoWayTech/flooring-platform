@@ -1,6 +1,7 @@
 import { addDays } from "../../src/dates";
 import { dec } from "../../src/money";
 import type { Product, ProductCategory, Supplier } from "../../src/types";
+import type { GeneratedSupplier } from "./directory";
 import { SQ_FT_PER_SQ_YD, type SellUnit } from "../../src/units";
 import type { GenContext } from "./context";
 import {
@@ -62,7 +63,7 @@ const SERVICES: readonly { name: string; unit: SellUnit; price: string; cost: st
 ];
 
 /** One supplier per catalog brand plus a few for tools and freight. */
-export function buildSuppliers(ctx: GenContext): Supplier[] {
+export function buildSuppliers(ctx: GenContext): GeneratedSupplier[] {
   const brandCategories = new Map<string, GoodsCategory[]>();
   for (const [category, brands] of Object.entries(BRANDS) as [GoodsCategory, readonly string[]][]) {
     for (const brand of brands) brandCategories.set(brand, [...(brandCategories.get(brand) ?? []), category]);

@@ -28,6 +28,7 @@ import {
 import { Field } from "@/components/field";
 import { api } from "@/lib/api";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
+import { useFormatDate } from "@/lib/use-format-date";
 
 const NO_FILE = "Attach the remittance, bank confirmation or check photo to continue.";
 
@@ -47,9 +48,10 @@ export function SupplierPaymentSheet({
   ledgers: ReadonlyMap<string, BillLedger>;
   onClose: () => void;
 }) {
-  const open = bills.filter((b) => b.supplierId === supplier.id && dec(ledgers.get(b.id)?.balance ?? "0").gt(0));
+  const formatDate = useFormatDate();
+  const open = bills.filter((b) => b.supplierId === supplier.id && dec(ledgers.get(b.id)?.unpaid ?? "0").gt(0));
   const [picked, setPicked] = useState<string[]>(open.map((b) => b.id));
-  const chosen = open.filter((b) => picked.includes(b.id)).map((b) => ({ ...b, balance: ledgers.get(b.id)!.balance }));
+  const chosen = open.filter((b) => picked.includes(b.id)).map((b) => ({ ...b, balance: ledgers.get(b.id)!.unpaid }));
   const owed = moneyString(chosen.reduce((s, b) => s.plus(b.balance), dec(0)));
   const [amount, setAmount] = useState(owed);
   const [date, setDate] = useState(api.today());
@@ -102,9 +104,9 @@ export function SupplierPaymentSheet({
                     onCheckedChange={(v) => setPicked((p) => (v === true ? [...p, b.id] : p.filter((x) => x !== b.id)))}
                   />
                   <span className="flex-1">
-                    {b.number}, due {b.dueAt}
+                    {b.number}, due {formatDate(b.dueAt)}
                   </span>
-                  <Num kind="money" value={ledgers.get(b.id)!.balance} />
+                  <Num kind="money" value={ledgers.get(b.id)!.unpaid} />
                 </label>
               ))}
             </fieldset>

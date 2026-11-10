@@ -1,6 +1,7 @@
 import { CATEGORY_LABELS } from "../../catalog-labels";
 import { SUPPLIER_TERMS_LABELS } from "../../operations/purchasing";
-import type { ProductCategory, Supplier, SupplierTerms } from "../../types";
+import { SUPPLIER_TYPE_LABELS } from "../../suppliers";
+import type { ProductCategory, Supplier, SupplierContact, SupplierTerms, SupplierType } from "../../types";
 import { addressFields, findParty, patched, rowAddress, text } from "../lookup";
 import type { KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
 
@@ -20,20 +21,50 @@ function resolveSupplier(row: ParsedRow, ctx: PlanContext): RowOutcome {
       id: ctx.newId("sup"),
       externalId: text(row, "external_id") || undefined,
       name,
-      contactName: text(row, "contact_name"),
+      type: (row.type as SupplierType | null) ?? "goods",
+      status: "active",
+      accountNumber: text(row, "account_number"),
       email: text(row, "email"),
       phone: text(row, "phone"),
       terms: (row.terms as SupplierTerms | null) ?? "net_30",
       creditLimit: text(row, "credit_limit", "0.00"),
       categories: (row.categories as ProductCategory[] | null) ?? [],
       address: place.address ?? NO_ADDRESS,
+      track1099: false,
+      taxForm: null,
+      notes: "",
     };
-    return { action: "create", label: name, writes: [{ collection: "suppliers", record: supplier }] };
+    const contactName = text(row, "contact_name");
+    const contact: SupplierContact | null = contactName
+      ? {
+          id: ctx.newId("con"),
+          supplierId: supplier.id,
+          name: contactName,
+          role: "sales_rep",
+          mobile: "",
+          officePhone: supplier.phone,
+          email: supplier.email,
+          whatsapp: false,
+          preferredMethod: "email",
+          notes: "",
+          isPrimary: true,
+          status: "active",
+        }
+      : null;
+    return {
+      action: "create",
+      label: name,
+      writes: [
+        { collection: "suppliers", record: supplier },
+        ...(contact ? [{ collection: "supplierContacts" as const, record: contact }] : []),
+      ],
+    };
   }
   const next = patched(existing, {
     externalId: text(row, "external_id") || undefined,
     name,
-    contactName: row.contact_name as string | null,
+    type: row.type as SupplierType | null,
+    accountNumber: row.account_number as string | null,
     email: row.email as string | null,
     phone: row.phone as string | null,
     terms: row.terms as SupplierTerms | null,
@@ -63,6 +94,21 @@ export const SUPPLIERS: KindHandler = {
         type: "text",
         aliases: ["id", "supplier id", "vendor id", "vendor number"],
         examples: ["VEN-201", "VEN-202"],
+      },
+      {
+        key: "type",
+        label: "Type",
+        type: "choice",
+        choices: SUPPLIER_TYPE_LABELS,
+        aliases: ["vendor type", "supplier type"],
+        examples: ["Goods", "Services"],
+      },
+      {
+        key: "account_number",
+        label: "Account number",
+        type: "text",
+        aliases: ["account", "account no", "our account"],
+        examples: ["AC-10021", ""],
       },
       {
         key: "name",

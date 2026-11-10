@@ -125,7 +125,7 @@ export function receiptStock(
           originalLengthFt: r.lengthFt,
           remainingLengthFt: r.lengthFt,
           costPerSqFt: roundUnitCost(dec(ordered.unitCost)).toString(),
-          locationId: receipt.locationId,
+          locationId: line.locationId ?? receipt.locationId,
           bin: "Receiving",
           transferId: null,
           isRemnant: false,
@@ -139,7 +139,7 @@ export function receiptStock(
         id: ids.movementId(),
         at: receipt.receivedAt,
         productId: product.id,
-        locationId: receipt.locationId,
+        locationId: line.locationId ?? receipt.locationId,
         quantity: dec(line.received).toString(),
         kind: "receipt",
         source: { kind: "receipt", id: receipt.id, number: receipt.number },
@@ -180,6 +180,10 @@ export function matchIssues(total: string, expected: Dec, formatMoney: (v: strin
 
 /** What a bill owes now, from confirmed supplier payments (spec D3). */
 export interface BillLedger {
+  /** Waiting for verification (audit U-04). */
+  pending: string;
+  /** The balance less what is waiting. */
+  unpaid: string;
   paid: string;
   balance: string;
   state: "open" | "partial" | "paid";
@@ -194,10 +198,18 @@ export function billLedger(bill: Bill, payments: readonly SupplierPayment[], tod
       .filter((p) => p.status === "confirmed")
       .flatMap((p) => p.allocations.filter((a) => a.billId === bill.id).map((a) => a.amount)),
   );
+  const pending = sum(
+    payments
+      .filter((p) => p.status === "pending")
+      .flatMap((p) => p.allocations.filter((a) => a.billId === bill.id).map((a) => a.amount)),
+  );
   const balance = maxDec(dec(bill.total).minus(paid), 0);
   const overdue = balance.gt(0) && daysBetween(bill.dueAt, today) > 0;
   return {
     paid: moneyString(paid),
+    pending: moneyString(pending),
+    /** What can still be paid: the balance less what already waits for a check (audit U-04). */
+    unpaid: moneyString(maxDec(balance.minus(pending), 0)),
     balance: moneyString(balance),
     state: balance.isZero() ? "paid" : paid.gt(0) ? "partial" : "open",
     overdue,

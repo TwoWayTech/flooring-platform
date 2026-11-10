@@ -171,8 +171,14 @@ export function notifyInvoiceSent(ctx: ActionContext, invoice: Invoice) {
 }
 
 /** Tells the people who can approve that a payment waits for them (spec A4). */
-export async function notifyPaymentToVerify(ctx: ActionContext, number: string, amount: string, href: string) {
-  const approvers = await usersWith(ctx, "sales.payment.approve");
+export async function notifyPaymentToVerify(
+  ctx: ActionContext,
+  number: string,
+  amount: string,
+  href: string,
+  permission: Parameters<ActionContext["can"]>[0] = "sales.payment.approve",
+) {
+  const approvers = await usersWith(ctx, permission);
   const title = `Payment of ${money(ctx, amount)} on ${number} needs checking`;
   notify(ctx, {
     key: "payment.to_verify",

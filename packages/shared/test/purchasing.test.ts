@@ -36,6 +36,11 @@ const po: PurchaseOrder = {
   cancelledAt: null,
   lines,
   total: poTotal(lines),
+  contactId: null,
+  contactSnapshot: null,
+  supplierRef: "",
+  buyerId: "u",
+  placedVia: null,
 };
 const supplier = { id: "s", terms: "net_30", creditLimit: "10000.00" } as Supplier;
 const receipt = (id: string, carpetQty: string, lvpQty: string, damaged = "0"): GoodsReceipt => ({

@@ -94,6 +94,7 @@ function plan(scope: ImportScope, request: ImportRequest, batch: { id: string; n
     world: {
       customers: db.list("customers"),
       suppliers: db.list("suppliers"),
+      supplierContacts: db.list("supplierContacts"),
       products: db.list("products"),
       rolls: db.list("rolls"),
       stockMovements: db.list("stockMovements"),

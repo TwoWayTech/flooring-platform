@@ -34,6 +34,8 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   invoiceAdjustments: [],
   refunds: [],
   suppliers: ["purchasing.supplier.create", "purchasing.supplier.edit"],
+  // Contacts change only through their own store calls (spec B1).
+  supplierContacts: [],
   purchaseOrders: [],
   bills: [],
   // Receipts, bills and supplier payments change only through their own store calls (spec D2, D3).

@@ -18,6 +18,8 @@ interface ProofFilesFieldProps {
   message?: string;
   error?: string;
   label?: string;
+  /** What to drop here, e.g. "the supplier's invoice" (audit U-33). */
+  dropHint?: string;
 }
 
 /** A preview for one chosen file: a thumbnail for images the browser can show, an icon otherwise. */
@@ -49,6 +51,7 @@ export function ProofFilesField({
   message,
   error,
   label = "Proof of payment",
+  dropHint = "the receipt, bank confirmation or check photo",
 }: ProofFilesFieldProps) {
   const input = useRef<HTMLInputElement>(null);
   const hintId = useId();
@@ -80,7 +83,7 @@ export function ProofFilesField({
         )}
       >
         <Paperclip aria-hidden="true" className="text-muted-foreground size-5" />
-        <p className="text-muted-foreground">Drop the receipt, bank confirmation or check photo here, or</p>
+        <p className="text-muted-foreground">Drop {dropHint} here, or</p>
         <Button
           id={id}
           type="button"
@@ -118,7 +121,7 @@ export function ProofFilesField({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{file.name}</span>
                 <span className="text-muted-foreground text-xs">
-                  <Num kind="quantity" value={String(Math.max(0.1, file.size / 1024 / 1024))} unit="MB" />
+                  <Num kind="quantity" value={String(file.size / 1024)} unit="KB" />
                 </span>
               </span>
               <Button

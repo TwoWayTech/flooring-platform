@@ -27,6 +27,7 @@ const summit = JSON.parse(
 const world = (): ImportWorld => ({
   customers: summit.customers,
   suppliers: summit.suppliers,
+  supplierContacts: summit.supplierContacts,
   products: summit.products,
   rolls: summit.rolls,
   stockMovements: summit.stockMovements,

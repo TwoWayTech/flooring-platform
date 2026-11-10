@@ -12,6 +12,7 @@ import type {
   Roll,
   StockMovement,
   Supplier,
+  SupplierContact,
   SupplierPayment,
   User,
 } from "../types";
@@ -31,6 +32,7 @@ import type {
 export interface ImportWorld {
   customers: Customer[];
   suppliers: Supplier[];
+  supplierContacts: SupplierContact[];
   products: Product[];
   rolls: Roll[];
   stockMovements: StockMovement[];

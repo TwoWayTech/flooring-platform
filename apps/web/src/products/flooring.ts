@@ -1,4 +1,14 @@
-import { BarChart3, CalendarDays, Hammer, LayoutDashboard, Layers, Receipt, Truck, UsersRound } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  Hammer,
+  Landmark,
+  LayoutDashboard,
+  Layers,
+  Receipt,
+  Truck,
+  UsersRound,
+} from "lucide-react";
 import { SETTINGS_MENU } from "./settings-menu";
 import type { ProductConfig } from "./types";
 
@@ -34,6 +44,13 @@ export const FLOORING: ProductConfig = {
       icon: Truck,
       anyOf: ["purchasing.order.view", "purchasing.bill.view"],
       features: ["purchasing.orders"],
+    },
+    {
+      label: "Finance",
+      href: "/finance",
+      icon: Landmark,
+      anyOf: ["sales.payment.approve", "purchasing.payment.approve", "finance.expense.view"],
+      features: ["finance.payments-queue", "finance.expenses"],
     },
     {
       label: "Installation",

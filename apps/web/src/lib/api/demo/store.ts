@@ -34,6 +34,8 @@ import {
   type NotificationEventKey,
   type NotificationRule,
   type Quote,
+  type Supplier,
+  type SupplierContact,
   type RecordPaymentInput,
   type RefundInput,
   type Role,
@@ -60,6 +62,8 @@ import type {
   AdjustmentDecision,
   AdjustmentInput,
   StockCorrectionInput,
+  SupplierContactInput,
+  SupplierInput,
   MeetingMove,
   MeetingUndo,
   BillInput,
@@ -77,6 +81,7 @@ import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, pe
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
+import { saveSupplier, saveSupplierContact, setContactStatus, setSupplierStatus } from "./supplier-actions";
 import {
   cancelOutbox,
   listOutbox,
@@ -694,6 +699,22 @@ export class DemoStore implements ApiClient {
     return this.act(async (ctx) => markNotificationsRead(ctx, ids));
   }
 
+  async saveSupplier(input: SupplierInput) {
+    return this.act((ctx) => saveSupplier(ctx, input));
+  }
+
+  async setSupplierStatus(id: string, status: Supplier["status"]) {
+    return this.act((ctx) => setSupplierStatus(ctx, id, status));
+  }
+
+  async saveSupplierContact(input: SupplierContactInput) {
+    return this.act((ctx) => saveSupplierContact(ctx, input));
+  }
+
+  async setContactStatus(id: string, status: SupplierContact["status"]) {
+    return this.act((ctx) => setContactStatus(ctx, id, status));
+  }
+
   async whoAmI() {
     return this.viewer!.userId;
   }
@@ -756,8 +777,8 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => createPurchaseOrder(ctx, input));
   }
 
-  async markOrdered(poId: string) {
-    return this.act((ctx) => markOrdered(ctx, poId));
+  async markOrdered(poId: string, via: "email" | "phone" = "email") {
+    return this.act((ctx) => markOrdered(ctx, poId, via));
   }
 
   async cancelOrder(poId: string, reason: string) {

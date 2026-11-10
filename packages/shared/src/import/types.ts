@@ -73,7 +73,15 @@ export interface PlannedRow {
 
 /** Collections an import writes. */
 export type ImportCollection =
-  "customers" | "suppliers" | "products" | "rolls" | "stockMovements" | "invoices" | "bills" | "employees";
+  | "customers"
+  | "suppliers"
+  | "supplierContacts"
+  | "products"
+  | "rolls"
+  | "stockMovements"
+  | "invoices"
+  | "bills"
+  | "employees";
 
 /** One record an import creates or changes, with the version before it (null when created). */
 export interface ImportChange {

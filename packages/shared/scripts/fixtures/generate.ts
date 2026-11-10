@@ -1,7 +1,7 @@
 import { last12Months } from "../../src/dates";
 import { dec, moneyString, sum } from "../../src/money";
 import { monthlyPnl } from "../../src/analytics";
-import type { CompanyFixtures, PlatformFixtures } from "../../src/types";
+import type { CompanyFixtures, PlatformFixtures, Supplier } from "../../src/types";
 import { buildAudit } from "./audit";
 import { buildProducts, buildSuppliers } from "./catalog";
 import { ANCHOR_DATE, COMPANY_SEEDS, type CompanySeed } from "./companies";
@@ -18,6 +18,7 @@ import { buildRolls } from "./rolls";
 import { buildStock } from "./stock";
 import { buildSales } from "./sales";
 import { buildCompany, buildRoles, buildSettings, buildUsers, withBuyer } from "./tenant";
+import { withDirectory } from "./directory";
 
 /** Everything `pnpm fixtures` writes: the platform file and one file per company. */
 export interface GeneratedFixtures {
@@ -39,7 +40,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
   const roles = buildRoles(seed);
   const employees = buildEmployees(ctx);
   const users = buildUsers(ctx, employees);
-  const suppliers = trades ? buildSuppliers(ctx) : [];
+  const suppliers = (trades ? buildSuppliers(ctx) : []) as unknown as Supplier[];
   const generated = trades ? buildProducts(ctx, suppliers) : [];
   const builtRolls = trades ? buildRolls(ctx, generated, users) : [];
   const locations = buildLocations(seed.id);
@@ -69,6 +70,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     customers,
     ...sales,
     suppliers,
+    supplierContacts: [],
     ...purchasing,
     expenses: buildExpenses(ctx, trades ? averageMonthlyGross(sales, ANCHOR_DATE) : dec(0).toFixed(2)),
     crews,
@@ -85,7 +87,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withBuyer(ctx, fixtures);
+  return withDirectory(ctx, withBuyer(ctx, fixtures));
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */

@@ -24,7 +24,7 @@ import type {
   SupplierPaymentInput,
 } from "../contract";
 import { DemoRuleError } from "./admin-rules";
-import { notify } from "./notification-actions";
+import { notify, notifyPaymentToVerify } from "./notification-actions";
 import { describeFiles, storeFiles, type ActionContext } from "./payment-actions";
 
 const dollars = (amount: string) => `$${moneyString(amount)}`;
@@ -57,6 +57,11 @@ export async function createPurchaseOrder(ctx: ActionContext, input: NewPurchase
     cancelledAt: null,
     lines: input.lines,
     total: poTotal(input.lines),
+    contactId: input.contactId,
+    contactSnapshot: input.asDraft ? null : contactSnapshot(ctx, input.contactId),
+    supplierRef: input.supplierRef.trim(),
+    buyerId: ctx.actor.id,
+    placedVia: input.asDraft ? null : input.placedVia,
   };
   ctx.db.put("purchaseOrders", po);
   ctx.audit({
@@ -66,28 +71,50 @@ export async function createPurchaseOrder(ctx: ActionContext, input: NewPurchase
     before: null,
     after: `total ${po.total}`,
   });
-  if (po.status === "ordered") notifyPoSent(ctx, po);
+  if (po.status === "ordered" && po.placedVia !== "phone") notifyPoSent(ctx, po);
   return po;
 }
 
-/** Supplier PO sent: goes to the supplier's address until a sales rep is chosen on the order (spec A4, B2). */
+/** The rep as they are now, kept on the order so history survives them leaving (ADR 0022). */
+function contactSnapshot(ctx: ActionContext, contactId: string | null) {
+  const contact = contactId ? ctx.db.get("supplierContacts", contactId) : undefined;
+  return contact ? { name: contact.name, email: contact.email, phone: contact.mobile || contact.officePhone } : null;
+}
+
+/** Supplier PO sent (spec A4, B2): goes to the chosen rep, or the supplier's address if the rep has no email. */
 function notifyPoSent(ctx: ActionContext, po: PurchaseOrder) {
   const supplier = ctx.db.get("suppliers", po.supplierId);
+  const contact = po.contactId ? ctx.db.get("supplierContacts", po.contactId) : undefined;
+  const href = `/purchasing?view=orders&po=${po.id}`;
+  const recipient = contact?.email
+    ? { kind: "supplier_contact" as const, id: contact.id, name: contact.name, email: contact.email }
+    : {
+        kind: "supplier" as const,
+        id: po.supplierId,
+        name: supplier?.name ?? "Supplier",
+        email: supplier?.email ?? "",
+      };
   notify(ctx, {
     key: "po.sent",
-    source: { type: "purchaseOrder", id: po.id, href: "/purchasing?view=orders" },
-    values: { "contact.name": supplier?.name ?? "", "po.number": po.number, "po.expected": po.expectedAt },
-    to: [{ kind: "supplier", id: po.supplierId, name: supplier?.name ?? "Supplier", email: supplier?.email ?? "" }],
-    attachments: [{ kind: "pdf", fileName: `${po.number}.pdf`, href: "/purchasing?view=orders" }],
+    source: { type: "purchaseOrder", id: po.id, href },
+    values: { "contact.name": recipient.name, "po.number": po.number, "po.expected": po.expectedAt },
+    to: [recipient],
+    attachments: [{ kind: "pdf", fileName: `${po.number}.pdf`, href }],
   });
 }
 
 /** Sends a draft to the supplier (Draft → Ordered). Audited. */
-export async function markOrdered(ctx: ActionContext, poId: string) {
+export async function markOrdered(ctx: ActionContext, poId: string, via: "email" | "phone" = "email") {
   await ctx.assertCan(["purchasing.order.create"]);
   const po = orderOf(ctx, poId);
   if (po.status !== "draft") throw new DemoRuleError(`${po.number} is not a draft.`);
-  const ordered: PurchaseOrder = { ...po, status: "ordered", orderedAt: ctx.today };
+  const ordered: PurchaseOrder = {
+    ...po,
+    status: "ordered",
+    orderedAt: ctx.today,
+    placedVia: via,
+    contactSnapshot: contactSnapshot(ctx, po.contactId),
+  };
   ctx.db.put("purchaseOrders", ordered);
   ctx.audit({
     category: "data",
@@ -96,7 +123,7 @@ export async function markOrdered(ctx: ActionContext, poId: string) {
     before: "draft",
     after: "ordered",
   });
-  notifyPoSent(ctx, ordered);
+  if (via === "email") notifyPoSent(ctx, ordered);
   return ordered;
 }
 
@@ -220,7 +247,7 @@ export async function recordSupplierPayment(ctx: ActionContext, input: SupplierP
   const open = ctx.db
     .list("bills")
     .filter((b) => b.supplierId === input.supplierId)
-    .map((b) => ({ ...b, balance: billLedger(b, payments, ctx.today).balance }))
+    .map((b) => ({ ...b, balance: billLedger(b, payments, ctx.today).unpaid }))
     .filter((b) => dec(b.balance).gt(0))
     .filter((b) => !input.billIds?.length || input.billIds.includes(b.id));
   const owed = open.reduce((s, b) => s.plus(b.balance), dec(0));
@@ -255,6 +282,15 @@ export async function recordSupplierPayment(ctx: ActionContext, input: SupplierP
     voidReason: null,
   };
   ctx.db.put("supplierPayments", payment);
+  if (payment.status === "pending") {
+    await notifyPaymentToVerify(
+      ctx,
+      payment.number,
+      payment.amount,
+      "/finance?view=payments",
+      "purchasing.payment.approve",
+    );
+  }
   const supplier = ctx.db.get("suppliers", input.supplierId);
   ctx.audit({
     action: "Paid supplier",

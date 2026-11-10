@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, PackageCheck, ReceiptText, Send } from "lucide-react";
+import { Ban, PackageCheck, ReceiptText, Send, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   dec,
@@ -17,6 +17,7 @@ import {
   type Product,
   type PurchaseOrder,
   type Supplier,
+  type SupplierContact,
   type SupplierPayment,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
@@ -24,7 +25,8 @@ import { Num } from "@workspace/ui/components/num";
 import { CartonHint } from "@/components/quantity/carton-hint";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { ReasonDialog } from "@/components/reason-dialog";
-import { useCan } from "@/components/workspace/workspace-context";
+import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { saveBlob } from "@/lib/save-blob";
 import { api } from "@/lib/api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { BillDialog } from "./bill-dialog";
@@ -38,6 +40,8 @@ import { ReceiptDialog } from "./receipt-dialog";
 export function OrderDrawer({
   po,
   supplier,
+  contacts,
+  onOpenBill,
   receipts,
   bills,
   payments,
@@ -47,6 +51,8 @@ export function OrderDrawer({
 }: {
   po: PurchaseOrder | null;
   supplier: Supplier | undefined;
+  contacts: SupplierContact[];
+  onOpenBill: (bill: Bill) => void;
   receipts: GoodsReceipt[];
   bills: Bill[];
   payments: SupplierPayment[];
@@ -55,6 +61,7 @@ export function OrderDrawer({
   onClose: () => void;
 }) {
   const can = useCan();
+  const { settings } = useWorkspace();
   const formatDate = useFormatDate();
   const [dialog, setDialog] = useState<"receive" | "bill" | "cancel" | null>(null);
   const showCost = can(SENSITIVE.productCost);
@@ -65,6 +72,16 @@ export function OrderDrawer({
   const own = receipts.filter((r) => r.poId === po.id);
   const toBill = unbilledReceipts(po, receipts, bills);
   const open = po.lines.some((l) => (got.get(l.id) ?? dec(0)).lt(l.quantity));
+  const orderBills = bills.filter((b) => b.poId === po.id);
+  const contact = contacts.find((c) => c.id === po.contactId);
+  const rep = po.contactSnapshot?.name ?? contact?.name ?? "";
+  const canEmail = !!(po.contactSnapshot?.email || contact?.email || supplier?.email);
+  /** Renders the purchase order PDF in the browser; @react-pdf/renderer loads only when asked. */
+  async function downloadPdf() {
+    const [{ pdf }, { PoPdf, buildPoModel }] = await Promise.all([import("@react-pdf/renderer"), import("./po-pdf")]);
+    const model = buildPoModel(po!, supplier, rep, locations, settings);
+    saveBlob(await pdf(<PoPdf model={model} />).toBlob(), `${model.number}.pdf`);
+  }
   const run = (work: Promise<unknown>, done: string) =>
     work
       .then(() => toast.success(done))
@@ -79,14 +96,20 @@ export function OrderDrawer({
             <PoStatusPill state={state} />
           </SheetTitle>
           <SheetDescription>
-            {supplier?.name}, receive into {locationName(locations, po.locationId)}, expected{" "}
+            {supplier?.name}
+            {rep ? `, attention ${rep}` : ""}, receive into {locationName(locations, po.locationId)}, expected{" "}
             {formatDate(po.expectedAt)}
+            {po.supplierRef ? `, their order ${po.supplierRef}` : ""}
+            {po.placedVia === "phone" ? ", placed by phone" : ""}
           </SheetDescription>
           <div className="flex flex-wrap gap-2">
             {po.status === "draft" && can("purchasing.order.create") ? (
-              <Button size="sm" onClick={() => void run(api.markOrdered(po.id), `${po.number} ordered`)}>
+              <Button
+                size="sm"
+                onClick={() => void run(api.markOrdered(po.id, canEmail ? "email" : "phone"), `${po.number} ordered`)}
+              >
                 <Send />
-                Place order
+                {canEmail ? "Place order" : "Mark as ordered by phone"}
               </Button>
             ) : null}
             {po.status === "ordered" && open && can("purchasing.order.receive") ? (
@@ -101,6 +124,10 @@ export function OrderDrawer({
                 Enter bill
               </Button>
             ) : null}
+            <Button size="sm" variant="outline" onClick={() => void downloadPdf()}>
+              <FileDown />
+              Download PDF
+            </Button>
             {po.status !== "cancelled" && own.length === 0 && can("purchasing.order.create") ? (
               <Button size="sm" variant="ghost" onClick={() => setDialog("cancel")}>
                 <Ban />
@@ -159,6 +186,25 @@ export function OrderDrawer({
             </p>
           ) : null}
         </div>
+        {orderBills.length > 0 ? (
+          <section className="px-4 text-sm" aria-label="Bills">
+            <h3 className="mb-1 font-semibold">Bills</h3>
+            <ul className="flex flex-col gap-1">
+              {orderBills.map((b) => (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    className="text-brand-ink underline-offset-4 hover:underline"
+                    onClick={() => onOpenBill(b)}
+                  >
+                    {b.number}
+                  </button>{" "}
+                  <Num kind="money" value={b.total} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {own.length > 0 ? (
           <section className="px-4 pb-6 text-sm">
             <h3 className="mb-1 font-semibold">Receipts</h3>

@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   addDays,
+  contactsOf,
   dec,
   defaultWarehouse,
   formatNumber,
@@ -16,6 +17,7 @@ import {
   type PoLine,
   type Product,
   type Supplier,
+  type SupplierContact,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
@@ -26,9 +28,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog";
+import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@workspace/ui/components/tooltip";
 import { Field } from "@/components/field";
 import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
@@ -37,6 +39,8 @@ import { ProductPicker } from "@/features/quotes/product-picker";
 import { api } from "@/lib/api";
 import { WarehouseSelect } from "@/components/warehouse-select";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { ContactPicker } from "./contact-picker";
+import { SupplierPicker } from "./supplier-picker";
 
 /** Days a supplier usually takes to deliver, for the expected date. */
 const LEAD_DAYS = 10;
@@ -45,6 +49,7 @@ interface NewOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   suppliers: Supplier[];
+  contacts: SupplierContact[];
   products: Product[];
   locations: Location[];
 }
@@ -56,23 +61,34 @@ interface DraftLine {
 }
 
 /**
- * New purchase order (spec D1): one supplier, one warehouse, lines from that supplier's catalog.
- * Area goods are ordered in sq ft with their cartons or roll length shown next to it (spec A1);
- * typing cartons converts, and partial cartons round up. Long names wrap to two lines then truncate with a tooltip; the lines scroll inside
- * their own box with a sticky header and totals, so the page never overflows. Save as draft or
- * place the order.
+ * New purchase order (spec B2): find or add the supplier and its sales rep, then lines in sq ft
+ * with cartons beside them, a cost per sq ft and a warehouse per line. Anything added here is
+ * saved to the directory at once. Long names wrap to two lines then truncate with a tooltip, and
+ * the lines scroll inside their own box. An order with no email on file is marked as phoned in.
  */
-export function NewOrderDialog({ open, onOpenChange, suppliers, products, locations }: NewOrderDialogProps) {
+export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, products, locations }: NewOrderDialogProps) {
   const { user } = useWorkspace();
   const numbers = useNumberSettings();
   const [locationId, setLocationId] = useState(defaultWarehouse(locations, user)?.id ?? "");
-  const stocked = suppliers.filter((s) => products.some((p) => p.supplierId === s.id && p.category !== "service"));
-  const [supplierId, setSupplierId] = useState(stocked[0]?.id ?? "");
+  const [supplierId, setSupplierId] = useState("");
+  const [contactId, setContactId] = useState("");
+  const [supplierRef, setSupplierRef] = useState("");
   const [drafts, setDrafts] = useState<DraftLine[]>([]);
   const [pending, setPending] = useState(false);
-  const offered = products.filter((p) => p.supplierId === supplierId && p.category !== "service");
+  const supplier = suppliers.find((s) => s.id === supplierId);
+  const contact = contacts.find((c) => c.id === contactId);
+  const goods = products.filter((p) => p.category !== "service");
+  const own = goods.filter((p) => p.supplierId === supplierId);
+  const offered = own.length ? own : goods;
   const lines = drafts.map((d) => d.line);
   const fmt = (v: string) => formatNumber(v, "quantity", numbers);
+  const hasEmail = !!(contact?.email || supplier?.email);
+
+  function chooseSupplier(next: Supplier) {
+    setSupplierId(next.id);
+    setContactId(contactsOf(next.id, contacts)[0]?.id ?? "");
+    setDrafts([]);
+  }
 
   function add(p: Product) {
     setDrafts((ds) => [
@@ -92,8 +108,8 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
     ]);
   }
 
-  const update = (i: number, patch: Partial<DraftLine> | ((d: DraftLine) => DraftLine)) =>
-    setDrafts((ds) => ds.map((d, j) => (j === i ? (typeof patch === "function" ? patch(d) : { ...d, ...patch }) : d)));
+  const update = (i: number, patch: Partial<PoLine>) =>
+    setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, line: { ...d.line, ...patch } } : d)));
 
   /** The roll length a broadloom area needs, in words. */
   function rollLength(d: DraftLine): string {
@@ -108,13 +124,19 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
     try {
       const po = await api.createPurchaseOrder({
         supplierId,
+        contactId: contactId || null,
+        supplierRef,
         expectedAt: addDays(api.today(), LEAD_DAYS),
         locationId,
         lines,
         asDraft,
+        placedVia: asDraft ? null : hasEmail ? "email" : "phone",
       });
       toast.success(asDraft ? `Draft ${po.number} saved` : `Purchase order ${po.number} created`);
       setDrafts([]);
+      setSupplierId("");
+      setContactId("");
+      setSupplierRef("");
       onOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The purchase order was not created.");
@@ -125,33 +147,31 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface flex max-h-[90dvh] flex-col sm:max-w-3xl">
+      <DialogContent className="bg-surface flex max-h-[90dvh] flex-col sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>New purchase order</DialogTitle>
           <DialogDescription>
-            Order from one supplier into one warehouse. Area goods are ordered in sq ft; type 22c for 22 cartons.
+            Find or add the supplier and sales rep. Area goods are ordered in sq ft; type 22c for 22 cartons.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id="po-supplier" label="Supplier">
-            <Select
+            <SupplierPicker
+              id="po-supplier"
+              suppliers={suppliers}
+              contacts={contacts}
               value={supplierId}
-              onValueChange={(v) => {
-                setSupplierId(v);
-                setDrafts([]);
-              }}
-            >
-              <SelectTrigger id="po-supplier" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {stocked.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onSelect={chooseSupplier}
+            />
+          </Field>
+          <Field id="po-contact" label="Sales rep">
+            <ContactPicker
+              id="po-contact"
+              supplier={supplier}
+              contacts={contacts}
+              value={contactId}
+              onChange={setContactId}
+            />
           </Field>
           <Field id="po-location" label="Receive into">
             <WarehouseSelect
@@ -163,6 +183,9 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
               onChange={setLocationId}
             />
           </Field>
+          <Field id="po-ref" label="Supplier's order number (optional)">
+            <Input id="po-ref" value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} />
+          </Field>
         </div>
         <div
           role="region"
@@ -170,7 +193,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
           tabIndex={0}
           className="border-hairline min-h-0 flex-1 overflow-auto rounded-md border"
         >
-          <table className="w-full min-w-[40rem] text-sm">
+          <table className="w-full min-w-[46rem] text-sm">
             <thead className="bg-raised text-muted-foreground sticky top-0 z-10 text-xs">
               <tr>
                 <th scope="col" className="h-9 px-3 text-left font-medium">
@@ -181,6 +204,9 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
                 </th>
                 <th scope="col" className="px-3 text-right font-medium">
                   Cost
+                </th>
+                <th scope="col" className="px-3 text-left font-medium">
+                  Receive into
                 </th>
                 <th scope="col" className="px-3 text-right font-medium">
                   Amount
@@ -193,13 +219,13 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
             <tbody>
               {drafts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-muted-foreground h-16 px-3 text-center">
-                    Add products from this supplier.
+                  <td colSpan={6} className="text-muted-foreground h-16 px-3 text-center">
+                    {supplier ? "Add products below." : "Choose a supplier, then add products."}
                   </td>
                 </tr>
               ) : null}
               {drafts.map((d, i) => {
-                const line = lines[i]!;
+                const line = d.line;
                 return (
                   <tr key={line.id} className="border-hairline border-t align-top">
                     <td className="max-w-64 px-3 py-2">
@@ -226,17 +252,38 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
                           aria-label={`${line.description} ${line.unit === "sq_ft" ? "area in sq ft" : "quantity"}`}
                           value={line.quantity}
                           sqFtPerCarton={line.sqFtPerCarton}
-                          onChange={(quantity) => update(i, (x) => ({ ...x, line: { ...x.line, quantity } }))}
+                          onChange={(quantity) => update(i, { quantity })}
                           className="h-8 w-24 text-right tabular-nums"
                         />
                         <span className="text-muted-foreground w-12 text-left text-xs">{UNIT_LABELS[line.unit]}</span>
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <Num kind="unitCost" value={line.unitCost} /> per {UNIT_SINGULAR[line.unit]}
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        <Input
+                          aria-label={`${line.description} cost per ${UNIT_SINGULAR[line.unit]}`}
+                          inputMode="decimal"
+                          value={line.unitCost}
+                          onChange={(e) => update(i, { unitCost: e.target.value.replace(/[^\d.]/g, "") })}
+                          className="h-8 w-20 text-right tabular-nums"
+                        />
+                        <span className="text-muted-foreground text-xs">per {UNIT_SINGULAR[line.unit]}</span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <WarehouseSelect
+                        label={`Receive ${line.description} into`}
+                        className="h-8 w-44"
+                        locations={locations}
+                        value={line.locationId ?? locationId}
+                        onChange={(id) => update(i, { locationId: id === locationId ? undefined : id })}
+                      />
                     </td>
                     <td className="px-3 py-2 text-right font-medium">
-                      <Num kind="money" value={roundMoney(dec(line.quantity || "0").times(line.unitCost)).toString()} />
+                      <Num
+                        kind="money"
+                        value={roundMoney(dec(line.quantity || "0").times(line.unitCost || "0")).toString()}
+                      />
                     </td>
                     <td className="py-1.5 text-right">
                       <Button
@@ -256,7 +303,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
             {drafts.length > 0 ? (
               <tfoot className="bg-raised sticky bottom-0 z-10">
                 <tr className="border-hairline border-t font-semibold">
-                  <td colSpan={3} className="h-10 px-3">
+                  <td colSpan={4} className="h-10 px-3">
                     Total
                   </td>
                   <td className="px-3 text-right">
@@ -268,7 +315,16 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
             ) : null}
           </table>
         </div>
-        <ProductPicker label="Add product" products={offered} onPick={add} />
+        {supplier ? (
+          <>
+            <ProductPicker label="Add product" products={offered} onPick={add} />
+            {own.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                {supplier.name} has no catalog of its own yet, so every product is offered.
+              </p>
+            ) : null}
+          </>
+        ) : null}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
@@ -282,7 +338,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
             Save as draft
           </Button>
           <Button type="button" disabled={pending || drafts.length === 0} onClick={() => void submit(false)}>
-            Create purchase order
+            {hasEmail ? "Create purchase order" : "Mark as ordered by phone"}
           </Button>
         </DialogFooter>
       </DialogContent>

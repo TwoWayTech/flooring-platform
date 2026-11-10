@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Banknote, CircleCheck, CircleDot, Clock, FilePlus2, TriangleAlert } from "lucide-react";
+import { Banknote, CircleCheck, CircleDot, Clock, FilePlus2, TriangleAlert, UserPlus } from "lucide-react";
 import {
   billLedgerIndex,
+  callNumber,
+  contactsOf,
   dec,
   locationName,
   payablesSummary,
@@ -13,12 +15,15 @@ import {
   SENSITIVE,
   sum,
   supplierBalance,
+  supplierProfileGaps,
   SUPPLIER_TERMS_LABELS,
+  SUPPLIER_TYPE_LABELS,
   type Bill,
   type BillLedger,
   type PurchaseOrder,
   type Supplier,
 } from "@workspace/shared";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
@@ -35,7 +40,10 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { NewOrderDialog } from "./new-order-dialog";
 import { OrderDrawer } from "./order-drawer";
+import { BillDrawer } from "./bill-drawer";
 import { PoStatusPill } from "./po-status";
+import { SupplierDrawer } from "./supplier-drawer";
+import { SupplierFormDialog } from "./supplier-form-dialog";
 import { SupplierPaymentSheet } from "./supplier-payment-sheet";
 
 type View = "suppliers" | "orders" | "bills";
@@ -43,6 +51,7 @@ type View = "suppliers" | "orders" | "bills";
 /** A bill's state today from its ledger: paid, overdue past its due date, partly paid or open. */
 function billPill(ledger: BillLedger) {
   if (ledger.state === "paid") return { tone: "success", icon: CircleCheck, label: "Paid" } as const;
+  if (dec(ledger.pending).gt(0)) return { tone: "warning", icon: Clock, label: "Pending verification" } as const;
   if (ledger.overdue) return { tone: "danger", icon: TriangleAlert, label: "Overdue" } as const;
   if (ledger.state === "partial") return { tone: "warning", icon: Clock, label: "Partly paid" } as const;
   return { tone: "brand", icon: CircleDot, label: "Open" } as const;
@@ -58,20 +67,25 @@ export function PurchasingPage() {
   const router = useRouter();
   const params = useSearchParams();
   const formatDate = useFormatDate();
-  const [openPo, setOpenPo] = useState<PurchaseOrder | null>(null);
+  const [openPoId, setOpenPoId] = useState<string | null>(params.get("po"));
+  const [openSupplier, setOpenSupplier] = useState<Supplier | null>(null);
+  const [openBill, setOpenBill] = useState<Bill | null>(null);
+  const [addingSupplier, setAddingSupplier] = useState(false);
   const [creating, setCreating] = useState(false);
   const [paying, setPaying] = useState<Supplier | null>(null);
   const data = useApiQuery(async (client) => {
-    const [suppliers, purchaseOrders, bills, products, locations, receipts, supplierPayments] = await Promise.all([
-      client.list("suppliers"),
-      client.list("purchaseOrders"),
-      client.list("bills"),
-      client.list("products"),
-      client.list("locations"),
-      client.list("receipts"),
-      client.list("supplierPayments"),
-    ]);
-    return { suppliers, purchaseOrders, bills, products, locations, receipts, supplierPayments };
+    const [suppliers, contacts, purchaseOrders, bills, products, locations, receipts, supplierPayments] =
+      await Promise.all([
+        client.list("suppliers"),
+        client.list("supplierContacts"),
+        client.list("purchaseOrders"),
+        client.list("bills"),
+        client.list("products"),
+        client.list("locations"),
+        client.list("receipts"),
+        client.list("supplierPayments"),
+      ]);
+    return { suppliers, contacts, purchaseOrders, bills, products, locations, receipts, supplierPayments };
   }, []);
   if (!can("purchasing.order.view") && !can("purchasing.bill.view")) return <NoAccess />;
   const money = can(SENSITIVE.productCost) || can("purchasing.bill.view");
@@ -90,15 +104,29 @@ export function PurchasingPage() {
     return dec(p.total).minus(paid).toString();
   };
   const balance = (s: Supplier) => supplierBalance(s, d!.bills, ledgers);
+  const contactLine = (s: Supplier) => {
+    const primary = contactsOf(s.id, d!.contacts)[0];
+    return primary ? `${primary.name}, ${callNumber(primary) || primary.email}` : "No contacts yet";
+  };
 
   const supplierColumns: ColumnSpec<Supplier>[] = [
     {
       id: "name",
       header: "Supplier",
       value: (s) => s.name,
-      cell: (s) => <span className="font-medium">{s.name}</span>,
+      cell: (s) => (
+        <span className="flex flex-col">
+          <span className="flex items-center gap-2">
+            <span className="font-medium">{s.name}</span>
+            {s.status === "inactive" ? <Badge variant="outline">Inactive</Badge> : null}
+            {supplierProfileGaps(s, d!.contacts).length ? <Badge variant="outline">Profile incomplete</Badge> : null}
+          </span>
+          <span className="text-muted-foreground text-xs">{contactLine(s)}</span>
+        </span>
+      ),
     },
-    { id: "contact", header: "Contact", value: (s) => `${s.contactName}, ${s.phone}`, hidden: true },
+    { id: "type", header: "Type", filter: "select", value: (s) => SUPPLIER_TYPE_LABELS[s.type] },
+    { id: "account", header: "Our account", value: (s) => s.accountNumber, hidden: true },
     { id: "terms", header: "Terms", value: (s) => SUPPLIER_TERMS_LABELS[s.terms] },
     ...(money
       ? [
@@ -217,8 +245,15 @@ export function PurchasingPage() {
             visualOnly: true,
             value: () => null,
             cell: (b: Bill) =>
-              dec(ledgers.get(b.id)!.balance).gt(0) ? (
-                <Button size="sm" variant="outline" onClick={() => setPaying(supplierOf(b.supplierId) ?? null)}>
+              dec(ledgers.get(b.id)!.unpaid).gt(0) ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPaying(supplierOf(b.supplierId) ?? null);
+                  }}
+                >
                   <Banknote />
                   Pay
                 </Button>
@@ -233,12 +268,20 @@ export function PurchasingPage() {
       <PageHeader
         title="Purchasing"
         actions={
-          can("purchasing.order.create") ? (
-            <Button onClick={() => setCreating(true)}>
-              <FilePlus2 />
-              New purchase order
-            </Button>
-          ) : null
+          <span className="flex flex-wrap gap-2">
+            {can("purchasing.supplier.create") ? (
+              <Button variant="outline" onClick={() => setAddingSupplier(true)}>
+                <UserPlus />
+                Add supplier
+              </Button>
+            ) : null}
+            {can("purchasing.order.create") ? (
+              <Button onClick={() => setCreating(true)}>
+                <FilePlus2 />
+                New purchase order
+              </Button>
+            ) : null}
+          </span>
         }
       />
       <Tabs value={view} className="gap-6" onValueChange={(v) => router.replace(`/purchasing?view=${v}`)}>
@@ -256,9 +299,11 @@ export function PurchasingPage() {
               rows={d.suppliers}
               columns={supplierColumns}
               getRowId={(s) => s.id}
+              onRowClick={setOpenSupplier}
+              rowLabel={(s) => `Open ${s.name}`}
               searchPlaceholder="Search suppliers"
               csvName="suppliers"
-              empty={{ message: "No suppliers yet." }}
+              empty={{ message: "No suppliers yet. Add the first one." }}
             />
           ) : view === "bills" ? (
             <>
@@ -268,6 +313,8 @@ export function PurchasingPage() {
                 rows={d.bills}
                 columns={billColumns}
                 getRowId={(b) => b.id}
+                onRowClick={setOpenBill}
+                rowLabel={(b) => `Open bill ${b.number}`}
                 searchPlaceholder="Search bills"
                 csvName="bills"
                 initialSort={{ id: "due", desc: true }}
@@ -280,7 +327,7 @@ export function PurchasingPage() {
               rows={d.purchaseOrders}
               columns={orderColumns}
               getRowId={(p) => p.id}
-              onRowClick={setOpenPo}
+              onRowClick={(p) => setOpenPoId(p.id)}
               rowLabel={(p) => `Open ${p.number}`}
               searchPlaceholder="Search purchase orders"
               csvName="purchase-orders"
@@ -290,16 +337,18 @@ export function PurchasingPage() {
           )}
         </TabsContent>
       </Tabs>
-      {d && openPo ? (
+      {d && openPoId ? (
         <OrderDrawer
-          po={d.purchaseOrders.find((p) => p.id === openPo.id) ?? null}
-          supplier={supplierOf(openPo.supplierId)}
+          po={d.purchaseOrders.find((p) => p.id === openPoId) ?? null}
+          supplier={supplierOf(d.purchaseOrders.find((p) => p.id === openPoId)?.supplierId ?? "")}
+          contacts={d.contacts}
+          onOpenBill={setOpenBill}
           receipts={d.receipts}
           bills={d.bills}
           payments={d.supplierPayments}
           products={d.products}
           locations={d.locations}
-          onClose={() => setOpenPo(null)}
+          onClose={() => setOpenPoId(null)}
         />
       ) : null}
       {d ? (
@@ -307,12 +356,36 @@ export function PurchasingPage() {
           open={creating}
           onOpenChange={setCreating}
           suppliers={d.suppliers}
+          contacts={d.contacts}
           products={d.products}
           locations={d.locations}
         />
       ) : null}
       {d && paying ? (
         <SupplierPaymentSheet supplier={paying} bills={d.bills} ledgers={ledgers} onClose={() => setPaying(null)} />
+      ) : null}
+      {d && openSupplier ? (
+        <SupplierDrawer
+          supplier={d.suppliers.find((s) => s.id === openSupplier.id) ?? openSupplier}
+          suppliers={d.suppliers}
+          contacts={d.contacts}
+          balance={balance(d.suppliers.find((s) => s.id === openSupplier.id) ?? openSupplier)}
+          onClose={() => setOpenSupplier(null)}
+        />
+      ) : null}
+      {d && openBill ? (
+        <BillDrawer
+          bill={d.bills.find((b) => b.id === openBill.id) ?? openBill}
+          ledger={ledgers.get(openBill.id)!}
+          supplier={supplierOf(openBill.supplierId)}
+          order={d.purchaseOrders.find((p) => p.id === openBill.poId)}
+          receipts={d.receipts}
+          payments={d.supplierPayments}
+          onClose={() => setOpenBill(null)}
+        />
+      ) : null}
+      {d && addingSupplier ? (
+        <SupplierFormDialog supplier={null} suppliers={d.suppliers} onClose={() => setAddingSupplier(false)} />
       ) : null}
       {money && d ? (
         <p className="text-muted-foreground text-xs">

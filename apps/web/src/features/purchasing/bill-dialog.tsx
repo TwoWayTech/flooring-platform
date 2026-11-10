@@ -96,7 +96,13 @@ export function BillDialog({
               The total differs from the goods received; the bill will be flagged for a check.
             </p>
           ) : null}
-          <ProofFilesField id="bill-files" label="Supplier's invoice" files={files} onChange={setFiles} />
+          <ProofFilesField
+            dropHint="the supplier's invoice"
+            id="bill-files"
+            label="Supplier's invoice"
+            files={files}
+            onChange={setFiles}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

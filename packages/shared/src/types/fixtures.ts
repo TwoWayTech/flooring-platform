@@ -4,7 +4,15 @@ import type { Company, CompanyId, Role, User } from "./company";
 import type { Commission, Employee, PtoRequest, Timesheet } from "./hr";
 import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
-import type { Bill, Expense, GoodsReceipt, PurchaseOrder, Supplier, SupplierPayment } from "./purchasing";
+import type {
+  Bill,
+  Expense,
+  GoodsReceipt,
+  PurchaseOrder,
+  Supplier,
+  SupplierPayment,
+  SupplierContact,
+} from "./purchasing";
 import type { Location, StockMovement, Transfer } from "./locations";
 import type { Reservation, StockAdjustment } from "./stock";
 import type { Customer, Invoice, InvoiceAdjustment, Payment, Quote, Refund } from "./sales";
@@ -33,6 +41,7 @@ export interface CompanyFixtures {
   invoiceAdjustments: InvoiceAdjustment[];
   refunds: Refund[];
   suppliers: Supplier[];
+  supplierContacts: SupplierContact[];
   purchaseOrders: PurchaseOrder[];
   receipts: GoodsReceipt[];
   bills: Bill[];

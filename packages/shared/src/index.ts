@@ -32,6 +32,7 @@ export * from "./operations/meetings";
 export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
+export * from "./suppliers";
 export * from "./notifications/events";
 export * from "./notifications/render";
 export * from "./migrations";

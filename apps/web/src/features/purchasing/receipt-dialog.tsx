@@ -62,6 +62,7 @@ export function ReceiptDialog({
       received: left.toString(),
       damaged: "",
       rolls: [],
+      ...(line.locationId ? { locationId: line.locationId } : {}),
     })),
   );
   const [pending, setPending] = useState(false);
@@ -96,10 +97,10 @@ export function ReceiptDialog({
               Enter what actually arrived. Damaged units stay out of stock and off the bill.
             </DialogDescription>
           </DialogHeader>
-          <Field id="gr-location" label="Received into">
+          <Field id="gr-location" label="Received into, by default">
             <WarehouseSelect
               id="gr-location"
-              label="Received into"
+              label="Received into, by default"
               className="w-full"
               locations={locations}
               value={locationId}
@@ -131,6 +132,16 @@ export function ReceiptDialog({
                     />
                   </Field>
                 </div>
+                <Field id={`gr-${i}-location`} label="Received into">
+                  <WarehouseSelect
+                    id={`gr-${i}-location`}
+                    label={`${po_line.description} received into`}
+                    className="w-full"
+                    locations={locations}
+                    value={l.locationId ?? locationId}
+                    onChange={(id) => set(i, { locationId: id === locationId ? undefined : id })}
+                  />
+                </Field>
                 {isRoll(l.productId) ? (
                   <div className="flex flex-col gap-2">
                     {l.rolls.map((r, k) => (

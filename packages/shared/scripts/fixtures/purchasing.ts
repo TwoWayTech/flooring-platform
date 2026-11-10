@@ -202,6 +202,11 @@ export function buildPurchasing(
         orderedAt: stage === "draft" ? null : createdAt,
         cancelledAt: null,
         lines,
+        contactId: null,
+        contactSnapshot: null,
+        supplierRef: "",
+        buyerId: "",
+        placedVia: null,
         total,
       };
       purchaseOrders.push(po);

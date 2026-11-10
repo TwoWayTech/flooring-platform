@@ -11,7 +11,6 @@ import {
   filteredHref,
   formatNumber,
   invoicesIn,
-  INVOICE_STATUS_LABELS,
   isYear,
   PERIOD_LABELS,
   pendingQuotes,
@@ -45,7 +44,7 @@ import { WarehouseToday } from "./warehouse-today";
 import { useDashboardData, type DashboardData } from "./use-dashboard-data";
 
 const PENDING_QUOTES_HREF = filteredHref("/sales?view=quotes", "sales-quotes", "status", ["Pending"]);
-const TO_VERIFY_HREF = filteredHref("/sales?view=invoices", "sales-invoices", "state", [INVOICE_STATUS_LABELS.pending]);
+const TO_VERIFY_HREF = "/finance?view=payments";
 
 /** The key figures for the chosen period and warehouse, with the change vs the previous period. */
 function FigureRow({
