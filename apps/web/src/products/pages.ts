@@ -27,6 +27,7 @@ const SUB_PAGES: PageRule[] = [
   { pattern: "/purchasing?view=bills", anyOf: ["purchasing.bill.view"] },
   { pattern: "/finance?view=payments", anyOf: ["sales.payment.approve", "purchasing.payment.approve"] },
   { pattern: "/finance?view=expenses", anyOf: ["finance.expense.view"] },
+  { pattern: "/contracts/*", anyOf: ["contracts.contract.view"] },
   { pattern: "/hr/employees", anyOf: ["hr.employee.view"] },
   { pattern: "/hr/timesheets", anyOf: ["hr.timesheet.approve"] },
   { pattern: "/hr/time-off", anyOf: ["hr.pto.approve"] },

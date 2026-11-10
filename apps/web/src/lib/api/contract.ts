@@ -1,4 +1,11 @@
 import type {
+  BillingLine,
+  ChangeOrder,
+  Contract,
+  ContractBilling,
+  ContractLine,
+  InsuranceCertificate,
+  LienWaiver,
   CommissionAssignment,
   CommissionPlan,
   CommissionStatement,
@@ -217,6 +224,61 @@ export interface MyPortal {
   teamOut: PtoRequest[];
   teamNames: { id: string; name: string }[];
 }
+
+/** The fields of a contract and its schedule (spec D1). */
+export type ContractInput = Pick<
+  Contract,
+  | "direction"
+  | "kind"
+  | "customerId"
+  | "supplierId"
+  | "title"
+  | "scope"
+  | "branchId"
+  | "locationId"
+  | "jobSite"
+  | "salesRepId"
+  | "startsAt"
+  | "endsAt"
+  | "renewal"
+  | "retainagePct"
+  | "storedRetainagePct"
+  | "bondInLieu"
+  | "taxTreatment"
+  | "notes"
+> & { id?: string; lines: Omit<ContractLine, "id" | "contractId" | "changeOrderId">[] };
+
+/** A simulated signature: typed name and role (spec D2). */
+export interface SignatureInput {
+  signerName: string;
+  signerRole: string;
+}
+
+/** A pay application's cumulative figures (ADR 0026). */
+export interface BillingInput {
+  periodEnd: string;
+  lines: BillingLine[];
+}
+
+/** How much retainage to release. */
+export interface ReleaseInput {
+  amount: string;
+}
+
+/** A change order to submit. */
+export interface ChangeOrderInput {
+  reason: string;
+  lines: ChangeOrder["lines"];
+}
+
+/** A lien waiver to record. */
+export type WaiverInput = Pick<
+  LienWaiver,
+  "type" | "paymentId" | "supplierPaymentId" | "amount" | "throughDate" | "statutoryForm"
+>;
+
+/** A subcontractor's certificate of insurance. */
+export type CertificateInput = Pick<InsuranceCertificate, "producer" | "holder" | "coverages" | "additionalInsured">;
 
 /**
  * Who the API answers for. With `viewAsRoleId` set, data scope follows that role's first active
@@ -556,6 +618,38 @@ export interface ApiClient {
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
   /** The signed-in user's id. */
   whoAmI(): Promise<string>;
+  /** Adds or edits a contract and its schedule (spec D1). */
+  saveContract(input: ContractInput): Promise<Contract>;
+  /** Sends a draft for signature. */
+  sendContract(id: string): Promise<Contract>;
+  /** Takes a contract back to draft. */
+  recallContract(id: string): Promise<Contract>;
+  /** Records a simulated signature. */
+  signContract(id: string, input: SignatureInput): Promise<Contract>;
+  /** Marks substantial completion. */
+  completeContract(id: string): Promise<Contract>;
+  /** Closes a contract, with a reason when overriding a check. */
+  closeContract(id: string, overrideReason: string | null): Promise<Contract>;
+  /** Ends a contract with a reason. */
+  terminateContract(id: string, reason: string): Promise<Contract>;
+  /** Starts the next term as a new draft. */
+  renewContract(id: string): Promise<Contract>;
+  /** Posts a pay application and raises its invoice or bill. */
+  postBilling(contractId: string, input: BillingInput): Promise<ContractBilling>;
+  /** Releases held retainage on its own invoice or bill. */
+  releaseRetainage(contractId: string, input: ReleaseInput): Promise<ContractBilling>;
+  /** Voids the latest billing. */
+  voidBilling(billingId: string, reason: string): Promise<ContractBilling>;
+  /** Submits a change order for approval. */
+  saveChangeOrder(contractId: string, input: ChangeOrderInput): Promise<ChangeOrder>;
+  /** Approves or rejects a change order. */
+  decideChangeOrder(id: string, decision: { approve: boolean; reason: string }): Promise<ChangeOrder>;
+  /** Records a lien waiver. */
+  recordWaiver(contractId: string, input: WaiverInput): Promise<LienWaiver>;
+  /** Saves a certificate of insurance. */
+  saveCertificate(contractId: string, input: CertificateInput): Promise<InsuranceCertificate>;
+  /** Adds attachments to a contract. */
+  addContractFiles(contractId: string, files: File[]): Promise<void>;
   /** Adds or edits a person (spec C1). */
   saveEmployee(input: EmployeeInput): Promise<Employee>;
   /** Ticks or unticks an onboarding or offboarding step. */

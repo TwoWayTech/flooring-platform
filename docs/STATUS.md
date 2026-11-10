@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A, B and C are done and pushed. Batch D is next. Live sites are still feature batch 2.
-- Next step: build Batch D from item D1 (ADR 0026).
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to D are done and pushed. Batch E is next. Live sites are still feature batch 2.
+- Next step: build Batch E from item E1 (ADR 0021).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -172,13 +172,13 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch C: full suite green (311 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch D: Contracts (ADR 0026)
-- [ ] D1. Customer and subcontractor contracts: master and project, schedule of values or milestones, retainage, dates, insurance certificate, W-9 / 1099 flag
-- [ ] D2a. Lifecycle: Draft → Sent for signature → Active → Completed → Closed, Expired derived, Terminated with reason; simulated signature with PDF and audit entry
-- [ ] D2b. Progress billing: billings per period, retainage held off invoice totals, partial release invoices, tax setting, stored materials, subcontract bills through supplier bills and payments, estimated cost share (K-10)
-- [ ] D2c. Change orders with approval and revised contract value
-- [ ] D2d. Documents and compliance: attachments, insurance expiry per coverage, lien waivers per payment with exchange rules
-- [ ] D2e. Reminders through the notification centre; contract list with filters; contract page with value, invoiced, paid, retained, remaining; Contracts dashboard widget
-- [ ] Batch D: full suite green
+- [x] D1. Customer and subcontractor contracts: master and project, schedule of values or milestones, retainage, dates, insurance certificate, W-9 / 1099 flag
+- [x] D2a. Lifecycle: Draft → Sent for signature → Active → Completed → Closed, Expired derived, Terminated with reason; simulated signature with PDF and audit entry
+- [x] D2b. Progress billing: billings per period, retainage held off invoice totals, partial release invoices, tax setting, stored materials, subcontract bills through supplier bills and payments, estimated cost share (K-10)
+- [x] D2c. Change orders with approval and revised contract value
+- [x] D2d. Documents and compliance: attachments, insurance expiry per coverage, lien waivers per payment with exchange rules
+- [x] D2e. Reminders through the notification centre; contract list with filters; contract page with value, invoiced, paid, retained, remaining; Contracts dashboard widget
+- [x] Batch D: full suite green (328 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch E: meetings with customers and email (ADR 0021)
 - [ ] E1. Guests: internal users, customers, customer contacts, supplier contacts, Add guest by email; Settings → Meetings for new-guest handling (E-1, K-8)

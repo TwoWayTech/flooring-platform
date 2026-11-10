@@ -42,6 +42,13 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   receipts: [],
   supplierPayments: [],
   expenses: [],
+  // Contract records change only through their own store calls (spec D2).
+  contracts: [],
+  contractLines: [],
+  changeOrders: [],
+  contractBillings: [],
+  lienWaivers: [],
+  insuranceCertificates: [],
   crews: ["installation.crew.manage"],
   jobs: ["installation.job.create", "installation.job.edit", "installation.job.schedule", "installation.job.sign_off"],
   // HR records change only through their own store calls (spec C1, C2).

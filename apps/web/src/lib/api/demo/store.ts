@@ -32,6 +32,7 @@ import {
   type PermissionKey,
   SENSITIVE,
   type CommissionPlan,
+  type ContractLine,
   type Employee,
   type ImportTable,
   type TimeOffPolicy,
@@ -56,6 +57,13 @@ import {
 import { viewerAccess } from "../../access";
 import type {
   Collections,
+  BillingInput,
+  CertificateInput,
+  ChangeOrderInput,
+  ContractInput,
+  ReleaseInput,
+  SignatureInput,
+  WaiverInput,
   ApiClient,
   AuditInput,
   CollectionName,
@@ -180,6 +188,25 @@ import {
   setPayExclusion,
 } from "./pay-actions";
 import { myPortal } from "./portal-actions";
+import {
+  addContractFiles,
+  closeContract,
+  completeContract,
+  decideChangeOrder,
+  postBilling,
+  raiseContractReminders,
+  recallContract,
+  recordWaiver,
+  releaseRetainage,
+  renewContract,
+  saveCertificate,
+  saveChangeOrder,
+  saveContract,
+  sendContract,
+  signContract,
+  terminateContract,
+  voidBilling,
+} from "./contract-actions";
 import { sampleDatabase } from "./sample-database";
 import {
   importOverview,
@@ -213,6 +240,12 @@ const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
   commissionAssignments: "hr.commission.view",
   commissionStatements: "hr.commission.view",
   commissionAdjustments: "hr.commission.view",
+  contracts: "contracts.contract.view",
+  contractLines: "contracts.contract.view",
+  changeOrders: "contracts.contract.view",
+  contractBillings: "contracts.billing.view",
+  lienWaivers: "contracts.compliance.view",
+  insuranceCertificates: "contracts.compliance.view",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
@@ -239,6 +272,7 @@ export class DemoStore implements ApiClient {
     this.current = await this.db(companyId);
     this.viewer = viewer;
     releaseScheduled(this.actionContext(this.current));
+    await raiseContractReminders(this.actionContext(this.current));
     if (this.current.upgradeNotice && !this.notices.includes(this.current.upgradeNotice)) {
       this.notices.push(this.current.upgradeNotice);
     }
@@ -382,6 +416,9 @@ export class DemoStore implements ApiClient {
     // Pay rate needs its own permission (CLAUDE.md rule 2), so the record never carries it without it.
     if (collection === "employees" && !(await can(SENSITIVE.payRate))) {
       return (items as Employee[]).map((e) => ({ ...e, payRate: "0.00" })) as unknown as Collections[K];
+    }
+    if (collection === "contractLines" && !(await can("contracts.contract.view_sensitive"))) {
+      return (items as ContractLine[]).map((l) => ({ ...l, estimatedCost: "0.00" })) as unknown as Collections[K];
     }
     return items;
   }
@@ -792,6 +829,70 @@ export class DemoStore implements ApiClient {
     return this.viewer!.userId;
   }
 
+  async saveContract(input: ContractInput) {
+    return this.act((ctx) => saveContract(ctx, input));
+  }
+
+  async sendContract(id: string) {
+    return this.act((ctx) => sendContract(ctx, id));
+  }
+
+  async recallContract(id: string) {
+    return this.act((ctx) => recallContract(ctx, id));
+  }
+
+  async signContract(id: string, input: SignatureInput) {
+    return this.act((ctx) => signContract(ctx, id, input));
+  }
+
+  async completeContract(id: string) {
+    return this.act((ctx) => completeContract(ctx, id));
+  }
+
+  async closeContract(id: string, overrideReason: string | null) {
+    return this.act((ctx) => closeContract(ctx, id, overrideReason));
+  }
+
+  async terminateContract(id: string, reason: string) {
+    return this.act((ctx) => terminateContract(ctx, id, reason));
+  }
+
+  async renewContract(id: string) {
+    return this.act((ctx) => renewContract(ctx, id));
+  }
+
+  async postBilling(contractId: string, input: BillingInput) {
+    return this.act((ctx) => postBilling(ctx, contractId, input));
+  }
+
+  async releaseRetainage(contractId: string, input: ReleaseInput) {
+    return this.act((ctx) => releaseRetainage(ctx, contractId, input));
+  }
+
+  async voidBilling(billingId: string, reason: string) {
+    return this.act((ctx) => voidBilling(ctx, billingId, reason));
+  }
+
+  async saveChangeOrder(contractId: string, input: ChangeOrderInput) {
+    return this.act((ctx) => saveChangeOrder(ctx, contractId, input));
+  }
+
+  async decideChangeOrder(id: string, decision: { approve: boolean; reason: string }) {
+    return this.act((ctx) => decideChangeOrder(ctx, id, decision));
+  }
+
+  async recordWaiver(contractId: string, input: WaiverInput) {
+    return this.act((ctx) => recordWaiver(ctx, contractId, input));
+  }
+
+  async saveCertificate(contractId: string, input: CertificateInput) {
+    return this.act((ctx) => saveCertificate(ctx, contractId, input));
+  }
+
+  async addContractFiles(contractId: string, files: File[]) {
+    return this.act((ctx) => addContractFiles(ctx, contractId, files));
+  }
+
   async saveEmployee(input: EmployeeInput) {
     return this.act((ctx) => saveEmployee(ctx, input));
   }
@@ -989,7 +1090,7 @@ export class DemoStore implements ApiClient {
 
   async getFile(fileId: string) {
     const db = this.open();
-    await this.assertCan(db, ["sales.payment.view", "hr.employee.view", "hr.portal.view"]);
+    await this.assertCan(db, ["sales.payment.view", "hr.employee.view", "hr.portal.view", "contracts.contract.view"]);
     return readFile(this.actionContext(db), fileId);
   }
 

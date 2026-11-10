@@ -98,6 +98,12 @@ export interface Quote {
 export interface Invoice {
   /** Who shares the commission (ADR 0025); empty means the sales rep alone. */
   commissionSplit?: { userId: string; pct: string }[];
+  /** Set on a contract billing or release (ADR 0026). */
+  contractId?: string;
+  billingId?: string;
+  /** Retained this billing and released by it; total = subtotal + tax − withheld + released. */
+  retainageWithheld?: string;
+  retainageReleased?: string;
   id: string;
   number: string;
   quoteId: string | null;

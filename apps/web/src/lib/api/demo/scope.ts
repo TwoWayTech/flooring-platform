@@ -39,6 +39,11 @@ function invoiceInScope(invoiceId: string, subject: ScopeSubject, db: CompanyDb)
   return !!invoice && byRep(invoice as never, subject, db);
 }
 
+function contractInScope(contractId: string, subject: ScopeSubject, db: CompanyDb): boolean {
+  const contract = db.get("contracts", contractId);
+  return !!contract && byRep(contract as never, subject, db);
+}
+
 const byEmployee: Filter = (item: { employeeId: string }, { user }) => item.employeeId === user.employeeId;
 
 /** Own records, and at branch scope a manager's direct reports too (ADR 0024: per-manager queue). */
@@ -67,6 +72,10 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
   ptoRequests: ownOrReports,
   timeOffEntries: ownOrReports,
   clockEntries: byEmployee,
+  contracts: byRep,
+  contractLines: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
+  changeOrders: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
+  contractBillings: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
   meetings: (item: { attendees: { id: string }[] }, { user, scope }) =>
     scope !== "own" || item.attendees.some((a) => a.id === user.id),
 };

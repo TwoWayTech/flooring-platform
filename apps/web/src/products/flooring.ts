@@ -1,6 +1,7 @@
 import {
   BarChart3,
   CalendarDays,
+  FileSignature,
   Hammer,
   Landmark,
   LayoutDashboard,
@@ -52,6 +53,13 @@ export const FLOORING: ProductConfig = {
       icon: Landmark,
       anyOf: ["sales.payment.approve", "purchasing.payment.approve", "finance.expense.view"],
       features: ["finance.payments-queue", "finance.expenses"],
+    },
+    {
+      label: "Contracts",
+      href: "/contracts",
+      icon: FileSignature,
+      anyOf: ["contracts.contract.view"],
+      features: ["contracts.register"],
     },
     {
       label: "Installation",

@@ -159,6 +159,13 @@ export interface Bill {
   /** Differences found when matching to the PO and receipts, in words. */
   matchIssues: string[];
   files: FileMeta[];
+  /** Set on a subcontract billing or release (ADR 0026); it has no PO or receipts. */
+  contractId?: string;
+  billingId?: string;
+  kind?: "progress" | "retainage_release";
+  gross?: string;
+  retainageWithheld?: string;
+  retainageReleased?: string;
 }
 
 /**

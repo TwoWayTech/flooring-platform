@@ -11,3 +11,4 @@ export * from "./meetings";
 export * from "./notifications";
 export * from "./settings";
 export * from "./fixtures";
+export * from "./contracts";

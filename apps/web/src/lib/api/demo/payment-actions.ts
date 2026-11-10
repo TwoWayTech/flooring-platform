@@ -238,6 +238,14 @@ export async function readFile(ctx: ActionContext, fileId: string): Promise<Blob
     const name = holder.documents.find((d) => d.id === fileId)!.name;
     return placeholderProof([`${name} for ${holder.name}`], "Sample employee document", "Generated for the demo.");
   }
+  const contract = ctx.db.list("contracts").find((c) => c.files.some((f) => f.id === fileId));
+  if (contract) {
+    return placeholderProof(
+      [`${contract.number}, ${contract.title}`, `Signed ${contract.signedAt?.slice(0, 10) ?? ""}`],
+      "Signed contract",
+      "Simulated signature for the demo. Not a legal signature.",
+    );
+  }
   const payment = ctx.db.list("payments").find((p) => p.files.some((f) => f.id === fileId));
   if (!payment) throw new DemoRuleError("This file is not in this browser any more.");
   const invoice = ctx.db.get("invoices", payment.invoiceId);

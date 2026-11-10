@@ -10,6 +10,7 @@ import {
   openAmounts,
   boxedStock,
   computeTotals,
+  contractFigures,
   customerReceivable,
   daysBetween,
   dec,
@@ -56,7 +57,7 @@ describe("fixed seed", () => {
 describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reconcile (spec section 4)", (_, f) => {
   it("invoice total = sum of lines + tax, recomputed with the tax rule for its job site and date", () => {
     const { tax, region } = f.settings.localization;
-    for (const inv of f.invoices) {
+    for (const inv of f.invoices.filter((i) => !i.contractId)) {
       const { rule } = resolveTaxRule(tax, region.statesOfOperation, inv.jobSite, inv.issuedAt);
       expect(rule?.ratePct ?? null, inv.number).toBe(inv.taxRule?.ratePct ?? null);
       const quote = f.quotes.find((q) => q.id === inv.quoteId);
@@ -69,6 +70,19 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
       expect(inv.subtotal, inv.number).toBe(moneyString(sum(inv.lines.map(lineAmount))));
       expect(inv.total, inv.number).toBe(moneyString(dec(inv.subtotal).plus(inv.tax)));
       expect([totals.subtotal, totals.tax, totals.cost], inv.number).toEqual([inv.subtotal, inv.tax, inv.cost]);
+    }
+  });
+
+  it("contract invoices: total = lines + tax − retained + released, and invoiced + remaining = value", () => {
+    for (const inv of f.invoices.filter((i) => i.contractId)) {
+      const expected = dec(inv.subtotal).plus(inv.tax).minus(inv.retainageWithheld!).plus(inv.retainageReleased!);
+      expect(inv.total, inv.number).toBe(moneyString(expected));
+      expect(inv.subtotal, inv.number).toBe(moneyString(sum(inv.lines.map(lineAmount))));
+    }
+    for (const c of f.contracts) {
+      const figures = contractFigures(c, f.contractLines, f.contractBillings, f.changeOrders);
+      expect(moneyString(dec(figures.billed).plus(figures.remaining)), c.number).toBe(figures.value);
+      expect(dec(figures.held).gte(0), c.number).toBe(true);
     }
   });
 
@@ -123,6 +137,11 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     for (const bill of f.bills) {
       const ledger = billLedger(bill, f.supplierPayments, today);
       expect(dec(ledger.paid).lte(bill.total), bill.number).toBe(true);
+      if (bill.contractId) {
+        const expected = dec(bill.gross!).minus(bill.retainageWithheld!).plus(bill.retainageReleased!);
+        expect(moneyString(expected), bill.number).toBe(bill.total);
+        continue;
+      }
       const po = f.purchaseOrders.find((p) => p.id === bill.poId)!;
       const receipts = f.receipts.filter((r) => bill.receiptIds.includes(r.id));
       expect(moneyString(receivedValue(po, receipts)), bill.number).toBe(bill.total);
@@ -259,7 +278,7 @@ describe("spec section 4 volumes", () => {
   it("has about 300 quotes and 220 invoices, about 12 % overdue and 3 % returns", () => {
     const sales = summit.invoices.filter((i) => !i.isReturn);
     expect(summit.quotes).toHaveLength(300);
-    expect(sales).toHaveLength(220);
+    expect(sales.filter((i) => !i.contractId)).toHaveLength(220);
     const summitLedgers = ledgerIndex(summit.invoices, { payments: summit.payments, adjustments: [] }, today);
     const overdue = sales.filter((i) => summitLedgers.get(i.id)!.overdue).length / sales.length;
     expect(overdue).toBeGreaterThan(0.08);

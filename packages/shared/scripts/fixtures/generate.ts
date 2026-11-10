@@ -8,6 +8,7 @@ import { ANCHOR_DATE, COMPANY_SEEDS, type CompanySeed } from "./companies";
 import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
 import { buildEmployees, buildPto, buildTimesheets } from "./hr";
+import { withContracts } from "./contracts";
 import { withHrRecords } from "./hr-records";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
 import { withExtras } from "./extras";
@@ -76,6 +77,12 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     expenses: buildExpenses(ctx, trades ? averageMonthlyGross(sales, ANCHOR_DATE) : dec(0).toFixed(2)),
     crews,
     jobs: holdUntilInstalled(buildJobs(ctx, crews, sales.invoices, sales.quotes, customers), sales.invoices, customers),
+    contracts: [],
+    contractLines: [],
+    changeOrders: [],
+    contractBillings: [],
+    lienWaivers: [],
+    insuranceCertificates: [],
     employees,
     timesheets: buildTimesheets(ctx, employees),
     ptoRequests: buildPto(ctx, employees),
@@ -97,7 +104,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withHrRecords(ctx, withDirectory(ctx, withBuyer(ctx, fixtures)));
+  return withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures))));
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */

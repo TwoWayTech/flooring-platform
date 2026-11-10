@@ -39,6 +39,7 @@ import { BestSellers } from "./best-sellers";
 import { FigureCard } from "./figure-card";
 import { RevenuePanel } from "./revenue-panel";
 import { SlowMovers } from "./sellers-panels";
+import { ContractsWidget } from "./contracts-widget";
 import { TodaysJobs } from "./todays-jobs";
 import { WarehouseToday } from "./warehouse-today";
 import { useDashboardData, type DashboardData } from "./use-dashboard-data";
@@ -346,6 +347,7 @@ export function DashboardPage() {
               {can("sales.commission.view") && sales ? (
                 <TopPerformer data={data.data} period={range} locationId={locationId} />
               ) : null}
+              {can("contracts.contract.view") && featureOn("contracts.register") ? <ContractsWidget /> : null}
               {can("installation.job.view") && featureOn("installation.calendar") ? (
                 <TodaysJobs jobs={data.data.jobsToday} />
               ) : null}

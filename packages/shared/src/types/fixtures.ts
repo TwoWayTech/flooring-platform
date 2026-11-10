@@ -16,6 +16,14 @@ import type {
   TimeOffPolicy,
   Timesheet,
 } from "./hr";
+import type {
+  ChangeOrder,
+  Contract,
+  ContractBilling,
+  ContractLine,
+  InsuranceCertificate,
+  LienWaiver,
+} from "./contracts";
 import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
 import type {
@@ -63,6 +71,12 @@ export interface CompanyFixtures {
   expenses: Expense[];
   crews: Crew[];
   jobs: Job[];
+  contracts: Contract[];
+  contractLines: ContractLine[];
+  changeOrders: ChangeOrder[];
+  contractBillings: ContractBilling[];
+  lienWaivers: LienWaiver[];
+  insuranceCertificates: InsuranceCertificate[];
   employees: Employee[];
   timesheets: Timesheet[];
   ptoRequests: PtoRequest[];
