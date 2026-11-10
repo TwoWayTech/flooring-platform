@@ -20,10 +20,10 @@ Run these from the repository root, `C:\dev\flooring-platform`.
 7. Check both hosts: `https://flooring-demo-twowaytech.vercel.app/login` shows "Flooring Suite" and `https://hr-demo-twowaytech.vercel.app/login` shows "HR Suite".
 8. Run the end-to-end checks against the deployment. Each product is its own Playwright project with its own address: `E2E_FLOORING_URL=https://flooring-demo-twowaytech.vercel.app E2E_HR_URL=https://hr-demo-twowaytech.vercel.app pnpm test:e2e`. Remote runs retry twice and wait longer, so a slow connection does not fail them. HR Suite tests (tagged `@hr`) run on the HR address and sign in to Harbor Staffing.
 
-## Current deployment (2026-11-08)
+## Current deployment (2026-11-10)
 - Project `flooring-demo-twowaytech` (personal scope `twowaytech`), Root Directory `apps/web`, Next.js, Node 24. Both hostnames are assigned and live.
-- Production runs commit `17161ae` (deployment `dpl_46PEHPUwSwyDzNxWk4dpw1XSUhg6`), with the feature switches and every switch on. Both hostnames point at it.
-- Checked against the live site on 2026-11-08 after that deploy: the full suite, 189 tests (156 Flooring, 33 HR Suite), passes with no retries.
+- Production runs commit `439943a` (deployment `dpl_6cwSDiN4JT2eKMezCnKp88qY3vwx`), feature batch 3. Both hostnames point at it. The `demo-v3` tag sits on the next commit, which changes only one test and these records.
+- Checked against the live site on 2026-11-10 after that deploy, with one worker in eight chunks: 469 tests, 461 passed, 7 skipped as switched off, 1 failed. The failure was a test still looking for a renamed presenter guide step; it was corrected and passed against the live site on its own.
 - Not done, left to the owner: `DEMO_SESSION_SECRET` is not set (step 4), and the GitHub repository is not connected, because the Vercel GitHub app has no access to `TwoWayTech/flooring-platform`. After granting it access, `vercel git connect` makes every push deploy automatically.
 
 ## Later deploys

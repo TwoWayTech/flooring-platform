@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to H are done and pushed. The redeploy and the live test run are in progress.
-- Next step: redeploy production, run the full suite against both live addresses in chunks, tag demo-v3 and write the final report.
+- Current phase: Feature batch 3 is finished, live on both addresses and tagged demo-v3.
+- Next step: none planned. The next work comes from the owner's feedback on the demo (docs/demo-script.md shows how to run it).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -208,10 +208,10 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] H4. FEATURES.md, blueprint-delta.md, README.demo.md, docs/demo-script.md, presenter guide
 
 #### End
-- [ ] Redeploy production
-- [ ] Full suite against both live addresses, in chunks
-- [ ] Git tag `demo-v3`
-- [ ] Final report: what changed, how to try each item (persona, company, record), what was assumed or left out
+- [x] Redeploy production
+- [x] Full suite against both live addresses, in chunks
+- [x] Git tag `demo-v3`
+- [x] Final report: what changed, how to try each item (persona, company, record), what was assumed or left out
 
 ## Decisions
 (see docs/adr/)

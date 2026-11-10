@@ -22,7 +22,7 @@ test.describe("loading, error and empty states", () => {
   test("an offline screen explains the failure and recovers with Try again", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/");
     const guide = await setNetwork(page, "Offline");
-    await guide.getByRole("link", { name: /Reports/ }).click();
+    await guide.getByRole("link", { name: /Business report/ }).click();
     const alert = page.getByRole("alert").filter({ hasText: "This page could not load its data." });
     await expect(alert).toContainText(OFFLINE);
 
