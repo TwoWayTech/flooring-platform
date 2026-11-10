@@ -20,6 +20,8 @@ export interface Location {
   isDefault: boolean;
   /** Display samples on the floor; a simple count, never sellable stock (plan A-1). */
   displaySamples: number;
+  /** Floor area in sq ft, used to share company-wide costs (spec F1). */
+  floorAreaSqFt?: string;
 }
 
 /** Why boxed stock changed. Every change has a source document (spec C1). */

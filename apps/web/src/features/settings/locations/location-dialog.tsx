@@ -40,6 +40,7 @@ const LocationSchema = z.object({
   }),
   isDefault: z.boolean(),
   displaySamples: z.number().int("Enter a whole number.").min(0, "Enter zero or more."),
+  floorAreaSqFt: z.string().regex(/^\d*(\.\d{1,2})?$/, "Enter the area in sq ft, for example 3200."),
 });
 
 type LocationForm = z.infer<typeof LocationSchema>;
@@ -63,7 +64,7 @@ export function LocationDialog({
   const form = useForm<LocationForm>({
     resolver: zodResolver(LocationSchema),
     defaultValues: location
-      ? { ...location, address: { county: "", ...location.address } }
+      ? { ...location, floorAreaSqFt: location.floorAreaSqFt ?? "", address: { county: "", ...location.address } }
       : {
           name: "",
           kind: "warehouse",
@@ -71,6 +72,7 @@ export function LocationDialog({
           address: { street: "", city: "", state: company.state, zip: "", county: "" },
           isDefault: false,
           displaySamples: 0,
+          floorAreaSqFt: "",
         },
   });
   const kind = useWatch({ control: form.control, name: "kind" });
@@ -207,6 +209,15 @@ export function LocationDialog({
               {errorText("displaySamples", errors.displaySamples?.message)}
             </Field>
           )}
+          <Field id="loc-area" label="Floor area, sq ft" hint="Used to share company-wide costs by floor area.">
+            <Input
+              id="loc-area"
+              inputMode="decimal"
+              aria-describedby="loc-area-hint"
+              {...form.register("floorAreaSqFt")}
+            />
+            {errorText("floorAreaSqFt", errors.floorAreaSqFt?.message)}
+          </Field>
           {errors.root?.message ? (
             <p role="alert" className="text-danger-ink text-sm">
               {errors.root.message}

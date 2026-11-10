@@ -1,5 +1,6 @@
 import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
 import { daysBetween } from "./dates";
+import { countsAsCost } from "./expenses";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
 import type { InvoiceLedger } from "./ledger";
@@ -123,7 +124,7 @@ export function monthlyPnl(
     const inMonth = invoices.filter((i) => !i.voidedAt && i.issuedAt.startsWith(month));
     const revenue = sum(inMonth.map(signedSubtotal));
     const cogs = sum(inMonth.map(signedCost));
-    const opex = sum(expenses.filter((e) => e.at.startsWith(month)).map((e) => e.amount));
+    const opex = sum(expenses.filter((e) => countsAsCost(e) && e.date.startsWith(month)).map((e) => e.amount));
     const gross = revenue.minus(cogs);
     return {
       month,

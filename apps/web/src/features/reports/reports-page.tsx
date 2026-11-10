@@ -36,6 +36,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { loadSalesLedger } from "@/lib/sales-ledger";
 import { saveBlob } from "@/lib/save-blob";
 import { CATEGORY_LABELS } from "@workspace/shared";
+import { BusinessReportView } from "./business-report";
 import {
   agingReport,
   payablesAgingReport,
@@ -200,10 +201,13 @@ export function ReportsPage() {
   const allowed = (Object.keys(REPORTS) as ReportKey[]).filter(
     (k) => can(REPORTS[k].view) && featureOn(REPORTS[k].feature),
   );
-  if (allowed.length === 0) return <NoAccess />;
-  const requested = params.get("report") as ReportKey | null;
-  const key = requested && allowed.includes(requested) ? requested : allowed[0]!;
-  const spec = REPORTS[key];
+  const hasBusiness = can("reports.financial.view") && featureOn("reports.business");
+  if (allowed.length === 0 && !hasBusiness) return <NoAccess />;
+  const requested = params.get("report");
+  const showBusiness =
+    hasBusiness && (requested === "business" || !requested || !allowed.includes(requested as ReportKey));
+  const key = (allowed.includes(requested as ReportKey) ? requested : allowed[0]) as ReportKey;
+  const spec = REPORTS[key] ?? REPORTS.pnl;
   const today = api.today();
   const months = monthsFor(range, today);
   const warehouseId = warehouse === ALL_WAREHOUSES ? null : warehouse;
@@ -215,7 +219,7 @@ export function ReportsPage() {
     // Aging is as of today over every open invoice; the other reports cover the chosen dates.
     const invoices =
       key === "aging" ? inWarehouse : inWarehouse.filter((i) => i.issuedAt >= from && i.issuedAt <= addDays(today, 1));
-    const expenses = data.data.expenses.filter((e) => e.at >= from);
+    const expenses = data.data.expenses.filter((e) => e.date >= from);
     // Payments count on their payment date, in the warehouse of their invoice (Appendix A: cash dates).
     const shipsFrom = new Map(data.data.invoices.map((i) => [i.id, i.locationId]));
     const payments = data.data.payments.filter(
@@ -283,15 +287,30 @@ export function ReportsPage() {
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav aria-label="Reports" className="scrollbar-none -mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
           <ul className="flex gap-1 lg:flex-col">
+            {hasBusiness ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => router.replace("/reports?report=business")}
+                  aria-current={showBusiness ? "page" : undefined}
+                  className={cn(
+                    "flex h-9 w-full items-center rounded-md px-2.5 text-left text-sm whitespace-nowrap",
+                    showBusiness ? "bg-brand-soft text-brand-ink font-medium" : "hover:bg-raised",
+                  )}
+                >
+                  Business report
+                </button>
+              </li>
+            ) : null}
             {allowed.map((k) => (
               <li key={k}>
                 <button
                   type="button"
                   onClick={() => router.replace(`/reports?report=${k}`)}
-                  aria-current={k === key ? "page" : undefined}
+                  aria-current={k === key && !showBusiness ? "page" : undefined}
                   className={cn(
                     "flex h-9 w-full items-center rounded-md px-2.5 text-left text-sm whitespace-nowrap",
-                    k === key ? "bg-brand-soft text-brand-ink font-medium" : "hover:bg-raised",
+                    k === key && !showBusiness ? "bg-brand-soft text-brand-ink font-medium" : "hover:bg-raised",
                   )}
                 >
                   {REPORTS[k].label}
@@ -300,158 +319,162 @@ export function ReportsPage() {
             ))}
           </ul>
         </nav>
-        <Panel
-          title={spec.label}
-          actions={
-            can(spec.export) ? (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={exportCsv} disabled={!report}>
-                  <Download />
-                  Export CSV
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => void exportPdf()} disabled={!report}>
-                  <FileDown />
-                  Export PDF
-                </Button>
-              </div>
-            ) : null
-          }
-          bodyClassName="flex flex-col gap-4"
-        >
-          <div className="flex flex-wrap gap-3">
-            {key !== "inventory" && key !== "aging" && key !== "payables" ? (
-              <Filter label="Dates">
-                <Select value={range} onValueChange={(v) => setRange(v as Range)}>
-                  <SelectTrigger className="h-9 w-44" aria-label="Dates">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(RANGES) as Range[]).map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {RANGES[r]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Filter>
-            ) : null}
-            {data.status === "ready" ? (
-              <Filter label="Warehouse">
-                <WarehouseSelect
-                  label="Warehouse"
-                  extraOption={ALL_WAREHOUSES_OPTION}
-                  locations={data.data.locations}
-                  value={warehouse}
-                  onChange={setWarehouse}
-                />
-              </Filter>
-            ) : null}
-            {spec.categories ? (
-              <Filter label="Category">
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="h-9 w-52" aria-label="Category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All categories</SelectItem>
-                    {(Object.keys(CATEGORY_LABELS) as ProductCategory[])
-                      .filter((c) => c !== "service")
-                      .map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {CATEGORY_LABELS[c]}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </Filter>
-            ) : null}
-            {key === "payments" ? (
-              <>
-                <Filter label="Method">
-                  <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod | "all")}>
-                    <SelectTrigger className="h-9 w-48" aria-label="Method">
+        {showBusiness ? (
+          <BusinessReportView locations={data.data?.locations ?? []} />
+        ) : (
+          <Panel
+            title={spec.label}
+            actions={
+              can(spec.export) ? (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={exportCsv} disabled={!report}>
+                    <Download />
+                    Export CSV
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => void exportPdf()} disabled={!report}>
+                    <FileDown />
+                    Export PDF
+                  </Button>
+                </div>
+              ) : null
+            }
+            bodyClassName="flex flex-col gap-4"
+          >
+            <div className="flex flex-wrap gap-3">
+              {key !== "inventory" && key !== "aging" && key !== "payables" ? (
+                <Filter label="Dates">
+                  <Select value={range} onValueChange={(v) => setRange(v as Range)}>
+                    <SelectTrigger className="h-9 w-44" aria-label="Dates">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All methods</SelectItem>
-                      {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {PAYMENT_METHOD_LABELS[m]}
+                      {(Object.keys(RANGES) as Range[]).map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {RANGES[r]}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </Filter>
-                <Filter label="Customer">
-                  <Input
-                    aria-label="Customer"
-                    value={customerQuery}
-                    onChange={(e) => setCustomerQuery(e.target.value)}
-                    placeholder="Any customer"
-                    className="h-9 w-52"
+              ) : null}
+              {data.status === "ready" ? (
+                <Filter label="Warehouse">
+                  <WarehouseSelect
+                    label="Warehouse"
+                    extraOption={ALL_WAREHOUSES_OPTION}
+                    locations={data.data.locations}
+                    value={warehouse}
+                    onChange={setWarehouse}
                   />
                 </Filter>
-              </>
-            ) : null}
-          </div>
-          {!report ? (
-            <QueryFallback query={data} className="h-64" label="Loading report" />
-          ) : key === "inventory" && !can(SENSITIVE.productCost) ? (
-            <p className="text-muted-foreground">Inventory value is at cost, which your role does not include.</p>
-          ) : (
-            <ScrollRegion label={`${spec.label} table`} className="border-hairline rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-raised text-muted-foreground text-xs">
-                  <tr>
-                    {report.columns.map((c) => (
-                      <th
-                        key={c.id}
-                        scope="col"
-                        className={cn("h-9 px-3 font-medium whitespace-nowrap", c.kind ? "text-right" : "text-left")}
-                      >
-                        {c.header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.rows.length === 0 ? (
+              ) : null}
+              {spec.categories ? (
+                <Filter label="Category">
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger className="h-9 w-52" aria-label="Category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {(Object.keys(CATEGORY_LABELS) as ProductCategory[])
+                        .filter((c) => c !== "service")
+                        .map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {CATEGORY_LABELS[c]}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </Filter>
+              ) : null}
+              {key === "payments" ? (
+                <>
+                  <Filter label="Method">
+                    <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod | "all")}>
+                      <SelectTrigger className="h-9 w-48" aria-label="Method">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All methods</SelectItem>
+                        {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {PAYMENT_METHOD_LABELS[m]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Filter>
+                  <Filter label="Customer">
+                    <Input
+                      aria-label="Customer"
+                      value={customerQuery}
+                      onChange={(e) => setCustomerQuery(e.target.value)}
+                      placeholder="Any customer"
+                      className="h-9 w-52"
+                    />
+                  </Filter>
+                </>
+              ) : null}
+            </div>
+            {!report ? (
+              <QueryFallback query={data} className="h-64" label="Loading report" />
+            ) : key === "inventory" && !can(SENSITIVE.productCost) ? (
+              <p className="text-muted-foreground">Inventory value is at cost, which your role does not include.</p>
+            ) : (
+              <ScrollRegion label={`${spec.label} table`} className="border-hairline rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-raised text-muted-foreground text-xs">
                     <tr>
-                      <td colSpan={report.columns.length} className="text-muted-foreground h-16 px-3">
-                        No figures for these filters. Choose a wider date range or all warehouses.
-                      </td>
-                    </tr>
-                  ) : null}
-                  {report.rows.map((row, i) => (
-                    <tr key={i} className="border-hairline border-t">
-                      {report!.columns.map((c) => (
-                        <td key={c.id} className={cn("h-9 px-3 whitespace-nowrap", c.kind && "text-right")}>
-                          {c.kind ? <Num kind={c.kind} value={row[c.id] ?? "0"} /> : row[c.id]}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-                {report.totals ? (
-                  <tfoot>
-                    <tr className="border-hairline border-t-2 font-semibold">
                       {report.columns.map((c) => (
-                        <td key={c.id} className={cn("h-10 px-3 whitespace-nowrap", c.kind && "text-right")}>
-                          {c.kind && report!.totals![c.id] !== undefined ? (
-                            <Num kind={c.kind} value={report!.totals![c.id]!} />
-                          ) : (
-                            report!.totals![c.id]
-                          )}
-                        </td>
+                        <th
+                          key={c.id}
+                          scope="col"
+                          className={cn("h-9 px-3 font-medium whitespace-nowrap", c.kind ? "text-right" : "text-left")}
+                        >
+                          {c.header}
+                        </th>
                       ))}
                     </tr>
-                  </tfoot>
-                ) : null}
-              </table>
-            </ScrollRegion>
-          )}
-          <p className="text-muted-foreground text-xs">{filters} Figures are computed from documents.</p>
-        </Panel>
+                  </thead>
+                  <tbody>
+                    {report.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={report.columns.length} className="text-muted-foreground h-16 px-3">
+                          No figures for these filters. Choose a wider date range or all warehouses.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {report.rows.map((row, i) => (
+                      <tr key={i} className="border-hairline border-t">
+                        {report!.columns.map((c) => (
+                          <td key={c.id} className={cn("h-9 px-3 whitespace-nowrap", c.kind && "text-right")}>
+                            {c.kind ? <Num kind={c.kind} value={row[c.id] ?? "0"} /> : row[c.id]}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                  {report.totals ? (
+                    <tfoot>
+                      <tr className="border-hairline border-t-2 font-semibold">
+                        {report.columns.map((c) => (
+                          <td key={c.id} className={cn("h-10 px-3 whitespace-nowrap", c.kind && "text-right")}>
+                            {c.kind && report!.totals![c.id] !== undefined ? (
+                              <Num kind={c.kind} value={report!.totals![c.id]!} />
+                            ) : (
+                              report!.totals![c.id]
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    </tfoot>
+                  ) : null}
+                </table>
+              </ScrollRegion>
+            )}
+            <p className="text-muted-foreground text-xs">{filters} Figures are computed from documents.</p>
+          </Panel>
+        )}
       </div>
     </>
   );

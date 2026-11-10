@@ -3,6 +3,7 @@ import { dec, moneyString, roundMoney, sum } from "../../src/money";
 import type {
   Bill,
   Expense,
+  ExpenseCategory,
   GoodsReceipt,
   PoLine,
   Product,
@@ -14,6 +15,7 @@ import type {
 } from "../../src/types";
 import { warehouseIds } from "./locations";
 import type { GenContext } from "./context";
+import { EMPTY } from "./expense-records";
 import { supplierDueDate } from "../../src/operations/purchasing";
 import { brandCode } from "./vocabulary";
 
@@ -241,14 +243,14 @@ export function buildPurchasing(
 }
 
 /** Monthly operating cost as a share of average monthly gross margin, by category. */
-const EXPENSE_SHARES: readonly [Expense["category"], string, number][] = [
+const EXPENSE_SHARES: readonly [ExpenseCategory, string, number][] = [
   ["payroll", "Office and sales payroll", 0.42],
   ["rent", "Showroom and warehouse rent", 0.16],
-  ["utilities", "Utilities", 0.03],
-  ["vehicles", "Van leases and fuel", 0.05],
+  ["electricity", "Utilities", 0.03],
+  ["fuel_vehicles", "Van leases and fuel", 0.05],
   ["marketing", "Local advertising", 0.06],
   ["insurance", "General liability insurance", 0.03],
-  ["software", "Software subscriptions", 0.015],
+  ["other", "Software subscriptions", 0.015],
 ];
 
 /**
@@ -263,13 +265,14 @@ export function buildExpenses(ctx: GenContext, avgMonthlyGross: string): Expense
         const flat = category === "rent" || category === "insurance";
         const factor = flat ? "1" : ctx.rng.decimal(0.85, 1.15, 3);
         return {
+          ...EMPTY,
           id: ctx.id("exp"),
-          at: `${month}-${flat ? "01" : String(ctx.rng.int(2, 27)).padStart(2, "0")}`,
+          date: `${month}-${flat ? "01" : String(ctx.rng.int(2, 27)).padStart(2, "0")}`,
           category,
-          description,
+          note: description,
           amount: moneyString(dec(avgMonthlyGross).times(share).times(factor)),
         };
       }),
     )
-    .filter((e) => e.at <= ctx.anchor);
+    .filter((e) => e.date <= ctx.anchor);
 }

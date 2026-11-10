@@ -2,11 +2,11 @@
 
 exports[`default role matrix > matches the reviewed snapshot 1`] = `
 {
-  "accountant": "xx....xxxxxxxxxxxxxxx.xx...xxx...xxx.........x..x...xxxxx.....xxxxxxxx.....x..........x...xxxx..xx.....xx.xx.x....x.xxx.......xxx.x.......x",
+  "accountant": "xx....xxxxxxxxxxxxxxx.xx...xxx...xxx.........x..x...xxxxxxxxxxxxxxxxxx.....x..........x...xxxx..xx.....xx.xx.x....x.xxx.......xxx.x.......x",
   "employee": ".......................................................................................................xx.xx.x.......xx....................",
   "hr": "..................................................................................................xxxxxxxxxxxxxxxxxxxxxxxx.............x..x",
   "installer": "..............................................................................x...x....................xx.xx.x.......xx....................",
-  "manager": "xxxxxxxxxxxxx......xx.xxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx.....xxx.xx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxx.......xxxxx................x",
+  "manager": "xxxxxxxxxxxxx......xx.xxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxxxxx..xxx.xx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...xxxxxxx.......xxxxx................x",
   "owner": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "purchasing": "x............................x....xx.....x...xxxxxxxxxx...........x....................................xx.xx.x.......xx....................",
   "sales": "xxxx..xx...xx.......x..xxx...x.....x..........................x.......xxxx.x..x.......xxx..x..x........xx.xx.x.......xxx...................",

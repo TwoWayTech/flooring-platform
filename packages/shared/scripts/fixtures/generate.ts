@@ -9,6 +9,7 @@ import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
 import { buildEmployees, buildPto, buildTimesheets } from "./hr";
 import { withContracts } from "./contracts";
+import { withExpenseRecords } from "./expense-records";
 import { withHrRecords } from "./hr-records";
 import { withMeetingRecords } from "./meeting-records";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
@@ -75,6 +76,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     suppliers,
     supplierContacts: [],
     ...purchasing,
+    recurringExpenses: [],
     expenses: buildExpenses(ctx, trades ? averageMonthlyGross(sales, ANCHOR_DATE) : dec(0).toFixed(2)),
     crews,
     jobs: holdUntilInstalled(buildJobs(ctx, crews, sales.invoices, sales.quotes, customers), sales.invoices, customers),
@@ -107,7 +109,29 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withMeetingRecords(ctx, withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures)))));
+  return withSoldAt(
+    withExpenseRecords(
+      ctx,
+      withMeetingRecords(ctx, withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures))))),
+    ),
+  );
+}
+
+/**
+ * Where each sale happened (ADR 0023), drawing no random numbers: homeowners buy at their branch's
+ * showroom when it has one, dealers and contractors from the warehouse.
+ */
+function withSoldAt(f: CompanyFixtures): CompanyFixtures {
+  const site = (doc: { customerId: string; branchId: string; locationId: string }) => {
+    const homeowner = f.customers.find((c) => c.id === doc.customerId)?.type === "homeowner";
+    const showroom = f.locations.find((l) => l.kind === "showroom" && l.branchId === doc.branchId);
+    return homeowner && showroom ? showroom.id : doc.locationId;
+  };
+  return {
+    ...f,
+    quotes: f.quotes.map((q) => ({ ...q, soldAtLocationId: site(q) })),
+    invoices: f.invoices.map((i) => ({ ...i, soldAtLocationId: site(i) })),
+  };
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */

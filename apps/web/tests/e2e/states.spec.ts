@@ -28,7 +28,7 @@ test.describe("loading, error and empty states", () => {
 
     await setNetwork(page, "Normal");
     await alert.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByRole("region", { name: "Profit and loss", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Business report", exact: true })).toBeVisible();
   });
 
   test("a save made offline says why it failed and keeps the form open", async ({ page }) => {

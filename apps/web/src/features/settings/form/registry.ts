@@ -23,6 +23,7 @@ const PAYMENTS = "/settings/payments";
 const LOCATIONS = "/settings/locations";
 const HR = "/settings/hr";
 const MEETINGS = "/settings/meetings";
+const EXPENSES = "/settings/expenses";
 
 export const SETTINGS = {
   "region.country": { label: "Country", helper: "The US pack: 50 states and DC, imperial units, USD.", href: REGION },
@@ -88,6 +89,17 @@ export const SETTINGS = {
     label: "Holiday calendar",
     helper: "The state whose public holidays timesheets skip.",
     href: PAYROLL,
+  },
+  "expenses.approvalRequired": {
+    label: "Approve larger expenses",
+    helper: "Expenses above the amount wait for a second person.",
+    href: EXPENSES,
+  },
+  "expenses.approvalThreshold": { label: "Approval above", helper: "Cost including tax.", href: EXPENSES },
+  "sharedCosts.rule": {
+    label: "How company-wide costs are shared",
+    helper: "Used for each location's profit in the business report.",
+    href: EXPENSES,
   },
   "meetings.defaultReminderMin": {
     label: "Default reminder",

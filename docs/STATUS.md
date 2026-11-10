@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to E are done and pushed. Batch F is next. Live sites are still feature batch 2.
-- Next step: build Batch F from item F1a (ADR 0023).
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to F are done and pushed. Batch G is next. Live sites are still feature batch 2.
+- Next step: build Batch G from item G1.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -188,11 +188,11 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch E: full suite green (433 passed, 7 skipped as switched off, production build, 1 worker, chunks; the new HR, portal and contract screens were added to the accessibility, console and layout checks)
 
 #### Batch F: expenses and one business report (ADR 0023)
-- [ ] F1a. Finance → Expenses: every field in the spec, receipt required on leaving draft, approval above an amount, Pay later through a linked bill, sales tax payment category (U-06)
-- [ ] F1b. Recurring expenses: a draft each period to confirm with the actual amount
-- [ ] F1c. Floor area per location; shared costs rule in Settings, split by largest remainder; `journal.ts` postings
-- [ ] F2. Business report: Summary, Profit by location, Revenue and margin, Expenses, Cash, Purchases, Taxes, People costs, Stock on hand; period with comparison; filters; chart / table toggle; drill-down; CSV and PDF that match the screen (U-27)
-- [ ] Batch F: full suite green
+- [x] F1a. Finance → Expenses: every field in the spec, receipt required on leaving draft, approval above an amount, Pay later through a linked bill, sales tax payment category (U-06)
+- [x] F1b. Recurring expenses: a draft each period to confirm with the actual amount
+- [x] F1c. Floor area per location; shared costs rule in Settings, split by largest remainder; `journal.ts` postings
+- [x] F2. Business report: Summary, Profit by location, Revenue and margin, Expenses, Cash, Purchases, Taxes, People costs, Stock on hand; period with comparison; filters; chart / table toggle; drill-down; CSV and PDF that match the screen (U-27)
+- [x] Batch F: full suite green (468 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch G: final walkthrough and polish
 - [ ] G1. Seed data per the spec, plus healthy payables and sales across locations (U-28, U-29); reconciliation extended (expenses in the ledger, location profit = company profit, contract invoiced + remaining = value, gross pay = its parts)

@@ -62,8 +62,15 @@ const message = (error: unknown, fallback: string) => (error instanceof Error ? 
  * A blank quote for the signed-in rep, with the company's default deposit and home state, fulfilled
  * from the rep's default warehouse (spec A1). It starts as a Draft (spec B1).
  */
-export function newQuote(user: User, settings: CompanySettings, today: string, locationId: string): Quote {
+export function newQuote(
+  user: User,
+  settings: CompanySettings,
+  today: string,
+  locationId: string,
+  soldAtLocationId: string = locationId,
+): Quote {
   return {
+    soldAtLocationId,
     id: "",
     number: "",
     customerId: "",
@@ -279,6 +286,8 @@ export function QuoteBuilder({
           locations={locations}
           locationId={draft.locationId}
           onLocation={(locationId) => dispatch({ type: "location", locationId })}
+          soldAtLocationId={draft.soldAtLocationId}
+          onSoldAt={(locationId) => dispatch({ type: "soldAt", locationId })}
           editable={editable}
           taxedStates={settings.localization.tax.rules.map((r) => r.state)}
           onCustomer={(c) =>

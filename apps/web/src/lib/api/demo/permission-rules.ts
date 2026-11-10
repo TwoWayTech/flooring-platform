@@ -41,7 +41,9 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   // Receipts, bills and supplier payments change only through their own store calls (spec D2, D3).
   receipts: [],
   supplierPayments: [],
+  // Expenses change only through their own store calls (spec F1).
   expenses: [],
+  recurringExpenses: [],
   // Contract records change only through their own store calls (spec D2).
   contracts: [],
   contractLines: [],
@@ -95,6 +97,8 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   profile: ["settings.company.manage"],
   payments: ["settings.payments.manage"],
   inventory: ["settings.locations.manage"],
+  expenses: ["settings.expenses.manage"],
+  sharedCosts: ["settings.expenses.manage"],
   hr: ["settings.hr.manage"],
   meetings: ["settings.meetings.manage"],
   email: ["settings.notifications.manage"],

@@ -142,6 +142,7 @@ export function invoiceFromQuote(
     salesRepId: quote.salesRepId,
     branchId: quote.branchId,
     locationId: quote.locationId,
+    ...(quote.soldAtLocationId ? { soldAtLocationId: quote.soldAtLocationId } : {}),
     issuedAt: input.issuedAt,
     dueAt: invoiceDueDate(quote, customer.terms, input),
     createdBy: input.createdBy,

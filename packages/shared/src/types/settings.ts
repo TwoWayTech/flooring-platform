@@ -94,6 +94,19 @@ export interface InventorySettings {
   adjustmentApprovalQty: string;
 }
 
+/** Approval on expenses, the same two fields as payments (ADR 0023). */
+export interface ExpenseSettings {
+  approvalRequired: boolean;
+  approvalThreshold: string;
+}
+
+/** How company-wide costs are split across locations (spec F1, assumption F-1). */
+export interface SharedCostSettings {
+  rule: "revenue" | "floor_area" | "equal" | "fixed";
+  /** Percent per location id, when the rule is fixed. */
+  fixedPct: Record<string, string>;
+}
+
 /** Settings → Meetings (spec E, ADR 0021). */
 export interface MeetingSettings {
   defaultReminderMin: number;
@@ -139,6 +152,9 @@ export interface CompanySettings {
   profile: CompanyProfile;
   payments: PaymentSettings;
   inventory: InventorySettings;
+  /** Settings → Expenses (spec F1). */
+  expenses: ExpenseSettings;
+  sharedCosts: SharedCostSettings;
   /** Settings → HR (spec C1). */
   hr: HrSettings;
   /** Settings → Meetings (spec E). */

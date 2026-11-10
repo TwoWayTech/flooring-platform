@@ -2,6 +2,7 @@ import {
   Banknote,
   UsersRound,
   CalendarDays,
+  Receipt,
   Building2,
   Database,
   FileUp,
@@ -128,6 +129,15 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["sales.payments"],
     group: "payments",
     description: "The two-person check on payments, small write-offs and payment numbering.",
+  },
+  {
+    label: "Expenses",
+    href: "/settings/expenses",
+    icon: Receipt,
+    anyOf: ["settings.expenses.manage"],
+    features: ["finance.expenses"],
+    group: "payments",
+    description: "Approval above an amount, and how company-wide costs are shared.",
   },
   {
     label: "Meetings",

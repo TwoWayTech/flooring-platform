@@ -142,6 +142,11 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
         expect(moneyString(expected), bill.number).toBe(bill.total);
         continue;
       }
+      if (!bill.poId) {
+        const expense = f.expenses.find((e) => e.billId === bill.id);
+        if (expense) expect(moneyString(dec(expense.amount).plus(expense.tax)), bill.number).toBe(bill.total);
+        continue;
+      }
       const po = f.purchaseOrders.find((p) => p.id === bill.poId)!;
       const receipts = f.receipts.filter((r) => bill.receiptIds.includes(r.id));
       expect(moneyString(receivedValue(po, receipts)), bill.number).toBe(bill.total);

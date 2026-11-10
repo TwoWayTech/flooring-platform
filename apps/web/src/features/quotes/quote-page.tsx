@@ -36,7 +36,9 @@ export function QuotePage({ quoteId }: { quoteId: string | null }) {
   const { quote, products, customers, settings, locations, invoiceLedger, rolls, reservations, movements } = data.data;
   if (quoteId && !quote)
     return <p className="text-muted-foreground">This quote does not exist or is outside what you can see.</p>;
-  const initial = quote ?? newQuote(user, settings, api.today(), defaultWarehouse(locations, user)?.id ?? "");
+  const showroom = locations.find((l) => l.kind === "showroom" && l.branchId === user.branchId);
+  const initial =
+    quote ?? newQuote(user, settings, api.today(), defaultWarehouse(locations, user)?.id ?? "", showroom?.id);
   return (
     <QuoteBuilder
       key={initial.id || "new"}

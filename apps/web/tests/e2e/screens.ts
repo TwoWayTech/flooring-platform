@@ -38,6 +38,8 @@ export const FLOORING_SCREENS = [
   "/settings/notifications",
   "/settings/outbox",
   "/finance",
+  "/finance?view=expenses",
+  "/settings/expenses",
   "/my",
   "/my/timesheet",
   "/my/time-off",

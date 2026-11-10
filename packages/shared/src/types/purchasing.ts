@@ -196,11 +196,69 @@ export interface SupplierPayment {
   voidReason: string | null;
 }
 
-/** An operating expense (rent, payroll, vehicles); feeds the P&L. */
+/** What an expense is for (spec F1, ADR 0023); payroll exists only for seeded and imported months. */
+export type ExpenseCategory =
+  | "rent"
+  | "electricity"
+  | "water"
+  | "internet_phone"
+  | "supplies"
+  | "maintenance"
+  | "fuel_vehicles"
+  | "insurance"
+  | "taxes_licenses"
+  | "marketing"
+  | "professional_fees"
+  | "other"
+  | "sales_tax_payment"
+  | "payroll";
+
+/** Money the company spends (spec F1, ADR 0023). The cost is amount + tax, always derived. */
 export interface Expense {
   id: string;
-  at: string;
-  category: "payroll" | "rent" | "utilities" | "vehicles" | "marketing" | "insurance" | "software";
-  description: string;
+  /** EXP-0001. */
+  number: string;
+  date: string;
+  supplierId: string | null;
+  category: ExpenseCategory;
+  /** Null means company-wide, and it is shared across locations in the report. */
+  locationId: string | null;
   amount: string;
+  tax: string;
+  paymentMethod: PaymentMethod;
+  reference: string;
+  files: FileMeta[];
+  note: string;
+  status: "draft" | "pending" | "confirmed" | "rejected" | "voided";
+  settlement: "paid" | "on_account";
+  dueAt: string | null;
+  billId: string | null;
+  recurringId: string | null;
+  period: string | null;
+  recordedById: string;
+  recordedBy: string;
+  recordedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  voidedBy: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+}
+
+/** A cost that repeats; it makes one draft per period to confirm (spec F1). */
+export interface RecurringExpense {
+  id: string;
+  supplierId: string;
+  category: ExpenseCategory;
+  locationId: string | null;
+  amount: string;
+  tax: string;
+  paymentMethod: PaymentMethod;
+  frequency: "monthly" | "quarterly" | "yearly";
+  dayOfMonth: number;
+  startsOn: string;
+  endsOn: string | null;
+  active: boolean;
+  note: string;
 }

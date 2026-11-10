@@ -65,6 +65,9 @@ interface QuoteHeaderProps {
   locations: Location[];
   /** Fulfilled from (spec A1). */
   locationId: string;
+  /** Where it is being sold, which decides whose revenue it is (ADR 0023). */
+  soldAtLocationId: string | undefined;
+  onSoldAt: (locationId: string) => void;
   editable: boolean;
   /** States the company has tax rules for, marked in the state list. */
   taxedStates: string[];
@@ -87,6 +90,8 @@ export function QuoteHeader({
   jobSite,
   locations,
   locationId,
+  soldAtLocationId,
+  onSoldAt,
   editable,
   taxedStates,
   onCustomer,
@@ -130,6 +135,21 @@ export function QuoteHeader({
           disabled={!editable}
         />
         <FieldError field="location" problems={problems} />
+      </div>
+      <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
+        <Label htmlFor="quote-sold-at">Sold at</Label>
+        <Select value={soldAtLocationId ?? locationId} onValueChange={onSoldAt} disabled={!editable}>
+          <SelectTrigger id="quote-sold-at" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {locations.map((l) => (
+              <SelectItem key={l.id} value={l.id}>
+                {l.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex flex-col gap-1.5 sm:col-span-3 lg:col-span-2">
         <Label htmlFor="quote-customer">Customer</Label>

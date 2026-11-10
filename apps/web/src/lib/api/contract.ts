@@ -1,4 +1,8 @@
 import type {
+  BusinessFilters,
+  BusinessReport,
+  Expense,
+  RecurringExpense,
   Attendee,
   MeetingProposal,
   BillingLine,
@@ -226,6 +230,28 @@ export interface MyPortal {
   teamOut: PtoRequest[];
   teamNames: { id: string; name: string }[];
 }
+
+/** The fields of an expense (spec F1); `asDraft` saves it without a receipt. */
+export type ExpenseInput = Pick<
+  Expense,
+  | "date"
+  | "supplierId"
+  | "category"
+  | "locationId"
+  | "amount"
+  | "tax"
+  | "paymentMethod"
+  | "reference"
+  | "note"
+  | "settlement"
+  | "dueAt"
+> & { id?: string; asDraft: boolean };
+
+/** A decision on an expense waiting for approval. */
+export type ExpenseDecision = { action: "approve" } | { action: "reject"; reason: string };
+
+/** A recurring expense to save. */
+export type RecurringExpenseInput = Omit<RecurringExpense, "id"> & { id?: string };
 
 /** Someone added to a meeting by email (spec E). */
 export interface NewGuest {
@@ -662,6 +688,16 @@ export interface ApiClient {
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
   /** The signed-in user's id. */
   whoAmI(): Promise<string>;
+  /** Saves a draft expense or records one with its receipt (spec F1). */
+  saveExpense(input: ExpenseInput, files: File[]): Promise<Expense>;
+  /** Approves or rejects an expense. */
+  reviewExpense(id: string, decision: ExpenseDecision): Promise<Expense>;
+  /** Voids an expense with a reason. */
+  voidExpense(id: string, reason: string): Promise<Expense>;
+  /** Adds or edits a recurring expense. */
+  saveRecurringExpense(input: RecurringExpenseInput): Promise<RecurringExpense>;
+  /** The business report (spec F2), computed from the company's whole record. */
+  businessReport(filters: BusinessFilters): Promise<BusinessReport>;
   /** Schedules a meeting and invites its guests (spec E). */
   createMeeting(input: MeetingInput): Promise<Meeting>;
   /** Edits a meeting; a significant change asks every guest again. */

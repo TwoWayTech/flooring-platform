@@ -22,6 +22,7 @@ export type DraftAction =
   | { type: "customer"; customerId: string; jobSite: Address }
   | { type: "jobSite"; jobSite: Address }
   | { type: "location"; locationId: string }
+  | { type: "soldAt"; locationId: string }
   | { type: "taxOverride"; override: TaxOverride | null }
   | { type: "addRoom"; room: Room }
   | { type: "updateRoom"; room: Room }
@@ -68,6 +69,8 @@ function reducer(products: readonly Product[], waste: WasteDefaults) {
         return { ...draft, jobSite: action.jobSite };
       case "location":
         return { ...draft, locationId: action.locationId };
+      case "soldAt":
+        return { ...draft, soldAtLocationId: action.locationId };
       case "taxOverride":
         return { ...draft, taxOverride: action.override };
       case "addRoom": {

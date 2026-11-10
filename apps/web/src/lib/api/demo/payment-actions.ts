@@ -238,6 +238,13 @@ export async function readFile(ctx: ActionContext, fileId: string): Promise<Blob
     const name = holder.documents.find((d) => d.id === fileId)!.name;
     return placeholderProof([`${name} for ${holder.name}`], "Sample employee document", "Generated for the demo.");
   }
+  const expense = ctx.db.list("expenses").find((e) => e.files.some((f) => f.id === fileId));
+  if (expense)
+    return placeholderProof(
+      [`${expense.number}, ${expense.date}`, `Amount: ${dollars(expense.amount)}`],
+      "Sample receipt",
+      "Generated for the demo. Not a real receipt.",
+    );
   const contract = ctx.db.list("contracts").find((c) => c.files.some((f) => f.id === fileId));
   if (contract) {
     return placeholderProof(

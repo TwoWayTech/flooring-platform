@@ -67,6 +67,8 @@ export type QuoteStatus = "draft" | "pending" | "accepted" | "converted" | "decl
 
 /** A quote. Totals are recomputed from lines; the stored ones are a snapshot for lists. */
 export interface Quote {
+  /** Where it is being sold; empty means where it ships from (ADR 0023). */
+  soldAtLocationId?: string;
   id: string;
   number: string;
   customerId: string;
@@ -100,6 +102,8 @@ export interface Quote {
 export interface Invoice {
   /** Who shares the commission (ADR 0025); empty means the sales rep alone. */
   commissionSplit?: { userId: string; pct: string }[];
+  /** Where it was sold, which decides whose revenue it is; empty means where it ships from (ADR 0023). */
+  soldAtLocationId?: string;
   /** Set on a contract billing or release (ADR 0026). */
   contractId?: string;
   billingId?: string;

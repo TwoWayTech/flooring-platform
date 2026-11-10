@@ -29,6 +29,7 @@ import type { CustomerContact, Meeting, MeetingResponse } from "./meetings";
 import type {
   Bill,
   Expense,
+  RecurringExpense,
   GoodsReceipt,
   PurchaseOrder,
   Supplier,
@@ -69,6 +70,7 @@ export interface CompanyFixtures {
   bills: Bill[];
   supplierPayments: SupplierPayment[];
   expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
   crews: Crew[];
   jobs: Job[];
   contracts: Contract[];

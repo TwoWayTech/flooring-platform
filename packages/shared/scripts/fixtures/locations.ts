@@ -15,6 +15,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       address: { street: "4870 Quarry Lane", city: "Denver", state: "CO", zip: "80216", county: "Denver" },
       isDefault: true,
       displaySamples: 0,
+      floorAreaSqFt: "18000",
     },
     {
       id: "sm-loc-springs",
@@ -30,6 +31,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       },
       isDefault: false,
       displaySamples: 0,
+      floorAreaSqFt: "12000",
     },
     {
       id: "sm-loc-studio",
@@ -39,6 +41,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       address: { street: "220 Larkspur Avenue", city: "Denver", state: "CO", zip: "80206", county: "Denver" },
       isDefault: false,
       displaySamples: 142,
+      floorAreaSqFt: "3200",
     },
     {
       id: "sm-loc-southgate",
@@ -54,6 +57,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       },
       isDefault: false,
       displaySamples: 96,
+      floorAreaSqFt: "2400",
     },
   ],
   keystone: [
@@ -65,6 +69,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       address: { street: "900 Keel Road", city: "Harrisburg", state: "PA", zip: "17111", county: "Dauphin" },
       isDefault: true,
       displaySamples: 0,
+      floorAreaSqFt: "14000",
     },
     {
       id: "ks-loc-lancaster",
@@ -74,6 +79,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       address: { street: "41 Millrace Pike", city: "Lancaster", state: "PA", zip: "17601", county: "Lancaster" },
       isDefault: false,
       displaySamples: 0,
+      floorAreaSqFt: "9500",
     },
     {
       id: "ks-loc-frontst",
@@ -83,6 +89,7 @@ const LOCATIONS: Record<CompanyId, Location[]> = {
       address: { street: "1600 Front Street", city: "Harrisburg", state: "PA", zip: "17102", county: "Dauphin" },
       isDefault: false,
       displaySamples: 64,
+      floorAreaSqFt: "2800",
     },
   ],
   harbor: [],

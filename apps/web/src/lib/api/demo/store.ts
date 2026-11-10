@@ -31,6 +31,8 @@ import {
   type CompanySettings,
   type PermissionKey,
   SENSITIVE,
+  businessReport,
+  type BusinessFilters,
   type CommissionPlan,
   type Meeting,
   type ContractLine,
@@ -58,6 +60,9 @@ import {
 import { viewerAccess } from "../../access";
 import type {
   Collections,
+  ExpenseDecision,
+  ExpenseInput,
+  RecurringExpenseInput,
   MeetingInput,
   MeetingRequestInput,
   ReplyInput,
@@ -223,6 +228,7 @@ import {
   terminateContract,
   voidBilling,
 } from "./contract-actions";
+import { raiseRecurringDrafts, reviewExpense, saveExpense, saveRecurringExpense, voidExpense } from "./expense-actions";
 import { sampleDatabase } from "./sample-database";
 import {
   importOverview,
@@ -243,6 +249,8 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   profile: "Company profile",
   payments: "Payments",
   inventory: "Stock rules",
+  expenses: "Expense approval",
+  sharedCosts: "Shared costs",
   hr: "HR",
   meetings: "Meetings",
   email: "Email and notifications",
@@ -289,6 +297,7 @@ export class DemoStore implements ApiClient {
     this.current = await this.db(companyId);
     this.viewer = viewer;
     releaseScheduled(this.actionContext(this.current));
+    raiseRecurringDrafts(this.actionContext(this.current));
     await raiseContractReminders(this.actionContext(this.current));
     if (this.current.upgradeNotice && !this.notices.includes(this.current.upgradeNotice)) {
       this.notices.push(this.current.upgradeNotice);
@@ -846,6 +855,58 @@ export class DemoStore implements ApiClient {
     return this.viewer!.userId;
   }
 
+  async saveExpense(input: ExpenseInput, files: File[]) {
+    return this.act((ctx) => saveExpense(ctx, input, files));
+  }
+
+  async reviewExpense(id: string, decision: ExpenseDecision) {
+    return this.act((ctx) => reviewExpense(ctx, id, decision));
+  }
+
+  async voidExpense(id: string, reason: string) {
+    return this.act((ctx) => voidExpense(ctx, id, reason));
+  }
+
+  async saveRecurringExpense(input: RecurringExpenseInput) {
+    return this.act((ctx) => saveRecurringExpense(ctx, input));
+  }
+
+  async businessReport(filters: BusinessFilters) {
+    const db = this.open();
+    await this.assertCan(db, ["reports.financial.view"]);
+    const can = this.actionContext(db).can;
+    const [margin, people, stock] = await Promise.all([
+      can("sales.margin.view_sensitive"),
+      can(SENSITIVE.payRate),
+      can(SENSITIVE.productCost),
+    ]);
+    return businessReport(
+      {
+        invoices: db.list("invoices"),
+        payments: db.list("payments"),
+        adjustments: db.list("invoiceAdjustments"),
+        refunds: db.list("refunds"),
+        expenses: db.list("expenses"),
+        bills: db.list("bills"),
+        supplierPayments: db.list("supplierPayments"),
+        receipts: db.list("receipts"),
+        purchaseOrders: db.list("purchaseOrders"),
+        suppliers: db.list("suppliers"),
+        users: db.list("users"),
+        employees: db.list("employees"),
+        locations: db.list("locations"),
+        products: db.list("products"),
+        rolls: db.list("rolls"),
+        stockMovements: db.list("stockMovements"),
+        payPeriods: db.list("payPeriods"),
+        settings: db.settings,
+        today: this.todayIso,
+      },
+      filters,
+      { margin, people, stock },
+    );
+  }
+
   async createMeeting(input: MeetingInput) {
     return this.act((ctx) => createMeeting(ctx, input));
   }
@@ -1146,7 +1207,13 @@ export class DemoStore implements ApiClient {
 
   async getFile(fileId: string) {
     const db = this.open();
-    await this.assertCan(db, ["sales.payment.view", "hr.employee.view", "hr.portal.view", "contracts.contract.view"]);
+    await this.assertCan(db, [
+      "sales.payment.view",
+      "hr.employee.view",
+      "hr.portal.view",
+      "contracts.contract.view",
+      "finance.expense.view",
+    ]);
     return readFile(this.actionContext(db), fileId);
   }
 

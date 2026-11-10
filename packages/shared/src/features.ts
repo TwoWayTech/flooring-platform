@@ -177,9 +177,9 @@ export const FEATURES = {
     title: "Expenses",
     product: "flooring",
     module: "core",
-    status: "later",
-    enabled: false,
-    screens: ["/finance?view=expenses"],
+    status: "demo",
+    enabled: true,
+    screens: ["/finance?view=expenses", "/settings/expenses"],
   },
   "purchasing.orders": {
     title: "Suppliers, purchase orders and payables",
@@ -204,6 +204,14 @@ export const FEATURES = {
     status: "demo",
     enabled: true,
     screens: ["/reports"],
+  },
+  "reports.business": {
+    title: "Business report",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
   },
   "reports.pnl": {
     title: "Profit and loss report",
