@@ -132,6 +132,18 @@ describe("progress billing (spec D2, ADR 0026)", () => {
     expect(parts.map((p) => p.amount)).toEqual(["641.03", "358.97"]);
   });
 
+  it("a milestone bills its whole value, and its retainage, when marked complete", () => {
+    const [billing] = post([[input("M1", "800.00", "0", "5")]]);
+    expect([billing!.gross, billing!.withheld]).toEqual(["800.00", "40.00"]);
+    const figures = contractFigures(
+      contract(),
+      [line("M1", "800", { billing: "milestone" })],
+      post([[input("M1", "800.00", "0", "5")]]),
+      [],
+    );
+    expect(figures).toMatchObject({ value: "800.00", billed: "800.00", held: "40.00", remaining: "0.00" });
+  });
+
   it("refuses billing past a line's value, and a billing that changes nothing", () => {
     const lines = [line("L1", "1000")];
     expect(billingProblem([input("L1", "1200")], lines, [])).toMatch(/value/);

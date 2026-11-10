@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to F are done and pushed. Batch G is next. Live sites are still feature batch 2.
-- Next step: build Batch G from item G1.
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to F and G1 to G3 are done and pushed. The final walkthrough (G4) is running. Live sites are still feature batch 2.
+- Next step: finish G4, then Batch H, the redeploy, the live test run and the demo-v3 tag.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -195,9 +195,9 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch F: full suite green (468 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch G: final walkthrough and polish
-- [ ] G1. Seed data per the spec, plus healthy payables and sales across locations (U-28, U-29); reconciliation extended (expenses in the ledger, location profit = company profit, contract invoiced + remaining = value, gross pay = its parts)
-- [ ] G2. Unit tests: carton hints and rounding, warehouse availability, commission rules, overtime weekly and daily, gross pay, time-off accrual, retainage and milestone billing, change orders, ICS, expense sharing, report totals
-- [ ] G3. E2E flows tagged `@flow`, 1 to 7
+- [x] G1. Seed data per the spec, plus healthy payables and sales across locations (U-28, U-29); reconciliation extended (expenses in the ledger, location profit = company profit, contract invoiced + remaining = value, gross pay = its parts)
+- [x] G2. Unit tests: carton hints and rounding, warehouse availability, commission rules, overtime weekly and daily, gross pay, time-off accrual, retainage and milestone billing, change orders, ICS, expense sharing, report totals
+- [x] G3. E2E flows tagged `@flow`, 1 to 7
 - [ ] G4. Repeat the walkthrough for every persona, all companies, both themes and 375 px; update docs/ux-audit.md; fix what is left at high or medium; list low items for later
 - [ ] Batch G: full suite green
 

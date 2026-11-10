@@ -11,6 +11,7 @@ import {
   boxedStock,
   computeTotals,
   contractFigures,
+  expenseJournal,
   customerReceivable,
   daysBetween,
   dec,
@@ -225,6 +226,30 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
       );
       expect(row.paidRevenue, row.name).toBe(moneyString(revenue));
     }
+  });
+
+  it("every expense posts balanced journal lines", () => {
+    for (const e of f.expenses) {
+      const lines = expenseJournal(e);
+      expect(moneyString(sum(lines.map((l) => l.debit))), e.number).toBe(moneyString(sum(lines.map((l) => l.credit))));
+      if (e.status === "confirmed") expect(lines.length, e.number).toBeGreaterThan(0);
+    }
+  });
+
+  it("payables look healthy: most of what is open is not overdue, and no supplier is over credit", () => {
+    const ledgers = billLedgerIndex(f.bills, f.supplierPayments, today);
+    const open = f.bills.filter((b) => dec(ledgers.get(b.id)!.balance).gt(0));
+    const total = sum(open.map((b) => ledgers.get(b.id)!.balance));
+    const overdue = sum(open.filter((b) => ledgers.get(b.id)!.overdue).map((b) => ledgers.get(b.id)!.balance));
+    if (total.gt(0)) expect(overdue.dividedBy(total).toNumber()).toBeLessThan(0.4);
+    for (const s of f.suppliers.filter((x) => dec(x.creditLimit).gt(0))) {
+      const owed = sum(open.filter((b) => b.supplierId === s.id && b.poId).map((b) => ledgers.get(b.id)!.balance));
+      expect(owed.lte(s.creditLimit), s.name).toBe(true);
+    }
+  });
+
+  it("sales are spread across more than one location", () => {
+    expect(new Set(f.invoices.map((i) => i.soldAtLocationId)).size).toBeGreaterThan(1);
   });
 
   it("each pay line adds up to its gross pay, and only W-2 staff are on it", () => {

@@ -104,21 +104,38 @@ export function withExpenseRecords(ctx: GenContext, f: CompanyFixtures): Company
       }),
     )
     .filter((e) => e.date <= ctx.anchor);
-  const rentTemplate: RecurringExpense = {
-    id: ctx.id("rex"),
-    supplierId: vendorId("internet_phone") ?? "",
-    category: "internet_phone",
-    locationId: null,
-    amount: rng.money(240, 380),
-    tax: "0.00",
-    paymentMethod: "ach",
-    frequency: "monthly",
-    dayOfMonth: 5,
-    startsOn: addDays(ctx.anchor, -32),
-    endsOn: null,
-    active: true,
-    note: "Internet and phone plan",
-  };
+  const templates: RecurringExpense[] = [
+    {
+      id: ctx.id("rex"),
+      supplierId: vendorId("internet_phone") ?? "",
+      category: "internet_phone",
+      locationId: null,
+      amount: rng.money(240, 380),
+      tax: "0.00",
+      paymentMethod: "ach",
+      frequency: "monthly",
+      dayOfMonth: 5,
+      startsOn: addDays(ctx.anchor, -32),
+      endsOn: null,
+      active: true,
+      note: "Internet and phone plan",
+    },
+    ...f.locations.slice(0, 2).map((l, i): RecurringExpense => ({
+      id: ctx.id("rex"),
+      supplierId: vendorId(i === 0 ? "rent" : "electricity") ?? "",
+      category: i === 0 ? "rent" : "electricity",
+      locationId: l.id,
+      amount: rng.money(i === 0 ? 4200 : 310, i === 0 ? 6800 : 620),
+      tax: "0.00",
+      paymentMethod: "ach",
+      frequency: "monthly",
+      dayOfMonth: 1,
+      startsOn: addDays(ctx.anchor, 4),
+      endsOn: null,
+      active: true,
+      note: i === 0 ? "Warehouse lease" : "Electricity, estimated",
+    })),
+  ];
   const pending = full(
     {
       ...EMPTY,
@@ -171,7 +188,7 @@ export function withExpenseRecords(ctx: GenContext, f: CompanyFixtures): Company
   return {
     ...f,
     expenses: all,
-    recurringExpenses: [rentTemplate],
+    recurringExpenses: templates,
     bills: [
       ...f.bills,
       {

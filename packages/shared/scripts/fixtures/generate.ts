@@ -10,6 +10,7 @@ import { buildCustomers, withJobSites } from "./customers";
 import { buildEmployees, buildPto, buildTimesheets } from "./hr";
 import { withContracts } from "./contracts";
 import { withExpenseRecords } from "./expense-records";
+import { withFinalTouches } from "./final-touches";
 import { withHrRecords } from "./hr-records";
 import { withMeetingRecords } from "./meeting-records";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
@@ -109,12 +110,13 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withSoldAt(
+  const seeded = withSoldAt(
     withExpenseRecords(
       ctx,
       withMeetingRecords(ctx, withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures))))),
     ),
   );
+  return withFinalTouches(ctx, seeded);
 }
 
 /**
@@ -122,10 +124,19 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
  * showroom when it has one, dealers and contractors from the warehouse.
  */
 function withSoldAt(f: CompanyFixtures): CompanyFixtures {
-  const site = (doc: { customerId: string; branchId: string; locationId: string }) => {
+  const showrooms = f.locations.filter((l) => l.kind === "showroom");
+  const warehouses = f.locations.filter((l) => l.kind === "warehouse");
+  /** About a third of sales go to the other location, by a rule on the record's own id (audit U-29). */
+  const pick = <T>(list: readonly T[], id: string, fallback: T): T => {
+    if (list.length === 0) return fallback;
+    const n = Number(id.replace(/\D/g, "").slice(-4)) || 0;
+    return list[n % 3 === 0 ? list.length - 1 : 0]!;
+  };
+  const site = (doc: { id: string; customerId: string; locationId: string }) => {
     const homeowner = f.customers.find((c) => c.id === doc.customerId)?.type === "homeowner";
-    const showroom = f.locations.find((l) => l.kind === "showroom" && l.branchId === doc.branchId);
-    return homeowner && showroom ? showroom.id : doc.locationId;
+    if (homeowner && showrooms.length > 0) return pick(showrooms, doc.id, showrooms[0]!).id;
+    const place = pick(warehouses, doc.id, { id: doc.locationId } as (typeof warehouses)[number]);
+    return place.id;
   };
   return {
     ...f,
