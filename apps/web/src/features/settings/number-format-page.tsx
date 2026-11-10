@@ -19,7 +19,7 @@ import { SettingRow } from "./form/setting-row";
 import { SettingsForm } from "./form/settings-form";
 import type { SectionProps } from "./localization/simple-tabs";
 
-const UNITS: Partial<Record<NumberKind, string>> = { quantity: "sq ft", count: "cartons" };
+const UNITS: Partial<Record<NumberKind, string>> = { quantity: "sq ft", count: "items" };
 
 /** A − value + control for one number kind, kept inside the kind's allowed range. */
 function DecimalsStepper({

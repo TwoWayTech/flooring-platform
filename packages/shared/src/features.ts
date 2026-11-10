@@ -37,6 +37,14 @@ export const FEATURES = {
     enabled: true,
     screens: ["/"],
   },
+  "units.square-feet": {
+    title: "Square feet with carton hints",
+    product: "flooring",
+    module: "core",
+    status: "demo",
+    enabled: true,
+    screens: [],
+  },
   "inventory.products": {
     title: "Product catalog",
     product: "flooring",

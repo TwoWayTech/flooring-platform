@@ -1,5 +1,6 @@
 import { format, parseISO } from "date-fns";
 import {
+  cartonEquivalent,
   formatNumber,
   PAYMENT_METHOD_LABELS,
   lineAmount,
@@ -9,6 +10,7 @@ import {
   UNIT_LABELS,
   type Address,
   type CompanySettings,
+  type DocLine,
   type Customer,
   type DecimalInput,
   type Invoice,
@@ -20,6 +22,13 @@ import {
   plainAddress,
 } from "@workspace/shared";
 
+/** "≈ 22 cartons", or null for a line not sold in cartons (spec A1). */
+function cartonNote(line: DocLine, fmt: (value: DecimalInput, kind: NumberKind) => string): string | null {
+  if (!line.sqFtPerCarton) return null;
+  const { cartons } = cartonEquivalent(line.quantity, line.sqFtPerCarton);
+  return `≈ ${fmt(cartons, "count")} ${cartons === 1 ? "carton" : "cartons"}`;
+}
+
 /** What a balance held until installation reads as its due date (spec B6). */
 export const HELD_LABEL = "After installation";
 
@@ -28,6 +37,8 @@ export interface ModelLine {
   id: string;
   description: string;
   quantity: string;
+  /** The carton equivalent, for boxed goods (spec A1). */
+  cartons: string | null;
   price: string;
   amount: string;
 }
@@ -117,6 +128,7 @@ export function buildInvoiceModel(
       id: line.id,
       description: line.description,
       quantity: `${fmt(line.quantity, quantityKind(line.unit))} ${UNIT_LABELS[line.unit]}`,
+      cartons: cartonNote(line, fmt),
       price: fmt(line.unitPrice, "money"),
       amount: fmt(lineAmount(line), "money"),
     })),

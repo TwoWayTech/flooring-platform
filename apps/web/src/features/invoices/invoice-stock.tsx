@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   locationName,
   mayIssue,
+  STOCK_UNIT_LABELS,
   stockUnit,
   type Invoice,
   type InvoiceLedger,
@@ -17,6 +18,7 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { Panel } from "@workspace/ui/components/panel";
 import { StatusPill } from "@workspace/ui/components/status-pill";
 import { ReasonDialog } from "@/components/reason-dialog";
@@ -24,10 +26,8 @@ import { ScrollRegion } from "@/components/scroll-region";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 
-const UNIT = { ft: "ft", cartons: "cartons", each: "each" } as const;
-
 /**
- * The stock an invoice holds (spec C2): per line, the roll length or cartons reserved at its
+ * The stock an invoice holds (spec C2): per line, the roll length or area reserved at its
  * warehouse, or what is short. Cut / Issue works once a deposit or payment is confirmed; before
  * that only with inventory.reservation.override and a reason, which is audited.
  */
@@ -88,7 +88,7 @@ export function InvoiceStock({
               const product = products.find((p) => p.id === r.productId);
               const line = invoice.lines.find((l) => l.id === r.lineId);
               const roll = rolls.find((x) => x.id === r.rollId);
-              const unit = UNIT[(product && stockUnit(product)) || "each"];
+              const unit = STOCK_UNIT_LABELS[(product && stockUnit(product)) || "each"];
               const short = r.shortBy !== "0";
               return (
                 <tr key={r.id} className="border-hairline border-b">
@@ -106,6 +106,14 @@ export function InvoiceStock({
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <Num kind="quantity" value={r.quantity} unit={unit} />
+                    {r.rollId ? null : (
+                      <CartonHint
+                        quantity={r.quantity}
+                        sqFtPerCarton={product?.sqFtPerCarton}
+                        compact
+                        className="block"
+                      />
+                    )}
                   </td>
                   <td className="py-2 pr-3">
                     {r.status === "issued" ? (

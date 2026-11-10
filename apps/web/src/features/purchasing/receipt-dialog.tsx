@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   dec,
   receivedByLine,
+  stockUnit,
   UNIT_LABELS,
   type GoodsReceipt,
   type Location,
@@ -24,6 +25,8 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Field } from "@/components/field";
+import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { WarehouseSelect } from "@/components/warehouse-select";
 import { api } from "@/lib/api";
 
@@ -64,7 +67,7 @@ export function ReceiptDialog({
   const [pending, setPending] = useState(false);
   const isRoll = (productId: string) => {
     const p = products.find((x) => x.id === productId);
-    return p?.unit === "sq_yd" && !!p.widthFt;
+    return !!p && stockUnit(p) === "ft";
   };
   const set = (i: number, patch: Partial<ReceiptLine>) =>
     setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -111,19 +114,20 @@ export function ReceiptDialog({
                 <legend className="line-clamp-2 px-1 text-sm font-medium break-words">{po_line.description}</legend>
                 <div className="grid grid-cols-2 gap-3">
                   <Field id={`gr-${i}-received`} label={`Received in good condition (${unit})`}>
-                    <Input
+                    <AreaQuantityInput
                       id={`gr-${i}-received`}
-                      inputMode="decimal"
                       value={l.received}
-                      onChange={(e) => set(i, { received: number(e.target.value) })}
+                      sqFtPerCarton={po_line.sqFtPerCarton}
+                      onChange={(received) => set(i, { received })}
                     />
+                    <CartonHint quantity={l.received} sqFtPerCarton={po_line.sqFtPerCarton} />
                   </Field>
                   <Field id={`gr-${i}-damaged`} label={`Damaged (${unit})`}>
-                    <Input
+                    <AreaQuantityInput
                       id={`gr-${i}-damaged`}
-                      inputMode="decimal"
                       value={l.damaged}
-                      onChange={(e) => set(i, { damaged: number(e.target.value) })}
+                      sqFtPerCarton={po_line.sqFtPerCarton}
+                      onChange={(damaged) => set(i, { damaged })}
                     />
                   </Field>
                 </div>

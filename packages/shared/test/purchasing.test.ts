@@ -18,11 +18,11 @@ import {
   type SupplierPayment,
 } from "../src";
 
-const carpet = { id: "c", sku: "CP-1", unit: "sq_yd", widthFt: 12, category: "carpet" } as Product;
-const lvp = { id: "l", sku: "LV-1", unit: "carton", category: "lvp" } as Product;
+const carpet = { id: "c", sku: "CP-1", unit: "sq_ft", widthFt: 12, category: "carpet" } as Product;
+const lvp = { id: "l", sku: "LV-1", unit: "sq_ft", sqFtPerCarton: "20.00", category: "lvp" } as Product;
 const lines = [
-  { id: "1", productId: "c", description: "Carpet", quantity: "200", unit: "sq_yd" as const, unitCost: "18.00" },
-  { id: "2", productId: "l", description: "LVP", quantity: "40", unit: "carton" as const, unitCost: "36.50" },
+  { id: "1", productId: "c", description: "Carpet", quantity: "200", unit: "sq_ft" as const, unitCost: "18.00" },
+  { id: "2", productId: "l", description: "LVP", quantity: "40", unit: "sq_ft" as const, unitCost: "36.50" },
 ];
 const po: PurchaseOrder = {
   id: "po",
@@ -82,7 +82,7 @@ describe("purchasing (spec D1 to D3)", () => {
       rollId: () => `r${++n}`,
     });
     expect(movements).toEqual([expect.objectContaining({ productId: "l", quantity: "30", kind: "receipt" })]);
-    expect(rolls).toEqual([expect.objectContaining({ productId: "c", remainingLengthFt: "75", locationId: "w2" })]);
+    expect(rolls).toEqual([expect.objectContaining({ productId: "c", remainingLengthFt: "8.3", locationId: "w2" })]);
   });
 
   it("derives the order status from receipts, bills and supplier payments", () => {

@@ -13,7 +13,7 @@ export type ProductCategory =
   | "adhesive_trim"
   | "service";
 
-/** A catalog product. Price and cost are per selling unit. */
+/** A catalog product. Price and cost are per selling unit: per sq ft for every area good (spec A1). */
 export interface Product {
   id: string;
   sku: string;
@@ -27,7 +27,7 @@ export interface Product {
   unit: SellUnit;
   price: string;
   cost: string;
-  /** Boxed goods: sq ft per carton and reorder point. Stock on hand comes from the stock ledger. */
+  /** Boxed goods: sq ft per carton and reorder point in sq ft. Stock on hand comes from the stock ledger. */
   sqFtPerCarton?: string;
   reorderPoint?: number;
   /** Broadloom: roll width in ft. */

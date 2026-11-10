@@ -67,8 +67,8 @@ export function roomsArea(rooms: readonly Room[], roomIds?: readonly string[]) {
 
 /**
  * Re-measures lines tied to rooms after a room changes (spec "Quote builder"): materials get
- * the rooms' area plus waste in their selling unit (sq yd or whole cartons); installation labor
- * sold per sq ft gets the net area. Lines not tied to rooms keep their quantity.
+ * the rooms' area plus waste in sq ft, rounded up to whole cartons for boxed goods; installation
+ * labor sold per sq ft gets the net area. Lines not tied to rooms keep their quantity.
  */
 export function remeasureLines(
   lines: readonly DocLine[],
@@ -82,7 +82,7 @@ export function remeasureLines(
       return line.unit === "sq_ft" ? { ...line, quantity: area.toDecimalPlaces(2).toString() } : line;
     }
     const product = products.find((p) => p.id === line.productId);
-    const quantity = quantityForArea(area, line.wastePct ?? "0", line.unit, product?.sqFtPerCarton);
+    const quantity = quantityForArea(area, line.wastePct ?? "0", product?.sqFtPerCarton);
     return { ...line, quantity: quantity.toString() };
   });
 }

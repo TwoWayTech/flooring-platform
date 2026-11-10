@@ -30,12 +30,14 @@ interface TransfersPanelProps {
   users: User[];
 }
 
-/** What a transfer carries, in words: "12 cartons of Harbor Oak, roll NM-4471". */
+/** What a transfer carries, in words: "283.68 sq ft of Harbor Oak, roll NM-4471". */
 function itemsOf(transfer: Transfer, products: readonly Product[], rolls: readonly Roll[]): string {
   return transfer.lines
     .map((line) => {
       if (line.rollId) return `roll ${rolls.find((r) => r.id === line.rollId)?.rollNumber ?? ""}`.trim();
-      return `${line.quantity} × ${products.find((p) => p.id === line.productId)?.name ?? "item"}`;
+      const product = products.find((p) => p.id === line.productId);
+      const unit = product?.sqFtPerCarton ? " sq ft of " : " × ";
+      return `${line.quantity}${unit}${product?.name ?? "item"}`;
     })
     .join(", ");
 }

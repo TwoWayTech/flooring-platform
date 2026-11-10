@@ -37,7 +37,7 @@ export type DraftAction =
 /** Whether a product is measured from the rooms: goods sold by area, and labor sold per sq ft. */
 function measuredFromRooms(product: Product): boolean {
   if (product.category === "service") return product.unit === "sq_ft";
-  return product.unit === "sq_yd" || product.unit === "carton";
+  return product.unit === "sq_ft";
 }
 
 /** A new line for a product: tied to every room when it is measured by area, otherwise one unit. */
@@ -52,6 +52,7 @@ function lineFor(product: Product, lineId: string, rooms: readonly Room[], waste
     quantity: "1",
     unitPrice: product.price,
     unitCost: product.cost,
+    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
     ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
     ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
   };

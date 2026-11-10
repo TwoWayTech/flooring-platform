@@ -8,6 +8,7 @@ import {
   UNIT_SINGULAR,
   isBoxed,
   type Product,
+  STOCK_UNIT_LABELS,
   type Reservation,
   type Roll,
   type Location,
@@ -16,6 +17,7 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { RollGauge } from "@workspace/ui/components/roll-gauge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { Swatch } from "@workspace/ui/components/swatch";
@@ -112,12 +114,13 @@ export function ProductDrawer({
               {product.category !== "service"
                 ? warehousesOf(locations).map((w) => {
                     const s = stockLevel(product, { rolls, movements, reservations }, w.id);
-                    const kind = s.unit === "ft" ? "quantity" : "count";
+                    const kind = s.unit === "each" ? "count" : "quantity";
                     return (
                       <Fact key={w.id} label={`Available at ${w.name}`}>
                         <span className="inline-flex items-center gap-2">
                           <StockBadge status={s.status} />
-                          <Num kind={kind} value={s.available} unit={s.unit} />
+                          <Num kind={kind} value={s.available} unit={STOCK_UNIT_LABELS[s.unit]} />
+                          <CartonHint quantity={s.available} sqFtPerCarton={product.sqFtPerCarton} compact />
                         </span>
                         <span className="text-muted-foreground block text-xs">
                           <Num kind={kind} value={s.onHand} /> on hand, <Num kind={kind} value={s.reserved} /> reserved

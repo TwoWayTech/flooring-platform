@@ -256,8 +256,12 @@ function buildReturn(ctx: GenContext, inputs: SalesInputs, original: Invoice): I
   const line = original.lines.find((l) => l.category === "material");
   if (!line) return null;
   const customer = inputs.customers.find((c) => c.id === original.customerId)!;
-  const quantity =
-    line.unit === "carton" || line.unit === "each"
+  const pack = inputs.products.find((p) => p.id === line.productId)?.sqFtPerCarton;
+  const quantity = pack
+    ? dec(Math.max(1, Math.floor((Number(line.quantity) / Number(pack)) * 0.25)))
+        .times(pack)
+        .toString()
+    : line.unit === "each"
       ? String(Math.max(1, Math.floor(Number(line.quantity) * 0.25)))
       : dec(line.quantity).times("0.25").toDecimalPlaces(2).toString();
   const lines = [{ ...line, id: ctx.id("ln"), quantity, roomIds: undefined }];

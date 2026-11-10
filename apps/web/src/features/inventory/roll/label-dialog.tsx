@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@workspace/ui/components/dialog";
 import { Num } from "@workspace/ui/components/num";
-import { rollSqYd } from "../stock";
+import { rollSqFt } from "../stock";
 
 /** A 4 × 2 in roll label preview; Print sends only the label to the printer (see print styles). */
 export function LabelDialog({
@@ -60,7 +60,7 @@ export function LabelDialog({
             </span>
             <span className="col-span-2">{location}</span>
             <span>
-              <Num kind="quantity" value={rollSqYd(roll)} unit="sq yd" />
+              <Num kind="quantity" value={rollSqFt(roll)} unit="sq ft" />
             </span>
           </div>
         </div>

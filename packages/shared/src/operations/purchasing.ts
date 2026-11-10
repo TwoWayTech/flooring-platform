@@ -1,6 +1,6 @@
 import { addDays, daysBetween } from "../dates";
 import { dec, maxDec, minDec, moneyString, roundMoney, roundUnitCost, sum, type Dec } from "../money";
-import { isBoxed } from "../stock";
+import { isBoxed, stockUnit } from "../stock";
 import type {
   Bill,
   GoodsReceipt,
@@ -14,7 +14,6 @@ import type {
   SupplierPayment,
   SupplierTerms,
 } from "../types";
-import { SQ_FT_PER_SQ_YD } from "../units";
 
 /** Supplier terms as people say them (spec D3). */
 export const SUPPLIER_TERMS_LABELS: Record<SupplierTerms, string> = {
@@ -105,8 +104,8 @@ export function receiptStock(
     const product = products.find((p) => p.id === line.productId);
     const ordered = po.lines.find((l) => l.id === line.poLineId);
     if (!product || !ordered || dec(line.received).lte(0)) continue;
-    if (product.unit === "sq_yd" && product.widthFt) {
-      const fallback = dec(line.received).times(SQ_FT_PER_SQ_YD).dividedBy(product.widthFt).toDecimalPlaces(1);
+    if (stockUnit(product) === "ft" && product.widthFt) {
+      const fallback = dec(line.received).dividedBy(product.widthFt).toDecimalPlaces(1);
       const entered = line.rolls.length
         ? line.rolls
         : [
@@ -125,7 +124,7 @@ export function receiptStock(
           widthFt: product.widthFt,
           originalLengthFt: r.lengthFt,
           remainingLengthFt: r.lengthFt,
-          costPerSqFt: roundUnitCost(dec(ordered.unitCost).dividedBy(SQ_FT_PER_SQ_YD)).toString(),
+          costPerSqFt: roundUnitCost(dec(ordered.unitCost)).toString(),
           locationId: receipt.locationId,
           bin: "Receiving",
           transferId: null,

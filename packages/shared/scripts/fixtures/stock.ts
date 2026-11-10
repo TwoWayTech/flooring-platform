@@ -1,4 +1,5 @@
 import { addDays } from "../../src/dates";
+import { dec } from "../../src/money";
 import type { Location, Product, Roll, StockMovement, Transfer, User } from "../../src/types";
 import type { GeneratedProduct } from "./catalog";
 import type { GenContext } from "./context";
@@ -15,7 +16,7 @@ export interface StockFixtures {
 }
 
 /**
- * Opening stock: each boxed product's counted cartons split between the two warehouses, dated
+ * Opening stock in sq ft (spec A1): each boxed product's counted cartons split between the two warehouses, dated
  * 30 days back so later documents follow it (plan section 2.1: on hand is the ledger's sum).
  */
 function openingMovements(
@@ -37,12 +38,19 @@ function openingMovements(
         at,
         productId: p.id,
         locationId: w.id,
-        quantity: String(quantity),
+        quantity: inStockUnit(p, quantity),
         kind: "opening" as const,
         source,
         byUserId: null,
       }));
   });
+}
+
+/** A count of whole cartons or items in the product's stock unit: sq ft for boxed area goods. */
+function inStockUnit(product: Pick<Product, "sqFtPerCarton">, count: number): string {
+  return dec(count)
+    .times(product.sqFtPerCarton ?? 1)
+    .toString();
 }
 
 /** A transfer of a few cartons of one product, with its ledger lines when it was sent and received. */
@@ -56,20 +64,21 @@ function boxedTransfer(
 ): { transfer: Transfer; movements: StockMovement[] } {
   const id = ctx.id("trf");
   const number = `TR-${1000 + Number(id.slice(-4))}`;
-  const line = { id: ctx.id("trl"), productId: product.id, rollId: null, quantity: String(quantity) };
+  const moved = inStockUnit(product, quantity);
+  const line = { id: ctx.id("trl"), productId: product.id, rollId: null, quantity: moved };
   const source = { kind: "transfer" as const, id, number };
-  const move = (locationId: string, signed: number, at: string, kind: "transfer_out" | "transfer_in") => ({
+  const move = (locationId: string, signed: string, at: string, kind: "transfer_out" | "transfer_in") => ({
     id: ctx.id("mov"),
     at,
     productId: product.id,
     locationId,
-    quantity: String(signed),
+    quantity: signed,
     kind,
     source,
     byUserId,
   });
-  const movements = [move(route.from.id, -quantity, dates.sent, "transfer_out")];
-  if (dates.received) movements.push(move(route.to.id, quantity, dates.received, "transfer_in"));
+  const movements = [move(route.from.id, `-${moved}`, dates.sent, "transfer_out")];
+  if (dates.received) movements.push(move(route.to.id, moved, dates.received, "transfer_in"));
   return {
     transfer: {
       id,

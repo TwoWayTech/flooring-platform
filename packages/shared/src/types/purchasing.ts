@@ -27,12 +27,12 @@ export interface PoLine {
   id: string;
   productId: string;
   description: string;
-  /** In the product's selling unit: cartons for boxed area goods, sq yd for broadloom. */
+  /** In the product's selling unit: sq ft for every area good (spec A1). */
   quantity: string;
   unit: SellUnit;
   unitCost: string;
-  /** The area ordered, in sq ft, for goods ordered by area (spec D1); cartons are calculated from it. */
-  areaSqFt?: string;
+  /** Coverage of one carton when the line was written, for the carton hint (spec A1). */
+  sqFtPerCarton?: string;
 }
 
 /**

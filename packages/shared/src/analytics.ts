@@ -74,7 +74,7 @@ export function rollValue(roll: Roll): Dec {
 export type BoxedStock = ReadonlyMap<string, Dec>;
 
 /**
- * Inventory valuation (spec section 4): rolls remaining × their cost plus cartons × average
+ * Inventory valuation (spec section 4): rolls remaining × their cost plus boxed quantity × average
  * cost. Boxed goods use weighted average cost, stored as the product cost; their quantities come
  * from the stock ledger.
  */
@@ -174,9 +174,9 @@ export interface SlowMover {
   productId: string;
   lastSoldAt: string | null;
   daysWithoutSale: number;
-  /** Stock on hand in the product's stock unit: cartons or each for boxed goods, ft for rolls. */
+  /** Stock on hand in the product's stock unit: sq ft or each for boxed goods, ft for rolls. */
   onHand: string;
-  onHandUnit: "cartons" | "each" | "ft";
+  onHandUnit: "sq_ft" | "each" | "ft";
 }
 
 /**
@@ -213,7 +213,7 @@ export function slowMovers(
         lastSoldAt: sold,
         daysWithoutSale: daysBetween(sold ?? p.createdAt, today),
         onHand: onHand.toString(),
-        onHandUnit: (feet ? "ft" : p.unit === "each" ? "each" : "cartons") as SlowMover["onHandUnit"],
+        onHandUnit: (feet ? "ft" : p.unit === "each" ? "each" : "sq_ft") as SlowMover["onHandUnit"],
       };
     })
     .filter((m) => dec(m.onHand).gt(0))
@@ -420,7 +420,7 @@ export interface CategoryValuation {
 
 /**
  * Inventory valuation by category (spec section 4): rolls at remaining area × their own cost,
- * boxed goods at cartons × average cost. The categories add up to inventoryValuation's total.
+ * boxed goods at quantity × average cost. The categories add up to inventoryValuation's total.
  */
 export function inventoryByCategory(
   products: readonly Product[],

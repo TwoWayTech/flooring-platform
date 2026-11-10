@@ -98,16 +98,6 @@ export function RegionTab({ draft, setDraft, changed }: SectionProps<L["region"]
           />
         )}
       </SettingRow>
-      <SettingRow setting="region.areaUnit" changed={changed("areaUnit")}>
-        {(id) => (
-          <Choice
-            id={id}
-            value={draft.areaUnit}
-            options={{ sq_ft: "Square feet", sq_yd: "Square yards", m2: "Square meters" }}
-            onChange={(areaUnit) => setDraft({ ...draft, areaUnit })}
-          />
-        )}
-      </SettingRow>
       <SettingRow setting="region.statesOfOperation" changed={changed("statesOfOperation")} className="sm:col-span-2">
         {(id) => (
           <div

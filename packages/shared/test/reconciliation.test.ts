@@ -110,7 +110,7 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     expect(moneyString(buckets)).toBe(aging.total);
   });
 
-  it("inventory valuation = rolls remaining × their cost + cartons × average cost", () => {
+  it("inventory valuation = rolls remaining × their cost + boxed quantity × average cost", () => {
     const rolls = sum(f.rolls.map((r) => rollAreaSqFt(r.widthFt, r.remainingLengthFt).times(r.costPerSqFt)));
     const onHand = boxedStock(f.stockMovements);
     const boxed = sum(f.products.map((p) => (onHand.get(p.id) ?? dec(0)).times(p.cost)));

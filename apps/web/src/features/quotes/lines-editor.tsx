@@ -7,6 +7,7 @@ import {
   stockUnit,
   TAX_CATEGORY_LABELS,
   UNIT_LABELS,
+  UNIT_SINGULAR,
   type DocLine,
   type DocumentTotals,
   type Product,
@@ -17,6 +18,8 @@ import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { ProductPicker } from "./product-picker";
 import { RollPicker, type RollStock } from "./roll-picker";
+import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { ScrollRegion } from "@/components/scroll-region";
 
 interface LinesEditorProps {
@@ -66,7 +69,7 @@ function roomsNote(line: DocLine, rooms: readonly Room[]): string | null {
 }
 
 /**
- * Quote lines (spec "Quote builder", B3): materials in sq yd or cartons with a waste % (shown only
+ * Quote lines (spec "Quote builder", A1, B3): materials in sq ft with a carton hint and a waste % (shown only
  * with sales.waste.view; the quantity already includes it), labor and services. Lines measured from rooms update when a room changes; others take a typed quantity.
  */
 export function LinesEditor({
@@ -134,20 +137,17 @@ export function LinesEditor({
                       <Num kind={quantityKind(line.unit)} value={line.quantity} unit={UNIT_LABELS[line.unit]} />
                     ) : (
                       <span className="inline-flex items-center gap-1.5">
-                        <Input
+                        <AreaQuantityInput
                           aria-label={`${line.description} quantity`}
-                          inputMode="decimal"
-                          defaultValue={line.quantity}
-                          key={line.quantity}
-                          onBlur={(e) => {
-                            const value = e.target.value.replace(/[^\d.]/g, "");
-                            if (value && Number(value) > 0) onChange({ ...line, quantity: value });
-                          }}
-                          className="h-8 w-20 text-right tabular-nums"
+                          value={line.quantity}
+                          sqFtPerCarton={line.sqFtPerCarton}
+                          onChange={(quantity) => onChange({ ...line, quantity })}
+                          className="h-8 w-24 text-right tabular-nums"
                         />
                         <span className="text-muted-foreground text-xs">{UNIT_LABELS[line.unit]}</span>
                       </span>
                     )}
+                    <CartonHint quantity={line.quantity} sqFtPerCarton={line.sqFtPerCarton} className="block" />
                   </td>
                   {showWaste ? (
                     <td className="px-3 py-2 text-right">
@@ -172,6 +172,7 @@ export function LinesEditor({
                   ) : null}
                   <td className="px-3 py-2 text-right">
                     <Num kind="money" value={line.unitPrice} />
+                    <span className="text-muted-foreground block text-xs">per {UNIT_SINGULAR[line.unit]}</span>
                   </td>
                   <td className="px-3 py-2 text-right font-medium">
                     <Num kind="money" value={lineAmount(line)} />

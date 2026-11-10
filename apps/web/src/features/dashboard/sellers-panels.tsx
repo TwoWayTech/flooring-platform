@@ -1,5 +1,6 @@
 "use client";
 
+import { STOCK_UNIT_LABELS } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { Swatch } from "@workspace/ui/components/swatch";
@@ -16,7 +17,11 @@ export function SlowMovers({ rows }: { rows: DashboardData["slow"] }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate">{row.product.name}</span>
               <span className="text-muted-foreground block text-xs">
-                <Num kind={row.onHandUnit === "ft" ? "quantity" : "count"} value={row.onHand} unit={row.onHandUnit} />{" "}
+                <Num
+                  kind={row.onHandUnit === "each" ? "count" : "quantity"}
+                  value={row.onHand}
+                  unit={STOCK_UNIT_LABELS[row.onHandUnit]}
+                />{" "}
                 in stock
               </span>
             </span>

@@ -1,14 +1,14 @@
 import {
   availability,
-  dec,
+  rollAreaSqFt,
   rollsAt,
-  sqFtToSqYd,
   stockStatus,
   stockUnit,
   type Product,
   type Reservation,
   type Roll,
   type StockMovement,
+  type StockUnit,
 } from "@workspace/shared";
 
 /** Stock of one product: on hand, reserved for invoices and available (spec C2), and its status (C3). */
@@ -16,7 +16,7 @@ export interface StockLevel {
   onHand: string;
   reserved: string;
   available: string;
-  unit: "cartons" | "each" | "ft";
+  unit: StockUnit;
   rolls: number;
   status: "out" | "low" | "ok";
 }
@@ -45,7 +45,7 @@ export function stockLevel(
   };
 }
 
-/** Area left on a roll in sq yd, for the rolls list and roll page (width ft × remaining ft ÷ 9). */
-export function rollSqYd(roll: Roll): string {
-  return sqFtToSqYd(dec(roll.widthFt).times(roll.remainingLengthFt)).toString();
+/** Area left on a roll in sq ft, the main figure for a roll (spec A1): width ft × remaining ft. */
+export function rollSqFt(roll: Roll): string {
+  return rollAreaSqFt(roll.widthFt, roll.remainingLengthFt).toString();
 }

@@ -33,7 +33,7 @@ export interface MovementSource {
 }
 
 /**
- * One line of the stock ledger for boxed goods (cartons or items). On hand at a warehouse is the
+ * One line of the stock ledger for boxed goods (sq ft or items). On hand at a warehouse is the
  * sum of its movements, so no stored figure can drift (plan section 2.1).
  */
 export interface StockMovement {
@@ -57,7 +57,7 @@ export interface TransferLine {
   productId: string;
   /** Set when the line moves a carpet roll; the roll moves whole. */
   rollId: string | null;
-  /** Cartons or items for boxed goods; the roll's remaining ft for a roll. */
+  /** Sq ft or items for boxed goods; the roll's remaining ft for a roll. */
   quantity: string;
 }
 

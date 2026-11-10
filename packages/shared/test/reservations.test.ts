@@ -23,21 +23,21 @@ const load = (name: string) =>
 const summit = load("summit");
 const keystone = load("keystone");
 const carpet = summit.products.find((p) => stockUnit(p) === "ft" && p.widthFt)!;
-const boxed = summit.products.find((p) => stockUnit(p) === "cartons")!;
+const boxed = summit.products.find((p) => stockUnit(p) === "sq_ft")!;
 const at = summit.rolls.find((r) => r.productId === carpet.id && !r.transferId)!.locationId;
 const stock = { rolls: summit.rolls, movements: summit.stockMovements, reservations: [] as Reservation[] };
-const line = (id: string, productId: string, unit: "sq_yd" | "carton", quantity: string) =>
+const line = (id: string, productId: string, unit: "sq_ft", quantity: string) =>
   ({ id, productId, unit, quantity, description: id, category: "material", unitPrice: "1", unitCost: "1" }) as const;
 const invoice = (lines: Invoice["lines"]) => ({ id: "inv-x", locationId: at, lines }) as Invoice;
 
 describe("reservations (spec C2)", () => {
-  it("turns sq yd of carpet into ft of roll length, and cartons into cartons", () => {
-    expect(stockNeed({ quantity: "40", unit: "sq_yd" }, { ...carpet, widthFt: 12 })?.toString()).toBe("30");
-    expect(stockNeed({ quantity: "7", unit: "carton" }, boxed)?.toString()).toBe("7");
+  it("turns sq ft of carpet into ft of roll length, and keeps boxed goods in sq ft", () => {
+    expect(stockNeed({ quantity: "360", unit: "sq_ft" }, { ...carpet, widthFt: 12 })?.toString()).toBe("30");
+    expect(stockNeed({ quantity: "168", unit: "sq_ft" }, boxed)?.toString()).toBe("168");
   });
 
   it("holds one roll when one is long enough, and never more than is free", () => {
-    const [r] = planReservations(invoice([line("a", carpet.id, "sq_yd", "4")]), summit.products, stock);
+    const [r] = planReservations(invoice([line("a", carpet.id, "sq_ft", "36")]), summit.products, stock);
     expect(r).toMatchObject({ shortBy: "0", status: "active" });
     const roll = summit.rolls.find((x) => x.id === r!.rollId)!;
     expect(dec(r!.quantity).lte(roll.remainingLengthFt)).toBe(true);
@@ -47,8 +47,8 @@ describe("reservations (spec C2)", () => {
     const free = summit.rolls
       .filter((r) => r.productId === carpet.id && r.locationId === at && !r.transferId)
       .reduce((s, r) => s.plus(rollAvailable(r, [])), dec(0));
-    const sqYd = free.plus(30).times(carpet.widthFt!).div(9).toDecimalPlaces(0, 0).toString();
-    const drafts = planReservations(invoice([line("b", carpet.id, "sq_yd", sqYd)]), summit.products, stock);
+    const sqFt = free.plus(30).times(carpet.widthFt!).toString();
+    const drafts = planReservations(invoice([line("b", carpet.id, "sq_ft", sqFt)]), summit.products, stock);
     const held = drafts.reduce((s, d) => s.plus(d.quantity), dec(0));
     expect(held.toString()).toBe(free.toString());
     expect(drafts.at(-1)).toMatchObject({ rollId: null, quantity: "0" });
@@ -58,7 +58,7 @@ describe("reservations (spec C2)", () => {
   it("holds boxed goods up to what is available at the warehouse", () => {
     const onHand = boxedOnHand(summit.stockMovements, boxed.id, at);
     const [r] = planReservations(
-      invoice([line("c", boxed.id, "carton", onHand.plus(5).toString())]),
+      invoice([line("c", boxed.id, "sq_ft", onHand.plus(5).toString())]),
       summit.products,
       stock,
     );

@@ -1,6 +1,6 @@
 import { dec } from "../money";
 import { boxedOnHand } from "../stock";
-import type { Location, Roll, StockMovement, Transfer, TransferLine } from "../types";
+import type { Location, Product, Roll, StockMovement, Transfer, TransferLine } from "../types";
 
 /** What a person fills in to start a transfer. */
 export interface TransferInput {
@@ -13,13 +13,14 @@ export interface TransferInput {
 /**
  * Why a transfer cannot start, or null when it can (spec A1): both ends are different
  * warehouses (showrooms hold no sellable stock, plan A-1), every roll is at the sender and not
- * already travelling, and boxed quantities are whole and no more than the sender holds.
+ * already travelling, and boxed quantities are whole cartons or items and no more than the sender holds.
  */
 export function validateTransfer(
   input: TransferInput,
   locations: readonly Location[],
   rolls: readonly Roll[],
   movements: readonly StockMovement[],
+  products: readonly Pick<Product, "id" | "sqFtPerCarton">[],
 ): string | null {
   const from = locations.find((l) => l.id === input.fromId);
   const to = locations.find((l) => l.id === input.toId);
@@ -35,7 +36,12 @@ export function validateTransfer(
       continue;
     }
     const quantity = dec(line.quantity || "0");
-    if (!quantity.isInteger() || quantity.lte(0)) return "Quantities are whole cartons or items above zero.";
+    if (quantity.lte(0)) return "Enter a quantity above zero for every item.";
+    const product = products.find((p) => p.id === line.productId);
+    const pack = product?.sqFtPerCarton;
+    if (pack ? !quantity.dividedBy(pack).isInteger() : !quantity.isInteger()) {
+      return pack ? `Move whole cartons: multiples of ${pack} sq ft.` : "Move whole items.";
+    }
     const held = boxedOnHand(movements, line.productId, from.id);
     if (quantity.gt(held)) return `Only ${held.toString()} on hand at ${from.name} for one of the items.`;
   }

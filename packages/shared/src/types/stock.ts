@@ -2,7 +2,7 @@
 export type ReservationStatus = "active" | "released" | "issued";
 
 /**
- * Stock held for one invoice line (spec C2): a length of one roll, or cartons or items of a boxed
+ * Stock held for one invoice line (spec C2): a length of one roll, or sq ft or items of a boxed
  * product at the invoice's warehouse. Available = on hand − active reservations. When stock is
  * short the invoice still issues and the line shows what could not be held (plan C-1).
  */
@@ -14,7 +14,7 @@ export interface Reservation {
   /** The roll a broadloom line is cut from; null for boxed goods. */
   rollId: string | null;
   locationId: string;
-  /** In the product's stock unit: ft of the roll, or cartons or items. */
+  /** In the product's stock unit: ft of the roll, sq ft of boxed goods, or items. */
   quantity: string;
   /** What the line needed beyond what could be held; "0" when fully reserved. */
   shortBy: string;

@@ -5,12 +5,14 @@ import {
   SENSITIVE,
   UNIT_SINGULAR,
   type Location,
+  STOCK_UNIT_LABELS,
   type Product,
   type Reservation,
   type Roll,
   type StockMovement,
 } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { Swatch } from "@workspace/ui/components/swatch";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -54,7 +56,11 @@ export function ProductsTable({
     p.category === "service" ? (
       <span className="text-muted-foreground">Service</span>
     ) : (
-      <Num kind={level(p).unit === "ft" ? "quantity" : "count"} value={level(p)[key]} unit={level(p).unit} />
+      <Num
+        kind={level(p).unit === "each" ? "count" : "quantity"}
+        value={level(p)[key]}
+        unit={STOCK_UNIT_LABELS[level(p).unit]}
+      />
     );
 
   const columns: ColumnSpec<Product>[] = [
@@ -98,6 +104,7 @@ export function ProductsTable({
           {p.category !== "service" && level(p).unit === "ft" ? (
             <span className="text-muted-foreground">on {level(p).rolls} rolls</span>
           ) : null}
+          <CartonHint quantity={level(p).onHand} sqFtPerCarton={p.sqFtPerCarton} compact />
         </span>
       ),
     },

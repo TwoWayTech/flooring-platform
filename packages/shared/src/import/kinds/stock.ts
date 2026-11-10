@@ -57,7 +57,7 @@ function resolveRoll(row: ParsedRow, ctx: PlanContext, product: Product, warehou
     originalLengthFt: length,
     remainingLengthFt: length,
     // The product's cost is per sq yd; a roll keeps it per sq ft (CLAUDE.md rule 4).
-    costPerSqFt: text(row, "cost_per_sq_ft") || roundUnitCost(dec(product.cost).div(9)).toString(),
+    costPerSqFt: text(row, "cost_per_sq_ft") || roundUnitCost(dec(product.cost)).toString(),
     locationId: warehouse.id,
     bin: text(row, "bin"),
     transferId: null,
@@ -70,14 +70,19 @@ function resolveRoll(row: ParsedRow, ctx: PlanContext, product: Product, warehou
 }
 
 /**
- * Boxed stock (spec G1, plan section 2.1): the row is a count of cartons or items on hand at the
+ * Boxed stock (spec G1, A1): the row is the sq ft or items on hand at the
  * warehouse. The import writes one stock movement for the difference, sourced to the import, so
  * on hand stays the sum of movements and a second import of the same count changes nothing.
  */
 function resolveBoxed(row: ParsedRow, ctx: PlanContext, product: Product, warehouse: Location): RowOutcome {
   const label = `${product.sku} at ${warehouse.name}`;
   const counted = text(row, "quantity");
-  if (!counted) return { problems: [{ field: "quantity", message: `Give the ${stockUnit(product)} on hand.` }] };
+  if (!counted)
+    return {
+      problems: [
+        { field: "quantity", message: `Give the ${stockUnit(product) === "sq_ft" ? "sq ft" : "items"} on hand.` },
+      ],
+    };
   const before = boxedOnHand(ctx.world.stockMovements, product.id, warehouse.id);
   const change = dec(counted).minus(before);
   if (change.isZero()) return { action: "skip", label, writes: [], note: `Already ${counted} on hand.` };
@@ -122,7 +127,7 @@ export const STOCK: KindHandler = {
   def: {
     kind: "stock",
     label: "Rolls and stock",
-    description: "Carpet rolls by roll number, and cartons or items on hand, per warehouse.",
+    description: "Carpet rolls by roll number, and sq ft or items on hand, per warehouse.",
     module: "core",
     matchOn: "roll number, or SKU and warehouse",
     fields: [
@@ -146,7 +151,7 @@ export const STOCK: KindHandler = {
         key: "quantity",
         label: "On hand",
         type: "integer",
-        aliases: ["quantity", "qty", "count", "cartons"],
+        aliases: ["quantity", "qty", "count", "on hand"],
         examples: ["120", ""],
       },
       {

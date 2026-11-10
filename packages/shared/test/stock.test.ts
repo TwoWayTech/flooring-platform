@@ -53,20 +53,20 @@ describe("transfers (spec A1)", () => {
   const input = { fromId: "w1", toId: "w2", note: "", lines: [{ productId: "p1", rollId: null, quantity: "10" }] };
 
   it("refuses showrooms, the same warehouse twice, and more than the sender holds", () => {
-    expect(validateTransfer({ ...input, toId: "s1" }, locations, [roll], movements)).toBe(
+    expect(validateTransfer({ ...input, toId: "s1" }, locations, [roll], movements, [])).toBe(
       "Showrooms hold no sellable stock.",
     );
-    expect(validateTransfer({ ...input, toId: "w1" }, locations, [roll], movements)).toBe(
+    expect(validateTransfer({ ...input, toId: "w1" }, locations, [roll], movements, [])).toBe(
       "Choose two different warehouses.",
     );
     const tooMany = { ...input, lines: [{ productId: "p1", rollId: null, quantity: "26" }] };
-    expect(validateTransfer(tooMany, locations, [roll], movements)).toMatch(/Only 25 on hand/);
-    expect(validateTransfer(input, locations, [roll], movements)).toBeNull();
+    expect(validateTransfer(tooMany, locations, [roll], movements, [])).toMatch(/Only 25 on hand/);
+    expect(validateTransfer(input, locations, [roll], movements, [])).toBeNull();
   });
 
   it("refuses a roll that is already travelling", () => {
     const lines = [{ productId: "p2", rollId: "r1", quantity: "90" }];
-    expect(validateTransfer({ ...input, lines }, locations, [{ ...roll, transferId: "t0" }], movements)).toMatch(
+    expect(validateTransfer({ ...input, lines }, locations, [{ ...roll, transferId: "t0" }], movements, [])).toMatch(
       /already on a transfer/,
     );
   });

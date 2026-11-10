@@ -19,7 +19,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useCan } from "@/components/workspace/workspace-context";
 import { LOW_ROLL_FT } from "@/lib/attention";
-import { rollSqYd } from "./stock";
+import { rollSqFt } from "./stock";
 
 /** What a roll is today, for the Type column and its filter: Low is a full roll under LOW_ROLL_FT. */
 function rollType(roll: Roll): "In transit" | "Remnant" | "Used up" | "Low" | "Roll" {
@@ -84,6 +84,7 @@ export function RollsTable({ rolls, products, locations, warehouseId, reservatio
         />
       ),
     },
+    { id: "area", header: "Area", kind: "quantity", unit: "sq ft", value: (r) => rollSqFt(r) },
     { id: "remaining", header: "Remaining", kind: "quantity", unit: "ft", value: (r) => r.remainingLengthFt },
     {
       id: "reserved",
@@ -108,7 +109,6 @@ export function RollsTable({ rolls, products, locations, warehouseId, reservatio
       hidden: true,
     },
     { id: "width", header: "Width", kind: "quantity", unit: "ft", value: (r) => r.widthFt },
-    { id: "area", header: "Area", kind: "quantity", unit: "sq yd", value: (r) => rollSqYd(r) },
     // The page's warehouse filter applies to every inventory tab, so this column has none of its own.
     { id: "warehouse", header: "Warehouse", value: (r) => locationName(locations, r.locationId), filter: false },
     { id: "bin", header: "Bin", value: (r) => r.bin },

@@ -162,7 +162,6 @@ export function buildSettings(ctx: GenContext): CompanySettings {
         dateFormat: "MMM d, yyyy",
         firstDayOfWeek: "monday",
         fiscalYearStartMonth: 1,
-        areaUnit: "sq_ft",
       },
       currency: {
         base: "USD",
@@ -216,7 +215,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       paymentPrefix: "PAY-",
       refundPrefix: "RF-",
     },
-    inventory: { adjustmentApprovalQty: "50" },
+    inventory: { adjustmentApprovalQty: "1000" },
     // Sales earn 5 % of paid revenue, 6 % once a period passes $50,000 (spec E2).
     commissions: {
       rules: [

@@ -1,6 +1,6 @@
 import { addDays } from "../../src/dates";
 import { dec } from "../../src/money";
-import { REMNANT_THRESHOLD_FT, SQ_FT_PER_SQ_YD } from "../../src/units";
+import { REMNANT_THRESHOLD_FT } from "../../src/units";
 import type { Product, Roll, RollCut, User } from "../../src/types";
 import type { GenContext } from "./context";
 import { warehouseIds } from "./locations";
@@ -53,9 +53,7 @@ export function buildRolls(ctx: GenContext, products: readonly Product[], users:
     const receivedAt = addDays(ctx.anchor, -rng.int(20, 300));
     const target = i < LOW_ROLLS ? rng.int(9, 11) : rng.int(25, original);
     const { cuts, remaining } = buildCuts(ctx, original, receivedAt, target, cutters);
-    const costPerSqFt = dec(product.cost)
-      .dividedBy(SQ_FT_PER_SQ_YD)
-      .times(rng.decimal(0.95, 1.05, 3));
+    const costPerSqFt = dec(product.cost).times(rng.decimal(0.95, 1.05, 3));
     return {
       id: ctx.id("roll"),
       rollNumber: `${brandCode(product.brand)}-${rng.int(1000, 9999)}`,

@@ -6,14 +6,12 @@ import { D, dec, type Dec, type DecimalInput } from "./money";
  */
 export const SQ_FT_PER_SQ_YD = 9;
 
-/** Selling units a product line can use. */
-export type SellUnit = "sq_ft" | "sq_yd" | "carton" | "each" | "step" | "ft" | "hour";
+/** Selling units a product line can use. Area is always sq ft (spec A1); cartons are only a hint beside it. */
+export type SellUnit = "sq_ft" | "each" | "step" | "ft" | "hour";
 
 /** Short suffix shown after a quantity. */
 export const UNIT_LABELS: Record<SellUnit, string> = {
   sq_ft: "sq ft",
-  sq_yd: "sq yd",
-  carton: "cartons",
   each: "each",
   step: "steps",
   ft: "ft",
@@ -52,20 +50,46 @@ export function roomAreaSqFt(widthFt: DecimalInput, lengthFt: DecimalInput): Dec
   return dec(widthFt).times(lengthFt);
 }
 
+/** An area rounded up to whole cartons, in sq ft: 500 sq ft at 23.64 per carton is 22 cartons, 520.08 sq ft. */
+export function wholeCartonArea(areaSqFt: DecimalInput, sqFtPerCarton: DecimalInput): Dec {
+  return dec(cartonsForArea(areaSqFt, sqFtPerCarton)).times(sqFtPerCarton);
+}
+
 /**
- * Selling quantity for a material line from a room area: sq yd for broadloom carpet,
- * whole cartons for boxed goods, sq ft otherwise. Waste is applied first.
+ * Billed quantity in sq ft for a material line from a room area (spec A1, plan N-2). Waste is
+ * applied first; boxed goods then round up to whole cartons, because cartons are sold whole.
  */
-export function quantityForArea(
-  areaSqFt: DecimalInput,
-  wastePct: DecimalInput,
-  unit: SellUnit,
-  sqFtPerCarton?: DecimalInput,
-): Dec {
+export function quantityForArea(areaSqFt: DecimalInput, wastePct: DecimalInput, sqFtPerCarton?: DecimalInput): Dec {
   const gross = withWaste(areaSqFt, wastePct);
-  if (unit === "sq_yd") return sqFtToSqYd(gross).toDecimalPlaces(2, D.ROUND_CEIL);
-  if (unit === "carton") return dec(cartonsForArea(gross, sqFtPerCarton ?? 1));
-  return gross.toDecimalPlaces(2, D.ROUND_CEIL);
+  return sqFtPerCarton ? wholeCartonArea(gross, sqFtPerCarton) : gross.toDecimalPlaces(2, D.ROUND_CEIL);
+}
+
+/** What a quantity comes to in cartons (spec A1 "Cartons as a hint"); partial cartons round up. */
+export interface CartonEquivalent {
+  cartons: number;
+  sqFtPerCarton: string;
+}
+
+/** The carton equivalent of an area, for the hint beside a quantity. */
+export function cartonEquivalent(areaSqFt: DecimalInput, sqFtPerCarton: string): CartonEquivalent {
+  return { cartons: cartonsForArea(areaSqFt, sqFtPerCarton), sqFtPerCarton };
+}
+
+/**
+ * Reads what someone typed in a quantity field (spec A1): "500" is sq ft, and "22c", "22 ctn" or
+ * "22 cartons" converts to sq ft when the product comes in cartons. Null when it is not a
+ * positive number, or names cartons for a product that has none.
+ */
+export function parseAreaEntry(raw: string, sqFtPerCarton?: string): Dec | null {
+  const match = raw
+    .trim()
+    .replace(/,/g, "")
+    .match(/^(\d*\.?\d+)\s*(c|ctn|ctns|carton|cartons)?$/i);
+  if (!match) return null;
+  const amount = dec(match[1]!);
+  if (amount.lte(0)) return null;
+  if (!match[2]) return amount;
+  return sqFtPerCarton ? amount.ceil().times(sqFtPerCarton) : null;
 }
 
 /** Square feet in one square meter (exact definition: 1 ft = 0.3048 m). */
@@ -97,15 +121,13 @@ export const REMNANT_THRESHOLD_FT = 12;
 /** A selling unit in "price per …" phrases, e.g. "per carton". */
 export const UNIT_SINGULAR: Record<SellUnit, string> = {
   sq_ft: "sq ft",
-  sq_yd: "sq yd",
-  carton: "carton",
   each: "item",
   step: "step",
   ft: "ft",
   hour: "hour",
 };
 
-/** Cartons, items and steps are whole counts; areas and lengths are quantities with decimals. */
+/** Items and steps are whole counts; areas and lengths are quantities with decimals. */
 export function quantityKind(unit: SellUnit): "count" | "quantity" {
-  return unit === "carton" || unit === "each" || unit === "step" ? "count" : "quantity";
+  return unit === "each" || unit === "step" ? "count" : "quantity";
 }

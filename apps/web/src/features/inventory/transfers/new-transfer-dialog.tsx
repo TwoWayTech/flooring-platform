@@ -25,10 +25,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog";
-import { Input } from "@workspace/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
+import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { WarehouseSelect } from "@/components/warehouse-select";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
@@ -71,6 +72,8 @@ export function NewTransferDialog({
       ? `Roll ${rolls.find((r) => r.id === line.rollId)?.rollNumber ?? ""}`
       : (products.find((p) => p.id === line.productId)?.name ?? "");
 
+  const packOf = (line: TransferInput["lines"][number]) => products.find((p) => p.id === line.productId)?.sqFtPerCarton;
+
   function changeFrom(id: string) {
     setFromId(id);
     setLines([]);
@@ -80,7 +83,7 @@ export function NewTransferDialog({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const input = { fromId, toId, lines, note };
-    const problem = validateTransfer(input, locations, rolls, movements);
+    const problem = validateTransfer(input, locations, rolls, movements, products);
     if (problem) return setError(problem);
     setSaving(true);
     try {
@@ -134,17 +137,16 @@ export function NewTransferDialog({
                   {line.rollId ? (
                     <span className="text-muted-foreground text-xs">whole roll</span>
                   ) : (
-                    <Input
-                      aria-label={`${nameOf(line)} quantity`}
-                      inputMode="numeric"
-                      value={line.quantity}
-                      onChange={(e) =>
-                        setLines((ls) =>
-                          ls.map((l, j) => (j === i ? { ...l, quantity: e.target.value.replace(/\D/g, "") } : l)),
-                        )
-                      }
-                      className="h-8 w-20 text-right tabular-nums"
-                    />
+                    <span className="flex flex-col items-end">
+                      <AreaQuantityInput
+                        aria-label={`${nameOf(line)} quantity`}
+                        value={line.quantity}
+                        sqFtPerCarton={packOf(line)}
+                        onChange={(quantity) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, quantity } : l)))}
+                        className="h-8 w-24 text-right tabular-nums"
+                      />
+                      <CartonHint quantity={line.quantity} sqFtPerCarton={packOf(line)} compact />
+                    </span>
                   )}
                   <Button
                     type="button"
@@ -163,7 +165,12 @@ export function NewTransferDialog({
             <Field id="transfer-add-product" label="Add boxed goods">
               <Select
                 value=""
-                onValueChange={(id) => setLines((ls) => [...ls, { productId: id, rollId: null, quantity: "1" }])}
+                onValueChange={(id) =>
+                  setLines((ls) => [
+                    ...ls,
+                    { productId: id, rollId: null, quantity: products.find((p) => p.id === id)?.sqFtPerCarton ?? "1" },
+                  ])
+                }
               >
                 <SelectTrigger id="transfer-add-product" className="w-full">
                   <SelectValue placeholder="Choose a product" />
@@ -173,7 +180,8 @@ export function NewTransferDialog({
                     .filter((p) => !lines.some((l) => !l.rollId && l.productId === p.id))
                     .map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} ({boxedOnHand(movements, p.id, fromId).toString()} on hand)
+                        {p.name} ({boxedOnHand(movements, p.id, fromId).toString()}
+                        {p.sqFtPerCarton ? " sq ft" : ""} on hand)
                       </SelectItem>
                     ))}
                 </SelectContent>

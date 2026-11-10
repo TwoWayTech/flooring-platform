@@ -1,5 +1,6 @@
 import { CATEGORY_LABELS } from "../../catalog-labels";
-import { UNIT_LABELS, type SellUnit } from "../../units";
+import { dec } from "../../money";
+import { SQ_FT_PER_SQ_YD, UNIT_LABELS, type SellUnit } from "../../units";
 import type { Product, ProductCategory } from "../../types";
 import type { CellProblem } from "../types";
 import { findParty, patched, text } from "../lookup";
@@ -8,21 +9,36 @@ import type { KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
 /** Imported products start with a neutral chip until someone picks a color. */
 const NEUTRAL_SWATCH = "#A39A8E";
 
+/** Units a file may use: every selling unit, plus sq yd and cartons, which convert to sq ft (plan A-2). */
+const FILE_UNIT_LABELS = { ...UNIT_LABELS, sq_yd: "sq yd", carton: "cartons" } as const;
+type FileUnit = keyof typeof FILE_UNIT_LABELS;
+
 /** Coverage and width the product's unit needs (spec section 4): cartons need sq ft per carton, broadloom a width. */
-function unitProblems(category: ProductCategory, unit: SellUnit, row: ParsedRow, existing?: Product): CellProblem[] {
+function unitProblems(category: ProductCategory, unit: FileUnit, row: ParsedRow, existing?: Product): CellProblem[] {
   const problems: CellProblem[] = [];
   if (unit === "carton" && !row.sq_ft_per_carton && !existing?.sqFtPerCarton && category !== "adhesive_trim") {
     problems.push({ field: "sq_ft_per_carton", message: "Products sold by the carton need the sq ft per carton." });
   }
-  if (category === "carpet" && unit === "sq_yd" && !row.width_ft && !existing?.widthFt) {
+  if (category === "carpet" && !row.width_ft && !existing?.widthFt) {
     problems.push({ field: "width_ft", message: "Broadloom carpet needs its roll width in ft." });
   }
   return problems;
 }
 
 /**
+ * A price from a file, per the catalog's unit (spec A1, plan A-2): the catalog is per sq ft, so a
+ * price per sq yd is divided by nine and a price per carton by its coverage.
+ */
+function pricePerSellUnit(price: string, unit: FileUnit, coverage: string | undefined): string {
+  if (unit === "sq_yd") return dec(price).dividedBy(SQ_FT_PER_SQ_YD).toDecimalPlaces(4).toString();
+  if (unit === "carton" && coverage) return dec(price).dividedBy(coverage).toDecimalPlaces(4).toString();
+  return price;
+}
+
+/**
  * Products (spec G1): matched on SKU. The supplier must already be in the app (import suppliers
- * first). Price and cost are per selling unit, as on the product screen.
+ * first). Price and cost are per sq ft for area goods, as on the product screen; a file in sq yd
+ * or cartons is converted.
  */
 function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
   const sku = text(row, "sku");
@@ -35,9 +51,13 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
     };
   }
   const category = row.category as ProductCategory;
-  const unit = row.unit as SellUnit;
-  const problems = unitProblems(category, unit, row, existing);
+  const fileUnit = row.unit as FileUnit;
+  const problems = unitProblems(category, fileUnit, row, existing);
   if (problems.length) return { problems };
+  const unit: SellUnit = fileUnit === "sq_yd" || fileUnit === "carton" ? "sq_ft" : fileUnit;
+  const coverage = (row.sq_ft_per_carton as string | null) ?? existing?.sqFtPerCarton;
+  const price = pricePerSellUnit(text(row, "price"), fileUnit, coverage);
+  const cost = pricePerSellUnit(text(row, "cost"), fileUnit, coverage);
   const width = row.width_ft ? Number(row.width_ft) : undefined;
   const reorder = row.reorder_point ? Number(row.reorder_point) : undefined;
   if (!existing) {
@@ -51,8 +71,8 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
       swatch: NEUTRAL_SWATCH,
       category,
       unit,
-      price: text(row, "price"),
-      cost: text(row, "cost"),
+      price,
+      cost,
       ...(row.sq_ft_per_carton ? { sqFtPerCarton: text(row, "sq_ft_per_carton") } : {}),
       ...(reorder !== undefined ? { reorderPoint: reorder } : {}),
       ...(width !== undefined ? { widthFt: width } : {}),
@@ -69,8 +89,8 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
     colorName: row.color as string | null,
     category,
     unit,
-    price: text(row, "price"),
-    cost: text(row, "cost"),
+    price,
+    cost,
     sqFtPerCarton: row.sq_ft_per_carton as string | null,
     reorderPoint: reorder,
     widthFt: width,
@@ -143,9 +163,9 @@ export const PRODUCTS: KindHandler = {
         label: "Selling unit",
         type: "choice",
         required: true,
-        choices: UNIT_LABELS,
+        choices: FILE_UNIT_LABELS,
         aliases: ["unit", "uom", "unit of measure"],
-        examples: ["carton", "each"],
+        examples: ["sq ft", "each"],
       },
       {
         key: "price",

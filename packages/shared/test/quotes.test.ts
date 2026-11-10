@@ -35,7 +35,7 @@ const localization = { tax, region: { statesOfOperation: ["NJ", "CO"] } } as Pic
   LocalizationSettings,
   "tax" | "region"
 >;
-const lvp = { id: "lvp", unit: "carton", sqFtPerCarton: "23.64", category: "lvp" } as Product;
+const lvp = { id: "lvp", unit: "sq_ft", sqFtPerCarton: "23.64", category: "lvp" } as Product;
 const rooms = [
   { id: "living", name: "Living room", x: 0, y: 0, widthFt: 14, lengthFt: 18 },
   { id: "hall", name: "Hall", x: 16, y: 0, widthFt: 4, lengthFt: 12 },
@@ -46,7 +46,7 @@ const lines: DocLine[] = [
     productId: "lvp",
     description: "LVP",
     category: "material",
-    unit: "carton",
+    unit: "sq_ft",
     quantity: "1",
     unitPrice: "80.00",
     unitCost: "48.00",
@@ -79,7 +79,7 @@ describe("quote rules", () => {
   it("re-measures lines tied to rooms: cartons with waste for materials, net sq ft for labor", () => {
     const [material, labor, service] = remeasureLines(lines, rooms, [lvp]);
     // 252 + 48 = 300 sq ft; with 8 % waste 324 sq ft; 324 / 23.64 = 13.7 → 14 cartons.
-    expect(material!.quantity).toBe("14");
+    expect(material!.quantity).toBe("330.96");
     expect(labor!.quantity).toBe("300");
     expect(service!.quantity).toBe("2");
   });

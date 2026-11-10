@@ -21,6 +21,8 @@ export interface DocLine {
   roomIds?: string[];
   /** The roll a carpet line should be cut from, picked in the quote builder (spec C2). */
   rollId?: string;
+  /** Coverage of one carton when the line was written, for the carton hint (spec A1). */
+  sqFtPerCarton?: string;
 }
 
 /** What the tax engine needs to tax a document. */

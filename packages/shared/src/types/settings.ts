@@ -3,7 +3,6 @@ import type { ProductCategory } from "./catalog";
 
 /** Product categories that carry waste: every one but services. */
 export type WasteCategory = Exclude<ProductCategory, "service">;
-import type { AreaUnit } from "../units";
 import type { OvertimeRule } from "../us-pack/overtime";
 import type { TaxRule } from "../us-pack/tax";
 import type { CompanyDefaultRate, JurisdictionRate } from "../us-pack/tax-defaults";
@@ -37,8 +36,6 @@ export interface LocalizationSettings {
     dateFormat: "MM/dd/yyyy" | "yyyy-MM-dd" | "MMM d, yyyy";
     firstDayOfWeek: "sunday" | "monday";
     fiscalYearStartMonth: number;
-    /** The unit lists and purchase orders show area in first; storage is always sq ft (CLAUDE.md rule 4). */
-    areaUnit: AreaUnit;
   };
   currency: {
     base: "USD";
@@ -92,7 +89,7 @@ export interface PaymentSettings {
 
 /** Stock rules (spec C1): adjustments above this quantity wait for an Owner or Manager. */
 export interface InventorySettings {
-  /** In the product's stock unit (ft, cartons or items); empty means no approval. */
+  /** In the product's stock unit (ft, sq ft or items); empty means no approval. */
   adjustmentApprovalQty: string;
 }
 

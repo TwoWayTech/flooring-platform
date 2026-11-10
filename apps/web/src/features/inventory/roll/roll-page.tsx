@@ -16,7 +16,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { useCan } from "@/components/workspace/workspace-context";
 import { NoAccess } from "@/components/no-access";
-import { rollSqYd } from "../stock";
+import { rollSqFt } from "../stock";
 import { CutRollDialog } from "./cut-roll-dialog";
 import { LabelDialog } from "./label-dialog";
 import { MoveRollDialog } from "./move-roll-dialog";
@@ -135,13 +135,13 @@ export function RollPage({ rollId }: { rollId: string }) {
           <Fact label="Width">
             <Num kind="quantity" value={roll.widthFt} unit="ft" />
           </Fact>
-          <Fact label="Remaining">
+          <Fact label="Area left">
             <span className="font-display text-lg font-semibold">
-              <Num kind="quantity" value={roll.remainingLengthFt} unit="ft" />
-            </span>{" "}
-            <span className="text-muted-foreground font-normal">
-              (<Num kind="quantity" value={rollSqYd(roll)} unit="sq yd" />)
+              <Num kind="quantity" value={rollSqFt(roll)} unit="sq ft" />
             </span>
+          </Fact>
+          <Fact label="Remaining">
+            <Num kind="quantity" value={roll.remainingLengthFt} unit="ft" />
           </Fact>
           <Fact label="Reserved">
             <Num kind="quantity" value={reservedOnRoll(roll.id, reservations).toString()} unit="ft" />

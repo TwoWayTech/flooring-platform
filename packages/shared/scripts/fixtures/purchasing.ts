@@ -28,8 +28,11 @@ export interface PurchasingFixtures {
 }
 
 function orderQuantity(ctx: GenContext, product: Product): string {
-  if (product.unit === "sq_yd") return String(ctx.rng.int(15, 70) * 10);
-  if (product.unit === "carton") return String(ctx.rng.int(4, 30) * 10);
+  if (product.category === "carpet" || product.category === "pad") return String(ctx.rng.int(15, 70) * 90);
+  if (product.sqFtPerCarton)
+    return dec(ctx.rng.int(4, 30) * 10)
+      .times(product.sqFtPerCarton)
+      .toString();
   return String(ctx.rng.int(2, 10) * 10);
 }
 
@@ -41,6 +44,7 @@ function poLines(ctx: GenContext, products: readonly Product[]): PoLine[] {
     quantity: orderQuantity(ctx, p),
     unit: p.unit,
     unitCost: p.cost,
+    ...(p.sqFtPerCarton ? { sqFtPerCarton: p.sqFtPerCarton } : {}),
   }));
 }
 

@@ -1,5 +1,6 @@
 import { computeTotals, productTaxCategory, type DocLine } from "../documents";
 import { dec, maxDec, moneyString, roundMoney, sum } from "../money";
+import { rollAreaSqFt } from "../units";
 import { defaultAddress, plainAddress } from "../customers";
 import type { Crew, Customer, Invoice, Job, PaymentTerms, Product, Roll } from "../types";
 import type { LocalizationSettings } from "../types/settings";
@@ -181,7 +182,7 @@ export function invoiceFromJob(
 
 /**
  * A one-line invoice for a length cut from a roll (spec C1 "Create a new invoice"): the roll's
- * product by the sq yd (length × width ÷ 9), its price, the roll's own cost, taxed by the
+ * product by the sq ft (length × width), its price, the roll's own cost, taxed by the
  * customer's job site, tied to the roll so the reservation holds it.
  */
 export function invoiceFromRoll(
@@ -192,17 +193,16 @@ export function invoiceFromRoll(
   localization: Pick<LocalizationSettings, "tax" | "region">,
   input: { id: string; lineId: string; number: string; issuedAt: string; createdBy: string; branchId: string },
 ): Invoice {
-  // To the nearest cent of a sq yd, so the length reserved back from it is the length sold.
-  const sqYd = dec(lengthFt).times(roll.widthFt).div(9).toDecimalPlaces(2);
+  const sqFt = rollAreaSqFt(roll.widthFt, lengthFt).toDecimalPlaces(2);
   const line: DocLine = {
     id: input.lineId,
     productId: product.id,
     description: `${product.brand} ${product.name}`,
     category: productTaxCategory(product),
-    unit: "sq_yd",
-    quantity: sqYd.toString(),
+    unit: "sq_ft",
+    quantity: sqFt.toString(),
     unitPrice: product.price,
-    unitCost: moneyString(dec(roll.costPerSqFt).times(9)),
+    unitCost: roll.costPerSqFt,
     rollId: roll.id,
   };
   const site = plainAddress(defaultAddress(customer, "job_site"));

@@ -1,6 +1,6 @@
 import { productTaxCategory, type DocLine } from "../../src/documents";
 import { dec } from "../../src/money";
-import { quantityForArea, roomAreaSqFt, sqFtToSqYd } from "../../src/units";
+import { quantityForArea, roomAreaSqFt } from "../../src/units";
 import type { Product, ProductCategory, Room } from "../../src/types";
 import type { GenContext } from "./context";
 import { ROOM_NAMES } from "./vocabulary";
@@ -57,6 +57,7 @@ export function lineFor(ctx: GenContext, product: Product, quantity: string, ext
     quantity,
     unitPrice: product.price,
     unitCost: product.cost,
+    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
     ...extra,
   };
 }
@@ -82,7 +83,7 @@ export function roomLines(ctx: GenContext, products: readonly Product[], rooms: 
   const area = rooms.reduce((sum, r) => sum.plus(roomAreaSqFt(r.widthFt, r.lengthFt)), dec(0));
   const waste = WASTE_PCT[category] ?? DEFAULT_WASTE_PCT;
   const roomIds = rooms.map((r) => r.id);
-  const quantity = quantityForArea(area, waste, material.unit, material.sqFtPerCarton).toString();
+  const quantity = quantityForArea(area, waste, material.sqFtPerCarton).toString();
   const lines = [lineFor(ctx, material, quantity, { wastePct: waste, roomIds })];
   if (category === "carpet") {
     const pad = rng.pick(products.filter((p) => p.category === "pad"));
@@ -102,10 +103,10 @@ export function roomLines(ctx: GenContext, products: readonly Product[], rooms: 
   return lines;
 }
 
-/** Quantity for a trade order: bulk sq yd for broadloom, cartons for boxed goods. */
+/** Quantity for a trade order: bulk sq ft for broadloom, whole cartons of sq ft for boxed goods. */
 function tradeQuantity(ctx: GenContext, product: Product): string {
-  if (product.unit === "sq_yd") return sqFtToSqYd(ctx.rng.int(540, 5400)).toDecimalPlaces(2).toString();
-  if (product.unit === "carton") return String(ctx.rng.int(20, 240));
+  if (product.category === "carpet") return String(ctx.rng.int(540, 5400));
+  if (product.sqFtPerCarton) return dec(ctx.rng.int(20, 240)).times(product.sqFtPerCarton).toString();
   return String(ctx.rng.int(5, 60));
 }
 

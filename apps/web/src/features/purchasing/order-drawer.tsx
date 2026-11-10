@@ -21,6 +21,7 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { ReasonDialog } from "@/components/reason-dialog";
 import { useCan } from "@/components/workspace/workspace-context";
@@ -135,11 +136,7 @@ export function OrderDrawer({
                     <span className="line-clamp-2 break-words" title={l.description}>
                       {l.description}
                     </span>
-                    {l.areaSqFt ? (
-                      <span className="text-muted-foreground text-xs">
-                        <Num kind="quantity" value={l.areaSqFt} unit="sq ft" />
-                      </span>
-                    ) : null}
+                    <CartonHint quantity={l.quantity} sqFtPerCarton={l.sqFtPerCarton} className="block" />
                   </td>
                   <td className="py-1.5 text-right whitespace-nowrap">
                     <Num kind="quantity" value={l.quantity} unit={UNIT_LABELS[l.unit]} />

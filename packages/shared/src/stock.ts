@@ -2,23 +2,27 @@ import { dec, type Dec } from "./money";
 import type { Location, Product, Roll, StockMovement, User } from "./types";
 
 /** The unit a product's stock is counted in, or null for services and untracked goods. */
-export type StockUnit = "ft" | "cartons" | "each";
+export type StockUnit = "ft" | "sq_ft" | "each";
+
+/** Short labels of the stock units. */
+export const STOCK_UNIT_LABELS: Record<StockUnit, string> = { ft: "ft", sq_ft: "sq ft", each: "each" };
 
 /**
- * How stock of a product is counted (spec section 4): broadloom carpet by roll length in ft,
- * boxed goods in cartons, trims and adhesives as items. Services and pad are not stocked.
+ * How stock of a product is counted (spec section 4, A1): broadloom carpet by roll length in ft,
+ * goods sold in cartons by their area in sq ft, trims and adhesives as items. Services and pad are
+ * not stocked.
  */
-export function stockUnit(product: Pick<Product, "category" | "unit" | "widthFt">): StockUnit | null {
-  if (product.category === "carpet" && product.unit === "sq_yd" && product.widthFt) return "ft";
-  if (product.unit === "carton") return "cartons";
+export function stockUnit(product: Pick<Product, "category" | "sqFtPerCarton" | "widthFt">): StockUnit | null {
+  if (product.category === "carpet" && product.widthFt) return "ft";
+  if (product.sqFtPerCarton) return "sq_ft";
   if (product.category === "adhesive_trim") return "each";
   return null;
 }
 
-/** Whether the product is boxed stock kept in the stock ledger (cartons or items). */
-export function isBoxed(product: Pick<Product, "category" | "unit" | "widthFt">): boolean {
+/** Whether the product is boxed stock kept in the stock ledger (area in cartons, or items). */
+export function isBoxed(product: Pick<Product, "category" | "sqFtPerCarton" | "widthFt">): boolean {
   const unit = stockUnit(product);
-  return unit === "cartons" || unit === "each";
+  return unit === "sq_ft" || unit === "each";
 }
 
 /**

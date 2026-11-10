@@ -1,7 +1,7 @@
 import { addDays } from "../../src/dates";
 import { dec } from "../../src/money";
 import type { Product, ProductCategory, Supplier } from "../../src/types";
-import type { SellUnit } from "../../src/units";
+import { SQ_FT_PER_SQ_YD, type SellUnit } from "../../src/units";
 import type { GenContext } from "./context";
 import {
   BRANDS,
@@ -30,18 +30,22 @@ const CATEGORY_COUNTS: Record<GoodsCategory, number> = {
   adhesive_trim: 6,
 };
 
-/** Price range by category. Boxed goods are priced per sq ft here and sold per carton. */
-const PRICING: Record<GoodsCategory, { unit: SellUnit; min: number; max: number; coverage?: string[] }> = {
-  carpet: { unit: "sq_yd", min: 22, max: 68 },
-  carpet_tile: { unit: "carton", min: 2.4, max: 4.6, coverage: ["48.00", "36.00"] },
-  lvp: { unit: "carton", min: 2.49, max: 6.99, coverage: ["23.64", "19.80", "21.45", "28.50"] },
-  laminate: { unit: "carton", min: 1.79, max: 3.99, coverage: ["22.35", "18.60"] },
-  engineered_hardwood: { unit: "carton", min: 4.99, max: 9.99, coverage: ["20.00", "26.40"] },
-  solid_hardwood: { unit: "carton", min: 6.99, max: 12.99, coverage: ["20.00"] },
-  porcelain_tile: { unit: "carton", min: 2.99, max: 8.99, coverage: ["15.50", "10.76"] },
-  pad: { unit: "sq_yd", min: 3.5, max: 9 },
-  adhesive_trim: { unit: "each", min: 12, max: 95 },
-};
+/**
+ * Price range by category, per sq ft (spec A1); broadloom and pad were priced per sq yd and are
+ * drawn the same way, then divided by nine, so the random numbers drawn do not change.
+ */
+const PRICING: Record<GoodsCategory, { unit: SellUnit; min: number; max: number; coverage?: string[]; bySqYd?: true }> =
+  {
+    carpet: { unit: "sq_ft", min: 22, max: 68, bySqYd: true },
+    carpet_tile: { unit: "sq_ft", min: 2.4, max: 4.6, coverage: ["48.00", "36.00"] },
+    lvp: { unit: "sq_ft", min: 2.49, max: 6.99, coverage: ["23.64", "19.80", "21.45", "28.50"] },
+    laminate: { unit: "sq_ft", min: 1.79, max: 3.99, coverage: ["22.35", "18.60"] },
+    engineered_hardwood: { unit: "sq_ft", min: 4.99, max: 9.99, coverage: ["20.00", "26.40"] },
+    solid_hardwood: { unit: "sq_ft", min: 6.99, max: 12.99, coverage: ["20.00"] },
+    porcelain_tile: { unit: "sq_ft", min: 2.99, max: 8.99, coverage: ["15.50", "10.76"] },
+    pad: { unit: "sq_ft", min: 3.5, max: 9, bySqYd: true },
+    adhesive_trim: { unit: "each", min: 12, max: 95 },
+  };
 
 /**
  * Services sold on quotes. Each names its tax category, because installation labor is taxed
@@ -131,11 +135,11 @@ function goodsProduct(
   const collection = rng.pick(COLLECTIONS[category]);
   const [colorName, swatch] = COLORWAYS[(index * 7 + rng.int(0, 3)) % COLORWAYS.length]!;
   const coverage = pricing.coverage ? rng.pick(pricing.coverage) : undefined;
-  const pricePerBase = dec(rng.money(pricing.min, pricing.max));
-  const price = coverage ? pricePerBase.times(coverage).toDecimalPlaces(2) : pricePerBase;
+  const drawn = dec(rng.money(pricing.min, pricing.max));
+  const price = pricing.bySqYd ? drawn.dividedBy(SQ_FT_PER_SQ_YD).toDecimalPlaces(2) : drawn;
   const cost = price.times(rng.decimal(0.52, 0.68, 2)).toDecimalPlaces(2);
   const widthFt = category === "carpet" ? rng.pick([12, 12, 15]) : undefined;
-  const boxed = pricing.unit === "carton";
+  const boxed = coverage !== undefined;
   return {
     id: ctx.id("prd"),
     sku: `${brandCode(brand)}-${rng.int(1000, 9999)}`,
@@ -150,7 +154,12 @@ function goodsProduct(
     cost: cost.toFixed(2),
     ...(coverage ? { sqFtPerCarton: coverage } : {}),
     ...(boxed || category === "adhesive_trim"
-      ? { cartonsOnHand: rng.chance(0.12) ? rng.int(2, 15) : rng.int(25, 180), reorderPoint: rng.int(20, 40) }
+      ? {
+          cartonsOnHand: rng.chance(0.12) ? rng.int(2, 15) : rng.int(25, 180),
+          reorderPoint: dec(rng.int(20, 40))
+            .times(coverage ?? 1)
+            .toNumber(),
+        }
       : {}),
     ...(widthFt ? { widthFt } : {}),
     attributes: attributesFor(ctx, category, widthFt),

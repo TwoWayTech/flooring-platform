@@ -59,7 +59,10 @@ export function InvoicePdf({ model }: { model: InvoiceModel }) {
           {model.lines.map((line) => (
             <View key={line.id} style={{ flexDirection: "row" }} wrap={false}>
               <Text style={[styles.td, styles.desc]}>{line.description}</Text>
-              <Text style={[styles.td, styles.num]}>{line.quantity}</Text>
+              <Text style={[styles.td, styles.num]}>
+                {line.quantity}
+                {line.cartons ? `\n${line.cartons}` : ""}
+              </Text>
               <Text style={[styles.td, styles.num]}>{line.price}</Text>
               <Text style={[styles.td, styles.num]}>{line.amount}</Text>
             </View>

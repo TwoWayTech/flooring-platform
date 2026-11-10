@@ -101,7 +101,10 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
             {model.lines.map((line) => (
               <tr key={line.id} className="border-hairline border-b">
                 <td className="py-2 pr-3">{line.description}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">{line.quantity}</td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {line.quantity}
+                  {line.cartons ? <span className="block text-xs opacity-70">{line.cartons}</span> : null}
+                </td>
                 <td className="px-3 py-2 text-right">{line.price}</td>
                 <td className="py-2 text-right">{line.amount}</td>
               </tr>

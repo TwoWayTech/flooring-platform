@@ -5,16 +5,13 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   addDays,
-  AREA_UNIT_LABELS,
-  cartonsFor,
   dec,
   defaultWarehouse,
   formatNumber,
   poTotal,
   roundMoney,
-  toSqFt,
   UNIT_LABELS,
-  type AreaUnit,
+  UNIT_SINGULAR,
   type Location,
   type PoLine,
   type Product,
@@ -29,12 +26,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog";
-import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@workspace/ui/components/tooltip";
 import { Field } from "@/components/field";
+import { AreaQuantityInput } from "@/components/quantity/area-quantity-input";
+import { CartonHint } from "@/components/quantity/carton-hint";
 import { ProductPicker } from "@/features/quotes/product-picker";
 import { api } from "@/lib/api";
 import { WarehouseSelect } from "@/components/warehouse-select";
@@ -51,45 +49,29 @@ interface NewOrderDialogProps {
   locations: Location[];
 }
 
-/** A line being ordered: the PO line plus the area typed, in the company's area unit. */
+/** A line being ordered, with its product for the carton hint and roll width. */
 interface DraftLine {
   line: PoLine;
   product: Product;
-  /** For goods ordered by area: what was typed, in the area unit; empty for items. */
-  area: string;
-}
-
-/** Whether a product is ordered by area (spec D1): boxed area goods by the carton, broadloom by the sq yd. */
-const byArea = (p: Product) => (p.unit === "carton" && !!p.sqFtPerCarton) || (p.unit === "sq_yd" && !!p.widthFt);
-
-/** The PO line for an area typed in the area unit: cartons rounded up, or sq yd of broadloom. */
-function lineForArea(draft: DraftLine, unit: AreaUnit): PoLine {
-  const sqFt = toSqFt(draft.area || "0", unit);
-  const quantity =
-    draft.product.unit === "carton"
-      ? cartonsFor(sqFt.toString(), draft.product.sqFtPerCarton!).cartons.toString()
-      : sqFt.div(9).toDecimalPlaces(2).toString();
-  return { ...draft.line, quantity, areaSqFt: sqFt.toDecimalPlaces(2).toString() };
 }
 
 /**
  * New purchase order (spec D1): one supplier, one warehouse, lines from that supplier's catalog.
- * Area goods are ordered in the company's area unit and their cartons or roll length are shown
- * next to it. Long names wrap to two lines then truncate with a tooltip; the lines scroll inside
+ * Area goods are ordered in sq ft with their cartons or roll length shown next to it (spec A1);
+ * typing cartons converts, and partial cartons round up. Long names wrap to two lines then truncate with a tooltip; the lines scroll inside
  * their own box with a sticky header and totals, so the page never overflows. Save as draft or
  * place the order.
  */
 export function NewOrderDialog({ open, onOpenChange, suppliers, products, locations }: NewOrderDialogProps) {
-  const { user, settings } = useWorkspace();
+  const { user } = useWorkspace();
   const numbers = useNumberSettings();
-  const unit = settings.localization.region.areaUnit;
   const [locationId, setLocationId] = useState(defaultWarehouse(locations, user)?.id ?? "");
   const stocked = suppliers.filter((s) => products.some((p) => p.supplierId === s.id && p.category !== "service"));
   const [supplierId, setSupplierId] = useState(stocked[0]?.id ?? "");
   const [drafts, setDrafts] = useState<DraftLine[]>([]);
   const [pending, setPending] = useState(false);
   const offered = products.filter((p) => p.supplierId === supplierId && p.category !== "service");
-  const lines = drafts.map((d) => (byArea(d.product) ? lineForArea(d, unit) : d.line));
+  const lines = drafts.map((d) => d.line);
   const fmt = (v: string) => formatNumber(v, "quantity", numbers);
 
   function add(p: Product) {
@@ -97,14 +79,14 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
       ...ds,
       {
         product: p,
-        area: byArea(p) ? "100" : "",
         line: {
           id: `pol-${crypto.randomUUID().slice(0, 8)}`,
           productId: p.id,
           description: `${p.brand} ${p.name}`,
-          quantity: "10",
+          quantity: p.sqFtPerCarton ?? (p.unit === "sq_ft" ? "100" : "10"),
           unit: p.unit,
           unitCost: p.cost,
+          ...(p.sqFtPerCarton ? { sqFtPerCarton: p.sqFtPerCarton } : {}),
         },
       },
     ]);
@@ -113,19 +95,12 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
   const update = (i: number, patch: Partial<DraftLine> | ((d: DraftLine) => DraftLine)) =>
     setDrafts((ds) => ds.map((d, j) => (j === i ? (typeof patch === "function" ? patch(d) : { ...d, ...patch }) : d)));
 
-  /** "500 sq ft = 21.2, rounded up to 22 cartons" or the roll length a broadloom area needs. */
-  function conversion(d: DraftLine, line: PoLine): string {
-    if (d.product.unit === "carton") {
-      const { exact, cartons } = cartonsFor(line.areaSqFt ?? "0", d.product.sqFtPerCarton!);
-      const area = formatNumber(d.area || "0", "quantity", numbers, { decimalsDelta: -2 });
-      const tenths = formatNumber(exact.toString(), "quantity", numbers, { decimalsDelta: -1 });
-      const whole = formatNumber(cartons.toString(), "count", numbers);
-      return `${area} ${AREA_UNIT_LABELS[unit]} = ${tenths}, rounded up to ${whole} cartons`;
-    }
-    const ft = dec(line.areaSqFt ?? "0")
+  /** The roll length a broadloom area needs, in words. */
+  function rollLength(d: DraftLine): string {
+    const ft = dec(d.line.quantity || "0")
       .div(d.product.widthFt!)
       .toDecimalPlaces(1);
-    return `${fmt(line.quantity)} sq yd, ${fmt(ft.toString())} ft of a ${d.product.widthFt} ft roll`;
+    return `${fmt(ft.toString())} ft of a ${d.product.widthFt} ft roll`;
   }
 
   async function submit(asDraft: boolean) {
@@ -154,8 +129,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
         <DialogHeader>
           <DialogTitle>New purchase order</DialogTitle>
           <DialogDescription>
-            Order from one supplier into one warehouse. Area goods are ordered in {AREA_UNIT_LABELS[unit]}; cartons are
-            worked out for you.
+            Order from one supplier into one warehouse. Area goods are ordered in sq ft; type 22c for 22 cartons.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -237,33 +211,29 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, products, locati
                         </TooltipTrigger>
                         <TooltipContent>{line.description}</TooltipContent>
                       </Tooltip>
-                      {byArea(d.product) ? (
-                        <span className="text-muted-foreground mt-0.5 block text-xs">{conversion(d, line)}</span>
+                      <CartonHint
+                        quantity={line.quantity}
+                        sqFtPerCarton={line.sqFtPerCarton}
+                        className="mt-0.5 block"
+                      />
+                      {d.product.widthFt ? (
+                        <span className="text-muted-foreground mt-0.5 block text-xs">{rollLength(d)}</span>
                       ) : null}
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5">
-                        <Input
-                          aria-label={`${line.description} ${byArea(d.product) ? `area in ${AREA_UNIT_LABELS[unit]}` : "quantity"}`}
-                          inputMode="decimal"
-                          value={byArea(d.product) ? d.area : d.line.quantity}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/[^\d.]/g, "");
-                            update(i, (x) =>
-                              byArea(x.product)
-                                ? { ...x, area: value }
-                                : { ...x, line: { ...x.line, quantity: value || "0" } },
-                            );
-                          }}
+                        <AreaQuantityInput
+                          aria-label={`${line.description} ${line.unit === "sq_ft" ? "area in sq ft" : "quantity"}`}
+                          value={line.quantity}
+                          sqFtPerCarton={line.sqFtPerCarton}
+                          onChange={(quantity) => update(i, (x) => ({ ...x, line: { ...x.line, quantity } }))}
                           className="h-8 w-24 text-right tabular-nums"
                         />
-                        <span className="text-muted-foreground w-12 text-left text-xs">
-                          {byArea(d.product) ? AREA_UNIT_LABELS[unit] : UNIT_LABELS[line.unit]}
-                        </span>
+                        <span className="text-muted-foreground w-12 text-left text-xs">{UNIT_LABELS[line.unit]}</span>
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <Num kind="unitCost" value={line.unitCost} /> / {UNIT_LABELS[line.unit]}
+                      <Num kind="unitCost" value={line.unitCost} /> per {UNIT_SINGULAR[line.unit]}
                     </td>
                     <td className="px-3 py-2 text-right font-medium">
                       <Num kind="money" value={roundMoney(dec(line.quantity || "0").times(line.unitCost)).toString()} />

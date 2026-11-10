@@ -46,11 +46,6 @@ export const SETTINGS = {
     helper: "Year-to-date figures and reports count from this month.",
     href: REGION,
   },
-  "region.areaUnit": {
-    label: "Default area unit",
-    helper: "Area is always stored in sq ft; this changes what lists and purchase orders show first.",
-    href: REGION,
-  },
   "region.statesOfOperation": {
     label: "States of operation",
     helper: "Where you sell; the company default tax rate applies only in these states.",
@@ -146,7 +141,7 @@ export const SETTINGS = {
   },
   "inventory.adjustmentApprovalQty": {
     label: "Adjustments that need approval",
-    helper: "Above this many ft, cartons or items, an Owner or Manager approves the change. Empty: never.",
+    helper: "Above this many ft, sq ft or items, an Owner or Manager approves the change. Empty: never.",
     href: LOCATIONS,
   },
   "commissions.rules": {

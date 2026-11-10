@@ -723,7 +723,13 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["inventory.transfer.create"]);
     const locations = db.list("locations");
-    const problem = validateTransfer(input, locations, db.list("rolls"), db.list("stockMovements"));
+    const problem = validateTransfer(
+      input,
+      locations,
+      db.list("rolls"),
+      db.list("stockMovements"),
+      db.list("products"),
+    );
     if (problem) throw new DemoRuleError(problem);
     const transfer: Transfer = {
       id: newId(db.companyId, "trf"),

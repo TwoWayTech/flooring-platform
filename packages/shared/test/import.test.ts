@@ -254,7 +254,7 @@ describe("planning an import (spec G1 steps 5 and 6)", () => {
   });
 
   it("refuses unknown and showroom locations for stock", () => {
-    const boxed = summit.products.find((p) => p.unit === "carton")!;
+    const boxed = summit.products.find((p) => p.sqFtPerCarton)!;
     const showroom = summit.locations.find((l) => l.kind === "showroom")!;
     const result = plan("stock", [
       { sku: boxed.sku, warehouse: "Nowhere", quantity: "5" },
@@ -266,7 +266,7 @@ describe("planning an import (spec G1 steps 5 and 6)", () => {
   it("writes one movement for the difference to a counted stock, and none when it matches", () => {
     const warehouse = summit.locations.find((l) => l.isDefault)!;
     const boxed = summit.products.find(
-      (p) => p.unit === "carton" && boxedOnHand(summit.stockMovements, p.id, warehouse.id).gt(0),
+      (p) => p.sqFtPerCarton && boxedOnHand(summit.stockMovements, p.id, warehouse.id).gt(0),
     )!;
     const onHand = boxedOnHand(summit.stockMovements, boxed.id, warehouse.id);
     const result = plan("stock", [{ sku: boxed.sku, warehouse: warehouse.name, quantity: onHand.plus(7).toString() }]);

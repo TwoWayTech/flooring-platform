@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cartonEquivalent,
   cartonsForArea,
   defaultNumberSettings,
   formatFull,
@@ -7,10 +8,12 @@ import {
   isRounded,
   marginPct,
   moneyString,
+  parseAreaEntry,
   quantityForArea,
   rollAreaSqFt,
   roundMoney,
   sqFtToSqYd,
+  wholeCartonArea,
   sum,
   withWaste,
 } from "../src";
@@ -70,8 +73,26 @@ describe("units", () => {
   it("rounds cartons up and applies waste", () => {
     expect(cartonsForArea(250, "23.64")).toBe(11);
     expect(withWaste(100, 10).toString()).toBe("110");
-    expect(quantityForArea(252, 10, "sq_yd").toString()).toBe("30.8");
-    expect(quantityForArea(300, 5, "carton", "23.64").toString()).toBe("14");
+    expect(quantityForArea(252, 10).toString()).toBe("277.2");
+    expect(quantityForArea(300, 5, "23.64").toString()).toBe("330.96");
+  });
+
+  it("rounds an area up to whole cartons, and shows the carton equivalent (spec A1)", () => {
+    expect(wholeCartonArea(500, "23.64").toString()).toBe("520.08");
+    expect(wholeCartonArea("520.08", "23.64").toString()).toBe("520.08");
+    expect(cartonEquivalent(500, "23.64")).toEqual({ cartons: 22, sqFtPerCarton: "23.64" });
+  });
+
+  it("reads sq ft or cartons typed in a quantity field (spec A1)", () => {
+    expect(parseAreaEntry("500", "23.64")?.toString()).toBe("500");
+    expect(parseAreaEntry("1,250.5")?.toString()).toBe("1250.5");
+    for (const typed of ["22c", "22 ctn", "22 cartons", "22 CARTONS"]) {
+      expect(parseAreaEntry(typed, "23.64")?.toString(), typed).toBe("520.08");
+    }
+    expect(parseAreaEntry("21.5c", "23.64")?.toString()).toBe("520.08");
+    expect(parseAreaEntry("22c")).toBeNull();
+    expect(parseAreaEntry("0")).toBeNull();
+    expect(parseAreaEntry("many", "23.64")).toBeNull();
   });
 });
 

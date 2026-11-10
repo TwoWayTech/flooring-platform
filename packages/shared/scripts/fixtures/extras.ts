@@ -1,7 +1,7 @@
 import { addDays } from "../../src/dates";
 import { lineAmount } from "../../src/documents";
 import { jobCostFrom } from "../../src/operations/jobs";
-import { moneyString, sum } from "../../src/money";
+import { dec, moneyString, sum } from "../../src/money";
 import { adjustmentNeedsApproval } from "../../src/reservations";
 import { boxedOnHand } from "../../src/stock";
 import type { CompanyFixtures, Job, StockAdjustment, StockMovement, User } from "../../src/types";
@@ -40,8 +40,8 @@ function unbilledJob(ctx: GenContext, f: CompanyFixtures): Job[] {
   ];
 }
 
-/** Cartons free at a warehouse: on hand less what active reservations hold. */
-function freeCartons(f: CompanyFixtures, productId: string, locationId: string) {
+/** Stock free at a warehouse, in sq ft: on hand less what active reservations hold. */
+function freeStock(f: CompanyFixtures, productId: string, locationId: string) {
   const held = sum(
     f.reservations
       .filter((r) => r.status === "active" && !r.rollId && r.productId === productId && r.locationId === locationId)
@@ -104,34 +104,37 @@ function adjustments(ctx: GenContext, f: CompanyFixtures) {
   const warehouse = f.locations.find((l) => l.isDefault);
   const by = f.users.find((u) => u.roleIds.some((r) => r.endsWith("-role-warehouse"))) ?? f.users[0];
   if (!warehouse || !by) return { adjustments: [], movements: [] };
-  const roomy = f.products.filter((p) => p.unit === "carton" && freeCartons(f, p.id, warehouse.id).gte(10));
+  const roomy = f.products.filter(
+    (p) => p.sqFtPerCarton && freeStock(f, p.id, warehouse.id).gte(dec(10).times(p.sqFtPerCarton)),
+  );
   if (roomy.length < 3) return { adjustments: [], movements: [] };
   const [a, b, c] = roomy as [(typeof roomy)[0], (typeof roomy)[0], (typeof roomy)[0]];
+  const cartons = (p: (typeof roomy)[0], count: number) => dec(count).times(p.sqFtPerCarton!).toString();
   const plans = [
     {
       productId: a.id,
-      quantity: "-2",
+      quantity: cartons(a, -2),
       reason: "damage" as const,
       note: "Two cartons crushed when the truck was unloaded.",
       daysAgo: 9,
     },
     {
       productId: b.id,
-      quantity: "4",
+      quantity: cartons(b, 4),
       reason: "count" as const,
       note: "Cycle count found four more than the system.",
       daysAgo: 5,
     },
     {
       productId: a.id,
-      quantity: "-1",
+      quantity: cartons(a, -1),
       reason: "samples" as const,
       note: "Boards for the showroom display.",
       daysAgo: 3,
     },
     {
       productId: c.id,
-      quantity: "60",
+      quantity: cartons(c, 60),
       reason: "count" as const,
       note: "A pallet found in the yard, not in the system.",
       daysAgo: 1,

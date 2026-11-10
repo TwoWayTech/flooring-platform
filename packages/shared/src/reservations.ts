@@ -15,21 +15,19 @@ export const ADJUSTMENT_REASON_LABELS: Record<AdjustmentReason, string> = {
 const active = (r: Reservation) => r.status === "active";
 
 /**
- * How much stock an invoice line takes, in the product's stock unit (spec C2): carpet sold by the
- * sq yd takes ft of roll length (sq yd × 9 ÷ roll width, to the nearest hundredth, so a length sold
- * by the sq yd comes back as the same length); boxed goods take their cartons or items. Services and lines without stock take nothing.
+ * How much stock an invoice line takes, in the product's stock unit (spec C2, A1): carpet takes ft
+ * of roll length (sq ft ÷ roll width, to the nearest hundredth, so a length sold comes back as the
+ * same length); boxed goods take their sq ft or items. Services and lines without stock take nothing.
  */
 export function stockNeed(line: Pick<DocLine, "quantity" | "unit">, product: Product): Dec | null {
   const unit = stockUnit(product);
   if (!unit) return null;
   if (unit === "ft") {
     if (line.unit === "ft") return dec(line.quantity);
-    if (line.unit === "sq_yd" && product.widthFt)
-      return dec(line.quantity).times(9).div(product.widthFt).toDecimalPlaces(2);
     if (line.unit === "sq_ft" && product.widthFt) return dec(line.quantity).div(product.widthFt).toDecimalPlaces(2);
     return null;
   }
-  return line.unit === "carton" || line.unit === "each" ? dec(line.quantity) : null;
+  return line.unit === "sq_ft" || line.unit === "each" ? dec(line.quantity) : null;
 }
 
 /** Length of a roll held for invoices that have not been cut yet. */
@@ -42,7 +40,7 @@ export function rollAvailable(roll: Pick<Roll, "id" | "remainingLengthFt">, rese
   return maxDec(dec(roll.remainingLengthFt).minus(reservedOnRoll(roll.id, reservations)), 0);
 }
 
-/** Cartons or items of a product held at a warehouse (or everywhere). */
+/** Sq ft or items of a product held at a warehouse (or everywhere). */
 export function reservedBoxed(
   productId: string,
   reservations: readonly Reservation[],
