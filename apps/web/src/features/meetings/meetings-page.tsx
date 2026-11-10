@@ -1,18 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import {
-  BellRing,
-  Building2,
-  CalendarPlus,
-  ChevronLeft,
-  ChevronRight,
-  Globe,
-  Repeat,
-  Truck,
-  UserRound,
-} from "lucide-react";
-import { addDays, meetingOccurrences, mondayOf, type Attendee, type MeetingOccurrence } from "@workspace/shared";
+import { BellRing, CalendarPlus, ChevronLeft, ChevronRight, Globe, Repeat } from "lucide-react";
+import { addDays, meetingOccurrences, mondayOf, type MeetingOccurrence } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -25,12 +15,12 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { MeetingAnswers, RequestMeetingDialog } from "./meeting-answers";
 import { NewMeetingDialog, RECURRENCE } from "./new-meeting-dialog";
 import { RescheduleForm } from "./reschedule-form";
 import { timeOf, TimeGrid } from "./time-grid";
 import { useReschedule } from "./use-reschedule";
 
-const ATTENDEE_ICON = { staff: UserRound, customer: Building2, supplier: Truck } as const;
 type View = "day" | "week" | "month" | "agenda";
 const VIEWS: (readonly [View, string])[] = [
   ["day", "Day"],
@@ -46,17 +36,6 @@ const STEP: Record<View, { days: number; noun: string }> = {
   agenda: { days: 7, noun: "week" },
 };
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function AttendeeChip({ attendee }: { attendee: Attendee }) {
-  const Icon = ATTENDEE_ICON[attendee.kind];
-  return (
-    <li className="bg-raised inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs">
-      <Icon aria-hidden="true" className="text-muted-foreground size-3.5" />
-      {attendee.name}
-      {attendee.kind !== "staff" ? <span className="text-muted-foreground">({attendee.kind})</span> : null}
-    </li>
-  );
-}
 
 /** The first day of the month a date is in, and of the month after. */
 const monthOf = (iso: string) => `${iso.slice(0, 7)}-01`;
@@ -80,15 +59,18 @@ export function MeetingsPage() {
   const [anchor, setAnchor] = useState(today);
   const [open, setOpen] = useState<MeetingOccurrence | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
   const { reschedule, dialog } = useReschedule();
   const data = useApiQuery(async (client) => {
-    const [meetings, users, customers, suppliers] = await Promise.all([
+    const [meetings, users, customers, suppliers, contacts, supplierContacts] = await Promise.all([
       client.list("meetings"),
       client.list("users"),
       client.list("customers"),
       client.list("suppliers"),
+      client.list("customerContacts"),
+      client.list("supplierContacts"),
     ]);
-    return { meetings, users, customers, suppliers };
+    return { meetings, users, customers, suppliers, contacts, supplierContacts };
   }, []);
   if (!can("meetings.meeting.view")) return <NoAccess />;
   const canEdit = can("meetings.meeting.edit");
@@ -131,10 +113,15 @@ export function MeetingsPage() {
         title="Meetings"
         actions={
           can("meetings.meeting.create") ? (
-            <Button onClick={() => setCreating(`${today}T09:00`)}>
-              <CalendarPlus />
-              New meeting
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setRequesting(true)}>
+                Request a meeting
+              </Button>
+              <Button onClick={() => setCreating(`${today}T09:00`)}>
+                <CalendarPlus />
+                New meeting
+              </Button>
+            </>
           ) : null
         }
       />
@@ -254,17 +241,8 @@ export function MeetingsPage() {
                   <Globe aria-hidden="true" className="text-muted-foreground size-4" />
                   Times in {current.meeting.timeZone.replace("_", " ")}
                 </p>
-                <section aria-labelledby="attendees-title">
-                  <h3 id="attendees-title" className="mb-2 font-semibold">
-                    Attendees
-                  </h3>
-                  <ul className="flex flex-wrap gap-1.5">
-                    {current.meeting.attendees.map((a) => (
-                      <AttendeeChip key={`${a.kind}-${a.id}`} attendee={a} />
-                    ))}
-                  </ul>
-                </section>
-                {canEdit ? (
+                <MeetingAnswers meeting={current.meeting} />
+                {canEdit && current.meeting.status !== "cancelled" ? (
                   <RescheduleForm
                     key={`${current.meeting.id}-${current.planned}`}
                     occurrence={current}
@@ -283,9 +261,14 @@ export function MeetingsPage() {
           onOpenChange={(o) => !o && setCreating(null)}
           users={data.data.users}
           customers={data.data.customers}
+          contacts={data.data.contacts}
           suppliers={data.data.suppliers}
+          supplierContacts={data.data.supplierContacts}
           initialStart={creating}
         />
+      ) : null}
+      {data.data && requesting ? (
+        <RequestMeetingDialog users={data.data.users} onClose={() => setRequesting(false)} />
       ) : null}
       {dialog}
     </>

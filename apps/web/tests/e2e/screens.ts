@@ -26,6 +26,25 @@ export const FLOORING_SCREENS = [
   "/settings/documents",
   "/settings/payments",
   "/contracts",
+  "/contracts/sm-ctr-0001",
+  "/hr",
+  "/hr/employees",
+  "/hr/timesheets",
+  "/hr/time-off",
+  "/hr/commissions",
+  "/hr/pay-periods",
+  "/settings/hr",
+  "/settings/meetings",
+  "/settings/notifications",
+  "/settings/outbox",
+  "/finance",
+  "/my",
+  "/my/timesheet",
+  "/my/time-off",
+  "/my/pay",
+  "/my/documents",
+  "/my/meetings",
+  "/my/profile",
   "/sales?view=team",
   "/settings/audit",
   "/settings/import",
@@ -33,7 +52,19 @@ export const FLOORING_SCREENS = [
 ];
 
 /** HR Suite screens, opened as Harbor Staffing's Owner on the HR host. */
-export const HR_SCREENS = ["/", "/hr/employees", "/hr/timesheets", "/hr/time-off", "/meetings", "/settings/import"];
+export const HR_SCREENS = [
+  "/",
+  "/hr/employees",
+  "/hr/timesheets",
+  "/hr/time-off",
+  "/hr/pay-periods",
+  "/meetings",
+  "/settings/import",
+  "/settings/hr",
+  "/my",
+  "/my/timesheet",
+  "/my/pay",
+];
 
 /** Platform admin screens. */
 export const ADMIN_SCREENS = [

@@ -16,8 +16,8 @@ test.describe("meetings", () => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
     await page.getByRole("button", { name: "New meeting" }).click();
     await page.getByLabel("Title").fill("Sample room refresh");
-    await page.getByLabel("Supplier").click();
-    await page.getByRole("option").nth(1).click();
+    await page.getByRole("textbox", { name: "Guests" }).fill("Northline");
+    await page.getByRole("list", { name: "Guest results" }).getByRole("button").first().click();
     await page.getByLabel("Repeats").click();
     await page.getByRole("option", { name: "Every week" }).click();
     await page.getByRole("button", { name: "Schedule meeting" }).click();

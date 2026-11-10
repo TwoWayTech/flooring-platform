@@ -11,6 +11,7 @@ import { Panel } from "@workspace/ui/components/panel";
 import { Field } from "@/components/field";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialog";
+import { RequestMeetingDialog } from "@/features/meetings/meeting-answers";
 import { api } from "@/lib/api";
 import type { MyPortal } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -53,13 +54,23 @@ export function MyDocumentsPage() {
 function Meetings() {
   const { user } = useWorkspace();
   const formatDate = useFormatDate();
+  const [requesting, setRequesting] = useState(false);
   const data = useApiQuery((client) => client.list("meetings"), []);
+  const users = useApiQuery((client) => client.list("users"), []);
   const now = `${api.today()}T00:00`;
   const mine = (data.data ?? [])
     .filter((m: Meeting) => (m.ownerUserId === user.id || m.attendees.some((a) => a.id === user.id)) && m.start >= now)
     .sort((a, b) => a.start.localeCompare(b.start));
   return (
-    <Panel title="Coming up" bodyClassName="p-0">
+    <Panel
+      title="Coming up"
+      bodyClassName="p-0"
+      actions={
+        <Button size="sm" variant="outline" onClick={() => setRequesting(true)}>
+          Request a meeting
+        </Button>
+      }
+    >
       {mine.length === 0 ? (
         <p className="text-muted-foreground p-4 text-sm">No meetings coming up.</p>
       ) : (
@@ -74,6 +85,9 @@ function Meetings() {
           ))}
         </ul>
       )}
+      {requesting && users.data ? (
+        <RequestMeetingDialog users={users.data} onClose={() => setRequesting(false)} />
+      ) : null}
     </Panel>
   );
 }

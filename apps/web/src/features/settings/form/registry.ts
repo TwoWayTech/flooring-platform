@@ -22,6 +22,7 @@ const PROFILE = "/settings/company";
 const PAYMENTS = "/settings/payments";
 const LOCATIONS = "/settings/locations";
 const HR = "/settings/hr";
+const MEETINGS = "/settings/meetings";
 
 export const SETTINGS = {
   "region.country": { label: "Country", helper: "The US pack: 50 states and DC, imperial units, USD.", href: REGION },
@@ -87,6 +88,26 @@ export const SETTINGS = {
     label: "Holiday calendar",
     helper: "The state whose public holidays timesheets skip.",
     href: PAYROLL,
+  },
+  "meetings.defaultReminderMin": {
+    label: "Default reminder",
+    helper: "New meetings start with this reminder.",
+    href: MEETINGS,
+  },
+  "meetings.newGuestHandling": {
+    label: "New guests added by email",
+    helper: "Whether someone new is kept, and how.",
+    href: MEETINGS,
+  },
+  "meetings.allowProposals": {
+    label: "Guests can propose a new time",
+    helper: "On one-off meetings only.",
+    href: MEETINGS,
+  },
+  "meetings.hideGuestList": {
+    label: "Hide guest lists by default",
+    helper: "Each guest sees only themselves on the invite.",
+    href: MEETINGS,
   },
   "hr.workweekStartDay": {
     label: "Workweek starts on",

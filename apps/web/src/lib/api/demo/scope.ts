@@ -76,8 +76,10 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
   contractLines: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
   changeOrders: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
   contractBillings: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
-  meetings: (item: { attendees: { id: string }[] }, { user, scope }) =>
-    scope !== "own" || item.attendees.some((a) => a.id === user.id),
+  meetings: (item: { attendees: { id: string }[]; private: boolean; ownerUserId: string }, { user, scope }) =>
+    scope !== "own" && !item.private
+      ? true
+      : item.ownerUserId === user.id || item.attendees.some((a) => a.id === user.id),
 };
 
 /** The records of a collection the subject may see. */
@@ -89,6 +91,7 @@ export function applyScope<K extends CollectionName>(
 ): Collections[K] {
   const filter = FILTERS[name];
   if (name === "inAppNotifications" || name === "outboxMessages") return [] as unknown as Collections[K];
+  if (name === "meetings") return (items as never[]).filter((item) => filter!(item, subject, db)) as Collections[K];
   if (!filter || subject.scope === "all") return items;
   return (items as never[]).filter((item) => filter(item, subject, db)) as Collections[K];
 }

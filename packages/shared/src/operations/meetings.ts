@@ -39,6 +39,7 @@ function next(start: string, recurrence: Meeting["recurrence"]): string | null {
 export function meetingOccurrences(meetings: readonly Meeting[], from: string, to: string): MeetingOccurrence[] {
   const out: MeetingOccurrence[] = [];
   for (const meeting of meetings) {
+    if (meeting.status === "cancelled") continue;
     for (
       let planned: string | null = meeting.start;
       planned && planned.slice(0, 10) <= addDays(to, 31) && (!meeting.until || planned.slice(0, 10) <= meeting.until);

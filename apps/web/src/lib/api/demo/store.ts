@@ -32,6 +32,7 @@ import {
   type PermissionKey,
   SENSITIVE,
   type CommissionPlan,
+  type Meeting,
   type ContractLine,
   type Employee,
   type ImportTable,
@@ -57,6 +58,9 @@ import {
 import { viewerAccess } from "../../access";
 import type {
   Collections,
+  MeetingInput,
+  MeetingRequestInput,
+  ReplyInput,
   BillingInput,
   CertificateInput,
   ChangeOrderInput,
@@ -121,7 +125,19 @@ import {
 import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-actions";
-import { rescheduleMeeting, undoReschedule } from "./meeting-actions";
+import {
+  cancelMeeting,
+  createMeeting,
+  decideProposal,
+  meetingCalendarFile,
+  removeGuest,
+  requestMeeting,
+  rescheduleMeeting,
+  respondToMeeting,
+  simulateReply,
+  undoReschedule,
+  updateMeeting,
+} from "./meeting-actions";
 import {
   cancelOrder,
   createPurchaseOrder,
@@ -228,6 +244,7 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   payments: "Payments",
   inventory: "Stock rules",
   hr: "HR",
+  meetings: "Meetings",
   email: "Email and notifications",
 };
 
@@ -827,6 +844,45 @@ export class DemoStore implements ApiClient {
 
   async whoAmI() {
     return this.viewer!.userId;
+  }
+
+  async createMeeting(input: MeetingInput) {
+    return this.act((ctx) => createMeeting(ctx, input));
+  }
+
+  async updateMeeting(
+    id: string,
+    patch: Partial<Pick<Meeting, "title" | "notes" | "location" | "start" | "durationMin" | "reminderMin">>,
+  ) {
+    return this.act((ctx) => updateMeeting(ctx, id, patch));
+  }
+
+  async cancelMeeting(id: string) {
+    return this.act((ctx) => cancelMeeting(ctx, id));
+  }
+
+  async removeGuest(meetingId: string, attendeeId: string) {
+    return this.act((ctx) => removeGuest(ctx, meetingId, attendeeId));
+  }
+
+  async respondToMeeting(meetingId: string, reply: ReplyInput) {
+    return this.act((ctx) => respondToMeeting(ctx, meetingId, reply));
+  }
+
+  async simulateReply(outboxId: string, reply: ReplyInput) {
+    return this.act((ctx) => simulateReply(ctx, outboxId, reply));
+  }
+
+  async decideProposal(meetingId: string, attendeeId: string, accept: boolean) {
+    return this.act((ctx) => decideProposal(ctx, meetingId, attendeeId, accept));
+  }
+
+  async requestMeeting(input: MeetingRequestInput) {
+    return this.act((ctx) => requestMeeting(ctx, input));
+  }
+
+  async meetingCalendarFile(meetingId: string) {
+    return meetingCalendarFile(this.actionContext(this.open()), meetingId);
   }
 
   async saveContract(input: ContractInput) {

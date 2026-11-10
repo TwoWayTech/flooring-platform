@@ -32,6 +32,8 @@ export interface NotifyInput {
   scheduledFor?: string;
   /** Tells apart two sends of the same source, such as a meeting's SEQUENCE. */
   version?: string;
+  /** Hides this message from others, on top of the event's own rule (a private meeting). */
+  restricted?: boolean;
 }
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -86,7 +88,7 @@ export function notify(ctx: ActionContext, input: NotifyInput): void {
         createdAt: ctx.now,
         scheduledFor: input.scheduledFor ?? null,
         sentAt: failure || input.scheduledFor ? null : ctx.now,
-        restricted: event.restricted ?? false,
+        restricted: input.restricted ?? event.restricted ?? false,
         dedupeKey,
       };
       ctx.db.put("outboxMessages", row);

@@ -94,6 +94,15 @@ export interface InventorySettings {
   adjustmentApprovalQty: string;
 }
 
+/** Settings → Meetings (spec E, ADR 0021). */
+export interface MeetingSettings {
+  defaultReminderMin: number;
+  /** What happens to a guest added by email (assumption E-1). */
+  newGuestHandling: "contact" | "lead" | "none";
+  allowProposals: boolean;
+  hideGuestList: boolean;
+}
+
 /** Settings → HR (spec C1, ADR 0024): pay calendar, holidays and what employees may see. */
 export interface HrSettings {
   /** The day the fixed workweek starts, 0 Sunday to 6 Saturday; the law needs it designated. */
@@ -132,6 +141,8 @@ export interface CompanySettings {
   inventory: InventorySettings;
   /** Settings → HR (spec C1). */
   hr: HrSettings;
+  /** Settings → Meetings (spec E). */
+  meetings: MeetingSettings;
   /** Sender details on every email (spec A4). */
   email: EmailSettings;
 }

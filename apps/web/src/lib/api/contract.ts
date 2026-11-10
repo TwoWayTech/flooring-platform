@@ -1,4 +1,6 @@
 import type {
+  Attendee,
+  MeetingProposal,
   BillingLine,
   ChangeOrder,
   Contract,
@@ -223,6 +225,48 @@ export interface MyPortal {
   /** Colleagues' approved time off, never its kind; empty unless the company shows it. */
   teamOut: PtoRequest[];
   teamNames: { id: string; name: string }[];
+}
+
+/** Someone added to a meeting by email (spec E). */
+export interface NewGuest {
+  email: string;
+  name: string;
+  /** Who to save them under, when new guests become customer contacts. */
+  customerId: string | null;
+}
+
+/** A meeting to schedule (spec E). */
+export interface MeetingInput {
+  title: string;
+  start: string;
+  durationMin: number;
+  location: string;
+  guests: Attendee[];
+  newGuests: NewGuest[];
+  recurrence: Meeting["recurrence"];
+  reminderMin: number;
+  notes: string;
+  private: boolean;
+  hideGuestList: boolean;
+  allowProposals: boolean;
+}
+
+/** A guest's answer, with a proposed time when there is one. */
+export interface ReplyInput {
+  partStat: Attendee["partStat"];
+  note: string;
+  proposal: Omit<MeetingProposal, "status"> | null;
+}
+
+/** Asking someone to meet (spec E). */
+export interface MeetingRequestInput {
+  withUserId: string;
+  title: string;
+  start: string;
+  durationMin: number;
+  location: string;
+  note: string;
+  private: boolean;
 }
 
 /** The fields of a contract and its schedule (spec D1). */
@@ -618,6 +662,27 @@ export interface ApiClient {
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
   /** The signed-in user's id. */
   whoAmI(): Promise<string>;
+  /** Schedules a meeting and invites its guests (spec E). */
+  createMeeting(input: MeetingInput): Promise<Meeting>;
+  /** Edits a meeting; a significant change asks every guest again. */
+  updateMeeting(
+    id: string,
+    patch: Partial<Pick<Meeting, "title" | "notes" | "location" | "start" | "durationMin" | "reminderMin">>,
+  ): Promise<Meeting>;
+  /** Cancels a meeting and tells its guests. */
+  cancelMeeting(id: string): Promise<Meeting>;
+  /** Takes one guest off a meeting and sends them a cancellation. */
+  removeGuest(meetingId: string, attendeeId: string): Promise<Meeting>;
+  /** The signed-in person answers an invitation or request. */
+  respondToMeeting(meetingId: string, reply: ReplyInput): Promise<Meeting>;
+  /** Stands in for a guest's reply, from the Outbox. */
+  simulateReply(outboxId: string, reply: ReplyInput): Promise<Meeting>;
+  /** The organiser accepts or declines a proposed time. */
+  decideProposal(meetingId: string, attendeeId: string, accept: boolean): Promise<Meeting>;
+  /** Any user asks someone to meet. */
+  requestMeeting(input: MeetingRequestInput): Promise<Meeting>;
+  /** The calendar file for Add to my calendar. */
+  meetingCalendarFile(meetingId: string): Promise<{ fileName: string; text: string }>;
   /** Adds or edits a contract and its schedule (spec D1). */
   saveContract(input: ContractInput): Promise<Contract>;
   /** Sends a draft for signature. */

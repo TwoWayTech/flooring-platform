@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to D are done and pushed. Batch E is next. Live sites are still feature batch 2.
-- Next step: build Batch E from item E1 (ADR 0021).
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to E are done and pushed. Batch F is next. Live sites are still feature batch 2.
+- Next step: build Batch F from item F1a (ADR 0023).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -181,11 +181,11 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch D: full suite green (328 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch E: meetings with customers and email (ADR 0021)
-- [ ] E1. Guests: internal users, customers, customer contacts, supplier contacts, Add guest by email; Settings → Meetings for new-guest handling (E-1, K-8)
-- [ ] E2. Invites: Outbox row and `.ics` per guest; stable UID; SEQUENCE on significant changes; cancellations; guest removal; recurring cases; Add to my calendar; one manual import check in Google Calendar and Outlook
-- [ ] E3. Replies: Accept, Maybe, Decline, Propose a new time; Simulate reply in the Outbox; organiser accepts or declines a proposal
-- [ ] E4. Request a meeting, for every user (U-32); reminder defaults and per-meeting override; privacy and hidden guest lists; batch 2 calendar views and drag and drop kept
-- [ ] Batch E: full suite green
+- [x] E1. Guests: internal users, customers, customer contacts, supplier contacts, Add guest by email; Settings → Meetings for new-guest handling (E-1, K-8)
+- [x] E2. Invites: Outbox row and `.ics` per guest; stable UID; SEQUENCE on significant changes; cancellations; guest removal; recurring cases; Add to my calendar; one manual import check in Google Calendar and Outlook (NOT done: it needs a real mailbox; file format covered by unit tests)
+- [x] E3. Replies: Accept, Maybe, Decline, Propose a new time; Simulate reply in the Outbox; organiser accepts or declines a proposal
+- [x] E4. Request a meeting, for every user (U-32); reminder defaults and per-meeting override; privacy and hidden guest lists; batch 2 calendar views and drag and drop kept
+- [x] Batch E: full suite green (433 passed, 7 skipped as switched off, production build, 1 worker, chunks; the new HR, portal and contract screens were added to the accessibility, console and layout checks)
 
 #### Batch F: expenses and one business report (ADR 0023)
 - [ ] F1a. Finance → Expenses: every field in the spec, receipt required on leaving draft, approval above an amount, Pay later through a linked bill, sales tax payment category (U-06)

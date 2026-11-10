@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import type { Attendee, Customer, Meeting, Supplier, User } from "@workspace/shared";
+import type { Attendee, Customer, CustomerContact, Meeting, Supplier, SupplierContact, User } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
@@ -18,7 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/field";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import type { NewGuest } from "@/lib/api/contract";
+import { GuestPicker } from "./guest-picker";
 
+/** How each repeat choice reads. */
 export const RECURRENCE: Record<Meeting["recurrence"], string> = {
   none: "Does not repeat",
   weekly: "Every week",
@@ -31,92 +34,93 @@ const REMINDERS = {
   "30": "30 minutes before",
   "60": "1 hour before",
 } as const;
-const NONE = "none";
 
 interface NewMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   users: User[];
   customers: Customer[];
+  contacts: CustomerContact[];
   suppliers: Supplier[];
+  supplierContacts: SupplierContact[];
   /** The slot clicked on the calendar, "2026-11-09T10:00"; empty starts today at 9:00. */
   initialStart?: string;
 }
 
-/** Schedules a meeting with staff and, optionally, a customer or supplier; it can repeat and remind. */
+/**
+ * Schedules a meeting (spec E): guests from one search or by email, and each gets an invite with a
+ * calendar file in the Outbox. Times can repeat; reminder defaults come from Settings → Meetings.
+ */
 export function NewMeetingDialog({
   open,
   onOpenChange,
   users,
   customers,
+  contacts,
   suppliers,
+  supplierContacts,
   initialStart,
 }: NewMeetingDialogProps) {
   const { user, settings } = useWorkspace();
+  const defaults = settings.meetings;
+  const me: Attendee = {
+    kind: "staff",
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: "required",
+    partStat: "accepted",
+    respondedAt: null,
+    respondedSequence: null,
+    note: "",
+    proposal: null,
+  };
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(initialStart?.slice(0, 10) ?? api.today());
   const [time, setTime] = useState(initialStart?.slice(11, 16) ?? "09:00");
   const [duration, setDuration] = useState("30");
   const [location, setLocation] = useState("Conference room");
-  const [staff, setStaff] = useState<string[]>([user.id]);
-  const [customerId, setCustomerId] = useState(NONE);
-  const [supplierId, setSupplierId] = useState(NONE);
+  const [guests, setGuests] = useState<Attendee[]>([me]);
+  const [newGuests, setNewGuests] = useState<NewGuest[]>([]);
   const [recurrence, setRecurrence] = useState<Meeting["recurrence"]>("none");
-  const [reminder, setReminder] = useState<keyof typeof REMINDERS>("15");
+  const [reminder, setReminder] = useState(String(defaults.defaultReminderMin) as keyof typeof REMINDERS);
+  const [isPrivate, setPrivate] = useState(false);
+  const [hideGuests, setHideGuests] = useState(defaults.hideGuestList);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim()) return toast.error("Give the meeting a title.");
-    const attendees: Attendee[] = [
-      ...users.filter((u) => staff.includes(u.id)).map((u) => ({ kind: "staff" as const, id: u.id, name: u.name })),
-      ...customers
-        .filter((c) => c.id === customerId)
-        .map((c) => ({ kind: "customer" as const, id: c.id, name: c.name })),
-      ...suppliers
-        .filter((s) => s.id === supplierId)
-        .map((s) => ({ kind: "supplier" as const, id: s.id, name: s.name })),
-    ];
-    const meeting: Meeting = {
-      id: `mtg-${crypto.randomUUID().slice(0, 8)}`,
-      title: title.trim(),
-      start: `${date}T${time}`,
-      durationMin: Number(duration),
-      location,
-      attendees,
-      recurrence,
-      reminderMin: Number(reminder),
-      timeZone: settings.localization.region.timeZone,
-      until: null,
-      exceptions: [],
-      ownerUserId: user.id,
-      notes: "",
-    };
-    await api.save("meetings", meeting, {
-      category: "data",
-      action: "Scheduled meeting",
-      target: meeting.title,
-      before: null,
-      after: `${date} ${time}, ${RECURRENCE[recurrence].toLowerCase()}`,
-    });
-    toast.success(`Meeting ${meeting.title} scheduled`);
-    setTitle("");
-    onOpenChange(false);
+    try {
+      const meeting = await api.createMeeting({
+        title,
+        start: `${date}T${time}`,
+        durationMin: Number(duration),
+        location,
+        guests,
+        newGuests,
+        recurrence,
+        reminderMin: Number(reminder),
+        notes: "",
+        private: isPrivate,
+        hideGuestList: hideGuests,
+        allowProposals: defaults.allowProposals,
+      });
+      toast.success(`Meeting ${meeting.title} scheduled`);
+      setTitle("");
+      setGuests([me]);
+      setNewGuests([]);
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not schedule this meeting.");
+    }
   }
-
-  const options = <T extends { id: string; name: string }>(items: T[]) =>
-    items.map((i) => (
-      <SelectItem key={i.id} value={i.id}>
-        {i.name}
-      </SelectItem>
-    ));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="bg-surface max-h-[90dvh] overflow-y-auto sm:max-w-xl">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>New meeting</DialogTitle>
-            <DialogDescription>Attendees get a reminder before it starts.</DialogDescription>
+            <DialogDescription>Each guest gets an invite with a calendar file.</DialogDescription>
           </DialogHeader>
           <Field id="mtg-title" label="Title">
             <Input id="mtg-title" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -142,49 +146,18 @@ export function NewMeetingDialog({
           <Field id="mtg-location" label="Where">
             <Input id="mtg-location" value={location} onChange={(e) => setLocation(e.target.value)} />
           </Field>
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 text-sm font-medium">Staff</legend>
-            <div className="grid max-h-36 grid-cols-2 gap-2 overflow-y-auto">
-              {users
-                .filter((u) => u.status === "active")
-                .map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={staff.includes(u.id)}
-                      onCheckedChange={(on) => setStaff(on ? [...staff, u.id] : staff.filter((s) => s !== u.id))}
-                    />
-                    {u.name}
-                  </label>
-                ))}
-            </div>
-          </fieldset>
+          <GuestPicker
+            guests={guests}
+            newGuests={newGuests}
+            users={users}
+            customers={customers}
+            contacts={contacts}
+            suppliers={suppliers}
+            supplierContacts={supplierContacts}
+            onGuests={setGuests}
+            onNewGuests={setNewGuests}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
-            {customers.length > 0 ? (
-              <Field id="mtg-customer" label="Customer">
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger id="mtg-customer" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectItem value={NONE}>No customer</SelectItem>
-                    {options(customers)}
-                  </SelectContent>
-                </Select>
-              </Field>
-            ) : null}
-            {suppliers.length > 0 ? (
-              <Field id="mtg-supplier" label="Supplier">
-                <Select value={supplierId} onValueChange={setSupplierId}>
-                  <SelectTrigger id="mtg-supplier" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    <SelectItem value={NONE}>No supplier</SelectItem>
-                    {options(suppliers)}
-                  </SelectContent>
-                </Select>
-              </Field>
-            ) : null}
             <Field id="mtg-repeat" label="Repeats">
               <Select value={recurrence} onValueChange={(v) => setRecurrence(v as Meeting["recurrence"])}>
                 <SelectTrigger id="mtg-repeat" className="w-full">
@@ -213,6 +186,24 @@ export function NewMeetingDialog({
                 </SelectContent>
               </Select>
             </Field>
+          </div>
+          <div className="flex flex-col gap-2 text-sm">
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={isPrivate}
+                onCheckedChange={(v) => setPrivate(v === true)}
+                aria-label="Private meeting"
+              />
+              Private: only the people invited can see it
+            </label>
+            <label className="flex items-center gap-2">
+              <Checkbox
+                checked={hideGuests}
+                onCheckedChange={(v) => setHideGuests(v === true)}
+                aria-label="Hide the guest list"
+              />
+              Hide the guest list from guests
+            </label>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

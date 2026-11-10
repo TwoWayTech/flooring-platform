@@ -237,6 +237,7 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       showTeamCalendarToEmployees: false,
       clockEnabled: seed.id !== "keystone",
     },
+    meetings: { defaultReminderMin: 15, newGuestHandling: "contact", allowProposals: true, hideGuestList: false },
     email: { senderName: seed.name, replyTo: `office@${seed.domain}`, signature: `The team at ${seed.name}` },
     profile: {
       legalName: seed.legalName,

@@ -25,7 +25,7 @@ import type {
   LienWaiver,
 } from "./contracts";
 import type { Crew, Job } from "./installation";
-import type { Meeting } from "./meetings";
+import type { CustomerContact, Meeting, MeetingResponse } from "./meetings";
 import type {
   Bill,
   Expense,
@@ -91,6 +91,8 @@ export interface CompanyFixtures {
   commissionStatements: CommissionStatement[];
   commissionAdjustments: CommissionAdjustment[];
   meetings: Meeting[];
+  meetingResponses: MeetingResponse[];
+  customerContacts: CustomerContact[];
   audit: AuditEntry[];
   /** Imports run in the demo, for the history and Undo (spec G1); none are generated. */
   importBatches: ImportBatch[];

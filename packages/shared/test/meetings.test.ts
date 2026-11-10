@@ -13,6 +13,14 @@ const base = {
   timeZone: "America/Denver",
   until: null,
   exceptions: [],
+  uid: "uid",
+  sequence: 0,
+  rescheduleSequence: 0,
+  status: "confirmed" as const,
+  kind: "meeting" as const,
+  private: false,
+  hideGuestList: false,
+  allowProposals: true,
 };
 
 describe("meeting occurrences", () => {
@@ -52,7 +60,20 @@ describe("moving meetings on the calendar (spec F)", () => {
     id: "w",
     start: "2026-11-02T09:00",
     recurrence: "weekly",
-    attendees: [{ kind: "staff", id: "u1", name: "Dana" }],
+    attendees: [
+      {
+        kind: "staff",
+        id: "u1",
+        name: "Dana",
+        email: "dana@example.com",
+        role: "required",
+        partStat: "accepted",
+        respondedAt: null,
+        respondedSequence: null,
+        note: "",
+        proposal: null,
+      },
+    ],
   };
   const planned = "2026-11-09T09:00";
   const at = (ms: Meeting[], from: string, to: string) =>

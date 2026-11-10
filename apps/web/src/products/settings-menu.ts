@@ -1,6 +1,7 @@
 import {
   Banknote,
   UsersRound,
+  CalendarDays,
   Building2,
   Database,
   FileUp,
@@ -127,6 +128,15 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["sales.payments"],
     group: "payments",
     description: "The two-person check on payments, small write-offs and payment numbering.",
+  },
+  {
+    label: "Meetings",
+    href: "/settings/meetings",
+    icon: CalendarDays,
+    anyOf: ["settings.meetings.manage"],
+    features: ["settings.meetings"],
+    group: "notifications",
+    description: "Default reminders and what happens to guests added by email.",
   },
   {
     label: "HR",

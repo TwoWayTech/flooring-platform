@@ -54,9 +54,39 @@ function workday(anchor: string, firstWeek: number, slot: number): string {
   return addDays(mondayOf(anchor), (firstWeek + Math.floor(slot / 5)) * 7 + (slot % 5));
 }
 
+/** A guest as first built; withMeetingRecords adds their email and answer. */
+const seedGuest = (kind: Attendee["kind"], id: string, name: string): Attendee => ({
+  kind,
+  id,
+  name,
+  email: "",
+  role: "required",
+  partStat: "needs-action",
+  respondedAt: null,
+  respondedSequence: null,
+  note: "",
+  proposal: null,
+});
+
+/** The fields withMeetingRecords sets on every meeting; placeholders until then. */
+type MeetingSeed = Pick<
+  Meeting,
+  "uid" | "sequence" | "rescheduleSequence" | "status" | "kind" | "private" | "hideGuestList" | "allowProposals"
+>;
+const MEETING_BLANKS: MeetingSeed = {
+  uid: "",
+  sequence: 0,
+  rescheduleSequence: 0,
+  status: "confirmed",
+  kind: "meeting",
+  private: false,
+  hideGuestList: false,
+  allowProposals: true,
+};
+
 function staff(users: readonly User[], count: number, ctx: GenContext): Attendee[] {
   const active = users.filter((u) => u.status === "active");
-  return ctx.rng.sample(active, count).map((u) => ({ kind: "staff", id: u.id, name: u.name }));
+  return ctx.rng.sample(active, count).map((u) => seedGuest("staff", u.id, u.name));
 }
 
 /**
@@ -75,12 +105,12 @@ export function buildMeetings(
     let title = template.title;
     if (template.with === "customer" && customers.length > 0) {
       const customer = ctx.rng.pick(customers);
-      attendees.push({ kind: "customer", id: customer.id, name: customer.name });
+      attendees.push(seedGuest("customer", customer.id, customer.name));
       title = `${title}: ${customer.name}`;
     }
     if (template.with === "supplier" && suppliers.length > 0) {
       const supplier = ctx.rng.pick(suppliers);
-      attendees.push({ kind: "supplier", id: supplier.id, name: supplier.name });
+      attendees.push(seedGuest("supplier", supplier.id, supplier.name));
       title = `${title}: ${supplier.name}`;
     }
     const day =
@@ -88,6 +118,7 @@ export function buildMeetings(
         ? workday(ctx.anchor, -1, ctx.rng.int(0, 19))
         : workday(ctx.anchor, -6, ctx.rng.int(0, 14));
     return {
+      ...MEETING_BLANKS,
       id: ctx.id("mtg"),
       title,
       start: `${day}T${ctx.rng.pick(["08:30", "09:00", "10:30", "13:00", "14:00", "15:30"])}`,

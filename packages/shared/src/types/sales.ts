@@ -43,6 +43,8 @@ export interface Customer {
   certificate: Certificate | null;
   salesRepId: string;
   createdAt: string;
+  /** A lead is a guest kept from a meeting, profile incomplete (plan K-8). */
+  lifecycle?: "customer" | "lead";
   /** The id the customer had in the previous system, set by an import (spec G1); imports match on it. */
   externalId?: string;
 }

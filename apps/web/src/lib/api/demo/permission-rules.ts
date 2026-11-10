@@ -65,7 +65,10 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   commissionAssignments: [],
   commissionStatements: [],
   commissionAdjustments: [],
-  meetings: ["meetings.meeting.create", "meetings.meeting.edit"],
+  // Meetings change only through their own store calls, which send the invites (spec E).
+  meetings: [],
+  meetingResponses: [],
+  customerContacts: [],
   audit: [],
   // Imports and saved mappings change only through the import calls (spec G1).
   importBatches: [],
@@ -93,6 +96,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   payments: ["settings.payments.manage"],
   inventory: ["settings.locations.manage"],
   hr: ["settings.hr.manage"],
+  meetings: ["settings.meetings.manage"],
   email: ["settings.notifications.manage"],
 };
 

@@ -312,9 +312,9 @@ describe("spec section 4 volumes", () => {
     expect(harbor.employees.some((e) => e.state === "CA")).toBe(true);
   });
 
-  it("has 25 meetings across companies, some recurring", () => {
+  it("has the 25 calendar meetings plus an invite and a request per company, some recurring", () => {
     const meetings = [summit, keystone, harbor].flatMap((f) => f.meetings);
-    expect(meetings).toHaveLength(25);
+    expect(meetings).toHaveLength(25 + 2 * 3);
     expect(meetings.some((m) => m.recurrence !== "none")).toBe(true);
   });
 

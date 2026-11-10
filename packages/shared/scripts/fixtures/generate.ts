@@ -10,6 +10,7 @@ import { buildCustomers, withJobSites } from "./customers";
 import { buildEmployees, buildPto, buildTimesheets } from "./hr";
 import { withContracts } from "./contracts";
 import { withHrRecords } from "./hr-records";
+import { withMeetingRecords } from "./meeting-records";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
 import { withExtras } from "./extras";
 import { buildReservations } from "./reservations";
@@ -97,6 +98,8 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     commissionStatements: [],
     commissionAdjustments: [],
     meetings: buildMeetings(ctx, users, customers, suppliers),
+    meetingResponses: [],
+    customerContacts: [],
     audit: buildAudit(ctx, users),
     importBatches: [],
     importMappings: [],
@@ -104,7 +107,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures))));
+  return withMeetingRecords(ctx, withHrRecords(ctx, withContracts(ctx, withDirectory(ctx, withBuyer(ctx, fixtures)))));
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */
