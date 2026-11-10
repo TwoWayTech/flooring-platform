@@ -1,7 +1,21 @@
 import type { InAppNotification, NotificationRule, OutboxMessage } from "./notifications";
 import type { Product, Roll } from "./catalog";
 import type { Company, CompanyId, Role, User } from "./company";
-import type { Commission, Employee, PtoRequest, Timesheet } from "./hr";
+import type {
+  Bonus,
+  ClockEntry,
+  CommissionAdjustment,
+  CommissionAssignment,
+  CommissionPlan,
+  CommissionStatement,
+  ContractorPayment,
+  Employee,
+  PayPeriod,
+  PtoRequest,
+  TimeOffEntry,
+  TimeOffPolicy,
+  Timesheet,
+} from "./hr";
 import type { Crew, Job } from "./installation";
 import type { Meeting } from "./meetings";
 import type {
@@ -52,7 +66,16 @@ export interface CompanyFixtures {
   employees: Employee[];
   timesheets: Timesheet[];
   ptoRequests: PtoRequest[];
-  commissions: Commission[];
+  timeOffPolicies: TimeOffPolicy[];
+  timeOffEntries: TimeOffEntry[];
+  clockEntries: ClockEntry[];
+  payPeriods: PayPeriod[];
+  bonuses: Bonus[];
+  contractorPayments: ContractorPayment[];
+  commissionPlans: CommissionPlan[];
+  commissionAssignments: CommissionAssignment[];
+  commissionStatements: CommissionStatement[];
+  commissionAdjustments: CommissionAdjustment[];
   meetings: Meeting[];
   audit: AuditEntry[];
   /** Imports run in the demo, for the history and Undo (spec G1); none are generated. */

@@ -30,11 +30,9 @@ test.describe("HR Suite", { tag: HR_TAG }, () => {
     await expect(page.getByText(/^Time off approved for/)).toBeVisible();
   });
 
-  test("an employee sees only their own timesheet", async ({ page }) => {
+  test("an employee uses the portal, not the HR timesheet grid", async ({ page }) => {
     await signInAs(page, HARBOR_EMPLOYEE, "/hr/timesheets");
-    await expect(page.getByRole("rowheader")).toHaveCount(await page.getByRole("rowheader").count());
-    const names = await page.getByRole("rowheader").allInnerTexts();
-    expect(names.every((n) => n.startsWith("Mia Chen"))).toBe(true);
+    await expect(page.getByRole("heading", { name: "Timesheets", exact: true })).toHaveCount(0);
   });
 });
 

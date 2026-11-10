@@ -173,7 +173,7 @@ export function CurrencyTab({ draft, setDraft, changed }: SectionProps<L["curren
   );
 }
 
-/** Payroll rules: the overtime rule that flags timesheets, pay frequency, PTO accrual and holidays. */
+/** Payroll rules that follow the location: the overtime rule and the holiday calendar. Pay calendar is in Settings → HR. */
 export function PayrollTab({ draft, setDraft, changed }: SectionProps<L["payroll"]>) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -184,28 +184,6 @@ export function PayrollTab({ draft, setDraft, changed }: SectionProps<L["payroll
             value={draft.overtimeRule}
             options={OVERTIME_RULE_LABELS}
             onChange={(overtimeRule: OvertimeRule) => setDraft({ ...draft, overtimeRule })}
-          />
-        )}
-      </SettingRow>
-      <SettingRow setting="payroll.payFrequency" changed={changed("payFrequency")}>
-        {(id) => (
-          <Choice
-            id={id}
-            value={draft.payFrequency}
-            options={{ weekly: "Weekly", biweekly: "Every two weeks", semimonthly: "Twice a month" }}
-            onChange={(payFrequency) => setDraft({ ...draft, payFrequency })}
-          />
-        )}
-      </SettingRow>
-      <SettingRow setting="payroll.ptoAccrualHoursPerMonth" changed={changed("ptoAccrualHoursPerMonth")}>
-        {(id) => (
-          <Input
-            id={id}
-            inputMode="decimal"
-            aria-describedby={`${id}-hint`}
-            value={draft.ptoAccrualHoursPerMonth}
-            onChange={(e) => setDraft({ ...draft, ptoAccrualHoursPerMonth: e.target.value.replace(/[^\d.]/g, "") })}
-            className="w-28 tabular-nums"
           />
         )}
       </SettingRow>

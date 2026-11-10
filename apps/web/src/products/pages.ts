@@ -28,8 +28,11 @@ const SUB_PAGES: PageRule[] = [
   { pattern: "/finance?view=payments", anyOf: ["sales.payment.approve", "purchasing.payment.approve"] },
   { pattern: "/finance?view=expenses", anyOf: ["finance.expense.view"] },
   { pattern: "/hr/employees", anyOf: ["hr.employee.view"] },
-  { pattern: "/hr/timesheets", anyOf: ["hr.timesheet.view"] },
-  { pattern: "/hr/time-off", anyOf: ["hr.pto.view"] },
+  { pattern: "/hr/timesheets", anyOf: ["hr.timesheet.approve"] },
+  { pattern: "/hr/time-off", anyOf: ["hr.pto.approve"] },
+  { pattern: "/hr/commissions", anyOf: ["hr.commission.view"] },
+  { pattern: "/hr/pay-periods", anyOf: ["hr.payroll.view"] },
+  { pattern: "/my/*", anyOf: ["hr.portal.view"] },
 ];
 
 /** Every page rule of a product: its menus and settings pages, then the views and detail pages. */

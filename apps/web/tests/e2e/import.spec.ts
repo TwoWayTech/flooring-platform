@@ -171,7 +171,7 @@ test.describe("data import (spec G1)", () => {
     await page.getByRole("button", { name: "Import 1 row" }).click();
     await expect(page.getByText(/^IMP-1001 imported from people\.csv$/)).toBeVisible();
     await page.goto("/hr/employees");
-    await page.getByLabel("Search employees").fill("Jordan Reyes");
+    await page.getByLabel("Search people").fill("Jordan Reyes");
     await expect(page.getByText("Jordan Reyes", { exact: true })).toBeVisible();
   });
 });

@@ -57,8 +57,6 @@ export interface LocalizationSettings {
   };
   payroll: {
     overtimeRule: OvertimeRule;
-    payFrequency: "weekly" | "biweekly" | "semimonthly";
-    ptoAccrualHoursPerMonth: string;
     holidayState: string;
   };
   documents: {
@@ -96,16 +94,21 @@ export interface InventorySettings {
   adjustmentApprovalQty: string;
 }
 
-/**
- * A commission rule (spec E2): for a role or one person, a percent of paid revenue or of gross
- * margin, earned when payments are confirmed, with optional tiers (from an amount, a higher rate).
- */
-export interface CommissionRule {
-  id: string;
-  appliesTo: { kind: "role"; roleKey: string } | { kind: "user"; userId: string };
-  basis: "paid_revenue" | "gross_margin";
-  ratePct: string;
-  tiers: { fromAmount: string; ratePct: string }[];
+/** Settings → HR (spec C1, ADR 0024): pay calendar, holidays and what employees may see. */
+export interface HrSettings {
+  /** The day the fixed workweek starts, 0 Sunday to 6 Saturday; the law needs it designated. */
+  workweekStartDay: number;
+  payFrequency: "weekly" | "biweekly" | "semimonthly" | "monthly";
+  /** The first day weekly and biweekly periods count from. */
+  payPeriodAnchor: string;
+  holidays: { date: string; name: string }[];
+  showPayToEmployees: boolean;
+  /** Company default; each employee can override it (spec C1, assumption C-2: off). */
+  showCommissionToEmployees: boolean;
+  showRatesToEmployees: boolean;
+  showTeamCalendarToEmployees: boolean;
+  /** Clock in and out in the portal (spec C2, optional per company). */
+  clockEnabled: boolean;
 }
 
 /** Company profile in Settings: Company profile. */
@@ -127,8 +130,8 @@ export interface CompanySettings {
   profile: CompanyProfile;
   payments: PaymentSettings;
   inventory: InventorySettings;
-  /** Settings → Commissions (spec E2). */
-  commissions: { rules: CommissionRule[] };
+  /** Settings → HR (spec C1). */
+  hr: HrSettings;
   /** Sender details on every email (spec A4). */
   email: EmailSettings;
 }

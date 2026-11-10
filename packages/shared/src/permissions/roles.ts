@@ -27,7 +27,9 @@ function expand(patterns: string[]): PermissionKey[] {
 }
 
 const OWN_TIME = [
+  "hr.portal.view",
   "hr.timesheet.view",
+  "hr.timesheet.edit",
   "hr.pto.view",
   "hr.pto.request",
   "meetings.meeting.view",
@@ -66,6 +68,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "retail.*",
       "wholesale.*",
       "installation.*",
+      "hr.portal.view",
       "hr.overview.view",
       "hr.employee.view",
       "hr.timesheet.*",
@@ -103,6 +106,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "purchasing.payment.*",
       "reports.*",
       "wholesale.certificate.view",
+      "hr.payroll.view",
       "hr.payroll.export",
       "settings.localization.manage",
       "settings.payments.manage",
@@ -196,7 +200,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
     name: "HR manager",
     description: "Employees, timesheets, PTO and payroll register",
     dataScope: "all",
-    permissions: expand(["hr.*", "meetings.*", "settings.users.view", "settings.audit.view"]),
+    permissions: expand(["hr.*", "meetings.*", "settings.hr.manage", "settings.users.view", "settings.audit.view"]),
     owner: false,
   },
   employee: {

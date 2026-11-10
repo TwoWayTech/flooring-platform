@@ -2,7 +2,7 @@ import type { ModuleKey } from "../products";
 
 /** What the import wizard can bring in (spec G1). */
 export type ImportKind =
-  "customers" | "addresses" | "suppliers" | "products" | "stock" | "invoices" | "bills" | "employees";
+  "customers" | "addresses" | "suppliers" | "products" | "stock" | "invoices" | "bills" | "employees" | "timesheets";
 
 /**
  * How a cell is read (spec G1 "Validate"): plain text, an email, money with at most two decimals,
@@ -73,6 +73,8 @@ export interface PlannedRow {
 
 /** Collections an import writes. */
 export type ImportCollection =
+  | "timesheets"
+  | "timeOffEntries"
   | "customers"
   | "suppliers"
   | "supplierContacts"

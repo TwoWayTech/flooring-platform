@@ -1,12 +1,26 @@
-import { addDays, daysBetween, last12Months, mondayOf } from "../../src/dates";
-import { dec, moneyString, pctOf, sum } from "../../src/money";
+import { addDays, daysBetween, mondayOf } from "../../src/dates";
 import type { DefaultRoleKey } from "../../src/permissions/roles";
-import type { Commission, Employee, Invoice, PtoRequest, Timesheet, User } from "../../src/types";
+import type { Employee, PtoRequest, Timesheet } from "../../src/types";
 import type { PersonSeed } from "./companies";
 import type { GenContext } from "./context";
+import { policyIdFor } from "./hr-records";
 import { emailFor } from "./random";
 
 type Pay = Pick<Employee, "workerType" | "payType" | "payRate" | "department">;
+
+/** What withHrRecords fills in at the end, so the seed's random stream stays as it was. */
+const HR_BLANKS = {
+  flsaStatus: "not_applicable",
+  exemptionBasis: null,
+  salaryHoursPerWeek: 40,
+  commissionVisible: null,
+  homeLocationId: null,
+  birthDate: null,
+  emergencyContact: null,
+  documents: [],
+  onboarding: [],
+  offboarding: [],
+} satisfies Partial<Employee>;
 
 /** Pay by role. Salaried rates are annual, hourly rates per hour (pay rate is sensitive data). */
 function payFor(ctx: GenContext, role: DefaultRoleKey): Pay {
@@ -72,7 +86,8 @@ function extraEmployee(ctx: GenContext, index: number, ownerId: string): Employe
       : company.product === "hr"
         ? { workerType: "w2", payType: "hourly", payRate: rng.money(17, 26), department: "Placements" }
         : payFor(ctx, kind);
-  return {
+  const employee: Employee = {
+    ...HR_BLANKS,
     id: ctx.id("emp"),
     companyId: company.id,
     name,
@@ -83,15 +98,17 @@ function extraEmployee(ctx: GenContext, index: number, ownerId: string): Employe
     phone: rng.phone(placedInCa ? "619" : company.areaCode),
     hiredAt: addDays(ctx.anchor, -rng.int(40, 1500)),
     status: rng.chance(0.05) ? "on_leave" : "active",
-    ptoBalanceHours: String(rng.int(0, 96)),
     managerId: ownerId,
   };
+  ctx.openingPto.set(employee.id, rng.int(0, 96));
+  return employee;
 }
 
 function personEmployee(ctx: GenContext, person: PersonSeed, ownerId: string | null, id: string): Employee {
   const { rng, company } = ctx;
   const branchState = company.branches[person.branch]!.state;
-  return {
+  const employee: Employee = {
+    ...HR_BLANKS,
     id,
     companyId: company.id,
     name: person.name,
@@ -102,9 +119,10 @@ function personEmployee(ctx: GenContext, person: PersonSeed, ownerId: string | n
     phone: rng.phone(branchState === "CA" ? "619" : company.areaCode),
     hiredAt: addDays(ctx.anchor, person.status === "invited" ? -rng.int(1, 10) : -rng.int(200, 2600)),
     status: person.status === "disabled" ? "terminated" : "active",
-    ptoBalanceHours: String(rng.int(8, 120)),
     managerId: ownerId === id ? null : ownerId,
   };
+  ctx.openingPto.set(id, rng.int(8, 120));
+  return employee;
 }
 
 /** Employees: the company's users first (same order), then extra staff up to the spec's headcount. */
@@ -142,12 +160,18 @@ export function buildTimesheets(ctx: GenContext, employees: readonly Employee[])
   const daysSoFar = daysBetween(thisWeek, ctx.anchor) + 1;
   const hourly = employees.filter((e) => e.status === "active" && e.payType === "hourly" && e.workerType === "w2");
   return Array.from({ length: 8 }, (_, k) => addDays(thisWeek, -7 * k)).flatMap((weekStart, k) =>
-    hourly.map((employee) => ({
+    hourly.map((employee): Timesheet => ({
       id: ctx.id("ts"),
       employeeId: employee.id,
       weekStart,
       days: weekHours(ctx, employee, k === 0 ? daysSoFar : 7),
       status: k === 0 ? "draft" : k === 1 && ctx.rng.chance(0.6) ? "submitted" : "approved",
+      submittedAt: null,
+      decidedBy: null,
+      decidedAt: null,
+      rejectionReason: null,
+      source: "form",
+      history: [],
     })),
   );
 }
@@ -157,47 +181,26 @@ const PTO_COUNTS: Record<string, number> = { summit: 8, keystone: 6, harbor: 12 
 /** Time-off requests around the anchor date: past ones decided, future ones mostly pending. */
 export function buildPto(ctx: GenContext, employees: readonly Employee[]): PtoRequest[] {
   const active = employees.filter((e) => e.status === "active");
-  return Array.from({ length: PTO_COUNTS[ctx.company.id] ?? 0 }, () => {
+  return Array.from({ length: PTO_COUNTS[ctx.company.id] ?? 0 }, (): PtoRequest => {
     const start = addDays(ctx.anchor, ctx.rng.int(-60, 45));
     const days = ctx.rng.int(1, 5);
     const past = start < ctx.anchor;
+    const id = ctx.id("pto");
+    const employeeId = ctx.rng.pick(active).id;
+    const kind = ctx.rng.pick(["vacation", "vacation", "sick", "personal"] as const);
     return {
-      id: ctx.id("pto"),
-      employeeId: ctx.rng.pick(active).id,
+      id,
+      employeeId,
+      policyId: policyIdFor(ctx.company.idPrefix, kind),
       start,
       end: addDays(start, days - 1),
       hours: String(days * 8),
-      kind: ctx.rng.pick(["vacation", "vacation", "sick", "personal"] as const),
+      kind,
       status: past ? (ctx.rng.chance(0.85) ? "approved" : "denied") : ctx.rng.chance(0.7) ? "pending" : "approved",
       note: ctx.rng.chance(0.4) ? ctx.rng.pick(["Family trip", "Medical appointment", "Moving day"]) : "",
+      decidedBy: null,
+      decidedAt: null,
+      decisionReason: null,
     };
   });
-}
-
-/** Commission rate on a rep's net sales (subtotal, before tax), paid monthly. */
-const COMMISSION_PCT = "4";
-
-/**
- * Monthly commissions for sales reps, computed from their invoices: net sales (returns
- * subtracted) times the commission rate. Never typed by hand (spec section 4).
- */
-export function buildCommissions(ctx: GenContext, users: readonly User[], invoices: readonly Invoice[]): Commission[] {
-  const reps = users.filter((u) => u.employeeId && u.roleIds.some((r) => r.endsWith("-role-sales")));
-  return last12Months(ctx.anchor).flatMap((month) =>
-    reps.map((rep) => {
-      const sales = sum(
-        invoices
-          .filter((i) => i.salesRepId === rep.id && !i.voidedAt && i.issuedAt.startsWith(month))
-          .map((i) => (i.isReturn ? dec(i.subtotal).negated() : i.subtotal)),
-      );
-      return {
-        id: ctx.id("com"),
-        employeeId: rep.employeeId!,
-        month,
-        sales: moneyString(sales),
-        ratePct: COMMISSION_PCT,
-        amount: moneyString(pctOf(sales, COMMISSION_PCT)),
-      };
-    }),
-  );
 }

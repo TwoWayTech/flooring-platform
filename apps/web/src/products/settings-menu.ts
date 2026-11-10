@@ -1,6 +1,6 @@
 import {
   Banknote,
-  BadgePercent,
+  UsersRound,
   Building2,
   Database,
   FileUp,
@@ -25,7 +25,6 @@ export const SETTINGS_GROUPS = {
   inventory: "Inventory and warehouses",
   tax: "Tax and localization",
   payments: "Payments",
-  commissions: "Commissions",
   notifications: "Email and notifications",
   data: "Data import and integrations",
 } as const;
@@ -130,13 +129,13 @@ export const SETTINGS_MENU: MenuItem[] = [
     description: "The two-person check on payments, small write-offs and payment numbering.",
   },
   {
-    label: "Commissions",
-    href: "/settings/commissions",
-    icon: BadgePercent,
-    anyOf: ["sales.commission.manage"],
-    features: ["sales.team"],
-    group: "commissions",
-    description: "Commission rules per role or person: on paid revenue or margin, with tiers.",
+    label: "HR",
+    href: "/settings/hr",
+    icon: UsersRound,
+    anyOf: ["settings.hr.manage"],
+    features: ["settings.hr"],
+    group: "people",
+    description: "Pay calendar, holidays, time-off policies and what employees see.",
   },
   {
     label: "Email and notifications",

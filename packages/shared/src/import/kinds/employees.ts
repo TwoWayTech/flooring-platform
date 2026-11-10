@@ -1,8 +1,10 @@
+import { dec } from "../../money";
+import { timeOffBalance } from "../../hr/time-off";
 import { US_STATES } from "../../us-pack/states";
-import type { Employee } from "../../types";
+import type { Employee, TimeOffEntry } from "../../types";
 import { fold } from "../fields";
 import { findParty, patched, text } from "../lookup";
-import type { KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
+import type { KindHandler, ParsedRow, PlanContext, RowOutcome, RowWrite } from "../plan";
 
 const WORKER_TYPES: Record<Employee["workerType"], string> = { w2: "W-2 employee", "1099": "1099 contractor" };
 const PAY_TYPES: Record<Employee["payType"], string> = { hourly: "Hourly", salary: "Salary", per_job: "Per job" };
@@ -11,6 +13,30 @@ const STATUSES: Record<Employee["status"], string> = {
   on_leave: "On leave",
   terminated: "Terminated",
 };
+
+/**
+ * The opening vacation balance (ADR 0024): a balance is the sum of the ledger, so an imported
+ * figure posts one adjustment for the difference, and nothing when it already matches.
+ */
+function balanceWrite(row: ParsedRow, ctx: PlanContext, employeeId: string): RowWrite[] {
+  if (row.pto_hours === null) return [];
+  const policy = ctx.world.timeOffPolicies.find((p) => p.kind === "vacation");
+  if (!policy) return [];
+  const change = dec(row.pto_hours as string).minus(timeOffBalance(ctx.world.timeOffEntries, employeeId, policy.id));
+  if (change.isZero()) return [];
+  const record: TimeOffEntry = {
+    id: ctx.newId("tof"),
+    employeeId,
+    policyId: policy.id,
+    date: ctx.today,
+    kind: "adjustment",
+    hours: change.toString(),
+    note: "Imported opening balance",
+    requestId: null,
+    payPeriodId: null,
+  };
+  return [{ collection: "timeOffEntries", record }];
+}
 
 /**
  * Employees (spec G1): matched on email, then external ID. The manager must already be an
@@ -45,10 +71,23 @@ function resolveEmployee(row: ParsedRow, ctx: PlanContext): RowOutcome {
       phone: text(row, "phone"),
       hiredAt: text(row, "hired_at", ctx.today),
       status: (row.status as Employee["status"] | null) ?? "active",
-      ptoBalanceHours: text(row, "pto_hours", "0"),
       managerId: manager?.id ?? null,
+      flsaStatus: row.worker_type === "1099" ? "not_applicable" : "non_exempt",
+      exemptionBasis: null,
+      salaryHoursPerWeek: 40,
+      commissionVisible: null,
+      homeLocationId: null,
+      birthDate: null,
+      emergencyContact: null,
+      documents: [],
+      onboarding: [],
+      offboarding: [],
     };
-    return { action: "create", label: name, writes: [{ collection: "employees", record: employee }] };
+    return {
+      action: "create",
+      label: name,
+      writes: [{ collection: "employees", record: employee }, ...balanceWrite(row, ctx, employee.id)],
+    };
   }
   const next = patched(existing, {
     externalId: ext || undefined,
@@ -63,11 +102,15 @@ function resolveEmployee(row: ParsedRow, ctx: PlanContext): RowOutcome {
     phone: row.phone as string | null,
     hiredAt: row.hired_at as string | null,
     status: row.status as Employee["status"] | null,
-    ptoBalanceHours: row.pto_hours as string | null,
     managerId: manager?.id,
   });
-  if (!next) return { action: "skip", label: name, writes: [], note: "Nothing changed." };
-  return { action: "update", label: name, writes: [{ collection: "employees", record: next }] };
+  const balance = balanceWrite(row, ctx, existing.id);
+  if (!next && balance.length === 0) return { action: "skip", label: name, writes: [], note: "Nothing changed." };
+  return {
+    action: "update",
+    label: name,
+    writes: [...(next ? [{ collection: "employees" as const, record: next }] : []), ...balance],
+  };
 }
 
 /** The employees kind. */

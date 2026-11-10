@@ -101,6 +101,9 @@ function plan(scope: ImportScope, request: ImportRequest, batch: { id: string; n
       invoices: db.list("invoices"),
       bills: db.list("bills"),
       employees: db.list("employees"),
+      timesheets: db.list("timesheets"),
+      timeOffEntries: db.list("timeOffEntries"),
+      timeOffPolicies: db.list("timeOffPolicies"),
       locations: db.list("locations"),
       users: db.list("users"),
       payments: db.list("payments"),
@@ -114,6 +117,7 @@ function plan(scope: ImportScope, request: ImportRequest, batch: { id: string; n
     actorId: scope.actor.userId,
     batch,
     newId: scope.newId,
+    workweekStartDay: db.settings.hr.workweekStartDay,
   });
 }
 

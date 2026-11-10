@@ -91,6 +91,7 @@ const ROWS: Row[] = [
   ["hr.employee", "hr", "Employees", ["view", "create", "edit", "view_sensitive"]],
   ["hr.timesheet", "hr", "Timesheets", ["view", "edit", "approve"]],
   ["hr.pto", "hr", "Time off", ["view", "request", "approve"]],
+  ["hr.portal", "hr", "My portal", ["view"]],
   ["hr.commission", "hr", "Commission plans", ["view", "manage", "approve", "adjust"]],
   ["hr.payroll", "hr", "Pay periods", ["view", "approve", "export"]],
   ["meetings.meeting", "meetings", "Meetings", ["view", "create", "edit", "delete"]],

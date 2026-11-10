@@ -10,13 +10,13 @@ const FLOORING_PERSONAS: [name: string, home: RegExp][] = [
   ["Cole Brennan", /\/$/],
   ["Grace Liu", /\/$/],
   ["Tamara Reyes", /\/hr$/],
-  ["Bri Alvarez", /\/hr$/],
+  ["Bri Alvarez", /\/my$/],
 ];
 
 const HR_PERSONAS: [name: string, home: RegExp][] = [
   ["Elena Brooks", /\/$/],
   ["Andre Wallace", /\/$/],
-  ["Mia Chen", /\/hr\/timesheets$/],
+  ["Mia Chen", /\/my$/],
 ];
 
 async function signInThroughForm(page: Page, persona: string) {

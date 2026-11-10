@@ -41,6 +41,11 @@ function invoiceInScope(invoiceId: string, subject: ScopeSubject, db: CompanyDb)
 
 const byEmployee: Filter = (item: { employeeId: string }, { user }) => item.employeeId === user.employeeId;
 
+/** Own records, and at branch scope a manager's direct reports too (ADR 0024: per-manager queue). */
+const ownOrReports: Filter = (item: { employeeId: string }, { user, scope }, db) =>
+  item.employeeId === user.employeeId ||
+  (scope === "branch" && db.get("employees", item.employeeId)?.managerId === user.employeeId);
+
 /**
  * How each collection narrows for "own" and "branch" scope (blueprint "Data scope"). Collections
  * without an entry are company-wide reference data.
@@ -58,9 +63,10 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
   },
   jobs: (item: { crewId: string }, { user, scope }, db) =>
     scope !== "own" || db.get("crews", item.crewId)?.lead === user.name,
-  timesheets: (item, subject, db) => subject.scope !== "own" || byEmployee(item, subject, db),
-  ptoRequests: (item, subject, db) => subject.scope !== "own" || byEmployee(item, subject, db),
-  commissions: (item, subject, db) => subject.scope !== "own" || byEmployee(item, subject, db),
+  timesheets: ownOrReports,
+  ptoRequests: ownOrReports,
+  timeOffEntries: ownOrReports,
+  clockEntries: byEmployee,
   meetings: (item: { attendees: { id: string }[] }, { user, scope }) =>
     scope !== "own" || item.attendees.some((a) => a.id === user.id),
 };

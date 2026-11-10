@@ -34,6 +34,9 @@ const world = (): ImportWorld => ({
   invoices: summit.invoices,
   bills: summit.bills,
   employees: summit.employees,
+  timesheets: summit.timesheets,
+  timeOffEntries: summit.timeOffEntries,
+  timeOffPolicies: summit.timeOffPolicies,
   locations: summit.locations,
   users: summit.users,
   payments: summit.payments,
@@ -50,6 +53,7 @@ function context(): PlanContext {
     today: summit.anchorDate,
     now: `${summit.anchorDate}T10:00`,
     actorId: summit.users[0]!.id,
+    workweekStartDay: 1,
     batch: { id: "imp-1", number: "IMP-0001" },
     newId: (kind) => `t-${kind}-${++n}`,
   };
@@ -339,7 +343,7 @@ describe("planning an import (spec G1 steps 5 and 6)", () => {
 
 describe("templates and reports (spec G1 steps 2 and 7)", () => {
   it("offers kinds by module", () => {
-    expect(importKindsFor(["platform", "hr"])).toEqual(["employees"]);
+    expect(importKindsFor(["platform", "hr"])).toEqual(["employees", "timesheets"]);
     expect(importKindsFor(["platform", "core"])).not.toContain("employees");
   });
 

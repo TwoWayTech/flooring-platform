@@ -7,6 +7,7 @@ import {
   Layers,
   Receipt,
   Truck,
+  UserRound,
   UsersRound,
 } from "lucide-react";
 import { SETTINGS_MENU } from "./settings-menu";
@@ -63,9 +64,10 @@ export const FLOORING: ProductConfig = {
       label: "HR",
       href: "/hr",
       icon: UsersRound,
-      anyOf: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view"],
-      features: ["hr.dashboard", "hr.employees", "hr.timesheets", "hr.time-off"],
+      anyOf: ["hr.overview.view", "hr.commission.view", "hr.payroll.view"],
+      features: ["hr.dashboard", "hr.employees", "hr.timesheets", "hr.time-off", "hr.commissions", "hr.pay-periods"],
     },
+    { label: "My portal", href: "/my", icon: UserRound, anyOf: ["hr.portal.view"], features: ["hr.portal"] },
     {
       label: "Meetings",
       href: "/meetings",

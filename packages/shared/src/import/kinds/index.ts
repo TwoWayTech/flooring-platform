@@ -7,6 +7,7 @@ import { BILLS, INVOICES } from "./opening";
 import { PRODUCTS } from "./products";
 import { STOCK } from "./stock";
 import { SUPPLIERS } from "./suppliers";
+import { TIMESHEETS } from "./timesheets";
 
 /**
  * Every import kind in the order the wizard offers them (spec G1 step 1): the order data is
@@ -22,6 +23,7 @@ export const IMPORT_HANDLERS: Record<ImportKind, KindHandler> = {
   invoices: INVOICES,
   bills: BILLS,
   employees: EMPLOYEES,
+  timesheets: TIMESHEETS,
 };
 
 /** The definition of one import kind: its label, what it matches on and its columns. */

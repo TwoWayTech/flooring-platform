@@ -26,10 +26,9 @@ import {
   adjustmentNeedsApproval,
   billLedgerIndex,
   payablesSummary,
-  rateFor,
   roundMoney,
-  ruleFor,
   teamStats,
+  timeOffBalance,
   type CompanyFixtures,
   type PlatformFixtures,
 } from "../src";
@@ -184,14 +183,11 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
     }
   });
 
-  it("commissions earned = the rule's rate × the revenue in each rep's confirmed payments", () => {
-    const ledgers = ledgerIndex(f.invoices, { payments: f.payments, adjustments: f.invoiceAdjustments }, today);
+  it("paid revenue is the revenue in each rep's confirmed payments", () => {
     const range = { from: addDays(today, -89), to: today, today };
-    const rows = teamStats({ ...f, rules: f.settings.commissions.rules, ledgers }, range);
+    const rows = teamStats({ ...f, commission: new Map() }, range);
     for (const row of rows) {
-      const user = f.users.find((u) => u.id === row.userId)!;
-      const rule = ruleFor(user, f.roles, f.settings.commissions.rules);
-      const own = new Map(f.invoices.filter((i) => i.salesRepId === user.id && !i.voidedAt).map((i) => [i.id, i]));
+      const own = new Map(f.invoices.filter((i) => i.salesRepId === row.userId && !i.voidedAt).map((i) => [i.id, i]));
       const paid = f.payments.filter(
         (p) => p.status === "confirmed" && own.has(p.invoiceId) && p.date >= range.from && p.date <= range.to,
       );
@@ -204,15 +200,41 @@ describe.each(flooring.map((f) => [f.companyId, f] as const))("%s documents reco
         }),
       );
       expect(row.paidRevenue, row.name).toBe(moneyString(revenue));
-      if (rule?.basis === "paid_revenue") {
-        expect(row.earned, row.name).toBe(moneyString(revenue.times(rateFor(rule, revenue)).div(100)));
-      }
     }
-    expect(rows.some((r) => dec(r.earned).gt(0))).toBe(true);
   });
 
-  it("HR commissions are 4 % of each rep's net invoiced sales", () => {
-    for (const c of f.commissions) expect(c.amount).toBe(moneyString(dec(c.sales).times(c.ratePct).dividedBy(100)));
+  it("each pay line adds up to its gross pay, and only W-2 staff are on it", () => {
+    for (const period of f.payPeriods) {
+      for (const line of period.lines) {
+        const adds = [
+          line.straightTimePay,
+          line.paidLeavePay,
+          line.salaryAmount,
+          line.overtimePremium,
+          line.commissionPay,
+          line.nondiscretionaryBonus,
+          line.discretionaryBonus,
+          line.overtimeTrueUp,
+        ];
+        expect(line.grossPay).toBe(moneyString(sum(adds).minus(line.salaryDeduction)));
+        expect(f.employees.find((e) => e.id === line.employeeId)!.workerType).toBe("w2");
+      }
+    }
+  });
+
+  it("time-off balances are the sum of the ledger and none is negative", () => {
+    for (const employee of f.employees) {
+      for (const policy of f.timeOffPolicies) {
+        expect(timeOffBalance(f.timeOffEntries, employee.id, policy.id).gte(0), employee.name).toBe(true);
+      }
+    }
+  });
+
+  it("paid commission statements match months with commission, and each rep has a plan", () => {
+    const planIds = new Set(f.commissionPlans.map((p) => p.id));
+    for (const a of f.commissionAssignments) expect(planIds.has(a.planId)).toBe(true);
+    for (const s of f.commissionStatements) expect(s.status).toBe("paid");
+    if (f.invoices.length > 0) expect(f.commissionStatements.length).toBeGreaterThan(0);
   });
 });
 

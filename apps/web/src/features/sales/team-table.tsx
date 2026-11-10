@@ -8,7 +8,6 @@ import {
   type DashboardPeriod,
   type Location,
   type Quote,
-  type Role,
   type User,
 } from "@workspace/shared";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
@@ -17,6 +16,7 @@ import type { ColumnSpec } from "@/components/data-table/types";
 import { ALL_WAREHOUSES, ALL_WAREHOUSES_OPTION, WarehouseSelect } from "@/components/warehouse-select";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { useApiQuery } from "@/lib/api/use-api";
 import type { SalesLedger } from "@/lib/sales-ledger";
 
 type Row = ReturnType<typeof teamStats>[number];
@@ -30,22 +30,24 @@ export function TeamTable({
   sales,
   quotes,
   users,
-  roles,
   locations,
 }: {
   sales: SalesLedger;
   quotes: Quote[];
   users: User[];
-  roles: Role[];
   locations: Location[];
 }) {
   const can = useCan();
-  const { settings, user } = useWorkspace();
+  const { user } = useWorkspace();
   const [period, setPeriod] = useState<Exclude<DashboardPeriod, "custom">>("month");
   const [warehouse, setWarehouse] = useState(ALL_WAREHOUSES);
   const range = periodRange(period, api.today());
+  const commission = useApiQuery(
+    (client) => client.teamCommission({ from: range.from, to: range.to }),
+    [range.from, range.to],
+  );
   const rows = teamStats(
-    { ...sales, users, roles, rules: settings.commissions.rules, quotes },
+    { ...sales, users, quotes, commission: new Map(commission.data ?? []) },
     { from: range.from, to: range.to, today: api.today(), locationId: warehouse === ALL_WAREHOUSES ? null : warehouse },
   ).filter((r) => r.userId === user.id || Number(r.sales) !== 0 || Number(r.paidRevenue) !== 0 || r.quotesSent > 0);
   const money = (id: keyof Row, header: string, total = true): ColumnSpec<Row> => ({

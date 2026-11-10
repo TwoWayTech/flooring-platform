@@ -16,7 +16,7 @@ import {
 
 const FIXTURES = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const platform = JSON.parse(readFileSync(`${FIXTURES}platform.json`, "utf8")) as PlatformFixtures;
-const shift = { days: 0, weeks: 0 };
+const shift = { days: 0, weeks: 0, months: 0 };
 
 describe("saved demo data (feature batch 3 plan, section 5)", () => {
   it("keeps an overlay of the current version", () => {

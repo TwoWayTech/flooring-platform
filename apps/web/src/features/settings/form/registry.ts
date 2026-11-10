@@ -21,7 +21,7 @@ const BRANDING = "/settings/branding";
 const PROFILE = "/settings/company";
 const PAYMENTS = "/settings/payments";
 const LOCATIONS = "/settings/locations";
-const COMMISSIONS = "/settings/commissions";
+const HR = "/settings/hr";
 
 export const SETTINGS = {
   "region.country": { label: "Country", helper: "The US pack: 50 states and DC, imperial units, USD.", href: REGION },
@@ -83,16 +83,33 @@ export const SETTINGS = {
     helper: "Workers in California follow the California rule whatever is chosen here.",
     href: PAYROLL,
   },
-  "payroll.payFrequency": { label: "Pay frequency", helper: "How often timesheets close for payroll.", href: PAYROLL },
-  "payroll.ptoAccrualHoursPerMonth": {
-    label: "PTO accrual, hours per month",
-    helper: "Added to each employee's balance at the end of the month.",
-    href: PAYROLL,
-  },
   "payroll.holidayState": {
     label: "Holiday calendar",
     helper: "The state whose public holidays timesheets skip.",
     href: PAYROLL,
+  },
+  "hr.workweekStartDay": {
+    label: "Workweek starts on",
+    helper: "Overtime is worked out on this fixed seven-day week.",
+    href: HR,
+  },
+  "hr.payFrequency": { label: "Pay frequency", helper: "How often pay periods close.", href: HR },
+  "hr.showPayToEmployees": { label: "Show pay to employees", helper: "Adds My pay to the portal.", href: HR },
+  "hr.showCommissionToEmployees": {
+    label: "Show commission to employees",
+    helper: "The company default. Each person can be set differently on their profile.",
+    href: HR,
+  },
+  "hr.showRatesToEmployees": { label: "Show pay rate to employees", helper: "Adds the rate to My profile.", href: HR },
+  "hr.showTeamCalendarToEmployees": {
+    label: "Show who is out to employees",
+    helper: "They see that someone is out, never why.",
+    href: HR,
+  },
+  "hr.clockEnabled": {
+    label: "Clock in and out",
+    helper: "Adds a clock to the portal; punches fill the timesheet.",
+    href: HR,
   },
   "documents.defaultTerms": {
     label: "Default payment terms",
@@ -148,11 +165,6 @@ export const SETTINGS = {
     label: "Adjustments that need approval",
     helper: "Above this many ft, sq ft or items, an Owner or Manager approves the change. Empty: never.",
     href: LOCATIONS,
-  },
-  "commissions.rules": {
-    label: "Commission rules",
-    helper: "Earned when payments are confirmed; the highest tier a period reaches sets the rate for all of it.",
-    href: COMMISSIONS,
   },
   "email.senderName": {
     label: "Sender name",

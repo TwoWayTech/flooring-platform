@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Ban, ChevronDown, Coins, HandCoins, Receipt, Send, Eraser } from "lucide-react";
+import { Ban, ChevronDown, Coins, HandCoins, Receipt, ReceiptText, Send, Eraser, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
+  dec,
+  featureOn,
   formatNumber,
   invoiceActions,
   type Invoice,
@@ -23,6 +25,8 @@ import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { ReasonDialog } from "@/components/reason-dialog";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import { CommissionSplitDialog } from "./commission-split-dialog";
+import { CreditNoteDialog } from "./credit-note-dialog";
 
 /** Each action's words, icon and the permission it needs (spec B2, Appendix A "Permissions"). */
 const ACTIONS: Record<InvoiceAction, { label: string; icon: typeof Coins; permission: PermissionKey }> = {
@@ -52,13 +56,20 @@ interface UpdateStatusMenuProps {
 export function UpdateStatusMenu({ invoice, ledger, credit, settings, onRecord }: UpdateStatusMenuProps) {
   const can = useCan();
   const numbers = useNumberSettings();
-  const [asking, setAsking] = useState<"write_off" | "void" | null>(null);
+  const [asking, setAsking] = useState<"write_off" | "void" | "credit_note" | "split" | null>(null);
   const money = (v: string) => formatNumber(v, "money", numbers);
   const offered = invoiceActions(invoice, ledger, {
     customerCredit: credit,
     writeOffMax: settings.writeOffMax.trim() || ledger.balance,
   }).filter((a) => can(ACTIONS[a].permission));
-  if (offered.length === 0) return null;
+  const live = !invoice.voidedAt && !invoice.isReturn;
+  const canCredit = live && can("sales.invoice.void");
+  const canSplit =
+    live &&
+    featureOn("hr.commissions") &&
+    dec(ledger.paid).isZero() &&
+    (can("hr.commission.manage") || can("sales.invoice.edit"));
+  if (offered.length === 0 && !canCredit && !canSplit) return null;
 
   const run = (work: Promise<unknown>, done: string) =>
     work
@@ -91,6 +102,18 @@ export function UpdateStatusMenu({ invoice, ledger, credit, settings, onRecord }
               </DropdownMenuItem>
             );
           })}
+          {canSplit ? (
+            <DropdownMenuItem onSelect={() => setAsking("split")}>
+              <Users />
+              Commission split
+            </DropdownMenuItem>
+          ) : null}
+          {canCredit ? (
+            <DropdownMenuItem onSelect={() => setAsking("credit_note")}>
+              <ReceiptText />
+              Issue credit note
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       {asking === "write_off" ? (
@@ -104,6 +127,8 @@ export function UpdateStatusMenu({ invoice, ledger, credit, settings, onRecord }
           onClose={() => setAsking(null)}
         />
       ) : null}
+      {asking === "credit_note" ? <CreditNoteDialog invoice={invoice} onClose={() => setAsking(null)} /> : null}
+      {asking === "split" ? <CommissionSplitDialog invoice={invoice} onClose={() => setAsking(null)} /> : null}
       {asking === "void" ? (
         <ReasonDialog
           title={`Void ${invoice.number}`}

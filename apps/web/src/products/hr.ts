@@ -1,4 +1,4 @@
-import { CalendarClock, CalendarDays, Clock, LayoutDashboard, UsersRound } from "lucide-react";
+import { CalendarClock, CalendarDays, Clock, LayoutDashboard, UserRound, UsersRound, Wallet } from "lucide-react";
 import { SETTINGS_MENU, type SettingsGroup } from "./settings-menu";
 
 /** The settings groups an HR-only company uses; sales, stock, payments and commissions are flooring. */
@@ -18,7 +18,7 @@ export const HR: ProductConfig = {
       features: ["hr.dashboard"],
     },
     {
-      label: "Employees",
+      label: "People",
       href: "/hr/employees",
       icon: UsersRound,
       anyOf: ["hr.employee.view"],
@@ -28,10 +28,24 @@ export const HR: ProductConfig = {
       label: "Timesheets",
       href: "/hr/timesheets",
       icon: Clock,
-      anyOf: ["hr.timesheet.view"],
+      anyOf: ["hr.timesheet.approve"],
       features: ["hr.timesheets"],
     },
-    { label: "Time off", href: "/hr/time-off", icon: CalendarClock, anyOf: ["hr.pto.view"], features: ["hr.time-off"] },
+    {
+      label: "Time off",
+      href: "/hr/time-off",
+      icon: CalendarClock,
+      anyOf: ["hr.pto.approve"],
+      features: ["hr.time-off"],
+    },
+    {
+      label: "Pay periods",
+      href: "/hr/pay-periods",
+      icon: Wallet,
+      anyOf: ["hr.payroll.view"],
+      features: ["hr.pay-periods"],
+    },
+    { label: "My portal", href: "/my", icon: UserRound, anyOf: ["hr.portal.view"], features: ["hr.portal"] },
     {
       label: "Meetings",
       href: "/meetings",

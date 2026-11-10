@@ -2,14 +2,14 @@
 
 exports[`default role matrix > matches the reviewed snapshot 1`] = `
 {
-  "accountant": "xx....xxxxxxxxxxxxxxx.xx...xxx...xxx.........x..x...xxxxx.....xxxxxxxx.....x...........................x..xx.......xxx.......xxx.x.......x",
-  "employee": ".......................................................................................................x..xx........xx....................",
-  "hr": "..................................................................................................xxxxxxxxxxxxxxxxxxxxxxx................x",
-  "installer": "..............................................................................x...x....................x..xx........xx....................",
-  "manager": "xxxxxxxxxxxxx......xx.xxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx.....xxx.xx..xxxxxxxxxxxxxxxx............xx...xxxxxx.......xxxxx................x",
-  "owner": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "purchasing": "x............................x....xx.....x...xxxxxxxxxx...........x....................................x..xx........xx....................",
-  "sales": "xxxx..xx...xx.......x..xxx...x.....x..........................x.......xxxx.x..x........................x..xx........xxx...................",
-  "warehouse": "x..................x.........x.....xxx...xxx.x..x..x..............x...........x........................x..xx........xx....................",
+  "accountant": "xx....xxxxxxxxxxxxxxx.xx...xxx...xxx.........x..x...xxxxx.....xxxxxxxx.....x...........................xx.xx.x....x.xxx.......xxx.x.......x",
+  "employee": ".......................................................................................................xx.xx.x.......xx....................",
+  "hr": "..................................................................................................xxxxxxxxxxxxxxxxxxxxxxxx.............x..x",
+  "installer": "..............................................................................x...x....................xx.xx.x.......xx....................",
+  "manager": "xxxxxxxxxxxxx......xx.xxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx.....xxx.xx..xxxxxxxxxxxxxxxx............xx...xxxxxxx.......xxxxx................x",
+  "owner": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "purchasing": "x............................x....xx.....x...xxxxxxxxxx...........x....................................xx.xx.x.......xx....................",
+  "sales": "xxxx..xx...xx.......x..xxx...x.....x..........................x.......xxxx.x..x........................xx.xx.x.......xxx...................",
+  "warehouse": "x..................x.........x.....xxx...xxx.x..x..x..............x...........x........................xx.xx.x.......xx....................",
 }
 `;

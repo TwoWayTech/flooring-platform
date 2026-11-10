@@ -233,6 +233,11 @@ export async function attachPaymentFiles(ctx: ActionContext, paymentId: string, 
 export async function readFile(ctx: ActionContext, fileId: string): Promise<Blob> {
   const stored = await ctx.files.get(fileId);
   if (stored) return stored;
+  const holder = ctx.db.list("employees").find((e) => e.documents.some((d) => d.id === fileId));
+  if (holder) {
+    const name = holder.documents.find((d) => d.id === fileId)!.name;
+    return placeholderProof([`${name} for ${holder.name}`], "Sample employee document", "Generated for the demo.");
+  }
   const payment = ctx.db.list("payments").find((p) => p.files.some((f) => f.id === fileId));
   if (!payment) throw new DemoRuleError("This file is not in this browser any more.");
   const invoice = ctx.db.get("invoices", payment.invoiceId);

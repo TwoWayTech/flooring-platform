@@ -1,9 +1,9 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md), Phase 0 done. Research ADRs 0020 to 0026, docs/ux-audit.md and docs/specs/feature-batch-03-plan.md are written and pushed. Nothing is built yet. Live sites are still feature batch 2.
-- Next step: wait for the owner's OK on docs/specs/feature-batch-03-plan.md (section 1 has the six decisions). After the OK, tick "Owner's OK on the plan" and start item A0 below.
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A and B are done and pushed. Batch C code is written and committed but not verified: lint, the build and the browser suite still have to pass. Batches D to H, the redeploy and the demo-v3 tag have not started. Live sites are still feature batch 2.
+- Next step: when the laptop has memory to spare, run `pnpm lint` and `pnpm build`, then the browser suite on the production build in chunks (2 workers, 1 if memory is tight), starting with `hr-workspace.spec.ts`, `portal.spec.ts` and `hr.spec.ts`. Fix what fails, tick C1a to C2 and the Batch C suite line, then start D1.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
-- Last session log: docs/sessions/2026-11-10-batch3-phase0.md
+- Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
 ## Checklist
 
@@ -161,6 +161,7 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch B: full suite green (287 passed, 7 skipped as switched off)
 
 #### Batch C: HR, end to end, plus an employee portal
+Code for every item below is written and committed. They stay unticked until lint, the build and the browser suite pass.
 - [ ] C1a. HR Home: what needs action, birthdays, anniversaries, holidays; submitted timesheets counted (U-17)
 - [ ] C1b. People: directory and profiles, FLSA status, home location, documents, emergency contact, onboarding and offboarding checklists (U-11)
 - [ ] C1c. Timesheets: approval queue, reject with reason, bulk approve, CSV and Excel template and upload, overtime by workweek and regular rate, California seventh day, stated workweek start (ADR 0024, U-08)

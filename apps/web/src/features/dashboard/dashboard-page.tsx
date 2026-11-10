@@ -160,7 +160,7 @@ function TopPerformer({
 }) {
   const { settings } = useWorkspace();
   const rows = teamStats(
-    { ...data.sales, users: data.users, roles: data.roles, rules: settings.commissions.rules, quotes: data.quotes },
+    { ...data.sales, users: data.users, quotes: data.quotes, commission: new Map() },
     { from: period.from, to: period.to, today: api.today(), locationId },
   ).filter((r) => dec(r.paidRevenue).gt(0));
   const [top, ...rest] = rows;

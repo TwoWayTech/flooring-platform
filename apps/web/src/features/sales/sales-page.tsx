@@ -74,7 +74,6 @@ export function SalesPage() {
               sales={data.data.sales}
               quotes={data.data.quotes}
               users={data.data.users}
-              roles={data.data.roles}
               locations={data.data.locations}
             />
           ) : view === "customers" ? (

@@ -30,6 +30,11 @@ import {
   type CompanyId,
   type CompanySettings,
   type PermissionKey,
+  SENSITIVE,
+  type CommissionPlan,
+  type Employee,
+  type ImportTable,
+  type TimeOffPolicy,
   type PlatformFixtures,
   type NotificationEventKey,
   type NotificationRule,
@@ -50,6 +55,7 @@ import {
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
+  Collections,
   ApiClient,
   AuditInput,
   CollectionName,
@@ -58,6 +64,16 @@ import type {
   ScheduleJobInput,
   InviteUserInput,
   ItemOf,
+  CommissionAdjustmentInput,
+  CreditNoteInput,
+  EmployeeInput,
+  MyProfilePatch,
+  PlanAssignmentInput,
+  TimeOffAdjustment,
+  TimeOffDecision,
+  TimeOffInput,
+  TimesheetDecision,
+  TimesheetInput,
   NewCustomerInput,
   AdjustmentDecision,
   AdjustmentInput,
@@ -126,6 +142,44 @@ import {
   voidPayment,
   writeOffBalance,
 } from "./invoice-actions";
+import {
+  addEmployeeDocuments,
+  saveEmployee,
+  setChecklistItem,
+  startOffboarding,
+  updateMyProfile as updateMyEmployeeProfile,
+} from "./people-actions";
+import {
+  clockIn,
+  clockOut,
+  decideTimesheets,
+  reopenTimesheet,
+  saveTimesheet,
+  submitTimesheet,
+  uploadTimesheets,
+} from "./timesheet-actions";
+import { adjustTimeOff, cancelTimeOff, decideTimeOff, requestTimeOff, saveTimeOffPolicy } from "./timeoff-actions";
+import {
+  acknowledgePlan,
+  addCommissionAdjustment,
+  approveStatement,
+  assignPlan,
+  decideReversal,
+  issueCreditNote,
+  saveCommissionPlan,
+  setCommissionSplit,
+  statementRows,
+  teamCommission,
+} from "./commission-actions";
+import {
+  approvePayPeriod,
+  ensureCurrentPeriod,
+  exportPayPeriod,
+  reopenPayPeriod,
+  reviewPayPeriod,
+  setPayExclusion,
+} from "./pay-actions";
+import { myPortal } from "./portal-actions";
 import { sampleDatabase } from "./sample-database";
 import {
   importOverview,
@@ -146,8 +200,19 @@ const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   profile: "Company profile",
   payments: "Payments",
   inventory: "Stock rules",
-  commissions: "Commissions",
+  hr: "HR",
   email: "Email and notifications",
+};
+
+/** Collections that need a permission even to read: an API would answer 403 for the whole list. */
+const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
+  payPeriods: "hr.payroll.view",
+  bonuses: "hr.payroll.view",
+  contractorPayments: "hr.payroll.view",
+  commissionPlans: "hr.commission.view",
+  commissionAssignments: "hr.commission.view",
+  commissionStatements: "hr.commission.view",
+  commissionAdjustments: "hr.commission.view",
 };
 
 const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
@@ -310,7 +375,15 @@ export class DemoStore implements ApiClient {
 
   async list<K extends CollectionName>(collection: K) {
     const db = this.open();
-    return applyScope(db, collection, db.list(collection), this.subject(db));
+    const can = this.actionContext(db).can;
+    const needed = PRIVATE_COLLECTIONS[collection];
+    if (needed && !(await can(needed))) return [] as unknown as Collections[K];
+    const items = applyScope(db, collection, db.list(collection), this.subject(db));
+    // Pay rate needs its own permission (CLAUDE.md rule 2), so the record never carries it without it.
+    if (collection === "employees" && !(await can(SENSITIVE.payRate))) {
+      return (items as Employee[]).map((e) => ({ ...e, payRate: "0.00" })) as unknown as Collections[K];
+    }
+    return items;
   }
 
   async get<K extends CollectionName>(collection: K, id: string) {
@@ -719,6 +792,153 @@ export class DemoStore implements ApiClient {
     return this.viewer!.userId;
   }
 
+  async saveEmployee(input: EmployeeInput) {
+    return this.act((ctx) => saveEmployee(ctx, input));
+  }
+
+  async setChecklistItem(employeeId: string, list: "onboarding" | "offboarding", itemId: string, done: boolean) {
+    return this.act((ctx) => setChecklistItem(ctx, employeeId, list, itemId, done));
+  }
+
+  async startOffboarding(employeeId: string) {
+    return this.act((ctx) => startOffboarding(ctx, employeeId));
+  }
+
+  async addEmployeeDocuments(employeeId: string, files: File[]) {
+    return this.act((ctx) => addEmployeeDocuments(ctx, employeeId, files));
+  }
+
+  async updateMyEmployeeProfile(patch: MyProfilePatch) {
+    return this.act((ctx) => updateMyEmployeeProfile(ctx, patch));
+  }
+
+  async saveTimesheet(input: TimesheetInput) {
+    return this.act((ctx) => saveTimesheet(ctx, input));
+  }
+
+  async submitTimesheet(id: string) {
+    return this.act((ctx) => submitTimesheet(ctx, id));
+  }
+
+  async decideTimesheets(ids: readonly string[], decision: TimesheetDecision) {
+    return this.act((ctx) => decideTimesheets(ctx, ids, decision));
+  }
+
+  async reopenTimesheet(id: string, reason: string) {
+    return this.act((ctx) => reopenTimesheet(ctx, id, reason));
+  }
+
+  async uploadTimesheets(input: { table: ImportTable; fileName: string; apply: boolean; own: boolean }) {
+    return this.act((ctx) => uploadTimesheets(ctx, input));
+  }
+
+  async clockIn() {
+    return this.act((ctx) => clockIn(ctx));
+  }
+
+  async clockOut() {
+    return this.act((ctx) => clockOut(ctx));
+  }
+
+  async requestTimeOff(input: TimeOffInput) {
+    return this.act((ctx) => requestTimeOff(ctx, input));
+  }
+
+  async decideTimeOff(id: string, decision: TimeOffDecision) {
+    return this.act((ctx) => decideTimeOff(ctx, id, decision));
+  }
+
+  async cancelTimeOff(id: string) {
+    return this.act((ctx) => cancelTimeOff(ctx, id));
+  }
+
+  async adjustTimeOff(input: TimeOffAdjustment) {
+    return this.act((ctx) => adjustTimeOff(ctx, input));
+  }
+
+  async saveTimeOffPolicy(policy: TimeOffPolicy) {
+    return this.act((ctx) => saveTimeOffPolicy(ctx, policy));
+  }
+
+  async listCommissionStatements() {
+    const db = this.open();
+    await this.assertCan(db, ["hr.commission.view"]);
+    return statementRows(this.actionContext(db));
+  }
+
+  async teamCommission(range: { from: string; to: string }) {
+    const db = this.open();
+    return teamCommission(this.actionContext(db), this.subject(db), range);
+  }
+
+  async approveStatement(userId: string, month: string) {
+    return this.act((ctx) => approveStatement(ctx, userId, month));
+  }
+
+  async addCommissionAdjustment(input: CommissionAdjustmentInput) {
+    return this.act((ctx) => addCommissionAdjustment(ctx, input));
+  }
+
+  async decideReversal(input: {
+    userId: string;
+    month: string;
+    lineId: string;
+    outcome: "applied" | "waived";
+    reason: string;
+  }) {
+    return this.act((ctx) => decideReversal(ctx, input));
+  }
+
+  async saveCommissionPlan(plan: CommissionPlan) {
+    return this.act((ctx) => saveCommissionPlan(ctx, plan));
+  }
+
+  async assignPlan(input: PlanAssignmentInput) {
+    return this.act((ctx) => assignPlan(ctx, input));
+  }
+
+  async acknowledgePlan(assignmentId: string, signedName: string) {
+    return this.act((ctx) => acknowledgePlan(ctx, assignmentId, signedName));
+  }
+
+  async setCommissionSplit(invoiceId: string, split: { userId: string; pct: string }[]) {
+    return this.act((ctx) => setCommissionSplit(ctx, invoiceId, split));
+  }
+
+  async issueCreditNote(invoiceId: string, input: CreditNoteInput) {
+    return this.act((ctx) => issueCreditNote(ctx, invoiceId, input));
+  }
+
+  async listPayPeriods() {
+    const db = this.open();
+    await this.assertCan(db, ["hr.payroll.view"]);
+    return [...ensureCurrentPeriod(this.actionContext(db))].sort((a, b) => b.start.localeCompare(a.start));
+  }
+
+  async reviewPayPeriod(id: string) {
+    return reviewPayPeriod(this.actionContext(this.open()), id);
+  }
+
+  async setPayExclusion(id: string, employeeId: string, reason: string | null) {
+    return this.act((ctx) => setPayExclusion(ctx, id, employeeId, reason));
+  }
+
+  async approvePayPeriod(id: string) {
+    return this.act((ctx) => approvePayPeriod(ctx, id));
+  }
+
+  async reopenPayPeriod(id: string) {
+    return this.act((ctx) => reopenPayPeriod(ctx, id));
+  }
+
+  async exportPayPeriod(id: string) {
+    return this.act((ctx) => exportPayPeriod(ctx, id));
+  }
+
+  async myPortal() {
+    return myPortal(this.actionContext(this.open()));
+  }
+
   async listStockHolds() {
     return listStockHolds(this.actionContext(this.open()));
   }
@@ -769,7 +989,7 @@ export class DemoStore implements ApiClient {
 
   async getFile(fileId: string) {
     const db = this.open();
-    await this.assertCan(db, ["sales.payment.view"]);
+    await this.assertCan(db, ["sales.payment.view", "hr.employee.view", "hr.portal.view"]);
     return readFile(this.actionContext(db), fileId);
   }
 

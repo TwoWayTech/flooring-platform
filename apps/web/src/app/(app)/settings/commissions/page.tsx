@@ -1,9 +1,6 @@
-import type { Metadata } from "next";
-import { CommissionsPage } from "@/features/settings/commissions/commissions-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Commissions" };
-
-/** Settings: Commissions. */
+/** Commission rules moved to HR (spec C1); old links land there. */
 export default function Page() {
-  return <CommissionsPage />;
+  redirect("/hr/commissions");
 }

@@ -1,9 +1,10 @@
-import { addDays } from "../../src/dates";
+import { addDays, mondayOf } from "../../src/dates";
 import { defaultNumberSettings } from "../../src/numbers";
 import { ALL_PERMISSION_KEYS, permissionsForModules } from "../../src/permissions/catalog";
 import { PRODUCT_ROLES, roleTemplate } from "../../src/permissions/roles";
 import { PRODUCT_MODULES } from "../../src/products";
 import type { Company, CompanyFixtures, CompanySettings, Employee, Role, User } from "../../src/types";
+import { federalHolidays } from "../../src/us-pack/holidays";
 import { EXAMPLE_TAX_RULES } from "../../src/us-pack/tax";
 import { EXAMPLE_COMPANY_DEFAULT, EXAMPLE_JURISDICTIONS } from "../../src/us-pack/tax-examples";
 import { ANCHOR_DATE, type CompanySeed } from "./companies";
@@ -119,9 +120,19 @@ export function withBuyer(ctx: GenContext, fixtures: CompanyFixtures): CompanyFi
     phone: buyer.phone,
     hiredAt: addDays(anchor, -812),
     status: "active",
-    ptoBalanceHours: "52",
     managerId: fixtures.employees[0]!.id,
+    flsaStatus: "not_applicable",
+    exemptionBasis: null,
+    salaryHoursPerWeek: 40,
+    commissionVisible: null,
+    homeLocationId: null,
+    birthDate: null,
+    emergencyContact: null,
+    documents: [],
+    onboarding: [],
+    offboarding: [],
   };
+  ctx.openingPto.set(employeeId, 52);
   const user: User = {
     id: `${seed.idPrefix}-usr-${String(seed.people.length + 1).padStart(2, "0")}`,
     companyId: seed.id,
@@ -179,8 +190,6 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       },
       payroll: {
         overtimeRule: "federal",
-        payFrequency: "biweekly",
-        ptoAccrualHoursPerMonth: "6.67",
         holidayState: seed.state,
       },
       documents: {
@@ -217,17 +226,16 @@ export function buildSettings(ctx: GenContext): CompanySettings {
       refundPrefix: "RF-",
     },
     inventory: { adjustmentApprovalQty: "1000" },
-    // Sales earn 5 % of paid revenue, 6 % once a period passes $50,000 (spec E2).
-    commissions: {
-      rules: [
-        {
-          id: "com-rule-sales",
-          appliesTo: { kind: "role", roleKey: "sales" },
-          basis: "paid_revenue",
-          ratePct: "5",
-          tiers: [{ fromAmount: "50000", ratePct: "6" }],
-        },
-      ],
+    hr: {
+      workweekStartDay: 1,
+      payFrequency: seed.id === "harbor" ? "weekly" : "biweekly",
+      payPeriodAnchor: addDays(mondayOf(ctx.anchor), -42),
+      holidays: [...federalHolidays(2026), ...federalHolidays(2027)],
+      showPayToEmployees: true,
+      showCommissionToEmployees: false,
+      showRatesToEmployees: false,
+      showTeamCalendarToEmployees: false,
+      clockEnabled: seed.id !== "keystone",
     },
     email: { senderName: seed.name, replyTo: `office@${seed.domain}`, signature: `The team at ${seed.name}` },
     profile: {

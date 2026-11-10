@@ -1,165 +1,64 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { CalendarPlus, Check, CircleCheck, Clock, X, XCircle } from "lucide-react";
+import { useState } from "react";
+import { CalendarPlus, Check, CircleCheck, CircleSlash, Clock, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { daysBetween, type PtoRequest } from "@workspace/shared";
+import { timeOffBalance, type Employee, type PtoRequest } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
-import { Input } from "@workspace/ui/components/input";
-import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { StatusPill } from "@workspace/ui/components/status-pill";
-import { QueryFallback } from "@/components/query-fallback";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
-import { Field } from "@/components/field";
+import { QueryFallback } from "@/components/query-fallback";
 import { NoAccess } from "@/components/no-access";
+import { ReasonDialog } from "@/components/reason-dialog";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { HrTabs } from "./hr-tabs";
+import { RequestTimeOffDialog } from "./request-time-off-dialog";
+import { TeamCalendar } from "./team-calendar";
 
-const STATUS = {
+/** How each request status reads. */
+export const REQUEST_STATUS = {
   pending: { tone: "warning", icon: Clock, label: "Pending" },
   approved: { tone: "success", icon: CircleCheck, label: "Approved" },
-  denied: { tone: "neutral", icon: XCircle, label: "Denied" },
+  denied: { tone: "neutral", icon: XCircle, label: "Declined" },
+  cancelled: { tone: "neutral", icon: CircleSlash, label: "Cancelled" },
 } as const;
-const KINDS: Record<PtoRequest["kind"], string> = { vacation: "Vacation", sick: "Sick", personal: "Personal" };
-/** A day off counts as 8 hours against the balance. */
-const HOURS_PER_DAY = 8;
 
-/** Ask for time off: dates, kind and an optional note; it starts as pending. */
-function RequestDialog({
-  employeeId,
-  open,
-  onOpenChange,
-}: {
-  employeeId: string;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-}) {
-  const today = api.today();
-  const [start, setStart] = useState(today);
-  const [end, setEnd] = useState(today);
-  const [kind, setKind] = useState<PtoRequest["kind"]>("vacation");
-  const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (end < start) return setError("The last day must be on or after the first day.");
-    const days = daysBetween(start, end) + 1;
-    const request: PtoRequest = {
-      id: `pto-${crypto.randomUUID().slice(0, 8)}`,
-      employeeId,
-      start,
-      end,
-      hours: String(days * HOURS_PER_DAY),
-      kind,
-      status: "pending",
-      note,
-    };
-    await api.save("ptoRequests", request, {
-      category: "data",
-      action: "Requested time off",
-      target: `${start} to ${end}`,
-      before: null,
-      after: `${days} days, pending`,
-    });
-    toast.success("Time-off request sent");
-    setError(null);
-    onOpenChange(false);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-surface sm:max-w-md">
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>Request time off</DialogTitle>
-            <DialogDescription>Your manager reviews it; you see the answer here.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field id="pto-start" label="First day">
-              <Input id="pto-start" type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
-            </Field>
-            <Field id="pto-end" label="Last day">
-              <Input id="pto-end" type="date" value={end} onChange={(e) => setEnd(e.target.value)} required />
-            </Field>
-            <Field id="pto-kind" label="Kind">
-              <Select value={kind} onValueChange={(v) => setKind(v as PtoRequest["kind"])}>
-                <SelectTrigger id="pto-kind" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(KINDS) as PtoRequest["kind"][]).map((k) => (
-                    <SelectItem key={k} value={k}>
-                      {KINDS[k]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field id="pto-note" label="Note">
-              <Input id="pto-note" value={note} onChange={(e) => setNote(e.target.value)} />
-            </Field>
-          </div>
-          {error ? (
-            <p role="alert" className="text-danger-ink text-sm">
-              {error}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Send request</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Time off (spec "HR host"): requests with approve or deny, balances, and asking for your own. */
+/** Time off (spec C1): requests with approve or decline, balances, the team calendar, and your own request. */
 export function TimeOffPage() {
   const can = useCan();
   const { user, product } = useWorkspace();
   const formatDate = useFormatDate();
   const [asking, setAsking] = useState(false);
+  const [declining, setDeclining] = useState<PtoRequest | null>(null);
   const data = useApiQuery(async (client) => {
-    const [ptoRequests, employees] = await Promise.all([client.list("ptoRequests"), client.list("employees")]);
-    return { ptoRequests, employees };
+    const [ptoRequests, employees, policies, entries] = await Promise.all([
+      client.list("ptoRequests"),
+      client.list("employees"),
+      client.list("timeOffPolicies"),
+      client.list("timeOffEntries"),
+    ]);
+    return { ptoRequests, employees, policies, entries };
   }, []);
   if (!can("hr.pto.view")) return <NoAccess />;
   const canDecide = can("hr.pto.approve");
+  const nameOf = (id: string) => data.data?.employees.find((e) => e.id === id)?.name ?? "Unknown";
+  const policyOf = (id: string) => data.data?.policies.find((p) => p.id === id)?.name ?? "Time off";
 
-  async function decide(request: PtoRequest, status: "approved" | "denied", name: string) {
-    await api.save(
-      "ptoRequests",
-      { ...request, status },
-      {
-        category: "data",
-        action: status === "approved" ? "Approved time off" : "Denied time off",
-        target: `${name}, ${request.start}`,
-        before: "pending",
-        after: status,
-      },
-    );
-    toast.success(`Time off ${status} for ${name}`);
+  async function approve(request: PtoRequest) {
+    try {
+      await api.decideTimeOff(request.id, { action: "approve" });
+      toast.success(`Time off approved for ${nameOf(request.employeeId)}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not approve this request.");
+    }
   }
 
-  const nameOf = (id: string) => data.data?.employees.find((e) => e.id === id)?.name ?? "Unknown";
   const columns: ColumnSpec<PtoRequest>[] = [
     {
       id: "employee",
@@ -167,31 +66,49 @@ export function TimeOffPage() {
       value: (p) => nameOf(p.employeeId),
       cell: (p) => <span className="font-medium">{nameOf(p.employeeId)}</span>,
     },
-    { id: "kind", header: "Kind", value: (p) => KINDS[p.kind] },
+    { id: "kind", header: "Type", value: (p) => policyOf(p.policyId) },
     { id: "start", header: "From", value: (p) => p.start, cell: (p) => formatDate(p.start) },
     { id: "end", header: "To", value: (p) => p.end, cell: (p) => formatDate(p.end) },
     { id: "hours", header: "Hours", kind: "quantity", value: (p) => p.hours },
-    { id: "note", header: "Note", value: (p) => p.note, hidden: true },
+    { id: "note", header: "Note", value: (p) => p.decisionReason ?? p.note },
     {
       id: "status",
       header: "Status",
-      value: (p) => STATUS[p.status].label,
+      value: (p) => REQUEST_STATUS[p.status].label,
       cell: (p) =>
-        p.status === "pending" && canDecide ? (
+        p.status === "pending" && canDecide && p.employeeId !== user.employeeId ? (
           <span className="flex gap-1.5">
-            <Button size="sm" variant="outline" onClick={() => void decide(p, "approved", nameOf(p.employeeId))}>
+            <Button size="sm" variant="outline" onClick={() => void approve(p)}>
               <Check />
               Approve
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void decide(p, "denied", nameOf(p.employeeId))}>
+            <Button size="sm" variant="ghost" onClick={() => setDeclining(p)}>
               <X />
-              Deny
+              Decline
             </Button>
           </span>
         ) : (
-          <StatusPill {...STATUS[p.status]} />
+          <StatusPill {...REQUEST_STATUS[p.status]} />
         ),
     },
+  ];
+  const withBalance = (data.data?.employees ?? []).filter((e) => e.workerType === "w2" && e.status !== "terminated");
+  const balanceColumns: ColumnSpec<Employee>[] = [
+    {
+      id: "name",
+      header: "Employee",
+      value: (e) => e.name,
+      cell: (e) => <span className="font-medium">{e.name}</span>,
+    },
+    ...(data.data?.policies ?? [])
+      .filter((p) => p.accrualMethod !== "none")
+      .map((p): ColumnSpec<Employee> => ({
+        id: p.id,
+        header: p.name,
+        kind: "quantity",
+        unit: "h",
+        value: (e) => (data.data ? timeOffBalance(data.data.entries, e.id, p.id).toString() : "0"),
+      })),
   ];
 
   return (
@@ -211,30 +128,57 @@ export function TimeOffPage() {
       {data.status !== "ready" ? (
         <QueryFallback query={data} className="h-96" label="Loading time off" />
       ) : (
-        <>
-          <DataTable
-            id="hr-time-off"
-            rows={data.data.ptoRequests}
-            columns={columns}
-            getRowId={(p) => p.id}
-            searchPlaceholder="Search requests"
-            csvName="time-off"
-            initialSort={{ id: "start", desc: true }}
-            empty={{ message: "No time-off requests yet." }}
-          />
-          {user.employeeId ? (
-            <p className="text-muted-foreground text-sm">
-              Your balance:{" "}
-              <Num
-                kind="quantity"
-                value={data.data.employees.find((e) => e.id === user.employeeId)?.ptoBalanceHours ?? "0"}
-                unit="hours"
-              />
-            </p>
-          ) : null}
-        </>
+        <Tabs defaultValue="requests" className="gap-6">
+          <TabsList aria-label="Time off view">
+            <TabsTrigger value="requests">Requests</TabsTrigger>
+            <TabsTrigger value="balances">Balances</TabsTrigger>
+            <TabsTrigger value="calendar">Team calendar</TabsTrigger>
+          </TabsList>
+          <TabsContent value="requests">
+            <DataTable
+              id="hr-time-off"
+              rows={data.data.ptoRequests}
+              columns={columns}
+              getRowId={(p) => p.id}
+              searchPlaceholder="Search requests"
+              csvName="time-off"
+              initialSort={{ id: "start", desc: true }}
+              empty={{ message: "No time-off requests yet." }}
+            />
+          </TabsContent>
+          <TabsContent value="balances">
+            <DataTable
+              id="hr-time-off-balances"
+              rows={withBalance}
+              columns={balanceColumns}
+              getRowId={(e) => e.id}
+              searchPlaceholder="Search people"
+              csvName="time-off-balances"
+              initialSort={{ id: "name", desc: false }}
+              empty={{ message: "No balances yet." }}
+            />
+          </TabsContent>
+          <TabsContent value="calendar">
+            <TeamCalendar requests={data.data.ptoRequests} employees={data.data.employees} kinds />
+          </TabsContent>
+        </Tabs>
       )}
-      {user.employeeId ? <RequestDialog employeeId={user.employeeId} open={asking} onOpenChange={setAsking} /> : null}
+      {asking && user.employeeId && data.data ? (
+        <RequestTimeOffDialog
+          employeeId={user.employeeId}
+          policies={data.data.policies}
+          onClose={() => setAsking(false)}
+        />
+      ) : null}
+      {declining ? (
+        <ReasonDialog
+          title={`Decline ${nameOf(declining.employeeId)}'s request`}
+          description="Say why, so the employee knows. It goes in the message to them."
+          confirmLabel="Decline"
+          onConfirm={(reason) => api.decideTimeOff(declining.id, { action: "deny", reason })}
+          onClose={() => setDeclining(null)}
+        />
+      ) : null}
     </>
   );
 }

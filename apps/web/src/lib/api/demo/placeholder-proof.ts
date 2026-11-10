@@ -5,14 +5,18 @@ const pdfText = (text: string) => text.replace(/[\\()]/g, "").replace(/[^\x20-\x
  * A one-page PDF standing in for a seeded payment's proof (spec section H: payments with proof
  * files as generated placeholders). Built by hand, so no PDF library loads for it.
  */
-export function placeholderProof(lines: readonly string[]): Blob {
+export function placeholderProof(
+  lines: readonly string[],
+  title = "Sample proof of payment",
+  footer = "Generated for the demo. Not a real receipt.",
+): Blob {
   const content = [
     "BT /F1 16 Tf 72 720 Td",
-    `(${pdfText("Sample proof of payment")}) Tj`,
+    `(${pdfText(title)}) Tj`,
     "/F1 11 Tf",
     ...lines.flatMap((line) => ["0 -22 Td", `(${pdfText(line)}) Tj`]),
     "0 -40 Td",
-    `(${pdfText("Generated for the demo. Not a real receipt.")}) Tj`,
+    `(${pdfText(footer)}) Tj`,
     "ET",
   ].join("\n");
   const objects = [

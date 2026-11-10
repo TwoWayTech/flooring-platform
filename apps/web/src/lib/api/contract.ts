@@ -1,4 +1,18 @@
 import type {
+  CommissionAssignment,
+  CommissionPlan,
+  CommissionStatement,
+  ContractorPayment,
+  Employee,
+  ImportCounts,
+  ImportTable,
+  PayPeriod,
+  PayPeriodLine,
+  PtoRequest,
+  StatementFigures,
+  TeamCommission,
+  TimeOffPolicy,
+  Timesheet,
   AuditEntry,
   Branding,
   Company,
@@ -56,6 +70,153 @@ export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "se
 export type CollectionName = keyof Collections;
 /** One record of a collection. */
 export type ItemOf<K extends CollectionName> = Collections[K][number];
+
+/** The fields of a person's HR record (spec C1 People). */
+export type EmployeeInput = Omit<
+  Employee,
+  "id" | "companyId" | "documents" | "onboarding" | "offboarding" | "birthDate" | "externalId"
+> & { id?: string };
+
+/** What someone may change on their own record (spec C2 My profile). */
+export type MyProfilePatch = Pick<Employee, "phone" | "emergencyContact">;
+
+/** A manager's decision on submitted timesheets. */
+export type TimesheetDecision = { action: "approve" } | { action: "reject"; reason: string };
+
+/** A week of hours to save. */
+export interface TimesheetInput {
+  employeeId: string;
+  weekStart: string;
+  days: number[];
+}
+
+/** What a template upload would do, or did: each row, with its errors. */
+export interface TimesheetUploadResult {
+  rows: PlannedRow[];
+  counts: ImportCounts;
+}
+
+/** Whether the person is clocked in now. */
+export interface MyClock {
+  clockedInAt: string | null;
+}
+
+/** A time-off request to make. */
+export interface TimeOffInput {
+  employeeId: string;
+  policyId: string;
+  start: string;
+  end: string;
+  hours: string;
+  note: string;
+}
+
+/** A decision on a time-off request; a decline needs a reason. */
+export type TimeOffDecision = { action: "approve" } | { action: "deny"; reason: string };
+
+/** A manual change to a balance. */
+export interface TimeOffAdjustment {
+  employeeId: string;
+  policyId: string;
+  hours: string;
+  note: string;
+}
+
+/** A workweek holding up a pay period. */
+export interface PayBlocker {
+  employeeId: string;
+  employeeName: string;
+  weekStart: string;
+  status: Timesheet["status"] | "missing";
+}
+
+/** One person's line in a pay period, with whether they are left out of the run. */
+export interface PayReviewRow {
+  line: PayPeriodLine;
+  employee: Employee;
+  excludedReason: string | null;
+}
+
+/** One pay period to review (spec C1). */
+export interface PayPeriodReview {
+  period: PayPeriod;
+  rows: PayReviewRow[];
+  blockers: PayBlocker[];
+  contractors: ContractorPayment[];
+  contractorNames: Record<string, string>;
+}
+
+/** A person's month of commission with its status (ADR 0025). */
+export interface CommissionStatementRow extends StatementFigures {
+  statementId: string | null;
+  name: string;
+  status: CommissionStatement["status"];
+  approvedBy: string | null;
+  approvedAt: string | null;
+  payPeriodId: string | null;
+  monthEnded: boolean;
+  planName: string | null;
+}
+
+/** A manual change to a statement. */
+export interface CommissionAdjustmentInput {
+  userId: string;
+  month: string;
+  amount: string;
+  invoiceId: string | null;
+  reason: string;
+}
+
+/** Putting someone on a plan. */
+export interface PlanAssignmentInput {
+  userId: string;
+  planId: string;
+  effectiveFrom: string;
+  monthlyTargetOverride: string;
+}
+
+/** A credit note for part of an invoice (plan K-11). */
+export interface CreditNoteInput {
+  subtotal: string;
+  reason: string;
+}
+
+/** What the portal shows this person; a hidden item is not offered at all (spec C2). */
+export interface MyVisibility {
+  pay: boolean;
+  commission: boolean;
+  rates: boolean;
+  teamCalendar: boolean;
+  clock: boolean;
+}
+
+/** One pay period on My pay. */
+export interface MyPayRow {
+  period: PayPeriod;
+  line: PayPeriodLine;
+}
+
+/** Everything the portal shows, for the signed-in person only (spec C2). */
+export interface MyPortal {
+  employee: Employee | null;
+  visible: MyVisibility;
+  weekStart: string;
+  weekStartDay: number;
+  timesheets: Timesheet[];
+  usesTimesheet: boolean;
+  clock: MyClock;
+  balances: { policy: TimeOffPolicy; hours: string; pending: string }[];
+  requests: PtoRequest[];
+  pay: MyPayRow[];
+  earnedThisYear: string;
+  statements: CommissionStatementRow[];
+  assignment: CommissionAssignment | null;
+  plan: CommissionPlan | null;
+  contractorPayments: ContractorPayment[];
+  /** Colleagues' approved time off, never its kind; empty unless the company shows it. */
+  teamOut: PtoRequest[];
+  teamNames: { id: string; name: string }[];
+}
 
 /**
  * Who the API answers for. With `viewAsRoleId` set, data scope follows that role's first active
@@ -395,6 +556,90 @@ export interface ApiClient {
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
   /** The signed-in user's id. */
   whoAmI(): Promise<string>;
+  /** Adds or edits a person (spec C1). */
+  saveEmployee(input: EmployeeInput): Promise<Employee>;
+  /** Ticks or unticks an onboarding or offboarding step. */
+  setChecklistItem(
+    employeeId: string,
+    list: "onboarding" | "offboarding",
+    itemId: string,
+    done: boolean,
+  ): Promise<void>;
+  /** Starts offboarding someone. */
+  startOffboarding(employeeId: string): Promise<Employee>;
+  /** Adds files to a person's documents. */
+  addEmployeeDocuments(employeeId: string, files: File[]): Promise<void>;
+  /** Changes the signed-in person's phone and emergency contact. */
+  updateMyEmployeeProfile(patch: MyProfilePatch): Promise<Employee>;
+  /** Saves a week of hours. */
+  saveTimesheet(input: TimesheetInput): Promise<Timesheet>;
+  /** Sends a timesheet for approval. */
+  submitTimesheet(id: string): Promise<Timesheet>;
+  /** Approves or rejects submitted timesheets. */
+  decideTimesheets(ids: readonly string[], decision: TimesheetDecision): Promise<void>;
+  /** Reopens an approved timesheet with a reason. */
+  reopenTimesheet(id: string, reason: string): Promise<Timesheet>;
+  /** Bulk hours from the template; a dry run unless apply is true. */
+  uploadTimesheets(input: {
+    table: ImportTable;
+    fileName: string;
+    apply: boolean;
+    own: boolean;
+  }): Promise<TimesheetUploadResult>;
+  /** Clocks the signed-in person in. */
+  clockIn(): Promise<void>;
+  /** Clocks the signed-in person out and fills the draft timesheet. */
+  clockOut(): Promise<void>;
+  /** Asks for time off. */
+  requestTimeOff(input: TimeOffInput): Promise<PtoRequest>;
+  /** Approves or declines a time-off request. */
+  decideTimeOff(id: string, decision: TimeOffDecision): Promise<PtoRequest>;
+  /** Cancels a time-off request. */
+  cancelTimeOff(id: string): Promise<PtoRequest>;
+  /** Adds or takes hours from a balance. */
+  adjustTimeOff(input: TimeOffAdjustment): Promise<void>;
+  /** Adds or edits a time-off policy. */
+  saveTimeOffPolicy(policy: TimeOffPolicy): Promise<TimeOffPolicy>;
+  /** Everyone's monthly commission statements, computed live. */
+  listCommissionStatements(): Promise<CommissionStatementRow[]>;
+  /** Commission per person for a period, for Sales → Team. */
+  teamCommission(range: { from: string; to: string }): Promise<[string, TeamCommission][]>;
+  /** Approves a month's statement. */
+  approveStatement(userId: string, month: string): Promise<CommissionStatement>;
+  /** Adds a manual change to an open statement. */
+  addCommissionAdjustment(input: CommissionAdjustmentInput): Promise<void>;
+  /** Accepts or waives a reversal outside its window. */
+  decideReversal(input: {
+    userId: string;
+    month: string;
+    lineId: string;
+    outcome: "applied" | "waived";
+    reason: string;
+  }): Promise<void>;
+  /** Saves a plan; one already in use becomes a new version. */
+  saveCommissionPlan(plan: CommissionPlan): Promise<CommissionPlan>;
+  /** Puts someone on a plan. */
+  assignPlan(input: PlanAssignmentInput): Promise<CommissionAssignment>;
+  /** The rep signs their plan by typing their name. */
+  acknowledgePlan(assignmentId: string, signedName: string): Promise<void>;
+  /** Shares an invoice between up to two reps. */
+  setCommissionSplit(invoiceId: string, split: { userId: string; pct: string }[]): Promise<void>;
+  /** Issues a credit note for part of an invoice. */
+  issueCreditNote(invoiceId: string, input: CreditNoteInput): Promise<Invoice>;
+  /** The company's pay periods, making sure the current one exists. */
+  listPayPeriods(): Promise<PayPeriod[]>;
+  /** One pay period with live gross pay and what still blocks it. */
+  reviewPayPeriod(id: string): Promise<PayPeriodReview>;
+  /** Leaves someone out of a run with a reason, or brings them back. */
+  setPayExclusion(id: string, employeeId: string, reason: string | null): Promise<void>;
+  /** Approves a pay period and freezes its lines. */
+  approvePayPeriod(id: string): Promise<PayPeriod>;
+  /** Returns an approved period to review. */
+  reopenPayPeriod(id: string): Promise<PayPeriod>;
+  /** Marks a period exported and locks it. */
+  exportPayPeriod(id: string): Promise<PayPeriod>;
+  /** Everything the employee portal shows the signed-in person. */
+  myPortal(): Promise<MyPortal>;
   listStockHolds(): Promise<StockHold[]>;
   /** Saves one event's switch, channels and template (spec A4). Needs settings.notifications.manage. Audited. */
   saveNotificationRule(rule: Omit<NotificationRule, "updatedAt" | "updatedBy">): Promise<NotificationRule>;

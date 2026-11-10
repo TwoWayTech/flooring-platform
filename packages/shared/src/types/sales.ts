@@ -96,6 +96,8 @@ export interface Quote {
  * (ledger.ts, spec Appendix A "Core rule"). It keeps only lifecycle facts.
  */
 export interface Invoice {
+  /** Who shares the commission (ADR 0025); empty means the sales rep alone. */
+  commissionSplit?: { userId: string; pct: string }[];
   id: string;
   number: string;
   quoteId: string | null;

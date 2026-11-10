@@ -14,6 +14,9 @@ import type {
   Supplier,
   SupplierContact,
   SupplierPayment,
+  TimeOffEntry,
+  TimeOffPolicy,
+  Timesheet,
   User,
 } from "../types";
 import { readCell, type ImportCellValue } from "./fields";
@@ -39,6 +42,9 @@ export interface ImportWorld {
   invoices: Invoice[];
   bills: Bill[];
   employees: Employee[];
+  timesheets: Timesheet[];
+  timeOffEntries: TimeOffEntry[];
+  timeOffPolicies: readonly TimeOffPolicy[];
   locations: readonly Location[];
   users: readonly User[];
   payments: readonly Payment[];
@@ -57,6 +63,10 @@ export interface PlanContext {
   actorId: string | null;
   batch: { id: string; number: string };
   newId: (kind: string) => string;
+  /** The company's workweek start day, for filing a day into its week (ADR 0024). */
+  workweekStartDay: number;
+  /** Set for a portal upload: rows for anyone else are refused (ADR 0024). */
+  onlyEmployeeId?: string;
 }
 
 /** A row's cells read by type, by field key; null where the cell is empty. */
@@ -139,6 +149,8 @@ function workingCopy(world: ImportWorld): ImportWorld {
     invoices: [...world.invoices],
     bills: [...world.bills],
     employees: [...world.employees],
+    timesheets: [...world.timesheets],
+    timeOffEntries: [...world.timeOffEntries],
   };
 }
 

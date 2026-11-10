@@ -4,7 +4,6 @@ import {
   daysBetween,
   INVOICE_STATUS_LABELS,
   invoiceStatus,
-  splitOvertime,
   type Access,
   type PermissionKey,
   type ProductKey,
@@ -191,20 +190,16 @@ const CHECKS: Check[] = [
     },
   },
   {
-    key: "overtime",
+    key: "timesheets",
     feature: "hr.timesheets",
     permission: "hr.timesheet.approve",
-    products: ["hr"],
+    products: ["flooring", "hr"],
     load: async (client) => {
-      const sheets = await client.list("timesheets");
-      const latest = sheets.reduce((max, t) => (t.weekStart > max ? t.weekStart : max), "");
-      const count = sheets.filter(
-        (t) => t.weekStart === latest && splitOvertime(t.days, "federal").overtime > 0,
-      ).length;
+      const count = (await client.list("timesheets")).filter((t) => t.status === "submitted").length;
       return {
         count,
-        label: `${plural(count, "timesheet", "timesheets")} with overtime this week`,
-        href: "/hr/timesheets",
+        label: `${plural(count, "timesheet", "timesheets")} to approve`,
+        href: "/hr/timesheets?view=queue",
         tone: "warning",
       };
     },

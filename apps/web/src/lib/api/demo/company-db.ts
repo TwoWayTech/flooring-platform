@@ -83,7 +83,11 @@ export class CompanyDb {
 
   /** The overlay with its dates moved from the day it was saved to today. */
   private static moved(stored: CompanyOverlay, shift: DateShift): CompanyOverlay {
-    const delta = { days: shift.days - stored.shift.days, weeks: shift.weeks - stored.shift.weeks };
+    const delta = {
+      days: shift.days - stored.shift.days,
+      weeks: shift.weeks - stored.shift.weeks,
+      months: shift.months - (stored.shift.months ?? 0),
+    };
     const { settings, records } = shiftDates({ settings: stored.settings, records: stored.records }, delta);
     return { schemaVersion: OVERLAY_SCHEMA_VERSION, shift, settings, records };
   }

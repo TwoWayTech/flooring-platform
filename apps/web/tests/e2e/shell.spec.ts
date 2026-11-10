@@ -15,7 +15,7 @@ test.describe("app shell", () => {
     await signInAs(page, HARBOR_OWNER);
     await expect(page).toHaveTitle(/HR Suite/);
     const nav = page.getByRole("navigation", { name: "Main" });
-    await expect(nav.getByRole("link", { name: "Employees" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "People" })).toBeVisible();
     for (const label of ["Sales", "Inventory", "Purchasing", "Installation", "Reports"]) {
       await expect(nav.getByRole("link", { name: label })).toHaveCount(0);
     }

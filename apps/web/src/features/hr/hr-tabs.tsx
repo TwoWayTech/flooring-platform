@@ -7,10 +7,12 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { pathOn } from "@workspace/shared";
 
 const TABS = [
-  { href: "/hr", label: "Overview", permission: "hr.overview.view" },
-  { href: "/hr/employees", label: "Employees", permission: "hr.employee.view" },
+  { href: "/hr", label: "Home", permission: "hr.overview.view" },
+  { href: "/hr/employees", label: "People", permission: "hr.employee.view" },
   { href: "/hr/timesheets", label: "Timesheets", permission: "hr.timesheet.view" },
   { href: "/hr/time-off", label: "Time off", permission: "hr.pto.view" },
+  { href: "/hr/commissions", label: "Commissions", permission: "hr.commission.view" },
+  { href: "/hr/pay-periods", label: "Pay periods", permission: "hr.payroll.view" },
 ] as const;
 
 /**

@@ -14,6 +14,9 @@ export class GenContext {
   }
 
   /** Next stable id for a kind of record, e.g. `sm-inv-0007`. */
+  /** Each person's opening vacation balance, posted to the ledger at the end. */
+  readonly openingPto = new Map<string, number>();
+
   id(kind: string): string {
     const n = (this.counters.get(kind) ?? 0) + 1;
     this.counters.set(kind, n);

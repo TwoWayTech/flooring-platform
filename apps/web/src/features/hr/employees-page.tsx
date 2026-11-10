@@ -1,7 +1,9 @@
 "use client";
 
-import { Briefcase, CircleCheck, CirclePause, CircleX, FileSignature } from "lucide-react";
-import { SENSITIVE, stateName, type Employee } from "@workspace/shared";
+import { useState } from "react";
+import { Briefcase, CircleCheck, CirclePause, CircleX, FileSignature, UserPlus } from "lucide-react";
+import { SENSITIVE, stateName, timeOffBalance, type Employee } from "@workspace/shared";
+import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { StatusPill } from "@workspace/ui/components/status-pill";
@@ -12,6 +14,8 @@ import { NoAccess } from "@/components/no-access";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { EmployeeFormDialog } from "./employee-form-dialog";
+import { EmployeeSheet } from "./employee-sheet";
 import { HrTabs } from "./hr-tabs";
 
 const STATUS = {
@@ -28,16 +32,31 @@ const WORKER = {
 const PAY_UNIT: Record<Employee["payType"], string> = { hourly: "per hour", salary: "per year", per_job: "per job" };
 
 /**
- * Employees (spec "HR host"): W-2 and 1099 workers with department, state and PTO balance. Pay
- * rate is sensitive and shows only with hr.employee.view_sensitive (CLAUDE.md rule 2).
+ * People (spec C1): W-2 and 1099 workers with department, state and vacation balance; a row opens
+ * the profile. Pay rate is sensitive and shows only with hr.employee.view_sensitive (CLAUDE.md rule 2).
  */
 export function EmployeesPage() {
   const can = useCan();
   const { product } = useWorkspace();
   const formatDate = useFormatDate();
-  const data = useApiQuery((client) => client.list("employees"), []);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const data = useApiQuery(async (client) => {
+    const [employees, locations, policies, entries] = await Promise.all([
+      client.list("employees"),
+      client.list("locations"),
+      client.list("timeOffPolicies"),
+      client.list("timeOffEntries"),
+    ]);
+    return { employees, locations, policies, entries };
+  }, []);
   if (!can("hr.employee.view")) return <NoAccess />;
 
+  const vacation = data.data?.policies.find((p) => p.kind === "vacation");
+  const balanceOf = (e: Employee) =>
+    data.data && vacation && e.workerType === "w2"
+      ? timeOffBalance(data.data.entries, e.id, vacation.id).toString()
+      : "0";
   const columns: ColumnSpec<Employee>[] = [
     {
       id: "name",
@@ -75,7 +94,7 @@ export function EmployeesPage() {
       : []),
     { id: "state", header: "Works in", value: (e) => stateName(e.state) },
     { id: "hired", header: "Hired", value: (e) => e.hiredAt, cell: (e) => formatDate(e.hiredAt) },
-    { id: "pto", header: "PTO balance", kind: "quantity", unit: "h", value: (e) => e.ptoBalanceHours },
+    { id: "pto", header: "Vacation balance", kind: "quantity", unit: "h", value: balanceOf },
     {
       id: "status",
       header: "Status",
@@ -83,25 +102,56 @@ export function EmployeesPage() {
       cell: (e) => <StatusPill {...STATUS[e.status]} />,
     },
   ];
+  const open = data.data?.employees.find((e) => e.id === openId);
 
   return (
     <>
-      <PageHeader title={product.key === "hr" ? "Employees" : "HR"} />
+      <PageHeader
+        title={product.key === "hr" ? "People" : "HR"}
+        actions={
+          can("hr.employee.create") ? (
+            <Button onClick={() => setAdding(true)}>
+              <UserPlus />
+              Add person
+            </Button>
+          ) : null
+        }
+      />
       <HrTabs />
       {data.status !== "ready" ? (
-        <QueryFallback query={data} className="h-96" label="Loading employees" />
+        <QueryFallback query={data} className="h-96" label="Loading people" />
       ) : (
         <DataTable
           id="hr-employees"
-          rows={data.data}
+          rows={data.data.employees}
           columns={columns}
           getRowId={(e) => e.id}
-          searchPlaceholder="Search employees"
-          csvName="employees"
+          onRowClick={(e) => setOpenId(e.id)}
+          rowLabel={(e) => `Open ${e.name}`}
+          searchPlaceholder="Search people"
+          csvName="people"
           initialSort={{ id: "name", desc: false }}
-          empty={{ message: "No employees yet." }}
+          empty={{ message: "No people yet." }}
         />
       )}
+      {open && data.data ? (
+        <EmployeeSheet
+          employee={open}
+          employees={data.data.employees}
+          locations={data.data.locations}
+          policies={data.data.policies}
+          entries={data.data.entries}
+          onClose={() => setOpenId(null)}
+        />
+      ) : null}
+      {adding && data.data ? (
+        <EmployeeFormDialog
+          employee={null}
+          employees={data.data.employees}
+          locations={data.data.locations}
+          onClose={() => setAdding(false)}
+        />
+      ) : null}
     </>
   );
 }

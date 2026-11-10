@@ -7,7 +7,8 @@ import { buildProducts, buildSuppliers } from "./catalog";
 import { ANCHOR_DATE, COMPANY_SEEDS, type CompanySeed } from "./companies";
 import { GenContext } from "./context";
 import { buildCustomers, withJobSites } from "./customers";
-import { buildCommissions, buildEmployees, buildPto, buildTimesheets } from "./hr";
+import { buildEmployees, buildPto, buildTimesheets } from "./hr";
+import { withHrRecords } from "./hr-records";
 import { buildCrews, buildJobs, holdUntilInstalled } from "./installation";
 import { withExtras } from "./extras";
 import { buildReservations } from "./reservations";
@@ -78,7 +79,16 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     employees,
     timesheets: buildTimesheets(ctx, employees),
     ptoRequests: buildPto(ctx, employees),
-    commissions: buildCommissions(ctx, users, sales.invoices),
+    timeOffPolicies: [],
+    timeOffEntries: [],
+    clockEntries: [],
+    payPeriods: [],
+    bonuses: [],
+    contractorPayments: [],
+    commissionPlans: [],
+    commissionAssignments: [],
+    commissionStatements: [],
+    commissionAdjustments: [],
     meetings: buildMeetings(ctx, users, customers, suppliers),
     audit: buildAudit(ctx, users),
     importBatches: [],
@@ -87,7 +97,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     outboxMessages: [],
     inAppNotifications: [],
   });
-  return withDirectory(ctx, withBuyer(ctx, fixtures));
+  return withHrRecords(ctx, withDirectory(ctx, withBuyer(ctx, fixtures)));
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */

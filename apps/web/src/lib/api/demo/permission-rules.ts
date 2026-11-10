@@ -44,10 +44,20 @@ const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   expenses: [],
   crews: ["installation.crew.manage"],
   jobs: ["installation.job.create", "installation.job.edit", "installation.job.schedule", "installation.job.sign_off"],
-  employees: ["hr.employee.create", "hr.employee.edit"],
-  timesheets: ["hr.timesheet.edit", "hr.timesheet.approve"],
-  ptoRequests: ["hr.pto.request", "hr.pto.approve"],
-  commissions: [],
+  // HR records change only through their own store calls (spec C1, C2).
+  employees: [],
+  timesheets: [],
+  ptoRequests: [],
+  timeOffPolicies: [],
+  timeOffEntries: [],
+  clockEntries: [],
+  payPeriods: [],
+  bonuses: ["hr.payroll.approve"],
+  contractorPayments: [],
+  commissionPlans: [],
+  commissionAssignments: [],
+  commissionStatements: [],
+  commissionAdjustments: [],
   meetings: ["meetings.meeting.create", "meetings.meeting.edit"],
   audit: [],
   // Imports and saved mappings change only through the import calls (spec G1).
@@ -75,7 +85,7 @@ const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey
   profile: ["settings.company.manage"],
   payments: ["settings.payments.manage"],
   inventory: ["settings.locations.manage"],
-  commissions: ["sales.commission.manage"],
+  hr: ["settings.hr.manage"],
   email: ["settings.notifications.manage"],
 };
 
