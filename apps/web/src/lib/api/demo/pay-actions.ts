@@ -4,6 +4,7 @@ import {
   commissionAllocations,
   dec,
   grossPay,
+  moneyString,
   needsTimesheet,
   payFrequencyProblem,
   periodFor,
@@ -64,7 +65,7 @@ function lineFor(
     leave: db.list("ptoRequests").filter((r) => r.employeeId === employee.id),
     policies: db.list("timeOffPolicies"),
     companyRule: db.settings.localization.payroll.overtimeRule,
-    commission: own.reduce((t, s) => t.plus(s.payable), dec(0)).toFixed(2),
+    commission: moneyString(own.reduce((t, s) => t.plus(s.payable), dec(0))),
     bonuses: db
       .list("bonuses")
       .filter((b) => b.employeeId === employee.id && b.periodEnd >= period.start && b.periodEnd <= period.end),

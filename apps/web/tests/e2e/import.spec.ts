@@ -132,7 +132,7 @@ test.describe("data import (spec G1)", () => {
     await expect(page.getByRole("heading", { name: "Summit Floor Co.", level: 1 })).toBeVisible();
     await expect(page.getByRole("radio", { name: "Open customer invoices" })).toBeVisible();
     await page.goto("/admin/companies/harbor/import");
-    await expect(page.getByRole("radio")).toHaveCount(1);
+    await expect(page.getByRole("radio")).toHaveCount(2);
     await expect(page.getByRole("radio", { name: "Employees" })).toBeVisible();
   });
 
@@ -158,7 +158,7 @@ test.describe("data import (spec G1)", () => {
 
   test("the HR Suite imports employees", { tag: HR_TAG }, async ({ page }) => {
     await signInAs(page, HARBOR_OWNER, "/settings/import");
-    await expect(page.getByRole("radio")).toHaveCount(1);
+    await expect(page.getByRole("radio")).toHaveCount(2);
     await startImport(page, "Employees");
     await upload(
       page,

@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A and B are done and pushed. Batch C code is written and committed but not verified: lint, the build and the browser suite still have to pass. Batches D to H, the redeploy and the demo-v3 tag have not started. Live sites are still feature batch 2.
-- Next step: when the laptop has memory to spare, run `pnpm lint` and `pnpm build`, then the browser suite on the production build in chunks (2 workers, 1 if memory is tight), starting with `hr-workspace.spec.ts`, `portal.spec.ts` and `hr.spec.ts`. Fix what fails, tick C1a to C2 and the Batch C suite line, then start D1.
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A, B and C are done and pushed. Batch D is next. Live sites are still feature batch 2.
+- Next step: build Batch D from item D1 (ADR 0026).
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -161,16 +161,15 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Batch B: full suite green (287 passed, 7 skipped as switched off)
 
 #### Batch C: HR, end to end, plus an employee portal
-Code for every item below is written and committed. They stay unticked until lint, the build and the browser suite pass.
-- [ ] C1a. HR Home: what needs action, birthdays, anniversaries, holidays; submitted timesheets counted (U-17)
-- [ ] C1b. People: directory and profiles, FLSA status, home location, documents, emergency contact, onboarding and offboarding checklists (U-11)
-- [ ] C1c. Timesheets: approval queue, reject with reason, bulk approve, CSV and Excel template and upload, overtime by workweek and regular rate, California seventh day, stated workweek start (ADR 0024, U-08)
-- [ ] C1d. Time off: policies, accrual ledger, caps with California guards, decline with reason, team calendar, balances (U-24)
-- [ ] C1e. Commissions moved to HR (ADR 0025): plans, assignments with acknowledgement, tiers, split, override, draw, clawback, statements, adjustments with reason, credit-note action (K-11); Sales → Team links here (U-07)
-- [ ] C1f. Pay periods: review gross pay by the corrected formula (N-3), approve, CSV exports, contractor payments list, required label (U-07)
-- [ ] C1g. Settings → HR: pay periods, overtime rules, holidays, policies, employee visibility (U-30)
-- [ ] C2. Employee portal in both products: My timesheet (form or template upload, submit), Clock in / out, My time off, My pay, My commission, My documents, My meetings, My profile; own data only; hidden items absent; employees land here (U-01, U-02, U-25)
-- [ ] Batch C: full suite green (both products)
+- [x] C1a. HR Home: what needs action, birthdays, anniversaries, holidays; submitted timesheets counted (U-17)
+- [x] C1b. People: directory and profiles, FLSA status, home location, documents, emergency contact, onboarding and offboarding checklists (U-11)
+- [x] C1c. Timesheets: approval queue, reject with reason, bulk approve, CSV and Excel template and upload, overtime by workweek and regular rate, California seventh day, stated workweek start (ADR 0024, U-08)
+- [x] C1d. Time off: policies, accrual ledger, caps with California guards, decline with reason, team calendar, balances (U-24)
+- [x] C1e. Commissions moved to HR (ADR 0025): plans, assignments with acknowledgement, tiers, split, override, draw, clawback, statements, adjustments with reason, credit-note action (K-11); Sales → Team links here (U-07)
+- [x] C1f. Pay periods: review gross pay by the corrected formula (N-3), approve, CSV exports, contractor payments list, required label (U-07)
+- [x] C1g. Settings → HR: pay periods, overtime rules, holidays, policies, employee visibility (U-30)
+- [x] C2. Employee portal in both products: My timesheet (form or template upload, submit), Clock in / out, My time off, My pay, My commission, My documents, My meetings, My profile; own data only; hidden items absent; employees land here (U-01, U-02, U-25)
+- [x] Batch C: full suite green (311 passed, 7 skipped as switched off, production build, 1 worker, chunks)
 
 #### Batch D: Contracts (ADR 0026)
 - [ ] D1. Customer and subcontractor contracts: master and project, schedule of values or milestones, retainage, dates, insurance certificate, W-9 / 1099 flag

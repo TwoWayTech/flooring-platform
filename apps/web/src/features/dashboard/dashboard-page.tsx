@@ -158,7 +158,6 @@ function TopPerformer({
   period: ReturnType<typeof periodRange>;
   locationId: string | null;
 }) {
-  const { settings } = useWorkspace();
   const rows = teamStats(
     { ...data.sales, users: data.users, quotes: data.quotes, commission: new Map() },
     { from: period.from, to: period.to, today: api.today(), locationId },

@@ -80,7 +80,7 @@ test.describe("HR workspace (spec C1)", () => {
       .click();
     await page.getByRole("button", { name: "Approve statement" }).click();
     await expect(page.getByText(/^Statement approved for/)).toBeVisible();
-    await page.getByRole("tab", { name: "Plans" }).click();
+    await page.getByRole("tab", { name: "Plans", exact: true }).click();
     await expect(page.getByText("Showroom plan, version 1")).toBeVisible();
     await page.getByRole("tab", { name: "People on plans" }).click();
     await expect(page.getByText("Not signed").first()).toBeVisible();

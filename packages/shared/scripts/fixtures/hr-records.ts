@@ -6,7 +6,6 @@ import {
   statementChain,
   statementKey,
   type CommissionInputs,
-  type CommissionLine,
   type StatementFigures,
 } from "../../src/hr/commission-plans";
 import { grossPay } from "../../src/hr/pay";
@@ -361,7 +360,6 @@ function buildStatements(
   approver: string,
 ): {
   statements: CommissionStatement[];
-  lines: CommissionLine[];
   months: string[];
   chains: Map<string, StatementFigures[]>;
 } {
@@ -396,7 +394,7 @@ function buildStatements(
       });
     }
   }
-  return { statements, lines, months, chains };
+  return { statements, months, chains };
 }
 
 /** Two bonuses in the last paid period: one production (counts for overtime), one discretionary. */
@@ -507,7 +505,7 @@ export function withHrRecords(ctx: GenContext, f: CompanyFixtures): CompanyFixtu
     frozen: new Set(),
     today: ctx.anchor,
   };
-  const { statements, lines, months, chains } = buildStatements(ctx, f, inputs, approver);
+  const { statements, months, chains } = buildStatements(ctx, f, inputs, approver);
 
   const payPeriods = buildPeriods(ctx, f);
   const exported = payPeriods.filter((p) => p.status === "exported");

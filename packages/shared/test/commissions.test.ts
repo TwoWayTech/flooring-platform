@@ -6,7 +6,6 @@ import {
   changePct,
   dec,
   isYear,
-  ledgerIndex,
   periodRange,
   sparkSeries,
   teamStats,

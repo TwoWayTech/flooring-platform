@@ -159,7 +159,7 @@ export function MyTimesheetPage() {
         p.usesTimesheet ? (
           <Timesheets portal={p} />
         ) : (
-          <p className="text-muted-foreground">You don't fill in timesheets.</p>
+          <p className="text-muted-foreground">You do not fill in timesheets.</p>
         )
       }
     </MyShell>
