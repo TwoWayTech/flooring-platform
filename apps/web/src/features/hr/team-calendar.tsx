@@ -95,7 +95,7 @@ export function TeamCalendar({
                 </div>
                 <ul className="mt-1 flex flex-col gap-0.5">
                   {out.slice(0, 3).map((r) => (
-                    <li key={r.id} className="bg-brand/10 text-brand-ink truncate rounded-sm px-1 text-xs">
+                    <li key={r.id} className="bg-brand/10 text-foreground truncate rounded-sm px-1 text-xs">
                       {nameOf(r.employeeId)}
                       {kinds ? `, ${KIND_LABEL[r.kind]}` : ", Out"}
                     </li>

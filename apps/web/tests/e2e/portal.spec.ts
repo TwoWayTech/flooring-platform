@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HR_TAG, signInAs } from "./helpers";
+import { HR_TAG, signInAs, skipIfFeatureOff } from "./helpers";
 
 const BRI = { companyId: "summit", userId: "sm-usr-14", roleKey: "employee" } as const;
 const PRIYA = { companyId: "summit", userId: "sm-usr-03", roleKey: "sales" } as const;
@@ -39,6 +39,7 @@ test.describe("Employee portal (spec C2)", () => {
   });
 
   test("clocks in and out, and the hours reach the timesheet", async ({ page }) => {
+    skipIfFeatureOff("hr.clock");
     await signInAs(page, BRI, "/my");
     await page.getByRole("button", { name: "Clock in" }).click();
     await expect(page.getByText("Clocked in", { exact: true })).toBeVisible();

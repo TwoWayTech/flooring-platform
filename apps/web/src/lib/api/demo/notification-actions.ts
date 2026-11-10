@@ -242,19 +242,24 @@ export async function resetNotificationRule(ctx: ActionContext, key: Notificatio
   });
 }
 
+/** Whether a message is this person's own: they sent it or it was addressed to them (ADR 0020). */
+function isMine(ctx: ActionContext, m: OutboxMessage): boolean {
+  return (
+    m.actorUserId === ctx.actor.id ||
+    (m.recipient.kind === "user" && m.recipient.id === ctx.actor.id) ||
+    m.recipient.email === ctx.actor.email
+  );
+}
+
 /** The Outbox as a person may see it (ADR 0020): their own rows, or all with settings.outbox.view; restricted rows are redacted. */
 export async function listOutbox(ctx: ActionContext, all: boolean): Promise<OutboxMessage[]> {
   const admin = all && (await ctx.can("settings.outbox.view"));
   const hrView = await ctx.can("hr.employee.view");
-  const mine = (m: OutboxMessage) =>
-    m.actorUserId === ctx.actor.id ||
-    (m.recipient.kind === "user" && m.recipient.id === ctx.actor.id) ||
-    m.recipient.email === ctx.actor.email;
   return ctx.db
     .list("outboxMessages")
-    .filter((m) => admin || mine(m))
+    .filter((m) => admin || isMine(ctx, m))
     .map((m) =>
-      m.restricted && !mine(m) && !hrView
+      m.restricted && !isMine(ctx, m) && !hrView
         ? { ...m, subject: "Restricted message", bodyText: "Only the people involved can read this.", attachments: [] }
         : m,
     )
@@ -267,9 +272,16 @@ function outboxRow(ctx: ActionContext, id: string): OutboxMessage {
   return row;
 }
 
+/** A row this person may resend or cancel: their own, or any row with settings.outbox.view (ADR 0020). */
+async function actionableRow(ctx: ActionContext, id: string): Promise<OutboxMessage> {
+  const row = outboxRow(ctx, id);
+  if (!isMine(ctx, row)) await ctx.assertCan(["settings.outbox.view"]);
+  return row;
+}
+
 /** Sends a failed row again: back through queued to sent, with a fresh failure check. */
 export async function retryOutbox(ctx: ActionContext, id: string) {
-  const row = outboxRow(ctx, id);
+  const row = await actionableRow(ctx, id);
   if (row.status !== "failed") throw new DemoRuleError("Only a failed message can be sent again.");
   const failure = failureOf(row.recipient.email);
   return ctx.db.put("outboxMessages", {
@@ -283,7 +295,7 @@ export async function retryOutbox(ctx: ActionContext, id: string) {
 
 /** Cancels a scheduled row. */
 export async function cancelOutbox(ctx: ActionContext, id: string) {
-  const row = outboxRow(ctx, id);
+  const row = await actionableRow(ctx, id);
   if (row.status !== "scheduled") throw new DemoRuleError("Only a scheduled message can be cancelled.");
   return ctx.db.put("outboxMessages", { ...row, status: "cancelled" });
 }

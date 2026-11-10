@@ -6,7 +6,9 @@ import { FLOORING_SCREENS, HR_SCREENS } from "./screens";
 async function expectNoSidewaysScroll(page: Page, persona: Persona, path: string) {
   await signInAs(page, persona, path);
   await page.waitForLoadState("networkidle");
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
   expect(overflow).toBeLessThanOrEqual(0);
 }
 

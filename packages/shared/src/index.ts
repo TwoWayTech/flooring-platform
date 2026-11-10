@@ -33,6 +33,7 @@ export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
 export * from "./business-report";
+export * from "./sales-lines";
 export * from "./calendar/ics";
 export * from "./cost-sharing";
 export * from "./expenses";

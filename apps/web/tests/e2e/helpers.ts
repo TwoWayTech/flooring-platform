@@ -60,11 +60,11 @@ export async function signInAsPlatformAdmin(page: Page, path = "/admin") {
 const pixel = devices["Pixel 7"];
 
 /**
- * A phone (Pixel 7 at 390 px) for layout tests. Set it with `test.use(PHONE)` in a describe, so
+ * A phone (375 px wide, the narrowest the spec asks for) for layout tests. Set it with `test.use(PHONE)` in a describe, so
  * both product projects run their own phone checks.
  */
 export const PHONE = {
-  viewport: { width: 390, height: 844 },
+  viewport: { width: 375, height: 812 },
   userAgent: pixel.userAgent,
   deviceScaleFactor: pixel.deviceScaleFactor,
   isMobile: pixel.isMobile,

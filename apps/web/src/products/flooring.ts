@@ -87,7 +87,7 @@ export const FLOORING: ProductConfig = {
       label: "Reports",
       href: "/reports",
       icon: BarChart3,
-      anyOf: ["reports.sales.view", "reports.financial.view", "reports.inventory.view", "reports.tax.view"],
+      anyOf: ["reports.sales.view", "reports.financial.view"],
       features: ["reports.hub"],
     },
   ],

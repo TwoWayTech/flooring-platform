@@ -152,7 +152,7 @@ export function NotificationsSettingsPage() {
       </Panel>
       {groups.map(([group, label]) => (
         <Panel key={group} title={label}>
-          <div role="region" aria-label={`${label} notifications`} tabIndex={0} className="overflow-x-auto">
+          <div role="region" aria-label={`${label} notifications`} tabIndex={0} className="relative overflow-x-auto">
             <table className="w-full min-w-[34rem] text-sm">
               <thead className="text-muted-foreground text-xs">
                 <tr className="border-hairline border-b">

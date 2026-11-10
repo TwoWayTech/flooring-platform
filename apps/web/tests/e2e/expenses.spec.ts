@@ -11,6 +11,16 @@ const pdf = {
 test.describe("Finance → Expenses (spec F1)", () => {
   test.beforeEach(() => skipIfFeatureOff("finance.expenses"));
 
+  test("Manage recurring adds a recurring expense", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/finance?view=expenses");
+    await page.getByRole("button", { name: "Manage recurring" }).click();
+    await page.getByRole("button", { name: "New recurring expense" }).click();
+    const dialog = page.getByRole("dialog", { name: "New recurring expense" });
+    await dialog.getByLabel("Estimated amount").fill("250");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Recurring expense saved")).toBeVisible();
+  });
+
   test("lists expenses with vendor, category, location and receipt", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/finance?view=expenses");
     await expect(page.getByRole("button", { name: "Location, column options" })).toBeVisible();

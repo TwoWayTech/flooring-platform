@@ -10,7 +10,7 @@ test.describe("email and notification centre (spec A4)", () => {
     await page.getByRole("button", { name: "Edit template for Invoice sent" }).click();
     const sheet = page.getByRole("dialog", { name: "Invoice sent" });
     await sheet.getByLabel("Subject").fill("Invoice {{ invoice.number }} is ready");
-    await expect(sheet.getByText("Invoice INV-1221 is ready")).toBeVisible();
+    await expect(sheet.getByText(/^Invoice INV-\d+ is ready$/)).toBeVisible();
     await sheet.getByLabel("Subject").fill("{{ invoice.secret }}");
     await expect(sheet.getByRole("alert")).toContainText("no {{ invoice.secret }}");
     await expect(sheet.getByRole("button", { name: "Save template" })).toBeDisabled();

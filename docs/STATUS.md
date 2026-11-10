@@ -1,7 +1,7 @@
 # Status
 
-- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to F and G1 to G3 are done and pushed. The final walkthrough (G4) is running. Live sites are still feature batch 2.
-- Next step: finish G4, then Batch H, the redeploy, the live test run and the demo-v3 tag.
+- Current phase: Feature batch 3 (docs/specs/feature-batch-03.md). Batches A to G are done and pushed. Batch H (backbone docs) is next. Live sites are still feature batch 2.
+- Next step: finish the Batch H documents, then redeploy, run the suite against both live addresses and tag demo-v3.
 - Deployed URLs: Flooring Suite https://flooring-demo-twowaytech.vercel.app, HR Suite https://hr-demo-twowaytech.vercel.app (one Vercel project, flooring-demo-twowaytech; the spec names were taken, see docs/deploy.md)
 - Last session log: docs/sessions/2026-11-10-batch3-c-paused.md
 
@@ -198,8 +198,8 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] G1. Seed data per the spec, plus healthy payables and sales across locations (U-28, U-29); reconciliation extended (expenses in the ledger, location profit = company profit, contract invoiced + remaining = value, gross pay = its parts)
 - [x] G2. Unit tests: carton hints and rounding, warehouse availability, commission rules, overtime weekly and daily, gross pay, time-off accrual, retainage and milestone billing, change orders, ICS, expense sharing, report totals
 - [x] G3. E2E flows tagged `@flow`, 1 to 7
-- [ ] G4. Repeat the walkthrough for every persona, all companies, both themes and 375 px; update docs/ux-audit.md; fix what is left at high or medium; list low items for later
-- [ ] Batch G: full suite green
+- [x] G4. Repeat the walkthrough for every persona, all companies, both themes and 375 px; update docs/ux-audit.md; fix what is left at high or medium; list low items for later
+- [x] Batch G: full suite green
 
 #### Batch H: the backbone for the real build
 - [ ] H1. docs/product-spec/<module>.md for every module

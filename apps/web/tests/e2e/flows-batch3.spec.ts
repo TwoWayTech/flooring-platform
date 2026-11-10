@@ -303,6 +303,8 @@ test.describe("end-to-end flows (spec G3)", () => {
       const number = (await done.innerText()).split(" ")[1]!;
 
       await page.goto("/reports");
+      await page.getByRole("combobox", { name: "Period" }).click();
+      await page.getByRole("option", { name: "This month" }).click();
       await page
         .getByRole("group", { name: "Expenses by location view" })
         .getByRole("button", { name: "Table" })

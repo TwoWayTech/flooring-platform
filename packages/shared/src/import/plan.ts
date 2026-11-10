@@ -183,10 +183,10 @@ export function planImport(handler: KindHandler, request: ImportRequest, ctx: Pl
     }
     for (const write of outcome.writes) {
       const id = `${write.collection}:${write.record.id}`;
-      const before =
-        changes.get(id)?.before ??
-        (world[write.collection] as { id: string }[]).find((r) => r.id === write.record.id) ??
-        null;
+      const earlier = changes.get(id);
+      const before = earlier
+        ? earlier.before
+        : ((world[write.collection] as { id: string }[]).find((r) => r.id === write.record.id) ?? null);
       changes.set(id, { collection: write.collection, id: write.record.id, before, after: write.record });
       applyWrite(world, write);
     }

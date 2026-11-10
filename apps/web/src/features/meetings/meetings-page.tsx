@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { BellRing, CalendarPlus, ChevronLeft, ChevronRight, Globe, Repeat } from "lucide-react";
-import { addDays, meetingOccurrences, mondayOf, type MeetingOccurrence } from "@workspace/shared";
+import { addDays, featureOn, meetingOccurrences, mondayOf, type MeetingOccurrence } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -114,9 +114,11 @@ export function MeetingsPage() {
         actions={
           can("meetings.meeting.create") ? (
             <>
-              <Button variant="outline" onClick={() => setRequesting(true)}>
-                Request a meeting
-              </Button>
+              {featureOn("meetings.requests") ? (
+                <Button variant="outline" onClick={() => setRequesting(true)}>
+                  Request a meeting
+                </Button>
+              ) : null}
               <Button onClick={() => setCreating(`${today}T09:00`)}>
                 <CalendarPlus />
                 New meeting

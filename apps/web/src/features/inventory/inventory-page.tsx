@@ -44,7 +44,7 @@ export function InventoryPage() {
   const allowed: Record<InventoryView, boolean> = {
     products: can("inventory.product.view") && featureOn("inventory.products"),
     rolls: can("inventory.roll.view") && featureOn("inventory.rolls"),
-    ready: can("inventory.roll.cut") && featureOn("inventory.reservations"),
+    ready: can("inventory.roll.cut") && featureOn("inventory.reservations") && featureOn("inventory.ready-to-cut"),
     transfers: can("inventory.transfer.view") && featureOn("inventory.transfers"),
     adjustments:
       (can("inventory.stock.adjust") || can("inventory.stock.approve")) && featureOn("inventory.adjustments"),

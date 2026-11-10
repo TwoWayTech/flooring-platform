@@ -76,6 +76,21 @@ const field = (type: ImportField["type"], extra: Partial<ImportField> = {}): Imp
   ...extra,
 });
 
+describe("what Undo puts back (spec G1)", () => {
+  it("treats a timesheet built from several rows as new, so Undo removes it", () => {
+    const employee = summit.employees.find((e) => e.workerType !== "1099" && e.status !== "terminated")!;
+    const rows = ["2030-01-07", "2030-01-08"].map((work_date) => ({
+      employee_email: employee.email,
+      work_date,
+      hours_worked: "8",
+    }));
+    const { changes } = plan("timesheets", rows);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.before).toBeNull();
+    expect(changes[0]!.after).toMatchObject({ days: [8, 8, 0, 0, 0, 0, 0] });
+  });
+});
+
 describe("reading cells (spec G1 validate)", () => {
   it("reads money with a dollar sign and commas, and refuses three decimals or words", () => {
     expect(readCell(field("money"), "$1,250.5")).toEqual({ value: "1250.50" });

@@ -17,9 +17,9 @@ import {
   type PaymentMethod,
   monthlyPnl,
   salesByCategory,
+  salesCategoryLabel,
   salesTaxByJurisdiction,
   sum,
-  TAX_CATEGORY_LABELS,
   type Expense,
   type Invoice,
   type NumberKind,
@@ -27,7 +27,6 @@ import {
   type Roll,
   type TaxCategory,
 } from "@workspace/shared";
-import { CATEGORY_LABELS } from "@workspace/shared";
 
 /** A report column; numeric columns carry the number kind used to format them. */
 export interface ReportColumn {
@@ -72,10 +71,6 @@ export interface ReportInput {
 }
 
 /** A category key as people say it: product categories and, for services, the tax category. */
-export function categoryLabel(key: string): string {
-  return CATEGORY_LABELS[key as keyof typeof CATEGORY_LABELS] ?? TAX_CATEGORY_LABELS[key as TaxCategory] ?? key;
-}
-
 const total = (rows: Record<string, string>[], id: string) => sum(rows.map((r) => r[id] ?? "0")).toString();
 
 /**
@@ -196,7 +191,7 @@ export function pnlReport({ months, invoices, expenses }: ReportInput): Report {
 export function salesByCategoryReport({ invoices, products, category, showCost }: ReportInput): Report {
   const rows = salesByCategory(invoices, products)
     .filter((r) => !category || r.category === category)
-    .map((r) => ({ ...r, category: categoryLabel(r.category) }));
+    .map((r) => ({ ...r, category: salesCategoryLabel(r.category) }));
   return {
     title: "Sales by category",
     columns: [
@@ -246,7 +241,7 @@ export function salesTaxReport({ invoices }: ReportInput): Report {
 export function inventoryReport({ products, rolls, boxed, category }: ReportInput): Report {
   const rows = inventoryByCategory(products, rolls, boxed)
     .filter((r) => !category || r.category === category)
-    .map((r) => ({ category: categoryLabel(r.category), value: r.value }));
+    .map((r) => ({ category: salesCategoryLabel(r.category), value: r.value }));
   return {
     title: "Inventory valuation",
     columns: [

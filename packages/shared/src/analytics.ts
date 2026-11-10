@@ -1,4 +1,5 @@
 import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
+import { salesLines } from "./sales-lines";
 import { daysBetween } from "./dates";
 import { countsAsCost } from "./expenses";
 import { lineAmount } from "./documents";
@@ -342,7 +343,7 @@ export function salesByCategory(invoices: readonly Invoice[], products: readonly
   for (const inv of invoices) {
     if (inv.voidedAt) continue;
     const sign = inv.isReturn ? -1 : 1;
-    for (const line of inv.lines) {
+    for (const line of salesLines(inv)) {
       const product = products.find((p) => p.id === line.productId);
       const key = product && product.category !== "service" ? product.category : line.category;
       const g = groups.get(key) ?? { revenue: dec(0), cost: dec(0) };

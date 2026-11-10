@@ -135,6 +135,48 @@ export function ReplyButtons({ meeting, send }: { meeting: Meeting; send: (reply
   );
 }
 
+/** Edits a meeting's details (spec E). A new place asks every guest again; a title or notes change does not. */
+function EditMeetingDialog({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
+  const [title, setTitle] = useState(meeting.title);
+  const [location, setLocation] = useState(meeting.location);
+  const [notes, setNotes] = useState(meeting.notes);
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="bg-surface sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit meeting</DialogTitle>
+          <DialogDescription>Guests get an updated invite.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Field id="edit-title" label="Title">
+            <Input id="edit-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </Field>
+          <Field id="edit-where" label="Where">
+            <Input id="edit-where" value={location} onChange={(e) => setLocation(e.target.value)} />
+          </Field>
+          <Field id="edit-notes" label="Notes">
+            <Input id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!title.trim()}
+            onClick={() => {
+              void run(api.updateMeeting(meeting.id, { title: title.trim(), location, notes }), "Meeting updated");
+              onClose();
+            }}
+          >
+            Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** The drawer's guest list and actions (spec E): answers, proposals, Add to my calendar and cancel. */
 export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
   const can = useCan();
@@ -144,6 +186,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
   const canEdit = can("meetings.meeting.edit");
   const showGuests = organiser || !meeting.hideGuestList || canEdit;
   const cancelled = meeting.status === "cancelled";
+  const [editing, setEditing] = useState(false);
 
   async function addToCalendar() {
     const { fileName, text } = await api.meetingCalendarFile(meeting.id);
@@ -221,6 +264,11 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
             Add to my calendar
           </Button>
           {canEdit ? (
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              Edit details
+            </Button>
+          ) : null}
+          {canEdit ? (
             <Button
               size="sm"
               variant="ghost"
@@ -232,6 +280,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
           ) : null}
         </div>
       ) : null}
+      {editing ? <EditMeetingDialog meeting={meeting} onClose={() => setEditing(false)} /> : null}
     </div>
   );
 }

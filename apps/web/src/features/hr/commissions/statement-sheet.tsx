@@ -12,6 +12,7 @@ import { Field } from "@/components/field";
 import { ReasonDialog } from "@/components/reason-dialog";
 import { ScrollRegion } from "@/components/scroll-region";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import type { CommissionStatementRow } from "@/lib/api/contract";
 import { useFormatDate } from "@/lib/use-format-date";
@@ -33,11 +34,14 @@ function Line({ label, value, strong }: { label: ReactNode; value: string; stron
 
 const KIND = { earned: "Earned", override: "Manager override", reversal: "Reversal" } as const;
 
+const NO_INVOICE = "none";
+
 /** Adds a manual change with a reason; a deduction names its invoice (spec C1, ADR 0025). */
-function AdjustForm({ row }: { row: CommissionStatementRow }) {
+function AdjustForm({ row, invoices }: { row: CommissionStatementRow; invoices: readonly Invoice[] }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
-  const [invoiceId, setInvoiceId] = useState("");
+  const [invoiceId, setInvoiceId] = useState(NO_INVOICE);
+  const own = invoices.filter((i) => i.salesRepId === row.userId && !i.isReturn && !i.voidedAt);
   const [error, setError] = useState<string | null>(null);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -47,12 +51,12 @@ function AdjustForm({ row }: { row: CommissionStatementRow }) {
         month: row.month,
         amount,
         reason,
-        invoiceId: invoiceId || null,
+        invoiceId: invoiceId === NO_INVOICE ? null : invoiceId,
       });
       toast.success("Adjustment added");
       setAmount("");
       setReason("");
-      setInvoiceId("");
+      setInvoiceId(NO_INVOICE);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add this adjustment.");
@@ -77,11 +81,11 @@ function AdjustForm({ row }: { row: CommissionStatementRow }) {
       </div>
       {amount.trim().startsWith("-") ? (
         <Field id="adj-invoice" label="Invoice this relates to">
-          <Input
+          <Pick
             id="adj-invoice"
             value={invoiceId}
-            onChange={(e) => setInvoiceId(e.target.value)}
-            placeholder="Invoice id"
+            onChange={setInvoiceId}
+            options={[[NO_INVOICE, "Choose an invoice"], ...own.map((i) => [i.id, i.number] as const)]}
           />
         </Field>
       ) : null}
@@ -213,7 +217,7 @@ export function StatementSheet({
               </ScrollRegion>
             )}
           </section>
-          {row.status === "draft" && can("hr.commission.adjust") ? <AdjustForm row={row} /> : null}
+          {row.status === "draft" && can("hr.commission.adjust") ? <AdjustForm row={row} invoices={invoices} /> : null}
         </div>
         {deciding ? (
           <ReasonDialog

@@ -53,7 +53,7 @@ export function BusinessReportPdf({
                 <Text style={[styles.label, row.id === "total" ? styles.bold : {}]}>{row.label}</Text>
                 {section.columns.map((c) => (
                   <Text key={c.id} style={[styles.cell, row.id === "total" ? styles.bold : {}]}>
-                    {value(row.values[c.id], c.kind)}
+                    {value(row.values[c.id], row.kind ?? c.kind)}
                   </Text>
                 ))}
               </View>

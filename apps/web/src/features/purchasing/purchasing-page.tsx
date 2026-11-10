@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Banknote, CircleCheck, CircleDot, Clock, FilePlus2, TriangleAlert, UserPlus } from "lucide-react";
 import {
   billLedgerIndex,
+  featureOn,
   callNumber,
   contactsOf,
   dec,
@@ -90,7 +91,10 @@ export function PurchasingPage() {
   if (!can("purchasing.order.view") && !can("purchasing.bill.view")) return <NoAccess />;
   const money = can(SENSITIVE.productCost) || can("purchasing.bill.view");
   const requested = params.get("view") as View | null;
-  const view: View = requested ?? (can("purchasing.order.view") ? "orders" : "bills");
+  const suppliersOn = featureOn("purchasing.suppliers");
+  const view: View =
+    (suppliersOn || requested !== "suppliers" ? requested : null) ??
+    (can("purchasing.order.view") ? "orders" : "bills");
   const today = api.today();
   const d = data.data;
   const ledgers = billLedgerIndex(d?.bills ?? [], d?.supplierPayments ?? [], today);
@@ -286,7 +290,7 @@ export function PurchasingPage() {
       />
       <Tabs value={view} className="gap-6" onValueChange={(v) => router.replace(`/purchasing?view=${v}`)}>
         <TabsList aria-label="Purchasing view">
-          <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
+          {suppliersOn ? <TabsTrigger value="suppliers">Suppliers</TabsTrigger> : null}
           {can("purchasing.order.view") ? <TabsTrigger value="orders">Purchase orders</TabsTrigger> : null}
           {can("purchasing.bill.view") ? <TabsTrigger value="bills">Bills and payables</TabsTrigger> : null}
         </TabsList>

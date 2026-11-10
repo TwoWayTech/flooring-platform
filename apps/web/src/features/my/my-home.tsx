@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Clock, LogIn, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { featureOn } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
@@ -63,7 +64,7 @@ function Overview({ portal }: { portal: MyPortal }) {
       <p className="text-muted-foreground">
         Hello {user.name.split(" ")[0]}. Your hours, time off and pay are here, and only you and HR see them.
       </p>
-      {portal.visible.clock ? <Clocking portal={portal} /> : null}
+      {portal.visible.clock && featureOn("hr.clock") ? <Clocking portal={portal} /> : null}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {portal.usesTimesheet ? (
           <Card href="/my/timesheet" title="My timesheet">

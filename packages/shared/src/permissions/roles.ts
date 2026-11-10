@@ -115,6 +115,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "contracts.contract.view_sensitive",
       "contracts.billing.*",
       "contracts.compliance.*",
+      "hr.overview.view",
       "hr.payroll.view",
       "hr.payroll.export",
       "settings.localization.manage",

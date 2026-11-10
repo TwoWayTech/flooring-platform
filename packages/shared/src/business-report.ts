@@ -2,13 +2,12 @@ import { daysBetween, addDays } from "./dates";
 import { fromCents, toCents, shareByWeight, weightsFor } from "./cost-sharing";
 import { countsAsCost, expenseCost, EXPENSE_CATEGORY_LABELS } from "./expenses";
 import { inventoryValuation } from "./analytics";
-import { CATEGORY_LABELS } from "./catalog-labels";
 import { lineAmount } from "./documents";
 import { ledgerIndex } from "./ledger";
 import { dec, moneyString, roundMoney, sum, type Dec } from "./money";
 import { billLedgerIndex, receivedValue } from "./operations/purchasing";
 import { boxedStock } from "./stock";
-import { TAX_CATEGORY_LABELS } from "./us-pack/tax";
+import { salesCategoryLabel, salesLines, type SalesLine } from "./sales-lines";
 import type {
   Bill,
   CompanySettings,
@@ -92,6 +91,8 @@ export interface BusinessRow {
   label: string;
   values: Record<string, string>;
   records: DrillRecord[];
+  /** Overrides the column's number kind, for a percent row in a money column. */
+  kind?: "percent";
 }
 
 /** One section of the report; the screen, CSV and PDF all print these same rows. */
@@ -154,7 +155,7 @@ interface Figures {
 const add = (map: Map<string, Dec>, key: string, value: Dec) => map.set(key, (map.get(key) ?? dec(0)).plus(value));
 
 /** A line's revenue and cost, signed for returns. */
-function lineMoney(inv: Invoice, line: Invoice["lines"][number]) {
+function lineMoney(inv: Invoice, line: SalesLine) {
   return {
     revenue: lineAmount(line).times(sign(inv)),
     cost: roundMoney(dec(line.quantity).times(line.unitCost)).times(sign(inv)),
@@ -162,7 +163,7 @@ function lineMoney(inv: Invoice, line: Invoice["lines"][number]) {
 }
 
 /** A line's category key: the product's, or the tax category for labor and services. */
-function categoryOf(line: Invoice["lines"][number], products: readonly Product[]): string {
+function categoryOf(line: SalesLine, products: readonly Product[]): string {
   return products.find((p) => p.id === line.productId)?.category ?? line.category;
 }
 
@@ -211,7 +212,7 @@ function figuresFor(data: BusinessData, f: BusinessFilters, from: string, to: st
   let revenue = dec(0);
   let cost = dec(0);
   for (const inv of invoices) {
-    for (const line of inv.lines) {
+    for (const line of salesLines(inv)) {
       if (f.productCategory && categoryOf(line, products) !== f.productCategory) continue;
       const m = lineMoney(inv, line);
       revenue = revenue.plus(m.revenue);
@@ -383,23 +384,25 @@ export function businessReport(data: BusinessData, filters: BusinessFilters, sho
       ),
     );
     summaryRows.push(compare("Gross profit", "gross", a.gross, b.gross));
-    summaryRows.push(
-      row("gross_pct", "Gross profit %", {
+    summaryRows.push({
+      ...row("gross_pct", "Gross profit %", {
         now: pct(a.gross, now.revenue),
         before: pct(b.gross, before.revenue),
         change: "",
       }),
-    );
+      kind: "percent",
+    });
     if (!repOnly) {
       summaryRows.push(compare("Operating expenses", "opex", a.opex, b.opex, expenseRecords));
       summaryRows.push(compare("Net profit, before income tax", "net", a.net, b.net));
-      summaryRows.push(
-        row("net_pct", "Net profit %", {
+      summaryRows.push({
+        ...row("net_pct", "Net profit %", {
           now: pct(a.net, now.revenue),
           before: pct(b.net, before.revenue),
           change: "",
         }),
-      );
+        kind: "percent",
+      });
     }
   }
   if (!repOnly) {
@@ -427,11 +430,21 @@ export function businessReport(data: BusinessData, filters: BusinessFilters, sho
       compare("You owe suppliers, overdue", "ap_overdue", owe.suppliersOverdue, oweBefore.suppliersOverdue),
     );
   }
+  // A comparison with a period the records barely reach would read as huge growth, so it is left out.
+  const earliest = data.invoices.reduce((min, i) => (i.issuedAt < min ? i.issuedAt : min), data.today);
+  const partial = previous.from < earliest;
+  if (partial) for (const r of summaryRows) r.values.change = "";
   const sections: BusinessSection[] = [
     {
       key: "summary",
       title: "Summary",
-      note: repOnly ? "Filtered to one salesperson, so the summary stops at gross profit." : null,
+      note:
+        [
+          repOnly ? "Filtered to one salesperson, so the summary stops at gross profit." : null,
+          partial ? "The earlier period starts before the first records, so no change is shown." : null,
+        ]
+          .filter(Boolean)
+          .join(" ") || null,
       columns: SUMMARY_COLS,
       rows: summaryRows,
       total: null,
@@ -511,13 +524,10 @@ function profitByLocation(data: BusinessData, f: Figures, locationIds: string[])
 
 function revenueSections(data: BusinessData, f: Figures, show: BusinessVisibility): BusinessSection[] {
   const columns = [moneyCol("revenue", "Revenue"), ...(show.margin ? [moneyCol("margin", "Margin")] : [])];
-  const group = (
-    key: (i: Invoice, line: Invoice["lines"][number]) => string,
-    label: (k: string) => string,
-  ): BusinessRow[] => {
+  const group = (key: (i: Invoice, line: SalesLine) => string, label: (k: string) => string): BusinessRow[] => {
     const totals = new Map<string, { revenue: Dec; cost: Dec; invoices: Set<Invoice> }>();
     for (const inv of f.invoices) {
-      for (const line of inv.lines) {
+      for (const line of salesLines(inv)) {
         const m = lineMoney(inv, line);
         const k = key(inv, line);
         const t = totals.get(k) ?? { revenue: dec(0), cost: dec(0), invoices: new Set<Invoice>() };
@@ -536,13 +546,7 @@ function revenueSections(data: BusinessData, f: Figures, show: BusinessVisibilit
       )
       .sort((a, b) => dec(b.values.revenue!).comparedTo(a.values.revenue!));
   };
-  const byCategory = group(
-    (_, line) => categoryOf(line, data.products),
-    (k) =>
-      CATEGORY_LABELS[k as keyof typeof CATEGORY_LABELS] ??
-      TAX_CATEGORY_LABELS[k as keyof typeof TAX_CATEGORY_LABELS] ??
-      k,
-  );
+  const byCategory = group((_, line) => categoryOf(line, data.products), salesCategoryLabel);
   const byRep = group(
     (i) => i.salesRepId,
     (k) => data.users.find((u) => u.id === k)?.name ?? "Former employee",

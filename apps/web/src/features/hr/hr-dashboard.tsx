@@ -38,7 +38,7 @@ function Action({ count, label, href }: { count: number; label: string; href: st
   return (
     <li>
       <Link href={href} className="hover:bg-raised flex items-center gap-3 px-4 py-3">
-        <span className="bg-brand/12 text-brand-ink font-display grid size-8 place-items-center rounded-md text-sm font-semibold tabular-nums">
+        <span className="bg-brand/12 text-foreground font-display grid size-8 place-items-center rounded-md text-sm font-semibold tabular-nums">
           {count}
         </span>
         <span className="min-w-0 flex-1 text-sm">{label}</span>

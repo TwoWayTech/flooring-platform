@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { ExpenseFormDialog } from "./expense-form-dialog";
+import { RecurringExpensesSheet } from "./recurring-expenses";
 
 const STATUS = {
   draft: { tone: "neutral", icon: CircleDashed, label: "Draft" },
@@ -36,6 +37,7 @@ export function ExpensesView() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<FileMeta | null>(null);
   const [asking, setAsking] = useState<"reject" | "void" | null>(null);
+  const [managing, setManaging] = useState(false);
   const data = useApiQuery(async (client) => {
     const [expenses, suppliers, locations, recurring] = await Promise.all([
       client.list("expenses"),
@@ -82,13 +84,14 @@ export function ExpensesView() {
 
   return (
     <>
-      {recurring.length > 0 ? (
-        <p className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Repeat aria-hidden="true" className="size-4" />
-          {recurring.filter((r) => r.active).length} recurring: a draft appears each period to confirm with the actual
-          amount.
-        </p>
-      ) : null}
+      <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+        <Repeat aria-hidden="true" className="size-4" />
+        {recurring.filter((r) => r.active).length} recurring: a draft appears each period to confirm with the actual
+        amount.
+        <Button size="sm" variant="ghost" onClick={() => setManaging(true)}>
+          Manage recurring
+        </Button>
+      </p>
       <DataTable
         id="finance-expenses"
         rows={expenses}
@@ -206,6 +209,14 @@ export function ExpensesView() {
         />
       ) : null}
       {viewing ? <FileViewerDialog file={viewing} onClose={() => setViewing(null)} /> : null}
+      {managing ? (
+        <RecurringExpensesSheet
+          templates={recurring}
+          suppliers={suppliers}
+          locations={locations}
+          onClose={() => setManaging(false)}
+        />
+      ) : null}
       {open && asking === "reject" ? (
         <ReasonDialog
           title={`Reject ${open.number}`}

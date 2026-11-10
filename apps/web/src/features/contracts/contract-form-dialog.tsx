@@ -7,6 +7,7 @@ import {
   dec,
   retainageWarning,
   sum,
+  US_STATES,
   type Contract,
   type ContractLine,
   type Customer,
@@ -26,7 +27,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
-import { useWorkspace } from "@/components/workspace/workspace-context";
+import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import type { ContractInput } from "@/lib/api/contract";
@@ -90,6 +91,7 @@ export function ContractFormDialog({
   onSaved: (id: string) => void;
 }) {
   const { user } = useWorkspace();
+  const seesCost = useCan()("contracts.contract.view_sensitive");
   const today = api.today();
   const site = locations[0]?.address ?? { street: "", city: "", state: "", zip: "" };
   const [draft, setDraft] = useState<ContractInput>(
@@ -197,6 +199,35 @@ export function ContractFormDialog({
             <Field id="ctr-end" label="End date">
               <Input id="ctr-end" type="date" value={draft.endsAt} onChange={(e) => set({ endsAt: e.target.value })} />
             </Field>
+            <Field id="ctr-street" label="Job site street">
+              <Input
+                id="ctr-street"
+                value={draft.jobSite.street}
+                onChange={(e) => set({ jobSite: { ...draft.jobSite, street: e.target.value } })}
+              />
+            </Field>
+            <Field id="ctr-city" label="Job site city">
+              <Input
+                id="ctr-city"
+                value={draft.jobSite.city}
+                onChange={(e) => set({ jobSite: { ...draft.jobSite, city: e.target.value } })}
+              />
+            </Field>
+            <Field id="ctr-state" label="Job site state" hint="Sets the tax rule and any retainage limit.">
+              <Pick
+                id="ctr-state"
+                value={draft.jobSite.state}
+                onChange={(state) => set({ jobSite: { ...draft.jobSite, state } })}
+                options={US_STATES}
+              />
+            </Field>
+            <Field id="ctr-zip" label="Job site ZIP">
+              <Input
+                id="ctr-zip"
+                value={draft.jobSite.zip}
+                onChange={(e) => set({ jobSite: { ...draft.jobSite, zip: e.target.value } })}
+              />
+            </Field>
             {draft.kind === "project" ? (
               <>
                 <Field id="ctr-retainage" label="Retainage %">
@@ -229,7 +260,7 @@ export function ContractFormDialog({
             <section className="flex flex-col gap-2">
               <h3 className="text-sm font-medium">Schedule of values</h3>
               {draft.lines.map((line, i) => (
-                <div key={i} className="grid items-end gap-2 sm:grid-cols-[5rem_1fr_8rem_9rem_9rem_auto]">
+                <div key={i} className="grid items-end gap-2 sm:grid-cols-[4.5rem_1fr_7rem_8rem_7rem_7rem_auto]">
                   <Field id={`ln-code-${i}`} label="Code">
                     <Input
                       id={`ln-code-${i}`}
@@ -268,6 +299,16 @@ export function ContractFormDialog({
                       onChange={(e) => setLine(i, { scheduledValue: numeric(e.target.value) })}
                     />
                   </Field>
+                  {seesCost ? (
+                    <Field id={`ln-cost-${i}`} label="Est. cost">
+                      <Input
+                        id={`ln-cost-${i}`}
+                        inputMode="decimal"
+                        value={line.estimatedCost}
+                        onChange={(e) => setLine(i, { estimatedCost: numeric(e.target.value) })}
+                      />
+                    </Field>
+                  ) : null}
                   <Button
                     type="button"
                     size="icon"

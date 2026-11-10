@@ -44,7 +44,11 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
+      className={cn(
+        tabsListVariants({ variant }),
+        "scrollbar-none max-w-full justify-start overflow-x-auto [&>*]:shrink-0",
+        className,
+      )}
       {...props}
     />
   );

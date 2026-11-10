@@ -223,6 +223,34 @@ describe.each([
     expect(section("locations").total!.values.revenue).toBe(summaryValue("revenue"));
   });
 
+  it("counts a credit note, which has no lines, the same in every section", () => {
+    const base = f.invoices.find((i) => !i.voidedAt && !i.isReturn && i.issuedAt >= period.from)!;
+    const credit = {
+      ...base,
+      id: "credit-note",
+      isReturn: true,
+      subtotal: "100.00",
+      cost: "40.00",
+      tax: "0.00",
+      total: "100.00",
+      lines: [],
+    };
+    const data = dataOf(f);
+    const after = businessReport(
+      { ...data, invoices: [...data.invoices, credit] },
+      { ...period, ...everything },
+      showAll,
+    );
+    const part = (key: string) => after.sections.find((s) => s.key === key)!;
+    const revenue = part("summary").rows.find((r) => r.id === "revenue")!.values.now!;
+    expect(Number(revenue)).toBeCloseTo(Number(summaryValue("revenue")) - 100, 2);
+    expect(part("locations").total!.values.revenue).toBe(revenue);
+    const row = part("revenue_category").rows.find((r) => r.id === "credit_note")!;
+    expect(row.label).toBe("Credit notes");
+    expect(Number(row.values.revenue)).toBe(-100);
+    expect(Number(row.values.margin)).toBe(-60);
+  });
+
   it("holds for other periods too", () => {
     for (const [from, to] of [
       ["2026-03-01", "2026-03-31"],

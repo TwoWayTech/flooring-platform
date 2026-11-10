@@ -91,7 +91,8 @@ function SectionTable({ section, onOpen }: { section: BusinessSection; onOpen: (
   const cell = (row: BusinessRow, id: string, kind: "money" | "percent" | undefined) => {
     const raw = row.values[id];
     if (raw === undefined || raw === "") return null;
-    return kind ? <Num kind={kind} value={raw} /> : raw;
+    const shown = row.kind ?? kind;
+    return shown ? <Num kind={shown} value={raw} /> : raw;
   };
   return (
     <ScrollRegion label={section.title}>
@@ -201,7 +202,7 @@ export function BusinessReportView({ locations }: { locations: readonly Location
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
   const today = api.today();
-  const [preset, setPreset] = useState<Preset>("ytd");
+  const [preset, setPreset] = useState<Preset>("last_month");
   const [customFrom, setFrom] = useState(`${today.slice(0, 4)}-01-01`);
   const [customTo, setTo] = useState(today);
   const [locationIds, setLocations] = useState<string[]>([]);

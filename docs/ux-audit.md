@@ -12,6 +12,60 @@ Section 1 of `docs/specs/feature-batch-03.md`. This is the first pass, before an
 
 Severity: **high** means a person cannot finish their work, or the screen misleads them about money or stock. **Medium** means they can finish, with extra steps or confusion. **Low** is polish.
 
+## Final walkthrough (Batch G)
+
+- **Build:** local production build at the end of Batch G, on 2026-11-10, one server, stopped afterwards.
+- **Covered:** every active persona role in all three companies (Summit 9, Keystone 7, Harbor 3), each in desktop light, desktop dark and 375 px, opening every menu and portal link (57 sessions). Then the accessibility, console, layout and flow suites, and a screenshot review of HR Home, Pay periods, Contract, Business report and the portal.
+- **Result of the final pass:** no page that refused access from its own menu link, no console errors, no sideways scroll, no load failures. All high and medium items below are fixed. Low items are listed at the end.
+- **Limits:** the persona pass checked that pages open and behave; the end-to-end jobs are covered by the seven `@flow` tests. Calendar files were checked by unit tests only; no `.ics` was imported into a real Google or Outlook calendar.
+
+### Status of the first pass
+
+| Items | Status |
+| --- | --- |
+| U-01, U-02, U-07, U-08, U-11, U-17, U-24, U-25, U-30 | Fixed in Batch C |
+| U-03, U-05, U-09, U-13 to U-16, U-18 to U-23, U-26, U-31, U-33 to U-37 | Fixed in Batch A |
+| U-04, U-10, U-12 | Fixed in Batch B |
+| U-32 | Fixed in Batch E |
+| U-06, U-27 | Fixed in Batch F |
+| U-28, U-29 | Fixed in Batch G seed data |
+
+### Found and fixed in the final pass
+
+| Id | Severity | Page | What happened | Fix |
+| --- | --- | --- | --- | --- |
+| U-38 | Medium | Sales, Inventory at 375 px | The tab bar pushed the page sideways by 16 to 27 px. The phone test ran at 390 px and measured a width that grew with the page, so it never saw this. | Tab bars scroll inside themselves. The phone test now runs at 375 px and measures the real page width. |
+| U-39 | Medium | Reports link, Warehouse and Purchasing | The menu offered Reports, which refused access once four reports were switched off. | The link follows the reports that remain. |
+| U-40 | Medium | HR link, Accountant | The HR menu item refused access. | The Accountant has HR Home, which shows the pay run. |
+| U-41 | Medium | Settings → Notifications at 375 px | Hidden switches inside the table pushed the page sideways by 154 px. | The table's scroll box now contains them. |
+| U-42 | Medium | Business report | Gross and net profit percent read as dollars. | A row can carry its own number type, on screen and in the PDF. |
+| U-43 | Medium | Business report | Comparing a year with a period before the first records showed growth of 2,279 %. | Opens on last month, and shows no change when the earlier period predates the records. |
+| U-44 | Medium | Commission adjustment | A deduction asked for an internal invoice id. | A list of the rep's invoices. |
+| U-45 | Medium | New contract | No job site could be entered, though tax and retainage limits depend on it. | Job-site fields on the form. |
+| U-46 | Medium | HR Home, Harbor | The count badge failed contrast with Harbor's brand color. | Plain text color on the tint. |
+| U-47 | Medium | Finance → Expenses | Recurring expenses could not be added or edited. | Manage recurring. |
+| U-48 | Medium | Meetings | A meeting's title, place and notes could not be edited. | Edit details, which sends the update. |
+| U-49 | Medium | New contract | Estimated cost could not be entered, so a margin plan would pay on 100 %. | An estimated cost per line, for those who may see cost. |
+
+### Found while writing the backbone docs
+
+| Id | Severity | Page | What happened | Fix |
+| --- | --- | --- | --- | --- |
+| U-54 | Medium | Meetings | U-48 was marked fixed, but the Edit details button had not been added, so the dialog could not be opened. | The button is there, with a browser test. |
+| U-55 | Medium | Business report, Sales by category | A credit note issued in the app did not lower revenue or margin, though Profit by location did subtract it. | A credit note now counts everywhere, under its own Credit notes line, with a unit test. |
+| U-56 | Medium | Data import, timesheets | Undo kept the first version of a timesheet built from several rows of one file, when it should have removed it. | Undo removes it, with a unit test. |
+| U-57 | Medium | Outbox | Anyone could resend or cancel a message, even one that was not theirs, by calling the action directly. | Own messages, or any message with the Outbox permission. |
+| U-58 | Low | Meetings, portal, Inventory, Purchasing | Four feature switches changed nothing when turned off. | Each now hides its feature. |
+
+### Low, left for later
+
+| Id | Page | What happens |
+| --- | --- | --- |
+| U-50 | Meetings | A guest can be removed from an existing meeting but not added to one. |
+| U-51 | People | Start offboarding acts at once, with no confirmation. |
+| U-52 | Customers | A lead saved from a meeting has no Lead label in the customer list. |
+| U-53 | Pay periods | Bonuses can be read on a pay line but have no screen to add them. |
+
 ## High
 
 | Id | Page | Persona | What happened | Why it is a problem | Fix |

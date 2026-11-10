@@ -109,6 +109,26 @@ test.describe("Meeting guests and invites (spec E)", () => {
     await expect(page.getByRole("row", { name: /Cancelled: New build walkthrough/ }).first()).toBeVisible();
   });
 
+  test("Edit details renames a meeting and sends guests the update", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    const meeting = page.getByRole("button", { name: /New build walkthrough/ });
+    if (
+      !(await meeting
+        .first()
+        .isVisible()
+        .catch(() => false))
+    )
+      await page.getByRole("button", { name: "Next week" }).click();
+    await meeting.first().click();
+    await page.getByRole("button", { name: "Edit details" }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit meeting" });
+    await dialog.getByLabel("Title").fill("New build site walk");
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Meeting updated")).toBeVisible();
+    await page.goto("/settings/outbox");
+    await expect(page.getByRole("row", { name: /New build site walk/ }).first()).toBeVisible();
+  });
+
   test("Add to my calendar downloads an .ics file", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
     await page
@@ -121,6 +141,7 @@ test.describe("Meeting guests and invites (spec E)", () => {
   });
 
   test("anyone can request a meeting, and the other person can accept it", async ({ page }) => {
+    skipIfFeatureOff("meetings.requests");
     await signInAs(page, BRI, "/meetings");
     await page.getByRole("button", { name: "Request a meeting" }).click();
     await page.getByLabel("With").click();
@@ -131,6 +152,7 @@ test.describe("Meeting guests and invites (spec E)", () => {
   });
 
   test("the seeded request waits for an answer", async ({ page }) => {
+    skipIfFeatureOff("meetings.requests");
     await signInAs(page, SUMMIT_OWNER, "/meetings");
     const request = page.getByRole("button", { name: /Review my goals/ });
     if (
