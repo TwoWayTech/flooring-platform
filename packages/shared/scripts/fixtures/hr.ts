@@ -34,6 +34,8 @@ function payFor(ctx: GenContext, role: DefaultRoleKey): Pay {
       return salary(58, 74, "People");
     case "sales":
       return salary(46, 58, "Sales");
+    case "purchasing":
+      return salary(58, 72, "Purchasing");
     case "warehouse":
       return hourly(19, 26, "Warehouse");
     case "installer":

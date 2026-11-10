@@ -5,7 +5,7 @@ export type ProductKey = "flooring" | "hr";
  * Modules a company can have switched on (spec section 1, blueprint "Four layers of control").
  * `platform` holds users, roles, settings and audit, and is always on for every company.
  */
-export type ModuleKey = "platform" | "core" | "retail" | "wholesale" | "installation" | "hr" | "meetings";
+export type ModuleKey = "platform" | "core" | "retail" | "wholesale" | "installation" | "contracts" | "hr" | "meetings";
 
 /** Display metadata for a module. */
 export interface ModuleInfo {
@@ -21,6 +21,11 @@ export const MODULES: readonly ModuleInfo[] = [
   { key: "retail", label: "Retail", description: "Homeowner quotes with room measurements and samples" },
   { key: "wholesale", label: "Wholesale", description: "Dealer accounts, price lists, credit and resale certificates" },
   { key: "installation", label: "Installation", description: "Crews, subcontractors, job costing and sign-off" },
+  {
+    key: "contracts",
+    label: "Contracts",
+    description: "Customer and subcontractor contracts, progress billing and compliance",
+  },
   { key: "hr", label: "HR", description: "Employees, timesheets, PTO and commissions" },
   { key: "meetings", label: "Meetings", description: "Meetings with staff, customers and suppliers" },
 ];
@@ -30,7 +35,7 @@ export const MODULES: readonly ModuleInfo[] = [
  * modules, which is why Harbor Staffing (HR Suite) never sees flooring permissions.
  */
 export const PRODUCT_MODULES: Record<ProductKey, readonly ModuleKey[]> = {
-  flooring: ["platform", "core", "retail", "wholesale", "installation", "hr", "meetings"],
+  flooring: ["platform", "core", "retail", "wholesale", "installation", "contracts", "hr", "meetings"],
   hr: ["platform", "hr", "meetings"],
 };
 

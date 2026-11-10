@@ -1,5 +1,6 @@
 import {
   dateShift,
+  overlayFileIds,
   OVERLAY_SCHEMA_VERSION,
   shiftDates,
   upgradeOverlay,
@@ -40,34 +41,43 @@ export class CompanyDb {
   private readonly cache = new Map<CollectionName, unknown[]>();
   /** Set when saved data from an older demo had to be dropped; the store passes it on once. */
   readonly upgradeNotice: string | null;
+  /** Uploaded files that belonged to the dropped data; the store removes them. */
+  readonly droppedFileIds: string[];
 
   constructor(fixtures: CompanyFixtures, today: string) {
     const shift = dateShift(fixtures.anchorDate, today);
     this.base = shiftDates(fixtures, shift);
-    const { overlay, notice } = this.loadOverlay(shift);
+    const { overlay, notice, droppedFileIds } = this.loadOverlay(shift);
     this.overlay = overlay;
     this.upgradeNotice = notice;
+    this.droppedFileIds = droppedFileIds;
   }
 
   /**
    * Reads the stored overlay, moving its dates to today. Data saved by an older version (under
-   * the version 1 key, or an older schema under the current key) is upgraded first.
+   * the version 1 key, or an older schema under the current key) is dropped with a notice.
    */
-  private loadOverlay(shift: DateShift): { overlay: CompanyOverlay; notice: string | null } {
+  private loadOverlay(shift: DateShift): { overlay: CompanyOverlay; notice: string | null; droppedFileIds: string[] } {
     const id = this.base.companyId;
     const current = readStored<StoredOverlay>(id);
     if (current?.schemaVersion === OVERLAY_SCHEMA_VERSION) {
-      return { overlay: CompanyDb.moved(current as unknown as CompanyOverlay, shift), notice: null };
+      return {
+        overlay: CompanyDb.moved(current as unknown as CompanyOverlay, shift),
+        notice: null,
+        droppedFileIds: [],
+      };
     }
     const legacy = current ?? readLegacy<StoredOverlay>(id);
-    if (!legacy) return { overlay: emptyOverlay(shift), notice: null };
+    if (!legacy) return { overlay: emptyOverlay(shift), notice: null, droppedFileIds: [] };
     if (!current) removeLegacy(id);
     try {
-      const upgraded = upgradeOverlay(legacy, { base: this.base }) as unknown as CompanyOverlay;
+      const upgraded = upgradeOverlay(legacy) as unknown as CompanyOverlay;
       writeStored(id, upgraded);
-      return { overlay: CompanyDb.moved(upgraded, shift), notice: null };
+      return { overlay: CompanyDb.moved(upgraded, shift), notice: null, droppedFileIds: [] };
     } catch {
-      return { overlay: emptyOverlay(shift), notice: UPGRADE_RESET_NOTICE };
+      const fresh = emptyOverlay(shift);
+      writeStored(id, fresh);
+      return { overlay: fresh, notice: UPGRADE_RESET_NOTICE, droppedFileIds: overlayFileIds(legacy) };
     }
   }
 

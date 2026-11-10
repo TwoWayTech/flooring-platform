@@ -6,14 +6,11 @@ import { toast } from "sonner";
 import {
   ADJUSTMENT_REASON_LABELS,
   dec,
-  mayIssue,
   REMNANT_THRESHOLD_FT,
   rollAvailable,
   validateCut,
   type AdjustmentReason,
   type Customer,
-  type InvoiceLedger,
-  type Invoice,
   type Reservation,
   type Roll,
 } from "@workspace/shared";
@@ -36,6 +33,7 @@ import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
+import type { StockHold } from "@/lib/api/contract";
 import { CustomerPicker } from "@/features/customers/customer-picker";
 
 /** What the cut will leave, in words, before the person confirms it. */
@@ -65,8 +63,7 @@ type Mode = "invoice" | "new" | "adjust";
 interface CutRollDialogProps {
   roll: Roll;
   reservations: Reservation[];
-  invoices: Invoice[];
-  ledgers: ReadonlyMap<string, InvoiceLedger>;
+  holds: StockHold[];
   customers: Customer[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -77,15 +74,7 @@ interface CutRollDialogProps {
  * its deposit or payment is confirmed, or with an override reason), create a new invoice for a
  * length of it, or, with inventory.stock.adjust, record an adjustment with a reason.
  */
-export function CutRollDialog({
-  roll,
-  reservations,
-  invoices,
-  ledgers,
-  customers,
-  open,
-  onOpenChange,
-}: CutRollDialogProps) {
+export function CutRollDialog({ roll, reservations, holds, customers, open, onOpenChange }: CutRollDialogProps) {
   const can = useCan();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("invoice");
@@ -98,17 +87,12 @@ export function CutRollDialog({
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
 
-  const held = reservations.filter((r) => r.rollId === roll.id && r.status === "active");
-  const invoiceOf = (r: Reservation) => invoices.find((i) => i.id === r.invoiceId);
-  const customerOf = (i: Invoice | undefined) => customers.find((c) => c.id === i?.customerId);
-  const shown = held.filter((r) => {
-    const i = invoiceOf(r);
-    const text = `${i?.number ?? ""} ${customerOf(i)?.name ?? ""}`.toLowerCase();
-    return text.includes(query.trim().toLowerCase());
-  });
-  const chosen = held.find((r) => r.id === picked);
-  const chosenInvoice = chosen ? invoiceOf(chosen) : undefined;
-  const paid = chosenInvoice ? mayIssue(ledgers.get(chosenInvoice.id)!) : false;
+  const held = holds.filter((h) => h.rollId === roll.id);
+  const shown = held.filter((h) =>
+    `${h.invoiceNumber} ${h.customerName}`.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+  const chosen = held.find((h) => h.reservationId === picked);
+  const paid = chosen?.mayIssue ?? false;
   const free = rollAvailable(roll, reservations).toString();
   const modes: (readonly [Mode, string])[] = [
     ["invoice", "For an invoice"],
@@ -131,10 +115,10 @@ export function CutRollDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (mode === "invoice" && chosen && chosenInvoice) {
+    if (mode === "invoice" && chosen) {
       void run(async () => {
-        await api.issueReservation(chosen.id, paid ? undefined : override);
-        return `Cut ${chosen.quantity} ft for ${chosenInvoice.number}`;
+        await api.issueReservation(chosen.reservationId, paid ? undefined : override);
+        return `Cut ${chosen.quantity} ft for ${chosen.invoiceNumber}`;
       });
     } else if (mode === "new") {
       void run(async () => {
@@ -195,18 +179,15 @@ export function CutRollDialog({
                 </p>
               ) : (
                 <RadioGroup value={picked} onValueChange={setPicked} aria-label="Invoices holding this roll">
-                  {shown.map((r) => {
-                    const i = invoiceOf(r);
-                    return (
-                      <label key={r.id} className="flex items-center gap-3 text-sm">
-                        <RadioGroupItem value={r.id} />
-                        <span className="flex-1">
-                          {i?.number}, {customerOf(i)?.name}
-                        </span>
-                        <Num kind="quantity" value={r.quantity} unit="ft" />
-                      </label>
-                    );
-                  })}
+                  {shown.map((h) => (
+                    <label key={h.reservationId} className="flex items-center gap-3 text-sm">
+                      <RadioGroupItem value={h.reservationId} />
+                      <span className="flex-1">
+                        {h.invoiceNumber}, {h.customerName}
+                      </span>
+                      <Num kind="quantity" value={h.quantity} unit="ft" />
+                    </label>
+                  ))}
                 </RadioGroup>
               )}
               {chosen ? <Preview roll={roll} length={chosen.quantity} /> : null}
@@ -220,12 +201,12 @@ export function CutRollDialog({
                       onChange={(e) => setOverride(e.target.value)}
                     />
                     <p className="text-warning-ink text-xs">
-                      {chosenInvoice?.number} has no confirmed payment yet. The override is audited.
+                      {chosen.invoiceNumber} has no confirmed payment yet. The override is audited.
                     </p>
                   </Field>
                 ) : (
                   <p className="text-warning-ink text-sm">
-                    {chosenInvoice?.number} has no confirmed payment yet. Cut once the deposit is in.
+                    {chosen.invoiceNumber} has no confirmed payment yet. Cut once the deposit is in.
                   </p>
                 )
               ) : null}
@@ -282,8 +263,8 @@ export function CutRollDialog({
             </Button>
             <Button type="submit" disabled={pending || !ready}>
               {mode === "invoice"
-                ? chosenInvoice
-                  ? `Cut for ${chosenInvoice.number}`
+                ? chosen
+                  ? `Cut for ${chosen.invoiceNumber}`
                   : "Cut"
                 : mode === "new"
                   ? "Create invoice"

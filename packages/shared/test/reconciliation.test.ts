@@ -261,7 +261,7 @@ describe("spec section 4 volumes", () => {
   });
 
   it("has the HR headcounts, 8 weeks of timesheets with overtime, and W-2 and 1099 workers", () => {
-    expect([summit, keystone, harbor].map((f) => f.employees.length)).toEqual([18, 12, 30]);
+    expect([summit, keystone, harbor].map((f) => f.employees.length)).toEqual([19, 13, 30]);
     for (const f of [summit, keystone, harbor]) {
       const weeks = new Set(f.timesheets.map((t) => t.weekStart));
       expect(weeks.size).toBe(8);

@@ -6,7 +6,7 @@ export type DataScope = "own" | "branch" | "all";
 
 /** Stable keys for the default roles. Copies made by admins get generated keys. */
 export type DefaultRoleKey =
-  "owner" | "manager" | "accountant" | "sales" | "warehouse" | "installer" | "hr" | "employee";
+  "owner" | "manager" | "accountant" | "sales" | "purchasing" | "warehouse" | "installer" | "hr" | "employee";
 
 /** A default role template, copied into each company at setup. */
 export interface RoleTemplate {
@@ -142,6 +142,26 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
     ]),
     owner: false,
   },
+  purchasing: {
+    key: "purchasing",
+    name: "Purchasing",
+    description: "Suppliers, purchase orders, receiving and supplier bills",
+    dataScope: "all",
+    permissions: expand([
+      "dashboard.*",
+      "purchasing.supplier.*",
+      "purchasing.order.*",
+      "purchasing.bill.*",
+      "purchasing.payment.record",
+      "inventory.product.view",
+      "inventory.product.view_sensitive",
+      "inventory.roll.view",
+      "inventory.transfer.view",
+      "reports.inventory.view",
+      ...OWN_TIME,
+    ]),
+    owner: false,
+  },
   warehouse: {
     key: "warehouse",
     name: "Warehouse",
@@ -191,7 +211,7 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
 
 /** Default roles each product ships with, in display order. */
 export const PRODUCT_ROLES: Record<ProductKey, readonly DefaultRoleKey[]> = {
-  flooring: ["owner", "manager", "accountant", "sales", "warehouse", "installer", "hr", "employee"],
+  flooring: ["owner", "manager", "accountant", "sales", "purchasing", "warehouse", "installer", "hr", "employee"],
   hr: ["owner", "hr", "employee"],
 };
 

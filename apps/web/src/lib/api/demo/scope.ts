@@ -29,7 +29,11 @@ type Filter = (item: never, subject: ScopeSubject, db: CompanyDb) => boolean;
 const byRep: Filter = (item: { salesRepId: string; branchId: string }, { user, scope }) =>
   scope === "own" ? item.salesRepId === user.id : item.branchId === user.branchId;
 
-/** Payments, credits and write-offs follow the invoice they belong to. */
+/**
+ * Payments, credits and write-offs follow the invoice they belong to. Reservations do not: on
+ * hand, reserved and available are facts about the stock, so everyone who sees stock sees all of
+ * them (audit U-03), and they carry no customer or price.
+ */
 function invoiceInScope(invoiceId: string, subject: ScopeSubject, db: CompanyDb): boolean {
   const invoice = db.get("invoices", invoiceId);
   return !!invoice && byRep(invoice as never, subject, db);
@@ -48,7 +52,6 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
     scope === "own" ? item.salesRepId === user.id : db.get("users", item.salesRepId)?.branchId === user.branchId,
   payments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
   invoiceAdjustments: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
-  reservations: (item: { invoiceId: string }, subject, db) => invoiceInScope(item.invoiceId, subject, db),
   refunds: (item: { customerId: string }, subject, db) => {
     const customer = db.get("customers", item.customerId);
     return !!customer && FILTERS.customers!(customer as never, subject, db);

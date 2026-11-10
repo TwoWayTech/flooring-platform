@@ -13,7 +13,6 @@ import { Swatch } from "@workspace/ui/components/swatch";
 import { ScrollRegion } from "@/components/scroll-region";
 import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
-import { loadSalesLedger } from "@/lib/sales-ledger";
 import { useFormatDate } from "@/lib/use-format-date";
 import { useCan } from "@/components/workspace/workspace-context";
 import { NoAccess } from "@/components/no-access";
@@ -42,7 +41,7 @@ export function RollPage({ rollId }: { rollId: string }) {
   const [dialog, setDialog] = useState<"cut" | "move" | "label" | null>(null);
   const data = useApiQuery(
     async (client) => {
-      const [rolls, products, users, locations, transfers, reservations, customers, sales] = await Promise.all([
+      const [rolls, products, users, locations, transfers, reservations, customers, holds] = await Promise.all([
         client.list("rolls"),
         client.list("products"),
         client.list("users"),
@@ -50,14 +49,14 @@ export function RollPage({ rollId }: { rollId: string }) {
         client.list("transfers"),
         client.list("reservations"),
         client.list("customers"),
-        loadSalesLedger(client),
+        client.listStockHolds(),
       ]);
       const roll = rolls.find((r) => r.id === rollId);
       return {
         roll,
         reservations,
         customers,
-        sales,
+        holds,
         product: products.find((p) => p.id === roll?.productId),
         remnants: rolls.filter((r) => r.parentRollId === rollId),
         users,
@@ -70,7 +69,7 @@ export function RollPage({ rollId }: { rollId: string }) {
 
   if (!can("inventory.roll.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading roll" />;
-  const { roll, product, remnants, users, locations, transfer, reservations, customers, sales } = data.data;
+  const { roll, product, remnants, users, locations, transfer, reservations, customers, holds } = data.data;
   if (!roll)
     return (
       <p className="text-muted-foreground">
@@ -253,8 +252,7 @@ export function RollPage({ rollId }: { rollId: string }) {
       <CutRollDialog
         roll={roll}
         reservations={reservations}
-        invoices={sales.invoices}
-        ledgers={sales.ledgers}
+        holds={holds}
         customers={customers}
         open={dialog === "cut"}
         onOpenChange={(o) => setDialog(o ? "cut" : null)}

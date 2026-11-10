@@ -143,10 +143,10 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] Walkthrough of all nine personas on a production build; docs/ux-audit.md
 - [x] Plan: audit, research summary, data model, migration, assumptions with recommendations
 - [x] Client notes in docs/feedback-demo.md
-- [ ] Owner's OK on the plan, including decisions N-1 to N-6
+- [x] Owner's OK on the plan, including decisions N-1 to N-6 (all recommendations accepted, 2026-11-10)
 
 #### Batch A: cross-cutting changes
-- [ ] A0. Groundwork: overlay schema 4 with reset and message; `skipIfFeatureOff` for Playwright and Vitest (K-12); root `pnpm start` (K-13); Purchasing role and seeded user, Purchasing and Employee sign-in cards (K-1, U-26); new permission keys and `contracts` module; reservations follow the warehouse holding the stock (U-03)
+- [x] A0. Groundwork: overlay schema 4 with reset and message; `skipIfFeatureOff` for Playwright and Vitest (K-12); root `pnpm start` (K-13); Purchasing role and seeded user, Purchasing and Employee sign-in cards (K-1, U-26); new permission keys and `contracts` module; reservations follow the warehouse holding the stock (U-03)
 - [ ] A1. Square feet everywhere: area-unit setting removed, helpers kept; products, lines, stock, purchasing, reports and PDFs in sq ft; rolls show length and width in ft with area in sq ft first; carton hint beside or on hover; cartons typed convert to sq ft; whole cartons per N-2; seed prices per sq ft, reconciliation green (U-13, U-36, K-2)
 - [ ] A2. Warehouse on new quotes: Fulfilled from first and required, default the user's warehouse; each line shows available in that warehouse (sq ft, ≈ cartons); when short, warn and offer another warehouse for the line or a transfer; carries through invoice, reservations and cuts; product picker shows brand, SKU, price and availability (U-14, U-19)
 - [ ] A3. Switch off Adjustments, Installation and four reports: `inventory.reservations` split out (K-4), one key per report (K-5); Owner-only Correct stock count (A-1); Contracts takes the menu slot; every invoice has a due date (K-3, U-09, U-31, U-37); Installer card gone (K-6); tests skip automatically and flows through installation rewritten

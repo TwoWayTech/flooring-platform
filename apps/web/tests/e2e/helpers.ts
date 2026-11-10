@@ -1,4 +1,13 @@
-import { devices, expect, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
+import { featureOn, type FeatureKey } from "@workspace/shared";
+
+/**
+ * Skips the current describe or test while a feature's switch is off (spec section 0.6: a
+ * feature switched off keeps its code, and its tests skip by themselves until it is back on).
+ */
+export function skipIfFeatureOff(key: FeatureKey) {
+  test.skip(!featureOn(key), `${key} is switched off`);
+}
 
 /** A persona to sign in as, by company and role. */
 export interface Persona {

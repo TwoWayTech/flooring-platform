@@ -6,10 +6,12 @@ const FLOORING_PERSONAS: [name: string, home: RegExp][] = [
   ["Dana Whitfield", /\/$/],
   ["Luis Ortega", /\/$/],
   ["Priya Natarajan", /\/$/],
+  ["Renata Kowalski", /\/$/],
   ["Cole Brennan", /\/$/],
   ["Marcus Bell", /\/installation$/],
   ["Grace Liu", /\/$/],
   ["Tamara Reyes", /\/hr$/],
+  ["Bri Alvarez", /\/hr$/],
 ];
 
 const HR_PERSONAS: [name: string, home: RegExp][] = [

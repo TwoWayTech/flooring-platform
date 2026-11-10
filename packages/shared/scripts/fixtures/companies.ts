@@ -48,6 +48,8 @@ export interface CompanySeed {
   /** Permissions the super-admin left out of this company's plan, shown greyed in Security roles. */
   ceilingExclusions: PermissionKey[];
   people: PersonSeed[];
+  /** The Purchasing persona (plan K-1), flooring companies only; added after every generator has run. */
+  buyer?: { name: string; title: string; branch: number; phone: string };
   employeeCount: number;
   customerMix: Record<CustomerType, number>;
   /** Number of quotes and invoices; null for an HR-only company. */
@@ -65,9 +67,9 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     city: "Denver",
     state: "CO",
     product: "flooring",
-    modules: ["platform", "core", "retail", "installation", "hr", "meetings"],
+    modules: ["platform", "core", "retail", "installation", "contracts", "hr", "meetings"],
     plan: "Flooring Pro",
-    userLimit: 15,
+    userLimit: 16,
     branchLimit: 3,
     brandColor: "#2E8B7E",
     pattern: "herringbone",
@@ -88,6 +90,7 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     ],
     statesOfOperation: ["CO", "WY"],
     ceilingExclusions: ["customers.customer.delete", "inventory.product.delete"],
+    buyer: { name: "Renata Kowalski", title: "Purchasing coordinator", branch: 0, phone: "(303) 555-0177" },
     people: [
       { name: "Dana Whitfield", title: "Owner", role: "owner", branch: 0, lastLoginDaysAgo: 0 },
       { name: "Luis Ortega", title: "Store manager", role: "manager", branch: 0, lastLoginDaysAgo: 0 },
@@ -124,9 +127,9 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     city: "Harrisburg",
     state: "PA",
     product: "flooring",
-    modules: ["platform", "core", "wholesale", "hr", "meetings"],
+    modules: ["platform", "core", "wholesale", "contracts", "hr", "meetings"],
     plan: "Flooring Wholesale",
-    userLimit: 12,
+    userLimit: 13,
     branchLimit: 2,
     brandColor: "#2F6B45",
     pattern: "running-bond",
@@ -149,6 +152,7 @@ export const COMPANY_SEEDS: readonly CompanySeed[] = [
     ],
     statesOfOperation: ["PA", "NJ", "MD"],
     ceilingExclusions: ["customers.customer.delete", "reports.financial.export", "retail.room.measure"],
+    buyer: { name: "Owen Achterberg", title: "Purchasing lead", branch: 0, phone: "(717) 555-0163" },
     people: [
       { name: "Martin Hale", title: "Owner", role: "owner", branch: 0, lastLoginDaysAgo: 0 },
       { name: "Rosa Delgado", title: "Operations manager", role: "manager", branch: 0, lastLoginDaysAgo: 0 },

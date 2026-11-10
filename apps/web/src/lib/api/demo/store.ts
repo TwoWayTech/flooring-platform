@@ -90,6 +90,7 @@ import {
 import {
   createRollInvoice,
   issueReservation,
+  listStockHolds,
   recordAdjustment,
   reserveFor,
   reservationSummary,
@@ -636,6 +637,10 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => refundCredit(ctx, input, files));
   }
 
+  async listStockHolds() {
+    return this.act((ctx) => listStockHolds(ctx));
+  }
+
   async issueReservation(reservationId: string, overrideReason?: string) {
     return this.act((ctx) => issueReservation(ctx, reservationId, overrideReason));
   }
@@ -864,6 +869,7 @@ export class DemoStore implements ApiClient {
     let db = this.dbs.get(companyId);
     if (!db) {
       db = new CompanyDb(await loadCompanyFixtures(companyId), this.todayIso);
+      if (db.droppedFileIds.length) await this.files.remove(db.droppedFileIds).catch(() => undefined);
       this.dbs.set(companyId, db);
     }
     return db;

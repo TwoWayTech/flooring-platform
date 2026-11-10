@@ -23,6 +23,7 @@ export type PermissionAction =
   | "apply_credit"
   | "override"
   | "adjust"
+  | "correct"
   | "view_sensitive";
 
 /**
@@ -63,12 +64,14 @@ const ROWS: Row[] = [
   ["inventory.product", "core", "Products", ["view", "create", "edit", "delete", "export", "view_sensitive"]],
   ["inventory.roll", "core", "Rolls", ["view", "cut", "edit"]],
   ["inventory.stock", "core", "Stock adjustments", ["adjust", "approve"]],
+  ["inventory.stock", "core", "Stock count", ["correct"]],
   ["inventory.transfer", "core", "Warehouse transfers", ["view", "create", "receive"]],
   ["inventory.reservation", "core", "Stock reservations", ["override"]],
   ["purchasing.supplier", "core", "Suppliers", ["view", "create", "edit"]],
   ["purchasing.order", "core", "Purchase orders", ["view", "create", "approve", "receive"]],
   ["purchasing.bill", "core", "Supplier bills", ["view", "create"]],
   ["purchasing.payment", "core", "Supplier payments", ["record", "approve", "void"]],
+  ["finance.expense", "core", "Expenses", ["view", "create", "approve", "void", "export"]],
   ["reports.sales", "core", "Sales reports", ["view", "export"]],
   ["reports.financial", "core", "Financial reports", ["view", "export"]],
   ["reports.inventory", "core", "Inventory reports", ["view", "export"]],
@@ -80,11 +83,16 @@ const ROWS: Row[] = [
   ["wholesale.credit", "wholesale", "Credit limit overrides", ["approve"]],
   ["installation.job", "installation", "Jobs", ["view", "create", "schedule", "edit", "sign_off", "view_sensitive"]],
   ["installation.crew", "installation", "Crews and subcontractors", ["view", "manage"]],
+  ["contracts.contract", "contracts", "Contracts", ["view", "create", "edit", "approve", "view_sensitive"]],
+  ["contracts.billing", "contracts", "Progress billing", ["view", "create", "void"]],
+  ["contracts.change_order", "contracts", "Change orders", ["create", "approve"]],
+  ["contracts.compliance", "contracts", "Contract compliance", ["view", "manage"]],
   ["hr.overview", "hr", "HR dashboard", ["view"]],
   ["hr.employee", "hr", "Employees", ["view", "create", "edit", "view_sensitive"]],
   ["hr.timesheet", "hr", "Timesheets", ["view", "edit", "approve"]],
   ["hr.pto", "hr", "Time off", ["view", "request", "approve"]],
-  ["hr.payroll", "hr", "Payroll export", ["export"]],
+  ["hr.commission", "hr", "Commission plans", ["view", "manage", "approve", "adjust"]],
+  ["hr.payroll", "hr", "Pay periods", ["view", "approve", "export"]],
   ["meetings.meeting", "meetings", "Meetings", ["view", "create", "edit", "delete"]],
   ["settings.users", "platform", "Users", ["view", "manage"]],
   ["settings.roles", "platform", "Security roles", ["view", "manage"]],
@@ -95,6 +103,11 @@ const ROWS: Row[] = [
   ["settings.company", "platform", "Company profile", ["manage"]],
   ["settings.payments", "platform", "Payment settings", ["manage"]],
   ["settings.locations", "core", "Warehouses and showrooms", ["manage"]],
+  ["settings.expenses", "core", "Expense settings", ["manage"]],
+  ["settings.notifications", "platform", "Email and notifications", ["manage"]],
+  ["settings.outbox", "platform", "Outbox", ["view"]],
+  ["settings.hr", "hr", "HR settings", ["manage"]],
+  ["settings.meetings", "meetings", "Meeting settings", ["manage"]],
   ["settings.import", "platform", "Data import", ["manage"]],
   ["settings.audit", "platform", "Audit log", ["view"]],
 ];
@@ -121,6 +134,7 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
   apply_credit: "Apply credit",
   override: "Override",
   adjust: "Adjust",
+  correct: "Correct",
   view_sensitive: "View sensitive",
 };
 
@@ -145,7 +159,6 @@ export const ALL_PERMISSION_KEYS: readonly PermissionKey[] = PERMISSIONS.map((p)
 export const RENAMED_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   "sales.payment.create": "sales.payment.record",
   "purchasing.bill.pay": "purchasing.payment.record",
-  "hr.commission.view": "sales.commission.view",
 };
 
 const BY_KEY = new Map(PERMISSIONS.map((p) => [p.key, p]));

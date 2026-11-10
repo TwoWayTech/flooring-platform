@@ -1,4 +1,3 @@
-/** Upgrades for demo data saved by an older version of the demo (docs/specs/feature-batch-02-plan.md, 2.3). */
+/** Handling of demo data saved by an older version of the demo (docs/specs/feature-batch-03-plan.md, section 5). */
 export * from "./overlay";
-export { mergeDefaults } from "./merge";
-export { ADDED_IN_V2, upgradeCeiling, upgradeRole } from "./permissions";
+export { ADDED_PERMISSIONS, upgradeCeiling } from "./permissions";

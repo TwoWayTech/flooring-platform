@@ -3,7 +3,7 @@ import { defaultNumberSettings } from "../../src/numbers";
 import { ALL_PERMISSION_KEYS, permissionsForModules } from "../../src/permissions/catalog";
 import { PRODUCT_ROLES, roleTemplate } from "../../src/permissions/roles";
 import { PRODUCT_MODULES } from "../../src/products";
-import type { Company, CompanySettings, Employee, Role, User } from "../../src/types";
+import type { Company, CompanyFixtures, CompanySettings, Employee, Role, User } from "../../src/types";
 import { EXAMPLE_TAX_RULES } from "../../src/us-pack/tax";
 import { EXAMPLE_COMPANY_DEFAULT, EXAMPLE_JURISDICTIONS } from "../../src/us-pack/tax-examples";
 import { ANCHOR_DATE, type CompanySeed } from "./companies";
@@ -93,6 +93,50 @@ export function buildUsers(ctx: GenContext, employees: readonly Employee[]): Use
         person.role === "warehouse" ? branchWarehouse(seed.id, seed.branches[person.branch]!.id) : null,
     };
   });
+}
+
+/**
+ * Adds the Purchasing persona (plan K-1). It runs after every generator and draws no random
+ * numbers, so the records generated before it keep their values.
+ */
+export function withBuyer(ctx: GenContext, fixtures: CompanyFixtures): CompanyFixtures {
+  const { company: seed, anchor } = ctx;
+  const buyer = seed.buyer;
+  if (!buyer) return fixtures;
+  const employeeId = ctx.id("emp");
+  const email = emailFor(buyer.name, seed.domain);
+  const employee: Employee = {
+    id: employeeId,
+    companyId: seed.id,
+    name: buyer.name,
+    title: buyer.title,
+    department: "Purchasing",
+    workerType: "w2",
+    payType: "salary",
+    payRate: "64000.00",
+    state: seed.branches[buyer.branch]!.state,
+    email,
+    phone: buyer.phone,
+    hiredAt: addDays(anchor, -812),
+    status: "active",
+    ptoBalanceHours: "52",
+    managerId: fixtures.employees[0]!.id,
+  };
+  const user: User = {
+    id: `${seed.idPrefix}-usr-${String(seed.people.length + 1).padStart(2, "0")}`,
+    companyId: seed.id,
+    name: buyer.name,
+    email,
+    title: buyer.title,
+    roleIds: [roleId(seed, "purchasing")],
+    branchId: seed.branches[buyer.branch]!.id,
+    status: "active",
+    mfaEnrolled: true,
+    lastLoginAt: `${addDays(anchor, -1)}T09:12`,
+    employeeId,
+    defaultLocationId: branchWarehouse(seed.id, seed.branches[buyer.branch]!.id),
+  };
+  return { ...fixtures, employees: [...fixtures.employees, employee], users: [...fixtures.users, user] };
 }
 
 /** Settings for branding, localization and tax, number format and the company profile. */

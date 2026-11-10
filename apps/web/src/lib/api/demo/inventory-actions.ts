@@ -16,7 +16,7 @@ import {
   type StockAdjustment,
   type StockMovement,
 } from "@workspace/shared";
-import type { AdjustmentDecision, AdjustmentInput, RollInvoiceInput } from "../contract";
+import type { AdjustmentDecision, AdjustmentInput, RollInvoiceInput, StockHold } from "../contract";
 import { DemoRuleError } from "./admin-rules";
 import type { ActionContext } from "./payment-actions";
 
@@ -40,6 +40,34 @@ export function releaseFor(ctx: ActionContext, invoiceId: string): number {
   const held = ctx.db.list("reservations").filter((r) => r.invoiceId === invoiceId && r.status === "active");
   for (const r of held) ctx.db.put("reservations", { ...r, status: "released", closedAt: ctx.now });
   return held.length;
+}
+
+/** Open reservations with what a warehouse needs to cut against them (audit U-03). */
+export async function listStockHolds(ctx: ActionContext): Promise<StockHold[]> {
+  await ctx.assertCan(["inventory.roll.view", "inventory.product.view"]);
+  const payments = ctx.db.list("payments");
+  const adjustments = ctx.db.list("invoiceAdjustments");
+  return ctx.db
+    .list("reservations")
+    .filter((r) => r.status === "active")
+    .flatMap((r) => {
+      const invoice = ctx.db.get("invoices", r.invoiceId);
+      if (!invoice) return [];
+      return [
+        {
+          reservationId: r.id,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.number,
+          customerName: ctx.db.get("customers", invoice.customerId)?.name ?? "",
+          mayIssue: mayIssue(invoiceLedger(invoice, { payments, adjustments }, ctx.today)),
+          productId: r.productId,
+          rollId: r.rollId,
+          locationId: r.locationId,
+          quantity: r.quantity,
+          shortBy: r.shortBy,
+        },
+      ];
+    });
 }
 
 /**

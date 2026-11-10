@@ -6,7 +6,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 
 /** Persona cards per product, in the order of spec section 2. */
 const PERSONA_ORDER: Record<ProductKey, DefaultRoleKey[]> = {
-  flooring: ["owner", "manager", "sales", "warehouse", "installer", "accountant", "hr"],
+  flooring: ["owner", "manager", "sales", "purchasing", "warehouse", "installer", "accountant", "hr", "employee"],
   hr: ["owner", "hr", "employee"],
 };
 

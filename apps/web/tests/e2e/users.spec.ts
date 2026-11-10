@@ -13,13 +13,13 @@ async function invite(page: Page, name: string) {
 test.describe("settings: users", () => {
   test("enforces the seat limit", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/users");
-    await expect(page.getByText("13 of 15 seats used")).toBeVisible();
+    await expect(page.getByText("14 of 16 seats used")).toBeVisible();
     await invite(page, "Avery Lane");
-    await expect(page.getByText("14 of 15 seats used")).toBeVisible();
+    await expect(page.getByText("15 of 16 seats used")).toBeVisible();
     await invite(page, "Blake Moreno");
-    await expect(page.getByText("15 of 15 seats used")).toBeVisible();
+    await expect(page.getByText("16 of 16 seats used")).toBeVisible();
     await invite(page, "Casey North");
-    await expect(page.getByRole("alert")).toContainText("All 15 seats on your plan are in use");
+    await expect(page.getByRole("alert")).toContainText("All 16 seats on your plan are in use");
   });
 
   test("refuses to disable the last active Owner", async ({ page }) => {

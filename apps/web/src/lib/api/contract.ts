@@ -131,6 +131,26 @@ export interface BillInput {
 }
 
 /** A payment to a supplier (spec D3); without bill ids it covers the oldest open bills first. */
+/**
+ * One open reservation with just enough of its invoice to cut against it (audit U-03): warehouse
+ * staff do not see sales records, but they do need the invoice number, the customer and whether
+ * money has come in.
+ */
+export interface StockHold {
+  reservationId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerName: string;
+  /** Confirmed money has come in, so the stock may be cut or issued (spec C2). */
+  mayIssue: boolean;
+  productId: string;
+  rollId: string | null;
+  locationId: string;
+  /** In the product's stock unit. */
+  quantity: string;
+  shortBy: string;
+}
+
 export interface SupplierPaymentInput {
   supplierId: string;
   amount: string;
@@ -330,6 +350,8 @@ export interface ApiClient {
    * inventory.reservation.override. A roll cut keeps the remnant rule and links the invoice.
    * Needs inventory.roll.cut. Audited.
    */
+  /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
+  listStockHolds(): Promise<StockHold[]>;
   issueReservation(reservationId: string, overrideReason?: string): Promise<Reservation>;
   /** Records a stock adjustment with a reason; above the company's quantity it waits for approval. Audited. */
   recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;

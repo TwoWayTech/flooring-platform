@@ -17,7 +17,7 @@ import { buildLocations } from "./locations";
 import { buildRolls } from "./rolls";
 import { buildStock } from "./stock";
 import { buildSales } from "./sales";
-import { buildCompany, buildRoles, buildSettings, buildUsers } from "./tenant";
+import { buildCompany, buildRoles, buildSettings, buildUsers, withBuyer } from "./tenant";
 
 /** Everything `pnpm fixtures` writes: the platform file and one file per company. */
 export interface GeneratedFixtures {
@@ -50,7 +50,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
   const purchasing = buildPurchasing(ctx, suppliers, products, users);
   const installers = users.filter((u) => u.roleIds.some((r) => r.endsWith("-role-installer"))).map((u) => u.name);
   const crews = buildCrews(ctx, installers);
-  return withExtras(ctx, {
+  const fixtures = withExtras(ctx, {
     companyId: seed.id,
     anchorDate: ANCHOR_DATE,
     settings,
@@ -82,6 +82,7 @@ function generateCompany(seed: CompanySeed): CompanyFixtures {
     importBatches: [],
     importMappings: [],
   });
+  return withBuyer(ctx, fixtures);
 }
 
 /** Generates all demo fixtures from fixed seeds (CLAUDE.md rule 5). */
