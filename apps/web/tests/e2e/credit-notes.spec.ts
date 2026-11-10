@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { addDays, dec, type CompanyFixtures, type Payment } from "@workspace/shared";
+import { addDays, dec, moneyString, type CompanyFixtures, type Payment } from "@workspace/shared";
 import { signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const summit = JSON.parse(
@@ -14,7 +14,8 @@ const confirmed = (invoiceId: string) =>
   summit.payments.filter((p) => p.invoiceId === invoiceId && p.status === "confirmed");
 const alreadyCredited = new Set(summit.invoices.map((i) => i.creditForInvoiceId));
 const live = summit.invoices.filter(
-  (i) => i.salesRepId === PRIYA.userId && !i.isReturn && !i.voidedAt && !i.commissionSplit && !alreadyCredited.has(i.id),
+  (i) =>
+    i.salesRepId === PRIYA.userId && !i.isReturn && !i.voidedAt && !i.commissionSplit && !alreadyCredited.has(i.id),
 );
 
 /** Paid in full recently, so a credit note falls inside the 90-day clawback window. */
@@ -60,9 +61,11 @@ test.describe("Credit notes (plan K-11) and commission splits (spec C1)", () => 
     await dialog.getByRole("button", { name: "Issue credit note" }).click();
     await expect(dialog.getByRole("alert")).toHaveText("Give a reason; it stays on the credit note.");
     await dialog.getByLabel("Reason").fill("Over the limit");
-    await dialog.getByLabel("Amount before tax").fill(dec(paidInFull.subtotal).plus(1).toFixed(2));
+    await dialog.getByLabel("Amount before tax").fill(moneyString(dec(paidInFull.subtotal).plus(1)));
     await dialog.getByRole("button", { name: "Issue credit note" }).click();
-    await expect(dialog.getByRole("alert")).toHaveText("Enter an amount up to what is left on this invoice before tax.");
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Enter an amount up to what is left on this invoice before tax.",
+    );
   });
 
   test("shares an unpaid invoice's commission and keeps the split", async ({ page }) => {
