@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { signInAs, SUMMIT_OWNER, sendAndAccept } from "./helpers";
 
 async function pickState(page: Page, name: string) {
   await page.getByLabel("State").click();
@@ -47,6 +47,7 @@ test.describe("quote builder", () => {
     const coTotal = await summaryTotal(page);
     expect(coTotal).not.toBe(njTotal);
 
+    await sendAndAccept(page);
     await page.getByRole("button", { name: "Convert to invoice" }).click();
     await expect(page).toHaveURL(/\/sales\/invoices\//);
     await expect(page.getByText(/^Invoice INV-\d+$/).first()).toBeVisible();

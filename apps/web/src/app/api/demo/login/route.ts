@@ -10,7 +10,17 @@ const LoginBody = z.discriminatedUnion("kind", [
     kind: z.literal("company"),
     companyId: z.enum(["summit", "keystone", "harbor"]),
     userId: z.string().min(1),
-    roleKey: z.enum(["owner", "manager", "accountant", "sales", "warehouse", "installer", "hr", "employee"]),
+    roleKey: z.enum([
+      "owner",
+      "manager",
+      "accountant",
+      "sales",
+      "purchasing",
+      "warehouse",
+      "installer",
+      "hr",
+      "employee",
+    ]),
   }),
   z.object({ kind: z.literal("platform") }),
 ]);

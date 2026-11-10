@@ -5,7 +5,7 @@ test.describe("app shell", () => {
   test("shows flooring menus for a flooring company", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER);
     const nav = page.getByRole("navigation", { name: "Main" });
-    for (const label of ["Dashboard", "Sales", "Inventory", "Purchasing", "Installation", "Reports"]) {
+    for (const label of ["Dashboard", "Sales", "Inventory", "Purchasing", "Meetings", "Reports"]) {
       await expect(nav.getByRole("link", { name: label })).toBeVisible();
     }
     await expect(page.getByRole("button", { name: /Summit Floor Co..*switch company/ })).toBeVisible();

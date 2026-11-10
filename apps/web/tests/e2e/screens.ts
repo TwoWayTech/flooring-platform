@@ -10,7 +10,6 @@ export const FLOORING_SCREENS = [
   "/sales?view=customers",
   "/purchasing?view=orders",
   "/purchasing?view=bills",
-  "/installation",
   "/reports",
   "/meetings",
   "/sales/quotes/sm-quo-0288",

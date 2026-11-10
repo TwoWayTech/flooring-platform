@@ -699,7 +699,7 @@ export class DemoStore implements ApiClient {
   }
 
   async listStockHolds() {
-    return this.act((ctx) => listStockHolds(ctx));
+    return listStockHolds(this.actionContext(this.open()));
   }
 
   async issueReservation(reservationId: string, overrideReason?: string) {

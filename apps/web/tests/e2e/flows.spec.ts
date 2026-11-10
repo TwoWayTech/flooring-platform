@@ -30,7 +30,7 @@ async function savePayment(page: Page, reference: string) {
  */
 test.describe("flow 1 (spec H)", () => {
   test(
-    "quote draft → pending → accepted → invoice → deposit with proof → cut from roll → job complete → final payment → Paid; void one payment → Partly paid",
+    "quote draft → pending → accepted → invoice → deposit with proof → cut from roll → final payment → Paid; void one payment → Partly paid",
     { tag: FLOW_TAG },
     async ({ page }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -64,23 +64,6 @@ test.describe("flow 1 (spec H)", () => {
 
       await stock.getByRole("button", { name: "Cut", exact: true }).click();
       await expect(stock.getByText("Cut", { exact: true })).toBeVisible();
-
-      await page.getByRole("button", { name: "Schedule installation" }).click();
-      await page
-        .getByRole("dialog", { name: "Schedule installation" })
-        .getByRole("button", { name: "Schedule job" })
-        .click();
-      const jobLink = page.getByRole("link", { name: /^J-\d{4}, / });
-      await expect(jobLink).toBeVisible();
-      const jobNumber = (await jobLink.innerText()).split(",")[0]!;
-      await jobLink.click();
-      const card = page.getByRole("dialog", { name: new RegExp(`Job ${jobNumber}`) });
-      await card.getByRole("button", { name: "Start job" }).click();
-      await card.getByLabel("Customer signs as").fill("Pat Homeowner");
-      await card.getByRole("button", { name: "Record sign-off" }).click();
-      await expect(card.getByText(/Signed off by Pat Homeowner/)).toBeVisible();
-      await card.getByRole("link", { name: "View invoice" }).click();
-      await expect(page.getByRole("region", { name: "Timeline" }).getByText("Installed")).toBeVisible();
 
       await page.getByRole("button", { name: "Record payment" }).click();
       await savePayment(page, "ACH-FLOW-FINAL");

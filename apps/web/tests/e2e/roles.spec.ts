@@ -74,9 +74,9 @@ test.describe("settings: security roles", () => {
 
     const preview = page.getByRole("combobox", { name: "Preview access for" });
     await preview.click();
-    await page.getByRole("option", { name: "Installer" }).click();
+    await page.getByRole("option", { name: "Sales" }).click();
     const pages = page.getByRole("region", { name: "Pages" });
-    await expect(pages.getByText("Installation, allowed")).toBeAttached();
+    await expect(pages.getByText("Inventory, allowed")).toBeAttached();
     await expect(pages.getByText("Purchasing, not allowed")).toBeAttached();
   });
 });

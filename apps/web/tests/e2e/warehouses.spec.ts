@@ -33,7 +33,7 @@ test.describe("warehouses and transfers (spec A1)", () => {
 
     await page.getByRole("button", { name: "New transfer" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Add boxed goods").click();
+    await dialog.getByRole("button", { name: "Add boxed goods" }).click();
     await page.getByRole("option").first().click();
     await dialog.getByRole("button", { name: "Start transfer" }).click();
     await expect(page.getByRole("row", { name: /TR-1004/ }).getByText("In transit")).toBeVisible();

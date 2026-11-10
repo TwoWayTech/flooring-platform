@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { signInAs, SUMMIT_OWNER, skipIfFeatureOff } from "./helpers";
 
 test.describe("reports hub", () => {
   test("shows the P&L with totals and exports CSV and PDF", async ({ page }) => {
@@ -17,6 +17,7 @@ test.describe("reports hub", () => {
   });
 
   test("sales tax report reads the jurisdiction each invoice stored", async ({ page }) => {
+    skipIfFeatureOff("reports.tax-jurisdiction");
     await signInAs(page, SUMMIT_OWNER, "/reports?report=tax");
     await expect(page.getByRole("cell", { name: "Denver combined" })).toBeVisible();
   });

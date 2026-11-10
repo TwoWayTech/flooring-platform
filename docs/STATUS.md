@@ -152,7 +152,7 @@ Spec: docs/specs/feature-batch-03.md. Plan, data model, migration and decisions:
 - [x] A3. Switch off Adjustments, Installation and four reports: `inventory.reservations` split out (K-4), one key per report (K-5); Owner-only Correct stock count (A-1); Contracts takes the menu slot; every invoice has a due date (K-3, U-09, U-31, U-37); Installer card gone (K-6); tests skip automatically and flows through installation rewritten
 - [x] A4. Email and notification centre (ADR 0020): Settings → Email and notifications with events, toggles, templates and preview; Outbox with banner, statuses and redaction; stored per-user in-app notifications beside the derived Needs attention
 - [x] A5. Audit fixes owned by no other item: Sales records deposits and marks sent per N-1 (U-05); only the next valid action on quotes (U-20); invoice links to quote and customer (U-21); Warehouse home and Ready to cut (U-22); transfer product search (U-23); verify count only what the viewer may confirm (U-16); warn about payments already waiting (U-18)
-- [ ] Batch A: full suite green
+- [x] Batch A: full suite green (283 passed, 7 skipped as switched off, on a production build in six chunks)
 
 #### Batch B: purchasing, suppliers and their sales reps
 - [ ] B1. Suppliers directory (ADR 0022): type, status, account number, 1099 and W-9 flags, terms, credit, balance; contacts with role, phones, email, WhatsApp flag, preferred method, notes, primary; one tap to call, email or copy; add, edit, deactivate (U-10); supplier import updated

@@ -45,7 +45,6 @@ test.describe("dashboard", () => {
     await expect(figures).toContainText(expected.revenue);
     await expect(figures).toContainText(expected.margin);
     await expect(page.getByText("overdue invoices")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Today's jobs" })).toBeVisible();
   });
 
   test("View as Sales shows no margin", async ({ page }) => {

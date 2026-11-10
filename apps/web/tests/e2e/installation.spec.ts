@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { signInAs, SUMMIT_OWNER, skipIfFeatureOff } from "./helpers";
 
 const SUMMIT_INSTALLER = { companyId: "summit", userId: "sm-usr-05", roleKey: "installer" } as const;
+
+test.beforeEach(() => skipIfFeatureOff("installation.calendar"));
 
 test.describe("installation", () => {
   test("opens a job card with costing for the Owner", async ({ page }) => {

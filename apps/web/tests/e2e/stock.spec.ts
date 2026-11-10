@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+import { signInAs, skipIfFeatureOff, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const SUMMIT_WAREHOUSE: Persona = { companyId: "summit", userId: "sm-usr-04", roleKey: "warehouse" };
 const PDF = { name: "receipt.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%demo\n") };
@@ -41,7 +41,40 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     await expect(page.getByRole("link", { name: /^INV-\d+$/ })).toBeVisible();
   });
 
+  test("the Owner corrects a stock count with a reason; Warehouse cannot (plan A-1)", async ({ page }) => {
+    skipIfFeatureOff("inventory.stock-correction");
+    await signInAs(page, SUMMIT_WAREHOUSE, "/inventory/rolls/sm-roll-0004");
+    await expect(page.getByRole("button", { name: "Cut roll" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Correct stock count" })).toHaveCount(0);
+    await signInAs(page, SUMMIT_OWNER, "/inventory/rolls/sm-roll-0004");
+    await page.getByRole("button", { name: "Correct stock count" }).click();
+    const dialog = page.getByRole("dialog", { name: "Correct stock count" });
+    await dialog.getByLabel("Counted (ft)").fill("50");
+    await dialog.getByRole("button", { name: "Correct stock count" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Say why");
+    await dialog.getByLabel("Reason").fill("Measured during the yearly count");
+    await dialog.getByRole("button", { name: "Correct stock count" }).click();
+    await expect(page.getByText(/Stock count corrected/)).toBeVisible();
+    await expect(page.getByText("50.00 ft").first()).toBeVisible();
+    await page.goto("/settings/audit");
+    await expect(page.getByRole("cell", { name: "Corrected stock count" })).toBeVisible();
+  });
+
+  test("Warehouse sees what invoices hold, and cuts paid work from Ready to cut (audit U-03, U-22)", async ({
+    page,
+  }) => {
+    skipIfFeatureOff("inventory.ready-to-cut");
+    await signInAs(page, SUMMIT_WAREHOUSE, "/inventory?view=ready");
+    const row = page.getByRole("row", { name: /INV-/ }).first();
+    await expect(row).toBeVisible();
+    const number = (await row.getByRole("cell").first().innerText()).trim();
+    await row.getByRole("button", { name: /^(Cut|Issue)$/ }).click();
+    await expect(page.getByText(new RegExp(`(Cut|Issued) for ${number}`))).toBeVisible();
+    await expect(page.getByRole("row", { name: new RegExp(number) })).toHaveCount(0);
+  });
+
   test("an adjustment above the limit waits for an Owner, who approves it from Needs attention", async ({ page }) => {
+    skipIfFeatureOff("inventory.adjustments");
     await signInAs(page, SUMMIT_WAREHOUSE, "/inventory?view=products");
     await page.getByPlaceholder("Search products").fill("Terrace Tile Driftwood");
     await page

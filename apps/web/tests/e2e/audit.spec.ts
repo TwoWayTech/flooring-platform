@@ -13,16 +13,15 @@ test.describe("settings: company profile and audit log", () => {
     await expect(page.getByText("Company profile saved")).toBeVisible();
 
     await page.goto("/inventory/rolls/sm-roll-0004");
-    // A cut without an invoice is a stock adjustment (spec C1).
-    await page.getByRole("button", { name: "Cut roll" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Adjustment" }).click();
-    await page.getByLabel("Length to remove").fill("10");
-    await page.getByRole("dialog").getByRole("button", { name: "Record adjustment" }).click();
-    await expect(page.getByText(/^ADJ-\d{4} recorded$/)).toBeVisible();
+    await page.getByRole("button", { name: "Correct stock count" }).click();
+    await page.getByLabel("Counted (ft)").fill("83");
+    await page.getByLabel("Reason").fill("Yearly count");
+    await page.getByRole("dialog").getByRole("button", { name: "Correct stock count" }).click();
+    await expect(page.getByText(/Stock count corrected/)).toBeVisible();
 
     await page.goto("/settings/audit");
     await expect(page.getByRole("cell", { name: "Changed company profile" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Adjusted stock" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Corrected stock count" })).toBeVisible();
     await expect(page.getByRole("cell", { name: /ein: 84-1234567/ })).toBeVisible();
   });
 });

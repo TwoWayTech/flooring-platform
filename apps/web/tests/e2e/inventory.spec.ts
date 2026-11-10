@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { signInAs, skipIfFeatureOff, SUMMIT_OWNER } from "./helpers";
 
 test.describe("inventory", () => {
   test.beforeEach(async ({ page }) => {
@@ -8,6 +8,7 @@ test.describe("inventory", () => {
 
   // Spec C1: a cut always has a source. Cutting for an invoice is in stock.spec.ts; here, an adjustment.
   test("a cut without an invoice is a stock adjustment with a reason", async ({ page }) => {
+    skipIfFeatureOff("inventory.adjustments");
     await signInAs(page, SUMMIT_OWNER, "/inventory/rolls/sm-roll-0004");
     await expect(page.getByText("93.00 ft").first()).toBeVisible();
     await page.getByRole("button", { name: "Cut roll" }).click();
@@ -24,10 +25,10 @@ test.describe("inventory", () => {
     await signInAs(page, SUMMIT_OWNER, "/inventory/rolls/sm-roll-0004");
     await page.getByRole("button", { name: "Cut roll" }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("button", { name: "Adjustment" }).click();
-    await dialog.getByLabel("Length to remove").fill("500");
+    await dialog.getByRole("button", { name: "New invoice" }).click();
+    await dialog.getByLabel("Length to sell").fill("500");
     await expect(dialog.getByText("Only 93 ft is left on this roll.")).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Record adjustment" })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Create invoice" })).toBeDisabled();
   });
 
   test("lists rolls under 20 ft from the attention link", async ({ page }) => {

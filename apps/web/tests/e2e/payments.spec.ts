@@ -40,7 +40,7 @@ test.describe("customer payments (spec Appendix A)", () => {
     await expect(page.getByText("fake.pdf is not a PDF, JPG, PNG, WebP or HEIC file.")).toBeVisible();
     await sheet(page).getByRole("button", { name: "Remove fake.pdf" }).click();
     await sheet(page).locator("input[type=file]").setInputFiles(PDF);
-    await expect(sheet(page).getByRole("region", { name: "Payment summary" })).toContainText("$6,876.28");
+    await expect(sheet(page).getByRole("region", { name: "Payment summary" })).toContainText("$6,882.28");
     await save.click();
     await expect(page.getByText(/waits for verification/)).toBeVisible();
     await expect(statusPills(page).first()).toHaveText("Pending verification");
@@ -54,7 +54,7 @@ test.describe("customer payments (spec Appendix A)", () => {
     await row.getByRole("button", { name: /^Confirm PAY-/ }).click();
     await expect(row.getByText("Confirmed")).toBeVisible();
     await expect(statusPills(page).first()).toHaveText("Partly paid");
-    await expect(page.getByRole("article").getByText("Balance due").locator("..")).toContainText("$6,876.28");
+    await expect(page.getByRole("article").getByText("Balance due").locator("..")).toContainText("$6,882.28");
   });
 
   test("without approval a payment counts at once; a reused reference needs confirming", async ({ page }) => {
@@ -81,10 +81,14 @@ test.describe("customer payments (spec Appendix A)", () => {
     await expect(statusPills(page).first()).toHaveText("Partly paid");
   });
 
-  test("Sales can see payments but not record them by default", async ({ page }) => {
+  test("Sales records a deposit, which waits for a second person whatever the amount (plan N-1)", async ({ page }) => {
     await signInAs(page, SUMMIT_SALES, "/sales/invoices/sm-inv-0198");
     await expect(page.getByRole("region", { name: "Payments" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Record payment" })).toHaveCount(0);
+    await fillPayment(page, "50", "ACH-SALES-1");
+    await sheet(page).locator("input[type=file]").setInputFiles(PDF);
+    await sheet(page).getByRole("button", { name: "Save payment" }).click();
+    await expect(page.getByText(/waits for verification/)).toBeVisible();
+    await expect(statusPills(page).first()).toHaveText("Pending verification");
   });
 
   test("the palette opens Record payment on an invoice", async ({ page }) => {

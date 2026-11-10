@@ -71,6 +71,14 @@ export const PHONE = {
   hasTouch: pixel.hasTouch,
 };
 
+/** Sends the quote on screen and marks it accepted, the state Convert to invoice needs (audit U-20). */
+export async function sendAndAccept(page: Page) {
+  await page.getByRole("button", { name: "Send / mark pending" }).click();
+  await page.getByRole("dialog", { name: "Send quote" }).getByRole("button", { name: "Mark as pending" }).click();
+  await page.getByRole("button", { name: "Mark accepted" }).click();
+  await expect(page.getByRole("button", { name: "Convert to invoice" })).toBeVisible();
+}
+
 /** Tag for tests that belong to the HR Suite project, which runs them on the HR host. */
 export const HR_TAG = "@hr";
 

@@ -50,7 +50,7 @@ test.describe("warehouse on new quotes (spec A2)", () => {
     await quantity.blur();
     await page.getByRole("button", { name: "Create a transfer" }).click();
     const dialog = page.getByRole("dialog", { name: "New transfer" });
-    await expect(dialog.getByLabel("To")).toContainText(home.name);
+    await expect(dialog.getByRole("combobox", { name: "To" })).toContainText(home.name);
     await expect(dialog.getByLabel(`${product.name} quantity`)).toBeVisible();
   });
 });

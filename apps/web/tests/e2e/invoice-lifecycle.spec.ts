@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signInAs, type Persona } from "./helpers";
+import { signInAs, type Persona, sendAndAccept } from "./helpers";
 
 /** Keystone confirms payments at once, so the balance moves as soon as a payment is saved. */
 const KEYSTONE_OWNER: Persona = { companyId: "keystone", userId: "ks-usr-01", roleKey: "owner" };
@@ -20,6 +20,7 @@ async function newInvoice(page: Page) {
   await page.getByRole("option").first().click();
   await page.getByRole("button", { name: "Add product" }).click();
   await page.getByRole("option").first().click();
+  await sendAndAccept(page);
   await page.getByRole("button", { name: "Convert to invoice" }).click();
   await expect(page).toHaveURL(/\/sales\/invoices\//);
   await expect(mainStatus(page)).toHaveText("Open");

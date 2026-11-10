@@ -25,7 +25,9 @@ test.describe("purchasing (spec D1 to D3)", () => {
       await signInAs(page, SUMMIT_OWNER, "/purchasing?view=orders");
       const dialog = await draftLongLine(page);
       await dialog.getByLabel(/area in sq ft/).fill("500");
-      await expect(dialog.getByText("500 sq ft = 17.5, rounded up to 18 cartons")).toBeVisible();
+      await dialog.getByLabel(/area in sq ft/).blur();
+      await expect(dialog.getByLabel(/area in sq ft/)).toHaveValue("513");
+      await expect(dialog.getByText("≈ 18 cartons (28.50 sq ft each)")).toBeVisible();
       await dialog.getByRole("button", { name: "Save as draft" }).click();
       const saved = page.getByText(/^Draft PO-\d+ saved$/);
       await expect(saved).toBeVisible();

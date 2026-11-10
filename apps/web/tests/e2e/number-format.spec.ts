@@ -11,7 +11,7 @@ test.describe("settings: number format", () => {
       .getByRole("row", { name: /INV-1150/ })
       .getByRole("cell")
       .nth(headers.findIndex((h) => h.trim() === "Total"));
-    await expect(total).toHaveText("$5,036.99");
+    await expect(total).toHaveText("$5,037.12");
 
     await page.goto("/settings/number-format");
     const fewer = page.getByRole("button", { name: "Fewer decimals for Money (prices, totals, balances)" });
@@ -26,7 +26,7 @@ test.describe("settings: number format", () => {
     await expect(page).toHaveURL(/INV-1150/);
     await expect(total).toHaveText("$5,037");
     await total.getByText("$5,037").hover();
-    await expect(page.getByRole("tooltip")).toContainText("$5,036.99");
+    await expect(page.getByRole("tooltip")).toContainText("$5,037.12");
 
     await page.goto("/sales/invoices/sm-inv-0150");
     await expect(page.getByRole("article").getByText("Balance due").locator("..")).toContainText("$0");

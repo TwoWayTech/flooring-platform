@@ -32,12 +32,5 @@ test.describe("customers and receivables", () => {
     const all = await page.locator("tbody tr").count();
     await page.getByLabel("Overdue only").click();
     await expect.poll(() => page.locator("tbody tr").count()).toBeLessThan(all);
-
-    await page.goto("/reports?report=aging");
-    const table = page.getByRole("region", { name: "Receivables aging table" });
-    for (const bucket of ["Current", "1 to 30 days", "31 to 60 days", "61 to 90 days", "Over 90 days"]) {
-      await expect(table.getByRole("columnheader", { name: bucket })).toBeVisible();
-    }
-    await expect(table.locator("tfoot")).toContainText("Total");
   });
 });
