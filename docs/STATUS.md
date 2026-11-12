@@ -1,8 +1,8 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/auth-better-auth`, P8 part 1 (Better Auth sign-in). It is built and tested, in a draft PR waiting for a security review and the other person's review.
-- **Last session log:** docs/sessions/2026-11-12-1244-a-auth-better-auth.md
+- **In progress:** `feat/auth-better-auth`, P8 part 1 (Better Auth sign-in). It is built, tested and security-reviewed, and the one finding is fixed in `22f330a`. PR #2 is ready, all CI checks are green, and it waits for B's review and merge.
+- **Last session log:** docs/sessions/2026-11-12-1337-a-auth-security-review.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -40,14 +40,14 @@
 
 ## Next three tasks
 1. **A:**
-   - Run `/security-review` on `feat/auth-better-auth` and fix what it finds.
-   - Mark PR "P8 part 1" ready; B reviews and squash-merges it.
+   - B reviews and squash-merges PR #2, "P8 part 1". The `/security-review` is done and its finding is fixed.
    - Then do P8 part 2 on `feat/auth-mfa`: TOTP with backup codes, passkeys, mandatory MFA for Owner, Accountant, HR and platform admins, rate limits and lockout, and `GET /public/branding?host=`.
 2. **B:**
    - Add the `/feature` and `/review` commands, the security-reviewer, test-writer and schema-reviewer subagents, and the Stop hook (blueprint p35, p41), on `feat/tooling-claude-agents`.
 3. **B (week 2):** in api mode, build the real MFA enrolment and code screens, plus the Playwright auth tests, on top of P8 part 2.
 
 ## Blockers and open questions
+- **Temp file with a throwaway password:** `C:\Users\Admin\AppData\Local\scratch-e2e`, which holds the file `pw`. Claude's delete was denied, so delete it by hand.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Lockout thresholds:** the blueprint asks for lockout after repeated failures but gives no numbers. The owner decides them in P8 part 2.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet.
