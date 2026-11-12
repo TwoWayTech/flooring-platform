@@ -4,9 +4,6 @@ node_modules/
 dist/
 out/
 .vercel/
-.env
-.env.*
-!.env.example
 playwright-report/
 test-results/
 coverage/
@@ -16,4 +13,7 @@ coverage/
 next-env.d.ts
 *.tsbuildinfo
 .playwright-mcp/
-.env*
+# Local secrets stay on the laptop; only the list of names is committed.
+.env
+.env.*
+!.env.example
