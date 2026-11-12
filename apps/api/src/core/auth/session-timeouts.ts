@@ -28,8 +28,17 @@ export interface SessionTimes {
   updatedAt: Date;
 }
 
+/** Why a session ended. */
+export type SessionEnd = "idle" | "absolute";
+
+/** What the person is told when a timeout ends their session. */
+export const SESSION_ENDED_MESSAGES: Record<SessionEnd, string> = {
+  idle: "You were signed out after a period of inactivity. Sign in again.",
+  absolute: "Your session has reached its time limit. Sign in again.",
+};
+
 /** Why a session has ended, or null while it is still valid. */
-export function sessionExpiry(session: SessionTimes, timeouts: SessionTimeouts, now: Date): "idle" | "absolute" | null {
+export function sessionExpiry(session: SessionTimes, timeouts: SessionTimeouts, now: Date): SessionEnd | null {
   const minutes = (since: Date) => (now.getTime() - since.getTime()) / 60_000;
   if (minutes(session.createdAt) > timeouts.absoluteMin) return "absolute";
   if (minutes(session.updatedAt) > timeouts.idleMin) return "idle";

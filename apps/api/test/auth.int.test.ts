@@ -135,6 +135,42 @@ describe("sign-in with Better Auth (P8 part 1, needs the local PostgreSQL)", () 
       await harness.get("/auth/context").set("Cookie", cookie).expect(401);
     });
 
+    it("refuses an idle session on Better Auth's own endpoints, so set-active cannot revive it", async () => {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+      const cookie = await harness.signIn(email);
+      await ageSession(email, { updatedAt: minutesAgo(31) });
+      const revive = await harness
+        .post("/api/auth/organization/set-active")
+        .set("Cookie", cookie)
+        .send({ organizationId: SUMMIT_ID })
+        .expect(401);
+      expect(revive.body.code).toBe("session_expired");
+      const after = await harness.get("/api/auth/get-session").set("Cookie", cookie).expect(200);
+      expect(after.body).toBeNull();
+      await harness.get("/auth/context").set("Cookie", cookie).expect(401);
+    });
+
+    it("lets a person with an ended session sign in again", async () => {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+      const cookie = await harness.signIn(email);
+      await ageSession(email, { updatedAt: minutesAgo(31) });
+      await harness
+        .post("/api/auth/sign-in/email")
+        .set("Cookie", cookie)
+        .send({ email, password: PASSWORD })
+        .expect(200);
+    });
+
+    it("refuses an idle session on get-session too, and deletes it", async () => {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+      const cookie = await harness.signIn(email);
+      await ageSession(email, { updatedAt: minutesAgo(31) });
+      const response = await harness.get("/api/auth/get-session").set("Cookie", cookie).expect(401);
+      expect(response.body.code).toBe("session_expired");
+      const [owner] = await harness.control.db.select({ id: user.id }).from(user).where(eq(user.email, email));
+      expect(await harness.control.db.select().from(session).where(eq(session.userId, owner.id))).toHaveLength(0);
+    });
+
     it("signs out, after which the cookie no longer works", async () => {
       const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
       const cookie = await harness.signIn(email);

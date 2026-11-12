@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { CONTROL_DB } from "../database/control-db";
 import type { Auth } from "./auth";
 import { CompanyDirectory } from "./company-directory";
-import { sessionExpiry, shouldRecordActivity } from "./session-timeouts";
+import { SESSION_ENDED_MESSAGES, sessionExpiry, shouldRecordActivity } from "./session-timeouts";
 import { AUTH } from "./tokens";
 
 /** The signed-in person and their session, as guarded endpoints receive them. */
@@ -15,11 +15,6 @@ export interface AuthSession {
   /** The open company (tenant id), or null until the user chooses one. */
   companyId: string | null;
 }
-
-const ENDED_MESSAGES = {
-  idle: "You were signed out after a period of inactivity. Sign in again.",
-  absolute: "Your session has reached its time limit. Sign in again.",
-} as const;
 
 /**
  * Checks the session cookie on a request: Better Auth verifies it, then the company's idle and
@@ -43,7 +38,7 @@ export class SessionService {
     const ended = sessionExpiry(session, await this.companies.timeoutsOf(companyId), now);
     if (ended) {
       await this.control.db.delete(sessionTable).where(eq(sessionTable.id, session.id));
-      throw new UnauthorizedException({ code: "session_expired", message: ENDED_MESSAGES[ended] });
+      throw new UnauthorizedException({ code: "session_expired", message: SESSION_ENDED_MESSAGES[ended] });
     }
     if (shouldRecordActivity(session, now)) {
       await this.control.db.update(sessionTable).set({ updatedAt: now }).where(eq(sessionTable.id, session.id));

@@ -8,7 +8,7 @@ import { organization } from "better-auth/plugins";
 import { v7 as uuidv7 } from "uuid";
 import type { CompanyDirectory } from "./company-directory";
 import { hostCompanySlug, pickCompany } from "./company-pick";
-import { SESSION_CEILING_SECONDS } from "./session-timeouts";
+import { SESSION_CEILING_SECONDS, SESSION_ENDED_MESSAGES, sessionExpiry } from "./session-timeouts";
 
 /** What the Better Auth instance needs from the app. */
 export interface AuthDeps {
@@ -36,6 +36,26 @@ export const MIN_PASSWORD_LENGTH = 12;
  * endpoints are closed.
  */
 const OPEN_ORGANIZATION_PATHS = new Set(["/organization/set-active", "/organization/list"]);
+
+/**
+ * Auth endpoints that must work without a valid session, or with one a timeout has ended: signing
+ * in again, signing out, and the email and password-reset links. Every other endpoint gets the
+ * company's timeouts too, so no Better Auth call can use or revive an ended session.
+ */
+const SESSIONLESS_PATHS = new Set([
+  "/sign-in/email",
+  "/sign-out",
+  "/verify-email",
+  "/send-verification-email",
+  "/request-password-reset",
+  "/ok",
+  "/error",
+]);
+
+/** Whether an auth endpoint is exempt from the company timeouts. */
+function isSessionless(path: string): boolean {
+  return SESSIONLESS_PATHS.has(path) || path.startsWith("/reset-password");
+}
 
 const REFUSALS = {
   not_a_member: "This account is not a member of this company. Sign in on your company's own address.",
@@ -118,12 +138,24 @@ export function createAuth(deps: AuthDeps) {
         if (ctx.path.startsWith("/organization/") && !OPEN_ORGANIZATION_PATHS.has(ctx.path)) {
           throw new APIError("NOT_FOUND");
         }
+        // Direct server calls (SessionService.verify) apply the timeouts themselves.
+        if (!ctx.request || isSessionless(ctx.path)) return;
+        const current = await getSessionFromCtx(ctx);
+        if (!current) return;
+        // Blueprint p28: Better Auth's expiry is only a ceiling, so the company's idle and absolute
+        // timeouts are checked here as well as in SessionService. Without this, an endpoint such as
+        // set-active would accept an idle session and reset its activity time (updatedAt).
+        const timeouts = await deps.companies.timeoutsOf(current.session.activeOrganizationId);
+        const ended = sessionExpiry(current.session, timeouts, new Date());
+        if (ended) {
+          await ctx.context.internalAdapter.deleteSession(current.session.token);
+          throw new APIError("UNAUTHORIZED", { code: "session_expired", message: SESSION_ENDED_MESSAGES[ended] });
+        }
         if (ctx.path === "/organization/set-active") {
           // Checked here so a refused switch leaves the open company as it was; Better Auth's own
           // check refuses too, but clears the session's active company on the way out.
           const organizationId: unknown = ctx.body?.organizationId;
-          const current = await getSessionFromCtx(ctx);
-          if (!current || typeof organizationId !== "string") return;
+          if (typeof organizationId !== "string") return;
           const memberships = await deps.companies.membershipsOf(current.user.id);
           if (!memberships.some((company) => company.id === organizationId)) {
             throw new APIError("FORBIDDEN", { code: "not_a_member", message: REFUSALS.not_a_member });

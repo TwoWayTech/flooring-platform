@@ -38,6 +38,7 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 - Better Auth's own expiry is a 7-day ceiling, and its refresh is off.
 - `SessionService` checks each guarded request. When now − `created_at` exceeds the company's `absolute_timeout_min`, or now − `updated_at` exceeds its `idle_timeout_min`, the session row is deleted and the answer is 401 `session_expired`. The values are in `tenant_branding`, with defaults of 30 minutes and 12 hours (blueprint p28).
 - A valid request moves `updated_at` forward at most once a minute, so "idle" means no API request and is accurate to one minute.
+- Better Auth's own `/api/auth/*` endpoints apply the same check in a `before` hook, apart from sign-in, sign-out and the email and password-reset links. Without it, an endpoint that updates the session row, such as `organization/set-active`, would accept an idle session and move its `updated_at` forward (security review, 2026-11-12).
 - Before a company is open, the defaults apply.
 - The guard is opt-in for now; P9 makes guards global with the tenant guard.
 
