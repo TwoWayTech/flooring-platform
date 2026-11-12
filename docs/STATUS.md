@@ -1,7 +1,7 @@
 # Status: real build
 
 - **Phase:** base (week 1 of docs/real-build-plan.md). The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/platform-base`, a draft PR to main, waiting for the other person's review.
+- **In progress:** `feat/platform-base`, draft PR https://github.com/TwoWayTech/flooring-platform/pull/1, waiting for the other person's review.
 - **Last session log:** docs/sessions/2026-11-12-1200-a-platform-base.md
 
 ## Done
