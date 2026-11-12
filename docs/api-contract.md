@@ -29,7 +29,22 @@ The tenant always comes from the session, never from a parameter, as it will on 
 - **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
 - **Docs.** OpenAPI is generated from the controllers at `/docs` (browsable) and `/docs/openapi.json`. `GET /health` is public.
 
-## Session (real route handlers, already live in the demo)
+## Authentication (real build, P8 part 1, ADR 0029)
+
+In api mode the browser reaches these through the web app's own origin: Next.js rewrites `/api/auth/*` to apps/api's `/api/auth/*` and `/api-proxy/*` to the rest of apps/api, so the session cookie (`better-auth.session_token`, httpOnly, SameSite=Lax, `__Secure-` in production) is first-party on each product host. Better Auth's endpoints answer with Better Auth's own error body, `{ code, message }`, whose codes are upper case, such as `INVALID_EMAIL_OR_PASSWORD`.
+
+| Route | Body / response | Notes |
+| --- | --- | --- |
+| `POST /api/auth/sign-in/email` | `{ email, password, callbackURL? }` → 200 and the cookie | 401 `INVALID_EMAIL_OR_PASSWORD`. 403 `EMAIL_NOT_VERIFIED`, which also sends a verification link. 403 `not_a_member` when the host names a company the user is not in. 403 `no_company` |
+| `POST /api/auth/sign-up/email` | refused | Accounts are invite-only |
+| `GET /api/auth/verify-email?token=&callbackURL=` | redirects to `callbackURL` | The link in the verification email |
+| `POST /api/auth/organization/set-active` | `{ organizationId }` | Opens one of the user's companies (the chooser). 403 `not_a_member` for any other company. It selects among the session's verified memberships, so the tenant still comes from the session (rule 2) |
+| `GET /api/auth/organization/list` | the user's organizations | Every other organization endpoint answers 404 |
+| `POST /api/auth/sign-out` | → 200 | Deletes the session |
+| `POST /api/auth/change-password` | `{ currentPassword, newPassword }` | At least 12 characters |
+| `GET /auth/context` | → `{ user: { id, name, email }, company: { id, slug, name } \| null, companies: [...] }` | The shared error body. 401 `unauthenticated` without a session; 401 `session_expired` when the company's idle or absolute timeout ended it (the session is deleted). `company` is null until the user chooses one |
+
+## Session (demo route handlers, demo mode only)
 
 | Route | Body / response | Notes |
 | --- | --- | --- |
