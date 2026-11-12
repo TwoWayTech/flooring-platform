@@ -25,7 +25,6 @@ import {
   type NumberKind,
   type Product,
   type Roll,
-  type TaxCategory,
 } from "@workspace/shared";
 
 /** A report column; numeric columns carry the number kind used to format them. */

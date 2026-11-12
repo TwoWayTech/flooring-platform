@@ -1,0 +1,43 @@
+# Appends one line to docs/MERGE_LOG.md for every change that lands on main (blueprint
+# "Handoff and continuity", rule 6). The commit carries [skip ci], and pushes made with
+# GITHUB_TOKEN never start other workflows, so this costs about one minute per merge.
+name: Merge log
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: merge-log
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  log:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append the merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '.[0] | select(. != null) | "#\(.number) | \(.title | gsub("\\|"; "/")) | @\(.user.login) | \(.head.ref)"')
+          if [ -z "$pr" ]; then
+            subject=$(git log -1 --format=%s | tr '|' '/')
+            pr="direct push | ${subject} | @${{ github.actor }} | main"
+          fi
+          echo "| $(date -u +%Y-%m-%d) | ${pr} | \`${GITHUB_SHA::7}\` |" >> docs/MERGE_LOG.md
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/MERGE_LOG.md
+          git commit -m "docs(merge-log): record ${GITHUB_SHA::7} [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main

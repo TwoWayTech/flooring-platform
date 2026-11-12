@@ -1,0 +1,29 @@
+{
+  "name": "@workspace/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --project unit",
+    "test:api": "vitest run --project integration",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1167.0",
+    "@aws-sdk/s3-request-presigner": "3.1167.0",
+    "postgres": "4.1.1",
+    "resend": "6.38.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  }
+}

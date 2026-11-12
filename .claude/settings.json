@@ -4,15 +4,19 @@
       "Bash(pnpm *)",
       "Bash(npx *)",
       "Bash(node *)",
+      "Bash(docker compose *)",
       "Bash(git status)",
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git diff *)",
       "Bash(git log *)",
+      "Bash(git fetch *)",
       "Bash(git switch *)",
       "Bash(git checkout *)",
       "Bash(git branch *)",
       "Bash(git push origin *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
       "Bash(vercel *)"
     ],
     "deny": [
@@ -22,7 +26,22 @@
       "Edit(./.env.*)",
       "Bash(rm -rf *)",
       "Bash(git push --force *)",
-      "Bash(git push -f *)"
+      "Bash(git push -f *)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main *)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin HEAD:main*)",
+      "Bash(git push origin *:main)",
+      "Bash(git push * main)",
+      "Bash(git push -u origin main*)",
+      "Bash(git push --set-upstream origin main*)",
+      "Bash(git push)",
+      "Bash(gh pr merge *)",
+      "Bash(git push origin HEAD)",
+      "Bash(git push --all*)",
+      "Bash(git push origin --all*)",
+      "Bash(git push --mirror*)",
+      "Bash(git push origin --mirror*)"
     ]
   },
   "enabledPlugins": {

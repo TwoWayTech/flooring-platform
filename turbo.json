@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
-      "env": ["NEXT_PUBLIC_DATA_SOURCE", "DEMO_SESSION_SECRET"]
+      "env": ["NEXT_PUBLIC_DATA_SOURCE", "NEXT_PUBLIC_API_URL", "DEMO_SESSION_SECRET"]
     },
     "dev": {
       "cache": false,
@@ -15,6 +15,10 @@
     "typecheck": {},
     "test": {
       "outputs": ["coverage/**"]
+    },
+    "test:api": {
+      "cache": false,
+      "passThroughEnv": ["CONTROL_DATABASE_URL", "TENANT_DB_ADMIN_URL", "CONNECTION_ENCRYPTION_KEY", "DB_PROVIDER"]
     }
   }
 }

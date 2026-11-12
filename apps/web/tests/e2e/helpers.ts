@@ -82,5 +82,8 @@ export async function sendAndAccept(page: Page) {
 /** Tag for tests that belong to the HR Suite project, which runs them on the HR host. */
 export const HR_TAG = "@hr";
 
+/** Tag for the few tests CI runs on every push to main and every pull request: sign-in, home, sign-out on both hosts. */
+export const SMOKE_TAG = "@smoke";
+
 /** Tag for the named end-to-end flows of feature batch 2, H; run them with `--grep @flow`. */
 export const FLOW_TAG = "@flow";

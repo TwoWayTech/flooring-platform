@@ -30,3 +30,12 @@ Run these from the repository root, `C:\dev\flooring-platform`.
 
 ## Later deploys
 `vercel deploy --prod` from the repository root. Data lives in each visitor's browser (localStorage), so a deploy never loses anyone's demo changes and needs no database.
+
+## Demo branch (from 2026-11-12)
+`main` is now the real product. The demo lives on branch `demo`, created from tag `demo-v3` (commit `e082445`) and pushed to GitHub. Demo fixes go to `demo` (branch from it, pull request into it); nothing from `main` is merged into it.
+
+**Vercel setting that makes production deploy from `demo`:** Project `flooring-demo-twowaytech` → **Settings** → **Environments** → **Production** → **Branch Tracking**: change the branch to `demo` and click **Save**. This applies once the project is connected to Git (give the Vercel GitHub app access to `TwoWayTech/flooring-platform`, then `vercel git connect`).
+
+Recommended with it: **Settings** → **Build and Deployment** → **Ignored Build Step**, choose a custom command and enter `[ "$VERCEL_GIT_COMMIT_REF" != "demo" ]`. That exits 0 (skip the build) for every branch except `demo`, so real-product pushes do not use the demo project's build minutes.
+
+Until Git is connected, deploy by hand from the branch: `git switch demo && vercel deploy --prod`, then `git switch main`.

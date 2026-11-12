@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   env: {
     NEXT_PUBLIC_DATA_SOURCE: process.env.NEXT_PUBLIC_DATA_SOURCE ?? "demo",
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000",
   },
 };
 

@@ -1,0 +1,148 @@
+# CI sized for GitHub Free (2,000 Actions minutes a month; budget in docs/real-build-plan.md).
+#   fast    every push to a branch other than main: lint, typecheck, unit tests. No Postgres, no browser.
+#   verify  pull requests to main that are ready for review, and pushes to main: everything in fast,
+#           plus migrations and API tests against PostgreSQL 16, the web build and the Playwright smoke.
+#   e2e     pull requests to main that are ready for review: the full browser suite, after verify passes.
+# Draft pull requests run only fast (through their branch pushes); mark the PR ready to run verify and e2e.
+name: CI
+
+on:
+  push:
+    branches: ["**"] # branches only; pushing a tag runs nothing
+    paths-ignore: ["docs/**", "**/*.md"]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["docs/**", "**/*.md"]
+
+# Draft state is part of the group: a pull_request event sent while the PR was still a draft
+# (it skips verify and e2e) must never cancel the run started when the PR was marked ready.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event.pull_request.draft }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  fast:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Restore the Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-fast-${{ github.sha }}
+          restore-keys: turbo-fast-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  verify:
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: control
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d control" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      CONTROL_DATABASE_URL: postgres://postgres:postgres@localhost:5432/control
+      TENANT_DB_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # A throwaway key for the CI database only; it protects nothing.
+      CONNECTION_ENCRYPTION_KEY: Y2ktb25seS10aHJvd2F3YXkta2V5LW5vdC1hLXNlY3I=
+      E2E_WORKERS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Restore the Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-verify-${{ github.sha }}
+          restore-keys: |
+            turbo-verify-
+            turbo-fast-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Migrate and seed the test company (twice, to prove the seed is idempotent)
+        run: pnpm db:seed && pnpm db:seed && pnpm db:migrate
+      - name: API and database tests against PostgreSQL 16
+        run: pnpm test:api
+      - run: pnpm --filter web build
+      - name: Cache Playwright's browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Playwright smoke
+        run: pnpm test:e2e:smoke
+      - name: Keep the Playwright report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: apps/web/test-results
+          retention-days: 7
+
+  e2e:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      E2E_WORKERS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web build
+      - name: Cache Playwright's browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Full browser suite, Flooring host
+        run: pnpm --filter web exec playwright test --project=flooring
+      - name: Full browser suite, HR host
+        run: pnpm --filter web exec playwright test --project=hr
+      - name: Keep the Playwright report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: apps/web/test-results
+          retention-days: 7
