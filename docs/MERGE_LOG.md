@@ -4,3 +4,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 
 | Date | PR | Title | Author | Branch | Commit |
 | --- | --- | --- | --- | --- | --- |
+| 2026-11-12 | #1 | Real-build base: API, database, providers, CI and handoff system | @TwoWayTech | feat/platform-base | `7f6baf7` |
