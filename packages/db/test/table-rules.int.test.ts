@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrateCompany, migrateControl } from "../src";
-import { scratchDatabase } from "./scratch-db";
+import { scratchDatabase } from "../src/testing";
 
 /** Tables that are corrected by a new row, never hidden, so they have no deleted_at. */
 const APPEND_ONLY = new Set([

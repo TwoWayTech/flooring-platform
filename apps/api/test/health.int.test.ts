@@ -13,6 +13,7 @@ async function start(databaseUrl: string): Promise<INestApplication> {
     CONNECTION_ENCRYPTION_KEY: key,
     TENANT_DB_ADMIN_URL: controlUrl,
     APP_VERSION: "test",
+    BETTER_AUTH_SECRET: "test-only-secret-that-is-at-least-32-chars",
   });
   const app = await createApp();
   await app.init();

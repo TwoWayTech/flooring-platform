@@ -1,0 +1,56 @@
+import { Logger, Module } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type { ControlDb, DbHandle } from "@workspace/db";
+import type { EmailProvider } from "@workspace/providers";
+import type { ApiEnv } from "../config/env";
+import { CONTROL_DB } from "../database/control-db";
+import { EMAIL, EMAIL_FROM } from "../email/email.module";
+import { createAuth } from "./auth";
+import { AuthController } from "./auth.controller";
+import { CompanyDirectory } from "./company-directory";
+import { SessionGuard } from "./session.guard";
+import { SessionService } from "./session.service";
+import { AUTH } from "./tokens";
+
+/**
+ * Sign-in (P8): the Better Auth instance, mounted on /api/auth/* by app.ts, plus the session
+ * check that guarded endpoints use.
+ */
+@Module({
+  providers: [
+    {
+      provide: CompanyDirectory,
+      inject: [CONTROL_DB],
+      useFactory: (control: DbHandle<ControlDb>) => new CompanyDirectory(control.db),
+    },
+    {
+      provide: AUTH,
+      inject: [ConfigService, CONTROL_DB, CompanyDirectory, EMAIL, EMAIL_FROM],
+      useFactory: (
+        config: ConfigService<ApiEnv, true>,
+        control: DbHandle<ControlDb>,
+        companies: CompanyDirectory,
+        email: EmailProvider,
+        emailFrom: string,
+      ) => {
+        const logger = new Logger("Auth");
+        return createAuth({
+          db: control.db,
+          companies,
+          email,
+          emailFrom,
+          secret: config.get("BETTER_AUTH_SECRET", { infer: true }),
+          allowedHosts: config.get("AUTH_ALLOWED_HOSTS", { infer: true }),
+          trustedOrigins: config.get("CORS_ORIGINS", { infer: true }),
+          secureCookies: config.get("NODE_ENV", { infer: true }) === "production",
+          logError: (message) => logger.error(message),
+        });
+      },
+    },
+    SessionService,
+    SessionGuard,
+  ],
+  controllers: [AuthController],
+  exports: [AUTH, SessionService, SessionGuard],
+})
+export class AuthModule {}

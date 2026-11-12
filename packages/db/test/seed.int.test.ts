@@ -7,7 +7,7 @@ import { roles, userProfiles } from "../src/company";
 import { verifyPassword } from "better-auth/crypto";
 import { account, organization, tenantDatabases, tenants, user } from "../src/control";
 import { seedTestCompany } from "../src/seed";
-import { scratchDatabase } from "./scratch-db";
+import { scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
 const userPassword = randomBytes(12).toString("base64url");
