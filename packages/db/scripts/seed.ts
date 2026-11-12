@@ -15,7 +15,9 @@ async function main(): Promise<void> {
     encryptionKey: env.encryptionKey,
     provisioner: database,
     provider: env.provider,
+    userPassword: env.userPassword,
   });
+  if (!env.userPassword) console.log("SEED_USER_PASSWORD is not set, so the seeded users have no password.");
   console.log(`Seeded Summit Floor Co. (tenant ${tenantId}).`);
 }
 
