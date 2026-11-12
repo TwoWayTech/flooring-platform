@@ -21,7 +21,8 @@ export interface PoolOptions {
 
 function pool(url: string, options: PoolOptions) {
   // Plain TCP driver with a pooled URL; never a provider-only driver (blueprint "Provider portability", rule 2).
-  return postgres(url, { max: options.max ?? 5, onnotice: () => undefined });
+  // A short connect timeout, so /health answers before a host health check gives up.
+  return postgres(url, { max: options.max ?? 5, connect_timeout: 10, onnotice: () => undefined });
 }
 
 /** Opens the control database. */

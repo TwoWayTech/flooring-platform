@@ -20,14 +20,22 @@ export class PostgresServerProvisioner implements DatabaseProvisioner {
   /** @param adminUrl A superuser login on the server, used only for CREATE and DROP. */
   constructor(private readonly adminUrl: string) {}
 
-  /** Creates the role with a random password, then the database it owns, closed to everyone else. */
+  /**
+   * Creates the role with a random password, then the database it owns, closed to everyone else.
+   * If the database cannot be created, the new role is removed again, so a retry starts clean.
+   */
   async create({ slug }: ProvisionRequest): Promise<ProvisionedDatabase> {
     const name = companyDatabaseName(slug);
     const password = randomBytes(24).toString("hex");
     await this.admin(async (sql) => {
       // DDL cannot take bind parameters; the name is checked against IDENTIFIER and the password is hex.
       await sql.unsafe(`CREATE ROLE "${name}" LOGIN PASSWORD '${password}'`);
-      await sql.unsafe(`CREATE DATABASE "${name}" OWNER "${name}"`);
+      try {
+        await sql.unsafe(`CREATE DATABASE "${name}" OWNER "${name}"`);
+      } catch (error) {
+        await sql.unsafe(`DROP ROLE IF EXISTS "${name}"`);
+        throw error;
+      }
       await sql.unsafe(`REVOKE ALL ON DATABASE "${name}" FROM PUBLIC`);
     });
     return { providerRef: name, connectionUrl: this.urlFor(name, password) };

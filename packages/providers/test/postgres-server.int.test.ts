@@ -25,4 +25,18 @@ describe("PostgresServerProvisioner (needs the local PostgreSQL)", () => {
     await admin.end();
     expect(left).toHaveLength(0);
   });
+
+  it("removes the new role when the database cannot be created, so a retry starts clean", async () => {
+    const name = `company_${slug}_taken`;
+    const admin = postgres(adminUrl, { max: 1, onnotice: () => undefined });
+    await admin.unsafe(`CREATE DATABASE "${name}"`);
+    try {
+      await expect(provisioner.create({ tenantId: "t-itest", slug: `${slug}_taken` })).rejects.toThrow();
+      const roles = await admin`select 1 from pg_roles where rolname = ${name}`;
+      expect(roles).toHaveLength(0);
+    } finally {
+      await admin.unsafe(`DROP DATABASE IF EXISTS "${name}"`);
+      await admin.end();
+    }
+  });
 });
