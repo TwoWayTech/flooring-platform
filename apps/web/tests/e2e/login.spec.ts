@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { HR_TAG, PHONE } from "./helpers";
+import { HR_TAG, PHONE, SMOKE_TAG } from "./helpers";
 
 /** Each persona and the home it should land on (spec section 2: "Each persona lands on its allowed home"). */
 const FLOORING_PERSONAS: [name: string, home: RegExp][] = [
@@ -27,7 +27,7 @@ async function signInThroughForm(page: Page, persona: string) {
 
 test.describe("login", () => {
   for (const [persona, home] of FLOORING_PERSONAS) {
-    test(`${persona} lands on their home`, async ({ page }) => {
+    test(`${persona} lands on their home`, { tag: persona === "Dana Whitfield" ? SMOKE_TAG : [] }, async ({ page }) => {
       await page.goto("/login?product=flooring");
       await signInThroughForm(page, persona);
       await expect(page).toHaveURL(home);
@@ -36,14 +36,18 @@ test.describe("login", () => {
   }
 
   for (const [persona, home] of HR_PERSONAS) {
-    test(`HR host: ${persona} lands on their home`, { tag: HR_TAG }, async ({ page }) => {
-      await page.goto("/login?product=hr");
-      await expect(page.getByText("HR Suite").first()).toBeVisible();
-      await expect(page.getByRole("button", { name: /Harbor Staffing Co./ })).toBeVisible();
-      await expect(page.getByRole("button", { name: /Summit Floor Co./ })).toHaveCount(0);
-      await signInThroughForm(page, persona);
-      await expect(page).toHaveURL(home);
-    });
+    test(
+      `HR host: ${persona} lands on their home`,
+      { tag: persona === "Elena Brooks" ? [HR_TAG, SMOKE_TAG] : HR_TAG },
+      async ({ page }) => {
+        await page.goto("/login?product=hr");
+        await expect(page.getByText("HR Suite").first()).toBeVisible();
+        await expect(page.getByRole("button", { name: /Harbor Staffing Co./ })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Summit Floor Co./ })).toHaveCount(0);
+        await signInThroughForm(page, persona);
+        await expect(page).toHaveURL(home);
+      },
+    );
   }
 
   test("rejects a code that is not six digits", async ({ page }) => {
@@ -54,7 +58,7 @@ test.describe("login", () => {
     await expect(page.getByText("Enter the 6-digit code from your authenticator app.")).toBeVisible();
   });
 
-  test("signing out returns to the login page", async ({ page }) => {
+  test("signing out returns to the login page", { tag: SMOKE_TAG }, async ({ page }) => {
     await page.goto("/login?product=flooring");
     await signInThroughForm(page, "Dana Whitfield");
     await page.getByRole("button", { name: "Account: Dana Whitfield" }).click();

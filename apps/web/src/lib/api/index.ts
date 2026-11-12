@@ -1,15 +1,21 @@
+import { dataSource } from "@/lib/data-source";
 import type { ApiClient } from "./contract";
 import { DemoStore } from "./demo/store";
+import { API_METHODS } from "./http/api-methods";
+import { routeClient } from "./http/router";
+import { HttpTransport } from "./http/transport";
 import { withSimulatedNetwork } from "./network";
 
 /**
- * The app's single ApiClient. NEXT_PUBLIC_DATA_SOURCE=demo (the default) selects DemoStore; a
- * real HTTP client would be chosen here when that variable says so (spec section 1).
+ * The app's single ApiClient. In demo mode it is DemoStore. In api mode the methods listed in
+ * API_METHODS go to apps/api at NEXT_PUBLIC_API_URL and the rest stay on DemoStore until their
+ * module moves (docs/real-build-plan.md).
  */
 function createApiClient(): ApiClient {
-  const source = process.env.NEXT_PUBLIC_DATA_SOURCE ?? "demo";
-  if (source !== "demo") throw new Error(`Data source "${source}" is not available in the demo build.`);
-  return new DemoStore();
+  const demo = new DemoStore();
+  if (dataSource() === "demo") return demo;
+  const http = new HttpTransport(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+  return routeClient(demo, http, API_METHODS);
 }
 
 /** The client every screen uses, behind the presenter's simulated network (normal by default). */

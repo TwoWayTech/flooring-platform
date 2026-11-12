@@ -72,7 +72,10 @@ test.describe("Meeting guests and invites (spec E)", () => {
     await page.getByLabel("Start").fill("16:15");
     await page.getByRole("button", { name: "Send proposal" }).click();
     await expect(page.getByText("Riley Chen: Proposal sent")).toBeVisible();
+    // The meeting is seeded two days after today, which can be a weekend the week view leaves
+    // out, so look for it in the month view, then in the next month near a month's end.
     await page.goto("/meetings");
+    await page.getByRole("button", { name: "Month", exact: true }).click();
     const meeting = page.getByRole("button", { name: /New build walkthrough/ });
     if (
       !(await meeting
@@ -80,7 +83,7 @@ test.describe("Meeting guests and invites (spec E)", () => {
         .isVisible()
         .catch(() => false))
     )
-      await page.getByRole("button", { name: "Next week" }).click();
+      await page.getByRole("button", { name: "Next month" }).click();
     await page
       .getByRole("button", { name: /New build walkthrough/ })
       .first()
