@@ -1,11 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isDemoMode } from "./lib/data-source";
 import { PRODUCT_COOKIE, PRODUCT_HEADER, productForRequest } from "./lib/product";
+import { API_PROXY_PATH, AUTH_BASE_PATH, AUTH_SESSION_COOKIES } from "./lib/session/auth-cookie";
 import { SESSION_COOKIE } from "./lib/session/session";
 
-/** Paths anyone may open without a demo session. */
+/**
+ * Paths anyone may open without a session. In api mode that includes the proxied API, which
+ * answers 401 itself (sign-in, verification links and the session check go through it).
+ */
 function isPublic(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/design" || pathname.startsWith("/api/demo/");
+  if (pathname === "/login" || pathname === "/design") return true;
+  if (isDemoMode()) return pathname.startsWith("/api/demo/");
+  return pathname.startsWith(`${AUTH_BASE_PATH}/`) || pathname.startsWith(`${API_PROXY_PATH}/`);
+}
+
+/** Whether the request carries a session cookie; the server verifies it where the session is read. */
+function hasSessionCookie(request: NextRequest): boolean {
+  if (isDemoMode()) return request.cookies.has(SESSION_COOKIE);
+  return AUTH_SESSION_COOKIES.some((name) => request.cookies.has(name));
 }
 
 /**
@@ -24,7 +36,7 @@ export function proxy(request: NextRequest) {
     queryProduct,
     request.cookies.get(PRODUCT_COOKIE)?.value,
   );
-  const signedIn = request.cookies.has(SESSION_COOKIE);
+  const signedIn = hasSessionCookie(request);
   const forwarded = new Headers(request.headers);
   forwarded.set(PRODUCT_HEADER, product);
   const response =

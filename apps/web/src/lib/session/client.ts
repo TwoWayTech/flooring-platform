@@ -1,3 +1,5 @@
+import { isDemoMode } from "../data-source";
+import { signOutOfApi } from "./api-auth";
 import type { DemoSession } from "./session";
 
 /** What the login page sends: a persona of a company, or the platform admin. */
@@ -16,7 +18,8 @@ export async function signIn(request: SignInRequest): Promise<DemoSession> {
   return body.session;
 }
 
-/** Ends the session through POST /api/demo/logout. */
+/** Ends the session: the demo cookie through POST /api/demo/logout, or the real session in api mode. */
 export async function signOutRequest(): Promise<void> {
+  if (!isDemoMode()) return signOutOfApi();
   await fetch("/api/demo/logout", { method: "POST" });
 }
