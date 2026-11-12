@@ -1,8 +1,8 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/auth-better-auth`, P8 part 1 (Better Auth sign-in). It is built, tested and security-reviewed, and the one finding is fixed in `22f330a`. PR #2 is ready, all CI checks are green, and it waits for B's review and merge.
-- **Last session log:** docs/sessions/2026-11-12-1337-a-auth-security-review.md
+- **In progress:** PR #3, `feat/tooling-claude-agents`: task "c", the Claude tooling. **A took it over from B.** It is ready, rebased onto main after PR #2 merged, and waits for B's review and merge.
+- **Last session log:** docs/sessions/2026-11-12-1531-a-tooling-claude-agents.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -28,7 +28,7 @@
   - CLAUDE.md rewritten.
 - [x] apps/web: `NEXT_PUBLIC_DATA_SOURCE=api` routes the methods in `API_METHODS` to apps/api. The persona picker shows in demo mode only, and `/api/demo/*` answers 404 in api mode.
 - [x] docs/real-build-plan.md: module order, spec-to-prompt map, 20 weeks for A and B, CI budget.
-- [x] P8 part 1, on `feat/auth-better-auth` (not merged yet; ADR 0029):
+- [x] P8 part 1, merged to main in PR #2 (`31e2297`, ADR 0029):
   - Better Auth email and password: invite-only, 12-character minimum, verification email through EmailProvider.
   - The auth tables have UUID ids, with UUID v7 made by the API (migration 0001). `organization.id` references `tenants.id`.
   - Per-company idle and absolute timeouts, enforced by the API.
@@ -37,17 +37,23 @@
   - The real login page in api mode, proxied through the web host.
   - `pnpm db:seed` sets seed passwords from `SEED_USER_PASSWORD`.
   - The api-mode Playwright project runs in CI `verify`.
+- [x] Claude tooling (blueprint p35, p41), on `feat/tooling-claude-agents` (PR #3, not merged yet). This was task "c"; A took it over from B on 2026-11-12.
+  - Commands: `/feature` (spec → plan → tests → code → checks → summary) and `/review` (pre-PR self-review against CLAUDE.md).
+  - Subagents in `.claude/agents`: security-reviewer on opus; test-writer and schema-reviewer on sonnet.
+  - Stop hook `.claude/hooks/handoff-reminder.mjs`. It is non-blocking and reminds you to `/handoff` when the tree is dirty or today's session log is missing. Its tests run as `pnpm test:hooks`, which is part of `pnpm test`.
+  - Not built yet: the p41 PostToolUse hook that runs lint and typecheck after edits. Only the Stop hook was asked for.
 
 ## Next three tasks
-1. **A:**
-   - B reviews and squash-merges PR #2, "P8 part 1". The `/security-review` is done and its finding is fixed.
-   - Then do P8 part 2 on `feat/auth-mfa`: TOTP with backup codes, passkeys, mandatory MFA for Owner, Accountant, HR and platform admins, rate limits and lockout, and `GET /public/branding?host=`.
-2. **B:**
-   - Add the `/feature` and `/review` commands, the security-reviewer, test-writer and schema-reviewer subagents, and the Stop hook (blueprint p35, p41), on `feat/tooling-claude-agents`.
+1. **B:** review and squash-merge PR #3, the Claude tooling. It is rebased onto main, so it no longer conflicts. Check that merge-log appends a line for it.
+2. **A:** P8 part 2 on `feat/auth-mfa` (already created from main) with `/feature`:
+   - TOTP with backup codes;
+   - passkeys;
+   - mandatory MFA for Owner, Accountant, HR and platform admins;
+   - rate limits and lockout;
+   - `GET /public/branding?host=`.
 3. **B (week 2):** in api mode, build the real MFA enrolment and code screens, plus the Playwright auth tests, on top of P8 part 2.
 
 ## Blockers and open questions
-- **Temp file with a throwaway password:** `C:\Users\Admin\AppData\Local\scratch-e2e`, which holds the file `pw`. Claude's delete was denied, so delete it by hand.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Lockout thresholds:** the blueprint asks for lockout after repeated failures but gives no numbers. The owner decides them in P8 part 2.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet.
