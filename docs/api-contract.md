@@ -4,6 +4,31 @@ Every screen reads and writes data through the `ApiClient` interface in `apps/we
 
 The tenant always comes from the session, never from a parameter, as it will on the real server. The suggested REST endpoints below are what the real client would call.
 
+## Conventions for apps/api (real build, decided 2026-11-12)
+
+- **Moving a module.** With `NEXT_PUBLIC_DATA_SOURCE=api`, `apps/web/src/lib/api/index.ts` routes each `ApiClient` method listed in `API_METHODS` (`lib/api/http/api-methods.ts`) to apps/api through `HttpTransport`. Every other method stays on DemoStore. A module's pull request adds its methods there. The persona picker and `/api/demo/*` exist only in demo mode.
+- **URLs.** No version prefix. Resources are plural and kebab-case (`/purchase-orders`, `/supplier-payments`). `GET /:resource` lists and `GET /:resource/:id` reads. A business action is `POST /:resource/:id/<action>` (`/invoices/:id/void`), never a PATCH of a status field. `/me/...` is the signed-in person's own data.
+- **Tenant.** It comes only from the verified session, never from a path, query or body. The API picks the company database through `TenantConnectionService` (P9).
+- **Bodies.** JSON with camelCase fields. Every body is checked with a Zod schema from `packages/shared`. Money, quantities and rates are decimal strings, never JSON numbers. Area is in sq ft and length in ft. Dates are `YYYY-MM-DD` and moments are ISO 8601 in UTC.
+- **Errors.** Every failure returns `{ code, message, details? }`. `message` is written for the person and shown as it is.
+
+  | Status | Code | When |
+  | --- | --- | --- |
+  | 400 | `invalid_request` | The body failed validation |
+  | 401 | `unauthenticated` | No valid session |
+  | 403 | `forbidden` | Product, module, permission or data scope says no |
+  | 404 | `not_found` | Also used for records outside the caller's data scope, so their existence does not leak |
+  | 409 | `conflict` | State changed underneath, or a duplicate |
+  | 422 | `rule_broken` | A business rule refused |
+  | 429 | `rate_limited` | Too many requests |
+  | 500 | `internal_error` | Unexpected; details are logged on the server only |
+
+  The web client turns all of these into `ApiError`, so screens handle them as they handle a DemoStore rule error.
+- **Lists.** Filtered by data scope on the server. Pagination arrives when a module needs it, as `?limit=&cursor=` returning `{ items, nextCursor }`.
+- **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md).
+- **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
+- **Docs.** OpenAPI is generated from the controllers at `/docs` (browsable) and `/docs/openapi.json`. `GET /health` is public.
+
 ## Session (real route handlers, already live in the demo)
 
 | Route | Body / response | Notes |
