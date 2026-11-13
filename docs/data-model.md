@@ -294,6 +294,7 @@ Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to 
 
 - Every blueprint table has `id` (UUID v7), `created_at`, `updated_at`, `created_by` and soft delete. Demo records have string ids and only the dates each type needs.
 - Several "by" fields store a person's name rather than a user id: `recordedBy` (beside `recordedById`), `reviewedBy`, `voidedBy`, `decidedBy`, `approvedBy`, `postedBy`, `byName`, `actorName`, and `Crew.lead`. The real build should store user ids.
+- `tenants.status_changed_at` (a trigger stamps every status change) and `tenants.maintenance_reason` (`migration_failed` or `move`) drive the company life cycle and maintenance mode (control migration 0003, ADR 0033). The life-cycle phase itself is derived on every request, never stored.
 - Users live in the control database, and company records point at them by id. Those links cross databases, so they cannot be foreign keys.
 - `Attendee.id`, `OutboxMessage.sourceId`, `OutboxRecipient.id`, `MovementSource.id` and `ImportChange.id` are polymorphic and need a type column or separate link tables.
 - Money and quantities are decimal strings. The blueprint's column types are `numeric(14,2)` for money, `numeric(14,4)` for unit costs and `numeric(14,3)` for quantities.

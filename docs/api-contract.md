@@ -68,7 +68,9 @@ The company always comes from the verified session. A `companyId` or `tenantId` 
 | 403 `company_required` | The session has no open company (the chooser), or the company is deleted |
 | 403 `not_a_member` | The person was removed from the company during the session |
 | 403 `product_not_enabled` | The company lacks the product the web host serves (`x-demo-product`), or one the route requires with `@RequireProduct()` |
-| 403 `company_read_only` | A write (anything but GET, HEAD or OPTIONS) to a company that is suspended, cancelled, in maintenance mode, or whose database is read-only. Reading still works (blueprint p29, p40) |
+| 403 `company_read_only` | A write (anything but GET, HEAD or OPTIONS) to a company in a read-only period (suspended, cancelled, or a lapsed plan; ADR 0033) or whose database is read-only. Reading still works (blueprint p29, p40) |
+| 403 `company_suspended` | The company's read-only period is over, so it is locked. Sign-in and `/auth/context` still work, and no data is deleted (ADR 0033) |
+| 503 `company_maintenance` | The company is under maintenance (a move or a failed migration): no reads or writes (ADR 0033) |
 | 503 `company_unavailable` | The company database is not ready (provisioning, migrating or failed) |
 
 ## Permissions, sensitive fields and audit (real build, P10, ADR 0031)

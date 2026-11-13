@@ -41,7 +41,6 @@
       "Bash(gh pr merge *--merge*)",
       "Bash(gh pr merge *--rebase*)",
       "Bash(gh pr merge * -m*)",
-      "Bash(gh pr merge * -r*)",
       "Bash(gh api *pulls/*/merge*)",
       "Bash(git push origin HEAD)",
       "Bash(git push --all*)",
