@@ -12,6 +12,7 @@ Every variable the apps read, with the local default. Put real values in a local
 | `CONTROL_DATABASE_URL` | api, db scripts | `postgres://postgres:postgres@localhost:5432/control` | The control database |
 | `TENANT_DB_ADMIN_URL` | db scripts | `postgres://postgres:postgres@localhost:5432/postgres` | A superuser login on the server that holds company databases (`DB_PROVIDER=postgres`) |
 | `CONNECTION_ENCRYPTION_KEY` | api, db scripts | generate one | 32 random bytes in base64: `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`. Encrypts company connection strings with AES-256-GCM |
+| `TENANT_POOL_CACHE` | api | `20` | How many company database pools one API instance keeps open. The least recently used pool is closed when another company needs one. Each pool holds up to 3 connections, so the total stays below the server limit (P9, ADR 0030) |
 | `DB_PROVIDER` | api, db scripts | `postgres` | `neon`, `postgres` or `noop` |
 | `NEON_API_KEY`, `NEON_REGION` | `DB_PROVIDER=neon` | empty, `aws-us-east-2` | Region must be a US region |
 | `STORAGE_PROVIDER` | api | `memory` | `r2`, `s3` or `memory` |
