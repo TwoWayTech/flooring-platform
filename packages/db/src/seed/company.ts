@@ -6,7 +6,12 @@ import {
   customerContacts,
   customers,
   exemptionCertificates,
+  invoiceCommissionSplits,
+  invoiceLines,
+  invoices,
   measurementRooms,
+  paymentsReceived,
+  reservations,
   quoteLines,
   quotes,
   documentSequences,
@@ -578,6 +583,154 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
 }
 
 /**
+ * Invoices with their lines, commission splits, customer payments and the stock they hold (sales,
+ * part 2; ADR 0038). Fixture invoice lines reuse their quote line's id, so a line's id is
+ * `seedId("invoice:" + id)`. Contract billing invoices wait for the contracts module, whose rows
+ * they point at. Seeded proof files have no bytes, so payments are seeded without them.
+ */
+async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const billed = fixtures.invoices.filter((invoice) => !invoice.contractId);
+  if (billed.length === 0) return;
+  const kept = new Set(billed.map((invoice) => invoice.id));
+  const lineId = (id: string) => seedId(`invoice:${id}`);
+  const userByName = new Map(fixtures.users.map((person) => [person.name, seededUserId(person.id)]));
+  for (const invoice of billed) {
+    const id = seedId(invoice.id);
+    const by = seededUserId(invoice.createdBy);
+    const issuedAt = utc(invoice.issuedAt);
+    await tx
+      .insert(invoices)
+      .values({
+        id,
+        number: invoice.number,
+        quoteId: invoice.quoteId ? seedId(invoice.quoteId) : null,
+        customerId: seedId(invoice.customerId),
+        salesRepId: seededUserId(invoice.salesRepId),
+        branchId: seedId(invoice.branchId),
+        issuedAt,
+        dueAt: invoice.dueAt,
+        sentAt: invoice.sentAt ? utc(invoice.sentAt) : null,
+        sentBy: userOf(invoice.sentBy),
+        voidedAt: invoice.voidedAt ? utc(invoice.voidedAt) : null,
+        voidReason: invoice.voidReason,
+        depositPct: invoice.depositPct ?? "0",
+        isReturn: invoice.isReturn,
+        creditForInvoiceId: invoice.creditForInvoiceId ? seedId(invoice.creditForInvoiceId) : null,
+        refundedAt: invoice.refundedAt ? utc(invoice.refundedAt) : null,
+        locationId: seedId(invoice.locationId),
+        soldAtLocationId: invoice.soldAtLocationId ? seedId(invoice.soldAtLocationId) : null,
+        jobSite: invoice.jobSite,
+        taxRule: invoice.taxRule,
+        taxSource: invoice.taxSource,
+        taxOverride: invoice.taxOverride,
+        taxExempt: invoice.taxExempt,
+        subtotal: invoice.subtotal,
+        tax: invoice.tax,
+        total: invoice.total,
+        cost: invoice.cost,
+        createdAt: issuedAt,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+    if (invoice.lines.length > 0) {
+      await tx
+        .insert(invoiceLines)
+        .values(
+          invoice.lines.map((line, position) => ({
+            id: lineId(line.id),
+            invoiceId: id,
+            position,
+            productId: line.productId ? seedId(line.productId) : null,
+            description: line.description,
+            category: line.category,
+            unit: line.unit,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            unitCost: line.unitCost,
+            wastePct: line.wastePct ?? null,
+            rollId: line.rollId ? seedId(line.rollId) : null,
+            sqFtPerCarton: line.sqFtPerCarton ?? null,
+            locationId: line.locationId ? seedId(line.locationId) : null,
+            createdAt: issuedAt,
+            createdBy: by,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+    if (invoice.commissionSplit?.length) {
+      await tx
+        .insert(invoiceCommissionSplits)
+        .values(
+          invoice.commissionSplit.map((share) => ({
+            id: seedId(`${invoice.id}:split:${share.userId}`),
+            invoiceId: id,
+            userId: seededUserId(share.userId),
+            pct: share.pct,
+            createdAt: issuedAt,
+            createdBy: by,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  }
+  const payments = fixtures.payments.filter((payment) => kept.has(payment.invoiceId));
+  if (payments.length > 0) {
+    await tx
+      .insert(paymentsReceived)
+      .values(
+        payments.map((payment) => ({
+          id: seedId(payment.id),
+          number: payment.number,
+          invoiceId: seedId(payment.invoiceId),
+          customerId: seedId(payment.customerId),
+          kind: payment.kind,
+          amount: payment.amount,
+          date: payment.date,
+          method: payment.method,
+          checkNumber: payment.checkNumber,
+          cardLast4: payment.cardLast4,
+          reference: payment.reference,
+          note: payment.note,
+          status: payment.status,
+          recordedById: seededUserId(payment.recordedById),
+          recordedAt: utc(payment.recordedAt),
+          reviewedById: payment.reviewedBy ? (userByName.get(payment.reviewedBy) ?? null) : null,
+          reviewedAt: payment.reviewedAt ? utc(payment.reviewedAt) : null,
+          rejectReason: payment.rejectReason,
+          voidedById: payment.voidedBy ? (userByName.get(payment.voidedBy) ?? null) : null,
+          voidedAt: payment.voidedAt ? utc(payment.voidedAt) : null,
+          voidReason: payment.voidReason,
+          createdAt: utc(payment.recordedAt),
+          createdBy: seededUserId(payment.recordedById),
+        })),
+      )
+      .onConflictDoNothing();
+  }
+  const held = fixtures.reservations.filter((reservation) => kept.has(reservation.invoiceId));
+  if (held.length > 0) {
+    await tx
+      .insert(reservations)
+      .values(
+        held.map((reservation) => ({
+          id: seedId(reservation.id),
+          invoiceId: seedId(reservation.invoiceId),
+          invoiceLineId: lineId(reservation.lineId),
+          productId: seedId(reservation.productId),
+          rollId: reservation.rollId ? seedId(reservation.rollId) : null,
+          locationId: seedId(reservation.locationId),
+          quantity: reservation.quantity,
+          shortBy: reservation.shortBy,
+          status: reservation.status,
+          closedAt: reservation.closedAt ? utc(reservation.closedAt) : null,
+          overrideReason: reservation.overrideReason,
+          createdAt: utc(reservation.createdAt),
+        })),
+      )
+      .onConflictDoNothing();
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
  * and purchase orders with their receipts (purchasing part 1). Business records
@@ -592,5 +745,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedCatalog(tx, demo);
     await seedOrders(tx, demo);
     await seedSales(tx, demo);
+    await seedInvoices(tx, demo);
   });
 }

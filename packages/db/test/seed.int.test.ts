@@ -7,6 +7,10 @@ import {
   addresses,
   customers,
   goodsReceipts,
+  invoiceLines,
+  invoices,
+  paymentsReceived,
+  reservations,
   quoteLines,
   quotes,
   products,
@@ -128,6 +132,25 @@ describe("test company seed", () => {
       );
       expect(await company.db.select().from(quotes)).toHaveLength(fixtures.quotes.length);
       expect(await company.db.select().from(quoteLines)).toHaveLength(fixtures.quotes.flatMap((q) => q.lines).length);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds invoices with their lines, payments and reservations (sales, part 2)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const billed = fixtures.invoices.filter((invoice) => !invoice.contractId);
+    const kept = new Set(billed.map((invoice) => invoice.id));
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(invoices)).toHaveLength(billed.length);
+      expect(await company.db.select().from(invoiceLines)).toHaveLength(billed.flatMap((i) => i.lines).length);
+      expect(await company.db.select().from(paymentsReceived)).toHaveLength(
+        fixtures.payments.filter((p) => kept.has(p.invoiceId)).length,
+      );
+      expect(await company.db.select().from(reservations)).toHaveLength(
+        fixtures.reservations.filter((r) => kept.has(r.invoiceId)).length,
+      );
     } finally {
       await company.close();
     }
