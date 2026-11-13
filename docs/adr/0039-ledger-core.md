@@ -46,6 +46,13 @@
 - **Credit notes settle their own invoice first.** This was the open decision from the PR #15 security review. A new credit note is applied to its own invoice's open balance as credit applied, with its posting, and only the rest becomes customer credit. Refundable credit therefore always comes from money received.
 
   As a result, a note applied this way cannot be voided, because neither the note nor the applied credit has a reversal.
+
+  Two more rules keep note credit within money received (PR #16 security review):
+  - an invoice with a write-off takes no credit note;
+  - a confirmed payment on an invoice with a live credit note cannot be voided.
+- **Voiding a payment posts what the void changes now**, not a mirror of the original split. The entry credits Cash for the whole amount and debits Customer Credit for the overpayment that disappears, with the rest to Accounts Receivable. When two payments overpay an invoice and the first is voided, both accounts therefore still match the documents.
+- **Concurrency:** posting holds a shared advisory lock and closing a period an exclusive one, so no posting slips in behind a close. Closes are ordered by id, because UUID v7 sorts by time. A period can't be closed through a day that hasn't come yet.
+- **No lines added later:** lines may only join an entry created in the same transaction.
 - **Routes** (modules/finance):
   - `GET /ledger/trial-balance?through=` needs `reports.financial.view`.
   - `GET /ledger/period-close` shows the last closed day.

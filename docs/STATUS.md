@@ -113,6 +113,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Part 2:** expenses on the API with recurring drafts and postings.
   - **Part 3:** bills and supplier payments; receipt, stock-correction and cost-of-goods postings, with the costing method as a company setting.
   - **Later:** screens for the trial balance and the period close.
+- **PR #16 review, open items:**
+  - A pending payment dated in a closed period can't be confirmed (409 `period_closed`). Decide whether a late confirm should post on the review day.
+  - Consider adding `settings.company.manage` (period close) to `MFA_REQUIRED_KEYS`. Owners have MFA anyway.
+  - Once part 3 posts cost of goods, gate the trial balance's cost and margin rows on `sales.margin.view_sensitive`.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.

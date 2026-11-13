@@ -147,6 +147,23 @@ export function adjustmentPosting(adjustment: InvoiceAdjustment, invoiceNumber: 
   };
 }
 
+/**
+ * Undoing a confirmed payment (spec rule 32): credit Cash for the whole amount; debit Customer
+ * Credit for the credit it takes back (the invoice's overpayment that disappears) and Accounts
+ * Receivable for the rest. The split follows the invoice now, not the order the payments came in,
+ * so receivables and credit always match the documents (PR #16 review).
+ */
+export function paymentVoidLines(payment: Payment, creditTakenBack: string): PostingLine[] {
+  const amount = dec(payment.amount);
+  const fromCredit = minDec(dec(creditTakenBack).lt(0) ? dec(0) : dec(creditTakenBack), amount);
+  const customer = { customerId: payment.customerId };
+  return nonZero([
+    debit("customer_credit", fromCredit, customer),
+    debit("accounts_receivable", amount.minus(fromCredit), customer),
+    credit("cash", amount, customer),
+  ]);
+}
+
 /** A refund of customer credit (spec rule 37): debit Customer Credit, credit Cash. */
 export function refundPosting(refund: Refund): PostingDraft {
   const amount = dec(refund.amount);

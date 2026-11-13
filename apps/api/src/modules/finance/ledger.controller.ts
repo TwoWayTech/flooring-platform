@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import type { ControlDb, DbHandle } from "@workspace/db";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -8,10 +9,11 @@ import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
+import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
-import { DAY } from "../sales/sales-common";
+import { companyToday, DAY, refuse } from "../sales/sales-common";
 
 const THROUGH = z.object({ through: DAY.optional() });
 const CLOSE = z.object({ through: DAY, note: z.string().max(500) });
@@ -24,6 +26,7 @@ const CLOSE = z.object({ through: DAY, note: z.string().max(500) });
 @RequireModule("core")
 export class LedgerController {
   constructor(
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
     private readonly ledger: LedgerService,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
@@ -56,6 +59,8 @@ export class LedgerController {
     @Body() body: unknown,
   ) {
     const { through, note } = parse(CLOSE, body);
+    // Closing a day that has not happened would stop all recording until someone reopens it.
+    if (through > (await companyToday(this.control.db, tenant))) throw refuse("Close only a day that has passed.");
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);
     const before = await this.ledger.closedThrough(db);

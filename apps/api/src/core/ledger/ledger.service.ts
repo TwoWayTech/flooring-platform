@@ -54,7 +54,7 @@ export class LedgerService {
     await tx
       .insert(ledgerAccounts)
       .values(DEFAULT_ACCOUNTS.map((account) => ({ id: uuidv7(), ...account })))
-      .onConflictDoNothing();
+      .onConflictDoNothing({ target: ledgerAccounts.key });
     const rows = await tx
       .select({ id: ledgerAccounts.id, key: ledgerAccounts.key })
       .from(ledgerAccounts)
@@ -88,13 +88,16 @@ export class LedgerService {
   /**
    * Undoes the entry a source posted for an event, on the given day: the same lines with debit and
    * credit swapped, linked to the original (CLAUDE.md rule 9). Nothing happens when the source never
-   * posted that event, such as a payment that was never confirmed.
+   * posted that event, such as a payment that was never confirmed. `lines` replaces the mirrored
+   * lines when undoing the document now moves different accounts than posting it did, such as a
+   * payment whose extra became credit only because another payment came first (PR #16 review).
    */
   async reverse(
     tx: CompanyDb,
     source: Pick<PostingDraft, "sourceType" | "sourceId" | "event">,
     date: string,
     by: string,
+    lines?: PostingLine[],
   ): Promise<string | null> {
     const [entry] = await tx
       .select()
@@ -108,7 +111,25 @@ export class LedgerService {
       );
     if (!entry) return null;
     await this.assertOpen(tx, date);
-    const lines = await tx
+    if (lines) {
+      const problem = postingProblem(lines);
+      if (problem) throw new Error(`Reversing ${source.event} for ${entry.sourceNumber}: ${problem}`);
+      return this.write(
+        tx,
+        {
+          event: `${source.event}.reversed` as PostingDraft["event"],
+          sourceType: source.sourceType,
+          sourceId: source.sourceId,
+          sourceNumber: entry.sourceNumber,
+          date,
+          memo: `Reverses: ${entry.memo}`,
+          lines,
+        },
+        by,
+        entry.id,
+      );
+    }
+    const posted = await tx
       .select({
         key: ledgerAccounts.key,
         accountId: journalLines.accountId,
@@ -121,7 +142,7 @@ export class LedgerService {
       .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
       .where(eq(journalLines.entryId, entry.id));
     const reversal = reversedLines(
-      lines.map((line) => ({
+      posted.map((line) => ({
         account: line.key as AccountKey,
         debit: line.debit,
         credit: line.credit,
@@ -142,7 +163,7 @@ export class LedgerService {
       },
       by,
       entry.id,
-      lines.map((line) => line.accountId),
+      posted.map((line) => line.accountId),
     );
   }
 

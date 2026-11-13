@@ -326,15 +326,29 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       .send({ reason: "Rounding" })
       .expect(201);
     expect(writeOff.body).toMatchObject({ kind: "write_off", amount: "0.05" });
-    // 100.00 before tax, with tax in proportion: 39.65 × 100 / 450 = 8.81.
-    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+    // A write-off was never paid, so a credit note on it would make refundable credit (PR #16 review).
+    expect(
+      (
+        await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+          subtotal: "100.00",
+          reason: "Returned two cartons",
+        })
+      ).status,
+    ).toBe(400);
+    // Paid in full, so the note becomes credit: 100.00 before tax, tax in proportion 39.65 × 100 / 450 = 8.81.
+    const paidInFull = await invoiced(cookies.salesA, customer.body.id);
+    const full = await call("post", "/payments", cookies.owner)
+      .send(payment(paidInFull.invoice.id, { amount: "489.65", method: "cash", checkNumber: "", reference: "" }))
+      .expect(201);
+    await call("post", `/payments/${full.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    const note = await call("post", `/invoices/${paidInFull.invoice.id}/credit-notes`, cookies.owner)
       .send({ subtotal: "100.00", reason: "Returned two cartons" })
       .expect(201);
     expect(note.body).toMatchObject({ isReturn: true, subtotal: "100.00", tax: "8.81", total: "108.81" });
     expect(note.body.number).toMatch(/^CR-\d+$/);
     expect(
       (
-        await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+        await call("post", `/invoices/${paidInFull.invoice.id}/credit-notes`, cookies.owner).send({
           subtotal: "400.00",
           reason: "Too much",
         })
@@ -359,6 +373,10 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     // The note's credit is spent, so voiding it would take back money already used.
     expect(
       (await call("post", `/invoices/${note.body.id}/void`, cookies.owner).send({ reason: "Mistake" })).status,
+    ).toBe(400);
+    // The note became credit because the payment counted, so the payment can't be voided now.
+    expect(
+      (await call("post", `/payments/${full.body.id}/void`, cookies.owner).send({ reason: "Bounced check" })).status,
     ).toBe(400);
     const voided = await call("post", `/payments/${paid.body.id}/void`, cookies.owner)
       .send({ reason: "Bounced check" })
@@ -438,6 +456,28 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const reversed = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
     expect(dec(receivable(reversed)).minus(receivable(before)).toFixed(2)).toBe("489.65");
     expect(reversed.balanced).toBe(true);
+    // Two payments overpay an invoice; voiding the first takes back the credit the second made, so
+    // receivables and customer credit still match the documents (PR #16 review).
+    const credit = (tb: typeof before) => tb.rows.find((r) => r.key === "customer_credit")!.balance;
+    const overpaid = await invoiced(cookies.salesA, customer.body.id);
+    const confirmed = async (amount: string, extra: Record<string, unknown> = {}) => {
+      const recorded = await call("post", "/payments", cookies.owner)
+        .send(payment(overpaid.invoice.id, { amount, method: "cash", checkNumber: "", reference: "", ...extra }))
+        .expect(201);
+      await call("post", `/payments/${recorded.body.id}/review`, cookies.accountant)
+        .send({ action: "confirm" })
+        .expect(201);
+      return recorded.body as { id: string };
+    };
+    const first = await confirmed("300.00");
+    await confirmed("300.00", { extraAsCredit: true });
+    const both = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
+    await call("post", `/payments/${first.id}/void`, cookies.owner).send({ reason: "Duplicate" }).expect(201);
+    const one = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
+    // 489.65 less 300.00 is owed again (189.65), and the 110.35 of credit is gone.
+    expect(dec(receivable(one)).minus(receivable(both)).toFixed(2)).toBe("189.65");
+    expect(dec(credit(one)).minus(credit(both)).toFixed(2)).toBe("110.35");
+    expect(one.balanced).toBe(true);
     // Closing the books through today refuses anything dated today; reopening lets it through again.
     const today = new Date().toISOString().slice(0, 10);
     expect(

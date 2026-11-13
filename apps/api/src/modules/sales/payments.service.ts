@@ -1,11 +1,12 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { attachments, paymentsReceived, refunds, rolePermissions, userRoles } from "@workspace/db/company";
+import { attachments, invoices, paymentsReceived, refunds, rolePermissions, userRoles } from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
   dec,
   invoiceLedger,
   paymentPosting,
+  paymentVoidLines,
   refundPosting,
   moneyString,
   needsApproval,
@@ -284,6 +285,15 @@ export class PaymentsService {
         { payments: payments.map((p) => (p.id === paymentId ? { ...p, status: "voided" as const } : p)), adjustments },
         day,
       );
+      // A credit note on the invoice may have become credit only because this payment counted.
+      const [liveNote] = await tx
+        .select({ number: invoices.number })
+        .from(invoices)
+        .where(and(eq(invoices.creditForInvoiceId, invoice.id), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
+        .limit(1);
+      if (liveNote && payment.status === "confirmed") {
+        throw refuse(`Invoice ${invoice.number} has credit note ${liveNote.number}, so its payments can't be voided.`);
+      }
       const lostCredit = dec(ledger.overpaid).minus(after.overpaid);
       if (lostCredit.gt(0) && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(lostCredit)) {
         throw refuse(`Credit from payment ${payment.number} was already applied or refunded, so it can't be voided.`);
@@ -294,12 +304,15 @@ export class PaymentsService {
         .set({ status: "voided", voidedById: actor.access.userId, voidedAt: now, voidReason: why, updatedAt: now })
         .where(eq(paymentsReceived.id, paymentId));
       // Only a confirmed payment posted; a pending one has nothing to reverse.
-      await this.books.reverse(
-        tx,
-        { sourceType: "payment", sourceId: paymentId, event: "payment.confirmed" },
-        day,
-        actor.access.userId,
-      );
+      if (payment.status === "confirmed") {
+        await this.books.reverse(
+          tx,
+          { sourceType: "payment", sourceId: paymentId, event: "payment.confirmed" },
+          day,
+          actor.access.userId,
+          paymentVoidLines(payment, moneyString(lostCredit)),
+        );
+      }
       await this.auditLog.record(
         tenant,
         actor.audit,

@@ -310,6 +310,21 @@ export class InvoicesService {
         .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
         .limit(1);
       if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
+      // A note that settled its own invoice has no reversal for that settlement (ADR 0039).
+      if (invoice.isReturn && invoice.creditForInvoiceId) {
+        const [settlement] = await tx
+          .select({ id: invoiceAdjustments.id })
+          .from(invoiceAdjustments)
+          .where(
+            and(
+              eq(invoiceAdjustments.invoiceId, invoice.creditForInvoiceId),
+              eq(invoiceAdjustments.reason, `Credit note ${invoice.number}`),
+              isNull(invoiceAdjustments.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (settlement) throw refuse(`Credit note ${invoice.number} settled its invoice, so it can't be voided.`);
+      }
       if (invoice.isReturn && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(invoice.total)) {
         throw refuse(`Credit from ${invoice.number} was already applied or refunded, so it can't be voided.`);
       }
@@ -389,6 +404,12 @@ export class InvoicesService {
       await lockCustomer(tx, found.customerId);
       const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
       if (!invoice || invoice.voidedAt || invoice.isReturn) throw refuse("A credit note needs a live invoice.");
+      // A written-off balance was never paid; a note on it would turn the write-off into refundable
+      // credit (PR #16 review). With no write-off, notes become credit only up to money received.
+      const { ledger: current } = await invoiceState(tx, this.control.db, invoiceId, day);
+      if (dec(current.writtenOff).gt(0)) {
+        throw refuse(`Invoice ${invoice.number} has a write-off, so it can't take a credit note.`);
+      }
       const amount = dec(request.subtotal);
       const notes = await tx
         .select({ subtotal: invoices.subtotal, tax: invoices.tax })
