@@ -5,7 +5,7 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/sales-invoices` | A (Claude, work queue 2) | Task 5, part 2: invoices, payments, credits and refunds (ADR 0038) | Draft; security and schema reviews running | [#15](https://github.com/TwoWayTech/flooring-platform/pull/15) | the docs commit |
+| `feat/sales-invoices` | A (Claude, work queue 2) | Task 5, part 2: invoices, payments, credits and refunds (ADR 0038) | Schema review clean; third security review passed with nothing blocking. Ready, CI, then self-merge | [#15](https://github.com/TwoWayTech/flooring-platform/pull/15) | the docs commit |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
 Merged on 2026-11-13, with their branches deleted from origin:
