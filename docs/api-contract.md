@@ -159,6 +159,30 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 | `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. 403 for a waste change without `sales.waste.view` or a tax change without `sales.tax.override`. 409 `quote_closed`, `settings_missing` |
 | `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
 
+## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
+
+Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit notes) or `sales.payments` (payments, write-off, credit, refunds) is off. Records outside the person's data scope answer 404. Invoice `cost` and line `unitCost` are stripped without `inventory.product.view_sensitive`. Proof files are `{ name, data }` with `data` in base64, 1 to 3 files of at most 5 MB, checked by their first bytes.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split |
+| `GET /payments` | `sales.invoice.view` or `sales.payment.approve` | Payments on invoices within scope, with their files |
+| `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
+| `GET /refunds` | `sales.invoice.view` or `sales.payment.refund` | Refunds to customers within scope |
+| `GET /reservations` | `inventory.product.view`, `inventory.roll.view` or `sales.invoice.view` | Every hold for stock viewers; otherwise the holds of invoices within scope |
+| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing` |
+| `POST /invoices/:id/sent` | `sales.invoice.edit` or `sales.invoice.create` | Marks it sent once and emails `invoice.sent` |
+| `POST /invoices/:id/void` | `sales.invoice.void` | `{ reason }`; refused once money is confirmed or a credit note's credit is spent; voids pending payments and releases holds |
+| `POST /invoices/:id/credit-notes` | `sales.invoice.void` | `{ subtotal, reason }`; up to what is not yet credited; tax and cost in proportion |
+| `POST /invoices/:id/write-off` | `sales.payment.write_off` | `{ reason }`; the whole balance, up to the write-off maximum |
+| `POST /invoices/:id/apply-credit` | `sales.payment.apply_credit` | The customer's credit, up to the balance |
+| `POST /payments` | `sales.payment.record` | `RecordPaymentInput` plus `files`. 409 `duplicate_reference` unless `allowDuplicateReference`; 409 `settings_missing` without Settings → Payments |
+| `POST /payments/:id/review` | `sales.payment.approve` | `{ action: confirm }` or `{ action: reject, reason }`; never by the recorder (403) |
+| `POST /payments/:id/void` | `sales.payment.void` | `{ reason }`; refused when its overpayment was already spent as credit |
+| `POST /payments/:id/files` | `sales.payment.record` | `{ files }`; up to 3 in all, not on voided or rejected payments |
+| `POST /refunds` | `sales.payment.refund` | `RefundInput` plus `files`; at most the customer's credit |
+| `GET /files/:id` | `sales.invoice.view`, `sales.payment.approve` or `sales.payment.refund` | A proof file within scope, `inline`, `nosniff`, not cached |
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.
@@ -253,7 +277,7 @@ Added with their screens below.
 | `saveQuote(quote)` | `PUT /quotes/:id` | Saves content only. A new quote is a Draft with the next number from the company's quote prefix and needs only a customer; status, `sentAt`, `expiresAt` and `invoiceId` stay as stored. Refuses converted and declined quotes. A changed `taxOverride` needs `sales.tax.override` and writes its own audit entry with the reason. Audited. |
 | `updateQuoteStatus(quoteId, { action, expiresAt })` | `POST /quotes/:id/status` | `send` (to Pending, after full validation, optional expiry date not in the past), `accept` or `decline`, only as `quoteActions` allows in the quote's state. Needs `sales.quote.edit`. Audited. |
 | `convertQuoteToInvoice(quoteId)` | `POST /quotes/:id/invoice` | Refuses quotes already invoiced or declined, and runs full validation (customer, lines, job-site address, warehouse). Recomputes totals under the job-site state's tax rule, stores the rule version, numbers the invoice with the invoice prefix, dates it today with the customer's terms, and marks the quote Converted. Audited. |
-| `recordPayment(input, files)` | `POST /invoices/:id/payments` (multipart) | Needs `sales.payment.record`. Re-runs `validatePayment` (amount above zero and not above the balance unless the extra becomes credit with `sales.payment.apply_credit`; date not in the future nor before the invoice; reference except for cash; check number; card last 4 only). A reference already used needs `allowDuplicateReference`. One to three proof files, 5 MB each, checked by their first bytes (PDF, JPG, PNG, WebP, HEIC); all are stored or none. Numbers the payment with the payment prefix; with approval on (above the threshold) it starts Pending verification. Audited. |
+| `recordPayment(input, files)` | `POST /payments` (files in base64, ADR 0038) | Needs `sales.payment.record`. Re-runs `validatePayment` (amount above zero and not above the balance unless the extra becomes credit with `sales.payment.apply_credit`; date not in the future nor before the invoice; reference except for cash; check number; card last 4 only). A reference already used needs `allowDuplicateReference`. One to three proof files, 5 MB each, checked by their first bytes (PDF, JPG, PNG, WebP, HEIC); all are stored or none. Numbers the payment with the payment prefix; with approval on (above the threshold) it starts Pending verification. Audited. |
 | `reviewPayment(paymentId, { action: "confirm" } | { action: "reject", reason })` | `POST /payments/:id/review` | Needs `sales.payment.approve`; only a pending payment, never by the person who recorded it; a rejection needs a reason. Audited. |
 | `attachPaymentFiles(paymentId, files)` | `POST /payments/:id/files` | Needs `sales.payment.record`; not on voided or rejected payments; at most three files in all. Audited. |
 | `getFile(fileId)` | `GET /files/:id` | Needs `sales.payment.view`. Bytes from the file store (IndexedDB in the demo); a seeded payment's proof is a generated placeholder PDF. |
@@ -261,8 +285,8 @@ Added with their screens below.
 | `markInvoiceSent(invoiceId)` | `POST /invoices/:id/sent` | Needs `sales.invoice.edit`; once, not on a void invoice. Audited. |
 | `voidInvoice(invoiceId, reason)` | `POST /invoices/:id/void` | Needs `sales.invoice.void`; refused once any payment is confirmed; pending payments on it are voided too. Audited. |
 | `writeOffBalance(invoiceId, reason)` | `POST /invoices/:id/write-off` | Needs `sales.payment.write_off`; the whole remaining balance, up to the company's write-off maximum. Audited. |
-| `applyCredit(invoiceId)` | `POST /invoices/:id/credit` | Needs `sales.payment.apply_credit`; applies the customer's credit (overpayments, open credit notes) up to the balance. Audited. |
-| `refundCredit(input, files)` | `POST /customers/:id/refunds` (multipart) | Needs `sales.payment.refund`; not above the customer's credit, reference except for cash, proof required; numbered with the refund prefix. Audited. |
+| `applyCredit(invoiceId)` | `POST /invoices/:id/apply-credit` | Needs `sales.payment.apply_credit`; applies the customer's credit (overpayments, open credit notes) up to the balance. Audited. |
+| `refundCredit(input, files)` | `POST /refunds` (files in base64, ADR 0038) | Needs `sales.payment.refund`; not above the customer's credit, reference except for cash, proof required; numbered with the refund prefix. Audited. |
 | `signOffJob(jobId, signer)` | `POST /jobs/:id/sign-off` | Needs `installation.job.sign_off`; a started job only. Its invoice's held balance becomes due from today under the customer's terms and an unsent invoice is marked sent. Audited. |
 | `scheduleJob(input)` | `POST /installation/jobs` | Schedules the installation of an invoice without a job: crew, day (today or later), start hour; costed from the invoice. Needs `installation.job.create`. Audited. |
 | `startJob(jobId)` | `POST /installation/jobs/:id/start` | Starts a scheduled job on or after its day. Needs `installation.job.edit`. Audited. |
