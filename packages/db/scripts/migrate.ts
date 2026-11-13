@@ -22,7 +22,9 @@ async function main(): Promise<void> {
     const results = await migrateAllCompanies(control.db, env.encryptionKey, {
       onFailure: async (failure) => {
         const alerted = await alertMigrationFailure(control.db, email, from, failure);
-        console.error(`Company ${failure.tenantId} is in maintenance mode; ${alerted} platform admin(s) alerted.`);
+        // The memory adapter delivers nothing, so say so rather than claim admins were told (PR #10 review).
+        const how = emailEnv.EMAIL_PROVIDER === "resend" ? "emailed" : "NOT emailed (EMAIL_PROVIDER is memory)";
+        console.error(`Company ${failure.tenantId} is in maintenance mode; ${alerted} platform admin(s) ${how}.`);
       },
     });
     for (const result of results) console.log(`Company ${result.tenantId}: ${result.version}`);

@@ -91,7 +91,9 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 
 ## Follow-ups (don't forget)
 - **Required check on a paid GitHub plan:** when the repository moves to a paid GitHub plan, make `verify` (which runs the isolation suite) a required check on `main`. GitHub Free cannot enforce it on a private repository, so until then the CLAUDE.md self-merge rule is the guard (owner decision, 2026-11-13).
-- **Merge methods on GitHub (owner, settings):** the repository still allows rebase and merge commits. Switching both off under Settings → General → Pull Requests makes squash the only way, whatever a tool allows (PR #10 security review).
+- **Merge methods on GitHub (owner, settings):** the repository still allows rebase and merge commits. Switching both off under Settings → General → Pull Requests makes squash the only way, whatever a tool allows. Local rules (the permission rules and `.claude/hooks/merge-push-guard.mjs`) cannot see through a deliberately disguised command, so GitHub's settings are the real backstop (PR #10 security reviews).
+- **Platform-admin alerts and deleted accounts:** the migration alert goes to every active `platform_admins` row. When accounts can be banned or deleted, also skip those users (PR #10 review).
+- **Trial with no subscription stays `full`:** until plan prices exist, a fresh trial has no end. Revisit when plans are priced (PR #10 review).
 - **"Paid" in the life cycle:** `companyPhase` counts a cancelled subscription as paid when its price is above zero. The billing webhook must store trial rows with price `0`, or record payment in its own column such as `first_paid_at` (PR #10 security review).
 - **move-tenant must set `maintenance_reason = 'move'`** when it turns maintenance mode on, so a later migration never ends it (ADR 0033).
 - **Maintenance and suspended screens:** the web app shows the API's message today. Give it a full-page "under maintenance" and "account suspended" screen with the platform-admin screens (ADR 0033).

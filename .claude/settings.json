@@ -62,7 +62,9 @@
       "Bash(git push --all*)",
       "Bash(git push origin --all*)",
       "Bash(git push --mirror*)",
-      "Bash(git push origin --mirror*)"
+      "Bash(git push origin --mirror*)",
+      "Bash(git push *refs/heads/main*)",
+      "Bash(git push *:main*)"
     ]
   },
   "hooks": {
@@ -72,6 +74,18 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-reminder.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge-push-guard.mjs\"",
             "timeout": 10
           }
         ]

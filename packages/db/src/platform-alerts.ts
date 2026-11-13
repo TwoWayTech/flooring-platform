@@ -32,21 +32,28 @@ export async function alertMigrationFailure(
     .where(eq(tenants.id, failure.tenantId));
   const name = company ? `${company.name} (${company.slug})` : failure.tenantId;
   const recipients = await platformAdminEmails(control);
+  let sent = 0;
   for (const to of recipients) {
-    await email.send({
-      from,
-      to: [to],
-      subject: `Migration failed: ${name} is in maintenance mode`,
-      text: [
-        `The company database of ${name} failed to migrate, so the company is in maintenance mode.`,
-        'Its people see an "under maintenance" message and cannot read or change anything.',
-        "",
-        `Error code: ${failure.code ?? "none"}. The full error is in tenant_databases.last_error and platform_audit_log.`,
-        "",
-        "Fix the cause and run the migration again (pnpm db:migrate). A successful run ends maintenance mode.",
-      ].join("\n"),
-      idempotencyKey: `migration-failed|${failure.tenantId}|${to}|${new Date().toISOString().slice(0, 13)}`,
-    });
+    // One admin's failed send never stops the others (PR #10 review).
+    try {
+      await email.send({
+        from,
+        to: [to],
+        subject: `Migration failed: ${name} is in maintenance mode`,
+        text: [
+          `The company database of ${name} failed to migrate, so the company is in maintenance mode.`,
+          'Its people see an "under maintenance" message and cannot read or change anything.',
+          "",
+          `Error code: ${failure.code ?? "none"}. The full error is in tenant_databases.last_error and platform_audit_log.`,
+          "",
+          "Fix the cause and run the migration again (pnpm db:migrate). A successful run ends maintenance mode.",
+        ].join("\n"),
+        idempotencyKey: `migration-failed|${failure.tenantId}|${to}|${new Date().toISOString().slice(0, 13)}`,
+      });
+      sent += 1;
+    } catch {
+      console.error("An alert email to a platform admin could not be sent.");
+    }
   }
-  return recipients.length;
+  return sent;
 }
