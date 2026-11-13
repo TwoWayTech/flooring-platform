@@ -49,6 +49,9 @@ const RETENTION_DAYS = 30;
 /** How long the provider may take to accept one email before the send counts as failed. */
 const SEND_TIMEOUT_MS = 30_000;
 
+/** The shortest wait before an early job runs again, so clock differences never cause a tight loop. */
+const REQUEUE_DELAY_MS = 30_000;
+
 /** How long a row may stay `sending` before Retry may take it back (the worker died mid-send). */
 const STUCK_SENDING_MS = 10 * 60_000;
 
@@ -313,9 +316,10 @@ export class NotificationService implements OnApplicationBootstrap {
    * Sends one row (ADR 0032). The row is claimed first with one conditional update (queued or
    * scheduled to sending), so a second job, a second Retry or a cancel can never send it twice or
    * after it was cancelled. The claim skips a deleted row and a row whose scheduled time has not
-   * come (by the database clock), so no early job sends it before then; its own delayed job does. A read-only company (suspended, cancelled, in maintenance) sends
-   * nothing: its rows stay queued, and Retry (or the sweeper, STATUS) sends them once it is
-   * writable. A
+   * come (by the database clock), so no early job sends it before then; its own delayed job does. A
+   * read-only company (suspended, cancelled or lapsed) sends nothing, and a company in maintenance
+   * or locked gets no job context at all: its rows stay queued or scheduled, and Retry (or the
+   * sweeper, STATUS) sends them once it is writable. A
    * provider failure marks the row failed and tells the actor; Retry sends it again.
    */
   private async sendJob(job: Job<SendJob>): Promise<void> {
@@ -486,11 +490,11 @@ export class NotificationService implements OnApplicationBootstrap {
     await db.insert(notifications).values({ userId, eventKey: event, title, href });
   }
 
-  /** Queues the send of one row; the worker's claim makes a second job for the same row harmless. */
   /**
    * A job that ran before its row's time (clocks differ between the job queue and the company
-   * database) queues the send again for that time, so the row is never left waiting with no job
-   * (PR #10 review). The claim keeps it to one send whatever the number of jobs.
+   * database) queues the send again, so the row is never left waiting with no job (PR #10 review).
+   * It waits at least REQUEUE_DELAY_MS, so a lasting clock difference repeats it slowly, never in a
+   * tight loop. The claim keeps it to one send whatever the number of jobs.
    */
   private async requeueIfEarly(db: CompanyDb, job: SendJob): Promise<void> {
     const [early] = await db
@@ -504,9 +508,12 @@ export class NotificationService implements OnApplicationBootstrap {
           sql`${outboxMessages.scheduledFor} > now()`,
         ),
       );
-    if (early?.scheduledFor) await this.queue(job.companyId, job.messageId, early.scheduledFor);
+    if (!early?.scheduledFor) return;
+    const soonest = Date.now() + REQUEUE_DELAY_MS;
+    await this.queue(job.companyId, job.messageId, new Date(Math.max(early.scheduledFor.getTime(), soonest)));
   }
 
+  /** Queues the send of one row; the worker's claim makes a second job for the same row harmless. */
   private async queue(companyId: string, messageId: string, startAfter: Date | null): Promise<void> {
     await this.jobs.send(SEND_QUEUE, { companyId, messageId }, startAfter ? { startAfter } : {});
   }

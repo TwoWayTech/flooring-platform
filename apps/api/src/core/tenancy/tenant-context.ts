@@ -31,7 +31,10 @@ export class TenantContext {
     readonly products: readonly ProductKey[],
     /** The company's status; `trial` decides whether it gets all of its products' modules. */
     readonly status: TenantStatus,
-    /** True when the company may be read but not written (suspended, cancelled or in maintenance). */
+    /**
+     * True when the company may be read but not written: a read-only life-cycle phase or a read-only
+     * database (ADR 0033). Maintenance mode and a locked company never get a context at all.
+     */
     readonly readOnly: boolean,
   ) {}
 

@@ -37,7 +37,8 @@
   - calls `onFailure`, where `pnpm db:migrate` emails every active platform admin through EmailProvider, one email each. The email gives the error code only, because the full text can name a database host or user; that text stays in `last_error` and the audit row;
   - stops.
 - **When the migration later succeeds:** maintenance ends only if the reason was `migration_failed`, and `company.migration_recovered` is logged. A move keeps its own maintenance.
-- **Jobs:** they skip a company in maintenance.
+- **Jobs:** they skip a company in maintenance. A job that was already running when maintenance turned on finishes its current work; maintenance stops new requests and new jobs at once, not ones in flight (PR #10 re-review).
+- **Merging (`.claude/settings.json`):** the only merge allowed without a person's approval is `gh pr merge <n> --squash`, optionally followed by `--delete-branch` or `--match-head-commit <sha> --delete-branch`. `--squash=…`, `--merge` and `--rebase` (with or without `=`), `-m` and `--admin` are denied, so no flag combination turns the squash into another method (PR #10 security reviews). GitHub itself still allows merge commits and rebase merges; switching them off is an owner setting (STATUS).
 
 ## Consequences
 - **Cost:** each request makes one extra control-database query for the subscription rows.
