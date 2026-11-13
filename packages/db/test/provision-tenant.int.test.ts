@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PRODUCT_ROLES } from "@workspace/shared";
 import {
   decryptSecret,
+  encryptSecret,
+  migrateAllCompanies,
   migrateControl,
   openCompanyDb,
   openControlDb,
@@ -230,6 +232,93 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
       expect(await db.db.select().from(auditLog)).toHaveLength(1);
     } finally {
       await db.close();
+    }
+  });
+
+  it("finishes a company whose database never became ready, and refuses one that is ready", async () => {
+    const slug = `unready${run}`;
+    const first = await provision(company(slug));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      await handle.db
+        .update(tenantDatabases)
+        .set({ status: "provisioning" })
+        .where(eq(tenantDatabases.tenantId, first.tenantId));
+    } finally {
+      await handle.close();
+    }
+    await expect(provision(company(slug, { products: ["hr"] }))).rejects.toThrow(/other products/);
+    const again = await provision(company(slug));
+    expect(again).toMatchObject({ tenantId: first.tenantId, resumed: true });
+    await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+  });
+
+  it("never resumes a live company that is migrating or whose migration failed (PR #8 review)", async () => {
+    const slug = `live${run}`;
+    const first = await provision(company(slug));
+    for (const status of ["migrating", "failed", "read_only"] as const) {
+      const handle = openControlDb(control.url, { max: 1 });
+      try {
+        await handle.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, first.tenantId));
+      } finally {
+        await handle.close();
+      }
+      await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+    }
+  });
+
+  it("leaves a provisioning database to provisioning and keeps a read-only one read-only in migrate-all (PR #8 review)", async () => {
+    const unready = await provision(company(`skip${run}`));
+    const readOnly = await provision(company(`keep${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const setStatus = (tenantId: string, status: "provisioning" | "read_only") =>
+        handle.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, tenantId));
+      await setStatus(unready.tenantId, "provisioning");
+      await setStatus(readOnly.tenantId, "read_only");
+      const results = await migrateAllCompanies(handle.db, encryptionKey);
+      expect(results.map((result) => result.tenantId)).not.toContain(unready.tenantId);
+      const statusOf = async (tenantId: string) =>
+        (await handle.db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId)))[0].status;
+      expect(await statusOf(unready.tenantId)).toBe("provisioning");
+      expect(await statusOf(readOnly.tenantId)).toBe("read_only");
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("keeps a read-only database read-only when its migration fails (PR #8 review)", async () => {
+    const readOnly = await provision(company(`fail${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const [database] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      const unreachable = decryptSecret(database.encryptedUrl, encryptionKey).replace(/:[^:@/]+@/, ":wrong-password@");
+      await handle.db
+        .update(tenantDatabases)
+        .set({ status: "read_only", encryptedUrl: encryptSecret(unreachable, encryptionKey) })
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      await expect(migrateAllCompanies(handle.db, encryptionKey)).rejects.toThrow(/Migration stopped/);
+      const [after] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      expect(after.status).toBe("read_only");
+      expect(after.lastError).not.toBeNull();
+      await handle.db
+        .update(tenantDatabases)
+        .set({ encryptedUrl: database.encryptedUrl })
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      await migrateAllCompanies(handle.db, encryptionKey);
+      const [retried] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      expect(retried.status).toBe("read_only");
+    } finally {
+      await handle.close();
     }
   });
 });

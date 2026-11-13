@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { openCompanyDb, openControlDb, type ControlDb } from "./client";
-import { tenantDatabases } from "./control";
+import { tenantDatabases, type TenantDatabaseStatus } from "./control";
 import { decryptSecret } from "./crypto";
 
 /** Where the generated SQL lives; one folder per database kind. */
@@ -62,6 +62,10 @@ export class MigrationStoppedError extends Error {
  * Migrates every company database in turn and records each one's version (blueprint p13). The
  * first failure stops the rollout and is reported; companies after it stay on their previous
  * version until it is fixed, so no company is left half-way through a broken release.
+ *
+ * Databases still being provisioned are skipped: only provisioning marks them ready, after their
+ * first rows exist (PR #8 review). A read-only database stays read-only throughout, its failure
+ * recorded in last_error only, so no rollout, failed or interrupted, makes it writable.
  */
 export async function migrateAllCompanies(
   control: ControlDb,
@@ -70,25 +74,63 @@ export async function migrateAllCompanies(
   const companies = await control
     .select()
     .from(tenantDatabases)
-    .where(isNull(tenantDatabases.deletedAt))
+    .where(and(isNull(tenantDatabases.deletedAt), ne(tenantDatabases.status, "provisioning")))
     .orderBy(asc(tenantDatabases.createdAt));
   const migrated: CompanyMigrationResult[] = [];
   for (const company of companies) {
-    await control.update(tenantDatabases).set({ status: "migrating" }).where(eq(tenantDatabases.id, company.id));
+    const readOnly = await claimForMigration(control, company.id);
+    if (readOnly === null) continue;
     try {
       const version = await migrateCompany(decryptSecret(company.encryptedUrl, encryptionKey));
       await control
         .update(tenantDatabases)
-        .set({ status: "ready", schemaVersion: version, migratedAt: new Date(), lastError: null })
-        .where(eq(tenantDatabases.id, company.id));
+        .set({
+          ...(readOnly ? {} : { status: "ready" as const }),
+          schemaVersion: version,
+          migratedAt: new Date(),
+          lastError: null,
+        })
+        .where(
+          and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
+        );
       migrated.push({ tenantId: company.tenantId, version });
     } catch (error) {
       await control
         .update(tenantDatabases)
-        .set({ status: "failed", lastError: error instanceof Error ? error.message : String(error) })
-        .where(eq(tenantDatabases.id, company.id));
+        .set({
+          ...(readOnly ? {} : { status: "failed" as const }),
+          lastError: error instanceof Error ? error.message : String(error),
+        })
+        .where(
+          and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
+        );
       throw new MigrationStoppedError(company.tenantId, migrated, error);
     }
   }
   return migrated;
+}
+
+/** Statuses migrate-all may move to `migrating`: live databases that are not read-only. */
+const CLAIMABLE: TenantDatabaseStatus[] = ["ready", "failed", "migrating"];
+
+/**
+ * Claims a company database for this rollout, checking its status as it is now, not as listed at
+ * the start (PR #8 review). Returns false when it was claimed as `migrating`; true when it is
+ * read-only, which keeps its status and gets only its version and error fields updated; and null
+ * when it is something else now (provisioning, or deleted), so it is skipped. Every later write is
+ * conditional on the status this returns, so a status an operator sets meanwhile, such as
+ * read-only, is never overwritten.
+ */
+async function claimForMigration(control: ControlDb, databaseId: string): Promise<boolean | null> {
+  const [claimed] = await control
+    .update(tenantDatabases)
+    .set({ status: "migrating" })
+    .where(and(eq(tenantDatabases.id, databaseId), inArray(tenantDatabases.status, CLAIMABLE)))
+    .returning({ id: tenantDatabases.id });
+  if (claimed) return false;
+  const [current] = await control
+    .select({ status: tenantDatabases.status })
+    .from(tenantDatabases)
+    .where(and(eq(tenantDatabases.id, databaseId), isNull(tenantDatabases.deletedAt)));
+  return current?.status === "read_only" ? true : null;
 }

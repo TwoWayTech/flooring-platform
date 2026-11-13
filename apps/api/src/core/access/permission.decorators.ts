@@ -25,7 +25,7 @@ export const AnyCompanyMember = () => SetMetadata(ANY_MEMBER_KEY, true);
 
 /**
  * Marks a write whose handler writes its own audit entry through AuditService, inside its
- * transaction, so the AuditInterceptor does not add a second one.
+ * transaction, so the AuditInterceptor does not add a second one. It counts only on a handler.
  */
 export const Audited = () => SetMetadata(AUDITED_KEY, true);
 
@@ -67,5 +67,7 @@ export function permissionRequirement(
 
 /** Whether the route's handler writes its own audit entry. */
 export function isAudited(reflector: Reflector, context: ExecutionContext): boolean {
-  return read<boolean>(reflector, AUDITED_KEY, context) ?? false;
+  // Handler only: a class-level @Audited() would silence the safety net for every write in the
+  // controller (PR #7 re-review).
+  return reflector.get<boolean | undefined>(AUDITED_KEY, context.getHandler()) ?? false;
 }

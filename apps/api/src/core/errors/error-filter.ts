@@ -2,6 +2,7 @@ import { Catch, HttpException, HttpStatus, Logger, type ArgumentsHost, type Exce
 import type { Response } from "express";
 import type { AccessRequest } from "../access/permission.guard";
 import { stripSensitive } from "../access/sensitive-fields";
+import type { PermissionKey } from "@workspace/shared";
 
 /** The one error body every endpoint returns (docs/api-contract.md, Conventions). */
 export interface ErrorBody {
@@ -33,6 +34,15 @@ function bodyFor(exception: HttpException): ErrorBody {
   };
 }
 
+/** Error details with sensitive fields stripped, or none when they cannot be serialised (PR #7 re-review). */
+function safeDetails(details: unknown, held: ReadonlySet<PermissionKey>): unknown {
+  try {
+    return stripSensitive(details, held);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Every failure leaves the API as an ErrorBody. Unexpected errors are logged and answered with a
  * plain 500, so stack traces and SQL never reach the browser (blueprint "Security": monitoring).
@@ -49,7 +59,7 @@ export class ErrorFilter implements ExceptionFilter {
       // responses (CLAUDE.md rule 5; PR #7 review). Without resolved access nothing is stripped,
       // because public and session-only routes return no company data.
       const access = host.switchToHttp().getRequest<AccessRequest>().access;
-      if (access && body.details !== undefined) body.details = stripSensitive(body.details, access.permissions);
+      if (access && body.details !== undefined) body.details = safeDetails(body.details, access.permissions);
       response.status(exception.getStatus()).json(body);
       return;
     }

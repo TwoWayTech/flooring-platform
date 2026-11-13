@@ -86,13 +86,6 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
 - **P10 review follow-ups (none blocking):**
-  - **Next, in `fix/access-audit-hardening`:**
-    - read `@Audited()` from the handler only;
-    - record the audit entry when serialising fails after a committed write;
-    - make the error filter safe when `details` cannot be serialised;
-    - base "never subscribed" on tenant status, not on finding no rows;
-    - mark a company database ready only after its foundation is seeded;
-    - keep `__proto__` keys (PR #7 re-review 1, 2, 3, 6, 7 and 8).
   - Ban `@Res()` without passthrough and `@Next()` in modules. Give exports a shared stripping helper.
   - Widen the sensitive-field scan to the company schema and to totals (`totalCost`, `extendedCost`, `profit`, `markup`, `cogs`).
   - A runtime database role that does not own the company database, so the `audit_log` trigger cannot be disabled or dropped by the app's login.
@@ -101,6 +94,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Job costing must use `jobCost`, `jobMargin` and `jobMarginPct` (ADR 0031).
   - Make the role matrix test independent of `productPermissions` and `enabledModules`.
   - Check route decorators directly in the inventory test, not only over HTTP.
+- **Provisioning test gaps (PR #8 third review):** that resume picks the owner-role member when a non-owner member comes first; that provisionCompany keeps a status changed meanwhile; and that the dev seed can strand Summit if its database was left `failed` or `migrating` (run `pnpm db:migrate`).
+- **PR #8 fifth review (none blocking):**
+  - Claim the database row before `prepare`, so a rerun on a changed status never seeds before it throws.
+  - Report migrate-all writes that match no row (status changed mid-run), as provisionCompany does.
+  - Decide whether a read-only database should keep serving after a failed migration (availability: new code on an old schema answers 500).
+- **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
   - **Leases:** count users per pool (a `withDb(tenant, fn)` wrapper or acquire and release), so the over-cap close and eviction never end a pool that a request is still using. Today that can happen once more than 2 × `TENANT_POOL_CACHE` companies are active within 30 s.
@@ -109,6 +108,8 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Owner decision, billing:** should an `active` or `past_due` subscription keep giving its plan's modules after its period ends, and for how long (a grace period)? Today it does, with no limit. Only trial subscriptions expire (PR #8 review).
+- **Owner decision, access:** a company suspended or cancelled during its trial, which never subscribed, now gets only `platform`, so it cannot read its own records. That fails closed, but it conflicts with the rule that a cancelled company keeps reading its data (blueprint p29). Choose whether it should keep the products' modules read-only (PR #8 third review).
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet. They come later with Settings → Users.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).

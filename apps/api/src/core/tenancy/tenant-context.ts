@@ -1,4 +1,5 @@
 import { createParamDecorator, type ExecutionContext } from "@nestjs/common";
+import type { TenantStatus } from "@workspace/db/control";
 import type { ProductKey } from "@workspace/shared";
 import type { Request } from "express";
 import type { AuthSession } from "../auth/session.service";
@@ -25,6 +26,8 @@ export class TenantContext {
     readonly userId: string,
     /** The products the company has. */
     readonly products: readonly ProductKey[],
+    /** The company's status; `trial` decides whether it gets all of its products' modules. */
+    readonly status: TenantStatus,
     /** True when the company may be read but not written (suspended, cancelled or in maintenance). */
     readonly readOnly: boolean,
   ) {}
@@ -37,7 +40,7 @@ export class TenantContext {
     if (!session.companyId || session.companyId !== company.id) {
       throw new Error("A tenant context must be for the session's open company.");
     }
-    return new TenantContext(company.id, session.user.id, company.products, isReadOnly(company));
+    return new TenantContext(company.id, session.user.id, company.products, company.status, isReadOnly(company));
   }
 
   /** Whether a value is a TenantContext made by `fromVerifiedSession`, not a look-alike object. */

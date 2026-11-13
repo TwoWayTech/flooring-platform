@@ -1,6 +1,11 @@
 import { Body, Controller, Get, Module, Post } from "@nestjs/common";
 import { branches } from "@workspace/db/company";
-import { RequireModule, RequirePermission, AnyCompanyMember } from "../../src/core/access/permission.decorators";
+import {
+  Audited,
+  RequireModule,
+  RequirePermission,
+  AnyCompanyMember,
+} from "../../src/core/access/permission.decorators";
 import { CurrentAccess } from "../../src/core/access/permission.guard";
 import type { RequestAccess } from "../../src/core/access/access.service";
 import { TenantConnectionService } from "../../src/core/tenancy/tenant-connection.service";
@@ -55,6 +60,40 @@ class PermissionProbeController {
   }
 }
 
+/**
+ * A controller marked @Audited() at class level, which must not silence the audit safety net, and
+ * a write whose response cannot be serialised after it committed (PR #7 re-review).
+ */
+@Controller("permission-probe/audited")
+@Audited()
+class AuditedProbeController {
+  constructor(private readonly tenancy: TenantConnectionService) {}
+
+  @Post("branches")
+  @RequirePermission("inventory.product.create")
+  async create(@CurrentTenant() tenant: TenantContext) {
+    const [row] = await (
+      await this.tenancy.db(tenant)
+    )
+      .insert(branches)
+      .values({ name: "Class audited", city: "Austin", state: "TX" })
+      .returning();
+    return row;
+  }
+
+  @Post("unserialisable")
+  @RequirePermission("inventory.product.create")
+  async unserialisable(@CurrentTenant() tenant: TenantContext) {
+    const [row] = await (
+      await this.tenancy.db(tenant)
+    )
+      .insert(branches)
+      .values({ name: "Committed then failed", city: "Austin", state: "TX" })
+      .returning();
+    return { id: row.id, total: BigInt(1) };
+  }
+}
+
 /** Mounts the permission probe; pass it to AuthHarness.start. */
-@Module({ controllers: [PermissionProbeController] })
+@Module({ controllers: [PermissionProbeController, AuditedProbeController] })
 export class PermissionProbeModule {}

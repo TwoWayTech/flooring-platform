@@ -10,7 +10,7 @@
 1. SessionGuard;
 2. TenantGuard (ADR 0030);
 3. PermissionGuard;
-4. around the handler, the AuditInterceptor (outer) and the SensitiveFieldsInterceptor (inner).
+4. around the handler, the SensitiveFieldsInterceptor (outer) and the AuditInterceptor (inner). Audit sits next to the handler, so a committed write is recorded before anything that could still fail, such as serialising the response (PR #7 re-review).
 
 ### Access comes from the shared engine
 `AccessService.resolve(tenant)` builds a person's access with `resolveAccess` from packages/shared (rule 4):
@@ -19,11 +19,12 @@
 - the enabled modules from `enabledModules(products, planModules, overrides)` in packages/shared. That function takes the products' modules, limited to the plan's modules when there is a subscription (all of them during a trial), then applies `tenant_module_overrides`. Overrides never reach outside the products, and `platform` is always on.
 
 Plan modules come from `planModulesOf` (packages/shared):
-- null (a trial, all of the products' modules) only when the company never had a subscription;
-- otherwise the union of its current subscriptions' plans;
-- when every subscription is cancelled, the latest plan, read-only through the tenant status.
+- null (a trial, all of the products' modules) only when the company is in `trial` status and has never had a subscription;
+- a company that is not a trial and has no subscription rows gets no plan modules;
+- otherwise the union of its current subscriptions' plans; a cancelled subscription, or a trial subscription past its period, is not current;
+- when none is current, the latest plan, read-only through the tenant status.
 
-So a cancelled plan never turns into a trial (PR #7 review).
+So neither a cancelled plan nor deleted subscription rows turn a company back into a trial (PR #7 reviews).
 
 Nothing is cached between requests, so a change to roles, the ceiling or modules applies at once. A person with no profile in the company, or a disabled profile, holds nothing.
 
@@ -31,7 +32,8 @@ Nothing is cached between requests, so a change to roles, the ceiling or modules
 - Every company route must declare `@RequirePermission(...keys)` (any one of them, spec rule 5) or `@AnyCompanyMember()`. A route that declares neither is refused with 403 `permission_undeclared` and an error in the log, so a forgotten decorator fails closed.
 - Class-level decorators are defaults for reads only (PR #7 review):
   - `@AnyCompanyMember()` counts only on a handler;
-  - a write (POST, PUT, PATCH, DELETE) counts only permissions on its own handler.
+  - a write (POST, PUT, PATCH, DELETE) counts only permissions on its own handler;
+  - `@Audited()` counts only on a handler, so a class-level one cannot silence the safety net.
 
   So a controller that lets members read can never let them write by accident.
 - `@RequireModule()` adds a module check. A permission belongs to a module, so a route never serves a company whose products or plan lack it. This closes the P9 follow-up about routes that declared no product.

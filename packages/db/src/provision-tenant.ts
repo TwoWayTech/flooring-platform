@@ -1,4 +1,4 @@
-import { encodeMemberRoles, PRODUCT_DEFAULT_BRANDING, type ProductKey } from "@workspace/shared";
+import { decodeMemberRoles, encodeMemberRoles, PRODUCT_DEFAULT_BRANDING, type ProductKey } from "@workspace/shared";
 import type { DatabaseProvisioner } from "@workspace/providers";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
@@ -104,17 +104,20 @@ export async function provisionTenant(
   if (company.products.length === 0) throw new Error("Give the company at least one product.");
   const existing = await findUnfinished(control, company);
   const created = existing ?? (await writeControlRows(control, company));
-  const url = await provisionCompany(control, provisioner, encryptionKey, {
-    tenantId: created.tenantId,
-    slug: company.slug,
-    provider,
-  });
-  const companyDb = openCompanyDb(url, { max: 1 });
-  try {
-    await seedCompanyFoundation(companyDb.db, { products: company.products, ownerUserId: created.ownerUserId });
-  } finally {
-    await companyDb.close();
-  }
+  await provisionCompany(
+    control,
+    provisioner,
+    encryptionKey,
+    { tenantId: created.tenantId, slug: company.slug, provider },
+    async (url) => {
+      const companyDb = openCompanyDb(url, { max: 1 });
+      try {
+        await seedCompanyFoundation(companyDb.db, { products: company.products, ownerUserId: created.ownerUserId });
+      } finally {
+        await companyDb.close();
+      }
+    },
+  );
   return { ...created, resumed: existing !== null };
 }
 
@@ -134,21 +137,35 @@ async function findUnfinished(
     .where(and(eq(tenants.slug, slug), isNull(tenants.deletedAt)));
   if (!tenant) return null;
   const [database] = await control
-    .select({ id: tenantDatabases.id })
+    .select({ status: tenantDatabases.status })
     .from(tenantDatabases)
     .where(eq(tenantDatabases.tenantId, tenant.id));
-  if (database) throw new Error(`A company with the slug "${slug}" already exists.`);
-  const [owner] = await control
-    .select({ userId: member.userId, email: user.email })
+  // Only a company whose database never left `provisioning` is unfinished. A live company that is
+  // migrating or whose migration failed is never re-seeded (PR #8 review: a rerun must not
+  // restore permissions or hand out Owner in a live company).
+  if (database && database.status !== "provisioning") {
+    throw new Error(`A company with the slug "${slug}" already exists.`);
+  }
+  const owners = await control
+    .select({ userId: member.userId, email: user.email, role: member.role })
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))
-    .where(eq(member.organizationId, tenant.id))
-    .limit(1);
+    .where(eq(member.organizationId, tenant.id));
+  const owner = owners.find((row) => decodeMemberRoles(row.role).includes("owner"));
   if (!owner) throw new Error(`The company "${slug}" has no owner; fix it by hand before running again.`);
   if (owner.email !== normalisedEmail(company.owner.email)) {
     throw new Error(
       `The unfinished company "${slug}" has a different owner; run again with the original owner's email.`,
     );
+  }
+  const stored = await control
+    .select({ key: products.key })
+    .from(tenantProducts)
+    .innerJoin(products, eq(products.id, tenantProducts.productId))
+    .where(and(eq(tenantProducts.tenantId, tenant.id), isNull(tenantProducts.deletedAt)));
+  const storedKeys = stored.map((row) => row.key).sort();
+  if (storedKeys.join(",") !== [...new Set(company.products)].sort().join(",")) {
+    throw new Error(`The unfinished company "${slug}" has other products; run again with the original products.`);
   }
   return { tenantId: tenant.id, ownerUserId: owner.userId };
 }
