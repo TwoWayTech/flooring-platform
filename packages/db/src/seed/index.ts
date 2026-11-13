@@ -8,7 +8,7 @@ import { seedControl } from "./control";
 import { loadDemoCompany } from "./fixtures";
 
 export { seedId, loadDemoCompany } from "./fixtures";
-export { seededTenantId, seededUserId } from "./control";
+export { ensureReferenceData, seededTenantId, seededUserId } from "./control";
 
 /** What the test-company seed needs. */
 export interface SeedOptions {

@@ -20,6 +20,7 @@
     "db:generate": "pnpm --filter @workspace/db generate",
     "db:migrate": "pnpm --filter @workspace/db migrate",
     "db:seed": "pnpm --filter @workspace/db seed",
+    "db:provision-tenant": "pnpm --filter @workspace/db provision-tenant --",
     "fixtures": "pnpm --filter @workspace/shared fixtures",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

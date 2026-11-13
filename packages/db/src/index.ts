@@ -7,3 +7,4 @@ export * from "./columns";
 export * from "./crypto";
 export * from "./migrate";
 export * from "./provision";
+export * from "./provision-tenant";
