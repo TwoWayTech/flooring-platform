@@ -1,8 +1,14 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
+<<<<<<< HEAD
 - **In progress:** PR #3, `feat/tooling-claude-agents`: task "c", the Claude tooling. **A took it over from B.** It is ready, rebased onto main after PR #2 merged, and waits for B's review and merge.
 - **Last session log:** docs/sessions/2026-11-12-1531-a-tooling-claude-agents.md
+=======
+- **In progress:** `feat/auth-mfa`, P8 part 2: TOTP with backup codes, passkeys, mandatory MFA, lockout, rate limits and `GET /public/branding?host=`. Plan approved on 2026-11-13; draft PR.
+- **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day. A squash-merged PR #2 (P8 part 1, `31e2297`) and rebased PR #3 onto main for merging.
+- **Last session log:** docs/sessions/2026-11-12-1337-a-auth-security-review.md
+>>>>>>> c841778 (docs: start P8 part 2 on feat/auth-mfa; A did B's reviews and merges on Nov 13)
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
