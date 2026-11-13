@@ -76,8 +76,9 @@ function isJson(request: IncomingMessage): boolean {
 }
 
 /**
- * A proof upload: POST to a proof route with a session cookie. Without a session the request is
- * refused anyway, so it never gets the large body to fill memory before the guards run.
+ * A proof upload: POST to a proof route with a session cookie. Requests without one keep the
+ * small limit. The cookie is not verified before parsing, so per-IP limits on these routes are a
+ * follow-up (docs/STATUS.md).
  */
 function carriesProof(request: IncomingMessage): boolean {
   if (request.method !== "POST") return false;

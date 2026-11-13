@@ -119,17 +119,21 @@ export class InvoicesService {
   }
 
   /**
-   * Stock held for invoices. Warehouse staff see every hold, because they pick against them
-   * (inventory spec C2); someone who sees only sales sees the holds of their own invoices.
+   * Stock held for invoices. Stock viewers see every hold, because availability counts them
+   * (inventory spec C2), but a hold on an invoice outside their data scope comes without its
+   * invoice, line or override reason (PR #15 review). Anyone else sees the holds of their own invoices.
    */
   async reservations(tenant: TenantContext, access: RequestAccess): Promise<Reservation[]> {
     const db = await this.tenancy.db(tenant);
-    const list = await loadReservations(db);
+    const [list, seen] = await Promise.all([loadReservations(db), this.visibleInvoiceIds(db, access)]);
     const stockViewer =
       access.permissions.has("inventory.product.view") || access.permissions.has("inventory.roll.view");
-    if (stockViewer) return list;
-    const seen = await this.visibleInvoiceIds(db, access);
-    return list.filter((reservation) => seen.has(reservation.invoiceId));
+    if (!stockViewer) return list.filter((reservation) => seen.has(reservation.invoiceId));
+    return list.map((reservation) =>
+      seen.has(reservation.invoiceId)
+        ? reservation
+        : { ...reservation, invoiceId: "", lineId: "", overrideReason: null },
+    );
   }
 
   /**

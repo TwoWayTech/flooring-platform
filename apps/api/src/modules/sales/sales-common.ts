@@ -23,6 +23,7 @@ let ledgerOpen = false;
  * test code calls this; P12 removes it together with `requireLedger`.
  */
 export function openLedgerForTests(): void {
+  if (!process.env.VITEST) throw new Error("The ledger gate opens only in the test runner.");
   ledgerOpen = true;
 }
 

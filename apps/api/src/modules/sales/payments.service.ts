@@ -106,6 +106,8 @@ export class PaymentsService {
           }),
         );
         const reference = input.reference.trim();
+        // Company-wide, so two payments for different customers cannot both take one reference.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:payment-number'))`);
         if (input.method !== "cash" && reference) {
           const [duplicate] = await tx
             .select({ id: paymentsReceived.id })
@@ -125,7 +127,6 @@ export class PaymentsService {
             });
           }
         }
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:payment-number'))`);
         const used = await tx.select({ number: paymentsReceived.number }).from(paymentsReceived);
         const waits = needsApproval(settings, input.amount) || actor.access.dataScope === "own";
         const now = new Date();

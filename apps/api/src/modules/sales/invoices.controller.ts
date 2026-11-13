@@ -94,7 +94,7 @@ export class InvoicesController {
   @Get("payments")
   @RequirePermission("sales.payment.view", "sales.payment.approve")
   paymentList(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
-    requireFeature("sales.invoices");
+    requireFeature("sales.payments");
     return this.invoices.payments(tenant, access);
   }
 
@@ -110,7 +110,7 @@ export class InvoicesController {
   @Get("refunds")
   @RequirePermission("sales.payment.view", "sales.payment.refund")
   refunds(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
-    requireFeature("sales.invoices");
+    requireFeature("sales.payments");
     return this.invoices.refunds(tenant, access);
   }
 
