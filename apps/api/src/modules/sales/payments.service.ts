@@ -11,6 +11,7 @@ import {
   validatePayment,
   validateRefund,
   type Payment,
+  type PermissionKey,
   type RecordPaymentInput,
   type Refund,
   type RefundInput,
@@ -106,7 +107,7 @@ export class PaymentsService {
         const reference = input.reference.trim();
         if (input.method !== "cash" && reference) {
           const [duplicate] = await tx
-            .select({ number: paymentsReceived.number })
+            .select({ id: paymentsReceived.id })
             .from(paymentsReceived)
             .where(
               and(
@@ -119,7 +120,7 @@ export class PaymentsService {
           if (duplicate && !input.allowDuplicateReference) {
             throw new ConflictException({
               code: "duplicate_reference",
-              message: `Payment ${duplicate.number} already uses reference ${reference}.`,
+              message: `Another payment already uses reference ${reference}. Check it, then confirm to record it anyway.`,
             });
           }
         }
@@ -189,6 +190,7 @@ export class PaymentsService {
     const before = await this.paymentInScope(db, actor.access, paymentId);
     const reason = decision.action === "reject" ? decision.reason.trim() : "";
     if (decision.action === "reject" && reason.length < 3) throw refuse("Say why the payment is rejected.");
+    const day = await companyToday(this.control.db, tenant);
     await db.transaction(async (tx) => {
       await lockCustomer(tx, before.customerId);
       const [payment] = await loadPayments(tx, this.control.db, { ids: [paymentId] });
@@ -199,6 +201,14 @@ export class PaymentsService {
           code: "forbidden",
           message: "Someone other than the person who recorded a payment must verify it.",
         });
+      }
+      if (decision.action === "confirm") {
+        const { ledger } = await invoiceState(tx, this.control.db, payment.invoiceId, day);
+        if (dec(payment.amount).gt(ledger.balance) && !actor.access.permissions.has("sales.payment.apply_credit")) {
+          throw refuse(
+            `Payment ${payment.number} is more than the balance now. Someone who may give customer credit must confirm it.`,
+          );
+        }
       }
       const now = new Date();
       await tx
@@ -398,11 +408,12 @@ export class PaymentsService {
       .from(attachments)
       .where(and(eq(attachments.id, fileId), isNull(attachments.deletedAt)));
     if (!row) throw notFound("file");
-    if (row.ownerType === "payment") {
+    const may = (...keys: PermissionKey[]) => keys.some((key) => access.permissions.has(key));
+    if (row.ownerType === "payment" && may("sales.invoice.view", "sales.payment.approve")) {
       await this.paymentInScope(db, access, row.ownerId).catch(() => {
         throw notFound("file");
       });
-    } else if (row.ownerType === "refund") {
+    } else if (row.ownerType === "refund" && may("sales.invoice.view", "sales.payment.refund")) {
       const [refund] = await loadRefunds(db, this.control.db, { ids: [row.ownerId] });
       const [[customer], branches] = await Promise.all([
         loadCustomers(db, refund ? [refund.customerId] : []),

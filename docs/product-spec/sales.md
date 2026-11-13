@@ -715,12 +715,12 @@ Attachments are links. The app makes invoice and receipt PDFs on those pages. It
 - A credit note does not lower the original invoice's balance. The customer gets credit, and someone must apply it.
 - A credit note does not return stock or close a reservation.
 - `refundedAt` is never set on a credit note issued in the app. It always becomes customer credit.
-- `voidInvoice` accepts a credit note and an invoice that has credit notes. The menu offers no void on a credit note. Voiding an invoice leaves its credit notes live, so the credit stays.
+- `voidInvoice` accepts a credit note and an invoice that has credit notes. The menu offers no void on a credit note. Voiding an invoice leaves its credit notes live, so the credit stays. The real API refuses that void while a credit note is live, and refuses voiding a credit note whose credit was spent (ADR 0038).
 
 **Payments and corrections**
 
-- `reviewPayment` does not re-check the balance. Two pending payments can each pass validation and both be confirmed, which leaves the invoice Overpaid and creates customer credit without the extra-as-credit step. A write-off while a payment is pending can do the same.
-- `voidInvoice` is allowed when credit was applied, because `locked` looks only at confirmed payments. The `credit_applied` adjustment stays, so that credit remains used up.
+- `reviewPayment` does not re-check the balance. Two pending payments can each pass validation and both be confirmed, which leaves the invoice Overpaid and creates customer credit without the extra-as-credit step. The real API re-checks the balance on confirm; the extra needs a reviewer with `sales.payment.apply_credit` (ADR 0038). A write-off while a payment is pending can do the same.
+- `voidInvoice` is allowed when credit was applied, because `locked` looks only at confirmed payments. The `credit_applied` adjustment stays, so that credit remains used up. The real API refuses voiding an invoice with credit applied or a write-off (ADR 0038).
 - No action reverses a write-off, an applied credit or a refund.
 - The store checks a duplicate reference against every payment in the company. The form sees only payments in the viewer's scope. A Sales rep whose reference matches another rep's payment gets a refusal with no box to confirm it.
 - `recordedByOwnScopeRole` reads the signed-in person's real roles, not a role being viewed as.

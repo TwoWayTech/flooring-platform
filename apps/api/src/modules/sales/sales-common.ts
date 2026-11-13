@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import type { ControlDb } from "@workspace/db";
 import { tenants } from "@workspace/db/control";
 import { featureOn, scopeAllows, type Customer, type FeatureKey } from "@workspace/shared";
@@ -13,6 +13,21 @@ export const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date.");
 /** A switched-off feature is hidden everywhere, the API included (CLAUDE.md rule 13): 404. */
 export function requireFeature(key: FeatureKey): void {
   if (!featureOn(key)) throw new NotFoundException();
+}
+
+/**
+ * Every financial event posts a balanced journal entry through LedgerService (CLAUDE.md rule 10),
+ * which P12 builds next. Until then invoices, credit notes and money are not written on the real
+ * API: 409 `ledger_pending`, as bills and supplier payments wait (ADR 0036, ADR 0038). The rules
+ * behind them run in the integration tests only (NODE_ENV=test). P12 replaces this gate with the
+ * postings.
+ */
+export function requireLedger(): void {
+  if (process.env.NODE_ENV === "test") return;
+  throw new ConflictException({
+    code: "ledger_pending",
+    message: "Invoices and payments are recorded here once the company ledger is switched on.",
+  });
 }
 
 /** A request the sales rules refuse: 400 `invalid_request` with the rule's own words. */

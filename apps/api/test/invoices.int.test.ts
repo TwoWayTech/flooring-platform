@@ -354,6 +354,17 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Tomas Berg" }).expect(201);
     const { invoice } = await invoiced(cookies.salesA, customer.body.id);
     const pending = await call("post", "/payments", cookies.salesA).send(payment(invoice.id)).expect(201);
+    // A live credit note would stay customer credit for a void invoice, so it goes first (PR #15 review).
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+      .send({ subtotal: "450.00", reason: "Whole order returned" })
+      .expect(201);
+    expect(note.body.tax).toBe("39.65");
+    expect(
+      (await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "Cancelled" })).status,
+    ).toBe(400);
+    await call("post", `/invoices/${note.body.id}/void`, cookies.owner)
+      .send({ reason: "Issued by mistake" })
+      .expect(201);
     expect((await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "" })).status).toBe(400);
     const voided = await call("post", `/invoices/${invoice.id}/void`, cookies.owner)
       .send({ reason: "Customer cancelled" })

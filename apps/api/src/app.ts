@@ -75,8 +75,13 @@ function isJson(request: IncomingMessage): boolean {
   return (request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
 }
 
+/**
+ * A proof upload: POST to a proof route with a session cookie. Without a session the request is
+ * refused anyway, so it never gets the large body to fill memory before the guards run.
+ */
 function carriesProof(request: IncomingMessage): boolean {
   if (request.method !== "POST") return false;
+  if (!(request.headers.cookie ?? "").includes("better-auth.session_token=")) return false;
   const path = (request.url ?? "").split("?")[0] ?? "";
   return PROOF_ROUTES.test(path);
 }

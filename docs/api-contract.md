@@ -161,7 +161,7 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
 
-Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit notes) or `sales.payments` (payments, write-off, credit, refunds) is off. Records outside the person's data scope answer 404. Invoice `cost` and line `unitCost` are stripped without `inventory.product.view_sensitive`. Proof files are `{ name, data }` with `data` in base64, 1 to 3 files of at most 5 MB, checked by their first bytes.
+Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit notes) or `sales.payments` (payments, write-off, credit, refunds) is off. Records outside the person's data scope answer 404. Invoice `cost` and line `unitCost` are stripped without `inventory.product.view_sensitive`. Proof files are `{ name, data }` with `data` in base64, 1 to 3 files of at most 5 MB, checked by their first bytes. Until P12 posts journal entries, every route that writes money or an invoice answers 409 `ledger_pending` (ADR 0038).
 
 | Route | Needs | Does |
 | --- | --- | --- |

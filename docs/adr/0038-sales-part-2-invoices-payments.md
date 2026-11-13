@@ -4,6 +4,13 @@
 - **Context:** the owner's second work queue, task 5, part 2 (docs/product-spec/sales.md "Conversion and invoices", "Payments", "Corrections"; ADR 0013). Part 1 (ADR 0037) moved customers and quotes. The schema for invoices, payments, adjustments, refunds, reservations and attachments already existed, so this part has no migration.
 
 ## Decision
+- **Money writes wait for the ledger:** every financial event posts a balanced journal entry (CLAUDE.md rule 10), and LedgerService arrives with P12, the next task. Until then, these answer 409 `ledger_pending` on the real API:
+  - converting a quote;
+  - a credit note and voiding an invoice;
+  - recording, confirming and voiding a payment;
+  - a write-off, applying credit and a refund.
+
+  This is how bills and supplier payments wait (ADR 0036). Reads, Mark as sent and attaching proof are open. The rules run in the integration tests only (`NODE_ENV=test`). P12 replaces the gate with the postings, so no money is recorded without its entry and nothing needs a backfill (PR #15 security review).
 - **Data scope:** invoices follow the same rule as quotes, by the invoice's rep and branch. Payments and adjustments follow their invoice. Refunds follow their customer. Reservations are shown in full to stock viewers (`inventory.product.view` or `inventory.roll.view`), who pick against them; anyone else sees only the holds of their own invoices. Anything outside scope answers 404.
 - **Conversion:**
   - An accepted, open quote is converted once, under a lock on the quote row, and must still pass every send check.
@@ -21,13 +28,17 @@
   - Sent as base64 in the JSON body: `{ name, data }`, 1 to 3 files.
   - Checked again by their first bytes and size with the shared `proofFilesProblem`.
   - Written through the StorageProvider (`STORAGE_PROVIDER`, memory locally) under `<companyId>/proof/<id>`, then recorded in `attachments` in the same transaction. A failure removes every file already written.
-  - Only `POST /payments`, `POST /payments/:id/files` and `POST /refunds` accept bodies up to 21 MB; every other route keeps the parser's small default.
-  - `GET /files/:id` answers only within the payment's or refund's scope, as `inline` with `nosniff` and no caching.
+  - Only `POST /payments`, `POST /payments/:id/files` and `POST /refunds` that carry a session cookie accept bodies up to 21 MB; every other request keeps the parser's small default.
+  - `GET /files/:id` answers only within the payment's or refund's scope, for the keys that reach that kind of record, as `inline` with `nosniff`, a sandbox CSP and no caching.
   - This uses base64 JSON rather than multipart, so no new dependency is needed.
 - **Corrections:**
   - A void invoice voids its pending payments and releases its active holds.
   - A credit note's tax and cost follow the spec's proportions.
-  - Two rules beyond the demo, so that customer credit can never go below what was spent:
+  - Rules beyond the demo (PR #15 security review), so credit only comes from money received or a real return:
+    - an invoice with a live credit note cannot be voided; void the note first;
+    - an invoice with credit applied or a write-off cannot be voided, because neither can be reversed;
+    - confirming a payment checks the balance again, and an extra above it needs a reviewer with `sales.payment.apply_credit`;
+    - credit notes never credit more tax than the invoice charged: the last note takes the tax that is left;
     - a credit note whose credit was already applied or refunded cannot be voided;
     - a payment whose overpayment was already applied or refunded cannot be voided.
 - **Seed:** Summit's invoices and lines (`seedId("invoice:" + lineId)`, because fixture invoice lines reuse quote-line ids), commission splits, payments and reservations.

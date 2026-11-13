@@ -11,14 +11,13 @@ import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { InvoicesService } from "./invoices.service";
 import { PaymentsService } from "./payments.service";
-import { DAY, requireFeature } from "./sales-common";
+import { DAY, requireFeature, requireLedger } from "./sales-common";
 
 /** Money as typed: digits with at most two decimals (spec rule 25). Above zero is the rule's to say. */
 const MONEY = z
   .string()
   .trim()
-  .max(15)
-  .regex(/^\d+(\.\d{1,2})?$/, "Enter an amount such as 120.50.");
+  .regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount such as 120.50.");
 const METHOD = z.enum(["cash", "check", "ach", "card", "other"]);
 const REASON = z.object({ reason: z.string().max(500) });
 
@@ -134,6 +133,7 @@ export class InvoicesController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ) {
     requireFeature("sales.invoices");
+    requireLedger();
     return this.invoices.convert(tenant, actorOf(access, session, request), id);
   }
 
@@ -165,6 +165,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.invoices");
+    requireLedger();
     return this.invoices.voidInvoice(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -181,6 +182,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.invoices");
+    requireLedger();
     return this.invoices.creditNote(tenant, actorOf(access, session, request), id, parse(CREDIT_NOTE, body));
   }
 
@@ -197,6 +199,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     return this.invoices.writeOff(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -212,6 +215,7 @@ export class InvoicesController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     return this.invoices.applyCredit(tenant, actorOf(access, session, request), id);
   }
 
@@ -227,6 +231,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     const { files, ...input } = parse(RECORD_PAYMENT, body);
     return this.payments.record(tenant, actorOf(access, session, request), input, files);
   }
@@ -244,6 +249,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     return this.payments.review(tenant, actorOf(access, session, request), id, parse(REVIEW, body));
   }
 
@@ -260,6 +266,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     return this.payments.voidPayment(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -291,6 +298,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
+    requireLedger();
     const { files, ...input } = parse(REFUND, body);
     return this.payments.refund(tenant, actorOf(access, session, request), input, files);
   }
@@ -304,11 +312,13 @@ export class InvoicesController {
     @Param("id", new ParseUUIDPipe()) id: string,
     @Res({ passthrough: true }) response: Response,
   ) {
+    requireFeature("sales.payments");
     const file = await this.payments.file(tenant, access, id);
     response.set({
       "Content-Type": file.contentType,
       "Content-Disposition": `inline; filename="${safeFileName(file.name)}"`,
       "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
       "Cache-Control": "private, no-store",
     });
     return new StreamableFile(file.body);

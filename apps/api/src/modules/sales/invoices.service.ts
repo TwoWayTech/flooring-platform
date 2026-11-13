@@ -288,6 +288,17 @@ export class InvoicesService {
       if (ledger.locked) {
         throw refuse(`Invoice ${invoice.number} has confirmed payments. Void them first, or issue a credit note.`);
       }
+      // Applied credit and write-offs have no reversal, so voiding would lose them (spec "Edge cases").
+      if (dec(ledger.credited).gt(0) || dec(ledger.writtenOff).gt(0)) {
+        throw refuse(`Invoice ${invoice.number} has credit applied or a write-off, so it can't be voided.`);
+      }
+      // Its credit notes would stay customer credit for an invoice that no longer exists (PR #15 review).
+      const [liveNote] = await tx
+        .select({ number: invoices.number })
+        .from(invoices)
+        .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
+        .limit(1);
+      if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
       if (invoice.isReturn && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(invoice.total)) {
         throw refuse(`Credit from ${invoice.number} was already applied or refunded, so it can't be voided.`);
       }
@@ -351,7 +362,7 @@ export class InvoicesService {
       if (!invoice || invoice.voidedAt || invoice.isReturn) throw refuse("A credit note needs a live invoice.");
       const amount = dec(request.subtotal);
       const notes = await tx
-        .select({ subtotal: invoices.subtotal })
+        .select({ subtotal: invoices.subtotal, tax: invoices.tax })
         .from(invoices)
         .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)));
       const already = sum(notes.map((note) => note.subtotal));
@@ -359,7 +370,8 @@ export class InvoicesService {
         throw refuse("Enter an amount up to what is left on this invoice before tax.");
       }
       const share = (value: string) => roundMoney(dec(value).times(amount).dividedBy(invoice.subtotal));
-      const tax = share(invoice.tax);
+      const taxLeft = dec(invoice.tax).minus(sum(notes.map((n) => n.tax)));
+      const tax = amount.plus(already).eq(invoice.subtotal) ? taxLeft : minDec(share(invoice.tax), taxLeft);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
       const used = await tx.select({ number: invoices.number }).from(invoices).where(eq(invoices.isReturn, true));
       const note: Invoice = {
