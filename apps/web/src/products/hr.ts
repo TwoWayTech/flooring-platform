@@ -3,6 +3,7 @@ import { SETTINGS_MENU, type SettingsGroup } from "./settings-menu";
 
 /** The settings groups an HR-only company uses; sales, stock, payments and commissions are flooring. */
 const HR_SETTINGS_GROUPS: SettingsGroup[] = ["company", "people", "tax", "notifications", "data"];
+import { PRODUCT_DEFAULT_BRANDING } from "@workspace/shared";
 import type { ProductConfig } from "./types";
 
 /** HR Suite: HR and Meetings only, so an HR-only company never sees flooring menus (spec "HR host"). */
@@ -55,5 +56,5 @@ export const HR: ProductConfig = {
     },
   ],
   settings: SETTINGS_MENU.filter((item) => item.group && HR_SETTINGS_GROUPS.includes(item.group)),
-  defaultBranding: { brandColor: "#1F6FA8", pattern: "basketweave" },
+  defaultBranding: PRODUCT_DEFAULT_BRANDING.hr,
 };

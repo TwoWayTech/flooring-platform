@@ -12,6 +12,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { SETTINGS_MENU } from "./settings-menu";
+import { PRODUCT_DEFAULT_BRANDING } from "@workspace/shared";
 import type { ProductConfig } from "./types";
 
 /** Flooring Suite: menus in the order of the design brief's app shell. */
@@ -92,5 +93,5 @@ export const FLOORING: ProductConfig = {
     },
   ],
   settings: SETTINGS_MENU,
-  defaultBranding: { brandColor: "#2E8B7E", pattern: "herringbone" },
+  defaultBranding: PRODUCT_DEFAULT_BRANDING.flooring,
 };
