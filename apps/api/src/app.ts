@@ -58,8 +58,27 @@ function mountAuth(app: NestExpressApplication, proxySecret: string | undefined)
       }
       return handler(request, response);
     });
-  app.useBodyParser("json");
+  // Proof files travel as base64 JSON (ADR 0038), so only those routes take bodies of up to three 5 MB
+  // files; every other route keeps the parser's small default.
+  app.useBodyParser("json", { limit: PROOF_BODY_LIMIT, type: (request) => isJson(request) && carriesProof(request) });
+  app.useBodyParser("json", { type: (request) => isJson(request) && !carriesProof(request) });
   app.useBodyParser("urlencoded", { extended: true });
+}
+
+/** The largest proof-carrying body: three files of 5 MB in base64, with room for the form fields. */
+const PROOF_BODY_LIMIT = "21mb";
+
+/** POST /payments, /payments/:id/files and /refunds carry proof files. */
+const PROOF_ROUTES = /^\/(payments(\/[0-9a-fA-F-]{36}\/files)?|refunds)\/?$/;
+
+function isJson(request: IncomingMessage): boolean {
+  return (request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
+}
+
+function carriesProof(request: IncomingMessage): boolean {
+  if (request.method !== "POST") return false;
+  const path = (request.url ?? "").split("?")[0] ?? "";
+  return PROOF_ROUTES.test(path);
 }
 
 /**

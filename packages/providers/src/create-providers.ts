@@ -28,7 +28,8 @@ function databaseFor(env: ProviderEnv["database"]): DatabaseProvisioner {
   }
 }
 
-function storageFor(env: ProviderEnv["storage"]): StorageProvider {
+/** The storage adapter STORAGE_PROVIDER asks for, for an app that needs only storage. */
+export function storageFor(env: ProviderEnv["storage"]): StorageProvider {
   if (env.STORAGE_PROVIDER === "memory") return new MemoryStorageProvider();
   return new S3StorageProvider({
     bucket: env.S3_BUCKET,

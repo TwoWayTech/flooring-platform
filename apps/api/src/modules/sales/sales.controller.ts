@@ -1,5 +1,5 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { dec, featureOn, isStateCode, type FeatureKey } from "@workspace/shared";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
+import { dec, isStateCode } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -9,6 +9,7 @@ import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { DAY, requireFeature } from "./sales-common";
 import { SalesService } from "./sales.service";
 
 const QUANTITY = z.string().regex(/^\d{1,10}(\.\d{1,3})?$/, "Enter a quantity such as 12 or 12.5.");
@@ -17,7 +18,6 @@ const PERCENT = z
   .string()
   .regex(/^\d{1,3}(\.\d{1,4})?$/, "Enter a percent such as 10.")
   .refine((value) => dec(value).lte(100), "A percent is at most 100.");
-const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date.");
 /**
  * A state as stored: trimmed and uppercased, a real US code, or empty on a draft. Tax rules match
  * the code exactly, so "co" or a made-up code would collect nothing (PR #14 security review).
@@ -115,10 +115,6 @@ const STATUS = z.object({
 });
 
 /** A switched-off feature is hidden from the API too (CLAUDE.md rule 13): its routes answer 404. */
-function requireFeature(key: FeatureKey): void {
-  if (!featureOn(key)) throw new NotFoundException();
-}
-
 /**
  * Sales, part 1 (docs/product-spec/sales.md "Who uses it"; ADR 0037): customers and quotes, read
  * through data scope. Every route is in the `core` module. Line costs are stripped by name for
