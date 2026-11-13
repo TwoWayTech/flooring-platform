@@ -855,6 +855,14 @@ export class DemoStore implements ApiClient {
     return this.viewer!.userId;
   }
 
+  async listSettingsUsers() {
+    return this.list("users");
+  }
+
+  async listSettingsRoles() {
+    return this.list("roles");
+  }
+
   async verifyStepUp(code: string) {
     if (!/^\d{6}$/.test(code)) throw new DemoRuleError("Enter the 6-digit code from your authenticator app.");
   }

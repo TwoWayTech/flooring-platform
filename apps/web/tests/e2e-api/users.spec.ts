@@ -29,9 +29,10 @@ test.describe("users and account access (api mode)", () => {
   });
 
   test("an invitation or reset link that does not work says so plainly", async ({ page }) => {
+    // Next.js adds an empty route-announcer alert, so the message is found by its text.
     await page.goto("/accept-invite?token=this-token-was-never-issued-by-anyone-0123");
-    await expect(page.getByRole("alert")).toContainText("expired or was already used");
+    await expect(page.getByText("This invitation link has expired or was already used")).toBeVisible();
     await page.goto("/reset-password");
-    await expect(page.getByRole("alert")).toContainText("expired or was already used");
+    await expect(page.getByText("This reset link has expired or was already used")).toBeVisible();
   });
 });

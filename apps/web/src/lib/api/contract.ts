@@ -666,6 +666,13 @@ export interface ApiClient {
   /** Creates or replaces a record. Screens call domain methods; this backs them. */
   save<K extends CollectionName>(collection: K, item: ItemOf<K>, audit?: AuditInput): Promise<ItemOf<K>>;
 
+  /**
+   * Settings → Users' list of people, with their roles and MFA state. Other screens keep using
+   * `list("users")` for names and pickers until their modules move to the API (ADR 0034).
+   */
+  listSettingsUsers(): Promise<User[]>;
+  /** Settings → Users and Security roles' list of roles with their permissions. */
+  listSettingsRoles(): Promise<Role[]>;
   /** Invites a user; fails when the seat limit is reached (spec "Settings: Users"). */
   inviteUser(input: InviteUserInput): Promise<User>;
   /** Changes a user's roles, status, MFA or branch and audits it. */

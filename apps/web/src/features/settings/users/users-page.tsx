@@ -63,7 +63,7 @@ export function UsersPage() {
   // Disabling or enabling someone changes whether they can sign in, so it asks for a step-up code.
   const [changingStatus, setChangingStatus] = useState<{ user: User; status: User["status"] } | null>(null);
   const data = useApiQuery(async (client) => {
-    const [users, roles] = await Promise.all([client.list("users"), client.list("roles")]);
+    const [users, roles] = await Promise.all([client.listSettingsUsers(), client.listSettingsRoles()]);
     return { users, roles };
   }, []);
 
