@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/notifications-core`, PR #9, the last task of the 2026-11-13 work queue.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 is `fix/platform-owner-decisions`, PR #10.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`) and PR #8 (`59ce4e4`).
-- **Last session log:** docs/sessions/2026-11-13-0950-a-notifications-core.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`) and PR #9 (`38bf221`).
+- **Last session log:** docs/sessions/2026-11-13-1200-a-owner-decisions.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -63,26 +63,38 @@
   - separation of duties and data-scope rules;
   - default roles and a ceiling for new companies;
   - the role-by-permission matrix.
-- [x] The notifications core on `feat/notifications-core` (PR #9, ADR 0032; not merged at the time of writing):
+- [x] The notifications core, merged to main in PR #9 (`38bf221`, ADR 0032):
   - pg-boss jobs;
   - `notify` with the Outbox worker;
   - in-app notes and Outbox endpoints;
   - the daily 30-day cleanup of sign-in security data.
+- [x] The owner's decisions of 2026-11-13, on `fix/platform-owner-decisions` (PR #10, ADR 0033):
+  - the company life cycle (lapsed plan 14 days full, 30 read-only, then locked; an unpaid trial that is suspended, cancelled or ended is read-only for 30 days, then locked; data is never deleted);
+  - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
+  - Retry keeps a message's scheduled time;
+  - the explicit `gh pr` allows.
 
 ## Next three tasks
-The work queue the owner set on 2026-11-13. Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Owner:** make the CI `verify` check (it runs the isolation suite) required in GitHub branch protection for `main` (blueprint P9).
-
-3. **Next, A:** P10 part 2 with the Settings → Users and Roles API:
+The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
+1. **Task 2, A:** P10 part 2 with Settings → Users and Roles:
    - no-escalation on grants;
    - the active-Owner rule;
-   - server-side step-up MFA, which needs a design;
+   - server-side step-up MFA;
    - support-access grants;
-   - `member.role` sync with MFA by role content.
+   - invitations, whose acceptance sets the password and MFA;
+   - password reset with the 3-per-hour email limit;
+   - `member.role` sync with MFA decided by role content.
+2. **Tasks 3 to 5, A:** P11 inventory, then purchasing, then sales with the tax engine.
+3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
 ## Follow-ups (don't forget)
+- **Required check on a paid GitHub plan:** when the repository moves to a paid GitHub plan, make `verify` (which runs the isolation suite) a required check on `main`. GitHub Free cannot enforce it on a private repository, so until then the CLAUDE.md self-merge rule is the guard (owner decision, 2026-11-13).
+- **Merge methods on GitHub (owner, settings):** the repository still allows rebase and merge commits. Switching both off under Settings → General → Pull Requests makes squash the only way, whatever a tool allows (PR #10 security review).
+- **"Paid" in the life cycle:** `companyPhase` counts a cancelled subscription as paid when its price is above zero. The billing webhook must store trial rows with price `0`, or record payment in its own column such as `first_paid_at` (PR #10 security review).
+- **move-tenant must set `maintenance_reason = 'move'`** when it turns maintenance mode on, so a later migration never ends it (ADR 0033).
+- **Maintenance and suspended screens:** the web app shows the API's message today. Give it a full-page "under maintenance" and "account suspended" screen with the platform-admin screens (ADR 0033).
 - **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
 - **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
@@ -101,14 +113,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **PR #8 fifth review (none blocking):**
   - Claim the database row before `prepare`, so a rerun on a changed status never seeds before it throws.
   - Report migrate-all writes that match no row (status changed mid-run), as provisionCompany does.
-  - Decide whether a read-only database should keep serving after a failed migration (availability: new code on an old schema answers 500).
 - **Notifications follow-ups (PR #9 reviews, none blocking):**
-  - Retry should respect `scheduledFor`: a scheduled row with a bad address goes out at once after Retry.
-  - The worker's claim should skip soft-deleted rows.
   - Confine `JobsService.send` with lint, like `JobTenants`.
   - Stop pg-boss when shutdown comes while it is still starting.
   - Tests:
     - the stale-`sending` Retry;
+    - an early job queuing itself again (`requeueIfEarly`);
     - the provider timeout;
     - Retry after a company is writable again;
     - own-row SQL filter cases;
@@ -128,9 +138,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
-- **Owner decision, billing:** should an `active` or `past_due` subscription keep giving its plan's modules after its period ends, and for how long (a grace period)? Today it does, with no limit. Only trial subscriptions expire (PR #8 review).
-- **Owner decision, access:** a company suspended or cancelled during its trial, which never subscribed, now gets only `platform`, so it cannot read its own records. That fails closed, but it conflicts with the rule that a cancelled company keeps reading its data (blueprint p29). Choose whether it should keep the products' modules read-only (PR #8 third review).
-- **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
+- **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet. They come later with Settings → Users.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).
 - **`.env.example`:** Claude Code is denied `.env.*` files, so docs/environment.md lists the variables instead. The owner's `.env.local` exists with `BETTER_AUTH_SECRET` and `SEED_USER_PASSWORD`, so this is not a blocker.
