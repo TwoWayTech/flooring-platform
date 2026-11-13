@@ -4,11 +4,13 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, migrateAllCompanies, openCompanyDb, openControlDb } from "../src";
 import { roles, userProfiles } from "../src/company";
-import { tenantDatabases, tenants, user } from "../src/control";
+import { verifyPassword } from "better-auth/crypto";
+import { account, organization, tenantDatabases, tenants, user } from "../src/control";
 import { seedTestCompany } from "../src/seed";
-import { scratchDatabase } from "./scratch-db";
+import { scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
+const userPassword = randomBytes(12).toString("base64url");
 
 describe("test company seed", () => {
   const scratch: { url: string; drop: () => Promise<void> }[] = [];
@@ -21,6 +23,7 @@ describe("test company seed", () => {
       encryptionKey,
       provisioner: new NoopProvisioner(scratch[1].url),
       provider: "noop",
+      userPassword,
     };
     tenantId = await seedTestCompany(options);
     await seedTestCompany(options);
@@ -40,6 +43,19 @@ describe("test company seed", () => {
       expect(database.schemaVersion).toBe("0000_company_base");
       expect(database.encryptedUrl).not.toContain("postgres://");
       expect(decryptSecret(database.encryptedUrl, encryptionKey)).toBe(scratch[1].url);
+    } finally {
+      await control.close();
+    }
+  });
+
+  it("gives every seeded user one password credential, and the organization is the tenant", async () => {
+    const control = openControlDb(scratch[0].url, { max: 1 });
+    try {
+      const credentials = await control.db.select().from(account).where(eq(account.providerId, "credential"));
+      expect(credentials).toHaveLength(15);
+      expect(await verifyPassword({ hash: credentials[0].password ?? "", password: userPassword })).toBe(true);
+      const [org] = await control.db.select().from(organization);
+      expect(org.id).toBe(tenantId);
     } finally {
       await control.close();
     }

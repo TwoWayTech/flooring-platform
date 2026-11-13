@@ -11,7 +11,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test:e2e": "playwright test",
     "test": "vitest run",
-    "test:e2e:smoke": "playwright test --grep @smoke"
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:api": "playwright test --config playwright.api.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "7.0.3",

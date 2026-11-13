@@ -4,8 +4,9 @@ import { PostgresServerProvisioner } from "@workspace/providers";
 export const adminUrl = process.env.TENANT_DB_ADMIN_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
 
 /**
- * Throwaway databases for integration tests, made by the real provisioner, so a test never
- * touches the developer's control or company databases. Drop them in afterAll.
+ * Throwaway databases for integration tests in any package (`@workspace/db/testing`), made by the
+ * real provisioner, so a test never touches the developer's control or company databases. Drop
+ * them in afterAll.
  */
 export async function scratchDatabase(label: string): Promise<{ url: string; drop: () => Promise<void> }> {
   const provisioner = new PostgresServerProvisioner(adminUrl);

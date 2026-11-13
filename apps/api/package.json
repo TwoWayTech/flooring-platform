@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsup --watch --onSuccess \"node --env-file-if-exists=../../.env --enable-source-maps dist/main.js\"",
+    "dev": "tsup --watch --onSuccess \"node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local --enable-source-maps dist/main.js\"",
     "build": "tsup",
     "start": "node --enable-source-maps dist/main.js",
     "test": "vitest run --project unit",
@@ -23,6 +23,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/providers": "workspace:*",
     "@workspace/shared": "workspace:*",
+    "better-auth": "1.7.22",
     "drizzle-orm": "0.45.4",
     "postgres": "4.1.1",
     "reflect-metadata": "0.2.2",

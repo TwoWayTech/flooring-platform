@@ -7,26 +7,31 @@
     ".": "./src/index.ts",
     "./control": "./src/control/index.ts",
     "./company": "./src/company/index.ts",
-    "./seed": "./src/seed/index.ts"
+    "./seed": "./src/seed/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate --config drizzle.control.config.ts && drizzle-kit generate --config drizzle.company.config.ts",
-    "migrate": "node --env-file-if-exists=../../.env --import tsx scripts/migrate.ts",
-    "seed": "node --env-file-if-exists=../../.env --import tsx scripts/seed.ts",
+    "migrate": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local --import tsx scripts/migrate.ts",
+    "seed": "node --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local --import tsx scripts/seed.ts",
     "test": "vitest run --project unit",
     "test:api": "vitest run --project integration",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "auth:generate": "tsx scripts/generate-auth-schema.ts"
   },
   "dependencies": {
     "@workspace/providers": "workspace:*",
     "@workspace/shared": "workspace:*",
+    "better-auth": "1.7.22",
     "drizzle-orm": "0.45.4",
     "postgres": "4.1.1",
     "uuid": "14.0.3"
   },
   "devDependencies": {
+    "@better-auth/passkey": "1.7.22",
     "@types/node": "22.20.5",
+    "auth": "1.7.22",
     "drizzle-kit": "0.31.11",
     "eslint": "9.39.5",
     "tsx": "4.23.15",

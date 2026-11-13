@@ -19,6 +19,21 @@ const apiEnvSchema = z.object({
   CONNECTION_ENCRYPTION_KEY: z
     .string()
     .refine((value) => Buffer.from(value, "base64").length === 32, "Must be 32 bytes, base64-encoded."),
+  /** Signs Better Auth cookies and tokens. At least 32 characters; generate with `npx auth secret`. */
+  BETTER_AUTH_SECRET: z.string().min(32, "Must be at least 32 characters."),
+  /**
+   * Web hosts that serve the sign-in page, comma-separated, with wildcards (`*.vercel.app`,
+   * `localhost:*`). Better Auth builds verification links and checks origins from them (ADR 0029).
+   */
+  AUTH_ALLOWED_HOSTS: z
+    .string()
+    .default("localhost:*")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean),
+    ),
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });

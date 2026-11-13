@@ -1,6 +1,7 @@
 import { US_STATES, type ProductKey } from "@workspace/shared";
 import type { ControlDb } from "../client";
 import {
+  account,
   countryPacks,
   member,
   organization,
@@ -150,10 +151,15 @@ async function seedTenant(tx: ControlDb, demo: DemoCompany, planId: string): Pro
 }
 
 /**
- * The company's people as Better Auth users and organization members. No passwords or MFA
- * secrets are seeded: sign-in arrives with P8, which adds credentials through Better Auth itself.
+ * The company's people as Better Auth users and organization members. When a password hash is
+ * given, each user also gets a Better Auth "credential" account with it, so they can sign in
+ * locally (accounts are invite-only, ADR 0029). No MFA secrets are seeded.
  */
-async function seedPeople(tx: ControlDb, { company, fixtures }: DemoCompany): Promise<void> {
+async function seedPeople(
+  tx: ControlDb,
+  { company, fixtures }: DemoCompany,
+  passwordHash: string | undefined,
+): Promise<void> {
   const tenantId = seededTenantId(company.id);
   const now = new Date();
   await tx
@@ -177,16 +183,32 @@ async function seedPeople(tx: ControlDb, { company, fixtures }: DemoCompany): Pr
         createdAt: now,
       })
       .onConflictDoNothing();
+    if (passwordHash) {
+      await tx
+        .insert(account)
+        .values({
+          id: seedId(`account:${person.id}`),
+          accountId: userId,
+          providerId: "credential",
+          userId,
+          password: passwordHash,
+          updatedAt: now,
+        })
+        .onConflictDoNothing();
+    }
   }
 }
 
-/** Seeds the control-database side of one demo company: products, plan, tenant, branding, ceiling and people. */
-export async function seedControl(control: ControlDb, demo: DemoCompany): Promise<string> {
+/**
+ * Seeds the control-database side of one demo company: products, plan, tenant, branding, ceiling
+ * and people. `passwordHash` (a Better Auth hash) gives every seeded user a password.
+ */
+export async function seedControl(control: ControlDb, demo: DemoCompany, passwordHash?: string): Promise<string> {
   await control.transaction(async (tx) => {
     await seedReferenceData(tx);
     const planId = await seedPlan(tx, demo);
     await seedTenant(tx, demo, planId);
-    await seedPeople(tx, demo);
+    await seedPeople(tx, demo, passwordHash);
   });
   return seededTenantId(demo.company.id);
 }

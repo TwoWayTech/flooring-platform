@@ -6,6 +6,7 @@ const base = {
   CONTROL_DATABASE_URL: "postgres://u:p@localhost:5432/control",
   CONNECTION_ENCRYPTION_KEY: key,
   TENANT_DB_ADMIN_URL: "postgres://u:p@localhost:5432/postgres",
+  BETTER_AUTH_SECRET: "test-only-secret-that-is-at-least-32-chars",
 };
 
 describe("validateEnv", () => {
@@ -20,6 +21,16 @@ describe("validateEnv", () => {
     expect(() => validateEnv({ CONNECTION_ENCRYPTION_KEY: key })).toThrow(/CONTROL_DATABASE_URL/);
     expect(() => validateEnv({ ...base, CONNECTION_ENCRYPTION_KEY: "c2hvcnQ=" })).toThrow(/CONNECTION_ENCRYPTION_KEY/);
     expect(() => validateEnv({ ...base, CONNECTION_ENCRYPTION_KEY: "c2hvcnQ=" })).not.toThrow(/c2hvcnQ/);
+  });
+
+  it("needs a Better Auth secret of at least 32 characters and splits the allowed sign-in hosts", () => {
+    expect(() => validateEnv({ ...base, BETTER_AUTH_SECRET: undefined })).toThrow(/BETTER_AUTH_SECRET/);
+    expect(() => validateEnv({ ...base, BETTER_AUTH_SECRET: "short" })).toThrow(/BETTER_AUTH_SECRET/);
+    expect(validateEnv(base).AUTH_ALLOWED_HOSTS).toEqual(["localhost:*"]);
+    expect(validateEnv({ ...base, AUTH_ALLOWED_HOSTS: "a.example.com, *.vercel.app" }).AUTH_ALLOWED_HOSTS).toEqual([
+      "a.example.com",
+      "*.vercel.app",
+    ]);
   });
 
   it("checks the provider settings too", () => {

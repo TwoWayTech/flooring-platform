@@ -39,7 +39,8 @@ function storageFor(env: ProviderEnv["storage"]): StorageProvider {
   });
 }
 
-function emailFor(env: ProviderEnv["email"]): EmailProvider {
+/** The email adapter EMAIL_PROVIDER asks for, for an app that needs only email. */
+export function emailFor(env: ProviderEnv["email"]): EmailProvider {
   return env.EMAIL_PROVIDER === "memory" ? new MemoryEmailProvider() : new ResendEmailProvider(env.RESEND_API_KEY);
 }
 

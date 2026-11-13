@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { migrateCompany, migrateControl } from "../src";
-import { scratchDatabase } from "./scratch-db";
+import { scratchDatabase } from "../src/testing";
 
 /** Tables that are corrected by a new row, never hidden, so they have no deleted_at. */
 const APPEND_ONLY = new Set([
@@ -12,7 +12,7 @@ const APPEND_ONLY = new Set([
   "time_off_entries",
   "meeting_responses",
 ]);
-/** Better Auth owns these shapes (src/control/auth.ts). */
+/** Better Auth owns these shapes (src/control/auth.ts); only the uuid id rule applies to them. */
 const LIBRARY_OWNED = new Set([
   "user",
   "session",
@@ -55,9 +55,10 @@ function ruleBreaks(columns: Column[]): string[] {
   for (const column of columns) byTable.set(column.table, [...(byTable.get(column.table) ?? []), column]);
   const breaks: string[] = [];
   for (const [table, tableColumns] of byTable) {
-    if (LIBRARY_OWNED.has(table)) continue;
     const type = (name: string) => tableColumns.find((column) => column.column === name)?.type;
     if (type("id") !== "uuid") breaks.push(`${table}: id is not a uuid`);
+    // Better Auth tables keep its column shapes, but their ids must still be uuid (ADR 0029).
+    if (LIBRARY_OWNED.has(table)) continue;
     for (const name of ["created_at", "updated_at"]) {
       if (type(name) !== "timestamp with time zone") breaks.push(`${table}: ${name} missing or not timestamptz`);
     }

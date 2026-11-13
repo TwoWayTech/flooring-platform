@@ -56,7 +56,7 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -92,6 +92,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Make a throwaway seed password and auth secret for this run
+        run: |
+          pw=$(openssl rand -base64 18); echo "::add-mask::$pw"; echo "SEED_USER_PASSWORD=$pw" >> "$GITHUB_ENV"
+          secret=$(openssl rand -base64 32); echo "::add-mask::$secret"; echo "BETTER_AUTH_SECRET=$secret" >> "$GITHUB_ENV"
       - name: Migrate and seed the test company (twice, to prove the seed is idempotent)
         run: pnpm db:seed && pnpm db:seed && pnpm db:migrate
       - name: API and database tests against PostgreSQL 16
@@ -105,6 +109,11 @@ jobs:
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Playwright smoke
         run: pnpm test:e2e:smoke
+      - name: Real sign-in in the browser (api-mode web build, apps/api, seeded PostgreSQL)
+        run: |
+          pnpm --filter api build
+          NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build
+          pnpm --filter web test:e2e:api
       - name: Keep the Playwright report when it fails
         if: failure()
         uses: actions/upload-artifact@v4

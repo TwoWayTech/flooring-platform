@@ -6,13 +6,13 @@ import { ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { featureOn, type ProductKey } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
-import { BrandStyle } from "@workspace/ui/components/brand-style";
 import { FloorPattern } from "@workspace/ui/components/floor-pattern";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { signIn } from "@/lib/session/client";
 import { PRODUCTS } from "@/products";
 import { CodeStep } from "./code-step";
+import { LoginLayout } from "./login-layout";
 import { useLoginDirectory, type LoginCompany, type Persona } from "./use-login-directory";
 
 type Choice = { kind: "persona"; persona: Persona } | { kind: "platform" } | null;
@@ -130,91 +130,85 @@ export function LoginScreen({ product }: { product: ProductKey }) {
   }
 
   return (
-    <div className="bg-background relative min-h-dvh overflow-hidden">
-      <BrandStyle color={branding.brandColor} />
-      <FloorPattern key={branding.pattern} pattern={branding.pattern} animate className="absolute inset-0 size-full" />
-      <div className="relative flex min-h-dvh flex-col pt-28 sm:p-6 sm:pt-6 lg:p-12">
-        <main className="bg-surface border-hairline sm:rounded-dialog flex w-full flex-1 flex-col gap-7 rounded-t-dialog border p-6 shadow-lg sm:max-w-[480px] sm:flex-none sm:p-8">
-          <header className="flex flex-col gap-1">
-            <p className="font-display text-2xl font-semibold tracking-[-0.01em]">{config.name}</p>
-            <p className="text-muted-foreground">Pick a company and a persona to see the product as they would.</p>
-          </header>
-
-          {directory.status === "loading" ? (
-            <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading companies">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-40 w-full" />
+    <LoginLayout
+      brandColor={branding.brandColor}
+      pattern={branding.pattern}
+      title={config.name}
+      subtitle="Pick a company and a persona to see the product as they would."
+    >
+      {directory.status === "loading" ? (
+        <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading companies">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      ) : directory.status === "error" ? (
+        <p className="text-danger-ink">The demo data did not load. Reload the page to try again.</p>
+      ) : (
+        <>
+          <Step n={1} title="Company">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {companies.map((entry) => (
+                <CompanyChip
+                  key={entry.company.id}
+                  entry={entry}
+                  selected={entry.company.id === selected?.company.id}
+                  onSelect={() => {
+                    setCompanyId(entry.company.id);
+                    setChoice(null);
+                  }}
+                />
+              ))}
             </div>
-          ) : directory.status === "error" ? (
-            <p className="text-danger-ink">The demo data did not load. Reload the page to try again.</p>
-          ) : (
-            <>
-              <Step n={1} title="Company">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  {companies.map((entry) => (
-                    <CompanyChip
-                      key={entry.company.id}
-                      entry={entry}
-                      selected={entry.company.id === selected?.company.id}
-                      onSelect={() => {
-                        setCompanyId(entry.company.id);
-                        setChoice(null);
-                      }}
-                    />
-                  ))}
-                </div>
-              </Step>
+          </Step>
 
-              <Step n={2} title="Persona">
-                <div role="radiogroup" aria-labelledby="step-2" className="grid gap-2 sm:grid-cols-2">
-                  {(selected?.personas ?? []).map((persona) => (
-                    <PersonaCard
-                      key={persona.user.id}
-                      persona={persona}
-                      selected={choice?.kind === "persona" && choice.persona.user.id === persona.user.id}
-                      onSelect={() => setChoice({ kind: "persona", persona })}
-                    />
-                  ))}
-                </div>
-                {featureOn("admin.access") ? (
-                  <button
-                    type="button"
-                    onClick={() => setChoice({ kind: "platform" })}
-                    aria-pressed={choice?.kind === "platform"}
-                    className={cn(
-                      "flex items-center gap-3 rounded-md border border-dashed p-3 text-left transition-colors",
-                      choice?.kind === "platform" ? "border-brand bg-brand-soft" : "border-hairline hover:bg-raised",
-                    )}
-                  >
-                    <ShieldCheck aria-hidden="true" className="text-muted-foreground size-5 shrink-0" />
-                    <span>
-                      <span className="block text-sm font-semibold">Platform admin (you)</span>
-                      <span className="text-muted-foreground block text-xs">Companies, plans, modules and access</span>
-                    </span>
-                  </button>
-                ) : null}
-              </Step>
+          <Step n={2} title="Persona">
+            <div role="radiogroup" aria-labelledby="step-2" className="grid gap-2 sm:grid-cols-2">
+              {(selected?.personas ?? []).map((persona) => (
+                <PersonaCard
+                  key={persona.user.id}
+                  persona={persona}
+                  selected={choice?.kind === "persona" && choice.persona.user.id === persona.user.id}
+                  onSelect={() => setChoice({ kind: "persona", persona })}
+                />
+              ))}
+            </div>
+            {featureOn("admin.access") ? (
+              <button
+                type="button"
+                onClick={() => setChoice({ kind: "platform" })}
+                aria-pressed={choice?.kind === "platform"}
+                className={cn(
+                  "flex items-center gap-3 rounded-md border border-dashed p-3 text-left transition-colors",
+                  choice?.kind === "platform" ? "border-brand bg-brand-soft" : "border-hairline hover:bg-raised",
+                )}
+              >
+                <ShieldCheck aria-hidden="true" className="text-muted-foreground size-5 shrink-0" />
+                <span>
+                  <span className="block text-sm font-semibold">Platform admin (you)</span>
+                  <span className="text-muted-foreground block text-xs">Companies, plans, modules and access</span>
+                </span>
+              </button>
+            ) : null}
+          </Step>
 
-              {choice && featureOn("auth.mfa") ? (
-                <Step n={3} title="Verify it is you">
-                  <CodeStep
-                    key={choice.kind === "platform" ? "platform" : choice.persona.user.id}
-                    who={choice.kind === "platform" ? "platform admin" : choice.persona.user.name}
-                    pending={pending}
-                    onSubmit={() => void complete()}
-                  />
-                </Step>
-              ) : choice ? (
-                <Button size="lg" className="h-10 self-start" disabled={pending} onClick={() => void complete()}>
-                  {pending
-                    ? "Signing in"
-                    : `Sign in as ${choice.kind === "platform" ? "platform admin" : choice.persona.user.name}`}
-                </Button>
-              ) : null}
-            </>
-          )}
-        </main>
-      </div>
-    </div>
+          {choice && featureOn("auth.mfa") ? (
+            <Step n={3} title="Verify it is you">
+              <CodeStep
+                key={choice.kind === "platform" ? "platform" : choice.persona.user.id}
+                who={choice.kind === "platform" ? "platform admin" : choice.persona.user.name}
+                pending={pending}
+                onSubmit={() => void complete()}
+              />
+            </Step>
+          ) : choice ? (
+            <Button size="lg" className="h-10 self-start" disabled={pending} onClick={() => void complete()}>
+              {pending
+                ? "Signing in"
+                : `Sign in as ${choice.kind === "platform" ? "platform admin" : choice.persona.user.name}`}
+            </Button>
+          ) : null}
+        </>
+      )}
+    </LoginLayout>
   );
 }
