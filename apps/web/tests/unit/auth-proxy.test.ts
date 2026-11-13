@@ -1,6 +1,6 @@
 import { AUTH_PROXY_HEADERS } from "@workspace/shared";
 import { describe, expect, it } from "vitest";
-import { withAuthProxyHeaders } from "../../src/lib/session/auth-proxy";
+import { reachesAuthViaApiProxy, withAuthProxyHeaders } from "../../src/lib/session/auth-proxy";
 
 const SECRET = "web-proxy-secret-for-tests-0123456789";
 
@@ -32,5 +32,25 @@ describe("withAuthProxyHeaders (ADR 0029, part 2: the API trusts only the IP our
       SECRET,
     );
     expect(headers.get(AUTH_PROXY_HEADERS.proxySecret)).toBeNull();
+  });
+});
+
+describe("reachesAuthViaApiProxy (PR #4 re-review: Better Auth only through /api/auth)", () => {
+  it("catches auth paths behind /api-proxy, however they are written", () => {
+    for (const path of [
+      "/api-proxy/api/auth/sign-in/email",
+      "/api-proxy//api/auth/sign-in/email",
+      "/api-proxy/API/Auth/verify-password",
+      "/api-proxy/api%2Fauth/sign-in/email",
+      "/api-proxy/%E0%A4%A",
+    ]) {
+      expect(reachesAuthViaApiProxy(path)).toBe(true);
+    }
+  });
+
+  it("leaves the auth route and other API paths alone", () => {
+    for (const path of ["/api/auth/sign-in/email", "/api-proxy/auth/context", "/api-proxy/public/branding", "/sales"]) {
+      expect(reachesAuthViaApiProxy(path)).toBe(false);
+    }
   });
 });

@@ -11,7 +11,7 @@ import type { Auth } from "./core/auth/auth";
 import { settleClientIp } from "./core/auth/client-ip";
 import { AUTH } from "./core/auth/tokens";
 import type { ApiEnv } from "./core/config/env";
-import { ErrorFilter } from "./core/errors/error-filter";
+import { ErrorFilter, type ErrorBody } from "./core/errors/error-filter";
 
 /** Where the OpenAPI document is served: a browsable page and the raw JSON for client generators. */
 export const OPENAPI_PATHS = { ui: "docs", json: "docs/openapi.json" };
@@ -31,6 +31,12 @@ function setUpOpenApi(app: INestApplication): void {
 /** Where Better Auth's endpoints live; the web app proxies the same path (ADR 0029). */
 export const AUTH_BASE_PATH = "/api/auth";
 
+/** The answer to an auth request that did not come through the web host's auth route. */
+const PROXY_REQUIRED_BODY: ErrorBody = {
+  code: "proxy_required",
+  message: "Sign in through the app's own address.",
+};
+
 /**
  * Mounts Better Auth on /api/auth/* ahead of the JSON body parser, which would otherwise consume
  * the request body before Better Auth reads it, then turns body parsing on for every other route.
@@ -43,8 +49,13 @@ function mountAuth(app: NestExpressApplication, proxySecret: string | undefined)
     .getHttpAdapter()
     .getInstance()
     .all(`${AUTH_BASE_PATH}/*splat`, (request: IncomingMessage, response: ServerResponse) => {
-      // The per-IP limits read only the client IP our web proxy vouches for (client-ip.ts).
-      settleClientIp(request, proxySecret);
+      // The per-IP limits read only the client IP our web proxy vouches for (client-ip.ts). In
+      // production, auth requests that did not come through it are refused.
+      if (!settleClientIp(request, proxySecret)) {
+        response.writeHead(403, { "content-type": "application/json" });
+        response.end(JSON.stringify(PROXY_REQUIRED_BODY));
+        return;
+      }
       return handler(request, response);
     });
   app.useBodyParser("json");

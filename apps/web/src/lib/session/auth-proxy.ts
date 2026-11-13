@@ -1,5 +1,5 @@
 import { AUTH_PROXY_HEADERS } from "@workspace/shared";
-import { AUTH_BASE_PATH } from "./auth-cookie";
+import { API_PROXY_PATH, AUTH_BASE_PATH } from "./auth-cookie";
 
 /**
  * The browser's IP as the hosting edge reports it: the first `x-forwarded-for` entry. The web host
@@ -25,4 +25,21 @@ export function withAuthProxyHeaders(headers: Headers, pathname: string, secret:
   if (ip) headers.set(AUTH_PROXY_HEADERS.clientIp, ip);
   if (secret) headers.set(AUTH_PROXY_HEADERS.proxySecret, secret);
   return headers;
+}
+
+/**
+ * Whether a path would reach Better Auth through the general `/api-proxy` rewrite instead of
+ * `/api/auth`, which is the only route that carries the client IP and the proxy secret. Such paths
+ * answer 404. Repeated slashes and percent-encoding are undone first, so `/api-proxy//api%2Fauth`
+ * is caught too. The API refuses unproxied auth requests in production as well (client-ip.ts).
+ */
+export function reachesAuthViaApiProxy(pathname: string): boolean {
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return pathname.toLowerCase().startsWith(`${API_PROXY_PATH}/`);
+  }
+  const normalised = decoded.replace(/\/{2,}/g, "/").toLowerCase();
+  return normalised.startsWith(`${API_PROXY_PATH}${AUTH_BASE_PATH}`);
 }

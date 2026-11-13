@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isDemoMode } from "./lib/data-source";
 import { PRODUCT_COOKIE, PRODUCT_HEADER, productForRequest } from "./lib/product";
 import { API_PROXY_PATH, AUTH_BASE_PATH, AUTH_SESSION_COOKIES } from "./lib/session/auth-cookie";
-import { withAuthProxyHeaders } from "./lib/session/auth-proxy";
+import { reachesAuthViaApiProxy, withAuthProxyHeaders } from "./lib/session/auth-proxy";
 import { SESSION_COOKIE } from "./lib/session/session";
 
 /**
@@ -31,6 +31,7 @@ export function proxy(request: NextRequest) {
   if (!isDemoMode() && request.nextUrl.pathname.startsWith("/api/demo/")) {
     return new NextResponse(null, { status: 404 });
   }
+  if (reachesAuthViaApiProxy(request.nextUrl.pathname)) return new NextResponse(null, { status: 404 });
   const queryProduct = request.nextUrl.searchParams.get("product");
   const product = productForRequest(
     request.headers.get("host") ?? "",

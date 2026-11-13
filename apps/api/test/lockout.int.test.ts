@@ -1,8 +1,9 @@
 import { authAttempts } from "@workspace/db/control";
 import { eq } from "drizzle-orm";
+import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AuthHarness, PASSWORD, SUMMIT_ID } from "./auth-harness";
+import { AuthHarness, PASSWORD, SUMMIT_ID, WEB_ORIGIN } from "./auth-harness";
 
 describe("password lockout and rate limits (P8 part 2, needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
@@ -129,5 +130,48 @@ describe("password lockout and rate limits (P8 part 2, needs the local PostgreSQ
     await Promise.all(Array.from({ length: 8 }, () => attempt(email, true)));
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(harness.outbox.sent.filter((message) => message.to.includes(email))).toHaveLength(3);
+  });
+
+  /** One check of the password on a signed-in endpoint; a wrong password unless `right` is set. */
+  function verifyPassword(cookie: string, right = false) {
+    return harness
+      .post("/api/auth/verify-password")
+      .set("Cookie", cookie)
+      .send({ password: right ? PASSWORD : `${PASSWORD}-wrong` });
+  }
+
+  it("counts wrong passwords on signed-in endpoints towards the same lockout", async () => {
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+    const cookie = await harness.signIn(email);
+    for (let n = 0; n < 5; n += 1) expect((await verifyPassword(cookie)).status).not.toBe(200);
+    const locked = await verifyPassword(cookie, true);
+    expect(locked.status).toBe(429);
+    expect(locked.body.code).toBe("account_locked");
+    expect((await attempt(email, true)).status).toBe(429);
+  });
+
+  it("resets the count when a signed-in endpoint gets the right password", async () => {
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+    const cookie = await harness.signIn(email);
+    for (let n = 0; n < 4; n += 1) await verifyPassword(cookie);
+    await verifyPassword(cookie, true).expect(200);
+    for (let n = 0; n < 4; n += 1) await verifyPassword(cookie);
+    expect((await attempt(email, true)).status).toBe(200);
+  });
+
+  it("refuses auth requests that did not come through the web proxy", async () => {
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+    for (const secret of [undefined, "not-the-secret"]) {
+      const direct = request(harness.app.getHttpServer())
+        .post("/api/auth/sign-in/email")
+        .set("Origin", WEB_ORIGIN)
+        .set("X-Client-IP", "203.0.113.30");
+      const response = await (secret ? direct.set("X-Proxy-Secret", secret) : direct).send({
+        email,
+        password: PASSWORD,
+      });
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe("proxy_required");
+    }
   });
 });

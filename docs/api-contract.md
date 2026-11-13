@@ -40,7 +40,7 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 | `POST /api/auth/two-factor/verify-backup-code` | `{ code }` → 200 and the session cookie | Each of the 10 backup codes works once. Same limits as verify-totp |
 | `POST /api/auth/two-factor/enable` | `{ password }` → `{ totpURI, backupCodes }` | Starts authenticator-app set-up. It is on once the first code is confirmed with verify-totp |
 | `POST /api/auth/two-factor/disable` | `{ password }` | 403 `mfa_required` when MFA is mandatory for the user |
-| `POST /api/auth/verify-password` | `{ password }` → 200 | Confirms the password before a passkey is added. The confirmation lasts 5 minutes, on this session only. 10 a minute per IP |
+| `POST /api/auth/verify-password` | `{ password }` → 200 | Confirms the password before a passkey is added. The confirmation lasts 5 minutes, on this session only. 10 a minute per IP. Wrong passwords here, and on `change-password` and the two-factor `enable`, `disable`, `get-totp-uri` and `generate-backup-codes`, count towards the sign-in lockout: 429 `account_locked` |
 | `/api/auth/passkey/*` | Better Auth passkey plugin | Register: `generate-register-options` and `verify-registration` need a session signed in at most 10 minutes ago and a password confirmed with `verify-password` in the last 5 minutes, otherwise 403 `password_confirmation_required`. `createSession: true` answers 400 `create_session_unsupported`. Adding a passkey emails the account. Sign in: `generate-authenticate-options` and `verify-authentication`, 10 a minute per IP. Also list, rename and delete. Deleting the last factor of a user who must use MFA answers 403 `mfa_required`. The relying party is `PASSKEY_RP_ID`, and user verification (PIN or biometric) is required |
 | `POST /api/auth/two-factor/send-otp`, `verify-otp` | 404 | Codes by email or SMS are not offered |
 | `POST /api/auth/sign-up/email` | refused | Accounts are invite-only |
@@ -53,6 +53,8 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 | `GET /public/branding?host=` | → `{ displayName, monogram, brandColor, pattern, defaultTheme }` | Public, for the login page. 404 `not_found` when the host names no live company. 400 `invalid_request` for a malformed host. The logo arrives with the branding upload (P11) |
 
 **Mandatory MFA (blueprint p27).** Owner, Accountant, HR and active platform admins must use a second factor. Until they have one, their session may only set up an authenticator app or a passkey, read `/auth/context`, choose a company and sign out. Every other Better Auth endpoint and every guarded route answers 403 `mfa_enrolment_required`. The roles are read from `member.role`, which holds the person's company role keys, comma-separated.
+
+**Auth only through the web host.** With `AUTH_PROXY_SECRET` set (required in production), any `/api/auth/*` request that does not carry the web proxy's secret answers 403 `proxy_required`. The web host answers 404 for `/api-proxy/api/auth/*`.
 
 ## Session (demo route handlers, demo mode only)
 

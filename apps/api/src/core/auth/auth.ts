@@ -8,7 +8,7 @@ import { APIError } from "better-auth/api";
 import { organization, twoFactor } from "better-auth/plugins";
 import { v7 as uuidv7 } from "uuid";
 import { LOCKOUT, type AttemptLog } from "./attempts";
-import { afterAuthHook, AUTH_REFUSALS, beforeAuthHook, requestHost } from "./auth-hooks";
+import { afterAuthHook, AUTH_REFUSALS, beforeAuthHook, requestHost, SESSION_PASSWORD_PATHS } from "./auth-hooks";
 import { CLIENT_IP_HEADER } from "./client-ip";
 import type { CompanyDirectory } from "./company-directory";
 import { hostCompanySlug, pickCompany } from "./company-pick";
@@ -140,7 +140,8 @@ export function createAuth(deps: AuthDeps) {
         "/two-factor/verify-totp": SIGN_IN_RATE,
         "/two-factor/verify-backup-code": SIGN_IN_RATE,
         "/passkey/verify-authentication": SIGN_IN_RATE,
-        "/verify-password": SIGN_IN_RATE,
+        // Every signed-in endpoint that checks the password, /verify-password among them.
+        ...Object.fromEntries(SESSION_PASSWORD_PATHS.map((path) => [path, SIGN_IN_RATE])),
       },
     },
     advanced: {

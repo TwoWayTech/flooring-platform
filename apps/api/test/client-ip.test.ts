@@ -11,29 +11,30 @@ function request(headers: Record<string, string>, socketIp = "10.0.0.5"): Incomi
 describe("settleClientIp (ADR 0029, part 2: the per-IP limits trust only the web proxy)", () => {
   it("keeps the forwarded client IP when the proxy secret matches, and drops the secret", () => {
     const req = request({ [CLIENT_IP_HEADER]: "203.0.113.7", [PROXY_SECRET_HEADER]: SECRET });
-    settleClientIp(req, SECRET);
+    expect(settleClientIp(req, SECRET)).toBe(true);
     expect(req.headers[CLIENT_IP_HEADER]).toBe("203.0.113.7");
     expect(req.headers[PROXY_SECRET_HEADER]).toBeUndefined();
   });
 
-  it("uses the socket address when the secret is missing or wrong", () => {
+  it("refuses a request whose secret is missing or wrong, and never trusts its IP", () => {
     const missing = request({ [CLIENT_IP_HEADER]: "203.0.113.7" });
-    settleClientIp(missing, SECRET);
+    expect(settleClientIp(missing, SECRET)).toBe(false);
     expect(missing.headers[CLIENT_IP_HEADER]).toBe("10.0.0.5");
     const wrong = request({ [CLIENT_IP_HEADER]: "203.0.113.7", [PROXY_SECRET_HEADER]: `${SECRET}x` });
-    settleClientIp(wrong, SECRET);
+    expect(settleClientIp(wrong, SECRET)).toBe(false);
     expect(wrong.headers[CLIENT_IP_HEADER]).toBe("10.0.0.5");
+    expect(wrong.headers[PROXY_SECRET_HEADER]).toBeUndefined();
   });
 
-  it("uses the socket address when no client IP was forwarded", () => {
+  it("lets a proxied request with no client IP through, counted by the socket address", () => {
     const req = request({ [PROXY_SECRET_HEADER]: SECRET });
-    settleClientIp(req, SECRET);
+    expect(settleClientIp(req, SECRET)).toBe(true);
     expect(req.headers[CLIENT_IP_HEADER]).toBe("10.0.0.5");
   });
 
-  it("keeps the forwarded value without a configured secret (development and tests)", () => {
+  it("keeps the forwarded value without a configured secret (development)", () => {
     const req = request({ [CLIENT_IP_HEADER]: "203.0.113.7" });
-    settleClientIp(req, undefined);
+    expect(settleClientIp(req, undefined)).toBe(true);
     expect(req.headers[CLIENT_IP_HEADER]).toBe("203.0.113.7");
   });
 });

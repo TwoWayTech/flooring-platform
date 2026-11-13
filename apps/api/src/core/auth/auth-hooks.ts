@@ -74,11 +74,35 @@ function passkeyStepUpId(sessionId: string): string {
 }
 
 /**
- * When an authenticator app is confirmed, Better Auth swaps the session for a new one with a new
- * created time. The old created time is kept here between the before and after hooks, so the swap
- * cannot restart the company's absolute timeout (blueprint p28).
+ * Endpoints that check the signed-in person's password. Each try counts towards the same lockout
+ * as signing in (owner decision, 2026-11-13), so someone holding a stolen session cannot guess the
+ * password freely and then enrol their own factor. They also get the sign-in rate limit (auth.ts).
  */
-const sessionStarts = new WeakMap<Request, Date>();
+export const SESSION_PASSWORD_PATHS = [
+  "/verify-password",
+  "/change-password",
+  "/two-factor/enable",
+  "/two-factor/disable",
+  "/two-factor/get-totp-uri",
+  "/two-factor/generate-backup-codes",
+] as const;
+const SESSION_PASSWORD_PATH_SET = new Set<string>(SESSION_PASSWORD_PATHS);
+
+/** The session a request arrived with, kept from the before hook for the after hook. */
+interface PriorSession {
+  sessionId: string;
+  userId: string;
+  email: string;
+  createdAt: Date;
+}
+
+/**
+ * Some endpoints swap the session for a new one with a new created time: confirming or turning off
+ * the authenticator app, and changing the password with `revokeOtherSessions`. The session each
+ * request arrived with is kept here, so the after hook can carry its start time over and no swap
+ * can restart the company's absolute timeout (blueprint p28).
+ */
+const priorSessions = new WeakMap<Request, PriorSession>();
 
 /** What each auth refusal tells the person, by code (docs/api-contract.md, Authentication). */
 export const AUTH_REFUSALS = {
@@ -220,6 +244,18 @@ export function beforeAuthHook(deps: AuthDeps) {
         message: AUTH_REFUSALS.mfa_enrolment_required,
       });
     }
+    priorSessions.set(ctx.request, {
+      sessionId: current.session.id,
+      userId: current.user.id,
+      email: current.user.email,
+      createdAt: new Date(current.session.createdAt),
+    });
+    if (
+      SESSION_PASSWORD_PATH_SET.has(path) &&
+      (await deps.attempts.reservePasswordAttempt(current.user.email, requestIp(ctx.request.headers)))
+    ) {
+      throw new APIError("TOO_MANY_REQUESTS", { code: "account_locked", message: LOCKED_MESSAGE });
+    }
     await checkNoDowngrade(deps, path, current.user.id);
     if (PASSKEY_REGISTER_PATHS.has(path)) {
       const proof = await ctx.context.internalAdapter.findVerificationValue(passkeyStepUpId(current.session.id));
@@ -230,7 +266,6 @@ export function beforeAuthHook(deps: AuthDeps) {
         });
       }
     }
-    if (path === "/two-factor/verify-totp") sessionStarts.set(ctx.request, new Date(current.session.createdAt));
     if (path === "/organization/set-active") {
       await checkCompanySwitch(deps, ctx.body, current.user.id, requestHost(ctx.request.headers));
     }
@@ -240,9 +275,10 @@ export function beforeAuthHook(deps: AuthDeps) {
 /**
  * Runs after every Better Auth endpoint. On a password sign-in, a correct password resets the
  * lockout count (a wrong one needs nothing: its reserved attempt already counts as a failure), and
- * a password-only sign-in by someone who must use MFA and has only a passkey is refused. It also
- * keeps the absolute timeout across the authenticator-app session swap, and records the password
- * step before a passkey is added.
+ * a password-only sign-in by someone who must use MFA and has only a passkey is refused. On the
+ * signed-in password endpoints, success resets the lockout count the same way. It also keeps the
+ * absolute timeout across every session swap, and records the password step before a passkey is
+ * added.
  */
 export function afterAuthHook(deps: AuthDeps) {
   return createAuthMiddleware(async (ctx) => {
@@ -266,28 +302,40 @@ export function afterAuthHook(deps: AuthDeps) {
       }
       return;
     }
-    if (!succeeded) return;
-    if (ctx.path === "/two-factor/verify-totp") {
-      const startedAt = sessionStarts.get(ctx.request);
-      const created = ctx.context.newSession;
-      if (startedAt && created) {
-        await deps.db.update(sessionTable).set({ createdAt: startedAt }).where(eq(sessionTable.id, created.session.id));
-      }
-      return;
+    // Only a success proves the password: an error may come before the check, and must not reset
+    // the count, so a reserved attempt that ends in any error stays a failure.
+    const prior = priorSessions.get(ctx.request);
+    if (!succeeded || !prior) return;
+    if (SESSION_PASSWORD_PATH_SET.has(ctx.path)) {
+      await deps.attempts.record("password_ok", prior.email, requestIp(ctx.request.headers));
     }
-    if (ctx.path !== "/verify-password" && ctx.path !== "/passkey/verify-registration") return;
-    const current = await getSessionFromCtx(ctx);
-    if (ctx.path === "/verify-password" && current) {
-      const id = passkeyStepUpId(current.session.id);
+    await keepSessionStart(deps, prior, ctx.context.newSession);
+    if (ctx.path === "/verify-password") {
+      const id = passkeyStepUpId(prior.sessionId);
       await ctx.context.internalAdapter.deleteVerificationByIdentifier(id);
       await ctx.context.internalAdapter.createVerificationValue({
         identifier: id,
-        value: current.user.id,
+        value: prior.userId,
         expiresAt: new Date(Date.now() + PASSKEY_STEP_UP_MS),
       });
-    } else if (ctx.path === "/passkey/verify-registration" && current) {
-      await ctx.context.internalAdapter.deleteVerificationByIdentifier(passkeyStepUpId(current.session.id));
-      void notifyPasskeyAdded(deps, current.user.email).catch(() => deps.logError("Could not send a passkey notice."));
+    } else if (ctx.path === "/passkey/verify-registration") {
+      await ctx.context.internalAdapter.deleteVerificationByIdentifier(passkeyStepUpId(prior.sessionId));
+      void notifyPasskeyAdded(deps, prior.email).catch(() => deps.logError("Could not send a passkey notice."));
     }
   });
+}
+
+/**
+ * Carries the start time of the session a request arrived with over to a session the endpoint
+ * swapped it for, so the company's absolute timeout keeps counting from the first sign-in
+ * (blueprint p28). A new session for someone else, or none, is left alone.
+ */
+async function keepSessionStart(
+  deps: AuthDeps,
+  prior: PriorSession,
+  created: { session: { id: string; createdAt: Date | string }; user: { id: string } } | null | undefined,
+): Promise<void> {
+  if (!created || created.user.id !== prior.userId || created.session.id === prior.sessionId) return;
+  if (new Date(created.session.createdAt) <= prior.createdAt) return;
+  await deps.db.update(sessionTable).set({ createdAt: prior.createdAt }).where(eq(sessionTable.id, created.session.id));
 }

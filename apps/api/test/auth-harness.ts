@@ -22,6 +22,9 @@ export const PASSWORD = `pw-${randomBytes(12).toString("base64url")}`;
 /** Summit Floor Co.'s tenant id, as seeded. */
 export const SUMMIT_ID = seededTenantId("summit");
 
+/** The shared secret the web proxy sends, so the API trusts the forwarded client IP (client-ip.ts). */
+export const PROXY_SECRET = randomBytes(32).toString("base64url");
+
 /**
  * An API on throwaway control and company databases with Summit Floor Co. seeded and every
  * seeded user given PASSWORD. Each harness has its own databases, so tests never share state with
@@ -49,6 +52,7 @@ export class AuthHarness {
       TENANT_DB_ADMIN_URL: this.scratch[0].url,
       BETTER_AUTH_SECRET: randomBytes(32).toString("base64url"),
       AUTH_ALLOWED_HOSTS: "localhost:*,*.flooringsuite.test",
+      AUTH_PROXY_SECRET: PROXY_SECRET,
       CORS_ORIGINS: WEB_ORIGIN,
       EMAIL_PROVIDER: "memory",
       NODE_ENV: "test",
@@ -79,7 +83,8 @@ export class AuthHarness {
       .post(path)
       .set("Origin", WEB_ORIGIN)
       .set("X-Forwarded-Host", host)
-      .set("X-Client-IP", ip);
+      .set("X-Client-IP", ip)
+      .set("X-Proxy-Secret", PROXY_SECRET);
   }
 
   /** A GET request as the web app's proxy sends it. */
@@ -88,7 +93,8 @@ export class AuthHarness {
       .get(path)
       .set("Origin", WEB_ORIGIN)
       .set("X-Forwarded-Host", host)
-      .set("X-Client-IP", ip);
+      .set("X-Client-IP", ip)
+      .set("X-Proxy-Secret", PROXY_SECRET);
   }
 
   /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */
