@@ -3,8 +3,14 @@ import type { CompanyDb } from "../client";
 import {
   branches,
   documentSequences,
+  goodsReceipts,
   locations,
+  poLines,
   products,
+  purchaseOrders,
+  receiptLines,
+  supplierContacts,
+  suppliers,
   rollCuts,
   rolls,
   stockMovements,
@@ -19,6 +25,7 @@ import {
   userRoles,
   type SettingsGroup,
 } from "../company";
+import { and, eq, isNull } from "drizzle-orm";
 import { seededUserId } from "./control";
 import { seedId, type DemoCompany } from "./fixtures";
 
@@ -174,6 +181,7 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
         reorderPoint: product.reorderPoint === undefined ? null : String(product.reorderPoint),
         widthFt: product.widthFt === undefined ? null : String(product.widthFt),
         attributes: product.attributes,
+        supplierId: product.supplierId ? seedId(product.supplierId) : null,
         createdAt: utc(product.createdAt),
       })),
     )
@@ -268,6 +276,127 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
   }
 }
 
+/** The supplier directory (purchasing, part 1; ADR 0036), before products, which point at it. */
+async function seedSuppliers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  if (fixtures.suppliers.length === 0) return;
+  await tx
+    .insert(suppliers)
+    .values(
+      fixtures.suppliers.map((supplier) => ({
+        id: seedId(supplier.id),
+        name: supplier.name,
+        type: supplier.type,
+        status: supplier.status,
+        accountNumber: supplier.accountNumber,
+        email: supplier.email,
+        phone: supplier.phone,
+        terms: supplier.terms,
+        creditLimit: supplier.creditLimit,
+        categories: supplier.categories,
+        address: supplier.address,
+        track1099: supplier.track1099,
+        taxForm: supplier.taxForm,
+        notes: supplier.notes,
+        externalId: supplier.externalId ?? null,
+      })),
+    )
+    .onConflictDoNothing();
+  if (fixtures.supplierContacts.length === 0) return;
+  await tx
+    .insert(supplierContacts)
+    .values(
+      fixtures.supplierContacts.map((contact) => ({
+        ...contact,
+        id: seedId(contact.id),
+        supplierId: seedId(contact.supplierId),
+      })),
+    )
+    .onConflictDoNothing();
+}
+
+/** Purchase orders and goods receipts (purchasing, part 1), after the catalog they order. */
+async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  // A database seeded before suppliers existed gets its products' supplier now.
+  for (const product of fixtures.products) {
+    if (!product.supplierId) continue;
+    await tx
+      .update(products)
+      .set({ supplierId: seedId(product.supplierId) })
+      .where(and(eq(products.id, seedId(product.id)), isNull(products.supplierId)));
+  }
+  for (const po of fixtures.purchaseOrders) {
+    await tx
+      .insert(purchaseOrders)
+      .values({
+        id: seedId(po.id),
+        number: po.number,
+        supplierId: seedId(po.supplierId),
+        status: po.status,
+        locationId: seedId(po.locationId),
+        expectedAt: po.expectedAt,
+        orderedAt: po.orderedAt ? utc(po.orderedAt) : null,
+        cancelledAt: po.cancelledAt ? utc(po.cancelledAt) : null,
+        total: po.total,
+        contactId: po.contactId ? seedId(po.contactId) : null,
+        contactSnapshot: po.contactSnapshot,
+        supplierRef: po.supplierRef,
+        buyerId: seededUserId(po.buyerId),
+        placedVia: po.placedVia,
+        createdAt: utc(po.createdAt),
+        createdBy: seededUserId(po.buyerId),
+      })
+      .onConflictDoNothing();
+    await tx
+      .insert(poLines)
+      .values(
+        po.lines.map((line, position) => ({
+          id: seedId(line.id),
+          poId: seedId(po.id),
+          position,
+          productId: seedId(line.productId),
+          description: line.description,
+          quantity: line.quantity,
+          unit: line.unit,
+          unitCost: line.unitCost,
+          sqFtPerCarton: line.sqFtPerCarton ?? null,
+          locationId: line.locationId ? seedId(line.locationId) : null,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+  for (const receipt of fixtures.receipts) {
+    await tx
+      .insert(goodsReceipts)
+      .values({
+        id: seedId(receipt.id),
+        number: receipt.number,
+        poId: seedId(receipt.poId),
+        supplierId: seedId(receipt.supplierId),
+        locationId: seedId(receipt.locationId),
+        receivedAt: utc(receipt.receivedAt),
+        receivedById: seededUserId(receipt.receivedById),
+        note: receipt.note,
+        createdBy: seededUserId(receipt.receivedById),
+      })
+      .onConflictDoNothing();
+    await tx
+      .insert(receiptLines)
+      .values(
+        receipt.lines.map((line, index) => ({
+          id: seedId(`${receipt.id}:line:${index}`),
+          receiptId: seedId(receipt.id),
+          poLineId: seedId(line.poLineId),
+          productId: seedId(line.productId),
+          received: line.received,
+          damaged: line.damaged,
+          rolls: line.rolls,
+          locationId: line.locationId ? seedId(line.locationId) : null,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+}
+
 /**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, and the catalog and stock (inventory, part 1). Business records
@@ -278,6 +407,8 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
   await company.transaction(async (tx) => {
     await seedOrganization(tx, demo);
     await seedAccess(tx, demo);
+    await seedSuppliers(tx, demo);
     await seedCatalog(tx, demo);
+    await seedOrders(tx, demo);
   });
 }
