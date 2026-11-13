@@ -102,6 +102,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Owner decision, billing:** should an `active` or `past_due` subscription keep giving its plan's modules after its period ends, and for how long (a grace period)? Today it does, with no limit. Only trial subscriptions expire (PR #8 review).
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet. They come later with Settings → Users.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).

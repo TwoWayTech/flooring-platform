@@ -1,6 +1,13 @@
 import { productPermissions } from "@workspace/db";
 import { auditLog, userProfiles, userRoles } from "@workspace/db/company";
-import { planModules, plans, products, tenantModuleOverrides, tenantSubscriptions } from "@workspace/db/control";
+import {
+  planModules,
+  plans,
+  products,
+  tenantModuleOverrides,
+  tenants,
+  tenantSubscriptions,
+} from "@workspace/db/control";
 import {
   enabledModules,
   permissionsForModules,
@@ -293,6 +300,56 @@ describe("permissions, sensitive fields and audit (P10, needs the local PostgreS
       expect(entries.map((entry) => entry.targetId)).toContain(created.body.id);
     } finally {
       await handle.close();
+    }
+  });
+
+  it("gives a company that is no longer a trial and has no subscription only platform (PR #8 review)", async () => {
+    const manager = await member("flooring", ["manager"]);
+    await harness.control.db.update(tenants).set({ status: "active" }).where(eq(tenants.id, companies.flooring.id));
+    try {
+      expect((await call("get", `${PROBE}/contracts`, manager)).body.code).toBe("module_not_enabled");
+      expect((await call("get", `${PROBE}/products`, manager)).body.code).toBe("forbidden");
+    } finally {
+      await harness.control.db.update(tenants).set({ status: "trial" }).where(eq(tenants.id, companies.flooring.id));
+    }
+  });
+
+  it("does not make a trial company fresh again when its subscriptions are deleted (PR #8 review)", async () => {
+    const manager = await member("flooring", ["manager"]);
+    const [flooring] = await harness.control.db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.key, "flooring"));
+    const [plan] = await harness.control.db
+      .insert(plans)
+      .values({
+        key: `deleted-${companies.flooring.slug}`,
+        name: "Core",
+        productId: flooring.id,
+        monthlyPrice: "0",
+        yearlyPrice: "0",
+      })
+      .returning();
+    await harness.control.db.insert(planModules).values({ planId: plan.id, module: "core" });
+    const [subscription] = await harness.control.db
+      .insert(tenantSubscriptions)
+      .values({
+        tenantId: companies.flooring.id,
+        planId: plan.id,
+        interval: "monthly",
+        price: "0",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 86_400_000),
+        status: "trial",
+        deletedAt: new Date(),
+      })
+      .returning();
+    try {
+      expect((await call("get", `${PROBE}/contracts`, manager)).body.code).toBe("module_not_enabled");
+    } finally {
+      await harness.control.db.delete(tenantSubscriptions).where(eq(tenantSubscriptions.id, subscription.id));
+      await harness.control.db.delete(planModules).where(eq(planModules.planId, plan.id));
+      await harness.control.db.delete(plans).where(eq(plans.id, plan.id));
     }
   });
 });

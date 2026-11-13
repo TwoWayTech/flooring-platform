@@ -245,8 +245,23 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     } finally {
       await handle.close();
     }
+    await expect(provision(company(slug, { products: ["hr"] }))).rejects.toThrow(/other products/);
     const again = await provision(company(slug));
     expect(again).toMatchObject({ tenantId: first.tenantId, resumed: true });
     await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+  });
+
+  it("never resumes a live company that is migrating or whose migration failed (PR #8 review)", async () => {
+    const slug = `live${run}`;
+    const first = await provision(company(slug));
+    for (const status of ["migrating", "failed", "read_only"] as const) {
+      const handle = openControlDb(control.url, { max: 1 });
+      try {
+        await handle.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, first.tenantId));
+      } finally {
+        await handle.close();
+      }
+      await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+    }
   });
 });

@@ -43,8 +43,8 @@ export interface SubscriptionModules {
 
 /**
  * The plan modules that limit a company (input to enabledModules).
- * - A company in `trial` status that has never had a subscription gets null: all of its products'
- *   modules.
+ * - A fresh trial (a company in `trial` status that has never had a subscription row, deleted ones
+ *   included) gets null: all of its products' modules.
  * - Otherwise it is the union of the plans of its current subscriptions (one per product). A
  *   cancelled subscription, or a trial subscription past its period, is not current.
  * - With none current, it is the plan of the latest subscription, so a cancelled company keeps
@@ -54,12 +54,12 @@ export interface SubscriptionModules {
  */
 export function planModulesOf(
   subscriptions: readonly SubscriptionModules[],
-  companyIsTrial: boolean,
+  freshTrial: boolean,
   now: Date = new Date(),
 ): PlanModules {
   const isCurrent = (subscription: SubscriptionModules) =>
     subscription.status !== "cancelled" && !(subscription.status === "trial" && subscription.currentPeriodEnd < now);
-  if (subscriptions.length === 0) return companyIsTrial ? null : [];
+  if (subscriptions.length === 0) return freshTrial ? null : [];
   const current = subscriptions.filter(isCurrent);
   const counted =
     current.length > 0

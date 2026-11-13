@@ -1,4 +1,4 @@
-import { encodeMemberRoles, PRODUCT_DEFAULT_BRANDING, type ProductKey } from "@workspace/shared";
+import { decodeMemberRoles, encodeMemberRoles, PRODUCT_DEFAULT_BRANDING, type ProductKey } from "@workspace/shared";
 import type { DatabaseProvisioner } from "@workspace/providers";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
@@ -140,19 +140,32 @@ async function findUnfinished(
     .select({ status: tenantDatabases.status })
     .from(tenantDatabases)
     .where(eq(tenantDatabases.tenantId, tenant.id));
-  // A database that never became ready (seeding failed) is finished on a rerun (PR #7 re-review).
-  if (database?.status === "ready") throw new Error(`A company with the slug "${slug}" already exists.`);
-  const [owner] = await control
-    .select({ userId: member.userId, email: user.email })
+  // Only a company whose database never left `provisioning` is unfinished. A live company that is
+  // migrating or whose migration failed is never re-seeded (PR #8 review: a rerun must not
+  // restore permissions or hand out Owner in a live company).
+  if (database && database.status !== "provisioning") {
+    throw new Error(`A company with the slug "${slug}" already exists.`);
+  }
+  const owners = await control
+    .select({ userId: member.userId, email: user.email, role: member.role })
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))
-    .where(eq(member.organizationId, tenant.id))
-    .limit(1);
+    .where(eq(member.organizationId, tenant.id));
+  const owner = owners.find((row) => decodeMemberRoles(row.role).includes("owner"));
   if (!owner) throw new Error(`The company "${slug}" has no owner; fix it by hand before running again.`);
   if (owner.email !== normalisedEmail(company.owner.email)) {
     throw new Error(
       `The unfinished company "${slug}" has a different owner; run again with the original owner's email.`,
     );
+  }
+  const stored = await control
+    .select({ key: products.key })
+    .from(tenantProducts)
+    .innerJoin(products, eq(products.id, tenantProducts.productId))
+    .where(eq(tenantProducts.tenantId, tenant.id));
+  const storedKeys = stored.map((row) => row.key).sort();
+  if (storedKeys.join(",") !== [...new Set(company.products)].sort().join(",")) {
+    throw new Error(`The unfinished company "${slug}" has other products; run again with the original products.`);
   }
   return { tenantId: tenant.id, ownerUserId: owner.userId };
 }

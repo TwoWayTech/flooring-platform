@@ -127,14 +127,19 @@ export class AccessService {
   }
 
   private async modulesOf(tenant: TenantContext): Promise<ModuleKey[]> {
-    const subscriptions = await this.control.db
+    const allSubscriptions = await this.control.db
       .select({
         planId: tenantSubscriptions.planId,
         status: tenantSubscriptions.status,
         currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
+        deletedAt: tenantSubscriptions.deletedAt,
       })
       .from(tenantSubscriptions)
-      .where(and(eq(tenantSubscriptions.tenantId, tenant.companyId), isNull(tenantSubscriptions.deletedAt)));
+      .where(eq(tenantSubscriptions.tenantId, tenant.companyId));
+    // Deleted rows still prove the company once had a subscription, so deleting them never makes
+    // it a fresh trial again (PR #8 review); only live rows give plan modules.
+    const freshTrial = tenant.status === "trial" && allSubscriptions.length === 0;
+    const subscriptions = allSubscriptions.filter((subscription) => subscription.deletedAt === null);
     const planIds = [...new Set(subscriptions.map((subscription) => subscription.planId))];
     const moduleRows =
       planIds.length === 0
@@ -148,7 +153,7 @@ export class AccessService {
         ...subscription,
         modules: moduleRows.filter((row) => row.planId === subscription.planId).map((row) => row.module),
       })),
-      tenant.status === "trial",
+      freshTrial,
     );
     const overrides = await this.control.db
       .select({ module: tenantModuleOverrides.module, enabled: tenantModuleOverrides.enabled })
