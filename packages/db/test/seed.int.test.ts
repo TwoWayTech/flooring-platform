@@ -4,7 +4,11 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
+  addresses,
+  customers,
   goodsReceipts,
+  quoteLines,
+  quotes,
   products,
   purchaseOrders,
   rollCuts,
@@ -109,6 +113,21 @@ describe("test company seed", () => {
       expect(await company.db.select().from(goodsReceipts)).toHaveLength(fixtures.receipts.length);
       const linked = (await company.db.select().from(products)).filter((product) => product.supplierId !== null);
       expect(linked).toHaveLength(fixtures.products.filter((product) => product.supplierId).length);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds customers with their addresses, and quotes with their lines (sales, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(customers)).toHaveLength(fixtures.customers.length);
+      expect(await company.db.select().from(addresses)).toHaveLength(
+        fixtures.customers.flatMap((c) => c.addresses).length,
+      );
+      expect(await company.db.select().from(quotes)).toHaveLength(fixtures.quotes.length);
+      expect(await company.db.select().from(quoteLines)).toHaveLength(fixtures.quotes.flatMap((q) => q.lines).length);
     } finally {
       await company.close();
     }
