@@ -142,3 +142,46 @@ export async function startTotpEnrolment(password: string): Promise<TotpEnrolmen
 export async function confirmTotpEnrolment(code: string): Promise<AuthStep> {
   return step("/two-factor/verify-totp", { code });
 }
+
+/**
+ * Asks for a password-reset email. The answer is the same whether or not the address has an
+ * account, and the API sends at most 3 such emails an hour per address (draft spec).
+ */
+export async function requestPasswordReset(email: string): Promise<AuthStep> {
+  return step("/request-password-reset", { email, redirectTo: `${window.location.origin}/reset-password` });
+}
+
+/** Sets a new password with the token from the reset link; every session of the account ends. */
+export async function resetPassword(token: string, newPassword: string): Promise<AuthStep> {
+  return step("/reset-password", { token, newPassword });
+}
+
+/** What the accept-invitation page shows before the person chooses a password. */
+export interface InvitationInfo {
+  email: string;
+  companyName: string;
+  needsPassword: boolean;
+}
+
+/** The invitation behind an emailed token, or the reason it cannot be used. */
+export async function fetchInvitation(token: string): Promise<InvitationInfo | { message: string }> {
+  try {
+    const response = await fetch(`${API_PROXY_PATH}/public/invitations/${encodeURIComponent(token)}`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    return response.ok ? ((await response.json()) as InvitationInfo) : { message: await refusal(response) };
+  } catch {
+    return { message: NETWORK_MESSAGE };
+  }
+}
+
+/** Accepts an invitation, setting the password of a new account. */
+export async function acceptInvitation(token: string, password: string | undefined): Promise<AuthStep> {
+  try {
+    const response = await post(`${API_PROXY_PATH}/public/invitations/accept`, { token, password });
+    return response.ok ? { ok: true } : { ok: false, message: await refusal(response) };
+  } catch {
+    return { ok: false, message: NETWORK_MESSAGE };
+  }
+}

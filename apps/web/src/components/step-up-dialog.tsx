@@ -14,6 +14,9 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
+import { api } from "@/lib/api";
+import { ApiError } from "@/lib/api/errors";
+import { isDemoMode } from "@/lib/data-source";
 
 interface StepUpDialogProps {
   open: boolean;
@@ -29,7 +32,8 @@ function useSkipWhenSwitchedOff(
   onOpenChange: (open: boolean) => void,
   onConfirm: () => Promise<void> | void,
 ): boolean {
-  const skip = !featureOn("auth.step-up");
+  // The real API always requires the step-up, so only the demo honours the switch.
+  const skip = !featureOn("auth.step-up") && isDemoMode();
   const confirmed = useRef(false);
   useEffect(() => {
     if (!skip) return;
@@ -45,9 +49,10 @@ function useSkipWhenSwitchedOff(
 }
 
 /**
- * Simulated step-up MFA (blueprint rule 5): changing a role, a user's roles or MFA settings asks
- * for a fresh authenticator code. Any six digits pass in the demo. With the auth.step-up feature
- * switched off, opening it confirms at once.
+ * Step-up MFA (blueprint rule 5; draft spec docs/specs/settings-users-access.md): changing a
+ * role, a user's roles or MFA settings asks for a fresh authenticator code, checked by the API
+ * (`verifyStepUp`) before the change is sent. Any six digits pass in the demo. With the
+ * auth.step-up feature switched off, the demo confirms at once.
  */
 export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDialogProps) {
   const [code, setCode] = useState("");
@@ -63,9 +68,13 @@ export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDi
     }
     setPending(true);
     try {
+      await api.verifyStepUp(code);
       await onConfirm();
       setCode("");
       setError(null);
+    } catch (failure) {
+      if (!(failure instanceof ApiError)) throw failure;
+      setError(failure.message);
     } finally {
       setPending(false);
     }
@@ -97,7 +106,7 @@ export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDi
               placeholder="6 digits"
             />
             <p id="step-up-hint" className={error ? "text-danger-ink text-xs" : "text-muted-foreground text-xs"}>
-              {error ?? "Demo: any 6 digits work."}
+              {error ?? (isDemoMode() ? "Demo: any 6 digits work." : "The code changes every 30 seconds.")}
             </p>
           </div>
           <DialogFooter>
