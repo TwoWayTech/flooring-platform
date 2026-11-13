@@ -386,8 +386,8 @@ export class InvoicesService {
 
   /**
    * Issues a credit note for part of an invoice (spec rule 38): an amount before tax up to what is
-   * not yet credited, with tax and cost in proportion. It becomes customer credit and does not
-   * lower the invoice's balance until the credit is applied.
+   * not yet credited, with tax and cost in proportion. It settles its own invoice's open balance
+   * first, and only the rest becomes customer credit (ADR 0039).
    */
   async creditNote(
     tenant: TenantContext,

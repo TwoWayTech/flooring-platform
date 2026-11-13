@@ -121,7 +121,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Soft-deleting a default account would break the postings that use it. Handle this with the chart-of-accounts screen, which should refuse deleting a keyed account.
   - Closes are ordered by UUID v7 from the API clock. With several API instances, order by a database sequence instead.
   - Add a property test that reconciles the ledger's receivables and customer credit with the documents after random event sequences.
-  - A payment on a seeded or imported invoice that never posted drives that customer's receivable negative. The import must post its opening-balance entry before imported invoices take payments.
+  - Documents that never posted (seeded, imported, contract billings) make the ledger drift from the documents when anything acts on them. That covers a payment, credit note, write-off or applied credit on such an invoice, and voiding a seeded payment or note (its reversal finds no entry). The import must post its opening-balance entry first. Consider refusing money writes on an invoice with no `invoice.issued` entry until then.
+  - A refund may be dated any earlier day. Refuse dates before the customer's first credit, or before go-live.
+  - When a chart-of-accounts screen lets companies add accounts, create the default accounts at provisioning, or refuse their codes, so a code clash can't stop postings.
+  - The closed-period API test uses the UTC day; around midnight it can disagree with the company's day.
+  - The demo's `issueCreditNote` does not settle its own invoice the way the API does; align it if the demo is updated.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.
