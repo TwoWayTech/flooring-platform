@@ -94,6 +94,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Job costing must use `jobCost`, `jobMargin` and `jobMarginPct` (ADR 0031).
   - Make the role matrix test independent of `productPermissions` and `enabledModules`.
   - Check route decorators directly in the inventory test, not only over HTTP.
+- **Provisioning test gaps (PR #8 third review):** that resume picks the owner-role member when a non-owner member comes first; that provisionCompany keeps a status changed meanwhile; and that the dev seed can strand Summit if its database was left `failed` or `migrating` (run `pnpm db:migrate`).
 - **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
@@ -104,6 +105,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 
 ## Blockers and open questions
 - **Owner decision, billing:** should an `active` or `past_due` subscription keep giving its plan's modules after its period ends, and for how long (a grace period)? Today it does, with no limit. Only trial subscriptions expire (PR #8 review).
+- **Owner decision, access:** a company suspended or cancelled during its trial, which never subscribed, now gets only `platform`, so it cannot read its own records. That fails closed, but it conflicts with the rule that a cancelled company keeps reading its data (blueprint p29). Choose whether it should keep the products' modules read-only (PR #8 third review).
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet. They come later with Settings → Users.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PRODUCT_ROLES } from "@workspace/shared";
 import {
   decryptSecret,
+  encryptSecret,
   migrateAllCompanies,
   migrateControl,
   openCompanyDb,
@@ -281,6 +282,41 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
         (await handle.db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId)))[0].status;
       expect(await statusOf(unready.tenantId)).toBe("provisioning");
       expect(await statusOf(readOnly.tenantId)).toBe("read_only");
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("keeps a read-only database read-only when its migration fails (PR #8 review)", async () => {
+    const readOnly = await provision(company(`fail${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const [database] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      const unreachable = decryptSecret(database.encryptedUrl, encryptionKey).replace(/:[^:@/]+@/, ":wrong-password@");
+      await handle.db
+        .update(tenantDatabases)
+        .set({ status: "read_only", encryptedUrl: encryptSecret(unreachable, encryptionKey) })
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      await expect(migrateAllCompanies(handle.db, encryptionKey)).rejects.toThrow(/Migration stopped/);
+      const [after] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      expect(after.status).toBe("read_only");
+      expect(after.lastError).not.toBeNull();
+      await handle.db
+        .update(tenantDatabases)
+        .set({ encryptedUrl: database.encryptedUrl })
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      await migrateAllCompanies(handle.db, encryptionKey);
+      const [retried] = await handle.db
+        .select()
+        .from(tenantDatabases)
+        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      expect(retried.status).toBe("read_only");
     } finally {
       await handle.close();
     }

@@ -64,8 +64,8 @@ export class MigrationStoppedError extends Error {
  * version until it is fixed, so no company is left half-way through a broken release.
  *
  * Databases still being provisioned are skipped: only provisioning marks them ready, after their
- * first rows exist (PR #8 review). A read-only database goes back to read-only after migrating,
- * never to ready, so a rollout never makes a read-only company writable.
+ * first rows exist (PR #8 review). A read-only database stays read-only throughout, its failure
+ * recorded in last_error only, so no rollout, failed or interrupted, makes it writable.
  */
 export async function migrateAllCompanies(
   control: ControlDb,
@@ -78,13 +78,19 @@ export async function migrateAllCompanies(
     .orderBy(asc(tenantDatabases.createdAt));
   const migrated: CompanyMigrationResult[] = [];
   for (const company of companies) {
-    await control.update(tenantDatabases).set({ status: "migrating" }).where(eq(tenantDatabases.id, company.id));
+    // A read-only database keeps its status through the whole rollout, failure included, so no
+    // failed or interrupted run can turn it into ready (PR #8 review). Its migrations run in one
+    // transaction, so reading it meanwhile is safe. Every other database shows migrating.
+    const keepsStatus = company.status === "read_only";
+    if (!keepsStatus) {
+      await control.update(tenantDatabases).set({ status: "migrating" }).where(eq(tenantDatabases.id, company.id));
+    }
     try {
       const version = await migrateCompany(decryptSecret(company.encryptedUrl, encryptionKey));
       await control
         .update(tenantDatabases)
         .set({
-          status: company.status === "read_only" ? "read_only" : "ready",
+          status: keepsStatus ? "read_only" : "ready",
           schemaVersion: version,
           migratedAt: new Date(),
           lastError: null,
@@ -94,7 +100,10 @@ export async function migrateAllCompanies(
     } catch (error) {
       await control
         .update(tenantDatabases)
-        .set({ status: "failed", lastError: error instanceof Error ? error.message : String(error) })
+        .set({
+          ...(keepsStatus ? {} : { status: "failed" as const }),
+          lastError: error instanceof Error ? error.message : String(error),
+        })
         .where(eq(tenantDatabases.id, company.id));
       throw new MigrationStoppedError(company.tenantId, migrated, error);
     }
