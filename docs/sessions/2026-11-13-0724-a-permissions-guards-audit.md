@@ -47,3 +47,71 @@ This is recorded in the blueprint delta.
      - audit rows written and append-only;
      - the route inventory: every company route declares a permission.
 6. **Docs:** ADR 0031, the API contract, the data model (audit trigger), the blueprint delta, STATUS and BRANCHES.
+
+## What was built
+- **packages/shared, `permissions/access-rules.ts`:**
+  - `enabledModules` and `planModulesOf`;
+  - `SENSITIVE_FIELDS` and `sensitiveKeyFor` (camelCase or snake_case);
+  - `scopeAllows` and `separateDuties`.
+
+  Its tests include a scan that fails on any unclassified cost, margin, rate, wage or limit field.
+- **packages/db:**
+  - company migration `0001_audit_log_append_only.sql` (the trigger);
+  - `company-foundation.ts` (`seedCompanyFoundation`, `productPermissions`);
+  - `provisionTenant` writes the ceiling, the default roles and the owner's profile and role;
+  - the seed tests compare against the newest company migration.
+- **apps/api, core/access:**
+  - `access.service.ts`;
+  - `permission.decorators.ts`: `@RequirePermission`, `@RequireModule`, `@AnyCompanyMember`, `@Audited`;
+  - `permission.guard.ts`: PermissionGuard, `permissionDecision`, `@CurrentAccess`;
+  - `sensitive-fields.ts`: `stripSensitive` and the interceptor;
+  - `audit.ts`: AuditService and AuditInterceptor;
+  - `access.module.ts`.
+- **apps/api, elsewhere:**
+  - `core/request-pipeline.module.ts`, the one place that registers the guards and interceptors;
+  - the error filter strips `details`;
+  - ESLint enforces rule 2.
+- **Tests:**
+  - `apps/api/test/access-rules.test.ts`: the decision, stripping, decorators and serialisation;
+  - `permissions.int.test.ts`: 21 tests, including the 12-case role matrix, plans, cancellation, soft-deleted links, audit and the route inventory;
+  - `support/permission-probe.ts`;
+  - `support/routes.ts`;
+  - the harness grants roles and profiles in company databases.
+- **Docs:**
+  - ADR 0031;
+  - docs/api-contract.md: a Permissions section;
+  - docs/data-model.md: the audit_log note;
+  - the blueprint delta;
+  - STATUS follow-ups.
+
+## Reviews
+- **First security review:** 2 blocking findings, both fixed in `75b1b66`:
+  - a cancelled plan turned into a trial;
+  - sensitive values escaped through class instances and missing names.
+
+  The other findings were fixed or recorded in STATUS.
+- **Schema review:** 0 blocking. Its items were fixed, and the decision to add a trigger to an existing table is recorded in ADR 0031.
+- **A fresh review of `75b1b66`:** see PR #7.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck`, `pnpm format:check`: pass.
+- `pnpm test`: shared 344, api 46, db 11, web 13, providers 11.
+- `pnpm test:api`: api 107, db 13, providers 2.
+
+## What is left
+- **P10 part 2 (Settings → Users and Roles API):**
+  - no-escalation on grants;
+  - the active-Owner rule;
+  - server-side step-up MFA;
+  - support-access grants;
+  - `member.role` sync and MFA by role content.
+- **STATUS follow-ups:**
+  - a non-owner runtime role;
+  - an audit-failure alert;
+  - export stripping;
+  - job-costing names;
+  - an independent matrix;
+  - a decorator inventory.
+
+## Next prompt
+"/resume. Continue the work queue: the notifications core on feat/notifications-core from an up-to-date main (EmailProvider, an outbox worker on pg-boss, memory email locally, and the 30-day auth cleanup job)."
