@@ -155,10 +155,10 @@ function userOf(id: string | null | undefined): string | null {
 
 /**
  * The catalog and stock of the demo company (inventory, part 1; ADR 0035): products, transfers,
- * rolls with their cuts, and the boxed-stock ledger, with the seed's deterministic ids. Suppliers
- * arrive with purchasing (task 4), so products have none yet. Rows that point at an invoice or a
- * receipt store that document's `seedId` and number, so they match it once sales and purchasing
- * seed their documents with the same ids (there is no foreign key).
+ * rolls with their cuts, and the boxed-stock ledger, with the seed's deterministic ids. Products
+ * point at their supplier, which seedSuppliers writes first. Rows that point at an invoice or a
+ * receipt store that document's `seedId` and number, so they match it once its module seeds it
+ * with the same id (there is no foreign key).
  */
 async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   if (fixtures.products.length === 0) return;
@@ -305,10 +305,21 @@ async function seedSuppliers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
   await tx
     .insert(supplierContacts)
     .values(
-      fixtures.supplierContacts.map((contact) => ({
-        ...contact,
+      fixtures.supplierContacts.map((contact, index) => ({
         id: seedId(contact.id),
         supplierId: seedId(contact.supplierId),
+        name: contact.name,
+        role: contact.role,
+        mobile: contact.mobile,
+        officePhone: contact.officePhone,
+        email: contact.email,
+        whatsapp: contact.whatsapp,
+        preferredMethod: contact.preferredMethod,
+        notes: contact.notes,
+        isPrimary: contact.isPrimary,
+        status: contact.status,
+        // The fixture lists each supplier's contacts oldest first; the "oldest active" rule reads this.
+        createdAt: new Date(Date.UTC(2025, 0, 1) + index * 60_000),
       })),
     )
     .onConflictDoNothing();
@@ -355,6 +366,8 @@ async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
           position,
           productId: seedId(line.productId),
           description: line.description,
+          createdAt: utc(po.createdAt),
+          createdBy: seededUserId(po.buyerId),
           quantity: line.quantity,
           unit: line.unit,
           unitCost: line.unitCost,
@@ -391,6 +404,8 @@ async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
           damaged: line.damaged,
           rolls: line.rolls,
           locationId: line.locationId ? seedId(line.locationId) : null,
+          createdAt: utc(receipt.receivedAt),
+          createdBy: seededUserId(receipt.receivedById),
         })),
       )
       .onConflictDoNothing();
@@ -399,7 +414,8 @@ async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
 
 /**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
- * numbering, roles, user profiles, and the catalog and stock (inventory, part 1). Business records
+ * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
+ * and purchase orders with their receipts (purchasing part 1). Business records
  * arrive module by module
  * (docs/real-build-plan.md), each with its own seed.
  */

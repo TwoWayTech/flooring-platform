@@ -28,7 +28,7 @@ import {
   type Supplier,
   type SupplierContact,
 } from "@workspace/shared";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -296,6 +296,7 @@ export class PurchasingService {
       const [contact] = await loadContacts(tx, [id]);
       if (!contact) throw new NotFoundException({ code: "not_found", message: "This contact no longer exists." });
       const leavingPrimary = status === "inactive" && contact.isPrimary;
+      let handedTo: string | null = null;
       await tx
         .update(supplierContacts)
         .set({ status, isPrimary: leavingPrimary ? false : contact.isPrimary })
@@ -315,6 +316,7 @@ export class PurchasingService {
         const byAge = rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
         const next = byAge.find((row) => row.role === "sales_rep") ?? byAge[0];
         if (next) await tx.update(supplierContacts).set({ isPrimary: true }).where(eq(supplierContacts.id, next.id));
+        handedTo = next?.id ?? null;
       }
       await this.auditLog.record(
         tenant,
@@ -325,8 +327,8 @@ export class PurchasingService {
           targetType: "supplier_contact",
           targetId: id,
           targetLabel: contact.name,
-          before: { status: contact.status },
-          after: { status },
+          before: { status: contact.status, isPrimary: contact.isPrimary },
+          after: { status, ...(leavingPrimary ? { primaryHandedTo: handedTo } : {}) },
         },
         tx,
       );
@@ -356,6 +358,8 @@ export class PurchasingService {
       const productIds = new Set((await loadProducts(tx)).map((product) => product.id));
       if (input.lines.some((line) => !productIds.has(line.productId)))
         throw refuse("A product on the order no longer exists.");
+      // Order numbers are taken one at a time, so two orders saved together never share one.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('purchasing:po-number'))`);
       const existing = await tx.select({ number: purchaseOrders.number }).from(purchaseOrders);
       const orderId = uuidv7();
       const ordered = !input.asDraft;
