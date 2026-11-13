@@ -1,10 +1,4 @@
-import {
-  createParamDecorator,
-  Injectable,
-  SetMetadata,
-  type CanActivate,
-  type ExecutionContext,
-} from "@nestjs/common";
+import { createParamDecorator, Injectable, SetMetadata, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request } from "express";
@@ -35,7 +29,8 @@ export class SessionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<SignedInRequest>();
     const allowMfaEnrolment =
-      this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_ENROLMENT, [context.getHandler(), context.getClass()]) ?? false;
+      this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_ENROLMENT, [context.getHandler(), context.getClass()]) ??
+      false;
     request.authSession = await this.sessions.verify(fromNodeHeaders(request.headers), { allowMfaEnrolment });
     return true;
   }

@@ -12,6 +12,7 @@ export const metadata: Metadata = { title: "Sign in" };
 /** Where a visitor stands on the real login page, or "ready" when their workspace can open. */
 async function apiStage(context: SessionContext | null, product: ProductKey): Promise<SignInStage | "ready"> {
   if (!context) return { kind: "sign-in" };
+  if (context.mfa.state === "enrolment_required") return { kind: "enrol" };
   if (!context.company) return { kind: "choose", companies: context.companies };
   return (await toCompanySession(context, product)) ? "ready" : { kind: "no-profile" };
 }
@@ -19,7 +20,8 @@ async function apiStage(context: SessionContext | null, product: ProductKey): Pr
 /**
  * The login page, branded for this host's product. Signed-in visitors go straight to their home.
  * The persona picker is the demo's sign-in; with the real API the page shows the email and
- * password sign-in, or the company chooser for a session that has no company open yet.
+ * password sign-in, MFA set-up for a session that must enrol first, or the company chooser for a
+ * session that has no company open yet.
  */
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ verified?: string }> }) {
   const product = await requestProduct();

@@ -9,7 +9,9 @@ const ok = (minutes: number): PasswordAttempt => ({ kind: "password_ok", at: min
 
 describe("lockEnd (owner decision 2026-11-13: 5 failures in 15 minutes lock for 15 minutes)", () => {
   it("locks for 15 minutes from the fifth failure", () => {
-    expect(lockEnd([failed(1), failed(2), failed(3), failed(4), failed(5)], now)).toEqual(new Date(minutesAgo(1).getTime() + 15 * 60_000));
+    expect(lockEnd([failed(1), failed(2), failed(3), failed(4), failed(5)], now)).toEqual(
+      new Date(minutesAgo(1).getTime() + 15 * 60_000),
+    );
   });
 
   it("does not lock on 4 failures", () => {

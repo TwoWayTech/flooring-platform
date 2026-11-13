@@ -1,5 +1,12 @@
 import { BadRequestException, Controller, Get, Inject, NotFoundException, Query } from "@nestjs/common";
-import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOkResponse, ApiProperty, ApiQuery, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBadRequestResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiProperty,
+  ApiQuery,
+  ApiTags,
+} from "@nestjs/swagger";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { CompanyDirectory } from "../auth/company-directory";
 import { hostCompanySlug } from "../auth/company-pick";
@@ -48,7 +55,10 @@ export class BrandingController {
   async branding(@Query() query: unknown): Promise<PublicBranding> {
     const parsed = brandingQuerySchema.safeParse(query);
     if (!parsed.success) {
-      throw new BadRequestException({ code: "invalid_request", message: "Give a host name, such as summit.flooringsuite.com." });
+      throw new BadRequestException({
+        code: "invalid_request",
+        message: "Give a host name, such as summit.flooringsuite.com.",
+      });
     }
     const slug = hostCompanySlug(parsed.data.host);
     const companyId = slug ? await this.companies.idBySlug(slug) : null;

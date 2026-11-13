@@ -11,10 +11,17 @@ import { fetchSessionContext, openCompany, signInWithPassword, signOutOfApi } fr
 import type { ContextCompany } from "@/lib/session/api-context";
 import { PRODUCTS } from "@/products";
 import { LoginLayout } from "./login-layout";
+import { MfaEnrolment } from "./mfa-enrolment";
+import { SecondFactorStep } from "./second-factor-step";
 
-/** Where the sign-in stands: the form, waiting for the email link, choosing a company, or no profile yet. */
+/**
+ * Where the sign-in stands: the form, the authenticator code, MFA set-up, waiting for the email
+ * link, choosing a company, or no profile yet.
+ */
 export type SignInStage =
   | { kind: "sign-in" }
+  | { kind: "second-factor" }
+  | { kind: "enrol" }
   | { kind: "verify-email"; email: string }
   | { kind: "choose"; companies: ContextCompany[] }
   | { kind: "no-profile" };
@@ -28,15 +35,18 @@ interface ApiSignInProps {
 
 const SUBTITLES: Record<SignInStage["kind"], string> = {
   "sign-in": "Sign in with your work email.",
+  "second-factor": "One more step to confirm it is you.",
+  enrol: "Protect your account before you continue.",
   "verify-email": "One more step before you sign in.",
   choose: "You belong to more than one company.",
   "no-profile": "Your account is ready, but not this workspace.",
 };
 
 /**
- * The real sign-in (P8 part 1; blueprint p27): email and password through Better Auth, a
- * "check your email" step for unconfirmed addresses, and a company chooser for people in more
- * than one company. Two-step verification arrives in part 2. Same frame as the demo login.
+ * The real sign-in (P8; blueprint p27): email and password through Better Auth, the authenticator
+ * code for accounts that have one, MFA set-up for roles that require it, a "check your email" step
+ * for unconfirmed addresses, and a company chooser for people in more than one company. Same frame
+ * as the demo login.
  */
 export function ApiSignIn({ product, initial, verified }: ApiSignInProps) {
   const router = useRouter();
@@ -46,6 +56,19 @@ export function ApiSignIn({ product, initial, verified }: ApiSignInProps) {
   function enterApp() {
     router.replace("/");
     router.refresh();
+  }
+
+  /** After any step that may have opened a session: set up MFA, choose a company, or go in. */
+  async function continueSignedIn() {
+    const context = await fetchSessionContext();
+    if (context.mfa.state === "enrolment_required") setStage({ kind: "enrol" });
+    else if (context.company) enterApp();
+    else setStage({ kind: "choose", companies: context.companies });
+  }
+
+  async function signOut() {
+    await signOutOfApi();
+    setStage({ kind: "sign-in" });
   }
 
   return (
@@ -59,23 +82,19 @@ export function ApiSignIn({ product, initial, verified }: ApiSignInProps) {
         <PasswordForm
           notice={verified ? "Your email is confirmed. Sign in to continue." : null}
           onVerifyEmail={(email) => setStage({ kind: "verify-email", email })}
-          onSignedIn={async () => {
-            const context = await fetchSessionContext();
-            if (context.company) enterApp();
-            else setStage({ kind: "choose", companies: context.companies });
-          }}
+          onSecondFactor={() => setStage({ kind: "second-factor" })}
+          onSignedIn={continueSignedIn}
         />
+      ) : stage.kind === "second-factor" ? (
+        <SecondFactorStep onVerified={continueSignedIn} onBack={() => setStage({ kind: "sign-in" })} />
+      ) : stage.kind === "enrol" ? (
+        <MfaEnrolment onDone={continueSignedIn} onSignOut={signOut} />
       ) : stage.kind === "verify-email" ? (
         <CheckEmail email={stage.email} onBack={() => setStage({ kind: "sign-in" })} />
       ) : stage.kind === "choose" ? (
         <CompanyChooser companies={stage.companies} onOpened={enterApp} />
       ) : (
-        <NoProfile
-          onSignOut={async () => {
-            await signOutOfApi();
-            setStage({ kind: "sign-in" });
-          }}
-        />
+        <NoProfile onSignOut={signOut} />
       )}
     </LoginLayout>
   );
@@ -84,10 +103,11 @@ export function ApiSignIn({ product, initial, verified }: ApiSignInProps) {
 interface PasswordFormProps {
   notice: string | null;
   onVerifyEmail: (email: string) => void;
+  onSecondFactor: () => void;
   onSignedIn: () => Promise<void>;
 }
 
-function PasswordForm({ notice, onVerifyEmail, onSignedIn }: PasswordFormProps) {
+function PasswordForm({ notice, onVerifyEmail, onSecondFactor, onSignedIn }: PasswordFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +129,9 @@ function PasswordForm({ notice, onVerifyEmail, onSignedIn }: PasswordFormProps) 
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : "Sign-in failed. Try again.");
       }
+    } else if (result.kind === "second-factor") {
+      onSecondFactor();
+      return;
     } else if (result.kind === "verify-email") {
       onVerifyEmail(email.trim());
     } else {

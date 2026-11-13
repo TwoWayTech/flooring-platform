@@ -155,7 +155,13 @@ export class AuthHarness {
     for (const organizationId of options.companyIds) {
       await this.control.db
         .insert(member)
-        .values({ id: uuidv7(), organizationId, userId: id, role: encodeMemberRoles(options.roles ?? ["sales"]), createdAt: now });
+        .values({
+          id: uuidv7(),
+          organizationId,
+          userId: id,
+          role: encodeMemberRoles(options.roles ?? ["sales"]),
+          createdAt: now,
+        });
     }
     return email;
   }

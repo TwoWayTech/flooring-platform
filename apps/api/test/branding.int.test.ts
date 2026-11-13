@@ -19,7 +19,13 @@ describe("GET /public/branding?host= (P8 part 2, needs the local PostgreSQL)", (
 
   it("returns the company's display fields for its host, without signing in", async () => {
     const response = await branding("summit.flooringsuite.test").expect(200);
-    expect(Object.keys(response.body).sort()).toEqual(["brandColor", "defaultTheme", "displayName", "monogram", "pattern"]);
+    expect(Object.keys(response.body).sort()).toEqual([
+      "brandColor",
+      "defaultTheme",
+      "displayName",
+      "monogram",
+      "pattern",
+    ]);
     expect(response.body.brandColor).toMatch(/^#[0-9a-f]{6}$/i);
   });
 

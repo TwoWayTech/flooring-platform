@@ -7,7 +7,7 @@ import { defineConfig, devices } from "@playwright/test";
  * apps/api, and the local PostgreSQL with Summit seeded. First build both apps
  * (`NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` and `pnpm --filter api build`) and run
  * `pnpm db:seed` with SEED_USER_PASSWORD set; then `pnpm --filter web test:e2e:api`. The tests
- * sign in with SEED_USER_PASSWORD. Local values come from the root .env and .env.local when they
+ * sign in with SEED_USER_PASSWORD, and global-setup.ts resets the seeded accounts' MFA first. Local values come from the root .env and .env.local when they
  * exist.
  */
 for (const file of ["../../.env", "../../.env.local"]) {
@@ -20,6 +20,7 @@ const LOCAL = "http://localhost:3000";
 
 export default defineConfig({
   testDir: "./tests/e2e-api",
+  globalSetup: "./tests/e2e-api/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   expect: { timeout: 15_000 },

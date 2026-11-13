@@ -43,7 +43,11 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       .set("Cookie", first)
       .send({ code: totpCode(secret) });
     expect(confirmed.status).toBe(200);
-    return { secret, backupCodes: enabled.body.backupCodes as string[], cookie: sessionCookie(confirmed.headers["set-cookie"]) };
+    return {
+      secret,
+      backupCodes: enabled.body.backupCodes as string[],
+      cookie: sessionCookie(confirmed.headers["set-cookie"]),
+    };
   }
 
   /** Starts a password sign-in for a user with an authenticator app; returns the challenge cookie. */
@@ -108,8 +112,15 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       const other = await harness.addCompany(`mfa-${uuidv7().slice(-8)}`);
       const email = await harness.addUser({ companyIds: [SUMMIT_ID, other], roles: ["hr"] });
       const first = await harness.signIn(email);
-      await harness.post("/api/auth/organization/set-active").set("Cookie", first).send({ organizationId: other }).expect(200);
-      const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
+      await harness
+        .post("/api/auth/organization/set-active")
+        .set("Cookie", first)
+        .send({ organizationId: other })
+        .expect(200);
+      const enabled = await harness
+        .post("/api/auth/two-factor/enable")
+        .set("Cookie", first)
+        .send({ password: PASSWORD });
       const secret = totpSecretFromUri(enabled.body.totpURI as string);
       const confirmed = await harness
         .post("/api/auth/two-factor/verify-totp")
@@ -135,7 +146,10 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["owner"] });
       const { secret } = await enrol(email);
       const challenge = await startChallenge(email);
-      const wrong = await harness.post("/api/auth/two-factor/verify-totp").set("Cookie", challenge).send({ code: "000000" });
+      const wrong = await harness
+        .post("/api/auth/two-factor/verify-totp")
+        .set("Cookie", challenge)
+        .send({ code: "000000" });
       expect(wrong.status).toBe(401);
       const right = await harness
         .post("/api/auth/two-factor/verify-totp")
@@ -169,7 +183,10 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["owner"] });
       const { secret } = await enrol(email);
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        await harness.post("/api/auth/two-factor/verify-totp").set("Cookie", await startChallenge(email)).send({ code: "000000" });
+        await harness
+          .post("/api/auth/two-factor/verify-totp")
+          .set("Cookie", await startChallenge(email))
+          .send({ code: "000000" });
       }
       const locked = await harness
         .post("/api/auth/two-factor/verify-totp")
@@ -199,17 +216,26 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
     it("refuses to turn the authenticator app off for someone who must use MFA", async () => {
       const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["owner"] });
       const { cookie } = await enrol(email);
-      const response = await harness.post("/api/auth/two-factor/disable").set("Cookie", cookie).send({ password: PASSWORD });
+      const response = await harness
+        .post("/api/auth/two-factor/disable")
+        .set("Cookie", cookie)
+        .send({ password: PASSWORD });
       expect(response.status).toBe(403);
       expect(response.body.code).toBe("mfa_required");
-      const [row] = await harness.control.db.select({ on: user.twoFactorEnabled }).from(user).where(eq(user.email, email));
+      const [row] = await harness.control.db
+        .select({ on: user.twoFactorEnabled })
+        .from(user)
+        .where(eq(user.email, email));
       expect(row.on).toBe(true);
     });
 
     it("lets a user who need not use MFA turn the app off", async () => {
       const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
       const first = await harness.signIn(email);
-      const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
+      const enabled = await harness
+        .post("/api/auth/two-factor/enable")
+        .set("Cookie", first)
+        .send({ password: PASSWORD });
       const secret = totpSecretFromUri(enabled.body.totpURI as string);
       const confirmed = await harness
         .post("/api/auth/two-factor/verify-totp")

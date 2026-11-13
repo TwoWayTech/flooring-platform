@@ -128,8 +128,7 @@ async function checkCompanySwitch(
 async function checkNoDowngrade(deps: AuthDeps, path: string, userId: string): Promise<void> {
   if (path !== "/two-factor/disable" && path !== "/passkey/delete-passkey") return;
   const status = await deps.mfa.statusOf(userId);
-  const refused =
-    status.required && (path === "/two-factor/disable" || (!status.totp && status.passkeys <= 1));
+  const refused = status.required && (path === "/two-factor/disable" || (!status.totp && status.passkeys <= 1));
   if (refused) throw new APIError("FORBIDDEN", { code: "mfa_required", message: AUTH_REFUSALS.mfa_required });
 }
 
@@ -171,7 +170,10 @@ export function beforeAuthHook(deps: AuthDeps) {
       throw new APIError("UNAUTHORIZED", { code: "session_expired", message: SESSION_ENDED_MESSAGES[ended] });
     }
     if (!ENROLMENT_PATHS.has(path) && (await deps.mfa.statusOf(current.user.id)).state === "enrolment_required") {
-      throw new APIError("FORBIDDEN", { code: "mfa_enrolment_required", message: AUTH_REFUSALS.mfa_enrolment_required });
+      throw new APIError("FORBIDDEN", {
+        code: "mfa_enrolment_required",
+        message: AUTH_REFUSALS.mfa_enrolment_required,
+      });
     }
     await checkNoDowngrade(deps, path, current.user.id);
     if (path === "/organization/set-active") {
