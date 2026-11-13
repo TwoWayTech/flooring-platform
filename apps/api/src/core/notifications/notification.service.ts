@@ -219,8 +219,9 @@ export class NotificationService implements OnApplicationBootstrap {
 
   /**
    * Sends a row again after checking its address once more (spec `retryOutbox`). Besides a failed
-   * row it takes a queued row whose job is gone (a read-only company, or queueing failed) and a row
-   * stuck in `sending` for over 10 minutes (the worker died mid-send). The worker's claim still
+   * row it takes a queued row whose job is gone (a read-only company, or queueing failed), a
+   * scheduled row whose time has passed with no send (its job ran while the company was read-only),
+   * and a row stuck in `sending` for over 10 minutes (the worker died mid-send). The worker's claim still
    * sends it at most once, and the provider's idempotency key covers a send that did go out.
    */
   async retry(tenant: TenantContext, messageId: string): Promise<void> {
@@ -228,9 +229,10 @@ export class NotificationService implements OnApplicationBootstrap {
     const row = await this.rowFor(db, messageId);
     const retryable = or(
       inArray(outboxMessages.status, ["failed", "queued"]),
+      and(eq(outboxMessages.status, "scheduled"), lte(outboxMessages.scheduledFor, sql`now()`)),
       and(eq(outboxMessages.status, "sending"), lt(outboxMessages.updatedAt, new Date(Date.now() - STUCK_SENDING_MS))),
     );
-    if (row.status !== "failed" && row.status !== "queued" && row.status !== "sending")
+    if (!["failed", "queued", "scheduled", "sending"].includes(row.status))
       throw new ConflictException({
         code: "not_failed",
         message: "Only a failed or waiting message can be sent again.",
@@ -244,11 +246,15 @@ export class NotificationService implements OnApplicationBootstrap {
       return;
     }
     // A row scheduled for later goes back to waiting for its time, still cancellable, instead of
-    // going out at once (PR #9 review; owner's work queue, 2026-11-13).
-    const later = row.scheduledFor !== null && row.scheduledFor.getTime() > Date.now() ? row.scheduledFor : null;
+    // going out at once (PR #9 review; owner's work queue, 2026-11-13). The database clock decides,
+    // the same clock the worker's claim uses (PR #10 review).
     const [requeued] = await db
       .update(outboxMessages)
-      .set({ status: later ? "scheduled" : "queued", failureType: null, failureDetail: null })
+      .set({
+        status: sql`case when ${outboxMessages.scheduledFor} > now() then 'scheduled' else 'queued' end`,
+        failureType: null,
+        failureDetail: null,
+      })
       .where(and(eq(outboxMessages.id, row.id), retryable))
       .returning({ id: outboxMessages.id });
     // Another Retry moved it first, or it is sending right now (PR #9 review).
@@ -257,7 +263,8 @@ export class NotificationService implements OnApplicationBootstrap {
         code: "not_failed",
         message: "Only a failed or waiting message can be sent again.",
       });
-    await this.queue(tenant.companyId, row.id, later);
+    // pg-boss starts a job whose time has passed at once, so the scheduled time is always passed on.
+    await this.queue(tenant.companyId, row.id, row.scheduledFor);
   }
 
   /** Cancels a scheduled row before it is sent (spec `cancelOutbox`). */
@@ -333,7 +340,10 @@ export class NotificationService implements OnApplicationBootstrap {
         ),
       )
       .returning();
-    if (!row) return;
+    if (!row) {
+      await this.requeueIfEarly(db, job.data);
+      return;
+    }
     let sentId: string;
     try {
       sentId = (
@@ -477,6 +487,26 @@ export class NotificationService implements OnApplicationBootstrap {
   }
 
   /** Queues the send of one row; the worker's claim makes a second job for the same row harmless. */
+  /**
+   * A job that ran before its row's time (clocks differ between the job queue and the company
+   * database) queues the send again for that time, so the row is never left waiting with no job
+   * (PR #10 review). The claim keeps it to one send whatever the number of jobs.
+   */
+  private async requeueIfEarly(db: CompanyDb, job: SendJob): Promise<void> {
+    const [early] = await db
+      .select({ scheduledFor: outboxMessages.scheduledFor })
+      .from(outboxMessages)
+      .where(
+        and(
+          eq(outboxMessages.id, job.messageId),
+          eq(outboxMessages.status, "scheduled"),
+          isNull(outboxMessages.deletedAt),
+          sql`${outboxMessages.scheduledFor} > now()`,
+        ),
+      );
+    if (early?.scheduledFor) await this.queue(job.companyId, job.messageId, early.scheduledFor);
+  }
+
   private async queue(companyId: string, messageId: string, startAfter: Date | null): Promise<void> {
     await this.jobs.send(SEND_QUEUE, { companyId, messageId }, startAfter ? { startAfter } : {});
   }

@@ -415,4 +415,23 @@ describe("notifications core (needs the local PostgreSQL)", () => {
         .where(eq(tenants.id, company.id));
     }
   });
+
+  it("lets Retry send a scheduled row whose job ran while the company was read-only (PR #10 review)", async () => {
+    const sourceId = uuidv7();
+    await harness.control.db.update(tenants).set({ status: "suspended" }).where(eq(tenants.id, company.id));
+    try {
+      await service().notify(
+        tenant,
+        null,
+        quoteSent(sourceId, "held@example.test", { scheduledFor: new Date(Date.now() + 1_000) }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+      expect((await rowsOf(sourceId))[0].status).toBe("scheduled");
+    } finally {
+      await harness.control.db.update(tenants).set({ status: "trial" }).where(eq(tenants.id, company.id));
+    }
+    const [held] = await rowsOf(sourceId);
+    await service().retry(tenant, held.id);
+    await eventually(async () => ((await rowsOf(sourceId))[0]?.status === "sent" ? true : undefined), "the send");
+  });
 });

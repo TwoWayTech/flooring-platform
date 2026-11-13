@@ -18,13 +18,14 @@
 | Fresh trial with no subscription rows | always (plan prices are still open) | | |
 
 - **Subscriptions:** each live subscription gets its own phase, and the most generous one counts. The company's status can then only make the result stricter.
-- **What "paid" means:** a subscription row is paid when it is `active` or `past_due`, or `cancelled` with a price above zero.
+- **What "paid" means:** a subscription row is paid when it is `active` or `past_due`, or `cancelled` with a price above zero. This depends on trial rows carrying price `0`; the billing webhook must keep it so, or record payment in its own column (STATUS, PR #10 review).
+- **Deleted rows:** when every subscription row is deleted, the deleted rows still run their own ladder, so deleting a lapsed row never restores access. Only a company with no rows at all counts as a fresh trial (PR #10 review).
 - **Locked:**
   - sign-in and `GET /auth/context` still work;
   - every company route answers 403 `company_suspended`;
   - jobs skip the company.
 - **No deletion:** nothing is ever deleted automatically. Paying, or a platform admin changing the status, restores access at once.
-- **`status_changed_at`:** the control trigger `tenants_status_changed` (migration 0003) stamps it on every real status change, whoever writes it. Existing companies start their periods at the migration, which is the most generous choice.
+- **`status_changed_at`:** the control trigger `tenants_status_changed` (migration 0003) stamps it on every real status change, whoever writes it, and puts back the old value on any other write, so no update can move the periods (PR #10 review). Tests move it with `backdateStatusChange` in `@workspace/db/testing`, which switches the trigger off for one update. Existing companies start their periods at the migration, which is the most generous choice.
 
 ### Maintenance mode
 - **What it blocks:** maintenance mode now stops reads as well as writes. It answers 503 `company_maintenance` with "Your company's account is under maintenance."
@@ -33,7 +34,7 @@
 - **When a migration fails, migrate-all:**
   - turns maintenance on;
   - writes `company.migration_failed` to `platform_audit_log`;
-  - calls `onFailure`, where `pnpm db:migrate` emails every active platform admin through EmailProvider, one email each;
+  - calls `onFailure`, where `pnpm db:migrate` emails every active platform admin through EmailProvider, one email each. The email gives the error code only, because the full text can name a database host or user; that text stays in `last_error` and the audit row;
   - stops.
 - **When the migration later succeeds:** maintenance ends only if the reason was `migration_failed`, and `company.migration_recovered` is logged. A move keeps its own maintenance.
 - **Jobs:** they skip a company in maintenance.

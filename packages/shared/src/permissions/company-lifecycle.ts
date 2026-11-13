@@ -111,16 +111,19 @@ function statusPhase(facts: LifecycleFacts, everPaid: boolean, now: Date): Compa
  * - A fresh trial, with no subscription rows, stays full: plan prices are still open.
  *
  * Each live subscription gives a phase and the most generous one counts, since any current plan
- * gives access; the status then can only make it stricter. Deleted rows never give access, but they
- * still prove the company paid once.
+ * gives access; the status then can only make it stricter. When every row is deleted, the latest
+ * deleted rows still run their own ladder, so deleting a lapsed row never restores access (PR #10
+ * review); only a company with no rows at all counts as a fresh trial. Deleted rows also prove the
+ * company paid once.
  */
 export function companyPhase(facts: LifecycleFacts, now: Date = new Date()): CompanyPhase {
   const everPaid = facts.subscriptions.some(wasPaid);
   const live = facts.subscriptions.filter((subscription) => !subscription.deleted);
+  const counted = live.length > 0 ? live : facts.subscriptions;
   const fromSubscriptions =
-    live.length === 0
+    counted.length === 0
       ? "full"
-      : live
+      : counted
           .map((subscription) => subscriptionPhase(subscription, now))
           .reduce((best, phase) => (RANK[phase] > RANK[best] ? phase : best));
   const fromStatus = statusPhase(facts, everPaid, now);

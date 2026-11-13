@@ -88,6 +88,9 @@ describe("companyPhase (owner decisions 2026-11-13)", () => {
     const old = sub({ currentPeriodEnd: daysAgo(100) });
     expect(companyPhase(facts({ subscriptions: [old, current] }), now)).toBe("full");
     expect(companyPhase(facts({ subscriptions: [{ ...current, deleted: true }] }), now)).toBe("full");
+    // Deleting a lapsed row never restores access (PR #10 review).
+    expect(companyPhase(facts({ subscriptions: [{ ...old, deleted: true }] }), now)).toBe("locked");
+    expect(companyPhase(facts({ subscriptions: [{ ...old, deleted: true }, current] }), now)).toBe("full");
     const deletedPaid = sub({ deleted: true });
     expect(
       companyPhase(facts({ status: "cancelled", statusChangedAt: daysAgo(60), subscriptions: [deletedPaid] }), now),

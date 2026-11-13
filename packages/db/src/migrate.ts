@@ -50,7 +50,10 @@ export interface CompanyMigrationResult {
 /** A company whose migration failed, as the platform admins' alert names it. */
 export interface CompanyMigrationFailure {
   tenantId: string;
+  /** The error text, capped; it can name a database host or user, so it stays in the control database. */
   error: string;
+  /** The SQLSTATE or system error code when there is one, safe to put in an email. */
+  code: string | null;
 }
 
 /** Options for a rollout. */
@@ -131,9 +134,11 @@ export async function migrateAllCompanies(
       await startMigrationMaintenance(control, company, message).catch((writeError: unknown) => {
         console.error(`Could not put company ${company.tenantId} in maintenance: ${errorText(writeError)}`);
       });
-      await options.onFailure?.({ tenantId: company.tenantId, error: message }).catch((alertError: unknown) => {
-        console.error(`The alert for company ${company.tenantId} failed: ${errorText(alertError)}`);
-      });
+      await options
+        .onFailure?.({ tenantId: company.tenantId, error: message, code: errorCode(error) })
+        .catch((alertError: unknown) => {
+          console.error(`The alert for company ${company.tenantId} failed: ${errorText(alertError)}`);
+        });
       throw new MigrationStoppedError(company.tenantId, migrated, error);
     }
     // Outside the try: a control-database error here must not report a migrated company as failed.
@@ -156,6 +161,15 @@ const MAX_ERROR_LENGTH = 500;
 function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH)}…` : text;
+}
+
+/** The SQLSTATE or system error code of an error or its cause, or null. */
+function errorCode(error: unknown): string | null {
+  for (let current: unknown = error; current; current = (current as { cause?: unknown }).cause) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && /^[A-Z0-9_]{1,32}$/.test(code)) return code;
+  }
+  return null;
 }
 
 /** Statuses migrate-all may move to `migrating`: live databases that are not read-only. */

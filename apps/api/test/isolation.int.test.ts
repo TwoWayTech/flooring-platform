@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { backdateStatusChange } from "@workspace/db/testing";
 import { AUTH_BASE_PATH, OPENAPI_PATHS } from "../src/app";
 import { TenantConnectionService } from "../src/core/tenancy/tenant-connection.service";
 import { AuthHarness } from "./auth-harness";
@@ -199,7 +200,7 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
       harness.control.db.update(tenants).set(values).where(eq(tenants.id, company.id));
     await setTenant({ status: "suspended" });
     await call("get", PROBE, cookie).expect(200);
-    await setTenant({ statusChangedAt: new Date(Date.now() - 31 * 86_400_000) });
+    await backdateStatusChange(harness.control.db, company.id, new Date(Date.now() - 31 * 86_400_000));
     const locked = await call("get", PROBE, cookie);
     expect(locked.status).toBe(403);
     expect(locked.body.code).toBe("company_suspended");

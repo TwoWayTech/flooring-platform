@@ -34,7 +34,7 @@ import {
   tenants,
   user,
 } from "../src/control";
-import { adminUrl, scratchDatabase } from "../src/testing";
+import { adminUrl, backdateStatusChange, scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
 
@@ -365,14 +365,20 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     }
   });
 
-  it("stamps status_changed_at whenever the status changes, whoever writes it (control migration 0003)", async () => {
+  it("stamps status_changed_at on every status change and refuses any other write to it (control migration 0003)", async () => {
     const stamped = await provision(company(`stamp${run}`));
     const handle = openControlDb(control.url, { max: 1 });
     try {
       const old = new Date("2020-01-01T00:00:00Z");
       const read = async () => (await handle.db.select().from(tenants).where(eq(tenants.id, stamped.tenantId)))[0];
-      await handle.db.update(tenants).set({ statusChangedAt: old }).where(eq(tenants.id, stamped.tenantId));
+      await backdateStatusChange(handle.db, stamped.tenantId, old);
       await handle.db.update(tenants).set({ name: "Renamed" }).where(eq(tenants.id, stamped.tenantId));
+      expect((await read()).statusChangedAt).toEqual(old);
+      // A direct write, with or without the same status, cannot move the periods (PR #10 review).
+      await handle.db
+        .update(tenants)
+        .set({ statusChangedAt: new Date(), status: (await read()).status })
+        .where(eq(tenants.id, stamped.tenantId));
       expect((await read()).statusChangedAt).toEqual(old);
       await handle.db.update(tenants).set({ status: "suspended" }).where(eq(tenants.id, stamped.tenantId));
       expect((await read()).statusChangedAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
@@ -394,13 +400,15 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
       const email = new MemoryEmailProvider();
       const count = await alertMigrationFailure(handle.db, email, "alerts@example.test", {
         tenantId: failed.tenantId,
-        error: "relation does not exist",
+        error: "relation does not exist on host db.internal",
+        code: "42P01",
       });
       const sent = email.sent.filter((message) => message.subject.includes(`alrt${run}`));
       expect(count).toBeGreaterThanOrEqual(2);
       expect(sent.map((message) => message.to)).toEqual(expect.arrayContaining([[admins[0]], [admins[1]]]));
       expect(sent.flatMap((message) => message.to)).not.toContain(admins[2]);
-      expect(sent[0].text).toContain("relation does not exist");
+      expect(sent[0].text).toContain("42P01");
+      expect(sent[0].text).not.toContain("db.internal");
     } finally {
       await handle.close();
     }
