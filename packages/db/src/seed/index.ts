@@ -33,17 +33,21 @@ export async function seedTestCompany(options: SeedOptions): Promise<string> {
   try {
     const passwordHash = options.userPassword ? await hashPassword(options.userPassword) : undefined;
     const tenantId = await seedControl(control.db, demo, passwordHash);
-    const companyUrl = await provisionCompany(control.db, options.provisioner, options.encryptionKey, {
-      tenantId,
-      slug: demo.company.id,
-      provider: options.provider,
-    });
-    const company = openCompanyDb(companyUrl, { max: 1 });
-    try {
-      await seedCompany(company.db, demo);
-    } finally {
-      await company.close();
-    }
+    // Seeded as provisioning's prepare step, so Summit is ready only once its rows exist (PR #8 review).
+    await provisionCompany(
+      control.db,
+      options.provisioner,
+      options.encryptionKey,
+      { tenantId, slug: demo.company.id, provider: options.provider },
+      async (companyUrl) => {
+        const company = openCompanyDb(companyUrl, { max: 1 });
+        try {
+          await seedCompany(company.db, demo);
+        } finally {
+          await company.close();
+        }
+      },
+    );
     return tenantId;
   } finally {
     await control.close();

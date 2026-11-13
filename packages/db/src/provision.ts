@@ -34,12 +34,16 @@ export async function provisionCompany(
   await prepare(url);
   // Only a database still provisioning, or one already ready (a seed rerun), becomes ready; a
   // status another process set meanwhile (failed, read-only, migrating) is never overwritten.
-  await control
+  const [readied] = await control
     .update(tenantDatabases)
     .set({ status: "ready", schemaVersion: version, migratedAt: new Date(), lastError: null })
     .where(
       and(eq(tenantDatabases.tenantId, input.tenantId), inArray(tenantDatabases.status, ["provisioning", "ready"])),
-    );
+    )
+    .returning({ id: tenantDatabases.id });
+  // Another process changed the status meanwhile (PR #8 review); say so instead of reporting success.
+  if (!readied)
+    throw new Error("The company database changed status during provisioning; check it before running again.");
   return url;
 }
 

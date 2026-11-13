@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { openCompanyDb, openControlDb, type ControlDb } from "./client";
-import { tenantDatabases } from "./control";
+import { tenantDatabases, type TenantDatabaseStatus } from "./control";
 import { decryptSecret } from "./crypto";
 
 /** Where the generated SQL lives; one folder per database kind. */
@@ -78,35 +78,59 @@ export async function migrateAllCompanies(
     .orderBy(asc(tenantDatabases.createdAt));
   const migrated: CompanyMigrationResult[] = [];
   for (const company of companies) {
-    // A read-only database keeps its status through the whole rollout, failure included, so no
-    // failed or interrupted run can turn it into ready (PR #8 review). Its migrations run in one
-    // transaction, so reading it meanwhile is safe. Every other database shows migrating.
-    const keepsStatus = company.status === "read_only";
-    if (!keepsStatus) {
-      await control.update(tenantDatabases).set({ status: "migrating" }).where(eq(tenantDatabases.id, company.id));
-    }
+    const readOnly = await claimForMigration(control, company.id);
+    if (readOnly === null) continue;
     try {
       const version = await migrateCompany(decryptSecret(company.encryptedUrl, encryptionKey));
       await control
         .update(tenantDatabases)
         .set({
-          status: keepsStatus ? "read_only" : "ready",
+          ...(readOnly ? {} : { status: "ready" as const }),
           schemaVersion: version,
           migratedAt: new Date(),
           lastError: null,
         })
-        .where(eq(tenantDatabases.id, company.id));
+        .where(
+          and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
+        );
       migrated.push({ tenantId: company.tenantId, version });
     } catch (error) {
       await control
         .update(tenantDatabases)
         .set({
-          ...(keepsStatus ? {} : { status: "failed" as const }),
+          ...(readOnly ? {} : { status: "failed" as const }),
           lastError: error instanceof Error ? error.message : String(error),
         })
-        .where(eq(tenantDatabases.id, company.id));
+        .where(
+          and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
+        );
       throw new MigrationStoppedError(company.tenantId, migrated, error);
     }
   }
   return migrated;
+}
+
+/** Statuses migrate-all may move to `migrating`: live databases that are not read-only. */
+const CLAIMABLE: TenantDatabaseStatus[] = ["ready", "failed", "migrating"];
+
+/**
+ * Claims a company database for this rollout, checking its status as it is now, not as listed at
+ * the start (PR #8 review). Returns false when it was claimed as `migrating`; true when it is
+ * read-only, which keeps its status and gets only its version and error fields updated; and null
+ * when it is something else now (provisioning, or deleted), so it is skipped. Every later write is
+ * conditional on the status this returns, so a status an operator sets meanwhile, such as
+ * read-only, is never overwritten.
+ */
+async function claimForMigration(control: ControlDb, databaseId: string): Promise<boolean | null> {
+  const [claimed] = await control
+    .update(tenantDatabases)
+    .set({ status: "migrating" })
+    .where(and(eq(tenantDatabases.id, databaseId), inArray(tenantDatabases.status, CLAIMABLE)))
+    .returning({ id: tenantDatabases.id });
+  if (claimed) return false;
+  const [current] = await control
+    .select({ status: tenantDatabases.status })
+    .from(tenantDatabases)
+    .where(and(eq(tenantDatabases.id, databaseId), isNull(tenantDatabases.deletedAt)));
+  return current?.status === "read_only" ? true : null;
 }
