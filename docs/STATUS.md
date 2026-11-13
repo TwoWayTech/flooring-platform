@@ -7,6 +7,19 @@
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`) and PR #15 (`f8b0ef4`).
 - **Last session log:** docs/sessions/2026-11-14-1000-a-ledger-core.md
 
+## Queue stopped (2026-11-14): PR #16 is waiting on the Vercel check
+- **Where PR #16 stands:**
+  - It is ready.
+  - The schema review is clean, and the third security review found nothing blocking. The summary is posted on the PR.
+  - `verify` and `e2e` are green on `3af3405`.
+- **What blocks it:** the **Vercel** preview check failed with "Deployment rate limited — retry in 24 hours". That is the Vercel Free plan's build limit, not the code. Earlier PRs passed only because the Ignored Build Step skipped the build.
+- **Why I stopped:** the self-merge rule needs every check green, so Claude did not merge. P12 part 2 builds on this PR, and branches must start from main, so the queue stops here.
+- **Owner, choose one:**
+  1. **Wait out the limit**, then Redeploy the preview in Vercel (or push an empty commit). Claude then merges under the rule.
+  2. **Stop Vercel building branches other than `demo`.** In `vercel.json`, set `git.deploymentEnabled` so only `demo` deploys; previews of feature branches are skipped anyway. This also uses no build quota. It is a deploy-configuration change, so it waits for your approval.
+  3. **Move to a paid Vercel plan.** That is a paid-service decision.
+- **Then:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), and inventory part 2.
+
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
 - [x] apps/api: NestJS 12, `GET /health` (control-database ping, 503 when down), config validated at start-up, OpenAPI at `/docs` and `/docs/openapi.json`, one error body, CORS, Dockerfile (image builds and reports healthy).
