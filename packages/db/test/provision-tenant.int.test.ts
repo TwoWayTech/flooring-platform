@@ -96,6 +96,37 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     await expect(provision(company("Bad-Slug"))).rejects.toThrow(/Invalid slug/);
   });
 
+  it("makes an existing account the owner only when asked to", async () => {
+    const first = `first${run}`;
+    await provision(company(first));
+    const reused = company(`second${run}`, { owner: { name: "Pat Owner", email: `owner-${first}@example.test` } });
+    await expect(provision(reused)).rejects.toThrow(/already has an account/);
+    const result = await provision({ ...reused, reuseExistingOwner: true });
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const owners = await handle.db
+        .select()
+        .from(user)
+        .where(eq(user.email, `owner-${first}@example.test`));
+      expect(owners).toHaveLength(1);
+      expect(owners[0].id).toBe(result.ownerUserId);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("refuses to finish an unfinished company for a different owner", async () => {
+    const slug = `swap${run}`;
+    const failing: DatabaseProvisioner = {
+      create: () => Promise.reject(new Error("provider down")),
+      drop: () => Promise.resolve(),
+    };
+    await expect(provision(company(slug), failing)).rejects.toThrow(/provider down/);
+    const other = company(slug, { owner: { name: "Someone Else", email: `else-${slug}@example.test` } });
+    await expect(provision(other)).rejects.toThrow(/different owner/);
+    expect((await provision(company(slug))).resumed).toBe(true);
+  });
+
   it("finishes a run that stopped after the control rows", async () => {
     const slug = `resume${run}`;
     const failing: DatabaseProvisioner = {

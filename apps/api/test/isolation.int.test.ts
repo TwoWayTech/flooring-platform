@@ -1,5 +1,5 @@
 import { branches } from "@workspace/db/company";
-import { member, tenants } from "@workspace/db/control";
+import { member, tenantDatabases, tenants } from "@workspace/db/control";
 import { PRODUCT_HEADER } from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
 import request from "supertest";
@@ -98,6 +98,7 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
       .set("Cookie", aCookie)
       .send({ organizationId: b.id });
     expect(switched.status).toBe(403);
+    expect(switched.body.code).toBe("not_a_member");
     const list = await call("get", PROBE, aCookie).expect(200);
     expect(list.body.map((row: { name: string }) => row.name)).not.toContain("Bravo Main");
   });
@@ -159,21 +160,68 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
     expect(service.openPools).toBeLessThanOrEqual(20);
   });
 
-  it("refuses every route that is not public when there is no session (deny by default)", async () => {
+  it("refuses a deleted company, a database that is not ready, and writes in maintenance or after cancelling", async () => {
+    const company = await harness.provisionCompany("charlie");
+    const cookie = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
+    const setTenant = (values: Partial<typeof tenants.$inferInsert>) =>
+      harness.control.db.update(tenants).set(values).where(eq(tenants.id, company.id));
+    const setDatabase = (status: "ready" | "migrating" | "read_only") =>
+      harness.control.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, company.id));
+
+    await setTenant({ maintenanceMode: true });
+    await call("get", PROBE, cookie).expect(200);
+    expect((await call("post", PROBE, cookie).send({})).body.code).toBe("company_read_only");
+    await setTenant({ maintenanceMode: false, status: "cancelled" });
+    expect((await call("delete", `${PROBE}/${uuidv7()}`, cookie)).body.code).toBe("company_read_only");
+    await setTenant({ status: "trial" });
+
+    await setDatabase("read_only");
+    expect((await call("patch", `${PROBE}/${uuidv7()}`, cookie).send({})).body.code).toBe("company_read_only");
+    await setDatabase("migrating");
+    const migrating = await call("get", PROBE, cookie);
+    expect(migrating.status).toBe(503);
+    expect(migrating.body.code).toBe("company_unavailable");
+    await setDatabase("ready");
+
+    await setTenant({ deletedAt: new Date() });
+    expect((await call("get", PROBE, cookie)).body.code).toBe("company_required");
+  });
+
+  /** Every Nest route the inventory checks: all but the public ones, the API docs and Better Auth's mount. */
+  function checkedRoutes() {
     const routes = listRoutes(harness.app.getHttpAdapter().getInstance());
     const open = new Set(["GET /health", "GET /public/branding"]);
-    expect(routes.length).toBeGreaterThan(open.size);
-    for (const route of routes) {
-      // Skipped: the OpenAPI document is public on purpose and describes no company data, and
-      // Better Auth's mount has its own rules (proxy secret, sessions; auth and lockout tests).
-      const skipped = route.path.startsWith(`/${OPENAPI_PATHS.ui}`) || route.path.startsWith(`${AUTH_BASE_PATH}/`);
-      if (skipped || open.has(`${route.method} ${route.path}`)) continue;
-      const path = route.path.replace(/:[^/]+/g, uuidv7());
-      const response = await call(route.method.toLowerCase() as "get", path);
-      expect({ route: `${route.method} ${route.path}`, status: response.status }).toEqual({
-        route: `${route.method} ${route.path}`,
-        status: 401,
-      });
+    // The OpenAPI document is public on purpose and describes no company data, and Better Auth's
+    // mount has its own rules (proxy secret and sessions; see the auth and lockout tests).
+    const checked = routes.filter(
+      (route) =>
+        !open.has(`${route.method} ${route.path}`) &&
+        !route.path.startsWith(`/${OPENAPI_PATHS.ui}`) &&
+        !route.path.startsWith(`${AUTH_BASE_PATH}/`),
+    );
+    expect(checked.length).toBeGreaterThan(0);
+    return checked.map((route) => ({
+      ...route,
+      name: `${route.method} ${route.path}`,
+      url: route.path.replace(/:[^/]+/g, uuidv7()),
+    }));
+  }
+
+  it("refuses every route that is not public when there is no session (deny by default)", async () => {
+    for (const route of checkedRoutes()) {
+      const response = await call(route.method.toLowerCase() as "get", route.url);
+      expect({ route: route.name, status: response.status }).toEqual({ route: route.name, status: 401 });
+    }
+  });
+
+  it("needs an open company on every route except the session-only ones", async () => {
+    const sessionOnly = new Set(["GET /auth/context"]);
+    const noCompanyYet = await harness.signIn(await harness.addUser({ companyIds: [a.id, b.id] }));
+    for (const route of checkedRoutes()) {
+      const response = await call(route.method.toLowerCase() as "get", route.url, noCompanyYet).send({});
+      const expected = sessionOnly.has(route.name) ? response.body.code : "company_required";
+      expect({ route: route.name, code: response.body.code }).toEqual({ route: route.name, code: expected });
+      if (sessionOnly.has(route.name)) expect(response.status).toBe(200);
     }
   });
 });

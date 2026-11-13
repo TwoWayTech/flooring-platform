@@ -77,7 +77,9 @@ export class SessionService {
     try {
       return await this.auth.api.getSession({ headers });
     } catch (error) {
-      if (error instanceof APIError) return null;
+      // A refusal (4xx) means "not signed in on a host we serve"; a failure (5xx), such as a lost
+      // database connection, stays a 500 so monitoring sees it (PR #6 review).
+      if (error instanceof APIError && error.statusCode < 500) return null;
       throw error;
     }
   }

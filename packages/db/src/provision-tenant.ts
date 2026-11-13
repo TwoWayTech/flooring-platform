@@ -52,6 +52,11 @@ export interface NewCompany {
   timeZone: string;
   products: readonly ProductKey[];
   owner: { name: string; email: string };
+  /**
+   * Allows making an existing user the owner. Without it, an email that already has an account is
+   * refused, so a typo or a false request cannot hand someone else's account a new company.
+   */
+  reuseExistingOwner?: boolean;
 }
 
 /** What provisioning made. */
@@ -90,7 +95,7 @@ export async function provisionTenant(
   const problem = slugProblem(company.slug);
   if (problem) throw new Error(`Invalid slug: ${problem}`);
   if (company.products.length === 0) throw new Error("Give the company at least one product.");
-  const existing = await findUnfinished(control, company.slug);
+  const existing = await findUnfinished(control, company);
   const created = existing ?? (await writeControlRows(control, company));
   await provisionCompany(control, provisioner, encryptionKey, {
     tenantId: created.tenantId,
@@ -102,9 +107,14 @@ export async function provisionTenant(
 
 /**
  * The company with this slug when an earlier run created it but not its database; null when there
- * is no such company. A company that already has a database is an error, never overwritten.
+ * is no such company. A company that already has a database is an error, never overwritten, and a
+ * rerun must name the same owner, so it finishes the same request rather than a different one.
  */
-async function findUnfinished(control: ControlDb, slug: string): Promise<Omit<ProvisionedTenant, "resumed"> | null> {
+async function findUnfinished(
+  control: ControlDb,
+  company: NewCompany,
+): Promise<Omit<ProvisionedTenant, "resumed"> | null> {
+  const slug = company.slug;
   const [tenant] = await control
     .select({ id: tenants.id })
     .from(tenants)
@@ -116,17 +126,23 @@ async function findUnfinished(control: ControlDb, slug: string): Promise<Omit<Pr
     .where(eq(tenantDatabases.tenantId, tenant.id));
   if (database) throw new Error(`A company with the slug "${slug}" already exists.`);
   const [owner] = await control
-    .select({ userId: member.userId })
+    .select({ userId: member.userId, email: user.email })
     .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.organizationId, tenant.id))
     .limit(1);
   if (!owner) throw new Error(`The company "${slug}" has no owner; fix it by hand before running again.`);
+  if (owner.email !== normalisedEmail(company.owner.email)) {
+    throw new Error(
+      `The unfinished company "${slug}" has a different owner; run again with the original owner's email.`,
+    );
+  }
   return { tenantId: tenant.id, ownerUserId: owner.userId };
 }
 
 async function writeControlRows(control: ControlDb, company: NewCompany): Promise<Omit<ProvisionedTenant, "resumed">> {
   const tenantId = uuidv7();
-  const email = company.owner.email.trim().toLowerCase();
+  const email = normalisedEmail(company.owner.email);
   return control.transaction(async (tx) => {
     await ensureReferenceData(tx);
     await tx.insert(tenants).values({
@@ -155,31 +171,38 @@ async function writeControlRows(control: ControlDb, company: NewCompany): Promis
       brandColor: branding.brandColor,
       pattern: branding.pattern,
     });
-    const ownerUserId = await ownerUser(tx, email, company.owner.name);
-    await tx
-      .insert(member)
-      .values({
-        id: uuidv7(),
-        organizationId: tenantId,
-        userId: ownerUserId,
-        role: encodeMemberRoles(["owner"]),
-        createdAt: new Date(),
-      });
+    const ownerUserId = await ownerUser(tx, email, company);
+    await tx.insert(member).values({
+      id: uuidv7(),
+      organizationId: tenantId,
+      userId: ownerUserId,
+      role: encodeMemberRoles(["owner"]),
+      createdAt: new Date(),
+    });
     return { tenantId, ownerUserId };
   });
 }
 
 /**
  * The owner's user id. One person has one user record across companies (blueprint p12), so an
- * existing user with this email is reused; otherwise a new unverified user without a password is
- * made, who signs in once invitation acceptance exists (STATUS).
+ * existing user with this email can be made owner, but only when the caller says so
+ * (`reuseExistingOwner`). Otherwise a new unverified user without a password is made, who signs in
+ * once invitation acceptance exists (STATUS).
  */
-async function ownerUser(tx: ControlDb, email: string, name: string): Promise<string> {
+async function ownerUser(tx: ControlDb, email: string, company: NewCompany): Promise<string> {
   const [found] = await tx.select({ id: user.id }).from(user).where(eq(user.email, email));
+  if (found && !company.reuseExistingOwner) {
+    throw new Error(`${email} already has an account. To make that person the owner, pass --reuse-owner.`);
+  }
   if (found) return found.id;
   const id = uuidv7();
-  await tx.insert(user).values({ id, email, name, emailVerified: false });
+  await tx.insert(user).values({ id, email, name: company.owner.name, emailVerified: false });
   return id;
+}
+
+/** An email as stored and compared: trimmed and lowercased. */
+function normalisedEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /** Up to two initials from the company name, for the default logo. */

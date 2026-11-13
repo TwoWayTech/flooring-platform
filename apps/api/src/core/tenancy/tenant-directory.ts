@@ -30,6 +30,17 @@ export interface CompanyAccess {
  */
 const READ_ONLY_STATUSES: ReadonlySet<TenantStatus> = new Set(["suspended", "cancelled"]);
 
+/** Database statuses a request may use; `read_only` also makes the company read-only. */
+const USABLE_DATABASE_STATUSES: ReadonlySet<TenantDatabaseStatus> = new Set(["ready", "read_only"]);
+
+/**
+ * Whether the company's database may serve requests now. Checked on every request, not only when a
+ * pool opens, so a database that starts migrating or fails stops serving at once (PR #6 review).
+ */
+export function isDatabaseUsable(status: TenantDatabaseStatus | null): boolean {
+  return status !== null && USABLE_DATABASE_STATUSES.has(status);
+}
+
 /** Whether a company may only be read: its status, maintenance mode, or a read-only database. */
 export function isReadOnly(company: CompanyAccess): boolean {
   return READ_ONLY_STATUSES.has(company.status) || company.maintenanceMode || company.databaseStatus === "read_only";

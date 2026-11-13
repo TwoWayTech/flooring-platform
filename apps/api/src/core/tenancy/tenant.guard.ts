@@ -4,7 +4,8 @@ import { PRODUCT_HEADER, type ProductKey } from "@workspace/shared";
 import type { AuthSession } from "../auth/session.service";
 import { accessLevel, requiredProduct } from "./access";
 import { TenantContext, type TenantRequest } from "./tenant-context";
-import { isReadOnly, TenantDirectory } from "./tenant-directory";
+import { companyUnavailable } from "./company-unavailable";
+import { isDatabaseUsable, isReadOnly, TenantDirectory } from "./tenant-directory";
 
 /** Methods that only read; everything else is a write. */
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -29,6 +30,8 @@ function refuse(code: keyof typeof TENANCY_REFUSALS): never {
  * - the person is still a member of it (403 `not_a_member`);
  * - the company has the product the web host serves and any product the route requires
  *   (403 `product_not_enabled`; blueprint p17 rule 2);
+ * - the company database is ready or read-only (503 `company_unavailable` while it is provisioning,
+ *   migrating or failed);
  * - a write is allowed: suspended, cancelled and maintenance-mode companies are read-only
  *   (403 `company_read_only`; blueprint p29, p40).
  */
@@ -50,6 +53,7 @@ export class TenantGuard implements CanActivate {
     if (!(await this.directory.isMember(session.user.id, company.id))) refuse("not_a_member");
     const needed = [hostProduct(request.headers[PRODUCT_HEADER]), requiredProduct(this.reflector, context)];
     if (needed.some((product) => product && !company.products.includes(product))) refuse("product_not_enabled");
+    if (!isDatabaseUsable(company.databaseStatus)) throw companyUnavailable();
     if (!READ_METHODS.has(request.method) && isReadOnly(company)) refuse("company_read_only");
     request.tenant = TenantContext.fromVerifiedSession(session, company);
     return true;

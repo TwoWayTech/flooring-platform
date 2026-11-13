@@ -5,7 +5,8 @@ import { migrateControl, openControlDb, provisionTenant } from "../src";
 import { scriptEnv } from "./env";
 
 const USAGE = `Usage: pnpm db:provision-tenant --slug summit2 --name "Summit Floor Co." --legal-name "Summit Floor Co. LLC"
-  --state TX --time-zone America/Chicago --products flooring --owner-name "Pat Owner" --owner-email pat@example.test [--city Austin]`;
+  --state TX --time-zone America/Chicago --products flooring --owner-name "Pat Owner" --owner-email pat@example.test
+  [--city Austin] [--reuse-owner: make an existing account the owner]`;
 
 const PRODUCTS: readonly ProductKey[] = ["flooring", "hr"];
 
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
       products: { type: "string" },
       "owner-name": { type: "string" },
       "owner-email": { type: "string" },
+      "reuse-owner": { type: "boolean" },
     },
   });
   const required = [
@@ -65,6 +67,7 @@ async function main(): Promise<void> {
       timeZone: values["time-zone"] as string,
       products: productList(values.products as string),
       owner: { name: values["owner-name"] as string, email: values["owner-email"] as string },
+      reuseExistingOwner: values["reuse-owner"] === true,
     });
     console.log(`${result.resumed ? "Finished" : "Created"} company ${values.slug} (tenant ${result.tenantId}).`);
     console.log(`Owner user ${result.ownerUserId} has no password yet; invitation acceptance comes later (STATUS).`);
