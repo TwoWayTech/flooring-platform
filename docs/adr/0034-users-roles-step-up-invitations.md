@@ -8,10 +8,16 @@
   - **Endpoints:** `GET /users`, `POST /users/invite`, `PATCH /users/:id`; `GET /roles`, `POST /roles`, `PUT /roles/:id`, `POST /roles/:id/reset`, `DELETE /roles/:id`; `GET /audit`.
   - **Rules applied:** no escalation (`escalations` and `canAssignRole` from packages/shared), the last active Owner, the plan's seat limit, the locked Owner role, and the role-delete rules.
   - **Records:** every change writes `audit_log` in the same transaction.
+- **Nobody acts on someone who holds more (PR #11 security review):**
+  - Changing another person's roles or status, or resetting their MFA, needs every role that person holds to be one the actor could give (`canManageHolder`); only an Owner changes an Owner.
+  - Changing, resetting or deleting a role needs the actor to be able to give that role.
+  - Data scope counts too: a role's scope may not be wider than the actor's own (`scopeWidens`, and `scope_wider` from `canAssignRole`); Owners hold every scope.
+  - Status changes also need a step-up, and a platform admin's MFA can only be reset by platform support.
 - **MFA by role content:** a role needs MFA when it is the Owner role or holds a key in `MFA_REQUIRED_KEYS`. Assignments and role edits write `member.role` as the role keys plus an `mfa` marker, so sign-in still decides before any company database opens (ADR 0029). Copies of the Accountant and HR roles now keep the rule.
 - **Step-up:**
   - **Checking:** `POST /auth/step-up` checks a TOTP or backup code through Better Auth's own verify endpoints, against the session's user. A pass is written to `auth_attempts` (`step_up_ok`, keyed by session) and lasts 5 minutes.
-  - **Lockout:** wrong codes are counted per user (`step_up_failed`); 5 in 15 minutes lock step-up.
+  - **Lockout:** each code is recorded (`step_up_attempt`) before it is checked, under a per-user advisory lock, exactly like password attempts; a pass writes `step_up_pass`. 5 failures in 15 minutes lock step-up for 15 minutes, so parallel guesses cannot get past the limit (PR #11 security review).
+  - **Backstop:** PermissionGuard refuses `mfa_enrolment_required` on every company request when a held role needs MFA by content and the person has no factor, in case `member.role` missed a change.
   - **Where it is required:** role changes, MFA resets, role saves, resets and deletes, and support approvals all call `StepUpService.require`.
   - **Passkey-only people:** they step up with a fresh passkey sign-in.
 - **Invitations** (`user_invitations`, control migration 0004):

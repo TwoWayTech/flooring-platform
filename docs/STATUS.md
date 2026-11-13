@@ -98,6 +98,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `pnpm db:migrate` parses every provider setting; check only the email section.
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
+- **PR #11 security review (none blocking):**
+  - Inviting an address that already has an account gives the membership and roles at once, and the users list shows that account's own name. Hold the membership until acceptance, or treat `invited` profiles as holding nothing, and show the typed name until then.
+  - Write an `audit_log` entry when an invitation is accepted.
+  - Route the public invitation endpoints through the auth proxy, so their per-IP limit uses the client IP the web proxy vouches for (today the API sees the web server's IP).
+  - The provisioned owner's profile starts `invited` and has no password: owner invitations at provisioning come with the platform-admin screens (P17).
 - **CHECK constraints on status columns:** `tenants.status` and `tenant_subscriptions.status` have no CHECK constraint. `companyPhase` now locks a status it does not know, but a constraint would stop a bad value being written (a change to existing tables, so it waits for the owner; PR #10 review).
 - **Pools after a provider move:** `TenantConnectionService` caches a pool per company and never re-reads the connection URL. `move-tenant` must clear the company's pool when it ends maintenance (PR #10 review).
 - **Trial with no subscription stays `full`:** until plan prices exist, a fresh trial has no end. Revisit when plans are priced (PR #10 review).
