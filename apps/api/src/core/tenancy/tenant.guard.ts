@@ -4,7 +4,7 @@ import { PRODUCT_HEADER, type ProductKey } from "@workspace/shared";
 import type { AuthSession } from "../auth/session.service";
 import { accessLevel, requiredProduct } from "./access";
 import { TenantContext, type TenantRequest } from "./tenant-context";
-import { companyUnavailable } from "./company-unavailable";
+import { companyMaintenance, companyUnavailable } from "./company-unavailable";
 import { isDatabaseUsable, isReadOnly, TenantDirectory } from "./tenant-directory";
 
 /** Methods that only read; everything else is a write. */
@@ -16,6 +16,8 @@ export const TENANCY_REFUSALS = {
   not_a_member: "You are no longer a member of this company. Sign in again.",
   product_not_enabled: "Your company does not have this product.",
   company_read_only: "Your company's account is read-only right now, so changes cannot be saved.",
+  company_suspended:
+    "Your company's account is suspended, so its data cannot be opened. Your data is kept; contact us to restore access.",
 } as const;
 
 function refuse(code: keyof typeof TENANCY_REFUSALS): never {
@@ -30,10 +32,13 @@ function refuse(code: keyof typeof TENANCY_REFUSALS): never {
  * - the person is still a member of it (403 `not_a_member`);
  * - the company has the product the web host serves and any product the route requires
  *   (403 `product_not_enabled`; blueprint p17 rule 2);
+ * - the company is not in maintenance mode (503 `company_maintenance`, for reads and writes: a move
+ *   or a failed migration; owner decision, 2026-11-13);
  * - the company database is ready or read-only (503 `company_unavailable` while it is provisioning,
  *   migrating or failed);
- * - a write is allowed: suspended, cancelled and maintenance-mode companies are read-only
- *   (403 `company_read_only`; blueprint p29, p40).
+ * - its life cycle has not locked it (403 `company_suspended`; owner decisions, 2026-11-13);
+ * - a write is allowed: a suspended, cancelled or lapsed company in its read-only period, or one
+ *   with a read-only database, is read-only (403 `company_read_only`; blueprint p29, p40).
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -53,7 +58,9 @@ export class TenantGuard implements CanActivate {
     if (!(await this.directory.isMember(session.user.id, company.id))) refuse("not_a_member");
     const needed = [hostProduct(request.headers[PRODUCT_HEADER]), requiredProduct(this.reflector, context)];
     if (needed.some((product) => product && !company.products.includes(product))) refuse("product_not_enabled");
+    if (company.maintenanceMode) throw companyMaintenance();
     if (!isDatabaseUsable(company.databaseStatus)) throw companyUnavailable();
+    if (company.phase === "locked") refuse("company_suspended");
     if (!READ_METHODS.has(request.method) && isReadOnly(company)) refuse("company_read_only");
     request.tenant = TenantContext.fromVerifiedSession(session, company);
     return true;

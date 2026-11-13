@@ -43,6 +43,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       status: "trial",
       products: ["flooring"],
       maintenanceMode: false,
+      phase: "full",
       databaseStatus: "ready",
     });
   }, 120_000);

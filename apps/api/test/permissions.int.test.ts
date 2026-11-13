@@ -93,6 +93,7 @@ describe("permissions, sensitive fields and audit (P10, needs the local PostgreS
             status: "trial",
             products: [product],
             maintenanceMode: false,
+            phase: "full",
             databaseStatus: "ready",
           });
           const access = await harness.app.get(AccessService).resolve(tenant);

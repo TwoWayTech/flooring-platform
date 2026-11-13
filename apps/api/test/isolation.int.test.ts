@@ -1,5 +1,5 @@
 import { branches } from "@workspace/db/company";
-import { member, tenantDatabases, tenants } from "@workspace/db/control";
+import { member, plans, products, tenantDatabases, tenantSubscriptions, tenants } from "@workspace/db/control";
 import { PRODUCT_HEADER } from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
 import request from "supertest";
@@ -161,7 +161,7 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
     expect(service.openPools).toBeLessThanOrEqual(20);
   });
 
-  it("refuses a deleted company, a database that is not ready, and writes in maintenance or after cancelling", async () => {
+  it("refuses a deleted company, a database that is not ready, anything in maintenance, and writes after cancelling", async () => {
     const company = await harness.provisionCompany("charlie");
     const cookie = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
     const setTenant = (values: Partial<typeof tenants.$inferInsert>) =>
@@ -169,10 +169,14 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
     const setDatabase = (status: "ready" | "migrating" | "read_only") =>
       harness.control.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, company.id));
 
-    await setTenant({ maintenanceMode: true });
-    await call("get", PROBE, cookie).expect(200);
-    expect((await call("post", PROBE, cookie).send({})).body.code).toBe("company_read_only");
-    await setTenant({ maintenanceMode: false, status: "cancelled" });
+    // Maintenance (a move or a failed migration) stops reads too (owner decision, 2026-11-13).
+    await setTenant({ maintenanceMode: true, maintenanceReason: "migration_failed" });
+    for (const method of ["get", "post"] as const) {
+      const response = await call(method, PROBE, cookie).send({});
+      expect(response.status).toBe(503);
+      expect(response.body.code).toBe("company_maintenance");
+    }
+    await setTenant({ maintenanceMode: false, maintenanceReason: null, status: "cancelled" });
     expect((await call("delete", `${PROBE}/${uuidv7()}`, cookie)).body.code).toBe("company_read_only");
     await setTenant({ status: "trial" });
 
@@ -186,6 +190,59 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
 
     await setTenant({ deletedAt: new Date() });
     expect((await call("get", PROBE, cookie)).body.code).toBe("company_required");
+  });
+
+  it("locks a trial suspended before paying after its 30 read-only days, without deleting anything (owner decision 2026-11-13)", async () => {
+    const company = await harness.provisionCompany("delta");
+    const cookie = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
+    const setTenant = (values: Partial<typeof tenants.$inferInsert>) =>
+      harness.control.db.update(tenants).set(values).where(eq(tenants.id, company.id));
+    await setTenant({ status: "suspended" });
+    await call("get", PROBE, cookie).expect(200);
+    await setTenant({ statusChangedAt: new Date(Date.now() - 31 * 86_400_000) });
+    const locked = await call("get", PROBE, cookie);
+    expect(locked.status).toBe(403);
+    expect(locked.body.code).toBe("company_suspended");
+    await call("get", "/auth/context", cookie).expect(200);
+    await setTenant({ status: "active" });
+    await call("get", PROBE, cookie).expect(200);
+  });
+
+  it("gives a lapsed paid plan 14 days full, then 30 read-only, then locks it (owner decision 2026-11-13)", async () => {
+    const company = await harness.provisionCompany("echo");
+    const cookie = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
+    const [flooring] = await harness.control.db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.key, "flooring"));
+    const [plan] = await harness.control.db
+      .insert(plans)
+      .values({ key: `paid-${company.slug}`, name: "Paid", productId: flooring.id, monthlyPrice: "99", yearlyPrice: "990" })
+      .returning();
+    const endedDaysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    const [subscription] = await harness.control.db
+      .insert(tenantSubscriptions)
+      .values({
+        tenantId: company.id,
+        planId: plan.id,
+        interval: "monthly",
+        price: "99",
+        currentPeriodStart: endedDaysAgo(40),
+        currentPeriodEnd: endedDaysAgo(10),
+        status: "active",
+      })
+      .returning();
+    const endAt = (days: number) =>
+      harness.control.db
+        .update(tenantSubscriptions)
+        .set({ currentPeriodEnd: endedDaysAgo(days) })
+        .where(eq(tenantSubscriptions.id, subscription.id));
+    await call("post", PROBE, cookie).send({ name: "In grace" }).expect(201);
+    await endAt(20);
+    await call("get", PROBE, cookie).expect(200);
+    expect((await call("post", PROBE, cookie).send({ name: "Lapsed" })).body.code).toBe("company_read_only");
+    await endAt(45);
+    expect((await call("get", PROBE, cookie)).body.code).toBe("company_suspended");
   });
 
   /** Every Nest route the inventory checks: all but the public ones, the API docs and Better Auth's mount. */

@@ -52,6 +52,7 @@ function tenantFor(companyId: string): TenantContext {
     status: "active",
     products: ["flooring"],
     maintenanceMode: false,
+    phase: "full",
     databaseStatus: "ready",
   };
   return TenantContext.fromVerifiedSession(session, company);
