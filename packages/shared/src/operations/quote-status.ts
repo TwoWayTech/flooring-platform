@@ -1,6 +1,7 @@
 import { addDays, daysBetween } from "../dates";
 import { moneyString, sum } from "../money";
 import type { Quote } from "../types";
+import { isStateCode } from "../us-pack/states";
 
 /**
  * What a quote's state is today (spec B1): its stored status, or Expired for a pending quote
@@ -76,6 +77,7 @@ export function quoteSendProblems(
   if (!quote.jobSite.street.trim()) problems.street = "Enter the job-site street.";
   if (!quote.jobSite.city.trim()) problems.city = "Enter the city.";
   if (!quote.jobSite.state) problems.state = "Choose the state.";
+  else if (!isStateCode(quote.jobSite.state)) problems.state = "Choose a US state, such as CO.";
   if (!/^\d{5}(-\d{4})?$/.test(quote.jobSite.zip.trim())) problems.zip = "Enter a 5-digit ZIP.";
   if (!quote.locationId) problems.location = "Choose the warehouse it ships from.";
   if (expiresAt && expiresAt < today) problems.expiresAt = "The expiry date can't be in the past.";

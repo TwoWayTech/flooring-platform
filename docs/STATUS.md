@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 (purchasing, part 1) is `feat/purchasing-orders`.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 (sales, part 1) is `feat/sales-customers-quotes`.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`) and PR #12 (`2d483de`).
-- **Last session log:** docs/sessions/2026-11-14-0000-a-purchasing-part-1.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`) and PR #13 (`a66a49d`).
+- **Last session log:** docs/sessions/2026-11-14-0300-a-sales-part-1.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -73,7 +73,8 @@
   - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
   - Retry keeps a message's scheduled time;
   - the explicit `gh pr` allows and the merge and push guard hook.
-- [x] Purchasing part 1 on `feat/purchasing-orders` (ADR 0036): suppliers, contacts, orders and receipts on the API; Summit's purchasing seeded; the Purchasing page in api mode.
+- [x] Sales part 1 on `feat/sales-customers-quotes` (ADR 0037): customers and quotes through data scope, server totals with the tax engine; Summit's customers and quotes seeded; the Sales and quote pages in api mode.
+- [x] Purchasing part 1, merged to main in PR #13 (`a66a49d`, ADR 0036): suppliers, contacts, orders and receipts on the API; Summit's purchasing seeded; the Purchasing page in api mode.
 - [x] Inventory part 1, merged to main in PR #12 (`2d483de`, ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
 - [x] P10 part 2, merged to main in PR #11 (`2ddf5bc`, ADR 0034; draft spec docs/specs/settings-users-access.md):
   - Users and Roles API with no-escalation, holder dominance, data scope, the last Owner, seats and audit;
@@ -84,8 +85,7 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 4, A:** P11 purchasing part 1 (ADR 0036), in review. Bills and supplier payments move with P12.
-2. **Task 5, A:** P11 sales with the tax engine, and inventory part 2 (reservations, cut or issue, Ready to cut, quick invoice from Cut roll).
+1. **Task 5, A:** P11 sales part 1 (ADR 0037), in review. Then sales part 2: invoices, reservations and the cut or issue (inventory part 2), payments, credits and refunds.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -100,6 +100,16 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
 - **Purchasing part 1 (ADR 0036):** a supplier with an unpaid bill can be deactivated until bills move with P12; supplier routes show `creditLimit` by the purchasing money keys through `@SensitiveFieldKeys`.
+- **PR #14 reviews (none blocking):**
+  - Refuse duplicate line ids on a quote: a reused id gets round the "line without a product" rule.
+  - The `quote.sent` email uses the total from before the send reprices it, leaves `quote.expires` empty and sends the total unformatted; reload after commit and format the money.
+  - Trim the job-site county at the boundary, and trim before stripping " County" in `countyKey`.
+  - Decide whether quote-line `unitCost` should also need `sales.margin.view_sensitive` (a custom role with product cost could work out margin).
+  - Strip `wastePct` on quote responses without `sales.waste.view`, as sales.md asks of the real API; then a missing waste from such a viewer means "keep the saved one".
+  - The free-text county picks the county rate; limit it to the company's county rates for the state, or check it against the ZIP.
+  - Accountant: should an exemption certificate count only in its own state? `taxContextFor` checks only that it is valid on the date.
+- **Sales part 2 seed:** invoice-line fixture ids repeat quote-line ids (`sm-ln-0001`); seed invoice lines with a prefix (`seedId("invoice:" + id)`) (PR #14 schema review).
+- **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
 - **PR #13 reviews (none blocking):**
   - Make the 1 sq ft roll tolerance on receipts relative, so tiny receipts cannot repeat it.
   - Use `Object.hasOwn` when `SensitiveFieldKeys` looks up a field name.
@@ -178,6 +188,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Accountant questions (sales tax, ADR 0037):** which states is the client registered to collect sales tax in, and what are its states of operation? Are the seeded rates and per-category taxability (materials taxed; separately stated labor and delivery not) right for each state? Until answered, tax is collected only where a rule exists for the job site, or the company default in its states of operation.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).
 - **`.env.example`:** Claude Code is denied `.env.*` files, so docs/environment.md lists the variables instead. The owner's `.env.local` exists with `BETTER_AUTH_SECRET` and `SEED_USER_PASSWORD`, so this is not a blocker.

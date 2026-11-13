@@ -12,6 +12,7 @@ import { RequestPipelineModule } from "./core/request-pipeline.module";
 import { TenancyModule } from "./core/tenancy/tenancy.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { PurchasingModule } from "./modules/purchasing/purchasing.module";
+import { SalesModule } from "./modules/sales/sales.module";
 import { UsersModule } from "./modules/users/users.module";
 
 /**
@@ -42,6 +43,7 @@ export class AppModule {
         UsersModule,
         InventoryModule,
         PurchasingModule,
+        SalesModule,
         ...extraModules,
       ],
       controllers: [HealthController],

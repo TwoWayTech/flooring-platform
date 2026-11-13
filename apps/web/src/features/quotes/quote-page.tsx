@@ -15,16 +15,14 @@ export function QuotePage({ quoteId }: { quoteId: string | null }) {
   const { user } = useWorkspace();
   const data = useApiQuery(
     async (client) => {
-      const [quote, products, customers, settings, locations, rolls, reservations, movements] = await Promise.all([
-        quoteId ? client.get("quotes", quoteId) : Promise.resolve(undefined),
-        client.list("products"),
-        client.list("customers"),
+      const [sales, stock, settings] = await Promise.all([
+        client.salesData(),
+        client.inventoryData(),
         client.getSettings(),
-        client.list("locations"),
-        client.list("rolls"),
-        client.list("reservations"),
-        client.list("stockMovements"),
       ]);
+      const quote = quoteId ? sales.quotes.find((candidate) => candidate.id === quoteId) : undefined;
+      const { customers, locations } = sales;
+      const { products, rolls, reservations, stockMovements: movements } = stock;
       // A converted quote shows its invoice's status from the ledger (spec Appendix A "Quote").
       const invoiceLedger = quote?.invoiceId ? (await loadSalesLedger(client)).ledgers.get(quote.invoiceId) : undefined;
       return { quote, products, customers, settings, locations, invoiceLedger, rolls, reservations, movements };

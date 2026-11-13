@@ -1,8 +1,10 @@
 import type {
+  Customer,
   GoodsReceipt,
   Location,
   Product,
   PurchaseOrder,
+  Quote,
   Role,
   Roll,
   StockAdjustment,
@@ -75,6 +77,22 @@ export const API_METHODS: HttpRoutes = {
     // Reservations and adjustments come from invoices, which move with sales (ADR 0035).
     return { products, rolls, stockMovements, locations, transfers, reservations: [], stockAdjustments: [] };
   },
+  salesData: (http) => async () => {
+    const [quotes, customers, locations] = await Promise.all([
+      seen(http.request<Quote[]>("GET", "/quotes")),
+      seen(http.request<Customer[]>("GET", "/customers")),
+      seen(http.request<Location[]>("GET", "/locations")),
+    ]);
+    return { quotes, customers, locations };
+  },
+  createCustomer: (http) => (input) => http.request<Customer>("POST", "/customers", input),
+  saveCustomer: (http) => (customer) => http.request<Customer>("PUT", `/customers/${customer.id}`, customer),
+  // A quote the API has saved has a number; a draft from the screen does not yet.
+  saveQuote: (http) => (quote) =>
+    quote.number
+      ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quote)
+      : http.request<Quote>("POST", "/quotes", quote),
+  updateQuoteStatus: (http) => (quoteId, change) => http.request<Quote>("POST", `/quotes/${quoteId}/status`, change),
   purchasingData: (http) => async () => {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations] = await Promise.all([
       seen(http.request<Supplier[]>("GET", "/suppliers")),

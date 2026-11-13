@@ -1,7 +1,14 @@
 import type { CompanySettings } from "@workspace/shared";
 import type { CompanyDb } from "../client";
 import {
+  addresses,
   branches,
+  customerContacts,
+  customers,
+  exemptionCertificates,
+  measurementRooms,
+  quoteLines,
+  quotes,
   documentSequences,
   goodsReceipts,
   locations,
@@ -413,6 +420,164 @@ async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
 }
 
 /**
+ * Customers with their addresses, contacts and exemption certificates, then quotes with their rooms
+ * and lines (sales, part 1; ADR 0037). Default addresses are set once the addresses exist.
+ */
+async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const repOf = new Map(fixtures.customers.map((customer) => [customer.id, userOf(customer.salesRepId)]));
+  for (const customer of fixtures.customers) {
+    const id = seedId(customer.id);
+    const by = repOf.get(customer.id) ?? null;
+    const since = utc(customer.createdAt);
+    await tx
+      .insert(customers)
+      .values({
+        id,
+        type: customer.type,
+        name: customer.name,
+        contactName: customer.contactName,
+        email: customer.email,
+        phone: customer.phone,
+        terms: customer.terms,
+        creditLimit: customer.creditLimit,
+        taxExempt: customer.taxExempt,
+        salesRepId: customer.salesRepId ? seededUserId(customer.salesRepId) : null,
+        lifecycle: customer.lifecycle ?? "customer",
+        externalId: customer.externalId ?? null,
+        createdAt: since,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+    if (customer.addresses.length > 0) {
+      await tx
+        .insert(addresses)
+        .values(
+          customer.addresses.map((address, index) => ({
+            id: seedId(address.id),
+            // The fixture's order, kept: the first address is the fallback default.
+            createdAt: new Date(since.getTime() + index * 1000),
+            createdBy: by,
+            customerId: id,
+            label: address.label,
+            street: address.street,
+            city: address.city,
+            state: address.state,
+            zip: address.zip,
+            county: address.county ?? null,
+            lat: address.lat ?? null,
+            lng: address.lng ?? null,
+          })),
+        )
+        .onConflictDoNothing();
+      await tx
+        .update(customers)
+        .set({
+          defaultBillingId: customer.defaultBillingId ? seedId(customer.defaultBillingId) : null,
+          defaultJobSiteId: customer.defaultJobSiteId ? seedId(customer.defaultJobSiteId) : null,
+        })
+        .where(and(eq(customers.id, id), isNull(customers.defaultBillingId)));
+    }
+    if (customer.certificate) {
+      await tx
+        .insert(exemptionCertificates)
+        .values({
+          id: seedId(`${customer.id}:certificate`),
+          customerId: id,
+          ...customer.certificate,
+          createdAt: since,
+          createdBy: by,
+        })
+        .onConflictDoNothing();
+    }
+  }
+  if (fixtures.customerContacts.length > 0) {
+    await tx
+      .insert(customerContacts)
+      .values(
+        fixtures.customerContacts.map((contact) => ({
+          id: seedId(contact.id),
+          customerId: seedId(contact.customerId),
+          name: contact.name,
+          email: contact.email,
+          phone: contact.phone,
+          createdBy: repOf.get(contact.customerId) ?? null,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+  for (const quote of fixtures.quotes) {
+    const id = seedId(quote.id);
+    await tx
+      .insert(quotes)
+      .values({
+        id,
+        number: quote.number,
+        customerId: seedId(quote.customerId),
+        salesRepId: seededUserId(quote.salesRepId),
+        branchId: seedId(quote.branchId),
+        status: quote.status,
+        sentAt: quote.sentAt ? utc(quote.sentAt) : null,
+        expiresAt: quote.expiresAt,
+        locationId: seedId(quote.locationId),
+        soldAtLocationId: quote.soldAtLocationId ? seedId(quote.soldAtLocationId) : null,
+        jobSite: quote.jobSite,
+        depositPct: quote.depositPct,
+        lumpSum: quote.lumpSum,
+        taxOverride: quote.taxOverride,
+        total: quote.total,
+        notes: quote.notes,
+        createdAt: utc(quote.createdAt),
+        createdBy: seededUserId(quote.salesRepId),
+      })
+      .onConflictDoNothing();
+    if (quote.rooms.length > 0) {
+      await tx
+        .insert(measurementRooms)
+        .values(
+          quote.rooms.map((room, index) => ({
+            id: seedId(room.id),
+            createdAt: new Date(utc(quote.createdAt).getTime() + index * 1000),
+            createdBy: seededUserId(quote.salesRepId),
+            quoteId: id,
+            name: room.name,
+            x: room.x,
+            y: room.y,
+            widthFt: String(room.widthFt),
+            lengthFt: String(room.lengthFt),
+          })),
+        )
+        .onConflictDoNothing();
+    }
+    if (quote.lines.length > 0) {
+      await tx
+        .insert(quoteLines)
+        .values(
+          quote.lines.map((line, position) => ({
+            id: seedId(line.id),
+            quoteId: id,
+            position,
+            productId: line.productId ? seedId(line.productId) : null,
+            description: line.description,
+            category: line.category,
+            unit: line.unit,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            unitCost: line.unitCost,
+            wastePct: line.wastePct ?? null,
+            rollId: line.rollId ? seedId(line.rollId) : null,
+            sqFtPerCarton: line.sqFtPerCarton ?? null,
+            locationId: line.locationId ? seedId(line.locationId) : null,
+            roomIds: (line.roomIds ?? []).map((roomId) => seedId(roomId)),
+            createdAt: utc(quote.createdAt),
+            createdBy: seededUserId(quote.salesRepId),
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
  * and purchase orders with their receipts (purchasing part 1). Business records
@@ -426,5 +591,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedSuppliers(tx, demo);
     await seedCatalog(tx, demo);
     await seedOrders(tx, demo);
+    await seedSales(tx, demo);
   });
 }

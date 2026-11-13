@@ -146,6 +146,19 @@ Every route needs the `core` module. Line costs (`unitCost`) are stripped withou
 | `GET /receipts` | `purchasing.order.view` | Goods receipts with their lines |
 | `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, or a roll number already in stock |
 
+## Sales, part 1 (real build, P11, ADR 0037)
+
+Every route needs the `core` module and reads through data scope (own, branch, all); anything outside it answers 404. Line costs are stripped without `inventory.product.view_sensitive`, credit limits without `customers.customer.view_sensitive`.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /customers` | `customers.customer.view` | Customers within scope, with addresses and certificate |
+| `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }` |
+| `PUT /customers/:id` | `customers.customer.edit` | Name, contact, terms and addresses; credit, exemption and rep are never taken from the request |
+| `GET /quotes` | `sales.quote.view` | Quotes within scope, with rooms and lines |
+| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. 403 for a waste change without `sales.waste.view` or a tax change without `sales.tax.override`. 409 `quote_closed`, `settings_missing` |
+| `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.
