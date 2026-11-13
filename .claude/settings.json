@@ -83,11 +83,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge-push-guard.mjs\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge-push-guard.mjs\" || exit 2",
             "timeout": 10
           }
         ]

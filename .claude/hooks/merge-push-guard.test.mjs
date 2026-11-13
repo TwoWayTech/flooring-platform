@@ -13,7 +13,7 @@ test("allows only the exact squash merge", () => {
     "gh pr merge 10 --squash --match-head-commit 6fbb478 --delete-branch",
     "gh pr merge 10 --squash --delete-branch --match-head-commit 6fbb47812ab",
   ]) {
-    assert.equal(refusal(ok, "feat/x"), null, ok);
+    assert.equal(refusal(ok), null, ok);
   }
 });
 
@@ -32,8 +32,9 @@ test("refuses every other merge, however it is wrapped (PR #10 security reviews)
     "npx gh pr merge 10 --squash",
     "node -e \"require('child_process').execSync('gh pr merge 10 --admin --merge')\"",
     "gh pr merge 10 --squash && git branch -r",
+    "gh pr -R TwoWayTech/flooring-platform merge 10 --merge --admin",
   ]) {
-    assert.notEqual(refusal(bad, "feat/x"), null, bad);
+    assert.notEqual(refusal(bad), null, bad);
   }
 });
 
@@ -47,15 +48,17 @@ test("allows only read-only gh api calls and no repository edits", () => {
     "gh api --method=POST repos/o/r/pulls",
     "gh api repos/o/r/pulls --input body.json",
     "gh repo edit --enable-rebase-merge",
+    "gh api repos/o/r/merges -fbase=main -fhead=fix/x",
+    "gh api repos/o/r/git/refs/heads/main -Fforce=true",
   ]) {
-    assert.notEqual(refusal(bad, "feat/x"), null, bad);
+    assert.notEqual(refusal(bad), null, bad);
   }
   for (const ok of [
     "gh api repos/o/r --jq '{rebase:.allow_rebase_merge}'",
     "gh api -X GET repos/o/r/pulls/10",
     "gh api repos/o/r/pulls/10/comments",
   ]) {
-    assert.equal(refusal(ok, "feat/x"), null, ok);
+    assert.equal(refusal(ok), null, ok);
   }
 });
 
@@ -81,27 +84,36 @@ test("refuses pushes to main, pushes of HEAD from main, steered and forced pushe
     "git config remote.origin.push HEAD:main",
     "git config push.default upstream",
     "git config branch.feat/x.merge refs/heads/main",
+    "git switch main && git merge --ff-only fix/x && git push origin",
+    "git switch main && git push -q",
+    "git push -q",
+    "git push origin",
+    "git push -u origin HEAD",
+    "git push origin @",
+    "git --git-dir .git push origin main",
+    'git -C "C:/path with space" push origin main',
+    "cd /c/dev && git push",
+    "git push origin demo",
   ]) {
-    assert.notEqual(refusal(bad, "feat/x"), null, bad);
+    assert.notEqual(refusal(bad), null, bad);
   }
   for (const bad of ["git push -q", "git push origin", "git push -u origin HEAD", "git push origin @"]) {
-    assert.notEqual(refusal(bad, "main"), null, `${bad} on main`);
+    assert.notEqual(refusal(bad), null, `${bad} on main`);
   }
   for (const ok of [
     "git push origin feat/maintenance-mode",
     "git push -q -u origin fix/platform-owner-decisions",
-    "git push -q",
-    "git push -u origin HEAD",
     "git -C /c/dev/flooring-platform push -q origin feat/x",
+    "git push -q origin HEAD:fix/platform-owner-decisions",
     "git log --oneline main..HEAD",
     "git checkout main && git pull --ff-only",
     "gh pr view 10",
     "git branch -r",
     "git config --get remote.origin.url",
   ]) {
-    assert.equal(refusal(ok, "feat/x"), null, ok);
+    assert.equal(refusal(ok), null, ok);
   }
-  assert.equal(refusal("git push origin feat/x", "main"), null);
+
 });
 
 test("blocks with exit code 2, fails closed, and ignores other tools", () => {
@@ -116,5 +128,6 @@ test("blocks with exit code 2, fails closed, and ignores other tools", () => {
   assert.equal(run({ tool_name: "Bash", tool_input: { command: "pnpm lint" } }).status, 0);
   assert.equal(run({ tool_name: "Read", tool_input: { file_path: "main" } }).status, 0);
   assert.equal(run("not json").status, 2);
+  assert.equal(run({ tool_name: "PowerShell", tool_input: { command: "git push origin main" } }).status, 2);
   assert.equal(run({ tool_name: "Bash", tool_input: {} }).status, 2);
 });

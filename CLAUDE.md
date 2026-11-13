@@ -24,7 +24,7 @@ The clickable demo lives on branch `demo` (tag `demo-v3`). `main` is the real pr
   - a fresh read-only reviewer subagent found no blocking issue: security-reviewer for auth, tenancy, permissions, money or payroll; schema-reviewer for schema changes;
   - the reviewer's summary is posted with `gh pr review <n> --comment`.
   Never use `--admin`, never merge any other way, and never push to main directly.
-- `.claude/hooks/merge-push-guard.mjs` (PreToolUse) enforces this: it blocks any merge but `gh pr merge <n> --squash [--match-head-commit <sha>] [--delete-branch]` run on its own, and any push to main or force push. Its tests run in `pnpm test:hooks`.
+- `.claude/hooks/merge-push-guard.mjs` (PreToolUse) enforces this: it blocks any merge but `gh pr merge <n> --squash [--match-head-commit <sha>] [--delete-branch]` run on its own, any `gh api` write, and any push that does not name a `feat/*` or `fix/*` branch (`git push -q origin feat/<name>`), so a bare `git push` is refused too. It covers the Bash and PowerShell tools. Its tests run in `pnpm test:hooks`.
 - Push after every commit: `git push origin <branch>`. Nothing important may exist only on one laptop or in this chat.
 - Keep PRs as drafts while working. Mark one ready only when it is done, because ready PRs run the expensive CI (docs/real-build-plan.md, CI budget).
 

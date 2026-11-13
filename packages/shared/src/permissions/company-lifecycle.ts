@@ -77,6 +77,9 @@ function subscriptionPhase(subscription: LifecycleSubscription, now: Date): Comp
       const readOnly = wasPaid(subscription) ? LIFECYCLE_DAYS.cancelledPaidReadOnly : LIFECYCLE_DAYS.unpaidReadOnly;
       return ladder(now, end, addDays(end, readOnly));
     }
+    default:
+      // A status this code does not know gives no access (PR #10 review).
+      return "locked";
   }
 }
 
@@ -97,6 +100,8 @@ function statusPhase(facts: LifecycleFacts, everPaid: boolean, now: Date): Compa
         since,
         addDays(since, everPaid ? LIFECYCLE_DAYS.cancelledPaidReadOnly : LIFECYCLE_DAYS.unpaidReadOnly),
       );
+    default:
+      return "locked";
   }
 }
 
