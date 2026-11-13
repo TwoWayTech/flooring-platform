@@ -26,20 +26,23 @@ export function InventoryPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [products, rolls, stockMovements, reservations, locations, transfers, users, adjustments] = await Promise.all(
-      [
-        client.list("products"),
-        client.list("rolls"),
-        client.list("stockMovements"),
-        client.list("reservations"),
-        client.list("locations"),
-        client.list("transfers"),
-        client.list("users"),
-        client.list("stockAdjustments"),
-      ],
-    );
-    const holds = await client.listStockHolds();
-    return { products, rolls, stockMovements, reservations, locations, transfers, users, adjustments, holds };
+    const [stock, users, holds] = await Promise.all([
+      client.inventoryData(),
+      client.list("users"),
+      client.listStockHolds(),
+    ]);
+    const { products, rolls, stockMovements, reservations, locations, transfers } = stock;
+    return {
+      products,
+      rolls,
+      stockMovements,
+      reservations,
+      locations,
+      transfers,
+      users,
+      adjustments: stock.stockAdjustments,
+      holds,
+    };
   }, []);
   const allowed: Record<InventoryView, boolean> = {
     products: can("inventory.product.view") && featureOn("inventory.products"),

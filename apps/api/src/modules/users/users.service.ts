@@ -35,9 +35,9 @@ import {
 import { and, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
-import { AuditService, type AuditActor } from "../../core/access/audit";
+import { AuditService } from "../../core/access/audit";
+import type { Actor } from "../../core/access/request-actor";
 import { AttemptLog } from "../../core/auth/attempts";
-import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { EMAIL, EMAIL_FROM } from "../../core/email/email.module";
@@ -62,13 +62,6 @@ export interface UserPatchInput {
   mfaEnrolled?: false;
   branchId?: string;
   title?: string;
-}
-
-/** Who acts, with the session for step-up and the request facts for audit. */
-export interface Actor {
-  access: RequestAccess;
-  session: AuthSession;
-  audit: AuditActor;
 }
 
 const ROLE_REFUSALS = {

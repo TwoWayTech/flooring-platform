@@ -7,7 +7,7 @@ import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import type { Actor } from "./users.service";
+import type { Actor } from "../../core/access/request-actor";
 
 /** The longest support access a platform admin may ask for (draft spec "Support access"). */
 export const MAX_SUPPORT_HOURS = 72;

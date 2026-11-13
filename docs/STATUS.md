@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`); task 2 is `feat/settings-users-roles`, PR #11.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 (inventory, part 1) is `feat/inventory-catalog`.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`) and PR #10 (`a1b0840`).
-- **Last session log:** docs/sessions/2026-11-13-1600-a-users-roles-access.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`) and PR #11 (`2ddf5bc`).
+- **Last session log:** docs/sessions/2026-11-13-2100-a-inventory-part-1.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -73,7 +73,8 @@
   - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
   - Retry keeps a message's scheduled time;
   - the explicit `gh pr` allows and the merge and push guard hook.
-- [x] P10 part 2 on `feat/settings-users-roles` (PR #11, ADR 0034; draft spec docs/specs/settings-users-access.md):
+- [x] Inventory part 1 on `feat/inventory-catalog` (ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
+- [x] P10 part 2, merged to main in PR #11 (`2ddf5bc`, ADR 0034; draft spec docs/specs/settings-users-access.md):
   - Users and Roles API with no-escalation, holder dominance, data scope, the last Owner, seats and audit;
   - server-side step-up with a race-safe lockout;
   - MFA by role content, with a per-request backstop;
@@ -82,7 +83,7 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 3, A:** P11 inventory (docs/product-spec/inventory.md).
+1. **Task 3, A:** P11 inventory part 1 (ADR 0035), in review. Part 2 (reservations, cut or issue, Ready to cut, quick invoice from Cut roll) moves with sales.
 2. **Tasks 4 and 5, A:** P11 purchasing, then sales with the tax engine.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
@@ -97,7 +98,18 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `pnpm db:migrate` parses every provider setting; check only the email section.
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
+- **PR #12 reviews (none blocking):**
+  - `moveRoll` should take the stock lock and refuse a roll in transit, because receiving the transfer resets the bin the audit recorded.
+  - A roll correction should also check the `inventory.rolls` switch (and a boxed one `inventory.products`).
+  - `validateTransfer` should refuse a product no longer in the live catalog (latent: products cannot be deleted yet).
+  - Decide whether `GET /locations` honours the `inventory.locations` switch, and say so in docs/FEATURES.md.
+  - Add a test for two receives of one transfer at once.
+  - `widthFt` and `reorderPoint` go out as JSON numbers because the shared types declare them so; make them decimal strings when those types are next touched (CLAUDE.md rule 6).
+  - A stock correction changes inventory value: post it through LedgerService once P12 exists (rule 10).
+  - The inventory tables have no indexes on their foreign keys (`rolls.product_id`, `rolls.location_id`, `roll_cuts.roll_id`, `transfer_lines.transfer_id`), and the SKU and roll-number unique indexes are not partial on `deleted_at`. A change to existing tables, so it waits for a schema task the owner approves.
 - **PR #11 security review (none blocking):**
+  - In api mode the app shell's on-screen permissions still come from the demo's roles; give the shell the effective permissions from the API (`/auth/context`) when it moves. The server checks every call regardless (review of `d0e1eee`).
+  - The Security roles screen also loads `/users`, so a role with roles-view but no users-view sees an error there; load users only with `settings.users.view`, or have `/roles` return holder counts (review of `d0e1eee`).
   - **First:** keep a branch-scoped admin's branch changes and invitations to their own branch, and refuse changes to one's own branch unless an Owner or of scope `all` (third review, medium).
   - Better Auth's password reset gives an invited account a password, which sidesteps the invitation's expiry; hold the membership until acceptance, or refuse `/reset-password` for an account with no password (third review).
   - Consider adding `settings.import.manage` (and perhaps `settings.company.manage`) to `MFA_REQUIRED_KEYS` (third review).

@@ -64,6 +64,27 @@ describe("transfers (spec A1)", () => {
     expect(validateTransfer(input, locations, [roll], movements, [])).toBeNull();
   });
 
+  it("adds up lines of one product, and refuses a roll of another product or listed twice (PR #12 review)", () => {
+    const split = {
+      ...input,
+      lines: [
+        { productId: "p1", rollId: null, quantity: "20" },
+        { productId: "p1", rollId: null, quantity: "20" },
+      ],
+    };
+    expect(validateTransfer(split, locations, [roll], movements, [])).toMatch(/Only 25 on hand/);
+    const wrongProduct = { ...input, lines: [{ productId: "p1", rollId: "r1", quantity: "1" }] };
+    expect(validateTransfer(wrongProduct, locations, [roll], movements, [])).toMatch(/different product/);
+    const twice = {
+      ...input,
+      lines: [
+        { productId: "p2", rollId: "r1", quantity: "90" },
+        { productId: "p2", rollId: "r1", quantity: "90" },
+      ],
+    };
+    expect(validateTransfer(twice, locations, [roll], movements, [])).toMatch(/twice/);
+  });
+
   it("refuses a roll that is already travelling", () => {
     const lines = [{ productId: "p2", rollId: "r1", quantity: "90" }];
     expect(validateTransfer({ ...input, lines }, locations, [{ ...roll, transferId: "t0" }], movements, [])).toMatch(

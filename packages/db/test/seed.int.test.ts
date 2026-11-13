@@ -3,10 +3,11 @@ import { NoopProvisioner } from "@workspace/providers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
-import { roles, userProfiles } from "../src/company";
+import { products, rollCuts, rolls, roles, stockMovements, transfers, userProfiles } from "../src/company";
 import { verifyPassword } from "better-auth/crypto";
 import { account, organization, tenantDatabases, tenants, user } from "../src/control";
 import { seedTestCompany } from "../src/seed";
+import { loadDemoCompany } from "../src/seed/fixtures";
 import { scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
@@ -67,6 +68,20 @@ describe("test company seed", () => {
       const seededRoles = await company.db.select().from(roles);
       expect(seededRoles.filter((role) => role.owner)).toHaveLength(1);
       expect(await company.db.select().from(userProfiles)).toHaveLength(15);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds the catalog and stock once, with every roll, cut, ledger line and transfer (inventory, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(products)).toHaveLength(fixtures.products.length);
+      expect(await company.db.select().from(rolls)).toHaveLength(fixtures.rolls.length);
+      expect(await company.db.select().from(rollCuts)).toHaveLength(fixtures.rolls.flatMap((roll) => roll.cuts).length);
+      expect(await company.db.select().from(stockMovements)).toHaveLength(fixtures.stockMovements.length);
+      expect(await company.db.select().from(transfers)).toHaveLength(fixtures.transfers.length);
     } finally {
       await company.close();
     }

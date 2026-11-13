@@ -25,7 +25,7 @@ import type { AuthSession } from "../../core/auth/session.service";
 import type { ApiEnv } from "../../core/config/env";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { AuditLogService } from "./audit-log.service";
-import { actorOf, parse } from "./request-helpers";
+import { actorOf, parse } from "../../core/access/request-actor";
 import { linkOrigin } from "./invitation-rules";
 import { RolesService } from "./roles.service";
 import { UsersService } from "./users.service";

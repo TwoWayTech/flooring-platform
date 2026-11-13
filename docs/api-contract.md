@@ -111,6 +111,22 @@ Draft spec: docs/specs/settings-users-access.md.
 
 A route that needs a step-up answers 403 `step_up_required` without one from the last 5 minutes. Someone whose only factor is a passkey steps up by signing in again with it: a session under 5 minutes old counts. Password reset is Better Auth's `/api/auth/request-password-reset` and `/api/auth/reset-password` (one-hour links, every session ended; 3 emails an hour per address, shared with verification and invitation emails).
 
+## Inventory, part 1 (real build, P11, ADR 0035)
+
+Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /products` | `inventory.product.view` | The catalog (`Product`) |
+| `GET /rolls` | `inventory.roll.view` | Rolls and remnants with their cuts (`Roll`) |
+| `GET /stock-movements` | `inventory.product.view` | The boxed-stock ledger (`StockMovement`) |
+| `GET /locations` | Any company member | Warehouses and showrooms (`Location`). Shared reference data every module picks from, so `@AnyCompanyMember` here does not mean the person's own records |
+| `GET /transfers` | `inventory.transfer.view` | Transfers with their lines, newest first |
+| `POST /transfers` | `inventory.transfer.create` | `{ fromId, toId, lines: [{ productId, rollId, quantity }], note }`. 400 `invalid_transfer` (same warehouse, a showroom, more than on hand, a part carton, a roll elsewhere or already travelling) |
+| `POST /transfers/:id/receive` | `inventory.transfer.receive` | 409 `already_received` |
+| `PATCH /rolls/:id` | `inventory.roll.edit` | `{ bin }` only; any other field is 400 |
+| `POST /stock/corrections` | `inventory.stock.correct` | `{ productId, rollId, locationId, counted, reason }`: an approved count adjustment. 400 `invalid_correction` |
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.

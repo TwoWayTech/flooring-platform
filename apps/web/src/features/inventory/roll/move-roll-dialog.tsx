@@ -36,17 +36,7 @@ export function MoveRollDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await api.save(
-      "rolls",
-      { ...roll, bin: bin.trim() },
-      {
-        category: "data",
-        action: "Moved roll",
-        target: `Roll ${roll.rollNumber}`,
-        before: `${location}, bin ${roll.bin}`,
-        after: `${location}, bin ${bin.trim()}`,
-      },
-    );
+    await api.moveRoll(roll.id, bin.trim());
     toast.success(`Moved ${roll.rollNumber} to bin ${bin.trim()}`);
     onOpenChange(false);
   }

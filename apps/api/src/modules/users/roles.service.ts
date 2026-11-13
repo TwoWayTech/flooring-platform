@@ -27,7 +27,7 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { heldRoles, loadRoles, roleView, setRolePermissions, syncMemberRoles, type RoleRecord } from "./role-records";
-import type { Actor } from "./users.service";
+import type { Actor } from "../../core/access/request-actor";
 
 /** A role as the screens send it to be saved (ApiClient `saveRole`). */
 export interface RoleInput {

@@ -1,4 +1,5 @@
-import type { Role, User } from "@workspace/shared";
+import type { Location, Product, Role, Roll, StockAdjustment, StockMovement, Transfer, User } from "@workspace/shared";
+import { HttpApiError } from "./transport";
 import type { CollectionName, Collections, ItemOf } from "../contract";
 import type { HttpRoutes } from "./router";
 
@@ -50,7 +51,34 @@ export const API_METHODS: HttpRoutes = {
   resetRole: (http) => (roleId) => http.request<Role>("POST", `/roles/${roleId}/reset`),
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   verifyStepUp: (http) => (code) => http.request<void>("POST", "/auth/step-up", { code }),
+  inventoryData: (http) => async () => {
+    const [products, rolls, stockMovements, locations, transfers] = await Promise.all([
+      seen(http.request<Product[]>("GET", "/products")),
+      seen(http.request<Roll[]>("GET", "/rolls")),
+      seen(http.request<StockMovement[]>("GET", "/stock-movements")),
+      seen(http.request<Location[]>("GET", "/locations")),
+      seen(http.request<Transfer[]>("GET", "/transfers")),
+    ]);
+    // Reservations and adjustments come from invoices, which move with sales (ADR 0035).
+    return { products, rolls, stockMovements, locations, transfers, reservations: [], stockAdjustments: [] };
+  },
+  moveRoll: (http) => (rollId, bin) => http.request<Roll>("PATCH", `/rolls/${rollId}`, { bin }),
+  createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
+  receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
+  correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
+  // Holds are made by invoices, which move with sales; until then the real API has none.
+  listStockHolds: () => async () => [],
 };
+
+/** A list the person may not see (403) comes back empty, as the demo hides what a role cannot open. */
+async function seen<T>(list: Promise<T[]>): Promise<T[]> {
+  try {
+    return await list;
+  } catch (failure) {
+    if (failure instanceof HttpApiError && failure.status === 403) return [];
+    throw failure;
+  }
+}
 
 /** A role id the API made (a UUID); a draft role from the screen has a temporary id. */
 function isSaved(id: string): boolean {

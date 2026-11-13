@@ -855,6 +855,36 @@ export class DemoStore implements ApiClient {
     return this.viewer!.userId;
   }
 
+  async inventoryData() {
+    const [products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments] = await Promise.all([
+      this.list("products"),
+      this.list("rolls"),
+      this.list("stockMovements"),
+      this.list("locations"),
+      this.list("transfers"),
+      this.list("reservations"),
+      this.list("stockAdjustments"),
+    ]);
+    return { products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments };
+  }
+
+  async moveRoll(rollId: string, bin: string) {
+    const roll = await this.get("rolls", rollId);
+    if (!roll) throw new DemoRuleError("This roll no longer exists.");
+    const location = (await this.get("locations", roll.locationId))?.name ?? "";
+    return this.save(
+      "rolls",
+      { ...roll, bin: bin.trim() },
+      {
+        category: "data",
+        action: "Moved roll",
+        target: `Roll ${roll.rollNumber}`,
+        before: `${location}, bin ${roll.bin}`,
+        after: `${location}, bin ${bin.trim()}`,
+      },
+    );
+  }
+
   async listSettingsUsers() {
     return this.list("users");
   }
