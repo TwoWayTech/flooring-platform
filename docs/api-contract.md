@@ -38,7 +38,7 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 | `POST /api/auth/sign-in/email` | `{ email, password, callbackURL? }` → 200 and the cookie | 401 `INVALID_EMAIL_OR_PASSWORD`. 403 `EMAIL_NOT_VERIFIED`, which also sends a verification link. 403 `not_a_member` when the host names a company the user is not in. 403 `no_company` |
 | `POST /api/auth/sign-up/email` | refused | Accounts are invite-only |
 | `GET /api/auth/verify-email?token=&callbackURL=` | redirects to `callbackURL` | The link in the verification email |
-| `POST /api/auth/organization/set-active` | `{ organizationId }` | Opens one of the user's companies (the chooser). 403 `not_a_member` for any other company. It selects among the session's verified memberships, so the tenant still comes from the session (rule 2) |
+| `POST /api/auth/organization/set-active` | `{ organizationId }` | Opens one of the user's companies (the chooser). 400 `company_id_required` without a company id (`null` and `organizationSlug` are refused). 403 `not_a_member` for any other company, and 403 `wrong_host` for a company other than the one the host names. It selects among the session's verified memberships, so the tenant still comes from the session (rule 2) |
 | `GET /api/auth/organization/list` | the user's organizations | Every other organization endpoint answers 404 |
 | `POST /api/auth/sign-out` | → 200 | Deletes the session |
 | `POST /api/auth/change-password` | `{ currentPassword, newPassword }` | At least 12 characters |

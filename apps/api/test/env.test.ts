@@ -33,6 +33,17 @@ describe("validateEnv", () => {
     ]);
   });
 
+  it("needs exact sign-in hosts in production, without wildcards", () => {
+    const production = { ...base, NODE_ENV: "production" };
+    expect(() => validateEnv(production)).toThrow(/AUTH_ALLOWED_HOSTS: Required in production/);
+    expect(() => validateEnv({ ...production, AUTH_ALLOWED_HOSTS: "app.example.com, *.vercel.app" })).toThrow(
+      /AUTH_ALLOWED_HOSTS: Wildcards are not allowed/,
+    );
+    expect(validateEnv({ ...production, AUTH_ALLOWED_HOSTS: "app.example.com" }).AUTH_ALLOWED_HOSTS).toEqual([
+      "app.example.com",
+    ]);
+  });
+
   it("checks the provider settings too", () => {
     expect(() => validateEnv({ ...base, EMAIL_PROVIDER: "resend" })).toThrow(/RESEND_API_KEY/);
   });

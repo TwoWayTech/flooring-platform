@@ -21,7 +21,10 @@ export interface AuthDeps {
   allowedHosts: string[];
   /** Extra origins allowed to call auth endpoints (CORS_ORIGINS). */
   trustedOrigins: string[];
-  /** Secure cookies outside development and tests. */
+  /**
+   * Secure cookies in production. With a per-request base URL, Better Auth has no protocol to detect
+   * HTTPS from, so every deployment served over HTTPS must run with NODE_ENV=production.
+   */
   secureCookies: boolean;
   /** Where unexpected failures are reported, without tokens or passwords. */
   logError: (message: string) => void;
@@ -60,11 +63,41 @@ function isSessionless(path: string): boolean {
 const REFUSALS = {
   not_a_member: "This account is not a member of this company. Sign in on your company's own address.",
   no_company: "This account is not part of any company yet. Ask your company's owner to invite you.",
+  company_id_required: "Choose a company to open.",
+  wrong_host: "This address opens only its own company. Sign in on the other company's address.",
 } as const;
 
 /** The web host a request came through; the web app's proxy forwards it (ADR 0029). */
 function requestHost(headers: Headers | undefined): string | undefined {
   return headers?.get("x-forwarded-host") ?? headers?.get("host") ?? undefined;
+}
+
+/**
+ * Checks a set-active request before Better Auth runs it, so a refused switch leaves the open
+ * company as it was (Better Auth's own refusal clears it on the way out). Only a company id is
+ * accepted: a null id would leave the session with no company, and so under the default timeouts
+ * instead of the company's (blueprint p28), and a slug would skip this check. On a host that names
+ * a company, only that company can be opened (blueprint p16, "the subdomain picks the company").
+ */
+async function checkCompanySwitch(
+  deps: AuthDeps,
+  body: unknown,
+  userId: string,
+  host: string | undefined,
+): Promise<void> {
+  const fields = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const organizationId = fields.organizationId;
+  if (typeof organizationId !== "string" || organizationId === "" || "organizationSlug" in fields) {
+    throw new APIError("BAD_REQUEST", { code: "company_id_required", message: REFUSALS.company_id_required });
+  }
+  const slug = hostCompanySlug(host);
+  if (slug && (await deps.companies.idBySlug(slug)) !== organizationId) {
+    throw new APIError("FORBIDDEN", { code: "wrong_host", message: REFUSALS.wrong_host });
+  }
+  const memberships = await deps.companies.membershipsOf(userId);
+  if (!memberships.some((company) => company.id === organizationId)) {
+    throw new APIError("FORBIDDEN", { code: "not_a_member", message: REFUSALS.not_a_member });
+  }
 }
 
 /**
@@ -152,14 +185,7 @@ export function createAuth(deps: AuthDeps) {
           throw new APIError("UNAUTHORIZED", { code: "session_expired", message: SESSION_ENDED_MESSAGES[ended] });
         }
         if (ctx.path === "/organization/set-active") {
-          // Checked here so a refused switch leaves the open company as it was; Better Auth's own
-          // check refuses too, but clears the session's active company on the way out.
-          const organizationId: unknown = ctx.body?.organizationId;
-          if (typeof organizationId !== "string") return;
-          const memberships = await deps.companies.membershipsOf(current.user.id);
-          if (!memberships.some((company) => company.id === organizationId)) {
-            throw new APIError("FORBIDDEN", { code: "not_a_member", message: REFUSALS.not_a_member });
-          }
+          await checkCompanySwitch(deps, ctx.body, current.user.id, requestHost(ctx.request.headers));
         }
       }),
     },

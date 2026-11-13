@@ -1,4 +1,4 @@
-import { session, user } from "@workspace/db/control";
+import { session, tenants, user } from "@workspace/db/control";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, isUuidV7, PASSWORD, sessionCookie, SUMMIT_ID } from "./auth-harness";
@@ -208,6 +208,49 @@ describe("sign-in with Better Auth (P8 part 1, needs the local PostgreSQL)", () 
       expect(response.status).toBeGreaterThanOrEqual(400);
       const context = await harness.get("/auth/context").set("Cookie", cookie).expect(200);
       expect(context.body.company.id).toBe(SUMMIT_ID);
+    });
+
+    it("refuses a switch to no company or by slug, and keeps the open company", async () => {
+      const second = await harness.addCompany("slug-co");
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID, second] });
+      const cookie = await harness.signIn(email);
+      await harness
+        .post("/api/auth/organization/set-active")
+        .set("Cookie", cookie)
+        .send({ organizationId: SUMMIT_ID })
+        .expect(200);
+      for (const body of [{ organizationId: null }, { organizationSlug: "slug-co" }, {}]) {
+        const response = await harness.post("/api/auth/organization/set-active").set("Cookie", cookie).send(body);
+        expect(response.status).toBe(400);
+        expect(response.body.code).toBe("company_id_required");
+      }
+      const context = await harness.get("/auth/context").set("Cookie", cookie).expect(200);
+      expect(context.body.company.id).toBe(SUMMIT_ID);
+    });
+
+    it("refuses a switch to another company on a host that names a company", async () => {
+      const second = await harness.addCompany("bound-co");
+      const both = await harness.addUser({ companyIds: [SUMMIT_ID, second] });
+      const host = "bound-co.flooringsuite.test";
+      const cookie = await harness.signIn(both, host);
+      const response = await harness
+        .post("/api/auth/organization/set-active", host)
+        .set("Cookie", cookie)
+        .send({ organizationId: SUMMIT_ID });
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe("wrong_host");
+      const context = await harness.get("/auth/context", host).set("Cookie", cookie).expect(200);
+      expect(context.body.company.id).toBe(second);
+    });
+
+    it("leaves deleted companies out of sign-in", async () => {
+      const deleted = await harness.addCompany("deleted-co");
+      await harness.control.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.id, deleted));
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID, deleted] });
+      const cookie = await harness.signIn(email);
+      const context = await harness.get("/auth/context").set("Cookie", cookie).expect(200);
+      expect(context.body.company.id).toBe(SUMMIT_ID);
+      expect(context.body.companies).toHaveLength(1);
     });
 
     it("opens the company the host names, and refuses a user who is not its member", async () => {

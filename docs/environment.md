@@ -17,7 +17,7 @@ Every variable the apps read, with the local default. Put real values in a local
 | `STORAGE_PROVIDER` | api | `memory` | `r2`, `s3` or `memory` |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | `STORAGE_PROVIDER=r2` or `s3` | empty | For R2, `S3_ENDPOINT` is `https://<account>.r2.cloudflarestorage.com` and `S3_REGION` is `auto` |
 | `BETTER_AUTH_SECRET` | api | generate one | Signs session cookies and tokens; at least 32 characters: `npx auth secret`. Changing it signs everyone out |
-| `AUTH_ALLOWED_HOSTS` | api | `localhost:*` | Comma-separated web hosts that serve sign-in, wildcards allowed (`*.vercel.app`). Verification links and origin checks use them (ADR 0029) |
+| `AUTH_ALLOWED_HOSTS` | api | `localhost:*` outside production | Comma-separated web hosts that serve sign-in. Verification links and origin checks use them (ADR 0029). In production it is required and must list exact hosts: the API refuses to start with a wildcard, because the forwarded host is trusted and a shared wildcard such as `*.vercel.app` would let another site receive our links |
 | `SEED_USER_PASSWORD` | db scripts | empty | Password `pnpm db:seed` gives every seeded user, at least 12 characters. Unset: the seeded users get no password. Only new credentials get it; it never changes an existing one |
 | `E2E_USER_PASSWORD` | web api-mode e2e | `SEED_USER_PASSWORD` | Password the api-mode Playwright tests sign in with |
 | `EMAIL_PROVIDER` | api | `memory` | `resend` or `memory`. `memory` sends nothing (locally, verification links stay in the API's memory) |

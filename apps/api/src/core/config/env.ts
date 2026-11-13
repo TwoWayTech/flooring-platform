@@ -22,14 +22,14 @@ const apiEnvSchema = z.object({
   /** Signs Better Auth cookies and tokens. At least 32 characters; generate with `npx auth secret`. */
   BETTER_AUTH_SECRET: z.string().min(32, "Must be at least 32 characters."),
   /**
-   * Web hosts that serve the sign-in page, comma-separated, with wildcards (`*.vercel.app`,
-   * `localhost:*`). Better Auth builds verification links and checks origins from them (ADR 0029).
+   * Web hosts that serve the sign-in page, comma-separated. Better Auth builds verification links
+   * and checks origins from them (ADR 0029). Wildcards such as `localhost:*` are for development only.
    */
   AUTH_ALLOWED_HOSTS: z
     .string()
-    .default("localhost:*")
+    .optional()
     .transform((value) =>
-      value
+      (value ?? "")
         .split(",")
         .map((host) => host.trim())
         .filter(Boolean),
@@ -37,6 +37,22 @@ const apiEnvSchema = z.object({
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });
+
+/** The sign-in hosts used outside production when AUTH_ALLOWED_HOSTS is unset. */
+const DEV_ALLOWED_HOSTS = ["localhost:*"];
+
+/**
+ * Production must list its exact sign-in hosts. The API trusts the forwarded host, so a wildcard
+ * such as `*.vercel.app` would let anyone with a matching host receive our verification (and later
+ * reset) links, and a missing value would trust `localhost:*`.
+ */
+function allowedHostsIssues(env: z.infer<typeof apiEnvSchema>): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  if (env.AUTH_ALLOWED_HOSTS.length === 0) return ["AUTH_ALLOWED_HOSTS: Required in production."];
+  return env.AUTH_ALLOWED_HOSTS.some((host) => host.includes("*"))
+    ? ["AUTH_ALLOWED_HOSTS: Wildcards are not allowed in production."]
+    : [];
+}
 
 /** The API's settings after checking: its own plus the provider choices. */
 export type ApiEnv = z.infer<typeof apiEnvSchema> & { providers: ProviderEnv };
@@ -50,8 +66,14 @@ export function validateEnv(raw: Record<string, unknown>): ApiEnv {
   const parsed = apiEnvSchema.safeParse(env);
   const problems = [
     ...(parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)),
+    ...(parsed.success ? allowedHostsIssues(parsed.data) : []),
     ...providerEnvIssues(env),
   ];
   if (!parsed.success || problems.length > 0) throw new Error(`Invalid API environment. ${problems.join("; ")}`);
-  return { ...parsed.data, providers: parseProviderEnv(env) };
+  const allowedHosts = parsed.data.AUTH_ALLOWED_HOSTS;
+  return {
+    ...parsed.data,
+    AUTH_ALLOWED_HOSTS: allowedHosts.length > 0 ? allowedHosts : DEV_ALLOWED_HOSTS,
+    providers: parseProviderEnv(env),
+  };
 }

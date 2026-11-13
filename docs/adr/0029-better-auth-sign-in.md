@@ -32,7 +32,7 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 ### The cookie lives on the web host (owner)
 - In api mode Next.js rewrites `/api/auth/*` to apps/api's `/api/auth/*`, and `/api-proxy/*` to the rest of apps/api. The session cookie is therefore first-party on each product host: one cookie per domain, as blueprint p17 rule 4 asks. The web server and the proxy can see it.
 - The cookie is httpOnly with SameSite=Lax, plus Secure and the `__Secure-` prefix in production.
-- Better Auth uses a dynamic base URL. `AUTH_ALLOWED_HOSTS` lists the web hosts (wildcards allowed), and the host is read from `x-forwarded-host`, which the proxy sets (`trustedProxyHeaders`). A host not on the list is refused. This replaces the single `BETTER_AUTH_URL` from the plan, because Flooring and HR are different hosts.
+- Better Auth uses a dynamic base URL. `AUTH_ALLOWED_HOSTS` lists the web hosts (wildcards only outside production; production needs exact hosts, PR #2 review), and the host is read from `x-forwarded-host`, which the proxy sets (`trustedProxyHeaders`). A host not on the list is refused. This replaces the single `BETTER_AUTH_URL` from the plan, because Flooring and HR are different hosts.
 
 ### Per-company timeouts (owner)
 - Better Auth's own expiry is a 7-day ceiling, and its refresh is off.
@@ -47,7 +47,7 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 - Without a host company, a user with one company opens it. A user with several opens none until they choose: the login page shows a chooser, which calls the plugin's `set-active`. A user with no company is refused (`no_company`).
 - The rule lives in `apps/api/src/core/auth/company-pick.ts`.
 - Only the plugin's `set-active` and `list` endpoints are open. Every other organization endpoint answers 404, because membership, invitations and roles belong to our own modules behind the permission engine (CLAUDE.md rule 3).
-- `set-active` is checked against membership before Better Auth runs. Better Auth's own refusal would also clear the open company.
+- `set-active` is checked against membership before Better Auth runs, because Better Auth's own refusal would also clear the open company. It takes only a company id: `null` (no company, so the default timeouts instead of the company's) and `organizationSlug` are refused with 400 `company_id_required`. On a host that names a company, only that company can be opened (403 `wrong_host`). Deleted companies never open (PR #2 review).
 
 ### The web app in api mode
 - `getSession()` reads `GET /auth/context` and bridges it to the existing workspace session. The company is matched by slug and the user by email to their seeded profile, because screens still read DemoStore until Settings → Users moves to the API (P10). An account without a profile sees "Your account is ready, but not this workspace".
