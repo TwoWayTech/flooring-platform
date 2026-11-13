@@ -44,6 +44,8 @@ const apiEnvSchema = z.object({
    * `flooringsuite.com`. Defaults to `localhost` outside production; required in production.
    */
   PASSKEY_RP_ID: z.string().min(1).optional(),
+  /** How many company database pools one API instance keeps open (LRU, P9). Each holds up to 3 connections. */
+  TENANT_POOL_CACHE: z.coerce.number().int().min(1).max(500).default(20),
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });

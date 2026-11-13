@@ -1,7 +1,7 @@
 import type { ProductKey } from "@workspace/shared";
 
-/** Request header the proxy sets so server components know which product this host serves. */
-export const PRODUCT_HEADER = "x-demo-product";
+export { PRODUCT_HEADER } from "@workspace/shared";
+
 /** Cookie that remembers `?product=hr` on localhost, where there is no HR hostname. */
 export const PRODUCT_COOKIE = "demo_product";
 

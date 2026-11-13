@@ -1,7 +1,8 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get } from "@nestjs/common";
 import { ApiCookieAuth, ApiOkResponse, ApiProperty, ApiTags, ApiUnauthorizedResponse } from "@nestjs/swagger";
 import { CompanyDirectory } from "./company-directory";
-import { AllowMfaEnrolment, CurrentSession, SessionGuard } from "./session.guard";
+import { SessionOnly } from "../tenancy/access";
+import { AllowMfaEnrolment, CurrentSession } from "./session.guard";
 import type { AuthSession } from "./session.service";
 
 /** A company in the session context. */
@@ -68,7 +69,7 @@ export class SessionContext {
 @ApiTags("auth")
 @ApiCookieAuth()
 @Controller("auth")
-@UseGuards(SessionGuard)
+@SessionOnly()
 export class AuthController {
   constructor(private readonly companies: CompanyDirectory) {}
 

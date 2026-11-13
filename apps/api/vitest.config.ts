@@ -12,7 +12,9 @@ export default defineConfig({
       },
       {
         extends: true,
-        test: { name: "integration", include: ["test/**/*.int.test.ts"], testTimeout: 30_000 },
+        // Setting up and dropping throwaway databases can outlast the 10 s default when the files run in
+        // parallel (DROP DATABASE ... WITH (FORCE) waits for other sessions to end).
+        test: { name: "integration", include: ["test/**/*.int.test.ts"], testTimeout: 30_000, hookTimeout: 60_000 },
       },
     ],
     passWithNoTests: true,
