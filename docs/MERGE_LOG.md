@@ -13,3 +13,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-13 | #7 | P10 part 1: permissions, sensitive fields and audit in the API | @TwoWayTech | feat/permissions-guards-audit | `39e6a33` |
 | 2026-11-13 | #8 | fix(access): audit and module hardening from the PR #7 re-review | @TwoWayTech | fix/access-audit-hardening | `59ce4e4` |
 | 2026-11-13 | #9 | Notifications core: pg-boss, the Outbox worker and the 30-day auth cleanup | @TwoWayTech | feat/notifications-core | `38bf221` |
+| 2026-11-13 | #10 | Owner decisions: company life cycle, maintenance on failed migration, Retry schedule | @TwoWayTech | fix/platform-owner-decisions | `a1b0840` |
