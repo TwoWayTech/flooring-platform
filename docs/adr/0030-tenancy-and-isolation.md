@@ -26,7 +26,7 @@
   - no open company, or a deleted one: `company_required`;
   - a membership removed during the session: `not_a_member`;
   - a company without the host's product or a route's `@RequireProduct()`: `product_not_enabled`;
-  - writes to a suspended, cancelled or maintenance-mode company, or one whose database is `read_only`: `company_read_only`. Reading still works (blueprint p29, p40).
+  - writes to a suspended, cancelled or maintenance-mode company, or one whose database is `read_only`: `company_read_only`. Reading still works (blueprint p29, p40). **Changed by ADR 0033:** maintenance mode now stops reads too (503 `company_maintenance`), and the read-only periods end in a lock (403 `company_suspended`).
 - Better Auth's own refusals in SessionService (4xx, such as a host outside `AUTH_ALLOWED_HOSTS`) now answer 401 instead of 500. Its failures (5xx, such as a lost database connection) still answer 500, so monitoring sees them (PR #6 review).
 
 ### Isolation tests

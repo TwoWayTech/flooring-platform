@@ -5,6 +5,7 @@ export * from "./permissions/roles";
 export * from "./permissions/engine";
 export * from "./permissions/mfa";
 export * from "./permissions/access-rules";
+export * from "./permissions/company-lifecycle";
 export * from "./auth-proxy";
 export * from "./money";
 export * from "./units";

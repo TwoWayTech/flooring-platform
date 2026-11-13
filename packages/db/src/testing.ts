@@ -1,6 +1,6 @@
-import { inArray } from "drizzle-orm";
-import { openControlDb } from "./client";
-import { authAttempts, passkey, rateLimit, session, twoFactor, user } from "./control";
+import { eq, inArray, sql } from "drizzle-orm";
+import { openControlDb, type ControlDb } from "./client";
+import { authAttempts, passkey, rateLimit, session, tenants, twoFactor, user } from "./control";
 import { PostgresServerProvisioner } from "@workspace/providers";
 
 /** The superuser login on the local or CI PostgreSQL. */
@@ -44,4 +44,17 @@ export async function resetAuthState(controlUrl: string, emails: readonly string
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Moves a company's `status_changed_at` back in time, so tests can reach the end of a life-cycle
+ * period. The control trigger refuses such writes (migration 0003), so it is switched off for this
+ * one update, inside one transaction. Tests only: never point it at a real company.
+ */
+export async function backdateStatusChange(control: ControlDb, tenantId: string, at: Date): Promise<void> {
+  await control.transaction(async (tx) => {
+    await tx.execute(sql`alter table tenants disable trigger tenants_status_changed`);
+    await tx.update(tenants).set({ statusChangedAt: at }).where(eq(tenants.id, tenantId));
+    await tx.execute(sql`alter table tenants enable trigger tenants_status_changed`);
+  });
 }

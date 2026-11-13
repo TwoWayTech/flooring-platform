@@ -5,11 +5,12 @@ import {
   products,
   tenantDatabases,
   tenantProducts,
+  tenantSubscriptions,
   tenants,
   type TenantDatabaseStatus,
   type TenantStatus,
 } from "@workspace/db/control";
-import type { ProductKey } from "@workspace/shared";
+import { companyPhase, type CompanyPhase, type ProductKey } from "@workspace/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import { CONTROL_DB } from "../database/control-db";
 
@@ -18,17 +19,16 @@ export interface CompanyAccess {
   id: string;
   status: TenantStatus;
   products: ProductKey[];
-  /** True while the company is moved between providers (blueprint p12). */
+  /**
+   * True while the company is moved between providers (blueprint p12) or after its database failed
+   * a migration (owner decision, 2026-11-13): no reads or writes.
+   */
   maintenanceMode: boolean;
+  /** Where the company stands in its life cycle: full, read-only, or locked (packages/shared `companyPhase`). */
+  phase: CompanyPhase;
   /** The company database's status, or null when it has none yet. */
   databaseStatus: TenantDatabaseStatus | null;
 }
-
-/**
- * Statuses that keep a company readable but not writable. A suspended company can sign in, view
- * and export, but not create (blueprint p40). A cancelled company is read-only for 90 days (p29).
- */
-const READ_ONLY_STATUSES: ReadonlySet<TenantStatus> = new Set(["suspended", "cancelled"]);
 
 /** Database statuses a request may use; `read_only` also makes the company read-only. */
 const USABLE_DATABASE_STATUSES: ReadonlySet<TenantDatabaseStatus> = new Set(["ready", "read_only"]);
@@ -41,9 +41,20 @@ export function isDatabaseUsable(status: TenantDatabaseStatus | null): boolean {
   return status !== null && USABLE_DATABASE_STATUSES.has(status);
 }
 
-/** Whether a company may only be read: its status, maintenance mode, or a read-only database. */
+/**
+ * Whether a company may only be read: its life-cycle phase (a suspended, cancelled or lapsed
+ * company; blueprint p29, p40; owner decisions 2026-11-13) or a read-only database.
+ */
 export function isReadOnly(company: CompanyAccess): boolean {
-  return READ_ONLY_STATUSES.has(company.status) || company.maintenanceMode || company.databaseStatus === "read_only";
+  return company.phase !== "full" || company.databaseStatus === "read_only";
+}
+
+/**
+ * Whether the company may be served at all, by a request or a job: its database is usable, it is
+ * not in maintenance mode, and its life cycle has not locked it.
+ */
+export function isServing(company: CompanyAccess): boolean {
+  return isDatabaseUsable(company.databaseStatus) && !company.maintenanceMode && company.phase !== "locked";
 }
 
 /** Reads company access facts from the control database (P9). */
@@ -51,13 +62,18 @@ export function isReadOnly(company: CompanyAccess): boolean {
 export class TenantDirectory {
   constructor(@Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>) {}
 
-  /** The company's access facts, or null when it does not exist or is deleted. */
+  /**
+   * The company's access facts, or null when it does not exist or is deleted. The life-cycle phase
+   * is worked out from its status and every subscription row, deleted ones included, on each call,
+   * so it changes the moment a period ends.
+   */
   async access(companyId: string): Promise<CompanyAccess | null> {
     const [company] = await this.control.db
       .select({
         id: tenants.id,
         status: tenants.status,
         maintenanceMode: tenants.maintenanceMode,
+        statusChangedAt: tenants.statusChangedAt,
         databaseStatus: tenantDatabases.status,
       })
       .from(tenants)
@@ -69,7 +85,22 @@ export class TenantDirectory {
       .from(tenantProducts)
       .innerJoin(products, eq(products.id, tenantProducts.productId))
       .where(and(eq(tenantProducts.tenantId, companyId), isNull(tenantProducts.deletedAt)));
-    return { ...company, products: productRows.map((row) => row.key) };
+    const subscriptions = await this.control.db
+      .select({
+        status: tenantSubscriptions.status,
+        currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
+        price: tenantSubscriptions.price,
+        deletedAt: tenantSubscriptions.deletedAt,
+      })
+      .from(tenantSubscriptions)
+      .where(eq(tenantSubscriptions.tenantId, companyId));
+    const { statusChangedAt, ...facts } = company;
+    const phase = companyPhase({
+      status: company.status,
+      statusChangedAt,
+      subscriptions: subscriptions.map(({ deletedAt, ...row }) => ({ ...row, deleted: deletedAt !== null })),
+    });
+    return { ...facts, phase, products: productRows.map((row) => row.key) };
   }
 
   /** Whether the person is still a member of the company; membership can end during a session. */

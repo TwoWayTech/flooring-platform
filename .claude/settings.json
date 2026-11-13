@@ -15,8 +15,21 @@
       "Bash(git checkout *)",
       "Bash(git branch *)",
       "Bash(git push origin *)",
-      "Bash(gh pr *)",
-      "Bash(gh pr merge * --squash*)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr ready *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr status*)",
+      "Bash(gh pr comment *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr close *)",
+      "Bash(gh pr reopen *)",
+      "Bash(gh pr merge * --squash)",
+      "Bash(gh pr merge * --squash --delete-branch)",
+      "Bash(gh pr merge * --squash --match-head-commit * --delete-branch)",
       "Bash(gh run *)",
       "Bash(vercel *)"
     ],
@@ -40,14 +53,20 @@
       "Bash(gh pr merge *--admin*)",
       "Bash(gh pr merge *--merge*)",
       "Bash(gh pr merge *--rebase*)",
+      "Bash(gh pr merge *--squash=*)",
+      "Bash(gh pr merge *--merge=*)",
+      "Bash(gh pr merge *--rebase=*)",
       "Bash(gh pr merge * -m*)",
-      "Bash(gh pr merge * -r*)",
       "Bash(gh api *pulls/*/merge*)",
       "Bash(git push origin HEAD)",
       "Bash(git push --all*)",
       "Bash(git push origin --all*)",
       "Bash(git push --mirror*)",
-      "Bash(git push origin --mirror*)"
+      "Bash(git push origin --mirror*)",
+      "Bash(git push *refs/heads/main*)",
+      "Bash(git push *:main*)",
+      "Bash(git -C * push *main*)",
+      "Bash(gh repo edit*)"
     ]
   },
   "hooks": {
@@ -57,6 +76,18 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-reminder.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge-push-guard.mjs\" || exit 2",
             "timeout": 10
           }
         ]
