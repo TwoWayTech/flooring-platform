@@ -73,6 +73,14 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
+- **TenantConnectionService hardening (PR #6 third review, none blocking):**
+  - **Leases:** count users per pool (a `withDb(tenant, fn)` wrapper or acquire and release), so the over-cap close and eviction never end a pool that a request is still using. Today that can happen once more than 2 × `TENANT_POOL_CACHE` companies are active within 30 s.
+  - **A real connection bound:** bound the total connections rather than the pool count, pass `end({ timeout })`, and lower the `TENANT_POOL_CACHE` maximum (500 × 3 × 2 is far above PostgreSQL's 100).
+  - **Shutdown:** await the opens still in flight before draining, so none leaks.
+  - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
+- **P10, enforce rule 2 with tooling:**
+  - add `no-restricted-imports` in apps/api for `openCompanyDb` and `decryptSecret`, allowed only in `core/tenancy` and tests;
+  - keep `TenantContext.fromVerifiedSession` to TenantGuard's module (a module-private token or a WeakSet of issued contexts), so a job or admin path cannot fabricate a session or company input.
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
