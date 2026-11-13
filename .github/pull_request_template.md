@@ -27,4 +27,4 @@
 - [ ] Touches money, tax, the ledger or payroll
 - [ ] Adds a dependency, changes an existing table, or changes a provider
 
-If any box above is ticked, the other person reviews every line, and the security-reviewer pass is linked here.
+If any box above is ticked, the other person reviews every line, and the security-reviewer pass is linked here. The exception is a Claude self-merge under the CLAUDE.md rule (owner decision, 2026-11-13). There, a fresh security-reviewer (and schema-reviewer for schema changes) must find no blocking issue, and its summary is posted on the PR.
