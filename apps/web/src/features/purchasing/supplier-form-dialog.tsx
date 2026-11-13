@@ -64,14 +64,15 @@ export function SupplierFormDialog({
         email,
         phone,
         terms,
-        creditLimit,
+        // A limit the person was not shown is left out, so saving never changes it blind.
+        ...(supplier && supplier.creditLimit === undefined ? {} : { creditLimit }),
         track1099,
         taxForm: {
           w9OnFile,
           receivedAt: supplier?.taxForm?.receivedAt ?? null,
-          legalName: name,
-          entityType: "",
-          exemptFromReporting: false,
+          legalName: supplier?.taxForm?.legalName || name,
+          entityType: supplier?.taxForm?.entityType ?? "",
+          exemptFromReporting: supplier?.taxForm?.exemptFromReporting ?? false,
         },
         notes,
       });

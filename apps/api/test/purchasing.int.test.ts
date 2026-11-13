@@ -178,6 +178,25 @@ describe("purchasing part 1 (P11, needs the local PostgreSQL)", () => {
     );
     expect(after.isPrimary).toBe(true);
     expect((await call("post", "/suppliers", cookies.sales).send({ name: "Not allowed" })).status).toBe(403);
+    // Supplier credit follows the purchasing money keys, and an edit never changes it blind (PR #13 review).
+    await call("put", `/suppliers/${supplier}`, cookies.purchasing)
+      .send({ name: "Northline Mills", creditLimit: "25000.00" })
+      .expect(200);
+    const seen = (await call("get", "/suppliers", cookies.purchasing)).body.find(
+      (s: { id: string }) => s.id === supplier,
+    );
+    expect(seen.creditLimit).toBe("25000.00");
+    const hidden = (await call("get", "/suppliers", cookies.warehouse)).body.find(
+      (s: { id: string }) => s.id === supplier,
+    );
+    expect(hidden).not.toHaveProperty("creditLimit");
+    await call("put", `/suppliers/${supplier}`, cookies.purchasing)
+      .send({ name: "Northline Mills", phone: "(555) 010-3000" })
+      .expect(200);
+    const kept = (await call("get", "/suppliers", cookies.purchasing)).body.find(
+      (s: { id: string }) => s.id === supplier,
+    );
+    expect(kept.creditLimit).toBe("25000.00");
   });
 
   it("orders, shows money only to those who may see it, and receives stock and rolls in", async () => {

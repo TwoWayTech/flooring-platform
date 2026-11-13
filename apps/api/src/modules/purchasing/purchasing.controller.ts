@@ -8,6 +8,7 @@ import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
+import { SensitiveFieldKeys } from "../../core/access/sensitive-fields";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { PurchasingService } from "./purchasing.service";
 
@@ -112,6 +113,27 @@ const RECEIPT = z.object({
   note: z.string().max(1000).default(""),
 });
 
+/**
+ * Supplier money (spec "See money columns on suppliers and orders"): a supplier's credit limit is
+ * shown to holders of product cost or bills, not of customer credit, whose key the name
+ * `creditLimit` carries elsewhere (PR #13 security review).
+ */
+const SUPPLIER_MONEY_KEYS = ["inventory.product.view_sensitive", "purchasing.bill.view"] as const;
+const SupplierMoney = () => SensitiveFieldKeys({ creditLimit: SUPPLIER_MONEY_KEYS });
+
+/** Whether the person may see, and so set, supplier money. */
+function seesSupplierMoney(access: RequestAccess): boolean {
+  return SUPPLIER_MONEY_KEYS.some((key) => access.permissions.has(key));
+}
+
+/** A credit limit from someone who may not see supplier money is ignored, so it is never changed blind. */
+function withoutHiddenCredit<T extends { creditLimit?: string }>(access: RequestAccess, input: T): T {
+  if (seesSupplierMoney(access)) return input;
+  const rest = { ...input };
+  delete rest.creditLimit;
+  return rest;
+}
+
 /** A switched-off feature is hidden from the API too (CLAUDE.md rule 13): its routes answer 404. */
 function requireFeature(key: FeatureKey): void {
   if (!featureOn(key)) throw new NotFoundException();
@@ -142,6 +164,7 @@ export class PurchasingController {
 
   /** GET /suppliers: the directory; credit limits are stripped without the key that reveals them. */
   @Get("suppliers")
+  @SupplierMoney()
   @RequirePermission("purchasing.supplier.view")
   suppliers(@CurrentTenant() tenant: TenantContext) {
     requireFeature("purchasing.suppliers");
@@ -158,6 +181,7 @@ export class PurchasingController {
 
   /** POST /suppliers: adds a supplier. */
   @Post("suppliers")
+  @SupplierMoney()
   @RequirePermission("purchasing.supplier.create")
   @Audited()
   createSupplier(
@@ -168,11 +192,17 @@ export class PurchasingController {
     @Body() body: unknown,
   ) {
     requireFeature("purchasing.suppliers");
-    return this.purchasing.saveSupplier(tenant, actorOf(access, session, request), null, parse(SUPPLIER, body));
+    return this.purchasing.saveSupplier(
+      tenant,
+      actorOf(access, session, request),
+      null,
+      withoutHiddenCredit(access, parse(SUPPLIER, body)),
+    );
   }
 
   /** PUT /suppliers/:id: edits a supplier. */
   @Put("suppliers/:id")
+  @SupplierMoney()
   @RequirePermission("purchasing.supplier.edit")
   @Audited()
   editSupplier(
@@ -184,11 +214,17 @@ export class PurchasingController {
     @Body() body: unknown,
   ) {
     requireFeature("purchasing.suppliers");
-    return this.purchasing.saveSupplier(tenant, actorOf(access, session, request), id, parse(SUPPLIER, body));
+    return this.purchasing.saveSupplier(
+      tenant,
+      actorOf(access, session, request),
+      id,
+      withoutHiddenCredit(access, parse(SUPPLIER, body)),
+    );
   }
 
   /** POST /suppliers/:id/status: deactivates or reactivates a supplier. */
   @Post("suppliers/:id/status")
+  @SupplierMoney()
   @RequirePermission("purchasing.supplier.edit")
   @Audited()
   supplierStatus(

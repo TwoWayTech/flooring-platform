@@ -356,9 +356,17 @@ export class PurchasingService {
         if (locations.find((location) => location.id === locationId)?.kind !== "warehouse")
           throw refuse("Receive into a warehouse.");
       }
-      const productIds = new Set((await loadProducts(tx)).map((product) => product.id));
-      if (input.lines.some((line) => !productIds.has(line.productId)))
+      const catalog = new Map((await loadProducts(tx)).map((product) => [product.id, product]));
+      if (input.lines.some((line) => !catalog.has(line.productId)))
         throw refuse("A product on the order no longer exists.");
+      // The unit and carton size come from the product, never from the screen (CLAUDE.md rule 7).
+      const lines = input.lines.map((line) => {
+        const product = catalog.get(line.productId)!;
+        return { ...line, unit: product.unit, sqFtPerCarton: product.sqFtPerCarton };
+      });
+      const total = poTotal(lines);
+      // numeric(14,2): a total this large is a typing mistake, refused rather than failing in the database.
+      if (dec(total).gte("1e12")) throw refuse("This order's total is too large. Check the quantities and costs.");
       // Order numbers are taken one at a time, so two orders saved together never share one.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('purchasing:po-number'))`);
       const existing = await tx.select({ number: purchaseOrders.number }).from(purchaseOrders);
@@ -377,7 +385,7 @@ export class PurchasingService {
         locationId: input.locationId,
         expectedAt: input.expectedAt,
         orderedAt: ordered ? new Date() : null,
-        total: poTotal(input.lines),
+        total,
         contactId: contact?.id ?? null,
         contactSnapshot: ordered && contact ? snapshotOf(contact) : null,
         supplierRef: input.supplierRef.trim(),
@@ -386,7 +394,7 @@ export class PurchasingService {
         createdBy: actor.access.userId,
       });
       await tx.insert(poLines).values(
-        input.lines.map((line, position) => ({
+        lines.map((line, position) => ({
           poId: orderId,
           position,
           productId: line.productId,
@@ -427,7 +435,9 @@ export class PurchasingService {
       if (!po) throw new NotFoundException({ code: "not_found", message: "This purchase order no longer exists." });
       const [supplier] = await loadSuppliers(tx, [po.supplierId]);
       if (supplier?.status !== "active") throw refuse("This supplier is inactive. Reactivate it before ordering.");
-      const contact = po.contactId ? (await loadContacts(tx, [po.contactId]))[0] : undefined;
+      const found = po.contactId ? (await loadContacts(tx, [po.contactId]))[0] : undefined;
+      // A rep who left since the draft gets nothing; the supplier's own address is used instead.
+      const contact = found?.status === "active" ? found : undefined;
       const [moved] = await tx
         .update(purchaseOrders)
         .set({

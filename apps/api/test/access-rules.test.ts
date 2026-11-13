@@ -69,6 +69,15 @@ describe("stripSensitive (CLAUDE.md rule 5: the server strips sensitive fields)"
     });
   });
 
+  it("uses a route's own keys for a field it names, and the shared map for the rest (PR #13 review)", () => {
+    const own = { creditLimit: ["inventory.product.view_sensitive", "purchasing.bill.view"] as PermissionKey[] };
+    const withBills = stripSensitive(body, new Set<PermissionKey>(["purchasing.bill.view"]), own) as typeof body;
+    expect(withBills.supplier.creditLimit).toBe("5000.00");
+    expect(withBills).not.toHaveProperty("cost");
+    const customerKey = new Set<PermissionKey>(["customers.customer.view_sensitive"]);
+    expect(stripSensitive(body, customerKey, own)).not.toHaveProperty("supplier.creditLimit");
+  });
+
   it("keeps only the fields whose key the viewer holds", () => {
     const stripped = stripSensitive(body, new Set<PermissionKey>(["inventory.product.view_sensitive"])) as typeof body;
     expect(stripped.cost).toBe("2.5000");

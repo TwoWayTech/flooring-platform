@@ -100,7 +100,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
 - **Purchasing part 1 (ADR 0036):** a supplier with an unpaid bill can be deactivated until bills move with P12; a supplier's `creditLimit` is stripped with the customer credit key (fails closed), so give suppliers their own key.
-- **PR #13 reviews:** before P12, check in the blueprint whether a goods receipt posts to the ledger (inventory against received-not-billed) as well as the bill (rule 10).
+- **PR #13 reviews:** the fallback roll number for a receipt with no rolls entered (`SKU prefix-receipt number`) can clash; use the full SKU and line position. Before P12, check in the blueprint whether a goods receipt posts to the ledger (inventory against received-not-billed) as well as the bill (rule 10).
 - **PR #12 reviews (none blocking):**
   - `moveRoll` should take the stock lock and refuse a roll in transit, because receiving the transfer resets the bin the audit recorded.
   - A roll correction should also check the `inventory.rolls` switch (and a boxed one `inventory.products`).
