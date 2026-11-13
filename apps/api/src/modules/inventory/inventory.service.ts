@@ -17,12 +17,13 @@ import {
   type StockMovement,
   type Transfer,
 } from "@workspace/shared";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
+import { lockStock } from "./stock-lock";
 import { loadLocations, loadMovements, loadProducts, loadRolls, loadTransfers } from "./inventory-records";
 
 /** What starting a transfer carries (ApiClient `TransferInput`). */
@@ -44,14 +45,6 @@ export interface CorrectionInput {
 
 /** The first transfer number, as in the demo (`TR-1001`). */
 const FIRST_TRANSFER = 1001;
-
-/**
- * Stock changes in one company are made one at a time, under a transaction-level advisory lock, so
- * two transfers or corrections can never both spend the same stock or take the same number.
- */
-async function lockStock(tx: CompanyDb): Promise<void> {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('inventory:stock'))`);
-}
 
 /**
  * Inventory on the server, part 1 (docs/product-spec/inventory.md; ADR 0035): the catalog, rolls,
