@@ -39,7 +39,7 @@ export async function alertMigrationFailure(
       subject: `Migration failed: ${name} is in maintenance mode`,
       text: [
         `The company database of ${name} failed to migrate, so the company is in maintenance mode.`,
-        "Its people see an \"under maintenance\" message and cannot read or change anything.",
+        'Its people see an "under maintenance" message and cannot read or change anything.',
         "",
         `Error: ${failure.error}`,
         "",

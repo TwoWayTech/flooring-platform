@@ -217,7 +217,13 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
       .where(eq(products.key, "flooring"));
     const [plan] = await harness.control.db
       .insert(plans)
-      .values({ key: `paid-${company.slug}`, name: "Paid", productId: flooring.id, monthlyPrice: "99", yearlyPrice: "990" })
+      .values({
+        key: `paid-${company.slug}`,
+        name: "Paid",
+        productId: flooring.id,
+        monthlyPrice: "99",
+        yearlyPrice: "990",
+      })
       .returning();
     const endedDaysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
     const [subscription] = await harness.control.db

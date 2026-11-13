@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  companyPhase,
-  type LifecycleFacts,
-  type LifecycleSubscription,
-} from "../src/permissions/company-lifecycle";
+import { companyPhase, type LifecycleFacts, type LifecycleSubscription } from "../src/permissions/company-lifecycle";
 
 const DAY = 86_400_000;
 const now = new Date("2026-11-13T12:00:00Z");
@@ -30,21 +26,25 @@ describe("companyPhase (owner decisions 2026-11-13)", () => {
   });
 
   it("gives a lapsed paid plan 14 days full, 30 days read-only, then locks it", () => {
-    const at = (days: number) => companyPhase(facts({ subscriptions: [sub({ currentPeriodEnd: daysAgo(days) })] }), now);
+    const at = (days: number) =>
+      companyPhase(facts({ subscriptions: [sub({ currentPeriodEnd: daysAgo(days) })] }), now);
     expect(at(-5)).toBe("full");
     expect(at(13.9)).toBe("full");
     expect(at(14)).toBe("read_only");
     expect(at(43.9)).toBe("read_only");
     expect(at(44)).toBe("locked");
-    expect(companyPhase(facts({ subscriptions: [sub({ status: "past_due", currentPeriodEnd: daysAgo(20) })] }), now)).toBe(
-      "read_only",
-    );
+    expect(
+      companyPhase(facts({ subscriptions: [sub({ status: "past_due", currentPeriodEnd: daysAgo(20) })] }), now),
+    ).toBe("read_only");
   });
 
   it("makes a trial that ended unpaid read-only for 30 days, then locks it", () => {
     const at = (days: number) =>
       companyPhase(
-        facts({ status: "trial", subscriptions: [sub({ status: "trial", price: "0", currentPeriodEnd: daysAgo(days) })] }),
+        facts({
+          status: "trial",
+          subscriptions: [sub({ status: "trial", price: "0", currentPeriodEnd: daysAgo(days) })],
+        }),
         now,
       );
     expect(at(-1)).toBe("full");
@@ -76,9 +76,9 @@ describe("companyPhase (owner decisions 2026-11-13)", () => {
 
   it("keeps a suspended company that paid read-only until an admin acts, but never longer than its plan allows", () => {
     const current = sub({ currentPeriodEnd: daysAgo(-20) });
-    expect(companyPhase(facts({ status: "suspended", statusChangedAt: daysAgo(300), subscriptions: [current] }), now)).toBe(
-      "read_only",
-    );
+    expect(
+      companyPhase(facts({ status: "suspended", statusChangedAt: daysAgo(300), subscriptions: [current] }), now),
+    ).toBe("read_only");
     const lapsed = sub({ currentPeriodEnd: daysAgo(60) });
     expect(companyPhase(facts({ status: "suspended", subscriptions: [lapsed] }), now)).toBe("locked");
   });
