@@ -98,6 +98,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `pnpm db:migrate` parses every provider setting; check only the email section.
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
+- **PR #12 reviews (none blocking):**
+  - `widthFt` and `reorderPoint` go out as JSON numbers because the shared types declare them so; make them decimal strings when those types are next touched (CLAUDE.md rule 6).
+  - A stock correction changes inventory value: post it through LedgerService once P12 exists (rule 10).
+  - The inventory tables have no indexes on their foreign keys (`rolls.product_id`, `rolls.location_id`, `roll_cuts.roll_id`, `transfer_lines.transfer_id`), and the SKU and roll-number unique indexes are not partial on `deleted_at`. A change to existing tables, so it waits for a schema task the owner approves.
 - **PR #11 security review (none blocking):**
   - In api mode the app shell's on-screen permissions still come from the demo's roles; give the shell the effective permissions from the API (`/auth/context`) when it moves. The server checks every call regardless (review of `d0e1eee`).
   - The Security roles screen also loads `/users`, so a role with roles-view but no users-view sees an error there; load users only with `settings.users.view`, or have `/roles` return holder counts (review of `d0e1eee`).
