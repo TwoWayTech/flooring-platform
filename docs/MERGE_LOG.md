@@ -16,3 +16,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-13 | #10 | Owner decisions: company life cycle, maintenance on failed migration, Retry schedule | @TwoWayTech | fix/platform-owner-decisions | `a1b0840` |
 | 2026-11-13 | #11 | P10 part 2: Users and Roles API, step-up, invitations, password reset, support access | @TwoWayTech | feat/settings-users-roles | `2ddf5bc` |
 | 2026-11-13 | #12 | P11 inventory part 1: catalog, rolls, ledger, transfers and stock correction on the API | @TwoWayTech | feat/inventory-catalog | `2d483de` |
+| 2026-11-13 | #13 | P11 purchasing part 1: suppliers, contacts, orders and receipts on the API | @TwoWayTech | feat/purchasing-orders | `a66a49d` |
