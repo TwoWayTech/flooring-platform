@@ -54,6 +54,10 @@
    - `GET /public/branding?host=`.
 3. **B (week 2):** in api mode, build the real MFA enrolment and code screens, plus the Playwright auth tests, on top of P8 part 2.
 
+## Follow-ups (don't forget)
+- **30-day cleanup job (owner decision, 2026-11-13):** a daily pg-boss job deletes `auth_attempts` rows older than 30 days (`created_at`) and `rate_limit` rows older than 30 days (`last_request`). Build it in the notifications core task, which brings pg-boss. Until then nothing prunes these tables (docs/data-model.md, "Retention of sign-in security data").
+- **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.emailAllowed` (ADR 0029, part 2).
+
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
 - **Lockout thresholds:** the blueprint asks for lockout after repeated failures but gives no numbers. The owner decides them in P8 part 2.

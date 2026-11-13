@@ -76,6 +76,7 @@ The owner decided the four marked "(owner)". The rest are the safest options for
 - **Second factor:** the plugin's own lockout, 5 wrong codes in a row lock for 15 minutes. It counts consecutive failures rather than failures within 15 minutes.
 - **Per IP:** 10 a minute on `/sign-in/email`, `/two-factor/verify-totp`, `/two-factor/verify-backup-code` and `/passkey/verify-authentication`. These use Better Auth's rate limiter with database storage (the new `rate_limit` table), so the limits hold across API instances. The IP comes from `x-forwarded-for`, so apps/api must only be reached through the web host or a proxy that sets that header. Lockout and the email limit do not depend on the IP.
 - **Email:** at most 3 verification emails an hour per address. Extra ones are skipped silently. The same `AttemptLog.emailAllowed` check is to be used for reset emails when password reset is specced.
+- **Retention (owner, 2026-11-13):** `auth_attempts` and `rate_limit` rows are kept 30 days, then deleted, because they hold email addresses and IPs. Lockout and MFA events in `audit_log` follow the audit log's own retention. The 30-day delete is a pg-boss job that comes with the notifications core (STATUS); until then, nothing prunes these tables.
 
 ### Public branding
 `GET /public/branding?host=` returns only display fields (name, monogram, colour, pattern, theme) for the company the host's subdomain names. It answers 404 for no live company. The logo URL comes with the branding upload through StorageProvider (P11), because the API has no storage wiring yet.

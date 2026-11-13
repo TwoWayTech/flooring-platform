@@ -39,9 +39,19 @@ These collections are empty in all three seeded companies, so they only fill dur
 | --- | --- | --- | --- | --- |
 | Company (`companies`, in `platform.json`) | Control | `tenants`; `tenant_products` for `product`; `tenant_module_overrides` and `plan_modules` for `modules`; `plans`, `plan_limits` and `tenant_subscriptions` for `plan`, `userLimit`, `branchLimit`; `tenant_permission_ceiling` for `ceiling` | `id` (`summit`, `keystone`, `harbor`), `name`, `city`, `state`, `product`, `modules`, `plan`, `status` (`active`, `trial`, `past_due`, `suspended`; the blueprint also has `cancelled`), `userLimit`, `branchLimit`, `ceiling`, `branches`, `createdAt` | Owns one fixtures file, which is one company database. `branches` is embedded here in the demo but belongs in the company database (see Branch) |
 | User, identity part (`users`) | Control | `user`, `account`, `session`, `verification`, `two_factor`, `passkey`, `member`, `invitation` | `id`, `companyId`, `name`, `email`, `status` (`invited`, `active`, `disabled`), `mfaEnrolled`, `lastLoginAt` | One user has one company in the demo. The blueprint keeps one user record per person across companies and products |
+| Company membership (`User.roleIds`, identity part) | Control | Better Auth `member` | `organizationId` (= `tenants.id`), `userId`, `role` | `role` holds the person's company role keys, comma-separated and sorted (`encodeMemberRoles` in packages/shared), not Better Auth's `owner`/`member`. Sign-in reads it to decide on mandatory MFA before any company database is open (ADR 0029, part 2). The seed sets it only on insert and never overwrites it. Settings → Users keeps it in sync with `user_roles` (P10) |
+| Auth attempt (no demo entity) | Control | `auth_attempts` (new, not in the blueprint list) | `kind` (`password_failed`, `password_ok`, `verification_email`), `subject` (email trimmed and lowercased), `ip`, `created_at` | Append-only log read by the password lockout and the per-address email limit. Holds personal data (email, IP). Kept 30 days, then deleted (see Retention) |
+| Rate-limit bucket (no demo entity) | Control | Better Auth `rate_limit` (library-owned) | `key` (IP and path), `count`, `last_request` | Better Auth's per-IP limiter with database storage, so the limits hold across API instances. Kept 30 days, then deleted (see Retention) |
 | Branding (`CompanySettings.branding`) | Control | `tenant_branding` | `displayName`, `monogram`, `brandColor`, `pattern`, `logoDataUrl`, `defaultTheme` | Stored with the company settings in the demo. The blueprint needs it in the control database so the login page can show it before sign-in |
 
 The demo has no platform admin record. The platform admin is a session, not a row (`admin.access` in `packages/shared/src/features.ts`).
+
+### Retention of sign-in security data
+Owner decision, 2026-11-13 (ADR 0029, part 2):
+- `auth_attempts` rows are deleted 30 days after `created_at`.
+- `rate_limit` rows are deleted 30 days after `last_request`. That column is in epoch milliseconds, and the table has no `created_at`, because Better Auth owns it.
+- Lockout and MFA events written to `audit_log` follow the audit log's own retention, not the 30 days.
+- The delete is a daily pg-boss job, added with the notifications core when pg-boss arrives. Until then, nothing prunes these tables.
 
 ## Company database
 

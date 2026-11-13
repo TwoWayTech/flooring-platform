@@ -174,12 +174,13 @@ async function seedPeople(
       .values({ id: userId, name: person.name, email: person.email, emailVerified: true })
       .onConflictDoNothing();
     // member.role holds the person's role keys, which sign-in reads to require MFA (ADR 0029,
-    // part 2). Re-seeding refreshes it, so databases seeded before part 2 get the keys too.
+    // part 2). It is set only when the membership is created: the seed never overwrites roles
+    // (owner decision, 2026-11-13). A database seeded before part 2 needs a fresh seed.
     const role = encodeMemberRoles(person.roleIds.flatMap((roleId) => roleKeyById.get(roleId) ?? []));
     await tx
       .insert(member)
       .values({ id: seedId(`member:${person.id}`), organizationId: tenantId, userId, role, createdAt: now })
-      .onConflictDoUpdate({ target: member.id, set: { role } });
+      .onConflictDoNothing();
     if (passwordHash) {
       await tx
         .insert(account)
