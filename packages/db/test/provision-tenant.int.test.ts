@@ -1,9 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { companyDatabaseName, PostgresServerProvisioner, type DatabaseProvisioner } from "@workspace/providers";
-import { eq, sql } from "drizzle-orm";
+import {
+  companyDatabaseName,
+  MemoryEmailProvider,
+  PostgresServerProvisioner,
+  type DatabaseProvisioner,
+} from "@workspace/providers";
+import { v7 as uuidv7 } from "uuid";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PRODUCT_ROLES } from "@workspace/shared";
 import {
+  alertMigrationFailure,
   decryptSecret,
   encryptSecret,
   migrateAllCompanies,
@@ -18,6 +25,8 @@ import { auditLog, branches, rolePermissions, roles, userProfiles, userRoles } f
 import {
   member,
   organization,
+  platformAdmins,
+  platformAuditLog,
   tenantBranding,
   tenantDatabases,
   tenantPermissionCeiling,
@@ -287,7 +296,7 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     }
   });
 
-  it("keeps a read-only database read-only when its migration fails (PR #8 review)", async () => {
+  it("keeps a read-only database read-only when its migration fails, in maintenance until it recovers (PR #8 review; owner decision 2026-11-13)", async () => {
     const readOnly = await provision(company(`fail${run}`));
     const handle = openControlDb(control.url, { max: 1 });
     try {
@@ -300,13 +309,29 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
         .update(tenantDatabases)
         .set({ status: "read_only", encryptedUrl: encryptSecret(unreachable, encryptionKey) })
         .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
-      await expect(migrateAllCompanies(handle.db, encryptionKey)).rejects.toThrow(/Migration stopped/);
+      const failures: string[] = [];
+      await expect(
+        migrateAllCompanies(handle.db, encryptionKey, {
+          onFailure: async (failure) => {
+            failures.push(failure.tenantId);
+          },
+        }),
+      ).rejects.toThrow(/Migration stopped/);
+      expect(failures).toEqual([readOnly.tenantId]);
       const [after] = await handle.db
         .select()
         .from(tenantDatabases)
         .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
       expect(after.status).toBe("read_only");
       expect(after.lastError).not.toBeNull();
+      const tenantOf = async () => (await handle.db.select().from(tenants).where(eq(tenants.id, readOnly.tenantId)))[0];
+      expect(await tenantOf()).toMatchObject({ maintenanceMode: true, maintenanceReason: "migration_failed" });
+      const logged = (action: string) =>
+        handle.db
+          .select()
+          .from(platformAuditLog)
+          .where(and(eq(platformAuditLog.tenantId, readOnly.tenantId), eq(platformAuditLog.action, action)));
+      expect(await logged("company.migration_failed")).toHaveLength(1);
       await handle.db
         .update(tenantDatabases)
         .set({ encryptedUrl: database.encryptedUrl })
@@ -317,6 +342,65 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
         .from(tenantDatabases)
         .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
       expect(retried.status).toBe("read_only");
+      expect(await tenantOf()).toMatchObject({ maintenanceMode: false, maintenanceReason: null });
+      expect(await logged("company.migration_recovered")).toHaveLength(1);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("keeps a move's maintenance mode after a successful migration (owner decision 2026-11-13)", async () => {
+    const moving = await provision(company(`move${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      await handle.db
+        .update(tenants)
+        .set({ maintenanceMode: true, maintenanceReason: "move" })
+        .where(eq(tenants.id, moving.tenantId));
+      await migrateAllCompanies(handle.db, encryptionKey);
+      const [after] = await handle.db.select().from(tenants).where(eq(tenants.id, moving.tenantId));
+      expect(after).toMatchObject({ maintenanceMode: true, maintenanceReason: "move" });
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("stamps status_changed_at whenever the status changes, whoever writes it (control migration 0003)", async () => {
+    const stamped = await provision(company(`stamp${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const old = new Date("2020-01-01T00:00:00Z");
+      const read = async () => (await handle.db.select().from(tenants).where(eq(tenants.id, stamped.tenantId)))[0];
+      await handle.db.update(tenants).set({ statusChangedAt: old }).where(eq(tenants.id, stamped.tenantId));
+      await handle.db.update(tenants).set({ name: "Renamed" }).where(eq(tenants.id, stamped.tenantId));
+      expect((await read()).statusChangedAt).toEqual(old);
+      await handle.db.update(tenants).set({ status: "suspended" }).where(eq(tenants.id, stamped.tenantId));
+      expect((await read()).statusChangedAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("emails every active platform admin, one email each, when a migration fails (owner decision 2026-11-13)", async () => {
+    const failed = await provision(company(`alrt${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const admins = [`admin-a-${run}@example.test`, `admin-b-${run}@example.test`, `admin-c-${run}@example.test`];
+      for (const [index, email] of admins.entries()) {
+        const id = uuidv7();
+        await handle.db.insert(user).values({ id, name: "Platform Admin", email });
+        await handle.db.insert(platformAdmins).values({ userId: id, role: "support", active: index < 2 });
+      }
+      const email = new MemoryEmailProvider();
+      const count = await alertMigrationFailure(handle.db, email, "alerts@example.test", {
+        tenantId: failed.tenantId,
+        error: "relation does not exist",
+      });
+      const sent = email.sent.filter((message) => message.subject.includes(`alrt${run}`));
+      expect(count).toBeGreaterThanOrEqual(2);
+      expect(sent.map((message) => message.to)).toEqual(expect.arrayContaining([[admins[0]], [admins[1]]]));
+      expect(sent.flatMap((message) => message.to)).not.toContain(admins[2]);
+      expect(sent[0].text).toContain("relation does not exist");
     } finally {
       await handle.close();
     }

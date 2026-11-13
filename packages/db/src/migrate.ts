@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { openCompanyDb, openControlDb, type ControlDb } from "./client";
-import { tenantDatabases, type TenantDatabaseStatus } from "./control";
+import { platformAuditLog, tenantDatabases, tenants, type TenantDatabaseStatus } from "./control";
 import { decryptSecret } from "./crypto";
 
 /** Where the generated SQL lives; one folder per database kind. */
@@ -47,6 +47,22 @@ export interface CompanyMigrationResult {
   version: string;
 }
 
+/** A company whose migration failed, as the platform admins' alert names it. */
+export interface CompanyMigrationFailure {
+  tenantId: string;
+  error: string;
+}
+
+/** Options for a rollout. */
+export interface MigrateAllOptions {
+  /**
+   * Called once when a company fails, after it is in maintenance mode and the failure is logged.
+   * The migrate script emails the platform admins from here. A failing alert never hides the
+   * migration error.
+   */
+  onFailure?: (failure: CompanyMigrationFailure) => Promise<void>;
+}
+
 /** Thrown when a company fails; the companies after it were not touched. */
 export class MigrationStoppedError extends Error {
   constructor(
@@ -66,10 +82,16 @@ export class MigrationStoppedError extends Error {
  * Databases still being provisioned are skipped: only provisioning marks them ready, after their
  * first rows exist (PR #8 review). A read-only database stays read-only throughout, its failure
  * recorded in last_error only, so no rollout, failed or interrupted, makes it writable.
+ *
+ * A company whose migration fails is put in maintenance mode (reason `migration_failed`), so it
+ * serves no reads or writes on an old schema, and the failure goes to platform_audit_log (owner
+ * decision, 2026-11-13). A later successful run takes it out of maintenance, but only when the
+ * failed migration put it there; a move between providers keeps its own maintenance mode.
  */
 export async function migrateAllCompanies(
   control: ControlDb,
   encryptionKey: string,
+  options: MigrateAllOptions = {},
 ): Promise<CompanyMigrationResult[]> {
   const companies = await control
     .select()
@@ -93,17 +115,23 @@ export async function migrateAllCompanies(
         .where(
           and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
         );
+      await endMigrationMaintenance(control, company.tenantId, version);
       migrated.push({ tenantId: company.tenantId, version });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       await control
         .update(tenantDatabases)
         .set({
           ...(readOnly ? {} : { status: "failed" as const }),
-          lastError: error instanceof Error ? error.message : String(error),
+          lastError: message,
         })
         .where(
           and(eq(tenantDatabases.id, company.id), eq(tenantDatabases.status, readOnly ? "read_only" : "migrating")),
         );
+      await startMigrationMaintenance(control, company.tenantId, message);
+      await options.onFailure?.({ tenantId: company.tenantId, error: message }).catch((alertError: unknown) => {
+        console.error(`The alert for company ${company.tenantId} failed: ${String(alertError)}`);
+      });
       throw new MigrationStoppedError(company.tenantId, migrated, error);
     }
   }
@@ -133,4 +161,43 @@ async function claimForMigration(control: ControlDb, databaseId: string): Promis
     .from(tenantDatabases)
     .where(and(eq(tenantDatabases.id, databaseId), isNull(tenantDatabases.deletedAt)));
   return current?.status === "read_only" ? true : null;
+}
+
+/**
+ * Puts a company whose migration failed in maintenance mode and logs it (owner decision,
+ * 2026-11-13). A company already in maintenance for a move keeps that reason.
+ */
+async function startMigrationMaintenance(control: ControlDb, tenantId: string, error: string): Promise<void> {
+  await control.transaction(async (tx) => {
+    await tx
+      .update(tenants)
+      .set({ maintenanceMode: true, maintenanceReason: "migration_failed" })
+      .where(and(eq(tenants.id, tenantId), eq(tenants.maintenanceMode, false)));
+    await tx.insert(platformAuditLog).values({
+      tenantId,
+      action: "company.migration_failed",
+      targetType: "tenant_database",
+      targetId: tenantId,
+      after: { maintenanceMode: true, error },
+    });
+  });
+}
+
+/** Ends the maintenance mode a failed migration started, once the company is up to date, and logs it. */
+async function endMigrationMaintenance(control: ControlDb, tenantId: string, version: string): Promise<void> {
+  await control.transaction(async (tx) => {
+    const [ended] = await tx
+      .update(tenants)
+      .set({ maintenanceMode: false, maintenanceReason: null })
+      .where(and(eq(tenants.id, tenantId), eq(tenants.maintenanceReason, "migration_failed")))
+      .returning({ id: tenants.id });
+    if (!ended) return;
+    await tx.insert(platformAuditLog).values({
+      tenantId,
+      action: "company.migration_recovered",
+      targetType: "tenant_database",
+      targetId: tenantId,
+      after: { maintenanceMode: false, version },
+    });
+  });
 }

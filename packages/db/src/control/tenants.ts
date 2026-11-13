@@ -21,11 +21,22 @@ export const tenants = pgTable(
     status: text().$type<TenantStatus>().notNull().default("trial"),
     timeZone: text().notNull(),
     region: text().notNull().default("us"),
-    /** Read-only while the company is moved between providers (blueprint p12). */
+    /**
+     * No reads or writes while on: the company is being moved between providers (blueprint p12) or
+     * its database failed a migration (owner decision, 2026-11-13). Requests answer 503
+     * `company_maintenance`.
+     */
     maintenanceMode: boolean().notNull().default(false),
+    /** Why maintenance mode is on, so a recovered migration clears only the mode it set. */
+    maintenanceReason: text().$type<MaintenanceReason>(),
+    /** When `status` last changed; a trigger sets it (migration 0003), so the life-cycle periods count from it. */
+    statusChangedAt: at().notNull().defaultNow(),
   },
   (table) => [uniqueIndex("tenants_slug_uidx").on(table.slug)],
 );
+
+/** Why a company is in maintenance mode. */
+export type MaintenanceReason = "migration_failed" | "move";
 
 /** How a company database is reached: written by provisioning, read by the connection manager (P9). */
 export type TenantDatabaseStatus = "provisioning" | "ready" | "migrating" | "failed" | "read_only";

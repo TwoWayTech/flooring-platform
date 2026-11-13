@@ -6,6 +6,7 @@ export * from "./client";
 export * from "./columns";
 export * from "./crypto";
 export * from "./migrate";
+export * from "./platform-alerts";
 export * from "./provision";
 export * from "./provision-tenant";
 export * from "./company-foundation";
