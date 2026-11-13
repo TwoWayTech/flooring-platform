@@ -21,3 +21,35 @@ The company schema already holds every purchasing table, so no migration is need
 3. **Web:** `purchasingData()` for the Purchasing page. The directory, order and receipt methods go into API_METHODS. Bills and payments stay on the demo until task 6.
 4. **Tests:** API integration tests and a Playwright api-mode test.
 5. **Docs:** ADR 0036, the API contract, the blueprint delta and STATUS.
+
+## What was built
+As planned; see ADR 0036 and PR #13. The stock lock moved to `apps/api/src/modules/inventory/stock-lock.ts`. The sensitive-field interceptor gained a per-route rule, `@SensitiveFieldKeys` (handler level only), for the supplier credit limit.
+
+## Reviews
+- **Schema review:** no blocking findings. The should-fix items are done:
+  - stale text;
+  - stable seed times and authors;
+  - explicit contact columns;
+  - the PO number lock;
+  - an audited primary handover.
+- **First security review:** 2 blocking.
+  - One receipt could list the same order line many times.
+  - Roll lengths were not bounded by what arrived.
+
+  Both are fixed in the shared `receiptProblem`, which the demo now uses too.
+- **Second security review:** 1 blocking. Supplier credit was hidden by the customer key, so Purchasing edits wiped it. Fixed with the per-route keys, writes ignored when hidden, and the form omitting it.
+- **Third security review:** no blocking findings. Its follow-ups are in STATUS.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck` and `pnpm format:check` pass.
+- API vitest passes: 213 at the first full run, then the purchasing and access-rule suites again after each fix.
+- Shared purchasing tests pass, and so does the seed test (6).
+- Playwright api mode runs in CI.
+
+## What is left
+- Bills and supplier payments move with P12 (task 6).
+- Inventory part 2 moves with sales (task 5).
+- Follow-ups are in STATUS.
+
+## Next prompt
+"/resume. Continue the owner's second work queue with task 5, P11 sales with the tax engine and inventory part 2."

@@ -28,4 +28,4 @@
 ## Consequences
 - **Bills tab:** the Bills tab and the payments queue are empty in api mode until P12.
 - **Suppliers with bills:** a supplier with an unpaid bill could be deactivated, because bills are not on the server yet. The check comes with P12.
-- **Supplier credit limit:** the stripping rule keys `creditLimit` on the customer credit key (`SENSITIVE_FIELDS`). So a supplier's credit limit is hidden from anyone without `customers.customer.view_sensitive`. That fails closed; a supplier-specific key is a follow-up (STATUS).
+- **Supplier credit limit:** `creditLimit` is reserved for customer credit in `SENSITIVE_FIELDS`. So the supplier routes declare their own rule with `@SensitiveFieldKeys` (handler level only), and show it to holders of `inventory.product.view_sensitive` or `purchasing.bill.view`, as the spec says. A credit limit sent by someone who cannot see it is ignored, so an edit never changes it blind (PR #13 security reviews).
