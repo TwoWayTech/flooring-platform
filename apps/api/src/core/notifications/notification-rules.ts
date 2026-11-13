@@ -12,8 +12,8 @@ export function addressProblem(email: string): { type: OutboxFailure; detail: st
 
 /**
  * The key that makes one send happen once (spec rule 3): event, source, version and recipient. The
- * same key is the Outbox row's unique key, the pg-boss singleton key and the provider's
- * idempotency key, so neither a retry nor a second notify sends twice.
+ * same key is the Outbox row's unique key and the provider's idempotency key. pg-boss does not
+ * deduplicate jobs; the worker's claim on the row keeps each row to one send (ADR 0032).
  */
 export function dedupeKey(
   event: string,
@@ -22,6 +22,21 @@ export function dedupeKey(
   recipient: Pick<OutboxRecipient, "kind" | "id">,
 ): string {
   return [event, sourceId, version ?? "", recipient.kind, recipient.id].join("|");
+}
+
+/** A header value on one line, so no value can add a header (PR #9 review). */
+export function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/**
+ * The From header: the company's sender name, quoted, on the platform's own address. Line breaks,
+ * quotes, backslashes and angle brackets are removed from the name, so it cannot change the
+ * address or add a header (PR #9 review).
+ */
+export function fromHeader(name: string, address: string): string {
+  const safe = oneLine(name).replace(/["\\<>]/g, "");
+  return safe ? `"${safe}" <${address}>` : address;
 }
 
 /** The text of a failure notice to the person who caused the message (spec rule 5). */

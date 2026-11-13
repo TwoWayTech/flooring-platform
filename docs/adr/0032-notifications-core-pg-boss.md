@@ -40,7 +40,8 @@
 - The `outbox.send` worker first claims the row with one conditional update, `queued` or `scheduled` to `sending`, and sends only if it got the row (PR #9 review). So a second job, two Retry clicks, or a cancel during a send can never send a row twice or after it was cancelled.
 - It sends through the EmailProvider (memory locally, Resend in production) and records `sent` with the provider's message id.
 - **Headers:** the sender name is quoted and stripped of line breaks, quotes and angle brackets. The subject is on one line. An invalid reply-to is left out.
-- **Read-only companies:** a suspended, cancelled or maintenance-mode company sends nothing. Its rows stay `queued` until a sweeper or the Outbox sends them again (STATUS).
+- **Read-only companies:** a suspended, cancelled or maintenance-mode company sends nothing. Its rows stay `queued`, and Retry (or the sweeper, STATUS) sends them once it is writable.
+- **Stuck rows:** the provider call has a 30-second limit. Retry accepts a `failed` row, a `queued` row whose job is gone, and a row stuck in `sending` for over 10 minutes. The claim still allows one send, and the provider's idempotency key covers a send that did go out (PR #9 re-review).
 - A provider failure records `failed` (`provider_error`) and tells the actor. It is not retried automatically: `POST /outbox/:id/retry` sends it again after checking the address.
 - A row not yet visible makes the job retry, because its transaction has not committed.
 

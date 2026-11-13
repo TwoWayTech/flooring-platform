@@ -5,7 +5,12 @@ import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { JobsService } from "../src/core/jobs/jobs.service";
-import { CLEANUP_QUEUE, NotificationService, type NotifyInput } from "../src/core/notifications/notification.service";
+import {
+  CLEANUP_QUEUE,
+  NotificationService,
+  SEND_QUEUE,
+  type NotifyInput,
+} from "../src/core/notifications/notification.service";
 import { TenantContext } from "../src/core/tenancy/tenant-context";
 import { AuthHarness } from "./auth-harness";
 
@@ -47,6 +52,10 @@ describe("notifications core (needs the local PostgreSQL)", () => {
   });
 
   const service = () => harness.app.get(NotificationService);
+
+  /** Provider calls for one address. The memory adapter returns one entry per idempotency key, so it cannot show a second send. */
+  const callsTo = (spy: { mock: { calls: [{ to: string[] }][] } }, address: string) =>
+    spy.mock.calls.filter(([message]) => message.to.includes(address)).length;
 
   /**
    * Makes the email provider refuse messages to one address until restored. Other tests' queued
@@ -94,6 +103,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
 
   it("writes one rendered row per recipient, sends it through the EmailProvider, and never twice", async () => {
     const sourceId = uuidv7();
+    const sends = vi.spyOn(harness.outbox, "send");
     const actor = await harness.userIdOf(await harness.addUser({ companyIds: [company.id] }));
     const first = await service().notify(tenant, actor, quoteSent(sourceId, "dana@example.test"));
     expect(first.queued).toHaveLength(1);
@@ -106,7 +116,8 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     expect(sent.subject).toContain("Q-1001");
     expect(sent.bodyText).toContain("Dana Rivera");
     expect(sent.providerMessageId).toMatch(/^memory-/);
-    expect(harness.outbox.sent.filter((message) => message.idempotencyKey === sent.dedupeKey)).toHaveLength(1);
+    expect(callsTo(sends, "dana@example.test")).toBe(1);
+    sends.mockRestore();
   });
 
   it("never emails the person who caused the event", async () => {
@@ -204,9 +215,11 @@ describe("notifications core (needs the local PostgreSQL)", () => {
 
   it("refuses retry and cancel without settings.outbox.view", async () => {
     const plain = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
-    const response = await call("post", `/outbox/${uuidv7()}/retry`, plain);
-    expect(response.status).toBe(403);
-    expect(response.body.code).toBe("forbidden");
+    for (const action of ["retry", "cancel"]) {
+      const response = await call("post", `/outbox/${uuidv7()}/${action}`, plain);
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe("forbidden");
+    }
   });
 
   it("deletes sign-in security data older than 30 days in the daily cleanup (owner decision)", async () => {
@@ -270,7 +283,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     expect((await rowsOf(sourceId))[0].restricted).toBe(true);
   });
 
-  it("queues a failed message once however often Retry is pressed", async () => {
+  it("sends a failed message once however often Retry is pressed", async () => {
     const sourceId = uuidv7();
     const failing = failSendsTo("ray@example.test");
     await service().notify(tenant, null, quoteSent(sourceId, "ray@example.test"));
@@ -279,10 +292,13 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       return rows[0]?.status === "failed" ? rows : undefined;
     }, "the failure");
     failing.mockRestore();
-    const results = await Promise.allSettled([service().retry(tenant, failed.id), service().retry(tenant, failed.id)]);
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const sends = vi.spyOn(harness.outbox, "send");
+    // Both clicks may be accepted (a queued row may be retried); the worker's claim still sends it once.
+    await Promise.allSettled([service().retry(tenant, failed.id), service().retry(tenant, failed.id)]);
     await eventually(async () => ((await rowsOf(sourceId))[0]?.status === "sent" ? true : undefined), "the send");
-    expect(harness.outbox.sent.filter((message) => message.idempotencyKey === failed.dedupeKey)).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(callsTo(sends, "ray@example.test")).toBe(1);
+    sends.mockRestore();
   });
 
   it("sends nothing for a read-only company and leaves its rows queued", async () => {
@@ -319,5 +335,34 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     }
     const bad = await call("post", "/notifications/read", other).send({ ids: ["not-an-id"] });
     expect(bad.status).toBe(400);
+  });
+
+  it("sends a row once even when two jobs are queued for it (PR #9 re-review)", async () => {
+    const sourceId = uuidv7();
+    const sends = vi.spyOn(harness.outbox, "send");
+    const result = await service().notify(tenant, null, quoteSent(sourceId, "twice@example.test"));
+    const jobs = harness.app.get(JobsService);
+    await jobs.send(SEND_QUEUE, { companyId: company.id, messageId: result.queued[0] });
+    await jobs.send(SEND_QUEUE, { companyId: company.id, messageId: result.queued[0] });
+    await eventually(async () => ((await rowsOf(sourceId))[0]?.status === "sent" ? true : undefined), "the send");
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    expect(callsTo(sends, "twice@example.test")).toBe(1);
+    sends.mockRestore();
+  });
+
+  it("never sends a scheduled row cancelled before its time (PR #9 re-review)", async () => {
+    const sourceId = uuidv7();
+    const sends = vi.spyOn(harness.outbox, "send");
+    await service().notify(
+      tenant,
+      null,
+      quoteSent(sourceId, "soon@example.test", { scheduledFor: new Date(Date.now() + 1_500) }),
+    );
+    const [held] = await rowsOf(sourceId);
+    await service().cancel(tenant, held.id);
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    expect(callsTo(sends, "soon@example.test")).toBe(0);
+    expect((await rowsOf(sourceId))[0].status).toBe("cancelled");
+    sends.mockRestore();
   });
 });

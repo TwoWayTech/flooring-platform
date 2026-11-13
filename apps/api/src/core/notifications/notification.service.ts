@@ -21,7 +21,7 @@ import {
   type OutboxAttachment,
   type OutboxRecipient,
 } from "@workspace/shared";
-import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Job } from "pg-boss";
 import { CONTROL_DB } from "../database/control-db";
 import { EMAIL, EMAIL_FROM } from "../email/email.module";
@@ -29,7 +29,15 @@ import { JobTenants } from "../jobs/job-tenants";
 import { JobsService } from "../jobs/jobs.service";
 import { TenantConnectionService } from "../tenancy/tenant-connection.service";
 import type { TenantContext } from "../tenancy/tenant-context";
-import { addressProblem, dedupeKey, failureNotice, visibleOutboxRow, type OutboxReader } from "./notification-rules";
+import {
+  addressProblem,
+  dedupeKey,
+  failureNotice,
+  fromHeader,
+  oneLine,
+  visibleOutboxRow,
+  type OutboxReader,
+} from "./notification-rules";
 
 /** The queue that sends one Outbox row. */
 export const SEND_QUEUE = "outbox.send";
@@ -38,18 +46,19 @@ export const CLEANUP_QUEUE = "auth.cleanup";
 /** How long `auth_attempts` and `rate_limit` rows are kept (docs/data-model.md, "Retention"). */
 const RETENTION_DAYS = 30;
 
-/** A header value on one line, so no value can add a header (PR #9 review). */
-function oneLine(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").trim();
-}
+/** How long the provider may take to accept one email before the send counts as failed. */
+const SEND_TIMEOUT_MS = 30_000;
 
-/**
- * The From header: the company's sender name, quoted, on the platform's own address. Quotes and
- * line breaks in the name are removed, so a name cannot change the address (PR #9 review).
- */
-function fromHeader(name: string, address: string): string {
-  const safe = oneLine(name).replace(/["\\<>]/g, "");
-  return safe ? `"${safe}" <${address}>` : address;
+/** How long a row may stay `sending` before Retry may take it back (the worker died mid-send). */
+const STUCK_SENDING_MS = 10 * 60_000;
+
+/** Rejects when a promise takes longer than `ms`, so a hung provider call cannot hold a row. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error("timed out")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** What a send job carries: which company and which row, nothing else. */
@@ -189,18 +198,43 @@ export class NotificationService implements OnApplicationBootstrap {
         createdAt: outboxMessages.createdAt,
       })
       .from(outboxMessages)
-      .where(isNull(outboxMessages.deletedAt))
+      .where(
+        and(
+          isNull(outboxMessages.deletedAt),
+          // A non-admin's own rows are chosen in SQL, so a busy Outbox never pushes them out of
+          // the newest 200 (PR #9 re-review). visibleOutboxRow applies the same rule again.
+          reader.admin
+            ? undefined
+            : or(
+                eq(outboxMessages.actorUserId, reader.userId),
+                and(eq(outboxMessages.recipientType, "user"), eq(outboxMessages.recipientId, reader.userId)),
+                eq(sql`lower(${outboxMessages.recipientEmail})`, reader.email.toLowerCase()),
+              ),
+        ),
+      )
       .orderBy(desc(outboxMessages.createdAt))
       .limit(200);
     return rows.map((row) => visibleOutboxRow(row, reader)).filter((row) => row !== null);
   }
 
-  /** Sends a failed row again after checking its address once more (spec `retryOutbox`). */
+  /**
+   * Sends a row again after checking its address once more (spec `retryOutbox`). Besides a failed
+   * row it takes a queued row whose job is gone (a read-only company, or queueing failed) and a row
+   * stuck in `sending` for over 10 minutes (the worker died mid-send). The worker's claim still
+   * sends it at most once, and the provider's idempotency key covers a send that did go out.
+   */
   async retry(tenant: TenantContext, messageId: string): Promise<void> {
     const db = await this.tenancy.db(tenant);
     const row = await this.rowFor(db, messageId);
-    if (row.status !== "failed")
-      throw new ConflictException({ code: "not_failed", message: "Only a failed message can be sent again." });
+    const retryable = or(
+      inArray(outboxMessages.status, ["failed", "queued"]),
+      and(eq(outboxMessages.status, "sending"), lt(outboxMessages.updatedAt, new Date(Date.now() - STUCK_SENDING_MS))),
+    );
+    if (row.status !== "failed" && row.status !== "queued" && row.status !== "sending")
+      throw new ConflictException({
+        code: "not_failed",
+        message: "Only a failed or waiting message can be sent again.",
+      });
     const problem = addressProblem(row.recipientEmail);
     if (problem) {
       await db
@@ -212,11 +246,14 @@ export class NotificationService implements OnApplicationBootstrap {
     const [requeued] = await db
       .update(outboxMessages)
       .set({ status: "queued", failureType: null, failureDetail: null })
-      .where(and(eq(outboxMessages.id, row.id), eq(outboxMessages.status, "failed")))
+      .where(and(eq(outboxMessages.id, row.id), retryable))
       .returning({ id: outboxMessages.id });
-    // Another Retry moved it first; that one queues the send (PR #9 review).
+    // Another Retry moved it first, or it is sending right now (PR #9 review).
     if (!requeued)
-      throw new ConflictException({ code: "not_failed", message: "Only a failed message can be sent again." });
+      throw new ConflictException({
+        code: "not_failed",
+        message: "Only a failed or waiting message can be sent again.",
+      });
     await this.queue(tenant.companyId, row.id, null);
   }
 
@@ -266,7 +303,8 @@ export class NotificationService implements OnApplicationBootstrap {
    * Sends one row (ADR 0032). The row is claimed first with one conditional update (queued or
    * scheduled to sending), so a second job, a second Retry or a cancel can never send it twice or
    * after it was cancelled. A read-only company (suspended, cancelled, in maintenance) sends
-   * nothing: its rows stay queued and are sent again from the Outbox once it is writable. A
+   * nothing: its rows stay queued, and Retry (or the sweeper, STATUS) sends them once it is
+   * writable. A
    * provider failure marks the row failed and tells the actor; Retry sends it again.
    */
   private async sendJob(job: Job<SendJob>): Promise<void> {
@@ -288,14 +326,17 @@ export class NotificationService implements OnApplicationBootstrap {
     let sentId: string;
     try {
       sentId = (
-        await this.email.send({
-          from: fromHeader(row.fromName, this.emailFrom),
-          to: [row.recipientEmail],
-          ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
-          subject: oneLine(row.subject),
-          text: row.bodyText,
-          idempotencyKey: row.dedupeKey,
-        })
+        await withTimeout(
+          this.email.send({
+            from: fromHeader(row.fromName, this.emailFrom),
+            to: [row.recipientEmail],
+            ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
+            subject: oneLine(row.subject),
+            text: row.bodyText,
+            idempotencyKey: row.dedupeKey,
+          }),
+          SEND_TIMEOUT_MS,
+        )
       ).id;
     } catch {
       // The provider's message can carry the address; it is not stored or logged (rule 14).

@@ -3,6 +3,8 @@ import {
   addressProblem,
   dedupeKey,
   failureNotice,
+  fromHeader,
+  oneLine,
   visibleOutboxRow,
   type OutboxReader,
   type OutboxView,
@@ -64,5 +66,18 @@ describe("visibleOutboxRow (spec: who can see which Outbox row)", () => {
       recipientEmail: "Dana@Example.test",
     });
     expect(visibleOutboxRow(row, reader({ admin: true, hrView: true }))).toEqual(row);
+  });
+});
+
+describe("fromHeader and oneLine (PR #9 review: no header injection)", () => {
+  it("keeps a sender name on one line, without quotes or angle brackets, on the platform's address", () => {
+    expect(fromHeader('Summit "Floor" <evil@x.test>\r\nBcc: all@x.test', "no-reply@summit.test")).toBe(
+      '"Summit Floor evil@x.test Bcc: all@x.test" <no-reply@summit.test>',
+    );
+    expect(fromHeader("\r\n", "no-reply@summit.test")).toBe("no-reply@summit.test");
+  });
+
+  it("puts a subject on one line", () => {
+    expect(oneLine("Quote\r\nBcc: all@x.test")).toBe("Quote Bcc: all@x.test");
   });
 });
