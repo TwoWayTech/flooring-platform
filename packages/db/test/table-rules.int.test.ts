@@ -11,6 +11,7 @@ const APPEND_ONLY = new Set([
   "roll_cuts",
   "time_off_entries",
   "meeting_responses",
+  "auth_attempts",
 ]);
 /** Better Auth owns these shapes (src/control/auth.ts); only the uuid id rule applies to them. */
 const LIBRARY_OWNED = new Set([
@@ -23,6 +24,7 @@ const LIBRARY_OWNED = new Set([
   "organization",
   "member",
   "invitation",
+  "rate_limit",
 ]);
 /** Floats are allowed only for drawing coordinates, never for money or quantities. */
 const FLOAT_ALLOWED = new Set(["addresses.lat", "addresses.lng", "measurement_rooms.x", "measurement_rooms.y"]);

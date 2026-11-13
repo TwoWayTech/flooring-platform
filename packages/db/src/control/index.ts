@@ -2,5 +2,6 @@
 export * from "./auth";
 export * from "./country-packs";
 export * from "./plans";
+export * from "./security";
 export * from "./platform";
 export * from "./tenants";
