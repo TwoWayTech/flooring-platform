@@ -11,6 +11,7 @@ export * from "./expenses";
 export * from "./hr";
 export * from "./installation";
 export * from "./inventory";
+export * from "./ledger";
 export * from "./meetings";
 export * from "./notifications";
 export * from "./organization";
