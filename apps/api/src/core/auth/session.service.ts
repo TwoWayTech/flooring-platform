@@ -15,6 +15,8 @@ import { AUTH } from "./tokens";
 export interface AuthSession {
   user: { id: string; name: string; email: string };
   sessionId: string;
+  /** When the session began; a session swap keeps it (ADR 0029). Step-up reads it for passkey-only users. */
+  sessionCreatedAt: Date;
   /** The open company (tenant id), or null until the user chooses one. */
   companyId: string | null;
   /** Where the user stands on MFA (blueprint p27). */
@@ -65,7 +67,13 @@ export class SessionService {
     if (shouldRecordActivity(session, now)) {
       await this.control.db.update(sessionTable).set({ updatedAt: now }).where(eq(sessionTable.id, session.id));
     }
-    return { user: { id: user.id, name: user.name, email: user.email }, sessionId: session.id, companyId, mfa };
+    return {
+      user: { id: user.id, name: user.name, email: user.email },
+      sessionId: session.id,
+      sessionCreatedAt: new Date(session.createdAt),
+      companyId,
+      mfa,
+    };
   }
 
   /**

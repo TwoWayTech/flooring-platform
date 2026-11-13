@@ -86,6 +86,7 @@ describe("permissions, sensitive fields and audit (P10, needs the local PostgreS
           const session = {
             user: { id: userId, name: "Test", email },
             sessionId: "matrix",
+            sessionCreatedAt: new Date(),
             companyId: companies[product].id,
           };
           const tenant = TenantContext.fromVerifiedSession(session as AuthSession, {

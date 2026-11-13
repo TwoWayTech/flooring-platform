@@ -45,6 +45,7 @@ function tenantFor(companyId: string): TenantContext {
   const session = {
     user: { id: "user-1", name: "U", email: "u@example.test" },
     sessionId: "s",
+    sessionCreatedAt: new Date(),
     companyId,
   } as AuthSession;
   const company: CompanyAccess = {
