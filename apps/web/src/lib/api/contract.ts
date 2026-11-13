@@ -480,6 +480,18 @@ export interface SupplierInput {
 export type SupplierContactInput = Omit<SupplierContact, "id" | "status"> & { id?: string };
 
 /** A physical count that disagrees with the books (plan A-1). */
+/** The records the Purchasing page reads together (ApiClient `purchasingData`). */
+export interface PurchasingData {
+  suppliers: Supplier[];
+  contacts: SupplierContact[];
+  purchaseOrders: PurchaseOrder[];
+  receipts: GoodsReceipt[];
+  products: Product[];
+  locations: Location[];
+  bills: Bill[];
+  supplierPayments: SupplierPayment[];
+}
+
 /** The stock records the Inventory and roll pages read together (ApiClient `inventoryData`). */
 export interface InventoryData {
   products: Product[];
@@ -889,6 +901,12 @@ export interface ApiClient {
    * comes back empty.
    */
   inventoryData(): Promise<InventoryData>;
+  /**
+   * What the Purchasing page reads: suppliers, contacts, orders, receipts, the catalog and
+   * warehouses, bills and supplier payments. With the real API (purchasing, part 1; ADR 0036) bills
+   * and supplier payments stay empty until they move with the ledger (P12).
+   */
+  purchasingData(): Promise<PurchasingData>;
   /** Moves a roll to another bin; nothing else about a roll changes. Needs inventory.roll.edit. Audited. */
   moveRoll(rollId: string, bin: string): Promise<Roll>;
   /** Sets stock to what was counted, with a reason (plan A-1). Needs inventory.stock.correct. Audited. */

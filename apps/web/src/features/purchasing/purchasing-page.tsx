@@ -75,17 +75,8 @@ export function PurchasingPage() {
   const [creating, setCreating] = useState(false);
   const [paying, setPaying] = useState<Supplier | null>(null);
   const data = useApiQuery(async (client) => {
-    const [suppliers, contacts, purchaseOrders, bills, products, locations, receipts, supplierPayments] =
-      await Promise.all([
-        client.list("suppliers"),
-        client.list("supplierContacts"),
-        client.list("purchaseOrders"),
-        client.list("bills"),
-        client.list("products"),
-        client.list("locations"),
-        client.list("receipts"),
-        client.list("supplierPayments"),
-      ]);
+    const { suppliers, contacts, purchaseOrders, bills, products, locations, receipts, supplierPayments } =
+      await client.purchasingData();
     return { suppliers, contacts, purchaseOrders, bills, products, locations, receipts, supplierPayments };
   }, []);
   if (!can("purchasing.order.view") && !can("purchasing.bill.view")) return <NoAccess />;

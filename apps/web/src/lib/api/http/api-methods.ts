@@ -1,4 +1,17 @@
-import type { Location, Product, Role, Roll, StockAdjustment, StockMovement, Transfer, User } from "@workspace/shared";
+import type {
+  GoodsReceipt,
+  Location,
+  Product,
+  PurchaseOrder,
+  Role,
+  Roll,
+  StockAdjustment,
+  StockMovement,
+  Supplier,
+  SupplierContact,
+  Transfer,
+  User,
+} from "@workspace/shared";
 import { HttpApiError } from "./transport";
 import type { CollectionName, Collections, ItemOf } from "../contract";
 import type { HttpRoutes } from "./router";
@@ -62,6 +75,41 @@ export const API_METHODS: HttpRoutes = {
     // Reservations and adjustments come from invoices, which move with sales (ADR 0035).
     return { products, rolls, stockMovements, locations, transfers, reservations: [], stockAdjustments: [] };
   },
+  purchasingData: (http) => async () => {
+    const [suppliers, contacts, purchaseOrders, receipts, products, locations] = await Promise.all([
+      seen(http.request<Supplier[]>("GET", "/suppliers")),
+      seen(http.request<SupplierContact[]>("GET", "/supplier-contacts")),
+      seen(http.request<PurchaseOrder[]>("GET", "/purchase-orders")),
+      seen(http.request<GoodsReceipt[]>("GET", "/receipts")),
+      seen(http.request<Product[]>("GET", "/products")),
+      seen(http.request<Location[]>("GET", "/locations")),
+    ]);
+    // Bills and supplier payments post to the ledger, so they move with P12 (ADR 0036).
+    return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills: [], supplierPayments: [] };
+  },
+  saveSupplier:
+    (http) =>
+    ({ id, ...input }) =>
+      id
+        ? http.request<Supplier>("PUT", `/suppliers/${id}`, input)
+        : http.request<Supplier>("POST", "/suppliers", input),
+  setSupplierStatus: (http) => (id, status) => http.request<Supplier>("POST", `/suppliers/${id}/status`, { status }),
+  saveSupplierContact:
+    (http) =>
+    ({ id, ...input }) =>
+      id
+        ? http.request<SupplierContact>("PUT", `/supplier-contacts/${id}`, input)
+        : http.request<SupplierContact>("POST", "/supplier-contacts", input),
+  setContactStatus: (http) => (id, status) =>
+    http.request<SupplierContact>("POST", `/supplier-contacts/${id}/status`, { status }),
+  // The screen's draft line ids are ignored by the API, which gives every line its own id.
+  createPurchaseOrder: (http) => (input) => http.request<PurchaseOrder>("POST", "/purchase-orders", input),
+  markOrdered: (http) => (poId, via) =>
+    http.request<PurchaseOrder>("POST", `/purchase-orders/${poId}/order`, { via: via ?? "email" }),
+  cancelOrder: (http) => (poId, reason) =>
+    http.request<PurchaseOrder>("POST", `/purchase-orders/${poId}/cancel`, { reason }),
+  recordReceipt: (http) => (poId, input) =>
+    http.request<GoodsReceipt>("POST", `/purchase-orders/${poId}/receipts`, input),
   moveRoll: (http) => (rollId, bin) => http.request<Roll>("PATCH", `/rolls/${rollId}`, { bin }),
   createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
   receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
