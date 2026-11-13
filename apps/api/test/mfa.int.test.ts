@@ -271,6 +271,21 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       expect(row.on).toBe(true);
     });
 
+    it("does not count refused attempts to turn the app off towards the lockout", async () => {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["owner"] });
+      const { cookie } = await enrol(email);
+      for (let n = 0; n < 6; n += 1) {
+        const refused = await harness
+          .post("/api/auth/two-factor/disable")
+          .set("Cookie", cookie)
+          .send({ password: PASSWORD });
+        expect(refused.body.code).toBe("mfa_required");
+      }
+      const signIn = await harness.post("/api/auth/sign-in/email").send({ email, password: PASSWORD });
+      expect(signIn.status).toBe(200);
+      expect(signIn.body.twoFactorRedirect).toBe(true);
+    });
+
     it("lets a user who need not use MFA turn the app off", async () => {
       const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
       const first = await harness.signIn(email);

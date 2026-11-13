@@ -159,6 +159,19 @@ describe("password lockout and rate limits (P8 part 2, needs the local PostgreSQ
     expect((await attempt(email, true)).status).toBe(200);
   });
 
+  it("does not count a right password refused on another company's address", async () => {
+    const slug = `lock-${uuidv7().slice(-8)}`;
+    await harness.addCompany(slug);
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+    for (let n = 0; n < 6; n += 1) {
+      const refused = await harness
+        .post("/api/auth/sign-in/email", `${slug}.flooringsuite.test`)
+        .send({ email, password: PASSWORD });
+      expect(refused.body.code).toBe("not_a_member");
+    }
+    expect((await attempt(email, true)).status).toBe(200);
+  });
+
   it("refuses auth requests that did not come through the web proxy", async () => {
     const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
     for (const secret of [undefined, "not-the-secret"]) {
