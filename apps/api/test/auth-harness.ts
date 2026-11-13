@@ -6,6 +6,7 @@ import { seededTenantId, seedTestCompany } from "@workspace/db/seed";
 import { scratchDatabase } from "@workspace/db/testing";
 import { MemoryEmailProvider, NoopProvisioner } from "@workspace/providers";
 import { hashPassword } from "better-auth/crypto";
+import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -69,14 +70,25 @@ export class AuthHarness {
     return this.app.get<MemoryEmailProvider>(EMAIL);
   }
 
-  /** A request as the web app's proxy sends it, from the given browser host. */
-  post(path: string, host = "localhost:3000") {
-    return request(this.app.getHttpServer()).post(path).set("Origin", WEB_ORIGIN).set("X-Forwarded-Host", host);
+  /**
+   * A request as the web app's proxy sends it, from the given browser host. Each request comes
+   * from its own client IP unless one is given, so the per-IP limits only meet in tests about them.
+   */
+  post(path: string, host = "localhost:3000", ip = randomIp()) {
+    return request(this.app.getHttpServer())
+      .post(path)
+      .set("Origin", WEB_ORIGIN)
+      .set("X-Forwarded-Host", host)
+      .set("X-Forwarded-For", ip);
   }
 
   /** A GET request as the web app's proxy sends it. */
-  get(path: string, host = "localhost:3000") {
-    return request(this.app.getHttpServer()).get(path).set("Origin", WEB_ORIGIN).set("X-Forwarded-Host", host);
+  get(path: string, host = "localhost:3000", ip = randomIp()) {
+    return request(this.app.getHttpServer())
+      .get(path)
+      .set("Origin", WEB_ORIGIN)
+      .set("X-Forwarded-Host", host)
+      .set("X-Forwarded-For", ip);
   }
 
   /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */
@@ -86,14 +98,20 @@ export class AuthHarness {
     return sessionCookie(response.headers["set-cookie"]);
   }
 
-  /** The email of one seeded Summit user. */
-  async summitEmail(): Promise<string> {
-    const [row] = await this.control.db
-      .select({ email: user.email })
+  /**
+   * The email of one seeded Summit user. By default one whose roles do not require MFA, so tests
+   * about other rules sign straight in; `{ mfaRequired: true }` picks one whose roles do.
+   */
+  async summitEmail(options: { mfaRequired?: boolean } = {}): Promise<string> {
+    const rows = await this.control.db
+      .select({ email: user.email, role: member.role })
       .from(user)
       .innerJoin(member, eq(member.userId, user.id))
       .where(eq(member.organizationId, SUMMIT_ID))
-      .limit(1);
+      .orderBy(user.email);
+    const wanted = options.mfaRequired ?? false;
+    const row = rows.find((candidate) => rolesRequireMfa(decodeMemberRoles(candidate.role)) === wanted);
+    if (!row) throw new Error("No seeded Summit user fits.");
     return row.email;
   }
 
@@ -119,7 +137,7 @@ export class AuthHarness {
   }
 
   /** Adds a user with PASSWORD and the given memberships. Returns the email. */
-  async addUser(options: { companyIds: string[]; verified?: boolean }): Promise<string> {
+  async addUser(options: { companyIds: string[]; verified?: boolean; roles?: string[] }): Promise<string> {
     const id = uuidv7();
     const email = `user-${id}@example.test`;
     const now = new Date();
@@ -137,7 +155,7 @@ export class AuthHarness {
     for (const organizationId of options.companyIds) {
       await this.control.db
         .insert(member)
-        .values({ id: uuidv7(), organizationId, userId: id, role: "member", createdAt: now });
+        .values({ id: uuidv7(), organizationId, userId: id, role: encodeMemberRoles(options.roles ?? ["sales"]), createdAt: now });
     }
     return email;
   }
@@ -149,6 +167,12 @@ export function sessionCookie(setCookie: string[] | string | undefined): string 
   const session = cookies.find((cookie) => cookie.includes("session_token="));
   if (!session) throw new Error("No session cookie was set.");
   return session.split(";")[0];
+}
+
+/** A random client IP in 198.51.0.0/16, one per request by default (tests only). */
+export function randomIp(): string {
+  const [a, b] = randomBytes(2);
+  return `198.51.${a}.${b}`;
 }
 
 /** Whether an id is a UUID version 7. */

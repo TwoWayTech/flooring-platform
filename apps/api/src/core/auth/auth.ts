@@ -1,19 +1,25 @@
+import { passkey } from "@better-auth/passkey";
 import type { ControlDb } from "@workspace/db";
 import * as controlSchema from "@workspace/db/control";
 import type { EmailProvider } from "@workspace/providers";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { organization } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
+import { organization, twoFactor } from "better-auth/plugins";
 import { v7 as uuidv7 } from "uuid";
+import { LOCKOUT, type AttemptLog } from "./attempts";
+import { afterAuthHook, AUTH_REFUSALS, beforeAuthHook, requestHost } from "./auth-hooks";
 import type { CompanyDirectory } from "./company-directory";
 import { hostCompanySlug, pickCompany } from "./company-pick";
-import { SESSION_CEILING_SECONDS, SESSION_ENDED_MESSAGES, sessionExpiry } from "./session-timeouts";
+import type { MfaPolicy } from "./mfa-policy";
+import { SESSION_CEILING_SECONDS } from "./session-timeouts";
 
 /** What the Better Auth instance needs from the app. */
 export interface AuthDeps {
   db: ControlDb;
   companies: CompanyDirectory;
+  mfa: MfaPolicy;
+  attempts: AttemptLog;
   email: EmailProvider;
   emailFrom: string;
   secret: string;
@@ -34,80 +40,62 @@ export interface AuthDeps {
 export const MIN_PASSWORD_LENGTH = 12;
 
 /**
- * Organization endpoints the web app may call. Membership, invitations and roles are managed by
- * our own modules behind the permission engine (CLAUDE.md rule 3), so the plugin's other
- * endpoints are closed.
+ * The product name shown by authenticator apps and passkey prompts. A placeholder until the brand
+ * name is chosen (docs/real-build-plan.md, open questions).
  */
-const OPEN_ORGANIZATION_PATHS = new Set(["/organization/set-active", "/organization/list"]);
+export const APP_NAME = "Flooring Platform";
+
+/** Owner decision, 2026-11-13: sign-in and MFA checks allow 10 a minute from one IP address. */
+const SIGN_IN_RATE = { window: 60, max: 10 } as const;
 
 /**
- * Auth endpoints that must work without a valid session, or with one a timeout has ended: signing
- * in again, signing out, and the email and password-reset links. Every other endpoint gets the
- * company's timeouts too, so no Better Auth call can use or revive an ended session.
+ * Sends a verification email unless the address has had 3 in the last hour (owner decision,
+ * 2026-11-13). Not awaited by the caller, so the answer takes the same time whether or not an
+ * email goes out, and a skipped email is silent for the same reason.
  */
-const SESSIONLESS_PATHS = new Set([
-  "/sign-in/email",
-  "/sign-out",
-  "/verify-email",
-  "/send-verification-email",
-  "/request-password-reset",
-  "/ok",
-  "/error",
-]);
-
-/** Whether an auth endpoint is exempt from the company timeouts. */
-function isSessionless(path: string): boolean {
-  return SESSIONLESS_PATHS.has(path) || path.startsWith("/reset-password");
-}
-
-const REFUSALS = {
-  not_a_member: "This account is not a member of this company. Sign in on your company's own address.",
-  no_company: "This account is not part of any company yet. Ask your company's owner to invite you.",
-  company_id_required: "Choose a company to open.",
-  wrong_host: "This address opens only its own company. Sign in on the other company's address.",
-} as const;
-
-/** The web host a request came through; the web app's proxy forwards it (ADR 0029). */
-function requestHost(headers: Headers | undefined): string | undefined {
-  return headers?.get("x-forwarded-host") ?? headers?.get("host") ?? undefined;
+async function sendVerification(deps: AuthDeps, to: string, url: string): Promise<void> {
+  if (!(await deps.attempts.emailAllowed(to))) return;
+  await deps.attempts.record("verification_email", to, null);
+  await deps.email.send({
+    from: deps.emailFrom,
+    to: [to],
+    subject: "Confirm your email address",
+    text: `Confirm your email address to finish signing in:\n\n${url}\n\nIf you did not try to sign in, you can ignore this email.`,
+  });
 }
 
 /**
- * Checks a set-active request before Better Auth runs it, so a refused switch leaves the open
- * company as it was (Better Auth's own refusal clears it on the way out). Only a company id is
- * accepted: a null id would leave the session with no company, and so under the default timeouts
- * instead of the company's (blueprint p28), and a slug would skip this check. On a host that names
- * a company, only that company can be opened (blueprint p16, "the subdomain picks the company").
+ * The company a new session opens. A session made to replace another (after an authenticator app
+ * is confirmed) keeps the company that was open, when the host and memberships still allow it;
+ * otherwise the host's company, the user's only company, or none until they choose (ADR 0029).
  */
-async function checkCompanySwitch(
+async function companyForNewSession(
   deps: AuthDeps,
-  body: unknown,
   userId: string,
+  carried: string | null | undefined,
   host: string | undefined,
-): Promise<void> {
-  const fields = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
-  const organizationId = fields.organizationId;
-  if (typeof organizationId !== "string" || organizationId === "" || "organizationSlug" in fields) {
-    throw new APIError("BAD_REQUEST", { code: "company_id_required", message: REFUSALS.company_id_required });
-  }
+): Promise<string | null> {
   const slug = hostCompanySlug(host);
-  if (slug && (await deps.companies.idBySlug(slug)) !== organizationId) {
-    throw new APIError("FORBIDDEN", { code: "wrong_host", message: REFUSALS.wrong_host });
+  const hostCompanyId = slug ? await deps.companies.idBySlug(slug) : null;
+  const memberIds = (await deps.companies.membershipsOf(userId)).map((company) => company.id);
+  if (carried && memberIds.includes(carried) && (!hostCompanyId || hostCompanyId === carried)) return carried;
+  const pick = pickCompany(hostCompanyId, memberIds);
+  if (pick.kind === "refuse") {
+    throw new APIError("FORBIDDEN", { code: pick.reason, message: AUTH_REFUSALS[pick.reason] });
   }
-  const memberships = await deps.companies.membershipsOf(userId);
-  if (!memberships.some((company) => company.id === organizationId)) {
-    throw new APIError("FORBIDDEN", { code: "not_a_member", message: REFUSALS.not_a_member });
-  }
+  return pick.kind === "open" ? pick.companyId : null;
 }
 
 /**
  * Better Auth for the control database (blueprint p12, p27-28; ADR 0029): email and password with
- * verification and no public sign-up, the organization plugin with organization id = tenant id,
- * UUID v7 ids, and a session that opens the right company. Per-company idle and absolute timeouts
- * are enforced by SessionService, because Better Auth's expiry is global.
+ * verification and no public sign-up; TOTP with backup codes and passkeys as second factors; the
+ * organization plugin with organization id = tenant id; UUID v7 ids; per-IP limits on sign-in and
+ * MFA checks; and a session that opens the right company. Per-company timeouts, the password
+ * lockout and mandatory MFA are applied by the hooks in auth-hooks.ts and by SessionService.
  */
 export function createAuth(deps: AuthDeps) {
   return betterAuth({
+    appName: APP_NAME,
     secret: deps.secret,
     baseURL: { allowedHosts: deps.allowedHosts },
     trustedOrigins: deps.trustedOrigins,
@@ -123,15 +111,7 @@ export function createAuth(deps: AuthDeps) {
       sendOnSignIn: true,
       autoSignInAfterVerification: false,
       sendVerificationEmail: async ({ user, url }) => {
-        // Not awaited, so the answer takes the same time whether or not an email goes out.
-        void deps.email
-          .send({
-            from: deps.emailFrom,
-            to: [user.email],
-            subject: "Confirm your email address",
-            text: `Confirm your email address to finish signing in:\n\n${url}\n\nIf you did not try to sign in, you can ignore this email.`,
-          })
-          .catch(() => deps.logError("Could not send a verification email."));
+        void sendVerification(deps, user.email, url).catch(() => deps.logError("Could not send a verification email."));
       },
     },
     session: {
@@ -139,57 +119,59 @@ export function createAuth(deps: AuthDeps) {
       // Activity and expiry are recorded by SessionService on each guarded request instead.
       disableSessionRefresh: true,
     },
+    // Kept in the database so the limits hold across API instances. Better Auth keys them by IP and
+    // path; the IP comes from x-forwarded-for, which the web host sets (ADR 0029, part 2).
+    rateLimit: {
+      enabled: true,
+      storage: "database",
+      customRules: {
+        "/sign-in/email": SIGN_IN_RATE,
+        "/two-factor/verify-totp": SIGN_IN_RATE,
+        "/two-factor/verify-backup-code": SIGN_IN_RATE,
+        "/passkey/verify-authentication": SIGN_IN_RATE,
+      },
+    },
     advanced: {
       database: { generateId: () => uuidv7() },
       useSecureCookies: deps.secureCookies,
       // The web app proxies /api/auth/* here, so the browser's host arrives as x-forwarded-host.
       trustedProxyHeaders: true,
+      ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
     },
     databaseHooks: {
       session: {
         create: {
           before: async (session, context) => {
-            const slug = hostCompanySlug(requestHost(context?.request?.headers ?? context?.headers));
-            const hostCompanyId = slug ? await deps.companies.idBySlug(slug) : null;
-            const memberships = await deps.companies.membershipsOf(session.userId);
-            const pick = pickCompany(
-              hostCompanyId,
-              memberships.map((company) => company.id),
+            const host = requestHost(context?.request?.headers ?? context?.headers);
+            const activeOrganizationId = await companyForNewSession(
+              deps,
+              session.userId,
+              session.activeOrganizationId as string | null | undefined,
+              host,
             );
-            if (pick.kind === "refuse") {
-              throw new APIError("FORBIDDEN", { code: pick.reason, message: REFUSALS[pick.reason] });
-            }
-            return {
-              data: { ...session, activeOrganizationId: pick.kind === "open" ? pick.companyId : null },
-            };
+            return { data: { ...session, activeOrganizationId } };
           },
         },
       },
     },
-    hooks: {
-      before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path.startsWith("/organization/") && !OPEN_ORGANIZATION_PATHS.has(ctx.path)) {
-          throw new APIError("NOT_FOUND");
-        }
-        // Direct server calls (SessionService.verify) apply the timeouts themselves.
-        if (!ctx.request || isSessionless(ctx.path)) return;
-        const current = await getSessionFromCtx(ctx);
-        if (!current) return;
-        // Blueprint p28: Better Auth's expiry is only a ceiling, so the company's idle and absolute
-        // timeouts are checked here as well as in SessionService. Without this, an endpoint such as
-        // set-active would accept an idle session and reset its activity time (updatedAt).
-        const timeouts = await deps.companies.timeoutsOf(current.session.activeOrganizationId);
-        const ended = sessionExpiry(current.session, timeouts, new Date());
-        if (ended) {
-          await ctx.context.internalAdapter.deleteSession(current.session.token);
-          throw new APIError("UNAUTHORIZED", { code: "session_expired", message: SESSION_ENDED_MESSAGES[ended] });
-        }
-        if (ctx.path === "/organization/set-active") {
-          await checkCompanySwitch(deps, ctx.body, current.user.id, requestHost(ctx.request.headers));
-        }
+    hooks: { before: beforeAuthHook(deps), after: afterAuthHook(deps) },
+    plugins: [
+      organization({ allowUserToCreateOrganization: false }),
+      twoFactor({
+        issuer: APP_NAME,
+        // Turning the app on or off needs the password (blueprint p27).
+        allowPasswordless: false,
+        backupCodeOptions: { amount: 10 },
+        // Same numbers as the password lockout. Better Auth counts consecutive failures.
+        accountLockout: {
+          enabled: true,
+          maxFailedAttempts: LOCKOUT.failures,
+          durationSeconds: LOCKOUT.lockMs / 1000,
+        },
       }),
-    },
-    plugins: [organization({ allowUserToCreateOrganization: false })],
+      // No rpID: each product host is its own relying party, taken from the allowed request host.
+      passkey({ rpName: APP_NAME }),
+    ],
   });
 }
 

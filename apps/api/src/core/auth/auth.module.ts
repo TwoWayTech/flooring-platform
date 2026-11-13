@@ -5,15 +5,17 @@ import type { EmailProvider } from "@workspace/providers";
 import type { ApiEnv } from "../config/env";
 import { CONTROL_DB } from "../database/control-db";
 import { EMAIL, EMAIL_FROM } from "../email/email.module";
+import { AttemptLog } from "./attempts";
 import { createAuth } from "./auth";
 import { AuthController } from "./auth.controller";
 import { CompanyDirectory } from "./company-directory";
+import { MfaPolicy } from "./mfa-policy";
 import { SessionGuard } from "./session.guard";
 import { SessionService } from "./session.service";
 import { AUTH } from "./tokens";
 
 /**
- * Sign-in (P8): the Better Auth instance, mounted on /api/auth/* by app.ts, plus the session
+ * Sign-in (P8): the Better Auth instance with MFA, lockout and rate limits, mounted on /api/auth/* by app.ts, plus the session
  * check that guarded endpoints use.
  */
 @Module({
@@ -24,12 +26,24 @@ import { AUTH } from "./tokens";
       useFactory: (control: DbHandle<ControlDb>) => new CompanyDirectory(control.db),
     },
     {
+      provide: MfaPolicy,
+      inject: [CONTROL_DB],
+      useFactory: (control: DbHandle<ControlDb>) => new MfaPolicy(control.db),
+    },
+    {
+      provide: AttemptLog,
+      inject: [CONTROL_DB],
+      useFactory: (control: DbHandle<ControlDb>) => new AttemptLog(control.db),
+    },
+    {
       provide: AUTH,
-      inject: [ConfigService, CONTROL_DB, CompanyDirectory, EMAIL, EMAIL_FROM],
+      inject: [ConfigService, CONTROL_DB, CompanyDirectory, MfaPolicy, AttemptLog, EMAIL, EMAIL_FROM],
       useFactory: (
         config: ConfigService<ApiEnv, true>,
         control: DbHandle<ControlDb>,
         companies: CompanyDirectory,
+        mfa: MfaPolicy,
+        attempts: AttemptLog,
         email: EmailProvider,
         emailFrom: string,
       ) => {
@@ -37,6 +51,8 @@ import { AUTH } from "./tokens";
         return createAuth({
           db: control.db,
           companies,
+          mfa,
+          attempts,
           email,
           emailFrom,
           secret: config.get("BETTER_AUTH_SECRET", { infer: true }),

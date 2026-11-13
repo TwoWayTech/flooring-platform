@@ -13,3 +13,5 @@ export async function scratchDatabase(label: string): Promise<{ url: string; dro
   const created = await provisioner.create({ tenantId: label, slug: `test_${label}_${process.pid}` });
   return { url: created.connectionUrl, drop: () => provisioner.drop(created.providerRef) };
 }
+
+export { totpCode, totpSecretFromUri } from "./totp";
