@@ -2,6 +2,7 @@ import { createParamDecorator, Injectable, SetMetadata, type CanActivate, type E
 import { Reflector } from "@nestjs/core";
 import { fromNodeHeaders } from "better-auth/node";
 import type { Request } from "express";
+import { accessLevel } from "../tenancy/access";
 import { SessionService, type AuthSession } from "./session.service";
 
 /** The request after SessionGuard has run. */
@@ -17,7 +18,7 @@ export const AllowMfaEnrolment = () => SetMetadata(ALLOW_MFA_ENROLMENT, true);
 
 /**
  * Lets a request through only with a valid session, checked by SessionService, and attaches it for
- * `@CurrentSession()`. Opt-in for now; P9 makes guards global and deny-by-default with the tenant guard.
+ * `@CurrentSession()`. Global and deny by default (TenancyModule, P9): only `@Public()` routes skip it.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -27,6 +28,7 @@ export class SessionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (accessLevel(this.reflector, context) === "public") return true;
     const request = context.switchToHttp().getRequest<SignedInRequest>();
     const allowMfaEnrolment =
       this.reflector.getAllAndOverride<boolean>(ALLOW_MFA_ENROLMENT, [context.getHandler(), context.getClass()]) ??

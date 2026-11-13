@@ -31,7 +31,11 @@ export function seededUserId(fixtureUserId: string): string {
   return seedId(`user:${fixtureUserId}`);
 }
 
-async function seedReferenceData(tx: ControlDb): Promise<void> {
+/**
+ * The fixed reference data every company needs: the two products and the US country pack with its
+ * states. Stable ids and no overwrites, so it is safe to run before any company is written.
+ */
+export async function ensureReferenceData(tx: ControlDb): Promise<void> {
   await tx
     .insert(products)
     .values(
@@ -203,7 +207,7 @@ async function seedPeople(
  */
 export async function seedControl(control: ControlDb, demo: DemoCompany, passwordHash?: string): Promise<string> {
   await control.transaction(async (tx) => {
-    await seedReferenceData(tx);
+    await ensureReferenceData(tx);
     const planId = await seedPlan(tx, demo);
     await seedTenant(tx, demo, planId);
     await seedPeople(tx, demo, passwordHash);

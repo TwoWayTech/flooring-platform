@@ -1,3 +1,5 @@
+import type { FloorPattern } from "./types/company";
+
 /** Products sold on the platform. Each company subscribes to exactly one in the demo. */
 export type ProductKey = "flooring" | "hr";
 
@@ -51,3 +53,12 @@ export function moduleInfo(key: ModuleKey): ModuleInfo {
   if (!found) throw new Error(`Unknown module ${key}`);
   return found;
 }
+
+/**
+ * The branding a new company of each product starts with, until its owner uploads their own. The
+ * login page uses it before a company is known, and provisioning writes it into tenant_branding.
+ */
+export const PRODUCT_DEFAULT_BRANDING: Record<ProductKey, { brandColor: string; pattern: FloorPattern }> = {
+  flooring: { brandColor: "#2E8B7E", pattern: "herringbone" },
+  hr: { brandColor: "#1F6FA8", pattern: "basketweave" },
+};

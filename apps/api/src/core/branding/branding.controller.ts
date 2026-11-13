@@ -10,6 +10,7 @@ import {
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { CompanyDirectory } from "../auth/company-directory";
 import { hostCompanySlug } from "../auth/company-pick";
+import { Public } from "../tenancy/access";
 import { CONTROL_DB } from "../database/control-db";
 import { brandingQuerySchema, publicBrandingOf, type PublicBranding } from "./public-branding";
 
@@ -39,6 +40,7 @@ const NOT_FOUND = "No company uses this address.";
  * display fields only. The logo arrives with the branding upload (P11).
  */
 @ApiTags("public")
+@Public()
 @Controller("public")
 export class BrandingController {
   constructor(

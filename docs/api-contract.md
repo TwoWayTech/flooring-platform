@@ -56,6 +56,21 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 
 **Auth only through the web host.** With `AUTH_PROXY_SECRET` set (required in production), any `/api/auth/*` request that does not carry the web proxy's secret answers 403 `proxy_required`. The web host answers 404 for `/api-proxy/api/auth/*`.
 
+## Tenancy (real build, P9, ADR 0030)
+
+Every Nest route needs a signed-in session with an open company, unless it is marked `@Public()` (`GET /health`, `GET /public/branding`) or `@SessionOnly()` (`GET /auth/context`). The guards run globally in this order: SessionGuard, then TenantGuard. So a new route is closed until it says otherwise.
+
+The company always comes from the verified session. A `companyId` or `tenantId` in the path, query, body or headers is never read. Company data is reached only through `TenantConnectionService.db(tenant)`, where `tenant` is the `@CurrentTenant()` context that TenantGuard made.
+
+| Status and code | When |
+| --- | --- |
+| 401 `unauthenticated` | No session, or a host Better Auth does not serve |
+| 403 `company_required` | The session has no open company (the chooser), or the company is deleted |
+| 403 `not_a_member` | The person was removed from the company during the session |
+| 403 `product_not_enabled` | The company lacks the product the web host serves (`x-demo-product`), or one the route requires with `@RequireProduct()` |
+| 403 `company_read_only` | A write (anything but GET, HEAD or OPTIONS) to a company that is suspended, cancelled, in maintenance mode, or whose database is read-only. Reading still works (blueprint p29, p40) |
+| 503 `company_unavailable` | The company database is not ready (provisioning, migrating or failed) |
+
 ## Session (demo route handlers, demo mode only)
 
 | Route | Body / response | Notes |

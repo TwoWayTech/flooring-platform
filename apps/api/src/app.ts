@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import type { INestApplication } from "@nestjs/common";
+import type { INestApplication, Type } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -65,9 +65,10 @@ function mountAuth(app: NestExpressApplication, proxySecret: string | undefined)
 /**
  * Builds the configured app without listening, so main.ts and the tests start it the same way:
  * CORS limited to our own web origins with cookies, sign-in, one error format, and the OpenAPI document.
+ * Tests may pass extra modules (AppModule.forRoot); main.ts passes none.
  */
-export async function createApp(): Promise<INestApplication> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(), {
+export async function createApp(extraModules: readonly Type[] = []): Promise<INestApplication> {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(extraModules), {
     logger: ["error", "warn", "log"],
     bodyParser: false,
   });

@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import type { Response } from "express";
 import type { ApiEnv } from "../config/env";
 import { CONTROL_DB } from "../database/control-db";
+import { Public } from "../tenancy/access";
 
 /** The health report: the API is up, and whether it can reach the control database. */
 export class HealthReport {
@@ -24,6 +25,7 @@ export class HealthReport {
  * monitoring). Public on purpose, so it reports nothing beyond up or down.
  */
 @ApiTags("health")
+@Public()
 @Controller("health")
 export class HealthController {
   constructor(

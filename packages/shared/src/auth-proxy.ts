@@ -9,3 +9,9 @@ export const AUTH_PROXY_HEADERS = {
   /** The shared AUTH_PROXY_SECRET, proving the request came through our web proxy. */
   proxySecret: "x-proxy-secret",
 } as const;
+
+/**
+ * The product the web host serves, which its proxy sets on every request it forwards (it overwrites
+ * any value the browser sent). The API refuses a company that does not have this product (P9).
+ */
+export const PRODUCT_HEADER = "x-demo-product";
