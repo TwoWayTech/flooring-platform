@@ -28,3 +28,32 @@ The company schema already holds every inventory table (P9 mapped them from docs
    - **Holds in api mode:** reservations and holds stay empty until sales moves.
 4. **Tests:** API integration tests (stripping, transfers end to end, refusals, correction, bin-only edits, audit, isolation); a Playwright api-mode test of the Inventory page; unit tests where rules are new.
 5. **Docs:** ADR 0035, the API contract, the blueprint delta and STATUS.
+
+## What was built
+As planned; see ADR 0035 and PR #12. `Actor`, `actorOf` and `parse` moved to `apps/api/src/core/access/request-actor.ts`, so modules share them.
+
+## Reviews
+- **Schema review:** no blocking findings. The should-fix items are done:
+  - UTC fixture times;
+  - the seed comment;
+  - the data-model rows;
+  - roll count checks;
+  - a test for a count above the books;
+  - soft-delete filters when loading by id.
+- **First security review:** 1 blocking. Splitting a product over several transfer lines could overspend stock. Fixed in the shared `validateTransfer` (lines are added up per product), with roll-line checks and correction guards.
+- **Security re-review:** no blocking findings. Its follow-ups are in STATUS.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck` and `pnpm format:check` pass.
+- The shared tests pass: 357, plus the new transfer rule cases.
+- The API tests pass: 207, plus the follow-up inventory cases (`inventory.int.test.ts`, 8).
+- The seed test passes: 5.
+- The web's vitest passes: 13.
+- Playwright in api mode runs in CI.
+
+## What is left
+- Inventory part 2 moves with sales (task 5): reservations, cut or issue, Ready to cut, and the quick invoice from Cut roll.
+- The follow-ups are in STATUS under "PR #12 reviews".
+
+## Next prompt
+"/resume. Continue the owner's second work queue with task 4, P11 purchasing."

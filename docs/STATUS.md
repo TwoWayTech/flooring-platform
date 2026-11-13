@@ -99,6 +99,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
 - **PR #12 reviews (none blocking):**
+  - `moveRoll` should take the stock lock and refuse a roll in transit, because receiving the transfer resets the bin the audit recorded.
+  - A roll correction should also check the `inventory.rolls` switch (and a boxed one `inventory.products`).
+  - `validateTransfer` should refuse a product no longer in the live catalog (latent: products cannot be deleted yet).
+  - Decide whether `GET /locations` honours the `inventory.locations` switch, and say so in docs/FEATURES.md.
+  - Add a test for two receives of one transfer at once.
   - `widthFt` and `reorderPoint` go out as JSON numbers because the shared types declare them so; make them decimal strings when those types are next touched (CLAUDE.md rule 6).
   - A stock correction changes inventory value: post it through LedgerService once P12 exists (rule 10).
   - The inventory tables have no indexes on their foreign keys (`rolls.product_id`, `rolls.location_id`, `roll_cuts.roll_id`, `transfer_lines.transfer_id`), and the SKU and roll-number unique indexes are not partial on `deleted_at`. A change to existing tables, so it waits for a schema task the owner approves.
