@@ -90,7 +90,7 @@ export async function loadCustomers(db: CompanyDb, ids?: readonly string[]): Pro
       .select()
       .from(addresses)
       .where(and(isNull(addresses.deletedAt), inArray(addresses.customerId, customerIds)))
-      .orderBy(asc(addresses.createdAt)),
+      .orderBy(asc(addresses.createdAt), asc(addresses.id)),
     db
       .select()
       .from(exemptionCertificates)
@@ -147,7 +147,8 @@ export async function loadQuotes(db: CompanyDb, ids?: readonly string[]): Promis
     db
       .select()
       .from(measurementRooms)
-      .where(and(isNull(measurementRooms.deletedAt), inArray(measurementRooms.quoteId, quoteIds))),
+      .where(and(isNull(measurementRooms.deletedAt), inArray(measurementRooms.quoteId, quoteIds)))
+      .orderBy(asc(measurementRooms.createdAt), asc(measurementRooms.id)),
     db
       .select()
       .from(quoteLines)

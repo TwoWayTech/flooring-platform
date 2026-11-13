@@ -424,8 +424,11 @@ async function seedOrders(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
  * and lines (sales, part 1; ADR 0037). Default addresses are set once the addresses exist.
  */
 async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const repOf = new Map(fixtures.customers.map((customer) => [customer.id, userOf(customer.salesRepId)]));
   for (const customer of fixtures.customers) {
     const id = seedId(customer.id);
+    const by = repOf.get(customer.id) ?? null;
+    const since = utc(customer.createdAt);
     await tx
       .insert(customers)
       .values({
@@ -441,15 +444,19 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
         salesRepId: customer.salesRepId ? seededUserId(customer.salesRepId) : null,
         lifecycle: customer.lifecycle ?? "customer",
         externalId: customer.externalId ?? null,
-        createdAt: utc(customer.createdAt),
+        createdAt: since,
+        createdBy: by,
       })
       .onConflictDoNothing();
     if (customer.addresses.length > 0) {
       await tx
         .insert(addresses)
         .values(
-          customer.addresses.map((address) => ({
+          customer.addresses.map((address, index) => ({
             id: seedId(address.id),
+            // The fixture's order, kept: the first address is the fallback default.
+            createdAt: new Date(since.getTime() + index * 1000),
+            createdBy: by,
             customerId: id,
             label: address.label,
             street: address.street,
@@ -473,7 +480,13 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
     if (customer.certificate) {
       await tx
         .insert(exemptionCertificates)
-        .values({ id: seedId(`${customer.id}:certificate`), customerId: id, ...customer.certificate })
+        .values({
+          id: seedId(`${customer.id}:certificate`),
+          customerId: id,
+          ...customer.certificate,
+          createdAt: since,
+          createdBy: by,
+        })
         .onConflictDoNothing();
     }
   }
@@ -487,6 +500,7 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
           name: contact.name,
           email: contact.email,
           phone: contact.phone,
+          createdBy: repOf.get(contact.customerId) ?? null,
         })),
       )
       .onConflictDoNothing();
@@ -520,8 +534,10 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
       await tx
         .insert(measurementRooms)
         .values(
-          quote.rooms.map((room) => ({
+          quote.rooms.map((room, index) => ({
             id: seedId(room.id),
+            createdAt: new Date(utc(quote.createdAt).getTime() + index * 1000),
+            createdBy: seededUserId(quote.salesRepId),
             quoteId: id,
             name: room.name,
             x: room.x,
@@ -552,6 +568,8 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
             sqFtPerCarton: line.sqFtPerCarton ?? null,
             locationId: line.locationId ? seedId(line.locationId) : null,
             roomIds: (line.roomIds ?? []).map((roomId) => seedId(roomId)),
+            createdAt: utc(quote.createdAt),
+            createdBy: seededUserId(quote.salesRepId),
           })),
         )
         .onConflictDoNothing();

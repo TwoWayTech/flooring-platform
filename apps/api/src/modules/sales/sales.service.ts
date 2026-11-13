@@ -488,7 +488,11 @@ export class SalesService {
     }
   }
 
-  /** Rooms and lines are replaced as a whole on each save; line room ids follow the rooms' new ids. */
+  /**
+   * Rooms and lines are replaced as a whole on each save; line room ids follow the rooms' new ids.
+   * Nothing may point at a quote line's id: an invoice copies its lines, and reservations point at
+   * invoice lines (ADR 0037). Rooms keep their order through staggered creation times.
+   */
   private async replaceRoomsAndLines(
     tx: CompanyDb,
     quoteId: string,
@@ -508,8 +512,9 @@ export class SalesService {
     const roomIds = new Map(rooms.map((room) => [room.id, uuidv7()]));
     if (rooms.length > 0) {
       await tx.insert(measurementRooms).values(
-        rooms.map((room) => ({
+        rooms.map((room, index) => ({
           id: roomIds.get(room.id)!,
+          createdAt: new Date(now.getTime() + index),
           quoteId,
           name: room.name,
           x: room.x,

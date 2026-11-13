@@ -100,6 +100,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
 - **Purchasing part 1 (ADR 0036):** a supplier with an unpaid bill can be deactivated until bills move with P12; supplier routes show `creditLimit` by the purchasing money keys through `@SensitiveFieldKeys`.
+- **Sales part 2 seed:** invoice-line fixture ids repeat quote-line ids (`sm-ln-0001`); seed invoice lines with a prefix (`seedId("invoice:" + id)`) (PR #14 schema review).
 - **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
 - **PR #13 reviews (none blocking):**
   - Make the 1 sq ft roll tolerance on receipts relative, so tiny receipts cannot repeat it.
