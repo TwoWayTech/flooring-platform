@@ -11,7 +11,7 @@ import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { InvoicesService } from "./invoices.service";
 import { PaymentsService } from "./payments.service";
-import { DAY, requireFeature, requireLedger } from "./sales-common";
+import { DAY, requireFeature } from "./sales-common";
 
 /** Money as typed: digits with at most two decimals (spec rule 25). Above zero is the rule's to say. */
 const MONEY = z
@@ -92,7 +92,7 @@ export class InvoicesController {
 
   /** GET /payments: payments on invoices within scope, for invoice viewers and approvers. */
   @Get("payments")
-  @RequirePermission("sales.invoice.view", "sales.payment.approve")
+  @RequirePermission("sales.payment.view", "sales.payment.approve")
   paymentList(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
     requireFeature("sales.invoices");
     return this.invoices.payments(tenant, access);
@@ -108,7 +108,7 @@ export class InvoicesController {
 
   /** GET /refunds: refunds to customers within scope. */
   @Get("refunds")
-  @RequirePermission("sales.invoice.view", "sales.payment.refund")
+  @RequirePermission("sales.payment.view", "sales.payment.refund")
   refunds(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
     requireFeature("sales.invoices");
     return this.invoices.refunds(tenant, access);
@@ -118,6 +118,7 @@ export class InvoicesController {
   @Get("reservations")
   @RequirePermission("inventory.product.view", "inventory.roll.view", "sales.invoice.view")
   reservations(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireFeature("sales.invoices");
     return this.invoices.reservations(tenant, access);
   }
 
@@ -133,7 +134,6 @@ export class InvoicesController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ) {
     requireFeature("sales.invoices");
-    requireLedger();
     return this.invoices.convert(tenant, actorOf(access, session, request), id);
   }
 
@@ -165,7 +165,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.invoices");
-    requireLedger();
     return this.invoices.voidInvoice(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -182,7 +181,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.invoices");
-    requireLedger();
     return this.invoices.creditNote(tenant, actorOf(access, session, request), id, parse(CREDIT_NOTE, body));
   }
 
@@ -199,7 +197,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     return this.invoices.writeOff(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -215,7 +212,6 @@ export class InvoicesController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     return this.invoices.applyCredit(tenant, actorOf(access, session, request), id);
   }
 
@@ -231,7 +227,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     const { files, ...input } = parse(RECORD_PAYMENT, body);
     return this.payments.record(tenant, actorOf(access, session, request), input, files);
   }
@@ -249,7 +244,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     return this.payments.review(tenant, actorOf(access, session, request), id, parse(REVIEW, body));
   }
 
@@ -266,7 +260,6 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     return this.payments.voidPayment(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
@@ -298,14 +291,13 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.payments");
-    requireLedger();
     const { files, ...input } = parse(REFUND, body);
     return this.payments.refund(tenant, actorOf(access, session, request), input, files);
   }
 
   /** GET /files/:id: a proof file, opened in place; only within the person's data scope. */
   @Get("files/:id")
-  @RequirePermission("sales.invoice.view", "sales.payment.approve", "sales.payment.refund")
+  @RequirePermission("sales.payment.view", "sales.payment.approve", "sales.payment.refund")
   async file(
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,

@@ -15,15 +15,25 @@ export function requireFeature(key: FeatureKey): void {
   if (!featureOn(key)) throw new NotFoundException();
 }
 
+/** Whether money writes are open; nothing in the app or its configuration opens them. */
+let ledgerOpen = false;
+
+/**
+ * Opens the money writes for the integration tests, which exercise their rules (ADR 0038). Only
+ * test code calls this; P12 removes it together with `requireLedger`.
+ */
+export function openLedgerForTests(): void {
+  ledgerOpen = true;
+}
+
 /**
  * Every financial event posts a balanced journal entry through LedgerService (CLAUDE.md rule 10),
  * which P12 builds next. Until then invoices, credit notes and money are not written on the real
- * API: 409 `ledger_pending`, as bills and supplier payments wait (ADR 0036, ADR 0038). The rules
- * behind them run in the integration tests only (NODE_ENV=test). P12 replaces this gate with the
- * postings.
+ * API: 409 `ledger_pending`, as bills and supplier payments wait (ADR 0036, ADR 0038). Each money
+ * write in the services calls this first. P12 replaces it with the postings.
  */
 export function requireLedger(): void {
-  if (process.env.NODE_ENV === "test") return;
+  if (ledgerOpen) return;
   throw new ConflictException({
     code: "ledger_pending",
     message: "Invoices and payments are recorded here once the company ledger is switched on.",

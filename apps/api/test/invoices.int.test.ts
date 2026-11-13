@@ -3,6 +3,8 @@ import {
   branches,
   locations,
   products,
+  rolePermissions,
+  roles,
   settings,
   stockMovements,
   taxRules,
@@ -15,6 +17,7 @@ import { createRequire } from "node:module";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { openLedgerForTests } from "../src/modules/sales/sales-common";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Summit's localization settings, without the tax tables, as a company's settings row holds them. */
@@ -46,7 +49,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   let otherWarehouse = "";
   let otherTile = "";
   let tile = "";
-  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "" };
+  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "" };
 
   function call(method: "get" | "post", path: string, cookie: string) {
     return request(harness.app.getHttpServer())
@@ -194,6 +197,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   }
 
   beforeAll(async () => {
+    // The money rules run here; in the app they wait for P12's journal entries (ADR 0038).
+    openLedgerForTests();
     await harness.start();
     company = await harness.provisionCompany("bill");
     other = await harness.provisionCompany("billother");
@@ -203,7 +208,19 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     otherWarehouse = theirs.warehouse;
     otherTile = theirs.tile;
     tile = mine.tile;
+    // A custom role that sees invoices but not money (PR #15 security review).
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [role] = await handle.db
+        .insert(roles)
+        .values({ key: "dispatcher", name: "Dispatcher", dataScope: "all" as const })
+        .returning();
+      await handle.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "sales.invoice.view" });
+    } finally {
+      await handle.close();
+    }
     const emails = {
+      dispatcher: await harness.addUser({ companyIds: [company.id], roles: ["dispatcher"] }),
       salesA: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       salesB: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
@@ -216,6 +233,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     cookies.accountant = await enrolled(emails.accountant);
     cookies.owner = await enrolled(emails.owner);
     cookies.otherSales = await harness.signIn(emails.otherSales);
+    cookies.dispatcher = await harness.signIn(emails.dispatcher);
   }, 120_000);
 
   afterAll(async () => {
@@ -374,6 +392,13 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(payments.find((p) => p.id === pending.body.id)?.status).toBe("voided");
     const holds = (await call("get", "/reservations", cookies.owner)).body as { invoiceId: string; status: string }[];
     expect(holds.filter((r) => r.invoiceId === invoice.id).every((r) => r.status === "released")).toBe(true);
+  });
+
+  it("keeps payments, refunds and proof from someone who may see invoices but not money", async () => {
+    expect((await call("get", "/invoices", cookies.dispatcher)).status).toBe(200);
+    expect((await call("get", "/payments", cookies.dispatcher)).status).toBe(403);
+    expect((await call("get", "/refunds", cookies.dispatcher)).status).toBe(403);
+    expect((await call("get", `/files/${uuidv7()}`, cookies.dispatcher)).status).toBe(403);
   });
 
   it("never reaches another company's invoices, payments or files", async () => {

@@ -47,7 +47,7 @@ import {
   loadRefunds,
   loadReservations,
 } from "./invoice-records";
-import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
+import { companyToday, notFound, refuse, requireLedger, seesCustomer, seesDocument } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** The first invoice number, as in the demo (`INV-1001`), and the credit note series (`CR-5001`, spec rule 22). */
@@ -139,6 +139,7 @@ export class InvoicesService {
    * and does not block the sale.
    */
   async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
+    requireLedger();
     const db = await this.tenancy.db(tenant);
     const day = await companyToday(this.control.db, tenant);
     const id = uuidv7();
@@ -277,6 +278,7 @@ export class InvoicesService {
    * credit would go below what was spent.
    */
   async voidInvoice(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<Invoice> {
+    requireLedger();
     const why = reasonFor(reason, "the invoice is voided");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -309,6 +311,22 @@ export class InvoicesService {
           .update(paymentsReceived)
           .set({ status: "voided", voidedById: actor.access.userId, voidedAt: now, voidReason: why, updatedAt: now })
           .where(inArray(paymentsReceived.id, pending));
+        for (const voided of payments.filter((payment) => payment.status === "pending")) {
+          await this.auditLog.record(
+            tenant,
+            actor.audit,
+            {
+              category: "payment",
+              action: "Voided payment",
+              targetType: "payment",
+              targetId: voided.id,
+              targetLabel: `${voided.number} on ${invoice.number}`,
+              before: { amount: voided.amount, status: "pending" },
+              after: { status: "voided", reason: why, withInvoice: true },
+            },
+            tx,
+          );
+        }
       }
       await tx
         .update(invoices)
@@ -351,6 +369,7 @@ export class InvoicesService {
     invoiceId: string,
     request: CreditNoteRequest,
   ): Promise<Invoice> {
+    requireLedger();
     const why = reasonFor(request.reason, "the credit note is issued");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -421,6 +440,7 @@ export class InvoicesService {
    * maximum. The invoice then reads Paid.
    */
   async writeOff(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<InvoiceAdjustment> {
+    requireLedger();
     const why = reasonFor(reason, "the balance is written off");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -429,8 +449,10 @@ export class InvoicesService {
       loadPaymentSettings(db),
       loadMoneyFormat(db),
     ]);
-    return this.adjust(tenant, actor, found, day, "Wrote off balance", (balance) => {
+    return this.adjust(tenant, actor, found, day, "Wrote off balance", ({ balance, pending }) => {
       if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to write off.`);
+      // A payment that waits could still settle it; writing off first would turn it into credit.
+      if (pending.gt(0)) throw refuse(`Verify or reject the payment waiting on ${found.number} first.`);
       const max = settings.writeOffMax.trim();
       if (max && balance.gt(max)) {
         throw refuse(
@@ -443,10 +465,11 @@ export class InvoicesService {
 
   /** Applies the customer's credit to an invoice (spec rule 36): as much as the balance takes. */
   async applyCredit(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<InvoiceAdjustment> {
+    requireLedger();
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
     const day = await companyToday(this.control.db, tenant);
-    return this.adjust(tenant, actor, found, day, "Applied customer credit", (balance, credit) => {
+    return this.adjust(tenant, actor, found, day, "Applied customer credit", ({ balance, credit }) => {
       if (credit.lte(0)) throw refuse("This customer has no credit to apply.");
       if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to pay.`);
       return {
@@ -464,10 +487,11 @@ export class InvoicesService {
     found: Invoice,
     day: string,
     action: string,
-    decide: (
-      balance: ReturnType<typeof dec>,
-      credit: ReturnType<typeof dec>,
-    ) => Pick<InvoiceAdjustment, "kind" | "amount" | "reason">,
+    decide: (now: {
+      balance: ReturnType<typeof dec>;
+      credit: ReturnType<typeof dec>;
+      pending: ReturnType<typeof dec>;
+    }) => Pick<InvoiceAdjustment, "kind" | "amount" | "reason">,
   ): Promise<InvoiceAdjustment> {
     const db = await this.tenancy.db(tenant);
     const id = uuidv7();
@@ -476,7 +500,7 @@ export class InvoicesService {
       const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, day);
       if (ledger.state === "void" || ledger.state === "return") throw refuse(`Invoice ${invoice.number} owes nothing.`);
       const credit = await creditNow(tx, this.control.db, invoice.customerId, day);
-      const decided = decide(dec(ledger.balance), credit);
+      const decided = decide({ balance: dec(ledger.balance), credit, pending: dec(ledger.pending) });
       const now = new Date();
       await tx.insert(invoiceAdjustments).values({
         id,

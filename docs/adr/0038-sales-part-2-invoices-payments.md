@@ -10,7 +10,7 @@
   - recording, confirming and voiding a payment;
   - a write-off, applying credit and a refund.
 
-  This is how bills and supplier payments wait (ADR 0036). Reads, Mark as sent and attaching proof are open. The rules run in the integration tests only (`NODE_ENV=test`). P12 replaces the gate with the postings, so no money is recorded without its entry and nothing needs a backfill (PR #15 security review).
+  This is how bills and supplier payments wait (ADR 0036). Reads, Mark as sent and attaching proof are open. Each service method calls `requireLedger` first. No environment variable or setting opens it; only the integration tests call `openLedgerForTests` to exercise the rules. P12 replaces the gate with the postings, so no money is recorded without its entry and nothing needs a backfill (PR #15 security review).
 - **Data scope:** invoices follow the same rule as quotes, by the invoice's rep and branch. Payments and adjustments follow their invoice. Refunds follow their customer. Reservations are shown in full to stock viewers (`inventory.product.view` or `inventory.roll.view`), who pick against them; anyone else sees only the holds of their own invoices. Anything outside scope answers 404.
 - **Conversion:**
   - An accepted, open quote is converted once, under a lock on the quote row, and must still pass every send check.

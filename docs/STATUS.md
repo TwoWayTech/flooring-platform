@@ -110,7 +110,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Accountant: should an exemption certificate count only in its own state? `taxContextFor` checks only that it is valid on the date.
 - **Contract invoices and seeded proofs:** the three contract billing invoices (and their two payments) are seeded with the contracts module, because their foreign keys need contract rows. Seeded payments have no proof files, because the fixtures have no bytes (ADR 0038).
 - **Ledger gate (task 6):** until P12 posts their journal entries, the sales money writes answer 409 `ledger_pending` on the real API (`requireLedger` in `modules/sales/sales-common.ts`). P12 must replace each call with its posting and remove the gate (ADR 0038).
-- **PR #15 review, open item:** the `payment.to_verify` note goes to every holder of `sales.payment.approve`; leave out holders whose data scope doesn't cover the invoice.
+- **PR #15 reviews, open items:**
+  - **Decide in P12, before opening the gate:** a credit note on an unpaid invoice becomes customer credit that one person can refund as cash. The safe default for P12 applies a note to its own invoice's open balance first, so only the rest becomes refundable credit, and makes refunds above the payment threshold wait for a second person. Record it in blueprint-delta.
+  - Rate-limit the three proof routes per IP. The 21 MB body is parsed for any request that carries a session cookie, before the cookie is verified.
+  - The `payment.to_verify` note goes to every holder of `sales.payment.approve`; leave out holders whose data scope doesn't cover the invoice.
 - **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
 - **PR #13 reviews (none blocking):**
   - Make the 1 sq ft roll tolerance on receipts relative, so tiny receipts cannot repeat it.

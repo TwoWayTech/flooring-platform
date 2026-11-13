@@ -166,9 +166,9 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split |
-| `GET /payments` | `sales.invoice.view` or `sales.payment.approve` | Payments on invoices within scope, with their files |
+| `GET /payments` | `sales.payment.view` or `sales.payment.approve` | Payments on invoices within scope, with their files |
 | `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
-| `GET /refunds` | `sales.invoice.view` or `sales.payment.refund` | Refunds to customers within scope |
+| `GET /refunds` | `sales.payment.view` or `sales.payment.refund` | Refunds to customers within scope |
 | `GET /reservations` | `inventory.product.view`, `inventory.roll.view` or `sales.invoice.view` | Every hold for stock viewers; otherwise the holds of invoices within scope |
 | `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing` |
 | `POST /invoices/:id/sent` | `sales.invoice.edit` or `sales.invoice.create` | Marks it sent once and emails `invoice.sent` |
@@ -181,7 +181,7 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 | `POST /payments/:id/void` | `sales.payment.void` | `{ reason }`; refused when its overpayment was already spent as credit |
 | `POST /payments/:id/files` | `sales.payment.record` | `{ files }`; up to 3 in all, not on voided or rejected payments |
 | `POST /refunds` | `sales.payment.refund` | `RefundInput` plus `files`; at most the customer's credit |
-| `GET /files/:id` | `sales.invoice.view`, `sales.payment.approve` or `sales.payment.refund` | A proof file within scope, `inline`, `nosniff`, not cached |
+| `GET /files/:id` | `sales.payment.view`, `sales.payment.approve` (payment proof) or `sales.payment.refund` (refund proof) | A proof file within scope, `inline`, `nosniff`, not cached |
 
 ## Notifications and Outbox (real build, ADR 0032)
 
