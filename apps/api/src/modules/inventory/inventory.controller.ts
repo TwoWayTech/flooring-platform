@@ -72,10 +72,15 @@ export class InventoryController {
   @Get("stock-movements")
   @RequirePermission("inventory.product.view")
   movements(@CurrentTenant() tenant: TenantContext) {
+    requireFeature("inventory.products");
     return this.inventory.movements(tenant);
   }
 
-  /** GET /locations: warehouses and showrooms; every module picks one, so any member may read them. */
+  /**
+   * GET /locations: warehouses and showrooms. Every module picks one, so any member of a company
+   * with the `core` module may read them: shared reference data, not someone's own records
+   * (an exception to `@AnyCompanyMember`'s usual meaning, recorded in docs/api-contract.md).
+   */
   @Get("locations")
   @AnyCompanyMember()
   locations(@CurrentTenant() tenant: TenantContext) {

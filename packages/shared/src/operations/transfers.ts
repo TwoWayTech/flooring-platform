@@ -14,6 +14,8 @@ export interface TransferInput {
  * Why a transfer cannot start, or null when it can (spec A1): both ends are different
  * warehouses (showrooms hold no sellable stock, plan A-1), every roll is at the sender and not
  * already travelling, and boxed quantities are whole cartons or items and no more than the sender holds.
+ * Lines of one product are added up before they are compared with what the sender holds, a roll
+ * line must name the roll's own product, and a roll may appear once (PR #12 security review).
  */
 export function validateTransfer(
   input: TransferInput,
@@ -28,11 +30,16 @@ export function validateTransfer(
   if (from.kind !== "warehouse" || to.kind !== "warehouse") return "Showrooms hold no sellable stock.";
   if (from.id === to.id) return "Choose two different warehouses.";
   if (input.lines.length === 0) return "Add at least one item to the transfer.";
+  const seenRolls = new Set<string>();
+  const sending = new Map<string, ReturnType<typeof dec>>();
   for (const line of input.lines) {
     if (line.rollId) {
       const roll = rolls.find((r) => r.id === line.rollId);
       if (!roll || roll.locationId !== from.id) return `That roll is not at ${from.name}.`;
+      if (roll.productId !== line.productId) return `Roll ${roll.rollNumber} is a different product.`;
       if (roll.transferId) return `Roll ${roll.rollNumber} is already on a transfer.`;
+      if (seenRolls.has(roll.id)) return `Roll ${roll.rollNumber} is on the transfer twice.`;
+      seenRolls.add(roll.id);
       continue;
     }
     const quantity = dec(line.quantity || "0");
@@ -42,8 +49,11 @@ export function validateTransfer(
     if (pack ? !quantity.dividedBy(pack).isInteger() : !quantity.isInteger()) {
       return pack ? `Move whole cartons: multiples of ${pack} sq ft.` : "Move whole items.";
     }
-    const held = boxedOnHand(movements, line.productId, from.id);
-    if (quantity.gt(held)) return `Only ${held.toString()} on hand at ${from.name} for one of the items.`;
+    sending.set(line.productId, (sending.get(line.productId) ?? dec(0)).plus(quantity));
+  }
+  for (const [productId, total] of sending) {
+    const held = boxedOnHand(movements, productId, from.id);
+    if (total.gt(held)) return `Only ${held.toString()} on hand at ${from.name} for one of the items.`;
   }
   return null;
 }

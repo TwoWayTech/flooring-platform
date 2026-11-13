@@ -133,6 +133,14 @@ async function seedAccess(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
   }
 }
 
+/**
+ * A fixture timestamp as an instant. Fixture times such as `2026-04-16T14:15` carry no zone, which
+ * JavaScript would read as the machine's local time; they are UTC, so every machine seeds the same.
+ */
+function utc(value: string): Date {
+  return new Date(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value) ? `${value}Z` : value);
+}
+
 /** A fixture user id as the control database's user id, or null when there is none. */
 function userOf(id: string | null | undefined): string | null {
   return id ? seededUserId(id) : null;
@@ -141,8 +149,9 @@ function userOf(id: string | null | undefined): string | null {
 /**
  * The catalog and stock of the demo company (inventory, part 1; ADR 0035): products, transfers,
  * rolls with their cuts, and the boxed-stock ledger, with the seed's deterministic ids. Suppliers
- * arrive with purchasing (task 4), so products have none yet. Rows that point at invoices or
- * receipts keep the source's id and number as text, as the ledger stores them.
+ * arrive with purchasing (task 4), so products have none yet. Rows that point at an invoice or a
+ * receipt store that document's `seedId` and number, so they match it once sales and purchasing
+ * seed their documents with the same ids (there is no foreign key).
  */
 async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   if (fixtures.products.length === 0) return;
@@ -165,7 +174,7 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
         reorderPoint: product.reorderPoint === undefined ? null : String(product.reorderPoint),
         widthFt: product.widthFt === undefined ? null : String(product.widthFt),
         attributes: product.attributes,
-        createdAt: new Date(product.createdAt),
+        createdAt: utc(product.createdAt),
       })),
     )
     .onConflictDoNothing();
@@ -179,10 +188,10 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
           fromId: seedId(transfer.fromId),
           toId: seedId(transfer.toId),
           status: transfer.status,
-          receivedAt: transfer.receivedAt ? new Date(transfer.receivedAt) : null,
+          receivedAt: transfer.receivedAt ? utc(transfer.receivedAt) : null,
           receivedBy: userOf(transfer.receivedBy),
           note: transfer.note,
-          createdAt: new Date(transfer.createdAt),
+          createdAt: utc(transfer.createdAt),
           createdBy: userOf(transfer.createdBy),
         })),
       )
@@ -207,7 +216,7 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
         transferId: roll.transferId ? seedId(roll.transferId) : null,
         isRemnant: roll.isRemnant,
         parentRollId: roll.parentRollId ? seedId(roll.parentRollId) : null,
-        receivedAt: new Date(roll.receivedAt),
+        receivedAt: utc(roll.receivedAt),
       })
       .onConflictDoNothing();
     if (roll.cuts.length === 0) continue;
@@ -217,7 +226,7 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
         roll.cuts.map((cut) => ({
           id: seedId(cut.id),
           rollId: seedId(roll.id),
-          at: new Date(cut.at),
+          at: utc(cut.at),
           lengthFt: cut.lengthFt,
           reference: cut.reference,
           byUserId: userOf(cut.byUserId),
@@ -244,7 +253,7 @@ async function seedCatalog(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
       .values(
         fixtures.stockMovements.map((movement) => ({
           id: seedId(movement.id),
-          at: new Date(movement.at),
+          at: utc(movement.at),
           productId: seedId(movement.productId),
           locationId: seedId(movement.locationId),
           quantity: movement.quantity,

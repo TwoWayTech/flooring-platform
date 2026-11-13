@@ -1,7 +1,7 @@
 import type { CompanyDb } from "@workspace/db";
 import { locations, products, rollCuts, rolls, stockMovements, transferLines, transfers } from "@workspace/db/company";
 import type { Location, Product, Roll, StockMovement, Transfer } from "@workspace/shared";
-import { asc, inArray, isNull } from "drizzle-orm";
+import { and, asc, inArray, isNull } from "drizzle-orm";
 
 /** A timestamp as the screens read it, `yyyy-MM-ddTHH:mm` like the demo's records. */
 function stamp(value: Date): string {
@@ -42,7 +42,7 @@ export async function loadRolls(db: CompanyDb, ids?: readonly string[]): Promise
   const rows = await db
     .select()
     .from(rolls)
-    .where(ids ? inArray(rolls.id, [...ids]) : isNull(rolls.deletedAt))
+    .where(and(isNull(rolls.deletedAt), ids ? inArray(rolls.id, [...ids]) : undefined))
     .orderBy(asc(rolls.rollNumber));
   if (rows.length === 0) return [];
   const cuts = await db
@@ -120,7 +120,7 @@ export async function loadTransfers(db: CompanyDb, ids?: readonly string[]): Pro
   const rows = await db
     .select()
     .from(transfers)
-    .where(ids ? inArray(transfers.id, [...ids]) : isNull(transfers.deletedAt))
+    .where(and(isNull(transfers.deletedAt), ids ? inArray(transfers.id, [...ids]) : undefined))
     .orderBy(asc(transfers.createdAt));
   if (rows.length === 0) return [];
   const lines = await db

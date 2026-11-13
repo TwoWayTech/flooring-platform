@@ -108,6 +108,8 @@ export class InventoryService {
       ]);
       const problem = validateTransfer(input, locations, allRolls, movements, products);
       if (problem) throw new BadRequestException({ code: "invalid_transfer", message: problem });
+      // A roll travels whole: its line's length is the roll's, never what the client sent.
+      const lengthOf = (rollId: string) => allRolls.find((roll) => roll.id === rollId)!.remainingLengthFt;
       const transfer: Transfer = {
         id: uuidv7(),
         number: nextNumber(
@@ -118,7 +120,11 @@ export class InventoryService {
         fromId: input.fromId,
         toId: input.toId,
         status: "in_transit",
-        lines: input.lines.map((line) => ({ ...line, id: uuidv7() })),
+        lines: input.lines.map((line) => ({
+          ...line,
+          quantity: line.rollId ? lengthOf(line.rollId) : line.quantity,
+          id: uuidv7(),
+        })),
         createdAt: new Date().toISOString(),
         createdBy: actor.access.userId,
         receivedAt: null,
@@ -157,7 +163,11 @@ export class InventoryService {
           targetType: "transfer",
           targetId: transfer.id,
           targetLabel: transfer.number,
-          after: { fromId: transfer.fromId, toId: transfer.toId, lines: transfer.lines.length },
+          after: {
+            fromId: transfer.fromId,
+            toId: transfer.toId,
+            lines: transfer.lines.map(({ productId, rollId, quantity }) => ({ productId, rollId, quantity })),
+          },
         },
         tx,
       );
@@ -244,6 +254,8 @@ export class InventoryService {
     if (reason.length < 3) throw refuse("Say why the count is being corrected.");
     const counted = dec(input.counted);
     if (counted.lt(0)) throw refuse("A count cannot be negative.");
+    // Quantities are numeric(14,3): more decimals would be rounded silently by the database.
+    if (counted.decimalPlaces() > 3 || counted.gte("1e10")) throw refuse("Count to at most 3 decimals.");
     const db = await this.tenancy.db(tenant);
     return db.transaction(async (tx) => {
       await lockStock(tx);
@@ -251,9 +263,14 @@ export class InventoryService {
       if (!product || !stockUnit(product)) throw refuse("This product is not stocked.");
       const roll = input.rollId ? (await loadRolls(tx, [input.rollId]))[0] : undefined;
       if (input.rollId && (!roll || roll.productId !== product.id)) throw refuse("This roll no longer exists.");
+      if (roll?.transferId) throw refuse("This roll is in transit; count it after it is received.");
+      // Carpet is counted roll by roll; boxed goods by warehouse, never in a showroom (plan A-1).
+      if (stockUnit(product) === "ft" && !roll) throw refuse("Count carpet roll by roll.");
+      if (stockUnit(product) !== "ft" && roll) throw refuse("This product is not kept on rolls.");
       if (!roll) {
         const locations = await loadLocations(tx);
-        if (!locations.some((location) => location.id === input.locationId)) throw refuse("Choose a warehouse.");
+        const location = locations.find((candidate) => candidate.id === input.locationId);
+        if (location?.kind !== "warehouse") throw refuse("Choose a warehouse; showrooms hold no stock.");
         const pack = product.sqFtPerCarton;
         if (pack ? !counted.dividedBy(pack).isInteger() : !counted.isInteger()) {
           throw refuse(pack ? `Count whole cartons: multiples of ${pack} sq ft.` : "Count whole items.");
@@ -305,6 +322,7 @@ export class InventoryService {
       const source = { kind: "adjustment" as const, id: adjustment.id, number: adjustment.number };
       if (roll) {
         await tx.update(rolls).set({ remainingLengthFt: counted.toString() }).where(eq(rolls.id, roll.id));
+        // A count above the books is a negative cut: it adds length back, as the demo's ledger reads it.
         await tx.insert(rollCuts).values({
           rollId: roll.id,
           at: now,

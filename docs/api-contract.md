@@ -120,7 +120,7 @@ Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are str
 | `GET /products` | `inventory.product.view` | The catalog (`Product`) |
 | `GET /rolls` | `inventory.roll.view` | Rolls and remnants with their cuts (`Roll`) |
 | `GET /stock-movements` | `inventory.product.view` | The boxed-stock ledger (`StockMovement`) |
-| `GET /locations` | Any company member | Warehouses and showrooms (`Location`) |
+| `GET /locations` | Any company member | Warehouses and showrooms (`Location`). Shared reference data every module picks from, so `@AnyCompanyMember` here does not mean the person's own records |
 | `GET /transfers` | `inventory.transfer.view` | Transfers with their lines, newest first |
 | `POST /transfers` | `inventory.transfer.create` | `{ fromId, toId, lines: [{ productId, rollId, quantity }], note }`. 400 `invalid_transfer` (same warehouse, a showroom, more than on hand, a part carton, a roll elsewhere or already travelling) |
 | `POST /transfers/:id/receive` | `inventory.transfer.receive` | 409 `already_received` |

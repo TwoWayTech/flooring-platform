@@ -211,6 +211,16 @@ describe("inventory part 1 (P11, needs the local PostgreSQL)", () => {
     expect(
       (await send([{ productId: stock.tile, rollId: null, quantity: "20" }], stock.warehouseB, cookies.sales)).status,
     ).toBe(403);
+    // One product split over several lines is added up (PR #12 security review).
+    const onHandNow = Number(await onHand(stock.tile, stock.warehouseA));
+    const split = await send([
+      { productId: stock.tile, rollId: null, quantity: String(onHandNow) },
+      { productId: stock.tile, rollId: null, quantity: String(onHandNow) },
+    ]);
+    expect(split.body.code).toBe("invalid_transfer");
+    expect(await onHand(stock.tile, stock.warehouseA)).toBe(String(onHandNow));
+    const mislabelled = await send([{ productId: stock.tile, rollId: stock.roll, quantity: "1" }]);
+    expect(mislabelled.status).toBe(400);
   });
 
   it("lets the Owner correct a count with a reason, and nobody else", async () => {
@@ -261,6 +271,36 @@ describe("inventory part 1 (P11, needs the local PostgreSQL)", () => {
     );
     expect(measured.remainingLengthFt).toBe("92.500");
     expect(measured.cuts.at(-1)).toMatchObject({ lengthFt: "7.500", reference: roll.body.number });
+  });
+
+  it("adds length back for a count above the books, and refuses too many decimals", async () => {
+    const before = (await call("get", "/rolls", cookies.manager)).body.find(
+      (item: { id: string }) => item.id === stock.roll,
+    );
+    const raised = Number(before.remainingLengthFt) + 2;
+    const up = await call("post", "/stock/corrections", owner)
+      .send({
+        productId: stock.carpet,
+        rollId: stock.roll,
+        locationId: before.locationId,
+        counted: String(raised),
+        reason: "Found more",
+      })
+      .expect(201);
+    expect(up.body.quantity).toBe("2");
+    const after = (await call("get", "/rolls", cookies.manager)).body.find(
+      (item: { id: string }) => item.id === stock.roll,
+    );
+    expect(Number(after.remainingLengthFt)).toBe(raised);
+    expect(after.cuts.at(-1).lengthFt).toBe("-2.000");
+    const precise = await call("post", "/stock/corrections", owner).send({
+      productId: stock.carpet,
+      rollId: stock.roll,
+      locationId: before.locationId,
+      counted: "1.234",
+      reason: "Precise",
+    });
+    expect(precise.status).toBe(201);
   });
 
   it("moves a roll to another bin and changes nothing else", async () => {
