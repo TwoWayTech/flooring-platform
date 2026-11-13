@@ -17,10 +17,17 @@ Every variable the apps read, with the local default. Put real values in a local
 | `STORAGE_PROVIDER` | api | `memory` | `r2`, `s3` or `memory` |
 | `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | `STORAGE_PROVIDER=r2` or `s3` | empty | For R2, `S3_ENDPOINT` is `https://<account>.r2.cloudflarestorage.com` and `S3_REGION` is `auto` |
 | `BETTER_AUTH_SECRET` | api | generate one | Signs session cookies and tokens; at least 32 characters: `npx auth secret`. Changing it signs everyone out |
-| `AUTH_ALLOWED_HOSTS` | api | `localhost:*` | Comma-separated web hosts that serve sign-in, wildcards allowed (`*.vercel.app`). Verification links and origin checks use them (ADR 0029) |
+| `AUTH_ALLOWED_HOSTS` | api | `localhost:*` outside production | Comma-separated web hosts that serve sign-in. Verification links and origin checks use them (ADR 0029). In production it is required and must list exact hosts: the API refuses to start with a wildcard, because the forwarded host is trusted and a shared wildcard such as `*.vercel.app` would let another site receive our links |
 | `SEED_USER_PASSWORD` | db scripts | empty | Password `pnpm db:seed` gives every seeded user, at least 12 characters. Unset: the seeded users get no password. Only new credentials get it; it never changes an existing one |
 | `E2E_USER_PASSWORD` | web api-mode e2e | `SEED_USER_PASSWORD` | Password the api-mode Playwright tests sign in with |
 | `EMAIL_PROVIDER` | api | `memory` | `resend` or `memory`. `memory` sends nothing (locally, verification links stay in the API's memory) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | `EMAIL_PROVIDER=resend` | empty | `EMAIL_FROM` must be on a verified domain |
+
+P8 part 2 adds two variables (ADR 0029, part 2):
+
+| Name | Used by | Local value | Notes |
+| --- | --- | --- | --- |
+| `AUTH_PROXY_SECRET` | api, web | empty | At least 32 random characters; the same value on both. The web host sends it with every proxied `/api/auth/*` request, together with the browser's IP in `x-client-ip`. The API trusts that IP only when the secret matches; otherwise it counts the socket address, so a direct caller cannot choose its own rate-limit bucket. Required in production. Locally, without it, the forwarded IP is trusted. The web host must run behind an edge that overwrites `x-forwarded-for` (Vercel does), because that is where the web host reads the browser's IP |
+| `PASSKEY_RP_ID` | api | `localhost` | The WebAuthn relying party: the registrable domain the product hosts share, such as the chosen brand domain. Required in production. If Flooring and HR end up on different registrable domains, passkeys need one relying party per product (decide with the domain) |
 
 CI sets the database variables and a throwaway encryption key in `.github/workflows/ci.yml`; they protect nothing. The `verify` job also makes a fresh `SEED_USER_PASSWORD` and `BETTER_AUTH_SECRET` for each run, masked in the log.

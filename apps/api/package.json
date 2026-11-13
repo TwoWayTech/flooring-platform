@@ -15,6 +15,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "3.1167.0",
     "@aws-sdk/s3-request-presigner": "3.1167.0",
+    "@better-auth/passkey": "1.7.22",
     "@nestjs/common": "12.4.2",
     "@nestjs/config": "12.1.1",
     "@nestjs/core": "12.4.2",
@@ -24,6 +25,7 @@
     "@workspace/providers": "workspace:*",
     "@workspace/shared": "workspace:*",
     "better-auth": "1.7.22",
+    "decimal.js": "10.6.0",
     "drizzle-orm": "0.45.4",
     "postgres": "4.1.1",
     "reflect-metadata": "0.2.2",

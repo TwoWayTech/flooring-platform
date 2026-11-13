@@ -15,6 +15,13 @@
       "when": 1794478954024,
       "tag": "0001_auth_uuid_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794537028376,
+      "tag": "0002_auth_attempts_rate_limit",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,8 @@ P8 part 1 (docs/real-build-plan.md, week 1) adds real sign-in: email and passwor
 | --- | --- | --- |
 | better-auth 1.7.22 | apps/api, packages/db | The blueprint's auth library. packages/db uses only `better-auth/crypto` to hash the seed password |
 | auth 1.7.22 (dev) | packages/db | The Better Auth CLI. `@better-auth/cli` is deprecated and its last version is 1.4; the CLI now ships as `auth` |
-| @better-auth/passkey 1.7.22 (dev) | packages/db | Only so the CLI keeps generating the passkey table for P8 part 2 |
+| @better-auth/passkey 1.7.22 | apps/api (packages/db as dev) | Passkeys as a second factor and for sign-in (P8 part 2, owner approved 2026-11-13). packages/db keeps it so the CLI generates the passkey table |
+| decimal.js 10.6.0 | apps/api | Already used by packages/shared. Declared for the API bundle, which keeps npm packages external, now that the API imports packages/shared at runtime (part 2) |
 
 The web app adds no auth library. Its four calls (sign in, choose company, session context, sign out) are small typed `fetch` functions in `apps/web/src/lib/session/api-auth.ts`. NestJS has no Better Auth wrapper here. The handler is mounted with `toNodeHandler` because our own guards arrive in P9.
 
@@ -32,7 +33,7 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 ### The cookie lives on the web host (owner)
 - In api mode Next.js rewrites `/api/auth/*` to apps/api's `/api/auth/*`, and `/api-proxy/*` to the rest of apps/api. The session cookie is therefore first-party on each product host: one cookie per domain, as blueprint p17 rule 4 asks. The web server and the proxy can see it.
 - The cookie is httpOnly with SameSite=Lax, plus Secure and the `__Secure-` prefix in production.
-- Better Auth uses a dynamic base URL. `AUTH_ALLOWED_HOSTS` lists the web hosts (wildcards allowed), and the host is read from `x-forwarded-host`, which the proxy sets (`trustedProxyHeaders`). A host not on the list is refused. This replaces the single `BETTER_AUTH_URL` from the plan, because Flooring and HR are different hosts.
+- Better Auth uses a dynamic base URL. `AUTH_ALLOWED_HOSTS` lists the web hosts (wildcards only outside production; production needs exact hosts, PR #2 review), and the host is read from `x-forwarded-host`, which the proxy sets (`trustedProxyHeaders`). A host not on the list is refused. This replaces the single `BETTER_AUTH_URL` from the plan, because Flooring and HR are different hosts.
 
 ### Per-company timeouts (owner)
 - Better Auth's own expiry is a 7-day ceiling, and its refresh is off.
@@ -47,14 +48,48 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 - Without a host company, a user with one company opens it. A user with several opens none until they choose: the login page shows a chooser, which calls the plugin's `set-active`. A user with no company is refused (`no_company`).
 - The rule lives in `apps/api/src/core/auth/company-pick.ts`.
 - Only the plugin's `set-active` and `list` endpoints are open. Every other organization endpoint answers 404, because membership, invitations and roles belong to our own modules behind the permission engine (CLAUDE.md rule 3).
-- `set-active` is checked against membership before Better Auth runs. Better Auth's own refusal would also clear the open company.
+- `set-active` is checked against membership before Better Auth runs, because Better Auth's own refusal would also clear the open company. It takes only a company id: `null` (no company, so the default timeouts instead of the company's) and `organizationSlug` are refused with 400 `company_id_required`. On a host that names a company, only that company can be opened (403 `wrong_host`). Deleted companies never open (PR #2 review).
 
 ### The web app in api mode
 - `getSession()` reads `GET /auth/context` and bridges it to the existing workspace session. The company is matched by slug and the user by email to their seeded profile, because screens still read DemoStore until Settings → Users moves to the API (P10). An account without a profile sees "Your account is ready, but not this workspace".
 - The login page keeps the demo's frame, now `LoginLayout`, shared by both modes.
 
+## Part 2: MFA, passkeys, lockout and rate limits (2026-11-13)
+The owner decided the four marked "(owner)". The rest are the safest options for what the blueprint leaves open, recorded in docs/blueprint-delta.md.
+
+### Second factors
+- Better Auth's twoFactor plugin gives TOTP with 10 backup codes. Turning it on needs the password, and it is on only once the first code is confirmed. A password sign-in for an account with it answers `twoFactorRedirect` and opens no session until `/two-factor/verify-totp` or `verify-backup-code`.
+- Better Auth's passkey plugin. The relying party is `PASSKEY_RP_ID`, the registrable domain the product hosts share. Better Auth cannot derive it from a per-request base URL and would fall back to `localhost`, which browsers refuse on real hosts (PR #4 security review). Production states `https` for the base URL, so passkey origins and links never trust `x-forwarded-proto`. User verification (PIN or biometric) is required, which is what makes a passkey count as MFA. The name shown is `APP_NAME` ("Flooring Platform"), a placeholder until the brand is chosen.
+- **Adding a passkey** needs a sign-in at most 10 minutes old (`freshAge`; Better Auth's default of a day is longer than the absolute timeout) and the password confirmed with `/verify-password` in the last 5 minutes, on the same session. It never starts a new session (`createSession: true` answers 400), and it emails the account. Without these steps, a stolen cookie could add a permanent factor that signs in on its own.
+- Not offered: codes by email or SMS (`send-otp` and `verify-otp` answer 404), and remembered devices (`trustDevice: true` answers 400).
+
+### Who must use MFA (owner)
+- The rule is blueprint p27: Owner, Accountant, HR and platform admins. The role keys live in `MFA_REQUIRED_ROLES` in packages/shared.
+- Sign-in cannot open a company database yet (P9), so the company roles are read from Better Auth `member.role`, which now holds the person's role keys, comma-separated (`encodeMemberRoles`). The seed writes them. Settings → Users must keep them in sync when roles change (P10). A role copied from Owner, Accountant or HR under a new key is not covered until P10 decides how copies inherit the rule.
+- The rule looks at every company the person belongs to, so switching company never changes it. Active `platform_admins` rows always require MFA.
+- **Enrol at the next sign-in, with no grace period (owner).** A required user with no factor gets a session that may only set up a factor, read `/auth/context`, choose a company and sign out. Everything else answers 403 `mfa_enrolment_required`, both in the Better Auth hook and in `SessionService`. The `@AllowMfaEnrolment()` decorator opens a Nest route to such a session; today only `/auth/context` uses it.
+- **A passkey counts as MFA (owner).** A passkey sign-in needs no further step. A password sign-in by a required user whose only factor is a passkey is refused with 403 `passkey_required`, and its session is deleted at once, so a password alone never counts as MFA.
+- No downgrades. A required user cannot turn the authenticator app off, or delete their last passkey when they have no app (403 `mfa_required`).
+- When an authenticator app is confirmed, Better Auth swaps the session for a new one. The session-create hook keeps the company that was open, when the host and memberships still allow it. The hooks also keep the old session's start time on every session swap: confirming or turning off the app, and changing the password with `revokeOtherSessions`. So no swap can restart the absolute timeout.
+
+### Lockout and limits (owner)
+- **Passwords:** 5 failures within 15 minutes lock the address for 15 minutes. A success resets the count, and the lock ends on its own: attempts refused during a lock are not recorded. Attempts are kept in the new append-only `auth_attempts` table, keyed by the address trimmed and lowercased. Each attempt is checked against the lock and recorded as `password_attempt` before the password is checked, in one transaction under a per-address advisory lock. It counts as a failure until a `password_ok` follows it, so parallel guesses cannot get more than 5 checked. Unknown addresses are counted the same way, so the answers reveal nothing. The signed-in endpoints that check the password (`SESSION_PASSWORD_PATHS`: `/verify-password`, `/change-password` and the two-factor `enable`, `disable`, `get-totp-uri` and `generate-backup-codes`) reserve attempts the same way, for the session's email, and get the sign-in rate limit. Only a success records `password_ok`, so an error before the check cannot reset the count (PR #4 re-review). An admin unlock comes with Settings → Users.
+- **Second factor:** the plugin's own lockout, 5 wrong codes in a row lock for 15 minutes. It counts consecutive failures rather than failures within 15 minutes.
+- **Per IP:** 10 a minute on `/sign-in/email`, `/two-factor/verify-totp`, `/two-factor/verify-backup-code`, `/passkey/verify-authentication` and `/verify-password`. These use Better Auth's rate limiter with database storage (the new `rate_limit` table), so the limits hold across API instances. Lockout and the email limit do not depend on the IP.
+- **Which IP counts:** Better Auth reads only `x-client-ip`, never `x-forwarded-for`, which a browser can set and the Next.js rewrite passes on unchanged.
+  - The web proxy (`withAuthProxyHeaders`) removes any copy the browser sent. It sets the IP from the edge's `x-forwarded-for`, and adds `AUTH_PROXY_SECRET`.
+  - The API (`settleClientIp`) keeps that IP only when the secret matches. With `AUTH_PROXY_SECRET` set (production), an auth request without the right secret is refused with 403 `proxy_required`, so a direct caller cannot choose, use up or dodge a bucket. The web host answers 404 for `/api-proxy/api/auth/*`, because that rewrite would skip the auth route (PR #4 re-review).
+  - The web host must therefore run behind an edge that overwrites `x-forwarded-for`, as Vercel does. A self-hosted web tier needs a reverse proxy that does the same.
+- **Email:** at most 3 verification emails an hour per address. Extra ones are skipped silently. The count and the record happen under the same per-address lock (`AttemptLog.reserveEmail`), so parallel requests cannot send more. Reset emails are to use it when password reset is specced.
+- **Retention (owner, 2026-11-13):** `auth_attempts` and `rate_limit` rows are kept 30 days, then deleted, because they hold email addresses and IPs. Lockout and MFA events in `audit_log` follow the audit log's own retention. The 30-day delete is a pg-boss job that comes with the notifications core (STATUS); until then, nothing prunes these tables.
+
+### Public branding
+`GET /public/branding?host=` returns only display fields (name, monogram, colour, pattern, theme) for the company the host's subdomain names. It answers 404 for no live company. The logo URL comes with the branding upload through StorageProvider (P11), because the API has no storage wiring yet.
+
+### Web (api mode)
+The login page has the code step (authenticator code or backup code), and set-up for required users: the password again, the setup key in groups of four with a copy button, the first code, then the backup codes shown once. A session that must set up MFA opens the login page, not the app. Passkey screens and a QR code are B's (STATUS), because they need `@simplewebauthn/browser` in the web app.
+
 ## Left for later
-- **P8 part 2:** TOTP with backup codes and passkeys; MFA required for Owner, Accountant, HR and platform admins (blueprint p27); rate limits and lockout, whose thresholds the blueprint does not give; `GET /public/branding?host=`, which brings the company's own logo and colour to the login page.
 - **P9:**
   - Refusing a company that does not own the host's product (blueprint p17 rule 2), and a company that is not active.
   - Making the session guard global.

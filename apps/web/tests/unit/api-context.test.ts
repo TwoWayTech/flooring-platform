@@ -3,8 +3,15 @@ import { toCompanySession, type SessionContext } from "@/lib/session/api-context
 
 const summit = { id: "986ecd96-225c-5088-a04a-e9e7d56a7210", slug: "summit", name: "Summit Floor Co." };
 
-function context(email: string, company: SessionContext["company"] = summit): SessionContext {
-  return { user: { id: "0193f0e0-0000-7000-8000-000000000001", name: "Someone", email }, company, companies: [summit] };
+const MFA_OK: SessionContext["mfa"] = { required: true, totp: true, passkeys: 0, state: "ok" };
+
+function context(email: string, company: SessionContext["company"] = summit, mfa = MFA_OK): SessionContext {
+  return {
+    user: { id: "0193f0e0-0000-7000-8000-000000000001", name: "Someone", email },
+    company,
+    companies: [summit],
+    mfa,
+  };
 }
 
 describe("toCompanySession (api mode bridge to the workspace session)", () => {
@@ -21,6 +28,11 @@ describe("toCompanySession (api mode bridge to the workspace session)", () => {
 
   it("has no workspace session until a company is open", async () => {
     expect(await toCompanySession(context("dana.whitfield@summitfloor.example", null), "flooring")).toBeNull();
+  });
+
+  it("has no workspace session while the user must set up MFA", async () => {
+    const enrol: SessionContext["mfa"] = { required: true, totp: false, passkeys: 0, state: "enrolment_required" };
+    expect(await toCompanySession(context("dana.whitfield@summitfloor.example", summit, enrol), "flooring")).toBeNull();
   });
 
   it("has none for an account without a seeded profile or a company the web app does not know", async () => {

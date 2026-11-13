@@ -1,4 +1,4 @@
-import { US_STATES, type ProductKey } from "@workspace/shared";
+import { encodeMemberRoles, US_STATES, type ProductKey } from "@workspace/shared";
 import type { ControlDb } from "../client";
 import {
   account,
@@ -166,22 +166,20 @@ async function seedPeople(
     .insert(organization)
     .values({ id: tenantId, name: company.name, slug: company.id, createdAt: now })
     .onConflictDoNothing();
-  const ownerRoleIds = new Set(fixtures.roles.filter((role) => role.owner).map((role) => role.id));
+  const roleKeyById = new Map(fixtures.roles.map((role) => [role.id, role.key]));
   for (const person of fixtures.users) {
     const userId = seededUserId(person.id);
     await tx
       .insert(user)
       .values({ id: userId, name: person.name, email: person.email, emailVerified: true })
       .onConflictDoNothing();
+    // member.role holds the person's role keys, which sign-in reads to require MFA (ADR 0029,
+    // part 2). It is set only when the membership is created: the seed never overwrites roles
+    // (owner decision, 2026-11-13). A database seeded before part 2 needs a fresh seed.
+    const role = encodeMemberRoles(person.roleIds.flatMap((roleId) => roleKeyById.get(roleId) ?? []));
     await tx
       .insert(member)
-      .values({
-        id: seedId(`member:${person.id}`),
-        organizationId: tenantId,
-        userId,
-        role: person.roleIds.some((roleId) => ownerRoleIds.has(roleId)) ? "owner" : "member",
-        createdAt: now,
-      })
+      .values({ id: seedId(`member:${person.id}`), organizationId: tenantId, userId, role, createdAt: now })
       .onConflictDoNothing();
     if (passwordHash) {
       await tx

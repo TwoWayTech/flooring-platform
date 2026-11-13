@@ -22,21 +22,56 @@ const apiEnvSchema = z.object({
   /** Signs Better Auth cookies and tokens. At least 32 characters; generate with `npx auth secret`. */
   BETTER_AUTH_SECRET: z.string().min(32, "Must be at least 32 characters."),
   /**
-   * Web hosts that serve the sign-in page, comma-separated, with wildcards (`*.vercel.app`,
-   * `localhost:*`). Better Auth builds verification links and checks origins from them (ADR 0029).
+   * Web hosts that serve the sign-in page, comma-separated. Better Auth builds verification links
+   * and checks origins from them (ADR 0029). Wildcards such as `localhost:*` are for development only.
    */
   AUTH_ALLOWED_HOSTS: z
     .string()
-    .default("localhost:*")
+    .optional()
     .transform((value) =>
-      value
+      (value ?? "")
         .split(",")
         .map((host) => host.trim())
         .filter(Boolean),
     ),
+  /**
+   * Shared with the web host, which sends it with every proxied auth request so the API can trust
+   * the client IP it forwards (ADR 0029, part 2). Required in production.
+   */
+  AUTH_PROXY_SECRET: z.string().min(32, "Must be at least 32 characters.").optional(),
+  /**
+   * The WebAuthn relying party for passkeys: the registrable domain the product hosts share, such as
+   * `flooringsuite.com`. Defaults to `localhost` outside production; required in production.
+   */
+  PASSKEY_RP_ID: z.string().min(1).optional(),
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });
+
+/** The sign-in hosts used outside production when AUTH_ALLOWED_HOSTS is unset. */
+const DEV_ALLOWED_HOSTS = ["localhost:*"];
+
+/**
+ * Production must list its exact sign-in hosts. The API trusts the forwarded host, so a wildcard
+ * such as `*.vercel.app` would let anyone with a matching host receive our verification (and later
+ * reset) links, and a missing value would trust `localhost:*`.
+ */
+function allowedHostsIssues(env: z.infer<typeof apiEnvSchema>): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  if (env.AUTH_ALLOWED_HOSTS.length === 0) return ["AUTH_ALLOWED_HOSTS: Required in production."];
+  return env.AUTH_ALLOWED_HOSTS.some((host) => host.includes("*"))
+    ? ["AUTH_ALLOWED_HOSTS: Wildcards are not allowed in production."]
+    : [];
+}
+
+/** Settings that may be left out in development but must be set in production. */
+function productionOnlyIssues(env: z.infer<typeof apiEnvSchema>): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  return [
+    ...(env.AUTH_PROXY_SECRET ? [] : ["AUTH_PROXY_SECRET: Required in production."]),
+    ...(env.PASSKEY_RP_ID ? [] : ["PASSKEY_RP_ID: Required in production."]),
+  ];
+}
 
 /** The API's settings after checking: its own plus the provider choices. */
 export type ApiEnv = z.infer<typeof apiEnvSchema> & { providers: ProviderEnv };
@@ -50,8 +85,15 @@ export function validateEnv(raw: Record<string, unknown>): ApiEnv {
   const parsed = apiEnvSchema.safeParse(env);
   const problems = [
     ...(parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)),
+    ...(parsed.success ? allowedHostsIssues(parsed.data) : []),
+    ...(parsed.success ? productionOnlyIssues(parsed.data) : []),
     ...providerEnvIssues(env),
   ];
   if (!parsed.success || problems.length > 0) throw new Error(`Invalid API environment. ${problems.join("; ")}`);
-  return { ...parsed.data, providers: parseProviderEnv(env) };
+  const allowedHosts = parsed.data.AUTH_ALLOWED_HOSTS;
+  return {
+    ...parsed.data,
+    AUTH_ALLOWED_HOSTS: allowedHosts.length > 0 ? allowedHosts : DEV_ALLOWED_HOSTS,
+    providers: parseProviderEnv(env),
+  };
 }

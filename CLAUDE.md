@@ -17,7 +17,13 @@ The clickable demo lives on branch `demo` (tag `demo-v3`). `main` is the real pr
 
 ## Every session
 - Start with /resume. End with /handoff: session log, STATUS, BRANCHES, commit, push and a draft PR. Run it before the usage limit runs out, not after.
-- One task per branch, named feat/<area>-<name> or fix/<area>-<name>, created from main. Never commit to main and never push it. Changes reach main only through a pull request that the other person merges.
+- One task per branch, named feat/<area>-<name> or fix/<area>-<name>, created from main. Never commit to main and never push it. Changes reach main only through a squash-merged pull request.
+- Self-merge (approved by the owner, 2026-11-13): Claude may squash-merge its own PR (`gh pr merge <n> --squash`) only when all of these hold:
+  - the PR is ready, not a draft;
+  - every check on the latest commit is green;
+  - a fresh read-only reviewer subagent found no blocking issue: security-reviewer for auth, tenancy, permissions, money or payroll; schema-reviewer for schema changes;
+  - the reviewer's summary is posted with `gh pr review <n> --comment`.
+  Never use `--admin`, never merge any other way, and never push to main directly.
 - Push after every commit: `git push origin <branch>`. Nothing important may exist only on one laptop or in this chat.
 - Keep PRs as drafts while working. Mark one ready only when it is done, because ready PRs run the expensive CI (docs/real-build-plan.md, CI budget).
 
@@ -68,7 +74,7 @@ The clickable demo lives on branch `demo` (tag `demo-v3`). `main` is the real pr
 - Run lint, typecheck and tests before calling a task done, and report what you ran.
 - Ask before adding a dependency, altering an existing table, or touching auth, tenancy or providers. Record new libraries in docs/adr/.
 - Build a feature with `/feature <module>`; run `/review` before opening a PR. Subagents in .claude/agents: test-writer writes API and Playwright tests from a spec, schema-reviewer checks packages/db changes, and security-reviewer checks anything touching auth, tenancy, permissions or money. A Stop hook reminds you to `/handoff` when the tree is dirty or today's session log is missing.
-- Conventional commits. Squash-merge PRs. The other person reviews every PR, and nothing merges with red CI.
+- Conventional commits. Squash-merge PRs. The other person reviews every PR, unless Claude self-merges under the rule in "Every session". Nothing merges with red CI.
 
 ## Testing on a laptop (learned in the demo)
 - Run e2e against a production build: `pnpm build`, then the app starts.

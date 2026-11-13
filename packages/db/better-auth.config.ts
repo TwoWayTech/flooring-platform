@@ -16,5 +16,7 @@ export const auth = betterAuth({
   // UUID ids so user ids fit the uuid user links in the control and company databases (ADR 0028).
   // The API makes them as UUID v7; this setting only gives the columns the uuid type.
   advanced: { database: { generateId: "uuid" } },
+  // The API keeps its per-IP sign-in and MFA limits in the database, so they hold across instances.
+  rateLimit: { enabled: true, storage: "database" },
   plugins: [organization(), twoFactor(), passkey()],
 });

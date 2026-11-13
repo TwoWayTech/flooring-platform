@@ -1,3 +1,6 @@
+import { inArray } from "drizzle-orm";
+import { openControlDb } from "./client";
+import { authAttempts, passkey, rateLimit, session, twoFactor, user } from "./control";
 import { PostgresServerProvisioner } from "@workspace/providers";
 
 /** The superuser login on the local or CI PostgreSQL. */
@@ -12,4 +15,33 @@ export async function scratchDatabase(label: string): Promise<{ url: string; dro
   const provisioner = new PostgresServerProvisioner(adminUrl);
   const created = await provisioner.create({ tenantId: label, slug: `test_${label}_${process.pid}` });
   return { url: created.connectionUrl, drop: () => provisioner.drop(created.providerRef) };
+}
+
+export { totpCode, totpSecretFromUri } from "./totp";
+
+/**
+ * Puts the given users back to "no MFA, no failed attempts" in a control database and clears the
+ * per-IP rate limits, so browser tests of sign-in start the same way on every run. Tests only:
+ * never point it at a real company's data.
+ */
+export async function resetAuthState(controlUrl: string, emails: readonly string[]): Promise<void> {
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const subjects = emails.map((email) => email.trim().toLowerCase());
+    const users = await handle.db
+      .select({ id: user.id })
+      .from(user)
+      .where(inArray(user.email, [...emails]));
+    const ids = users.map((row) => row.id);
+    if (ids.length > 0) {
+      await handle.db.delete(twoFactor).where(inArray(twoFactor.userId, ids));
+      await handle.db.delete(passkey).where(inArray(passkey.userId, ids));
+      await handle.db.delete(session).where(inArray(session.userId, ids));
+      await handle.db.update(user).set({ twoFactorEnabled: false }).where(inArray(user.id, ids));
+    }
+    if (subjects.length > 0) await handle.db.delete(authAttempts).where(inArray(authAttempts.subject, subjects));
+    await handle.db.delete(rateLimit);
+  } finally {
+    await handle.close();
+  }
 }

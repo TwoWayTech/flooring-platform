@@ -29,20 +29,32 @@ The tenant always comes from the session, never from a parameter, as it will on 
 - **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
 - **Docs.** OpenAPI is generated from the controllers at `/docs` (browsable) and `/docs/openapi.json`. `GET /health` is public.
 
-## Authentication (real build, P8 part 1, ADR 0029)
+## Authentication (real build, P8, ADR 0029)
 
 In api mode the browser reaches these through the web app's own origin: Next.js rewrites `/api/auth/*` to apps/api's `/api/auth/*` and `/api-proxy/*` to the rest of apps/api, so the session cookie (`better-auth.session_token`, httpOnly, SameSite=Lax, `__Secure-` in production) is first-party on each product host. Better Auth's endpoints answer with Better Auth's own error body, `{ code, message }`, whose codes are upper case, such as `INVALID_EMAIL_OR_PASSWORD`.
 
 | Route | Body / response | Notes |
 | --- | --- | --- |
-| `POST /api/auth/sign-in/email` | `{ email, password, callbackURL? }` → 200 and the cookie | 401 `INVALID_EMAIL_OR_PASSWORD`. 403 `EMAIL_NOT_VERIFIED`, which also sends a verification link. 403 `not_a_member` when the host names a company the user is not in. 403 `no_company` |
+| `POST /api/auth/sign-in/email` | `{ email, password, callbackURL? }` → 200 and the cookie, or 200 `{ twoFactorRedirect: true, twoFactorMethods }` with a short-lived `two_factor` cookie (no session yet) when the account has an authenticator app | 401 `INVALID_EMAIL_OR_PASSWORD`. 403 `EMAIL_NOT_VERIFIED`, which also sends a verification link (at most 3 an hour per address). 403 `not_a_member` when the host names a company the user is not in. 403 `no_company`. 403 `passkey_required` when MFA is mandatory and the only factor is a passkey. 429 `account_locked` after 5 wrong passwords in 15 minutes, for 15 minutes. 429 with no code after 10 attempts a minute from one IP (`rate_limited` in the web client) |
+| `POST /api/auth/two-factor/verify-totp` | `{ code }` → 200 and the session cookie | Finishes a sign-in (with the `two_factor` cookie) or confirms set-up (with a session). 401 `INVALID_CODE`. 429 `ACCOUNT_TEMPORARILY_LOCKED` after 5 wrong codes in a row, for 15 minutes. 400 `trust_device_unsupported` for `trustDevice: true`. 10 a minute per IP |
+| `POST /api/auth/two-factor/verify-backup-code` | `{ code }` → 200 and the session cookie | Each of the 10 backup codes works once. Same limits as verify-totp |
+| `POST /api/auth/two-factor/enable` | `{ password }` → `{ totpURI, backupCodes }` | Starts authenticator-app set-up. It is on once the first code is confirmed with verify-totp |
+| `POST /api/auth/two-factor/disable` | `{ password }` | 403 `mfa_required` when MFA is mandatory for the user |
+| `POST /api/auth/verify-password` | `{ password }` → 200 | Confirms the password before a passkey is added. The confirmation lasts 5 minutes, on this session only. 10 a minute per IP. Wrong passwords here, and on `change-password` and the two-factor `enable`, `disable`, `get-totp-uri` and `generate-backup-codes`, count towards the sign-in lockout: 429 `account_locked` |
+| `/api/auth/passkey/*` | Better Auth passkey plugin | Register: `generate-register-options` and `verify-registration` need a session signed in at most 10 minutes ago and a password confirmed with `verify-password` in the last 5 minutes, otherwise 403 `password_confirmation_required`. `createSession: true` answers 400 `create_session_unsupported`. Adding a passkey emails the account. Sign in: `generate-authenticate-options` and `verify-authentication`, 10 a minute per IP. Also list, rename and delete. Deleting the last factor of a user who must use MFA answers 403 `mfa_required`. The relying party is `PASSKEY_RP_ID`, and user verification (PIN or biometric) is required |
+| `POST /api/auth/two-factor/send-otp`, `verify-otp` | 404 | Codes by email or SMS are not offered |
 | `POST /api/auth/sign-up/email` | refused | Accounts are invite-only |
 | `GET /api/auth/verify-email?token=&callbackURL=` | redirects to `callbackURL` | The link in the verification email |
-| `POST /api/auth/organization/set-active` | `{ organizationId }` | Opens one of the user's companies (the chooser). 403 `not_a_member` for any other company. It selects among the session's verified memberships, so the tenant still comes from the session (rule 2) |
+| `POST /api/auth/organization/set-active` | `{ organizationId }` | Opens one of the user's companies (the chooser). 400 `company_id_required` without a company id (`null` and `organizationSlug` are refused). 403 `not_a_member` for any other company, and 403 `wrong_host` for a company other than the one the host names. It selects among the session's verified memberships, so the tenant still comes from the session (rule 2) |
 | `GET /api/auth/organization/list` | the user's organizations | Every other organization endpoint answers 404 |
 | `POST /api/auth/sign-out` | → 200 | Deletes the session |
 | `POST /api/auth/change-password` | `{ currentPassword, newPassword }` | At least 12 characters |
-| `GET /auth/context` | → `{ user: { id, name, email }, company: { id, slug, name } \| null, companies: [...] }` | The shared error body. 401 `unauthenticated` without a session; 401 `session_expired` when the company's idle or absolute timeout ended it (the session is deleted). `company` is null until the user chooses one |
+| `GET /auth/context` | → `{ user: { id, name, email }, company: { id, slug, name } \| null, companies: [...], mfa: { required, totp, passkeys, state } }` | The shared error body. 401 `unauthenticated` without a session; 401 `session_expired` when the company's idle or absolute timeout ended it (the session is deleted). `company` is null until the user chooses one. `mfa.state` is `enrolment_required` when MFA is mandatory and the user has no factor yet |
+| `GET /public/branding?host=` | → `{ displayName, monogram, brandColor, pattern, defaultTheme }` | Public, for the login page. 404 `not_found` when the host names no live company. 400 `invalid_request` for a malformed host. The logo arrives with the branding upload (P11) |
+
+**Mandatory MFA (blueprint p27).** Owner, Accountant, HR and active platform admins must use a second factor. Until they have one, their session may only set up an authenticator app or a passkey, read `/auth/context`, choose a company and sign out. Every other Better Auth endpoint and every guarded route answers 403 `mfa_enrolment_required`. The roles are read from `member.role`, which holds the person's company role keys, comma-separated.
+
+**Auth only through the web host.** With `AUTH_PROXY_SECRET` set (required in production), any `/api/auth/*` request that does not carry the web proxy's secret answers 403 `proxy_required`. The web host answers 404 for `/api-proxy/api/auth/*`.
 
 ## Session (demo route handlers, demo mode only)
 
