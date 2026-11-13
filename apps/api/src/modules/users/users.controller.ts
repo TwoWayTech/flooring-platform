@@ -42,7 +42,7 @@ const INVITE = z.object({
   email: z.string().trim().email().max(320),
   title: z.string().max(200).default(""),
   roleIds: z.array(z.string().uuid()).min(1).max(20),
-  branchId: z.union([z.string().uuid(), z.literal("")]).default(""),
+  branchId: z.string().max(100).default(""),
 });
 
 /** PATCH /users/:id: only these fields; MFA can only be reset, never set. */
@@ -51,7 +51,7 @@ const USER_PATCH = z
     roleIds: z.array(z.string().uuid()).max(20).optional(),
     status: z.enum(["active", "disabled"]).optional(),
     mfaEnrolled: z.literal(false).optional(),
-    branchId: z.union([z.string().uuid(), z.literal("")]).optional(),
+    branchId: z.string().max(100).optional(),
     title: z.string().max(200).optional(),
   })
   .strict();

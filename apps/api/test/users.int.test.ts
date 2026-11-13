@@ -189,6 +189,16 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
 
   it("invites a person who sets a password once, then signs in; the link cannot be used again", async () => {
     const email = `invitee-${Date.now()}@example.test`;
+    const unconfirmed = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const refused = await call("post", "/users/invite", unconfirmed.cookie).send({
+      name: "No Step",
+      email: `nostep-${Date.now()}@example.test`,
+      title: "",
+      roleIds: [await roleId("sales")],
+      branchId: "",
+    });
+    expect(refused.body.code).toBe("step_up_required");
+    await stepUp(owner);
     const invited = await call("post", "/users/invite", owner.cookie)
       .send({ name: "Ivy Invitee", email, title: "Sales", roleIds: [await roleId("sales")], branchId: "" })
       .expect(201);
@@ -234,6 +244,7 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
       })
       .returning();
     try {
+      await stepUp(owner);
       const refused = await call("post", "/users/invite", owner.cookie).send({
         name: "No Seat",
         email: `noseat-${Date.now()}@example.test`,
@@ -437,5 +448,19 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
         );
       await handle.close();
     }
+  });
+
+  it("checks second-factor codes with a session only through step-up once the app is on (PR #11 review)", async () => {
+    const guessed = await harness
+      .post("/api/auth/two-factor/verify-totp")
+      .set("Cookie", owner.cookie)
+      .send({ code: "000000" });
+    expect(guessed.status).toBe(404);
+    const backup = await harness
+      .post("/api/auth/two-factor/verify-backup-code")
+      .set("Cookie", owner.cookie)
+      .send({ code: "aaaaa-bbbbb" });
+    expect(backup.status).toBe(404);
+    await stepUp(owner);
   });
 });

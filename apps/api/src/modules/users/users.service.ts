@@ -8,8 +8,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { ControlDb, DbHandle } from "@workspace/db";
-import { userProfiles } from "@workspace/db/company";
+import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
+import { branches, userProfiles } from "@workspace/db/company";
 import {
   member,
   passkey,
@@ -149,7 +149,10 @@ export class UsersService {
    * membership, the profile and the role links, then emails a one-time link valid for 7 days.
    */
   async invite(tenant: TenantContext, actor: Actor, input: InviteInput, origin: string): Promise<User> {
+    // Inviting gives roles to a new account, so it needs the same step-up as a role change (PR #11 review).
+    await this.stepUp.require(actor.session);
     const db = await this.tenancy.db(tenant);
+    const branchId = await knownBranch(db, input.branchId);
     const email = input.email.trim().toLowerCase();
     const allRoles = await loadRoles(db);
     this.assertCanAssign(actor.access, allRoles, input.roleIds, []);
@@ -224,13 +227,13 @@ export class UsersService {
         .values({
           userId,
           title: input.title.trim(),
-          branchId: input.branchId || null,
+          branchId,
           status: "invited",
           createdBy: actor.access.userId,
         })
         .onConflictDoUpdate({
           target: userProfiles.userId,
-          set: { title: input.title.trim(), branchId: input.branchId || null, status: "invited", deletedAt: null },
+          set: { title: input.title.trim(), branchId, status: "invited", deletedAt: null },
         });
       await setUserRoles(tx, userId, input.roleIds, actor.access.userId);
       await this.auditLog.record(
@@ -267,7 +270,13 @@ export class UsersService {
       .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
     if (!profile) throw new NotFoundException({ code: "not_found", message: "That person is not in your company." });
     // Roles, status and MFA change what someone can do or whether they can sign in: step-up first.
-    if (patch.roleIds !== undefined || patch.status !== undefined || patch.mfaEnrolled === false) {
+    // A branch decides what branch-scoped roles see, so moving someone needs it too (PR #11 review).
+    const sensitive =
+      patch.roleIds !== undefined ||
+      patch.status !== undefined ||
+      patch.branchId !== undefined ||
+      patch.mfaEnrolled === false;
+    if (sensitive) {
       await this.stepUp.require(actor.session);
     }
 
@@ -282,7 +291,7 @@ export class UsersService {
     await db.transaction(async (tx) => {
       const changes: Partial<typeof userProfiles.$inferInsert> = {};
       if (patch.status !== undefined) changes.status = patch.status;
-      if (patch.branchId !== undefined) changes.branchId = patch.branchId || null;
+      if (patch.branchId !== undefined) changes.branchId = await knownBranch(tx, patch.branchId);
       if (patch.title !== undefined) changes.title = patch.title.trim();
       if (Object.keys(changes).length > 0) {
         await tx.update(userProfiles).set(changes).where(eq(userProfiles.userId, userId));
@@ -450,6 +459,20 @@ export class UsersService {
         : `You have been invited to ${name}. Open this link to choose your password:\n\n${url}\n\nThe link works for ${INVITATION_DAYS} days. If you did not expect this, ignore this email.`,
     });
   }
+}
+
+/**
+ * The branch id to store: one of the company's live branches, or null. In api mode the screens
+ * still read branches from the demo until Settings → Locations moves, so an unknown id is stored as
+ * no branch rather than refused (STATUS).
+ */
+async function knownBranch(db: CompanyDb, branchId: string): Promise<string | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) return null;
+  const [row] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(and(eq(branches.id, branchId), isNull(branches.deletedAt)));
+  return row?.id ?? null;
 }
 
 /** The audit action for a user change, in words. */

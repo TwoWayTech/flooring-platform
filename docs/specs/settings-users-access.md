@@ -30,7 +30,7 @@ Every change writes `audit_log` with the before and after values.
 - **Sync:** whenever roles are assigned or a role's keys change, `member.role` is kept in sync for everyone affected. It holds the role keys plus the marker `mfa` when any held role needs MFA, so sign-in can decide before any company database is open.
 
 ## Step-up
-- **When it is needed:** changing roles, resetting MFA, saving, resetting or deleting a role, and approving support access. Each needs a step-up from the last 5 minutes.
+- **When it is needed:** inviting someone (it gives roles), changing roles, status or branch, resetting MFA, saving, resetting or deleting a role, and approving support access (PR #11 security reviews). Each needs a step-up from the last 5 minutes.
 - **How to step up:** `POST /auth/step-up { code }` checks a TOTP code or a backup code against the person's own factor and records it against the session (`session_step_ups`). Wrong codes count toward the second-factor lockout: 5 lock the step-up for 15 minutes.
 - **Passkey-only users:** someone with a passkey and no authenticator app steps up by signing in again with the passkey. A session under 5 minutes old counts as a step-up for them.
 - **No factor:** someone with no factor at all cannot step up. The answer is 403 `step_up_mfa_required`.

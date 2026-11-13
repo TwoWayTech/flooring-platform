@@ -18,7 +18,8 @@
   - **Checking:** `POST /auth/step-up` checks a TOTP or backup code through Better Auth's own verify endpoints, against the session's user. A pass is written to `auth_attempts` (`step_up_ok`, keyed by session) and lasts 5 minutes.
   - **Lockout:** each code is recorded (`step_up_attempt`) before it is checked, under a per-user advisory lock, exactly like password attempts; a pass writes `step_up_pass`. 5 failures in 15 minutes lock step-up for 15 minutes, so parallel guesses cannot get past the limit (PR #11 security review).
   - **Backstop:** PermissionGuard refuses `mfa_enrolment_required` on every company request when a held role needs MFA by content and the person has no factor, in case `member.role` missed a change.
-  - **Where it is required:** role changes, MFA resets, role saves, resets and deletes, and support approvals all call `StepUpService.require`.
+  - **Where it is required:** invitations (they give roles), role, status and branch changes, MFA resets, role saves, resets and deletes, and support approvals all call `StepUpService.require`.
+  - **No other way to check codes:** once a person's authenticator app is on, Better Auth's `/two-factor/verify-totp` and `/two-factor/verify-backup-code` answer 404 to a signed-in session, because with a session Better Auth skips its own lockout. Codes are then checked only at sign-in or through `/auth/step-up` (PR #11 security review).
   - **Passkey-only people:** they step up with a fresh passkey sign-in.
 - **Invitations** (`user_invitations`, control migration 0004):
   - **The token:** 32 random bytes; only the SHA-256 is stored. It lasts 7 days and works once.

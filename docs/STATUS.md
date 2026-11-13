@@ -102,6 +102,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Inviting an address that already has an account gives the membership and roles at once, and the users list shows that account's own name. Hold the membership until acceptance, or treat `invited` profiles as holding nothing, and show the typed name until then.
   - Write an `audit_log` entry when an invitation is accepted.
   - Route the public invitation endpoints through the auth proxy, so their per-IP limit uses the client IP the web proxy vouches for (today the API sees the web server's IP).
+  - Passkey-only step-up counts a session under 5 minutes old; record how the session signed in (a passkey) and accept only that.
+  - Write support-access requests to the company's `audit_log` as well, and limit how many requests an admin may send.
+  - An invitation's control-database rows are committed before the company profile; clean up a membership whose profile was never written.
+  - A role edit may remove keys from a role whose other holders hold more than the editor; this only reduces access. Note it in the spec or check it.
+  - Better Auth does not mark a TOTP code used, so a code seen at sign-in works for step-up within its 30 seconds.
+  - In api mode the Users screen's branch picker still lists the demo's branches, so the API stores no branch for them until Settings → Locations moves.
   - The provisioned owner's profile starts `invited` and has no password: owner invitations at provisioning come with the platform-admin screens (P17).
 - **CHECK constraints on status columns:** `tenants.status` and `tenant_subscriptions.status` have no CHECK constraint. `companyPhase` now locks a status it does not know, but a constraint would stop a bad value being written (a change to existing tables, so it waits for the owner; PR #10 review).
 - **Pools after a provider move:** `TenantConnectionService` caches a pool per company and never re-reads the connection URL. `move-tenant` must clear the company's pool when it ends maintenance (PR #10 review).

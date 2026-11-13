@@ -58,6 +58,9 @@ const ENROLMENT_PATHS = new Set([
   "/organization/list",
 ]);
 
+/** Second-factor checks that, with a session, would skip Better Auth's lockout. */
+const SIGNED_IN_CODE_PATHS = new Set(["/two-factor/verify-totp", "/two-factor/verify-backup-code"]);
+
 /** The two steps of adding a passkey. */
 const PASSKEY_REGISTER_PATHS = new Set(["/passkey/generate-register-options", "/passkey/verify-registration"]);
 
@@ -229,6 +232,13 @@ export function beforeAuthHook(deps: AuthDeps) {
     if (isSessionless(path)) return;
     const current = await getSessionFromCtx(ctx);
     if (!current) return;
+    // With a session, Better Auth checks second-factor codes without its lockout. Once the
+    // authenticator app is on, codes are checked only at sign-in (no session yet) or through
+    // POST /auth/step-up, which has its own lockout (PR #11 security review). Enrolment, before
+    // the app is on, still confirms its first code here.
+    if (SIGNED_IN_CODE_PATHS.has(path) && (current.user as { twoFactorEnabled?: boolean }).twoFactorEnabled === true) {
+      throw new APIError("NOT_FOUND");
+    }
     // Blueprint p28: Better Auth's expiry is only a ceiling, so the company's idle and absolute
     // timeouts are checked here as well as in SessionService. Without this, an endpoint such as
     // set-active would accept an idle session and reset its activity time (updatedAt).

@@ -60,6 +60,8 @@ export function UsersPage() {
   const [inviting, setInviting] = useState(false);
   const [editingRoles, setEditingRoles] = useState<User | null>(null);
   const [resettingMfa, setResettingMfa] = useState<User | null>(null);
+  // Disabling or enabling someone changes whether they can sign in, so it asks for a step-up code.
+  const [changingStatus, setChangingStatus] = useState<{ user: User; status: User["status"] } | null>(null);
   const data = useApiQuery(async (client) => {
     const [users, roles] = await Promise.all([client.list("users"), client.list("roles")]);
     return { users, roles };
@@ -73,12 +75,9 @@ export function UsersPage() {
   const now = new Date();
 
   async function setStatus(user: User, status: User["status"]) {
-    try {
-      await api.updateUser(user.id, { status });
-      toast.success(`${user.name} ${status === "disabled" ? "disabled" : "enabled"}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The user was not changed.");
-    }
+    await api.updateUser(user.id, { status });
+    toast.success(`${user.name} ${status === "disabled" ? "disabled" : "enabled"}`);
+    setChangingStatus(null);
   }
 
   const columns: ColumnSpec<User>[] = [
@@ -163,9 +162,13 @@ export function UsersPage() {
                     Reset MFA
                   </DropdownMenuItem>
                   {u.status === "disabled" ? (
-                    <DropdownMenuItem onSelect={() => void setStatus(u, "active")}>Enable user</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setChangingStatus({ user: u, status: "active" })}>
+                      Enable user
+                    </DropdownMenuItem>
                   ) : (
-                    <DropdownMenuItem onSelect={() => void setStatus(u, "disabled")}>Disable user</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setChangingStatus({ user: u, status: "disabled" })}>
+                      Disable user
+                    </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -200,6 +203,16 @@ export function UsersPage() {
       {editingRoles ? (
         <ChangeRolesDialog user={editingRoles} roles={roles} onClose={() => setEditingRoles(null)} />
       ) : null}
+      <StepUpDialog
+        open={!!changingStatus}
+        action={
+          changingStatus
+            ? `${changingStatus.status === "disabled" ? "Disabling" : "Enabling"} ${changingStatus.user.name}`
+            : ""
+        }
+        onOpenChange={(open) => !open && setChangingStatus(null)}
+        onConfirm={() => setStatus(changingStatus!.user, changingStatus!.status)}
+      />
       <StepUpDialog
         open={!!resettingMfa}
         action={resettingMfa ? `Resetting MFA for ${resettingMfa.name}` : ""}
