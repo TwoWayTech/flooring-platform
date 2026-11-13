@@ -136,8 +136,9 @@ export class AccessService {
       })
       .from(tenantSubscriptions)
       .where(eq(tenantSubscriptions.tenantId, tenant.companyId));
-    // Deleted rows still prove the company once had a subscription, so deleting them never makes
-    // it a fresh trial again (PR #8 review); only live rows give plan modules.
+    // Soft-deleted rows still prove the company once had a subscription, so soft-deleting them
+    // never makes it a fresh trial again (PR #8 review); only live rows give plan modules. Rows are
+    // never hard-deleted (CLAUDE.md rule 8, deleted_at on business tables).
     const freshTrial = tenant.status === "trial" && allSubscriptions.length === 0;
     const subscriptions = allSubscriptions.filter((subscription) => subscription.deletedAt === null);
     const planIds = [...new Set(subscriptions.map((subscription) => subscription.planId))];

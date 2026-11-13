@@ -1,5 +1,5 @@
 import type { DatabaseProvisioner } from "@workspace/providers";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { ControlDb } from "./client";
 import { tenantDatabases } from "./control";
 import { decryptSecret, encryptSecret } from "./crypto";
@@ -32,10 +32,14 @@ export async function provisionCompany(
     : await createDatabase(control, provisioner, encryptionKey, input);
   const version = await migrateCompany(url);
   await prepare(url);
+  // Only a database still provisioning, or one already ready (a seed rerun), becomes ready; a
+  // status another process set meanwhile (failed, read-only, migrating) is never overwritten.
   await control
     .update(tenantDatabases)
     .set({ status: "ready", schemaVersion: version, migratedAt: new Date(), lastError: null })
-    .where(eq(tenantDatabases.tenantId, input.tenantId));
+    .where(
+      and(eq(tenantDatabases.tenantId, input.tenantId), inArray(tenantDatabases.status, ["provisioning", "ready"])),
+    );
   return url;
 }
 

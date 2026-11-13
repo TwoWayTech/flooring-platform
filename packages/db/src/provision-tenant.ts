@@ -162,7 +162,7 @@ async function findUnfinished(
     .select({ key: products.key })
     .from(tenantProducts)
     .innerJoin(products, eq(products.id, tenantProducts.productId))
-    .where(eq(tenantProducts.tenantId, tenant.id));
+    .where(and(eq(tenantProducts.tenantId, tenant.id), isNull(tenantProducts.deletedAt)));
   const storedKeys = stored.map((row) => row.key).sort();
   if (storedKeys.join(",") !== [...new Set(company.products)].sort().join(",")) {
     throw new Error(`The unfinished company "${slug}" has other products; run again with the original products.`);

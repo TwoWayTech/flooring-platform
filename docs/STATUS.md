@@ -94,6 +94,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Job costing must use `jobCost`, `jobMargin` and `jobMarginPct` (ADR 0031).
   - Make the role matrix test independent of `productPermissions` and `enabledModules`.
   - Check route decorators directly in the inventory test, not only over HTTP.
+- **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
   - **Leases:** count users per pool (a `withDb(tenant, fn)` wrapper or acquire and release), so the over-cap close and eviction never end a pool that a request is still using. Today that can happen once more than 2 × `TENANT_POOL_CACHE` companies are active within 30 s.

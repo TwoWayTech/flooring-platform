@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PRODUCT_ROLES } from "@workspace/shared";
 import {
   decryptSecret,
+  migrateAllCompanies,
   migrateControl,
   openCompanyDb,
   openControlDb,
@@ -262,6 +263,26 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
         await handle.close();
       }
       await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+    }
+  });
+
+  it("leaves a provisioning database to provisioning and keeps a read-only one read-only in migrate-all (PR #8 review)", async () => {
+    const unready = await provision(company(`skip${run}`));
+    const readOnly = await provision(company(`keep${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const setStatus = (tenantId: string, status: "provisioning" | "read_only") =>
+        handle.db.update(tenantDatabases).set({ status }).where(eq(tenantDatabases.tenantId, tenantId));
+      await setStatus(unready.tenantId, "provisioning");
+      await setStatus(readOnly.tenantId, "read_only");
+      const results = await migrateAllCompanies(handle.db, encryptionKey);
+      expect(results.map((result) => result.tenantId)).not.toContain(unready.tenantId);
+      const statusOf = async (tenantId: string) =>
+        (await handle.db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId)))[0].status;
+      expect(await statusOf(unready.tenantId)).toBe("provisioning");
+      expect(await statusOf(readOnly.tenantId)).toBe("read_only");
+    } finally {
+      await handle.close();
     }
   });
 });

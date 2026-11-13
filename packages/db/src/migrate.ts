@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { openCompanyDb, openControlDb, type ControlDb } from "./client";
 import { tenantDatabases } from "./control";
@@ -62,6 +62,10 @@ export class MigrationStoppedError extends Error {
  * Migrates every company database in turn and records each one's version (blueprint p13). The
  * first failure stops the rollout and is reported; companies after it stay on their previous
  * version until it is fixed, so no company is left half-way through a broken release.
+ *
+ * Databases still being provisioned are skipped: only provisioning marks them ready, after their
+ * first rows exist (PR #8 review). A read-only database goes back to read-only after migrating,
+ * never to ready, so a rollout never makes a read-only company writable.
  */
 export async function migrateAllCompanies(
   control: ControlDb,
@@ -70,7 +74,7 @@ export async function migrateAllCompanies(
   const companies = await control
     .select()
     .from(tenantDatabases)
-    .where(isNull(tenantDatabases.deletedAt))
+    .where(and(isNull(tenantDatabases.deletedAt), ne(tenantDatabases.status, "provisioning")))
     .orderBy(asc(tenantDatabases.createdAt));
   const migrated: CompanyMigrationResult[] = [];
   for (const company of companies) {
@@ -79,7 +83,12 @@ export async function migrateAllCompanies(
       const version = await migrateCompany(decryptSecret(company.encryptedUrl, encryptionKey));
       await control
         .update(tenantDatabases)
-        .set({ status: "ready", schemaVersion: version, migratedAt: new Date(), lastError: null })
+        .set({
+          status: company.status === "read_only" ? "read_only" : "ready",
+          schemaVersion: version,
+          migratedAt: new Date(),
+          lastError: null,
+        })
         .where(eq(tenantDatabases.id, company.id));
       migrated.push({ tenantId: company.tenantId, version });
     } catch (error) {
