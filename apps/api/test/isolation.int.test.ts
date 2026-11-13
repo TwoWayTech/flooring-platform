@@ -50,7 +50,7 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
   });
 
   /** A request to the API as the web app's proxy sends it: the browser's host, and the cookie if any. */
-  function call(method: "get" | "post" | "patch" | "delete", path: string, cookie?: string) {
+  function call(method: HttpMethod, path: string, cookie?: string) {
     const pending = request(harness.app.getHttpServer())[method](path).set("X-Forwarded-Host", "localhost:3000");
     return cookie ? pending.set("Cookie", cookie) : pending;
   }
@@ -209,7 +209,7 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
 
   it("refuses every route that is not public when there is no session (deny by default)", async () => {
     for (const route of checkedRoutes()) {
-      const response = await call(route.method.toLowerCase() as "get", route.url);
+      const response = await call(route.verb, route.url);
       expect({ route: route.name, status: response.status }).toEqual({ route: route.name, status: 401 });
     }
   });
@@ -218,13 +218,27 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
     const sessionOnly = new Set(["GET /auth/context"]);
     const noCompanyYet = await harness.signIn(await harness.addUser({ companyIds: [a.id, b.id] }));
     for (const route of checkedRoutes()) {
-      const response = await call(route.method.toLowerCase() as "get", route.url, noCompanyYet).send({});
-      const expected = sessionOnly.has(route.name) ? response.body.code : "company_required";
-      expect({ route: route.name, code: response.body.code }).toEqual({ route: route.name, code: expected });
-      if (sessionOnly.has(route.name)) expect(response.status).toBe(200);
+      const response = await call(route.verb, route.url, noCompanyYet).send({});
+      // HEAD answers have no body, so the status is checked for every route and the code where there is one.
+      const expected = sessionOnly.has(route.name)
+        ? { route: route.name, status: 200 }
+        : { route: route.name, status: 403, code: route.verb === "head" ? undefined : "company_required" };
+      const actual = sessionOnly.has(route.name)
+        ? { route: route.name, status: response.status }
+        : { route: route.name, status: response.status, code: (response.body as { code?: string }).code };
+      expect(actual).toEqual(expected);
     }
   });
 });
+
+/** The HTTP methods the tests send. */
+type HttpMethod = "get" | "post" | "put" | "patch" | "delete" | "head" | "options";
+
+/** The method to probe an Express route method with. */
+function verbFor(method: string): HttpMethod {
+  const known: readonly HttpMethod[] = ["get", "post", "put", "patch", "delete", "head", "options"];
+  return (known as readonly string[]).includes(method) ? (method as HttpMethod) : "get";
+}
 
 /** An Express router layer, as far as listRoutes reads it. */
 interface RouterLayer {
@@ -232,12 +246,13 @@ interface RouterLayer {
 }
 
 /** Every Nest route on the Express app (Better Auth's /api/auth/* handler is not a Nest route). */
-function listRoutes(app: { router?: { stack: RouterLayer[] } }): { method: string; path: string }[] {
+function listRoutes(app: { router?: { stack: RouterLayer[] } }): { method: string; verb: HttpMethod; path: string }[] {
   return (app.router?.stack ?? []).flatMap(({ route }) =>
     route
       ? Object.keys(route.methods)
-          .filter((method) => ["get", "post", "patch", "put", "delete"].includes(method))
-          .map((method) => ({ method: method.toUpperCase(), path: route.path }))
+          // Every method, so @All(), @Head() and @Options() routes are checked too; an @All() route
+          // (Express "_all") is probed with GET.
+          .map((method) => ({ method: method.toUpperCase(), verb: verbFor(method), path: route.path }))
       : [],
   );
 }

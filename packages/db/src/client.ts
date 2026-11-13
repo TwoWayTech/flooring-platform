@@ -17,12 +17,19 @@ export interface DbHandle<T> {
 /** Pool settings; the defaults suit one API instance and keep a laptop's memory low. */
 export interface PoolOptions {
   max?: number;
+  /** Seconds before an unused connection is closed; unset keeps connections open. */
+  idleTimeoutSeconds?: number;
 }
 
 function pool(url: string, options: PoolOptions) {
   // Plain TCP driver with a pooled URL; never a provider-only driver (blueprint "Provider portability", rule 2).
   // A short connect timeout, so /health answers before a host health check gives up.
-  return postgres(url, { max: options.max ?? 5, connect_timeout: 10, onnotice: () => undefined });
+  return postgres(url, {
+    max: options.max ?? 5,
+    connect_timeout: 10,
+    idle_timeout: options.idleTimeoutSeconds,
+    onnotice: () => undefined,
+  });
 }
 
 /** Opens the control database. */

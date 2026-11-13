@@ -9,8 +9,15 @@ import { isReadOnly, type CompanyAccess } from "./tenant-directory";
  * (CLAUDE.md rule 2). TenantConnectionService takes only this, never a bare id, so no route can hand
  * it a company from a path, query, body or header. The constructor is private: the one way to
  * make it is `fromVerifiedSession`, which TenantGuard calls after its checks.
+ *
+ * The `#verified` field makes the type nominal. TypeScript compares classes by shape, so without a
+ * truly private member a plain object such as `{ companyId: params.id, ... }` would compile where a
+ * TenantContext is expected (PR #6 re-review). TenantConnectionService also checks `instanceof` at
+ * run time.
  */
 export class TenantContext {
+  readonly #verified = true;
+
   private constructor(
     /** The company (tenant) id. */
     readonly companyId: string,
@@ -31,6 +38,11 @@ export class TenantContext {
       throw new Error("A tenant context must be for the session's open company.");
     }
     return new TenantContext(company.id, session.user.id, company.products, isReadOnly(company));
+  }
+
+  /** Whether a value is a TenantContext made by `fromVerifiedSession`, not a look-alike object. */
+  static isVerified(value: unknown): value is TenantContext {
+    return value instanceof TenantContext && value.#verified;
   }
 }
 

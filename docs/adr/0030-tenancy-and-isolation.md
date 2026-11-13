@@ -15,8 +15,8 @@
 
 ### TenantConnectionService
 - It is the only way to a company database. Its one method, `db(tenant)`, takes a `TenantContext`, never a bare id.
-- `TenantContext` has a private constructor. Only `TenantContext.fromVerifiedSession(session, company)` makes one, and TenantGuard calls it after its checks. So the company cannot come from a path, query, body or header (rule 2).
-- Pools are cached per company in a small in-house LRU (`TENANT_POOL_CACHE`, default 20, 3 connections each). An evicted pool is closed after a 30-second grace period, so requests that still hold it can finish. Retiring pools still hold connections, so `TENANT_POOL_CACHE` should be above the number of companies active at once. All pools close at shutdown. Parallel first requests for one company share one pool. No new dependency.
+- `TenantContext` has a private constructor and a truly private `#verified` field, which makes the type nominal. TypeScript compares classes by shape, so without it a plain object would compile in its place (PR #6 re-review). Only `TenantContext.fromVerifiedSession(session, company)` makes one, and TenantGuard calls it after its checks. `db()` also checks `TenantContext.isVerified` at run time. So the company cannot come from a path, query, body or header (rule 2).
+- Pools are cached per company in a small in-house LRU (`TENANT_POOL_CACHE`, default 20, 3 connections each). An evicted pool is closed after a 30-second grace period, so requests that still hold it can finish. A company asked for again in that time takes its pool back. No more pools than the cache limit wait at once; beyond that the oldest closes at once. Company pools close connections idle for 60 seconds. So open connections stay below about twice `TENANT_POOL_CACHE` times 3 (PR #6 re-review). All pools close at shutdown. Parallel first requests for one company share one pool. No new dependency.
 - A database that is not `ready` or `read_only` answers 503 `company_unavailable`. TenantGuard checks this on every request, not only when a pool opens, so a database that starts migrating or fails stops serving at once (PR #6 review).
 
 ### Guards: global, deny by default
