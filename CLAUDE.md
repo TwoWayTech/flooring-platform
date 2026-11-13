@@ -67,6 +67,7 @@ The clickable demo lives on branch `demo` (tag `demo-v3`). `main` is the real pr
 - Write tests with every change: unit, API (supertest against Postgres) and Playwright UI.
 - Run lint, typecheck and tests before calling a task done, and report what you ran.
 - Ask before adding a dependency, altering an existing table, or touching auth, tenancy or providers. Record new libraries in docs/adr/.
+- Build a feature with `/feature <module>`; run `/review` before opening a PR. Subagents in .claude/agents: test-writer writes API and Playwright tests from a spec, schema-reviewer checks packages/db changes, and security-reviewer checks anything touching auth, tenancy, permissions or money. A Stop hook reminds you to `/handoff` when the tree is dirty or today's session log is missing.
 - Conventional commits. Squash-merge PRs. The other person reviews every PR, and nothing merges with red CI.
 
 ## Testing on a laptop (learned in the demo)

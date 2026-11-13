@@ -5,4 +5,5 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/auth-better-auth` | A | P8 part 1: Better Auth sign-in, email verification, per-company session timeouts, organizations = tenants, real login page in api mode | Ready PR, CI green. Security review done, idle-timeout fix in `22f330a`. Waiting for B to review and merge | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | the handoff commit after `22f330a` |
+| `feat/tooling-claude-agents` | A (task taken over from B) | Claude tooling from blueprint p35/p41: `/feature` and `/review` commands, security-reviewer (opus), test-writer and schema-reviewer (sonnet) subagents, Stop hook reminding to `/handoff` | Ready PR, rebased onto main after #2 merged. Waiting for B to review and merge | [#3](https://github.com/TwoWayTech/flooring-platform/pull/3) | the rebased handoff commit |
+| `feat/auth-mfa` | A | P8 part 2: TOTP and backup codes, passkeys, mandatory MFA, rate limits and lockout, `GET /public/branding?host=` | Created from main, no commits yet | none | `aa5bb7d` (main) |
