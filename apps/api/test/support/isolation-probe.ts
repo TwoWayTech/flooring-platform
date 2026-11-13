@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Module, NotFoundException, Param, Patch, Post } from "@nestjs/common";
 import { branches } from "@workspace/db/company";
 import { eq } from "drizzle-orm";
+import { AnyCompanyMember } from "../../src/core/access/permission.decorators";
 import { TenantConnectionService } from "../../src/core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../src/core/tenancy/tenant-context";
 
@@ -16,9 +17,11 @@ interface BranchInput {
  * update and delete. It reaches company data the only allowed way, through
  * TenantConnectionService with the request's TenantContext. The isolation tests use it to prove
  * that a person signed in to company A can never read or change company B's rows (blueprint P9).
- * It is mounted only by the tests.
+ * It is mounted only by the tests. It lets any member in, because it tests tenancy; the permission
+ * probe tests permissions.
  */
 @Controller("isolation-probe/branches")
+@AnyCompanyMember()
 class IsolationProbeController {
   constructor(private readonly tenancy: TenantConnectionService) {}
 

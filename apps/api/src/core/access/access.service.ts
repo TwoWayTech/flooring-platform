@@ -1,0 +1,156 @@
+import { Inject, Injectable } from "@nestjs/common";
+import type { ControlDb, DbHandle } from "@workspace/db";
+import { rolePermissions, roles, userProfiles, userRoles } from "@workspace/db/company";
+import {
+  planModules,
+  tenantModuleOverrides,
+  tenantPermissionCeiling,
+  tenantSubscriptions,
+} from "@workspace/db/control";
+import {
+  enabledModules,
+  resolveAccess,
+  type DataScope,
+  type ModuleKey,
+  type PermissionKey,
+  type PlanModules,
+  type RoleLike,
+} from "@workspace/shared";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { CONTROL_DB } from "../database/control-db";
+import { TenantConnectionService } from "../tenancy/tenant-connection.service";
+import type { TenantContext } from "../tenancy/tenant-context";
+
+/** What a signed-in person may do in the open company, as the guards and handlers see it. */
+export interface RequestAccess {
+  /** Effective permissions = role permissions ∩ company ceiling ∩ enabled modules (CLAUDE.md rule 4). */
+  permissions: ReadonlySet<PermissionKey>;
+  modules: readonly ModuleKey[];
+  /** The widest data scope across the person's roles. */
+  dataScope: DataScope;
+  isOwner: boolean;
+  userId: string;
+  /** The person's branch in this company, for `branch` data scope; null when they have none. */
+  branchId: string | null;
+  /** The names of the person's roles, as audit entries record them. */
+  roleNames: readonly string[];
+  /** Whether the person's profile in this company is disabled; a disabled person holds nothing. */
+  disabled: boolean;
+}
+
+/**
+ * Works out a person's access in their open company with the shared engine (`resolveAccess` in
+ * packages/shared, spec rules 1 to 3): their roles and role permissions from the company
+ * database, the ceiling and the modules from the control database. Nothing is cached between
+ * requests, so a change to roles, the ceiling or modules applies to the next request.
+ */
+@Injectable()
+export class AccessService {
+  constructor(
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
+    private readonly tenancy: TenantConnectionService,
+  ) {}
+
+  /** The access of the request's person in the request's company. */
+  async resolve(tenant: TenantContext): Promise<RequestAccess> {
+    const [held, ceiling, modules] = await Promise.all([
+      this.rolesOf(tenant),
+      this.ceilingOf(tenant.companyId),
+      this.modulesOf(tenant),
+    ]);
+    const access = resolveAccess(held.roles, held.disabled ? [] : ceiling, modules);
+    return {
+      permissions: access.permissions,
+      modules,
+      dataScope: access.dataScope,
+      isOwner: access.isOwner && !held.disabled,
+      userId: tenant.userId,
+      branchId: held.branchId,
+      roleNames: held.names,
+      disabled: held.disabled,
+    };
+  }
+
+  private async rolesOf(tenant: TenantContext) {
+    const db = await this.tenancy.db(tenant);
+    const [profile] = await db
+      .select({ branchId: userProfiles.branchId, status: userProfiles.status })
+      .from(userProfiles)
+      .where(and(eq(userProfiles.userId, tenant.userId), isNull(userProfiles.deletedAt)));
+    const roleRows = await db
+      .select({ id: roles.id, name: roles.name, dataScope: roles.dataScope, owner: roles.owner })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(eq(userRoles.userId, tenant.userId), isNull(userRoles.deletedAt), isNull(roles.deletedAt)));
+    const keys =
+      roleRows.length === 0
+        ? []
+        : await db
+            .select({ roleId: rolePermissions.roleId, key: rolePermissions.permissionKey })
+            .from(rolePermissions)
+            .where(
+              and(
+                inArray(
+                  rolePermissions.roleId,
+                  roleRows.map((role) => role.id),
+                ),
+                isNull(rolePermissions.deletedAt),
+              ),
+            );
+    const held: RoleLike[] = roleRows.map((role) => ({
+      id: role.id,
+      dataScope: role.dataScope,
+      owner: role.owner,
+      permissions: keys.filter((row) => row.roleId === role.id).map((row) => row.key as PermissionKey),
+    }));
+    return {
+      roles: held,
+      names: roleRows.map((role) => role.name),
+      branchId: profile?.branchId ?? null,
+      // No profile means the person was never set up in this company, which counts as disabled.
+      disabled: !profile || profile.status === "disabled",
+    };
+  }
+
+  private async ceilingOf(companyId: string): Promise<PermissionKey[]> {
+    const rows = await this.control.db
+      .select({ key: tenantPermissionCeiling.permissionKey })
+      .from(tenantPermissionCeiling)
+      .where(
+        and(
+          eq(tenantPermissionCeiling.tenantId, companyId),
+          eq(tenantPermissionCeiling.allowed, true),
+          isNull(tenantPermissionCeiling.deletedAt),
+        ),
+      );
+    return rows.map((row) => row.key as PermissionKey);
+  }
+
+  private async modulesOf(tenant: TenantContext): Promise<ModuleKey[]> {
+    const [subscription] = await this.control.db
+      .select({ planId: tenantSubscriptions.planId })
+      .from(tenantSubscriptions)
+      .where(
+        and(
+          eq(tenantSubscriptions.tenantId, tenant.companyId),
+          ne(tenantSubscriptions.status, "cancelled"),
+          isNull(tenantSubscriptions.deletedAt),
+        ),
+      )
+      .orderBy(desc(tenantSubscriptions.currentPeriodEnd))
+      .limit(1);
+    let plan: PlanModules = null;
+    if (subscription) {
+      const rows = await this.control.db
+        .select({ module: planModules.module })
+        .from(planModules)
+        .where(and(eq(planModules.planId, subscription.planId), isNull(planModules.deletedAt)));
+      plan = rows.map((row) => row.module);
+    }
+    const overrides = await this.control.db
+      .select({ module: tenantModuleOverrides.module, enabled: tenantModuleOverrides.enabled })
+      .from(tenantModuleOverrides)
+      .where(and(eq(tenantModuleOverrides.tenantId, tenant.companyId), isNull(tenantModuleOverrides.deletedAt)));
+    return enabledModules(tenant.products, plan, overrides);
+  }
+}

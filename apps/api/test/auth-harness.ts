@@ -20,7 +20,8 @@ import {
 } from "@workspace/providers";
 import { hashPassword } from "better-auth/crypto";
 import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa } from "@workspace/shared";
-import { eq } from "drizzle-orm";
+import { roles, userProfiles, userRoles } from "@workspace/db/company";
+import { eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { createApp } from "../src/app";
@@ -222,8 +223,37 @@ export class AuthHarness {
         role: encodeMemberRoles(options.roles ?? ["sales"]),
         createdAt: now,
       });
+      await this.grantRoles(organizationId, id, options.roles ?? ["sales"]);
     }
     return email;
+  }
+
+  /**
+   * Gives a user an active profile and the roles with these keys in a company's own database, as
+   * Settings → Users will (P10). Companies made with addCompany have no database, so they are skipped.
+   */
+  async grantRoles(companyId: string, userId: string, roleKeys: readonly string[]): Promise<void> {
+    const [database] = await this.control.db
+      .select({ id: tenantDatabases.id })
+      .from(tenantDatabases)
+      .where(eq(tenantDatabases.tenantId, companyId));
+    if (!database) return;
+    const handle = await this.companyDb(companyId);
+    try {
+      await handle.db.insert(userProfiles).values({ userId, status: "active" }).onConflictDoNothing();
+      const held = await handle.db
+        .select({ id: roles.id })
+        .from(roles)
+        .where(inArray(roles.key, [...roleKeys]));
+      if (held.length > 0) {
+        await handle.db
+          .insert(userRoles)
+          .values(held.map((role) => ({ userId, roleId: role.id })))
+          .onConflictDoNothing();
+      }
+    } finally {
+      await handle.close();
+    }
   }
 }
 
