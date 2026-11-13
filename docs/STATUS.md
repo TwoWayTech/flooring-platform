@@ -95,6 +95,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Make the role matrix test independent of `productPermissions` and `enabledModules`.
   - Check route decorators directly in the inventory test, not only over HTTP.
 - **Provisioning test gaps (PR #8 third review):** that resume picks the owner-role member when a non-owner member comes first; that provisionCompany keeps a status changed meanwhile; and that the dev seed can strand Summit if its database was left `failed` or `migrating` (run `pnpm db:migrate`).
+- **PR #8 fifth review (none blocking):**
+  - Claim the database row before `prepare`, so a rerun on a changed status never seeds before it throws.
+  - Report migrate-all writes that match no row (status changed mid-run), as provisionCompany does.
+  - Decide whether a read-only database should keep serving after a failed migration (availability: new code on an old schema answers 500).
 - **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
