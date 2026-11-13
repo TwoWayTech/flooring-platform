@@ -30,7 +30,8 @@ export async function alertMigrationFailure(
     .select({ name: tenants.name, slug: tenants.slug })
     .from(tenants)
     .where(eq(tenants.id, failure.tenantId));
-  const name = company ? `${company.name} (${company.slug})` : failure.tenantId;
+  // On one line, so a company name can never add a header (PR #10 review).
+  const name = (company ? `${company.name} (${company.slug})` : failure.tenantId).replace(/[\r\n]+/g, " ");
   const recipients = await platformAdminEmails(control);
   let sent = 0;
   for (const to of recipients) {
