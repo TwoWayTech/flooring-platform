@@ -1,6 +1,6 @@
 import { productPermissions } from "@workspace/db";
-import { auditLog, userProfiles } from "@workspace/db/company";
-import { tenantModuleOverrides } from "@workspace/db/control";
+import { auditLog, userProfiles, userRoles } from "@workspace/db/company";
+import { planModules, plans, products, tenantModuleOverrides, tenantSubscriptions } from "@workspace/db/control";
 import {
   enabledModules,
   permissionsForModules,
@@ -204,5 +204,66 @@ describe("permissions, sensitive fields and audit (P10, needs the local PostgreS
         undeclared.push(`${route.method} ${route.path}`);
     }
     expect(undeclared).toEqual([`GET ${PROBE}/undeclared`]);
+  });
+
+  it("limits modules to the plan, and never turns a cancelled plan into a trial (PR #7 review)", async () => {
+    const manager = await member("flooring", ["manager"]);
+    const contracts = async () => (await call("get", `${PROBE}/contracts`, manager)).body.code as string | undefined;
+    expect(await contracts()).not.toBe("module_not_enabled");
+    const [flooring] = await harness.control.db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.key, "flooring"));
+    const [plan] = await harness.control.db
+      .insert(plans)
+      .values({
+        key: `narrow-${companies.flooring.slug}`,
+        name: "Narrow",
+        productId: flooring.id,
+        monthlyPrice: "0",
+        yearlyPrice: "0",
+      })
+      .returning();
+    await harness.control.db.insert(planModules).values({ planId: plan.id, module: "core" });
+    const [subscription] = await harness.control.db
+      .insert(tenantSubscriptions)
+      .values({
+        tenantId: companies.flooring.id,
+        planId: plan.id,
+        interval: "monthly",
+        price: "0",
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 86_400_000),
+        status: "active",
+      })
+      .returning();
+    try {
+      expect(await contracts()).toBe("module_not_enabled");
+      await harness.control.db
+        .update(tenantSubscriptions)
+        .set({ status: "cancelled" })
+        .where(eq(tenantSubscriptions.id, subscription.id));
+      expect(await contracts()).toBe("module_not_enabled");
+    } finally {
+      await harness.control.db.delete(tenantSubscriptions).where(eq(tenantSubscriptions.id, subscription.id));
+      await harness.control.db.delete(planModules).where(eq(planModules.planId, plan.id));
+      await harness.control.db.delete(plans).where(eq(plans.id, plan.id));
+    }
+  });
+
+  it("ignores a role link that was removed (soft-deleted)", async () => {
+    const email = await harness.addUser({ companyIds: [companies.flooring.id], roles: ["manager"] });
+    const cookie = await harness.signIn(email);
+    await call("get", `${PROBE}/products`, cookie).expect(200);
+    const handle = await harness.companyDb(companies.flooring.id);
+    try {
+      await handle.db
+        .update(userRoles)
+        .set({ deletedAt: new Date() })
+        .where(eq(userRoles.userId, await harness.userIdOf(email)));
+    } finally {
+      await handle.close();
+    }
+    expect((await call("get", `${PROBE}/products`, cookie)).body.code).toBe("forbidden");
   });
 });

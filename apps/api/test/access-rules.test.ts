@@ -1,6 +1,9 @@
 import type { PermissionKey } from "@workspace/shared";
 import { describe, expect, it } from "vitest";
 import type { RequestAccess } from "../src/core/access/access.service";
+import { Controller, Get, Post, type ExecutionContext } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { AnyCompanyMember, permissionRequirement, RequirePermission } from "../src/core/access/permission.decorators";
 import { permissionDecision } from "../src/core/access/permission.guard";
 import { stripSensitive } from "../src/core/access/sensitive-fields";
 
@@ -60,7 +63,7 @@ describe("stripSensitive (CLAUDE.md rule 5: the server strips sensitive fields)"
       name: "Oak plank",
       lines: [{ sku: "A" }],
       supplier: { name: "Northwind Mills" },
-      createdAt: body.createdAt,
+      createdAt: "2026-11-13T00:00:00.000Z",
     });
   });
 
@@ -71,8 +74,64 @@ describe("stripSensitive (CLAUDE.md rule 5: the server strips sensitive fields)"
     expect(stripped.supplier).toEqual({ name: "Northwind Mills" });
   });
 
+  it("strips fields from class instances and toJSON output exactly as they would be sent", () => {
+    class ProductDto {
+      constructor(
+        readonly name: string,
+        readonly cost: string,
+      ) {}
+    }
+    const decimal = { toJSON: () => ({ unit_cost: "3.0000", qty: "2.000" }) };
+    expect(stripSensitive([new ProductDto("Tile", "9.0000"), decimal], new Set())).toEqual([
+      { name: "Tile" },
+      { qty: "2.000" },
+    ]);
+  });
+
   it("does not change the original response", () => {
     stripSensitive(body, new Set());
     expect(body.cost).toBe("2.5000");
+  });
+});
+
+describe("permissionRequirement (PR #7 review: class decorators never open writes)", () => {
+  @Controller("x")
+  @AnyCompanyMember()
+  @RequirePermission("inventory.product.view")
+  class Probe {
+    @Get()
+    read() {
+      return [];
+    }
+
+    @Post()
+    write() {
+      return {};
+    }
+
+    @Post("member")
+    @AnyCompanyMember()
+    memberWrite() {
+      return {};
+    }
+  }
+
+  const context = (handler: keyof Probe) =>
+    ({ getHandler: () => Probe.prototype[handler], getClass: () => Probe }) as unknown as ExecutionContext;
+  const reflector = new Reflector();
+
+  it("lets class permissions guard reads", () => {
+    expect(permissionRequirement(reflector, context("read"), "GET").permissions).toEqual(["inventory.product.view"]);
+  });
+
+  it("treats a write without handler permissions as undeclared, despite the class decorators", () => {
+    const requirement = permissionRequirement(reflector, context("write"), "POST");
+    expect(requirement).toMatchObject({ permissions: [], anyMember: false });
+    expect(permissionDecision(requirement, access(["inventory.product.view"]))).toBe("permission_undeclared");
+  });
+
+  it("counts AnyCompanyMember only on the handler", () => {
+    expect(permissionRequirement(reflector, context("read"), "GET").anyMember).toBe(false);
+    expect(permissionRequirement(reflector, context("memberWrite"), "POST").anyMember).toBe(true);
   });
 });

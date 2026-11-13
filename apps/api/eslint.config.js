@@ -13,13 +13,24 @@ const companyDatabaseImports = {
       importNames: ["openCompanyDb", "decryptSecret"],
       message: "Reach company data through TenantConnectionService.db(tenant) (CLAUDE.md rule 2).",
     },
+    {
+      name: "postgres",
+      message: "Database clients come from @workspace/db, company ones through TenantConnectionService.",
+    },
+    { name: "drizzle-orm/postgres-js", message: "Database clients come from @workspace/db (CLAUDE.md rule 2)." },
+    { name: "@workspace/db/testing", message: "Test helpers never ship in the API." },
   ],
 };
 
-const tenantContextFactory = {
-  selector: "MemberExpression[object.name='TenantContext'][property.name='fromVerifiedSession']",
-  message: "Only TenantGuard builds a TenantContext, from the verified session (CLAUDE.md rule 2).",
-};
+const tenantContextMessage = "Only TenantGuard builds a TenantContext, from the verified session (CLAUDE.md rule 2).";
+
+/** Every way to reach the factory: a property read, a computed read, destructuring, or an alias. */
+const tenantContextFactory = [
+  "MemberExpression[object.name='TenantContext'][property.name='fromVerifiedSession']",
+  "MemberExpression[object.name='TenantContext'][computed=true]",
+  "VariableDeclarator[init.name='TenantContext'] > ObjectPattern",
+  "ImportSpecifier[imported.name='TenantContext'][local.name!='TenantContext']",
+].map((selector) => ({ selector, message: tenantContextMessage }));
 
 export default tseslint.config(
   { ignores: ["dist/**", "coverage/**"] },
@@ -28,7 +39,7 @@ export default tseslint.config(
     files: ["src/**/*.ts"],
     rules: {
       "no-restricted-imports": ["error", companyDatabaseImports],
-      "no-restricted-syntax": ["error", tenantContextFactory],
+      "no-restricted-syntax": ["error", ...tenantContextFactory],
     },
   },
   {

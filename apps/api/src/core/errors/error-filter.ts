@@ -1,5 +1,7 @@
 import { Catch, HttpException, HttpStatus, Logger, type ArgumentsHost, type ExceptionFilter } from "@nestjs/common";
 import type { Response } from "express";
+import type { AccessRequest } from "../access/permission.guard";
+import { stripSensitive } from "../access/sensitive-fields";
 
 /** The one error body every endpoint returns (docs/api-contract.md, Conventions). */
 export interface ErrorBody {
@@ -42,7 +44,13 @@ export class ErrorFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
     if (exception instanceof HttpException) {
-      response.status(exception.getStatus()).json(bodyFor(exception));
+      const body = bodyFor(exception);
+      // Error details can carry a record, so they get the same sensitive-field stripping as
+      // responses (CLAUDE.md rule 5; PR #7 review). Without resolved access nothing is stripped,
+      // because public and session-only routes return no company data.
+      const access = host.switchToHttp().getRequest<AccessRequest>().access;
+      if (access && body.details !== undefined) body.details = stripSensitive(body.details, access.permissions);
+      response.status(exception.getStatus()).json(body);
       return;
     }
     this.logger.error(exception instanceof Error ? exception.stack : String(exception));

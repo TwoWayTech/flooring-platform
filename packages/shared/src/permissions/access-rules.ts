@@ -34,6 +34,34 @@ export function enabledModules(
   return [...enabled];
 }
 
+/** One of a company's subscriptions, with its plan's modules, as planModulesOf reads it. */
+export interface SubscriptionModules {
+  status: "trial" | "active" | "past_due" | "cancelled";
+  currentPeriodEnd: Date;
+  modules: readonly ModuleKey[];
+}
+
+/**
+ * The plan modules that limit a company (input to enabledModules). Null only when the company has
+ * never had a subscription, which is a trial. Otherwise it is the union of the plans of its current
+ * subscriptions (one per product). When every subscription is cancelled, it is the plan of the
+ * latest one, so a cancelled company keeps reading what it paid for (read-only, blueprint p29) and
+ * never gains more (PR #7 review: a cancelled plan must not turn into a trial).
+ */
+export function planModulesOf(subscriptions: readonly SubscriptionModules[]): PlanModules {
+  if (subscriptions.length === 0) return null;
+  const current = subscriptions.filter((subscription) => subscription.status !== "cancelled");
+  const counted =
+    current.length > 0
+      ? current
+      : [
+          subscriptions.reduce((latest, subscription) =>
+            subscription.currentPeriodEnd > latest.currentPeriodEnd ? subscription : latest,
+          ),
+        ];
+  return [...new Set(counted.flatMap((subscription) => subscription.modules))];
+}
+
 /**
  * Response fields that only some roles may see (CLAUDE.md rule 5; spec rule 9), by JSON property
  * name, with the key that reveals each. The API strips them from every company response for
@@ -45,16 +73,38 @@ export const SENSITIVE_FIELDS: Readonly<Record<string, PermissionKey>> = {
   unitCost: SENSITIVE.productCost,
   averageCost: SENSITIVE.productCost,
   landedCost: SENSITIVE.productCost,
+  costPerSqFt: SENSITIVE.productCost,
+  productCost: SENSITIVE.productCost,
   margin: SENSITIVE.margin,
   marginPct: SENSITIVE.margin,
   grossMargin: SENSITIVE.margin,
+  grossMarginPct: SENSITIVE.margin,
   jobMargin: SENSITIVE.jobMargin,
+  jobMarginPct: SENSITIVE.jobMargin,
+  jobCost: SENSITIVE.jobMargin,
+  laborCost: SENSITIVE.jobMargin,
   payRate: SENSITIVE.payRate,
   hourlyRate: SENSITIVE.payRate,
+  baseRate: SENSITIVE.payRate,
+  regularRate: SENSITIVE.payRate,
   salary: SENSITIVE.payRate,
+  salaryAmount: SENSITIVE.payRate,
   creditLimit: SENSITIVE.creditLimit,
   estimatedCost: "contracts.contract.view_sensitive",
 };
+
+/** A snake_case column name as the camelCase property name it stands for (`unit_cost` → `unitCost`). */
+function camelCase(field: string): string {
+  return field.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());
+}
+
+/**
+ * The key that reveals a response field, or undefined when the field is not sensitive. Raw SQL rows
+ * arrive in snake_case, so `unit_cost` is matched as `unitCost` (PR #7 review).
+ */
+export function sensitiveKeyFor(field: string): PermissionKey | undefined {
+  return SENSITIVE_FIELDS[field] ?? SENSITIVE_FIELDS[camelCase(field)];
+}
 
 /** Who is looking, as data scope needs it. */
 export interface ScopeViewer {

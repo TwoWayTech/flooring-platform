@@ -21,16 +21,17 @@ interface BranchInput {
  * probe tests permissions.
  */
 @Controller("isolation-probe/branches")
-@AnyCompanyMember()
 class IsolationProbeController {
   constructor(private readonly tenancy: TenantConnectionService) {}
 
   @Get()
+  @AnyCompanyMember()
   async list(@CurrentTenant() tenant: TenantContext) {
     return (await this.tenancy.db(tenant)).select().from(branches);
   }
 
   @Get(":id")
+  @AnyCompanyMember()
   async get(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     const [row] = await (await this.tenancy.db(tenant)).select().from(branches).where(eq(branches.id, id));
     if (!row) throw new NotFoundException();
@@ -38,6 +39,7 @@ class IsolationProbeController {
   }
 
   @Post()
+  @AnyCompanyMember()
   async create(@CurrentTenant() tenant: TenantContext, @Body() body: BranchInput) {
     const [row] = await (
       await this.tenancy.db(tenant)
@@ -49,6 +51,7 @@ class IsolationProbeController {
   }
 
   @Patch(":id")
+  @AnyCompanyMember()
   async update(@CurrentTenant() tenant: TenantContext, @Param("id") id: string, @Body() body: BranchInput) {
     const [row] = await (
       await this.tenancy.db(tenant)
@@ -62,6 +65,7 @@ class IsolationProbeController {
   }
 
   @Delete(":id")
+  @AnyCompanyMember()
   async remove(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     const [row] = await (await this.tenancy.db(tenant)).delete(branches).where(eq(branches.id, id)).returning();
     if (!row) throw new NotFoundException();

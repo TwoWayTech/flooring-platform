@@ -71,6 +71,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
+- **P10 review follow-ups (none blocking):**
+  - A runtime database role that does not own the company database, so the `audit_log` trigger cannot be disabled or dropped by the app's login.
+  - An alert, not only a log line, when the audit safety net fails to write.
+  - Exports must strip their data with `stripSensitive` before building a file.
+  - Job costing must use `jobCost`, `jobMargin` and `jobMarginPct` (ADR 0031).
+  - Make the role matrix test independent of `productPermissions` and `enabledModules`.
+  - Check route decorators directly in the inventory test, not only over HTTP.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
   - **Leases:** count users per pool (a `withDb(tenant, fn)` wrapper or acquire and release), so the over-cap close and eviction never end a pool that a request is still using. Today that can happen once more than 2 × `TENANT_POOL_CACHE` companies are active within 30 s.

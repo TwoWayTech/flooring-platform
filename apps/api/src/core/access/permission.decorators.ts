@@ -18,7 +18,8 @@ export const RequireModule = (module: ModuleKey) => SetMetadata(MODULE_KEY, modu
 
 /**
  * Lets any member of the company in, with no permission. Only for routes that return the person's
- * own information, such as their access. Every other company route must name its permissions.
+ * own information, such as their access. Every other company route must name its permissions. It
+ * counts only on a handler, never on a controller class.
  */
 export const AnyCompanyMember = () => SetMetadata(ANY_MEMBER_KEY, true);
 
@@ -39,12 +40,28 @@ function read<T>(reflector: Reflector, key: string, context: ExecutionContext): 
   return reflector.getAllAndOverride<T>(key, [context.getHandler(), context.getClass()]);
 }
 
-/** The permission requirement of the route a request is for. */
-export function permissionRequirement(reflector: Reflector, context: ExecutionContext): PermissionRequirement {
+/** Methods that only read; a write must declare its permissions on its own handler. */
+const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * The permission requirement of the route a request is for. Class-level decorators are defaults for
+ * reads only (PR #7 review): `@AnyCompanyMember()` counts only on the handler itself, and a write
+ * (POST, PUT, PATCH or DELETE) counts only permissions set on its own handler. So a controller that
+ * lets members read can never let them write by accident.
+ */
+export function permissionRequirement(
+  reflector: Reflector,
+  context: ExecutionContext,
+  method: string,
+): PermissionRequirement {
+  const handlerOnly = <T>(key: string) => reflector.get<T | undefined>(key, context.getHandler());
+  const permissions = READ_METHODS.has(method)
+    ? read<PermissionKey[]>(reflector, PERMISSIONS_KEY, context)
+    : handlerOnly<PermissionKey[]>(PERMISSIONS_KEY);
   return {
-    permissions: read<PermissionKey[]>(reflector, PERMISSIONS_KEY, context) ?? [],
+    permissions: permissions ?? [],
     module: read<ModuleKey>(reflector, MODULE_KEY, context),
-    anyMember: read<boolean>(reflector, ANY_MEMBER_KEY, context) ?? false,
+    anyMember: handlerOnly<boolean>(ANY_MEMBER_KEY) ?? false,
   };
 }
 

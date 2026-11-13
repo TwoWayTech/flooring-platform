@@ -58,7 +58,7 @@ export class PermissionGuard implements CanActivate {
     if (accessLevel(this.reflector, context) !== "company") return true;
     const request = context.switchToHttp().getRequest<AccessRequest>();
     if (!request.tenant) throw new Error("PermissionGuard ran without a tenant; TenantGuard must run first.");
-    const requirement = permissionRequirement(this.reflector, context);
+    const requirement = permissionRequirement(this.reflector, context, request.method);
     if (requirement.permissions.length === 0 && !requirement.anyMember) {
       this.logger.error(`${context.getClass().name}.${context.getHandler().name} declares no permission.`);
     }

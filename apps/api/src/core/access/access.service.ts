@@ -9,14 +9,14 @@ import {
 } from "@workspace/db/control";
 import {
   enabledModules,
+  planModulesOf,
   resolveAccess,
   type DataScope,
   type ModuleKey,
   type PermissionKey,
-  type PlanModules,
   type RoleLike,
 } from "@workspace/shared";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { CONTROL_DB } from "../database/control-db";
 import { TenantConnectionService } from "../tenancy/tenant-connection.service";
 import type { TenantContext } from "../tenancy/tenant-context";
@@ -127,26 +127,28 @@ export class AccessService {
   }
 
   private async modulesOf(tenant: TenantContext): Promise<ModuleKey[]> {
-    const [subscription] = await this.control.db
-      .select({ planId: tenantSubscriptions.planId })
+    const subscriptions = await this.control.db
+      .select({
+        planId: tenantSubscriptions.planId,
+        status: tenantSubscriptions.status,
+        currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
+      })
       .from(tenantSubscriptions)
-      .where(
-        and(
-          eq(tenantSubscriptions.tenantId, tenant.companyId),
-          ne(tenantSubscriptions.status, "cancelled"),
-          isNull(tenantSubscriptions.deletedAt),
-        ),
-      )
-      .orderBy(desc(tenantSubscriptions.currentPeriodEnd))
-      .limit(1);
-    let plan: PlanModules = null;
-    if (subscription) {
-      const rows = await this.control.db
-        .select({ module: planModules.module })
-        .from(planModules)
-        .where(and(eq(planModules.planId, subscription.planId), isNull(planModules.deletedAt)));
-      plan = rows.map((row) => row.module);
-    }
+      .where(and(eq(tenantSubscriptions.tenantId, tenant.companyId), isNull(tenantSubscriptions.deletedAt)));
+    const planIds = [...new Set(subscriptions.map((subscription) => subscription.planId))];
+    const moduleRows =
+      planIds.length === 0
+        ? []
+        : await this.control.db
+            .select({ planId: planModules.planId, module: planModules.module })
+            .from(planModules)
+            .where(and(inArray(planModules.planId, planIds), isNull(planModules.deletedAt)));
+    const plan = planModulesOf(
+      subscriptions.map((subscription) => ({
+        ...subscription,
+        modules: moduleRows.filter((row) => row.planId === subscription.planId).map((row) => row.module),
+      })),
+    );
     const overrides = await this.control.db
       .select({ module: tenantModuleOverrides.module, enabled: tenantModuleOverrides.enabled })
       .from(tenantModuleOverrides)
