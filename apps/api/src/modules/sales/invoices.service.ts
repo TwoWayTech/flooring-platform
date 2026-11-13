@@ -10,8 +10,11 @@ import {
   reservations,
 } from "@workspace/db/company";
 import {
+  adjustmentPosting,
+  creditNotePosting,
   dec,
   invoiceFromQuote,
+  invoicePosting,
   minDec,
   moneyString,
   nextNumber,
@@ -32,6 +35,7 @@ import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
+import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
@@ -47,7 +51,7 @@ import {
   loadRefunds,
   loadReservations,
 } from "./invoice-records";
-import { companyToday, notFound, refuse, requireLedger, seesCustomer, seesDocument } from "./sales-common";
+import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** The first invoice number, as in the demo (`INV-1001`), and the credit note series (`CR-5001`, spec rule 22). */
@@ -84,6 +88,7 @@ export class InvoicesService {
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
+    private readonly books: LedgerService,
   ) {}
 
   /** Invoices and credit notes the person may see. */
@@ -143,7 +148,6 @@ export class InvoicesService {
    * and does not block the sale.
    */
   async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
-    requireLedger();
     const db = await this.tenancy.db(tenant);
     const day = await companyToday(this.control.db, tenant);
     const id = uuidv7();
@@ -178,6 +182,8 @@ export class InvoicesService {
       // Invoice lines get their own ids; nothing points at a quote line (ADR 0037).
       const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
       await this.insertInvoice(tx, invoice, actor.access.userId);
+      // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
+      await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       await lockStock(tx);
       const [products, rolls, movements, held] = await Promise.all([
         loadProducts(tx),
@@ -282,7 +288,6 @@ export class InvoicesService {
    * credit would go below what was spent.
    */
   async voidInvoice(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<Invoice> {
-    requireLedger();
     const why = reasonFor(reason, "the invoice is voided");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -336,6 +341,8 @@ export class InvoicesService {
         .update(invoices)
         .set({ voidedAt: now, voidReason: why, updatedAt: now })
         .where(eq(invoices.id, invoiceId));
+      const event = invoice.isReturn ? "credit_note.issued" : "invoice.issued";
+      await this.books.reverse(tx, { sourceType: "invoice", sourceId: invoiceId, event }, day, actor.access.userId);
       await lockStock(tx);
       const released = await tx
         .update(reservations)
@@ -373,7 +380,6 @@ export class InvoicesService {
     invoiceId: string,
     request: CreditNoteRequest,
   ): Promise<Invoice> {
-    requireLedger();
     const why = reasonFor(request.reason, "the credit note is issued");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -422,6 +428,10 @@ export class InvoicesService {
         lines: [],
       };
       await this.insertInvoice(tx, note, actor.access.userId);
+      await this.books.post(tx, creditNotePosting(note), actor.access.userId);
+      // A note settles its own invoice's open balance first, so only money received can become
+      // refundable credit (ADR 0039; PR #15 security review).
+      const settled = await this.settleWithNote(tx, actor.access.userId, invoice, note, day);
       await this.auditLog.record(
         tenant,
         actor.audit,
@@ -431,7 +441,14 @@ export class InvoicesService {
           targetType: "invoice",
           targetId: id,
           targetLabel: note.number,
-          after: { for: invoice.number, subtotal: note.subtotal, tax: note.tax, total: note.total, reason: why },
+          after: {
+            for: invoice.number,
+            subtotal: note.subtotal,
+            tax: note.tax,
+            total: note.total,
+            settledOnInvoice: settled,
+            reason: why,
+          },
         },
         tx,
       );
@@ -444,7 +461,6 @@ export class InvoicesService {
    * maximum. The invoice then reads Paid.
    */
   async writeOff(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<InvoiceAdjustment> {
-    requireLedger();
     const why = reasonFor(reason, "the balance is written off");
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
@@ -469,7 +485,6 @@ export class InvoicesService {
 
   /** Applies the customer's credit to an invoice (spec rule 36): as much as the balance takes. */
   async applyCredit(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<InvoiceAdjustment> {
-    requireLedger();
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId);
     const day = await companyToday(this.control.db, tenant);
@@ -515,6 +530,15 @@ export class InvoicesService {
         at: now,
         createdBy: actor.access.userId,
       });
+      await this.books.post(
+        tx,
+        adjustmentPosting(
+          { id, invoiceId: invoice.id, customerId: invoice.customerId, ...decided, byName: "", at: "" },
+          invoice.number,
+          day,
+        ),
+        actor.access.userId,
+      );
       await this.auditLog.record(
         tenant,
         actor.audit,
@@ -531,6 +555,45 @@ export class InvoicesService {
       );
     });
     return (await loadAdjustments(db, this.control.db, { ids: [id] }))[0]!;
+  }
+
+  /**
+   * Applies a new credit note to its own invoice, up to the open balance, as credit applied with its
+   * posting. Returns what it settled, "0.00" when the invoice was already paid.
+   */
+  private async settleWithNote(
+    tx: CompanyDb,
+    by: string,
+    invoice: Invoice,
+    note: Invoice,
+    day: string,
+  ): Promise<string> {
+    const { ledger } = await invoiceState(tx, this.control.db, invoice.id, day);
+    const amount = minDec(dec(note.total), dec(ledger.balance));
+    if (amount.lte(0)) return "0.00";
+    const adjustment: InvoiceAdjustment = {
+      id: uuidv7(),
+      invoiceId: invoice.id,
+      customerId: invoice.customerId,
+      kind: "credit_applied",
+      amount: moneyString(amount),
+      reason: `Credit note ${note.number}`,
+      byName: "",
+      at: "",
+    };
+    await tx.insert(invoiceAdjustments).values({
+      id: adjustment.id,
+      invoiceId: adjustment.invoiceId,
+      customerId: adjustment.customerId,
+      kind: adjustment.kind,
+      amount: adjustment.amount,
+      reason: adjustment.reason,
+      byUserId: by,
+      at: new Date(),
+      createdBy: by,
+    });
+    await this.books.post(tx, adjustmentPosting(adjustment, invoice.number, day), by);
+    return adjustment.amount;
   }
 
   /** Writes an invoice with its lines and commission split. */

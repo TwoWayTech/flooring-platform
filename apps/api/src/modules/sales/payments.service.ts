@@ -5,6 +5,8 @@ import type { StorageProvider } from "@workspace/providers";
 import {
   dec,
   invoiceLedger,
+  paymentPosting,
+  refundPosting,
   moneyString,
   needsApproval,
   nextPaymentNumber,
@@ -22,6 +24,7 @@ import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
+import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { STORAGE } from "../../core/storage/storage.module";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
@@ -29,7 +32,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
 import { loadMoneyFormat, loadPaymentSettings, loadPayments, loadRefunds } from "./invoice-records";
 import { checkProofs, withStoredProofs, type ProofUpload } from "./proof-files";
-import { companyToday, notFound, refuse, requireLedger, seesCustomer } from "./sales-common";
+import { companyToday, notFound, refuse, seesCustomer } from "./sales-common";
 import { loadBranches, loadCustomers } from "./sales-records";
 
 /** A reviewer's decision on a pending payment (spec rule 28). */
@@ -65,6 +68,7 @@ export class PaymentsService {
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
+    private readonly books: LedgerService,
   ) {}
 
   /**
@@ -79,7 +83,6 @@ export class PaymentsService {
     input: RecordPaymentInput,
     files: readonly ProofUpload[],
   ): Promise<Payment> {
-    requireLedger();
     const proofs = checkProofs(files);
     const db = await this.tenancy.db(tenant);
     const found = await invoiceInScope(db, actor.access, input.invoiceId);
@@ -153,6 +156,11 @@ export class PaymentsService {
         };
         await tx.insert(paymentsReceived).values(row);
         await attach(tx, "payment", id, actor.access.userId);
+        if (row.status === "confirmed") {
+          // A payment counts, and posts, once confirmed; a pending one waits for its reviewer.
+          const [saved] = await loadPayments(tx, this.control.db, { ids: [id] });
+          await this.books.post(tx, paymentPosting(saved!, invoice.number, ledger.balance), actor.access.userId);
+        }
         await this.auditLog.record(
           tenant,
           actor.audit,
@@ -188,7 +196,6 @@ export class PaymentsService {
    * a rejection needs a reason of at least 3 characters.
    */
   async review(tenant: TenantContext, actor: Actor, paymentId: string, decision: PaymentDecision): Promise<Payment> {
-    requireLedger();
     const db = await this.tenancy.db(tenant);
     const before = await this.paymentInScope(db, actor.access, paymentId);
     const reason = decision.action === "reject" ? decision.reason.trim() : "";
@@ -205,8 +212,10 @@ export class PaymentsService {
           message: "Someone other than the person who recorded a payment must verify it.",
         });
       }
-      if (decision.action === "confirm") {
-        const { ledger } = await invoiceState(tx, this.control.db, payment.invoiceId, day);
+      const state =
+        decision.action === "confirm" ? await invoiceState(tx, this.control.db, payment.invoiceId, day) : null;
+      if (state) {
+        const { ledger } = state;
         if (dec(payment.amount).gt(ledger.balance) && !actor.access.permissions.has("sales.payment.apply_credit")) {
           throw refuse(
             `Payment ${payment.number} is more than the balance now. Someone who may give customer credit must confirm it.`,
@@ -224,6 +233,13 @@ export class PaymentsService {
           updatedAt: now,
         })
         .where(eq(paymentsReceived.id, paymentId));
+      if (state) {
+        await this.books.post(
+          tx,
+          paymentPosting(payment, state.invoice.number, state.ledger.balance),
+          actor.access.userId,
+        );
+      }
       await this.auditLog.record(
         tenant,
         actor.audit,
@@ -250,7 +266,6 @@ export class PaymentsService {
    * refunded cannot be voided, or the customer's credit would go below what was spent.
    */
   async voidPayment(tenant: TenantContext, actor: Actor, paymentId: string, reason: string): Promise<Payment> {
-    requireLedger();
     const why = reason.trim();
     if (why.length < 3) throw refuse("Say why the payment is voided.");
     const db = await this.tenancy.db(tenant);
@@ -278,6 +293,13 @@ export class PaymentsService {
         .update(paymentsReceived)
         .set({ status: "voided", voidedById: actor.access.userId, voidedAt: now, voidReason: why, updatedAt: now })
         .where(eq(paymentsReceived.id, paymentId));
+      // Only a confirmed payment posted; a pending one has nothing to reverse.
+      await this.books.reverse(
+        tx,
+        { sourceType: "payment", sourceId: paymentId, event: "payment.confirmed" },
+        day,
+        actor.access.userId,
+      );
       await this.auditLog.record(
         tenant,
         actor.audit,
@@ -345,7 +367,6 @@ export class PaymentsService {
     input: RefundInput,
     files: readonly ProofUpload[],
   ): Promise<Refund> {
-    requireLedger();
     const proofs = checkProofs(files);
     const db = await this.tenancy.db(tenant);
     const [[customer], branches] = await Promise.all([loadCustomers(db, [input.customerId]), loadBranches(db)]);
@@ -383,6 +404,8 @@ export class PaymentsService {
         };
         await tx.insert(refunds).values(row);
         await attach(tx, "refund", id, actor.access.userId);
+        const [saved] = await loadRefunds(tx, this.control.db, { ids: [id] });
+        await this.books.post(tx, refundPosting(saved!), actor.access.userId);
         await this.auditLog.record(
           tenant,
           actor.audit,
