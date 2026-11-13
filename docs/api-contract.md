@@ -161,7 +161,7 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
 
-Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit notes) or `sales.payments` (payments, write-off, credit, refunds) is off. Records outside the person's data scope answer 404. Invoice `cost` and line `unitCost` are stripped without `inventory.product.view_sensitive`. Proof files are `{ name, data }` with `data` in base64, 1 to 3 files of at most 5 MB, checked by their first bytes. Until P12 posts journal entries, every route that writes money or an invoice answers 409 `ledger_pending` (ADR 0038).
+Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit notes) or `sales.payments` (payments, write-off, credit, refunds) is off. Records outside the person's data scope answer 404. Invoice `cost` and line `unitCost` are stripped without `inventory.product.view_sensitive`. Proof files are `{ name, data }` with `data` in base64, 1 to 3 files of at most 5 MB, checked by their first bytes. Each route that records money or an invoice posts its journal entry in the same transaction, and answers 409 `period_closed` when its date is in a closed period (ADR 0039).
 
 | Route | Needs | Does |
 | --- | --- | --- |
@@ -182,6 +182,16 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 | `POST /payments/:id/files` | `sales.payment.record` | `{ files }`; up to 3 in all, not on voided or rejected payments |
 | `POST /refunds` | `sales.payment.refund` | `RefundInput` plus `files`; at most the customer's credit |
 | `GET /files/:id` | `sales.payment.view`, `sales.payment.approve` (payment proof) or `sales.payment.refund` (refund proof) | A proof file within scope, `inline`, `nosniff`, not cached |
+
+## Ledger (real build, P12 part 1, ADR 0039)
+
+Entries are posted by the modules, never through a route. Money is decimal strings.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /ledger/trial-balance?through=` | `reports.financial.view` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
+| `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage` | `{ closedThrough }`, the last closed day or null |
+| `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
 
 ## Notifications and Outbox (real build, ADR 0032)
 

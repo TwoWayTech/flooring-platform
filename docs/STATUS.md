@@ -109,9 +109,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - The free-text county picks the county rate; limit it to the company's county rates for the state, or check it against the ZIP.
   - Accountant: should an exemption certificate count only in its own state? `taxContextFor` checks only that it is valid on the date.
 - **Contract invoices and seeded proofs:** the three contract billing invoices (and their two payments) are seeded with the contracts module, because their foreign keys need contract rows. Seeded payments have no proof files, because the fixtures have no bytes (ADR 0038).
-- **Ledger gate (task 6):** until P12 posts their journal entries, the sales money writes answer 409 `ledger_pending` on the real API (`requireLedger` in `modules/sales/sales-common.ts`). P12 must replace each call with its posting and remove the gate (ADR 0038).
+- **Ledger, next parts (ADR 0039):**
+  - **Part 2:** expenses on the API with recurring drafts and postings.
+  - **Part 3:** bills and supplier payments; receipt, stock-correction and cost-of-goods postings, with the costing method as a company setting.
+  - **Later:** screens for the trial balance and the period close.
+- **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
-  - **Decide in P12, before opening the gate:** a credit note on an unpaid invoice becomes customer credit that one person can refund as cash. The safe default for P12 applies a note to its own invoice's open balance first, so only the rest becomes refundable credit, and makes refunds above the payment threshold wait for a second person. Record it in blueprint-delta.
+  - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.
   - Rate-limit the three proof routes per IP. The 21 MB body is parsed for any request that carries a session cookie, before the cookie is verified.
   - The `payment.to_verify` note goes to every holder of `sales.payment.approve`; leave out holders whose data scope doesn't cover the invoice.
 - **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
@@ -193,6 +197,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Accountant questions (ledger, ADR 0039):**
+  - Is the default chart of accounts right, and which accounts should be added or renamed?
+  - Which costing method for stock and cost of goods (average is the safe default for part 3)?
+  - Should sales tax be reported on the accrual basis (posted when invoiced), as now, or the cash basis?
+  - Should one Cash and Bank account be split by bank account or payment method?
 - **Accountant questions (sales tax, ADR 0037):** which states is the client registered to collect sales tax in, and what are its states of operation? Are the seeded rates and per-category taxability (materials taxed; separately stated labor and delivery not) right for each state? Until answered, tax is collected only where a rule exists for the job site, or the company default in its states of operation.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).
