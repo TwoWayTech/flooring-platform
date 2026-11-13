@@ -1,18 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/auth-mfa`, P8 part 2, PR #4:
-  - TOTP with backup codes;
-  - passkeys;
-  - mandatory MFA;
-  - lockout and rate limits;
-  - `GET /public/branding?host=`.
-
-  Its schema and security reviews are done and their blocking findings fixed. It is to be squash-merged under the self-merge rule once a fresh re-review passes and CI is green.
+- **In progress:** `feat/tenancy-company-databases`, P9, PR #6. The work queue continues with P10, then the notifications core.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude may self-merge under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md).
-- **Last session log:** docs/sessions/2026-11-13-0526-a-auth-mfa-reviews.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`) and PR #5 (`1c47288`).
+- **Last session log:** docs/sessions/2026-11-13-0700-a-tenancy-company-databases.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -52,10 +45,20 @@
   - Subagents in `.claude/agents`: security-reviewer on opus; test-writer and schema-reviewer on sonnet.
   - Stop hook `.claude/hooks/handoff-reminder.mjs`. It is non-blocking and reminds you to `/handoff` when the tree is dirty or today's session log is missing. Its tests run as `pnpm test:hooks`, which is part of `pnpm test`.
   - Not built yet: the p41 PostToolUse hook that runs lint and typecheck after edits. Only the Stop hook was asked for.
+- [x] P8 part 2, merged to main in PR #4 (`0ec9f6c`, ADR 0029 part 2), with the lockout refinements in PR #5 (`1c47288`):
+  - TOTP and 10 backup codes, passkeys with user verification, mandatory MFA for Owner, Accountant, HR and platform admins;
+  - the password lockout (5 in 15 minutes, 15-minute lock), per-IP limits through the web proxy's `AUTH_PROXY_SECRET`, and 3 verification emails an hour;
+  - `GET /public/branding?host=`;
+  - Claude's self-merge rule.
+- [x] P9 on `feat/tenancy-company-databases` (PR #6, ADR 0030; not merged at the time of writing):
+  - `pnpm db:provision-tenant`;
+  - TenantConnectionService through a session-only TenantContext;
+  - global deny-by-default session and tenant guards;
+  - the company-isolation suite.
 
 ## Next three tasks
 The work queue the owner set on 2026-11-13. Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **A (Claude):** P9 (R3): the company setup script, one database per company, TenantConnectionService, and isolation tests proving one company can never read another's data. Local Postgres provider only.
+1. **Owner:** make the CI `verify` check (it runs the isolation suite) required in GitHub branch protection for `main` (blueprint P9).
 2. **A (Claude):** P10 (R4): permissions in the API reusing the engine in packages/shared, deny-by-default guards, the audit log and approvals.
 3. **A (Claude):** the notifications core: EmailProvider and the outbox worker on pg-boss, with memory email locally. Include the 30-day cleanup job (Follow-ups).
 
@@ -66,6 +69,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
 - **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
+- **P10: deny company routes that declare no product.** A route without `@RequireProduct()` serves any company; add this to the route-inventory test (PR #6 review, finding 5).
+- **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
+- **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
+- **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.

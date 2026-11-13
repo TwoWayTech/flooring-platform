@@ -49,3 +49,62 @@ The owner's work queue, 2026-11-13, task 1: "Blueprint P9 (R3): company setup sc
 - **Company defaults in a new database (default roles, settings, sequences):** these arrive with P10 roles and the onboarding work. Until then a new company is denied by default: an empty permission ceiling and no roles.
 - **Owner sign-in for a new company:** the owner user has no password until invitation acceptance has a spec.
 - **Plans and subscriptions:** a new company is `trial` with no subscription row, because plan prices are an open owner decision.
+
+## What was built
+- **packages/shared:** `PRODUCT_DEFAULT_BRANDING` and `PRODUCT_HEADER` (apps/web re-exports them).
+- **packages/db:** `provisionTenant`, `slugProblem` and `RESERVED_SLUGS` in `src/provision-tenant.ts`, with the CLI `scripts/provision-tenant.ts` (`pnpm db:provision-tenant`) and `--reuse-owner`. `ensureReferenceData` is now exported from the seed.
+- **apps/api, core/tenancy:**
+  - `access.ts`: `@Public()`, `@SessionOnly()` and `@RequireProduct()`;
+  - `lru-cache.ts`;
+  - `tenant-directory.ts`;
+  - `tenant-context.ts`: `TenantContext` and `@CurrentTenant()`;
+  - `tenant-connection.service.ts`;
+  - `tenant.guard.ts`;
+  - `company-unavailable.ts`;
+  - `tenancy.module.ts`, which registers the global guards.
+- **Other API changes:**
+  - Health and branding are `@Public()`, and `/auth/context` is `@SessionOnly()`.
+  - SessionService answers 401 for Better Auth 4xx refusals.
+  - `createApp` and `AppModule.forRoot` take extra modules, for tests.
+- **Tests:**
+  - `packages/db/test/slug.test.ts`.
+  - `provision-tenant.int.test.ts`: 5 tests with real databases.
+  - `apps/api/test/lru-cache.test.ts`.
+  - `isolation.int.test.ts`: 13 tests, with the test-only `support/isolation-probe.ts`.
+  - The harness provisions real company databases.
+  - The API integration `hookTimeout` is now 60 s, after teardown timed out under parallel database drops.
+- **Docs:**
+  - ADR 0030.
+  - docs/api-contract.md: a Tenancy section.
+  - docs/environment.md: `TENANT_POOL_CACHE`.
+  - docs/blueprint-delta.md: a P9 row.
+
+## Decisions and why
+See ADR 0030. In short:
+- The company only ever comes from the verified session, through a TenantContext with a private constructor.
+- The guards are global, so a forgotten decorator fails closed.
+- Suspended, cancelled and maintenance companies are read-only, and a database that is not ready answers 503.
+- An existing account becomes owner only with `--reuse-owner`.
+- The deferrals are in "Deferred" above and in the blueprint delta.
+
+## Reviews
+- **First security review (security-reviewer), at `8209097`:** 0 blocking. Mediums 1–2 and lows 3–4 were fixed in `1802660`. Low 5 (deny routes that declare no product) goes to P10. Low 6 (CREATE ROLE password in DDL logs, existing code) goes to STATUS. The summary is posted on PR #6.
+- **Fresh re-review at `1802660`:** its summary is posted on PR #6.
+- **Schema reviewer:** not needed, because no schema or migration changed.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck`, `pnpm format:check`: pass.
+- `pnpm test`: api 31, web 13, db 11, shared 330, providers 11; all pass.
+- `pnpm test:api`: api 85 (13 isolation), db 11 (5 provisioning), providers 2; all pass.
+- `pnpm db:provision-tenant`: the usage and reserved-slug errors were checked by hand. No company was created in the developer database.
+
+## What is left
+- **Owner:** make the CI `verify` job (which runs the isolation suite) a required check in GitHub branch protection for `main`.
+- **P10:**
+  - deny company routes that declare no product;
+  - default roles in a new company database;
+  - sync `member.role` with role assignment.
+- **Later:** `move-tenant` with `invalidate(companyId)`, company defaults at onboarding, and plans and subscriptions (owner decision).
+
+## Next prompt
+"/resume. Continue the work queue: P10 (R4) on feat/permissions-guards-audit from an up-to-date main."
