@@ -56,7 +56,9 @@ export function rolesRequireMfa(roleKeys: readonly string[]): boolean {
  * The `member.role` value for a person's company roles: their role keys, plus the `mfa` marker
  * when any of the roles needs MFA by content (roleRequiresMfa).
  */
-export function memberRoleValue(roles: readonly { key: string; owner: boolean; permissions: readonly string[] }[]): string {
+export function memberRoleValue(
+  roles: readonly { key: string; owner: boolean; permissions: readonly string[] }[],
+): string {
   const keys = roles.map((role) => role.key);
   return encodeMemberRoles(roles.some(roleRequiresMfa) ? [...keys, MFA_MARKER] : keys);
 }

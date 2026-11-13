@@ -46,7 +46,7 @@ describe("mandatory MFA by role content (P10 part 2)", () => {
   it("requires MFA for the Owner, Accountant and HR manager templates and their copies, and no other template", () => {
     for (const key of ["owner", "accountant", "hr"] as const) {
       expect(roleRequiresMfa(template(key))).toBe(true);
-      expect(roleRequiresMfa({ ...template(key), owner: false, key: "custom" } as never)).toBe(key !== "owner" || true);
+      expect(roleRequiresMfa({ ...template(key), owner: false })).toBe(true);
     }
     for (const key of ["manager", "sales", "purchasing", "warehouse", "installer"] as const) {
       expect(roleRequiresMfa(template(key))).toBe(false);
