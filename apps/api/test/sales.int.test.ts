@@ -22,7 +22,9 @@ function summitLocalization() {
   const file = createRequire(import.meta.url).resolve("@workspace/shared/fixtures/summit.json");
   const fixtures = JSON.parse(readFileSync(file, "utf8")) as { settings: { localization: Record<string, unknown> } };
   const { tax, ...rest } = fixtures.settings.localization as { tax: Record<string, unknown> } & Record<string, unknown>;
-  const { rules: _rules, jurisdictions: _jurisdictions, ...taxRest } = tax;
+  const taxRest: Record<string, unknown> = { ...tax };
+  delete taxRest.rules;
+  delete taxRest.jurisdictions;
   return { ...rest, tax: taxRest };
 }
 
