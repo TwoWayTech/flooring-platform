@@ -250,13 +250,15 @@ export function beforeAuthHook(deps: AuthDeps) {
       email: current.user.email,
       createdAt: new Date(current.session.createdAt),
     });
+    // Refused before any attempt is reserved, so a refusal that never checks the password cannot
+    // lock the person out.
+    await checkNoDowngrade(deps, path, current.user.id);
     if (
       SESSION_PASSWORD_PATH_SET.has(path) &&
       (await deps.attempts.reservePasswordAttempt(current.user.email, requestIp(ctx.request.headers)))
     ) {
       throw new APIError("TOO_MANY_REQUESTS", { code: "account_locked", message: LOCKED_MESSAGE });
     }
-    await checkNoDowngrade(deps, path, current.user.id);
     if (PASSKEY_REGISTER_PATHS.has(path)) {
       const proof = await ctx.context.internalAdapter.findVerificationValue(passkeyStepUpId(current.session.id));
       if (!proof || new Date(proof.expiresAt) <= new Date()) {
@@ -270,6 +272,19 @@ export function beforeAuthHook(deps: AuthDeps) {
       await checkCompanySwitch(deps, ctx.body, current.user.id, requestHost(ctx.request.headers));
     }
   });
+}
+
+/**
+ * Sign-in refusals that Better Auth gives only after the password checked out: an unconfirmed
+ * email, and the company refusals thrown when the session is created (company-pick.ts). They prove
+ * the password, so they reset the lockout count; otherwise someone signing in on another
+ * company's address would lock their own account.
+ */
+const AFTER_PASSWORD_REFUSALS = new Set<string>(["EMAIL_NOT_VERIFIED", "not_a_member", "no_company"]);
+
+/** Whether a sign-in refusal code is one that comes only after a correct password. */
+function isAfterPasswordRefusal(code: unknown): boolean {
+  return typeof code === "string" && AFTER_PASSWORD_REFUSALS.has(code);
 }
 
 /**
@@ -287,8 +302,7 @@ export function afterAuthHook(deps: AuthDeps) {
     const succeeded = !(returned instanceof APIError);
     if (ctx.path === "/sign-in/email") {
       const email = signInEmail(ctx.body);
-      // Better Auth reports an unconfirmed email only after checking the password.
-      const passwordRight = succeeded || (returned instanceof APIError && returned.body?.code === "EMAIL_NOT_VERIFIED");
+      const passwordRight = succeeded || (returned instanceof APIError && isAfterPasswordRefusal(returned.body?.code));
       if (email && passwordRight) await deps.attempts.record("password_ok", email, requestIp(ctx.request.headers));
       const created = ctx.context.newSession;
       // With an authenticator app enrolled, the two-factor plugin asks for the code next.

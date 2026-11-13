@@ -15,6 +15,9 @@ for (const file of ["../../.env", "../../.env.local"]) {
 }
 // The API needs a signing secret; a run without one gets a throwaway value.
 process.env.BETTER_AUTH_SECRET ??= randomBytes(32).toString("base64url");
+// Both servers get the same proxy secret, so sign-in runs the production path: the web proxy adds
+// the secret and client IP, and the API refuses auth requests without it (ADR 0029, part 2).
+process.env.AUTH_PROXY_SECRET ??= randomBytes(32).toString("base64url");
 
 const LOCAL = "http://localhost:3000";
 
