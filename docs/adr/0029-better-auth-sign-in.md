@@ -12,7 +12,8 @@ P8 part 1 (docs/real-build-plan.md, week 1) adds real sign-in: email and passwor
 | --- | --- | --- |
 | better-auth 1.7.22 | apps/api, packages/db | The blueprint's auth library. packages/db uses only `better-auth/crypto` to hash the seed password |
 | auth 1.7.22 (dev) | packages/db | The Better Auth CLI. `@better-auth/cli` is deprecated and its last version is 1.4; the CLI now ships as `auth` |
-| @better-auth/passkey 1.7.22 (dev) | packages/db | Only so the CLI keeps generating the passkey table for P8 part 2 |
+| @better-auth/passkey 1.7.22 | apps/api (packages/db as dev) | Passkeys as a second factor and for sign-in (P8 part 2, owner approved 2026-11-13). packages/db keeps it so the CLI generates the passkey table |
+| decimal.js 10.6.0 | apps/api | Already used by packages/shared. Declared for the API bundle, which keeps npm packages external, now that the API imports packages/shared at runtime (part 2) |
 
 The web app adds no auth library. Its four calls (sign in, choose company, session context, sign out) are small typed `fetch` functions in `apps/web/src/lib/session/api-auth.ts`. NestJS has no Better Auth wrapper here. The handler is mounted with `toNodeHandler` because our own guards arrive in P9.
 
@@ -53,8 +54,36 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 - `getSession()` reads `GET /auth/context` and bridges it to the existing workspace session. The company is matched by slug and the user by email to their seeded profile, because screens still read DemoStore until Settings → Users moves to the API (P10). An account without a profile sees "Your account is ready, but not this workspace".
 - The login page keeps the demo's frame, now `LoginLayout`, shared by both modes.
 
+## Part 2: MFA, passkeys, lockout and rate limits (2026-11-13)
+The owner decided the four marked "(owner)". The rest are the safest options for what the blueprint leaves open, recorded in docs/blueprint-delta.md.
+
+### Second factors
+- Better Auth's twoFactor plugin gives TOTP with 10 backup codes. Turning it on needs the password, and it is on only once the first code is confirmed. A password sign-in for an account with it answers `twoFactorRedirect` and opens no session until `/two-factor/verify-totp` or `verify-backup-code`.
+- Better Auth's passkey plugin, with no fixed rpID: each product host is its own relying party, taken from the allowed request host. The name shown is `APP_NAME` ("Flooring Platform"), a placeholder until the brand is chosen.
+- Not offered: codes by email or SMS (`send-otp` and `verify-otp` answer 404), and remembered devices (`trustDevice: true` answers 400).
+
+### Who must use MFA (owner)
+- The rule is blueprint p27: Owner, Accountant, HR and platform admins. The role keys live in `MFA_REQUIRED_ROLES` in packages/shared.
+- Sign-in cannot open a company database yet (P9), so the company roles are read from Better Auth `member.role`, which now holds the person's role keys, comma-separated (`encodeMemberRoles`). The seed writes them. Settings → Users must keep them in sync when roles change (P10). A role copied from Owner, Accountant or HR under a new key is not covered until P10 decides how copies inherit the rule.
+- The rule looks at every company the person belongs to, so switching company never changes it. Active `platform_admins` rows always require MFA.
+- **Enrol at the next sign-in, with no grace period (owner).** A required user with no factor gets a session that may only set up a factor, read `/auth/context`, choose a company and sign out. Everything else answers 403 `mfa_enrolment_required`, both in the Better Auth hook and in `SessionService`. The `@AllowMfaEnrolment()` decorator opens a Nest route to such a session; today only `/auth/context` uses it.
+- **A passkey counts as MFA (owner).** A passkey sign-in needs no further step. A password sign-in by a required user whose only factor is a passkey is refused with 403 `passkey_required`, and its session is deleted at once, so a password alone never counts as MFA.
+- No downgrades. A required user cannot turn the authenticator app off, or delete their last passkey when they have no app (403 `mfa_required`).
+- When an authenticator app is confirmed, Better Auth swaps the session for a new one. The session-create hook keeps the company that was open, when the host and memberships still allow it.
+
+### Lockout and limits (owner)
+- **Passwords:** 5 failures within 15 minutes lock the address for 15 minutes. A success resets the count, and the lock ends on its own: attempts refused during a lock are not recorded. Outcomes are kept in the new append-only `auth_attempts` table, keyed by the address trimmed and lowercased. Unknown addresses are counted the same way, so the answers reveal nothing. An admin unlock comes with Settings → Users.
+- **Second factor:** the plugin's own lockout, 5 wrong codes in a row lock for 15 minutes. It counts consecutive failures rather than failures within 15 minutes.
+- **Per IP:** 10 a minute on `/sign-in/email`, `/two-factor/verify-totp`, `/two-factor/verify-backup-code` and `/passkey/verify-authentication`. These use Better Auth's rate limiter with database storage (the new `rate_limit` table), so the limits hold across API instances. The IP comes from `x-forwarded-for`, so apps/api must only be reached through the web host or a proxy that sets that header. Lockout and the email limit do not depend on the IP.
+- **Email:** at most 3 verification emails an hour per address. Extra ones are skipped silently. The same `AttemptLog.emailAllowed` check is to be used for reset emails when password reset is specced.
+
+### Public branding
+`GET /public/branding?host=` returns only display fields (name, monogram, colour, pattern, theme) for the company the host's subdomain names. It answers 404 for no live company. The logo URL comes with the branding upload through StorageProvider (P11), because the API has no storage wiring yet.
+
+### Web (api mode)
+The login page has the code step (authenticator code or backup code), and set-up for required users: the password again, the setup key in groups of four with a copy button, the first code, then the backup codes shown once. A session that must set up MFA opens the login page, not the app. Passkey screens and a QR code are B's (STATUS), because they need `@simplewebauthn/browser` in the web app.
+
 ## Left for later
-- **P8 part 2:** TOTP with backup codes and passkeys; MFA required for Owner, Accountant, HR and platform admins (blueprint p27); rate limits and lockout, whose thresholds the blueprint does not give; `GET /public/branding?host=`, which brings the company's own logo and colour to the login page.
 - **P9:**
   - Refusing a company that does not own the host's product (blueprint p17 rule 2), and a company that is not active.
   - Making the session guard global.

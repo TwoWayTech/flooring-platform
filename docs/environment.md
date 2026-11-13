@@ -23,4 +23,6 @@ Every variable the apps read, with the local default. Put real values in a local
 | `EMAIL_PROVIDER` | api | `memory` | `resend` or `memory`. `memory` sends nothing (locally, verification links stay in the API's memory) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | `EMAIL_PROVIDER=resend` | empty | `EMAIL_FROM` must be on a verified domain |
 
+P8 part 2 adds no variables. Passkeys take their relying party from the web host each request came through (an `AUTH_ALLOWED_HOSTS` entry). The per-IP sign-in limits read the client IP from `x-forwarded-for`, which the web host sets, so apps/api must be reachable only through the web host or a proxy that overwrites that header (ADR 0029, part 2).
+
 CI sets the database variables and a throwaway encryption key in `.github/workflows/ci.yml`; they protect nothing. The `verify` job also makes a fresh `SEED_USER_PASSWORD` and `BETTER_AUTH_SECRET` for each run, masked in the log.
