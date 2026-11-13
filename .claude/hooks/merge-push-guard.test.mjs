@@ -104,6 +104,8 @@ test("refuses pushes to main, pushes of HEAD from main, steered and forced pushe
     "git push origin feat/maintenance-mode",
     "git push -q -u origin fix/platform-owner-decisions",
     "git -C /c/dev/flooring-platform push -q origin feat/x",
+    "git push -q -u origin feat/settings-users-roles 2>&1 | tail -1",
+    "git push -q origin fix/x >/dev/null 2>&1",
     "git push -q origin HEAD:fix/platform-owner-decisions",
     "git log --oneline main..HEAD",
     "git checkout main && git pull --ff-only",
