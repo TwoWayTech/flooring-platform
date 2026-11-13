@@ -27,6 +27,7 @@ const STATUS: Record<
   sent: { tone: "success", icon: MailCheck, label: "Sent (simulated)" },
   scheduled: { tone: "brand", icon: MailClock, label: "Scheduled" },
   queued: { tone: "brand", icon: MailClock, label: "Queued" },
+  sending: { tone: "brand", icon: MailClock, label: "Sending" },
   failed: { tone: "danger", icon: MailX, label: "Failed" },
   cancelled: { tone: "neutral", icon: MailX, label: "Cancelled" },
 };

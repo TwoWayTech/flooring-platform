@@ -1,5 +1,15 @@
-import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from "@nestjs/common";
 import { featureOn, type FeatureKey } from "@workspace/shared";
+import { z } from "zod";
 import type { RequestAccess } from "../access/access.service";
 import { AnyCompanyMember, RequirePermission } from "../access/permission.decorators";
 import { CurrentAccess } from "../access/permission.guard";
@@ -7,6 +17,9 @@ import { CurrentSession } from "../auth/session.guard";
 import type { AuthSession } from "../auth/session.service";
 import { CurrentTenant, type TenantContext } from "../tenancy/tenant-context";
 import { NotificationService } from "./notification.service";
+
+/** The body of POST /notifications/read: optional note ids (Zod at the boundary). */
+const MARK_READ = z.object({ ids: z.array(z.string().uuid()).max(200).optional() });
 
 /** A switched-off feature is hidden from the API too (CLAUDE.md rule 13): its routes answer 404. */
 function requireFeature(key: FeatureKey): void {
@@ -32,11 +45,13 @@ export class NotificationsController {
   async markRead(
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,
-    @Body() body: { ids?: unknown },
+    @Body() body: unknown,
   ) {
     requireFeature("shell.notifications");
-    const ids = Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === "string") : undefined;
-    await this.notifications.markRead(tenant, access.userId, ids);
+    const parsed = MARK_READ.safeParse(body ?? {});
+    if (!parsed.success)
+      throw new BadRequestException({ code: "invalid_request", message: "ids must be a list of ids." });
+    await this.notifications.markRead(tenant, access.userId, parsed.data.ids);
     return { ok: true };
   }
 }

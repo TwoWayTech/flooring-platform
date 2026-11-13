@@ -1,5 +1,5 @@
 import { notifications, outboxMessages, rolePermissions, roles, userRoles } from "@workspace/db/company";
-import { authAttempts, rateLimit } from "@workspace/db/control";
+import { authAttempts, rateLimit, tenants } from "@workspace/db/control";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -47,6 +47,18 @@ describe("notifications core (needs the local PostgreSQL)", () => {
   });
 
   const service = () => harness.app.get(NotificationService);
+
+  /**
+   * Makes the email provider refuse messages to one address until restored. Other tests' queued
+   * messages may be sent meanwhile, so a one-off failure could hit the wrong message.
+   */
+  function failSendsTo(address: string) {
+    const send = harness.outbox.send.bind(harness.outbox);
+    return vi.spyOn(harness.outbox, "send").mockImplementation(async (message) => {
+      if (message.to.includes(address)) throw new Error("provider down");
+      return send(message);
+    });
+  }
 
   /** A request as the web app's proxy sends it. */
   function call(method: "get" | "post", path: string, cookie: string) {
@@ -126,7 +138,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
 
   it("records a provider failure as failed and sends it again on retry", async () => {
     const sourceId = uuidv7();
-    const failing = vi.spyOn(harness.outbox, "send").mockRejectedValueOnce(new Error("provider down"));
+    const failing = failSendsTo("lee@example.test");
     await service().notify(tenant, null, quoteSent(sourceId, "lee@example.test"));
     const [failed] = await eventually(async () => {
       const rows = await rowsOf(sourceId);
@@ -182,6 +194,12 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       subject: "Restricted message",
       bodyText: "Only the people involved can read this.",
     });
+    // Nothing that would undo the redaction comes back: no template values, dedupe key or provider id (PR #9 review).
+    for (const row of all.body as Record<string, unknown>[]) {
+      expect(row).not.toHaveProperty("values");
+      expect(row).not.toHaveProperty("dedupeKey");
+      expect(row).not.toHaveProperty("providerMessageId");
+    }
   });
 
   it("refuses retry and cancel without settings.outbox.view", async () => {
@@ -239,5 +257,67 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     } finally {
       await handle.close();
     }
+  });
+
+  it("stores a row restricted when the catalogue says so, even if the caller does not (spec rule 6)", async () => {
+    const sourceId = uuidv7();
+    await service().notify(tenant, null, {
+      event: "commission.ready",
+      source: { type: "commission_statement", id: sourceId },
+      to: [{ kind: "user", id: uuidv7(), name: "Priya", email: "priya@example.test" }],
+      values: { "employee.name": "Priya", "statement.month": "October 2026" },
+    });
+    expect((await rowsOf(sourceId))[0].restricted).toBe(true);
+  });
+
+  it("queues a failed message once however often Retry is pressed", async () => {
+    const sourceId = uuidv7();
+    const failing = failSendsTo("ray@example.test");
+    await service().notify(tenant, null, quoteSent(sourceId, "ray@example.test"));
+    const [failed] = await eventually(async () => {
+      const rows = await rowsOf(sourceId);
+      return rows[0]?.status === "failed" ? rows : undefined;
+    }, "the failure");
+    failing.mockRestore();
+    const results = await Promise.allSettled([service().retry(tenant, failed.id), service().retry(tenant, failed.id)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    await eventually(async () => ((await rowsOf(sourceId))[0]?.status === "sent" ? true : undefined), "the send");
+    expect(harness.outbox.sent.filter((message) => message.idempotencyKey === failed.dedupeKey)).toHaveLength(1);
+  });
+
+  it("sends nothing for a read-only company and leaves its rows queued", async () => {
+    const sourceId = uuidv7();
+    await harness.control.db.update(tenants).set({ status: "suspended" }).where(eq(tenants.id, company.id));
+    try {
+      await service().notify(tenant, null, quoteSent(sourceId, "sam@example.test"));
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      expect((await rowsOf(sourceId))[0].status).toBe("queued");
+    } finally {
+      await harness.control.db.update(tenants).set({ status: "trial" }).where(eq(tenants.id, company.id));
+    }
+  });
+
+  it("marks only the person's own notes read, and refuses ids that are not ids", async () => {
+    const owner = await harness.userIdOf(await harness.addUser({ companyIds: [company.id] }));
+    const otherEmail = await harness.addUser({ companyIds: [company.id] });
+    await service().notify(tenant, null, {
+      event: "timeoff.requested",
+      source: { type: "pto", id: uuidv7() },
+      inApp: [{ userId: owner, title: "Not yours", href: "/hr/time-off" }],
+    });
+    const other = await harness.signIn(otherEmail);
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [note] = await handle.db.select().from(notifications).where(eq(notifications.userId, owner));
+      await call("post", "/notifications/read", other)
+        .send({ ids: [note.id] })
+        .expect(201);
+      const [after] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
+      expect(after.readAt).toBeNull();
+    } finally {
+      await handle.close();
+    }
+    const bad = await call("post", "/notifications/read", other).send({ ids: ["not-an-id"] });
+    expect(bad.status).toBe(400);
   });
 });

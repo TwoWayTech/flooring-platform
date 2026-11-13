@@ -46,7 +46,8 @@ export interface NotificationRule {
 }
 
 /** What an Outbox row is on its way to doing (ADR 0020). The demo never sends real email. */
-export type OutboxStatus = "scheduled" | "queued" | "sent" | "failed" | "cancelled";
+/** `sending` is held by the worker while it hands a row to the provider, so no row is sent twice (ADR 0032). */
+export type OutboxStatus = "scheduled" | "queued" | "sending" | "sent" | "failed" | "cancelled";
 
 /** Why a row failed. */
 export type OutboxFailure = "missing_email" | "invalid_email" | "provider_error" | "bounced";

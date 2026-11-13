@@ -13,6 +13,7 @@ import type { EmailProvider } from "@workspace/providers";
 import {
   effectiveRule,
   featureOn,
+  notificationEvent,
   renderTemplate,
   type EmailSettings,
   type NotificationEventKey,
@@ -36,6 +37,20 @@ export const SEND_QUEUE = "outbox.send";
 export const CLEANUP_QUEUE = "auth.cleanup";
 /** How long `auth_attempts` and `rate_limit` rows are kept (docs/data-model.md, "Retention"). */
 const RETENTION_DAYS = 30;
+
+/** A header value on one line, so no value can add a header (PR #9 review). */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/**
+ * The From header: the company's sender name, quoted, on the platform's own address. Quotes and
+ * line breaks in the name are removed, so a name cannot change the address (PR #9 review).
+ */
+function fromHeader(name: string, address: string): string {
+  const safe = oneLine(name).replace(/["\\<>]/g, "");
+  return safe ? `"${safe}" <${address}>` : address;
+}
 
 /** What a send job carries: which company and which row, nothing else. */
 interface SendJob {
@@ -132,7 +147,7 @@ export class NotificationService implements OnApplicationBootstrap {
             );
         } else {
           result.queued.push(row.id);
-          await this.queue(tenant.companyId, row.id, row.dedupeKey, row.scheduledFor);
+          await this.queue(tenant.companyId, row.id, row.scheduledFor);
         }
       }
     }
@@ -149,8 +164,30 @@ export class NotificationService implements OnApplicationBootstrap {
   /** The Outbox as this reader may see it, newest first (spec "Who can see which Outbox row"). */
   async listOutbox(tenant: TenantContext, reader: OutboxReader) {
     const db = await this.tenancy.db(tenant);
+    // Only what the Outbox screen shows (spec "Outbox"). Template values, the dedupe key and the
+    // provider's id are never returned, so redaction cannot be undone from them (PR #9 review).
     const rows = await db
-      .select()
+      .select({
+        id: outboxMessages.id,
+        eventKey: outboxMessages.eventKey,
+        sourceType: outboxMessages.sourceType,
+        sourceId: outboxMessages.sourceId,
+        actorUserId: outboxMessages.actorUserId,
+        recipientType: outboxMessages.recipientType,
+        recipientId: outboxMessages.recipientId,
+        recipientName: outboxMessages.recipientName,
+        recipientEmail: outboxMessages.recipientEmail,
+        subject: outboxMessages.subject,
+        bodyText: outboxMessages.bodyText,
+        attachments: outboxMessages.attachments,
+        status: outboxMessages.status,
+        failureType: outboxMessages.failureType,
+        failureDetail: outboxMessages.failureDetail,
+        restricted: outboxMessages.restricted,
+        scheduledFor: outboxMessages.scheduledFor,
+        sentAt: outboxMessages.sentAt,
+        createdAt: outboxMessages.createdAt,
+      })
       .from(outboxMessages)
       .where(isNull(outboxMessages.deletedAt))
       .orderBy(desc(outboxMessages.createdAt))
@@ -172,11 +209,15 @@ export class NotificationService implements OnApplicationBootstrap {
         .where(eq(outboxMessages.id, row.id));
       return;
     }
-    await db
+    const [requeued] = await db
       .update(outboxMessages)
       .set({ status: "queued", failureType: null, failureDetail: null })
-      .where(and(eq(outboxMessages.id, row.id), eq(outboxMessages.status, "failed")));
-    await this.queue(tenant.companyId, row.id, row.dedupeKey, null);
+      .where(and(eq(outboxMessages.id, row.id), eq(outboxMessages.status, "failed")))
+      .returning({ id: outboxMessages.id });
+    // Another Retry moved it first; that one queues the send (PR #9 review).
+    if (!requeued)
+      throw new ConflictException({ code: "not_failed", message: "Only a failed message can be sent again." });
+    await this.queue(tenant.companyId, row.id, null);
   }
 
   /** Cancels a scheduled row before it is sent (spec `cancelOutbox`). */
@@ -221,28 +262,41 @@ export class NotificationService implements OnApplicationBootstrap {
       .where(ids && ids.length > 0 ? and(mine, inArray(notifications.id, [...ids])) : mine);
   }
 
-  /** Sends one queued row. A provider failure marks it failed and tells the actor; Retry sends it again. */
+  /**
+   * Sends one row (ADR 0032). The row is claimed first with one conditional update (queued or
+   * scheduled to sending), so a second job, a second Retry or a cancel can never send it twice or
+   * after it was cancelled. A read-only company (suspended, cancelled, in maintenance) sends
+   * nothing: its rows stay queued and are sent again from the Outbox once it is writable. A
+   * provider failure marks the row failed and tells the actor; Retry sends it again.
+   */
   private async sendJob(job: Job<SendJob>): Promise<void> {
     const tenant = await this.jobTenants.contextFor(job.data.companyId);
-    if (!tenant) return;
+    if (!tenant || tenant.readOnly) return;
     const db = await this.tenancy.db(tenant);
-    const [row] = await db.select().from(outboxMessages).where(eq(outboxMessages.id, job.data.messageId));
+    const [exists] = await db
+      .select({ id: outboxMessages.id })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, job.data.messageId));
     // Not visible yet: the writing transaction has not committed. Throwing makes pg-boss retry.
-    if (!row) throw new Error("Outbox row not found yet.");
-    if (row.status !== "queued" && row.status !== "scheduled") return;
+    if (!exists) throw new Error("Outbox row not found yet.");
+    const [row] = await db
+      .update(outboxMessages)
+      .set({ status: "sending" })
+      .where(and(eq(outboxMessages.id, job.data.messageId), inArray(outboxMessages.status, ["queued", "scheduled"])))
+      .returning();
+    if (!row) return;
+    let sentId: string;
     try {
-      const sent = await this.email.send({
-        from: `${row.fromName} <${this.emailFrom}>`,
-        to: [row.recipientEmail],
-        ...(row.replyTo ? { replyTo: row.replyTo } : {}),
-        subject: row.subject,
-        text: row.bodyText,
-        idempotencyKey: row.dedupeKey,
-      });
-      await db
-        .update(outboxMessages)
-        .set({ status: "sent", sentAt: new Date(), providerMessageId: sent.id })
-        .where(and(eq(outboxMessages.id, row.id), inArray(outboxMessages.status, ["queued", "scheduled"])));
+      sentId = (
+        await this.email.send({
+          from: fromHeader(row.fromName, this.emailFrom),
+          to: [row.recipientEmail],
+          ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
+          subject: oneLine(row.subject),
+          text: row.bodyText,
+          idempotencyKey: row.dedupeKey,
+        })
+      ).id;
     } catch {
       // The provider's message can carry the address; it is not stored or logged (rule 14).
       this.logger.warn("An Outbox message could not be sent.");
@@ -250,7 +304,7 @@ export class NotificationService implements OnApplicationBootstrap {
       await db
         .update(outboxMessages)
         .set({ status: "failed", failureType: "provider_error", failureDetail: detail })
-        .where(eq(outboxMessages.id, row.id));
+        .where(and(eq(outboxMessages.id, row.id), eq(outboxMessages.status, "sending")));
       if (row.actorUserId)
         await this.tell(
           db,
@@ -259,7 +313,14 @@ export class NotificationService implements OnApplicationBootstrap {
           failureNotice(row.recipientName, detail),
           "/settings/outbox",
         );
+      return;
     }
+    // Recorded only after the provider accepted it; if this write fails, the row stays sending and
+    // is never sent again by a retry of this job.
+    await db
+      .update(outboxMessages)
+      .set({ status: "sent", sentAt: new Date(), providerMessageId: sentId })
+      .where(and(eq(outboxMessages.id, row.id), eq(outboxMessages.status, "sending")));
   }
 
   /** Deletes sign-in security data older than 30 days (owner retention decision, ADR 0029 part 2). */
@@ -336,7 +397,7 @@ export class NotificationService implements OnApplicationBootstrap {
         failureType: problem?.type ?? null,
         failureDetail: problem?.detail ?? null,
         scheduledFor: input.scheduledFor ?? null,
-        restricted: input.restricted ?? false,
+        restricted: input.restricted ?? notificationEvent(input.event).restricted ?? false,
         dedupeKey: dedupeKey(input.event, input.source.id, input.version, recipient),
       })
       .onConflictDoNothing({ target: outboxMessages.dedupeKey })
@@ -363,11 +424,8 @@ export class NotificationService implements OnApplicationBootstrap {
     await db.insert(notifications).values({ userId, eventKey: event, title, href });
   }
 
-  private async queue(companyId: string, messageId: string, key: string, startAfter: Date | null): Promise<void> {
-    await this.jobs.send(
-      SEND_QUEUE,
-      { companyId, messageId },
-      { singletonKey: key, ...(startAfter ? { startAfter } : {}) },
-    );
+  /** Queues the send of one row; the worker's claim makes a second job for the same row harmless. */
+  private async queue(companyId: string, messageId: string, startAfter: Date | null): Promise<void> {
+    await this.jobs.send(SEND_QUEUE, { companyId, messageId }, startAfter ? { startAfter } : {});
   }
 }

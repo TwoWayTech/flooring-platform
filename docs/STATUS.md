@@ -98,6 +98,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Claim the database row before `prepare`, so a rerun on a changed status never seeds before it throws.
   - Report migrate-all writes that match no row (status changed mid-run), as provisionCompany does.
   - Decide whether a read-only database should keep serving after a failed migration (availability: new code on an old schema answers 500).
+- **Notifications follow-ups (PR #9 review, none blocking):**
+  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran.
+  - Validate the sender settings with Zod when Settings → Email saves them.
+  - The bounce webhook (`bounced`).
+  - Attachments through StorageProvider.
+  - Business events, raised from their modules.
 - **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**

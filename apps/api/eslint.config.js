@@ -20,7 +20,16 @@ const companyDatabaseImports = {
     { name: "drizzle-orm/postgres-js", message: "Database clients come from @workspace/db (CLAUDE.md rule 2)." },
     { name: "@workspace/db/testing", message: "Test helpers never ship in the API." },
   ],
+  patterns: [
+    {
+      group: ["**/jobs/job-tenants"],
+      message: "Only job handlers get a company context from a job (ADR 0032); requests use TenantGuard's.",
+    },
+  ],
 };
+
+/** The same rules, with job handlers allowed to use JobTenants. */
+const jobHandlerImports = { paths: companyDatabaseImports.paths };
 
 const tenantContextMessage =
   "Only TenantGuard (from the verified session) and the job runner build a TenantContext (CLAUDE.md rule 2).";
@@ -47,6 +56,10 @@ export default tseslint.config(
   {
     files: ["src/core/tenancy/**/*.ts"],
     rules: { "no-restricted-imports": "off" },
+  },
+  {
+    files: ["src/core/jobs/**/*.ts", "src/core/notifications/notification.service.ts"],
+    rules: { "no-restricted-imports": ["error", jobHandlerImports] },
   },
   {
     files: ["src/core/tenancy/tenant.guard.ts", "src/core/tenancy/tenant-context.ts", "src/core/jobs/job-tenants.ts"],

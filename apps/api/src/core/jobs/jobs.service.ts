@@ -9,6 +9,9 @@ export const JOBS_SCHEMA = "pgboss";
 /** How long to wait before trying to start pg-boss again while the database is unreachable. */
 const START_RETRY_MS = 5_000;
 
+/** How long queueing waits for pg-boss to start before it gives up. */
+const QUEUE_WAIT_MS = 10_000;
+
 /** A job's handler. It receives one job at a time; a thrown error makes pg-boss retry it. */
 export type JobHandler<T extends object> = (job: Job<T>) => Promise<void>;
 
@@ -56,9 +59,13 @@ export class JobsService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
-  /** Queues a job. A `singletonKey` makes a second job with the same key a no-op while one waits. */
+  /**
+   * Queues a job. Queues use pg-boss's standard policy, so a job is never deduplicated here; a
+   * handler that must run once claims its work itself. Waits at most QUEUE_WAIT_MS for pg-boss to
+   * start, then throws, so a request never hangs on an unreachable database.
+   */
   async send(queue: string, data: object, options: SendOptions = {}): Promise<string | null> {
-    await this.ready;
+    await this.untilStarted();
     return this.boss.send(queue, data, options);
   }
 
@@ -75,6 +82,19 @@ export class JobsService implements OnModuleInit, OnApplicationShutdown {
     await this.boss.stop({ graceful: true, timeout: 20_000 });
   }
 
+  /** Waits for pg-boss to start, for at most QUEUE_WAIT_MS. */
+  private async untilStarted(): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Background jobs are not available right now.")), QUEUE_WAIT_MS);
+    });
+    try {
+      await Promise.race([this.ready, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Starts pg-boss, retrying every few seconds until the database answers or the app stops. */
   private async startWhenReachable(): Promise<void> {
     while (!this.stopping) {
@@ -82,8 +102,10 @@ export class JobsService implements OnModuleInit, OnApplicationShutdown {
         await this.boss.start();
         this.started = true;
         return;
-      } catch {
-        this.logger.warn("pg-boss could not start; the control database is unreachable. Retrying.");
+      } catch (error) {
+        // The cause (a code such as ECONNREFUSED or a permission error), never a connection string.
+        const cause = (error as { code?: string } | null)?.code ?? "unknown";
+        this.logger.warn(`pg-boss could not start (${cause}). Retrying.`);
         await new Promise((resolve) => setTimeout(resolve, START_RETRY_MS).unref());
       }
     }
