@@ -108,6 +108,23 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       expect(context.body.company?.id).toBe(SUMMIT_ID);
     });
 
+    it("keeps the session's start time when the app is confirmed, so the absolute timeout does not restart", async () => {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["owner"] });
+      const [person] = await harness.control.db.select({ id: user.id }).from(user).where(eq(user.email, email));
+      const first = await harness.signIn(email);
+      const started = new Date(Date.now() - 60 * 60_000);
+      await harness.control.db.update(session).set({ createdAt: started }).where(eq(session.userId, person.id));
+      const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
+      await harness
+        .post("/api/auth/two-factor/verify-totp")
+        .set("Cookie", first)
+        .send({ code: totpCode(totpSecretFromUri(enabled.body.totpURI as string)) })
+        .expect(200);
+      const rows = await harness.control.db.select({ createdAt: session.createdAt }).from(session).where(eq(session.userId, person.id));
+      expect(rows).toHaveLength(1);
+      expect(Math.abs(rows[0].createdAt.getTime() - started.getTime())).toBeLessThan(1000);
+    });
+
     it("keeps the company a person with several companies chose before enrolling", async () => {
       const other = await harness.addCompany(`mfa-${uuidv7().slice(-8)}`);
       const email = await harness.addUser({ companyIds: [SUMMIT_ID, other], roles: ["hr"] });
@@ -269,6 +286,32 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       expect(cookiesFrom(response.headers["set-cookie"])).not.toMatch(/session_token=[^;]/);
       const sessions = await harness.control.db.select().from(session).where(eq(session.userId, person.id));
       expect(sessions).toHaveLength(0);
+    });
+
+    it("asks for the password before a passkey can be added, on the same session", async () => {
+      const cookie = await harness.signIn(await harness.addUser({ companyIds: [SUMMIT_ID] }));
+      const refused = await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", cookie);
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe("password_confirmation_required");
+      const wrong = await harness.post("/api/auth/verify-password").set("Cookie", cookie).send({ password: `${PASSWORD}x` });
+      expect(wrong.status).not.toBe(200);
+      expect((await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", cookie)).status).toBe(403);
+      await harness.post("/api/auth/verify-password").set("Cookie", cookie).send({ password: PASSWORD }).expect(200);
+      const allowed = await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", cookie);
+      expect(allowed.status).toBe(200);
+      expect(allowed.body.rp.id).toBe("localhost");
+      const otherSession = await harness.signIn(await harness.addUser({ companyIds: [SUMMIT_ID] }));
+      expect((await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", otherSession)).status).toBe(403);
+    });
+
+    it("refuses a passkey registration that would start a new session", async () => {
+      const cookie = await harness.signIn(await harness.addUser({ companyIds: [SUMMIT_ID] }));
+      const response = await harness
+        .post("/api/auth/passkey/verify-registration")
+        .set("Cookie", cookie)
+        .send({ response: {}, createSession: true });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe("create_session_unsupported");
     });
 
     it("offers passkey sign-in options without a session", async () => {

@@ -93,6 +93,30 @@ describe("password lockout and rate limits (P8 part 2, needs the local PostgreSQ
     expect((await attempt(`other-ip-${uuidv7()}@example.test`, false, "203.0.113.11")).status).toBe(401);
   });
 
+  it("ignores a spoofed X-Forwarded-For: the limit follows the client IP the proxy vouches for", async () => {
+    const ip = "203.0.113.20";
+    for (let n = 0; n < 10; n += 1) {
+      await harness
+        .post("/api/auth/sign-in/email", undefined, ip)
+        .set("X-Forwarded-For", `198.18.0.${n}`)
+        .send({ email: `spoof-${n}-${uuidv7()}@example.test`, password: "wrong-password-123" });
+    }
+    const limited = await harness
+      .post("/api/auth/sign-in/email", undefined, ip)
+      .set("X-Forwarded-For", "198.18.1.1")
+      .send({ email: `spoof-last-${uuidv7()}@example.test`, password: "wrong-password-123" });
+    expect(limited.status).toBe(429);
+  });
+
+  it("checks at most 5 of many parallel guesses before the lock applies", async () => {
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID] });
+    const answers = await Promise.all(Array.from({ length: 12 }, () => attempt(email)));
+    const checked = answers.filter((answer) => answer.status === 401).length;
+    expect(checked).toBeLessThanOrEqual(5);
+    expect(answers.filter((answer) => answer.status === 429).length).toBeGreaterThanOrEqual(7);
+    expect((await attempt(email, true)).status).toBe(429);
+  });
+
   it("sends at most 3 verification emails an hour to one address", async () => {
     const email = await harness.addUser({ companyIds: [SUMMIT_ID], verified: false });
     for (let n = 0; n < 5; n += 1) expect((await attempt(email, true)).status).toBe(403);
