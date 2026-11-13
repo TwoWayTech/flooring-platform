@@ -3,7 +3,19 @@ import { NoopProvisioner } from "@workspace/providers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
-import { products, rollCuts, rolls, roles, stockMovements, transfers, userProfiles } from "../src/company";
+import {
+  goodsReceipts,
+  products,
+  purchaseOrders,
+  rollCuts,
+  rolls,
+  roles,
+  stockMovements,
+  supplierContacts,
+  suppliers,
+  transfers,
+  userProfiles,
+} from "../src/company";
 import { verifyPassword } from "better-auth/crypto";
 import { account, organization, tenantDatabases, tenants, user } from "../src/control";
 import { seedTestCompany } from "../src/seed";
@@ -82,6 +94,21 @@ describe("test company seed", () => {
       expect(await company.db.select().from(rollCuts)).toHaveLength(fixtures.rolls.flatMap((roll) => roll.cuts).length);
       expect(await company.db.select().from(stockMovements)).toHaveLength(fixtures.stockMovements.length);
       expect(await company.db.select().from(transfers)).toHaveLength(fixtures.transfers.length);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds the supplier directory, orders and receipts, and links products to suppliers (purchasing, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(suppliers)).toHaveLength(fixtures.suppliers.length);
+      expect(await company.db.select().from(supplierContacts)).toHaveLength(fixtures.supplierContacts.length);
+      expect(await company.db.select().from(purchaseOrders)).toHaveLength(fixtures.purchaseOrders.length);
+      expect(await company.db.select().from(goodsReceipts)).toHaveLength(fixtures.receipts.length);
+      const linked = (await company.db.select().from(products)).filter((product) => product.supplierId !== null);
+      expect(linked).toHaveLength(fixtures.products.filter((product) => product.supplierId).length);
     } finally {
       await company.close();
     }

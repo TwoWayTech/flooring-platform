@@ -868,6 +868,21 @@ export class DemoStore implements ApiClient {
     return { products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments };
   }
 
+  async purchasingData() {
+    const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
+      await Promise.all([
+        this.list("suppliers"),
+        this.list("supplierContacts"),
+        this.list("purchaseOrders"),
+        this.list("receipts"),
+        this.list("products"),
+        this.list("locations"),
+        this.list("bills"),
+        this.list("supplierPayments"),
+      ]);
+    return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments };
+  }
+
   async moveRoll(rollId: string, bin: string) {
     const roll = await this.get("rolls", rollId);
     if (!roll) throw new DemoRuleError("This roll no longer exists.");

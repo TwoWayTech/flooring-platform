@@ -81,6 +81,13 @@ describe("purchasing (spec D1 to D3)", () => {
     // Damaged units are still owed by the supplier, so they stay to come.
     expect(receiptProblem(po, receipt("b", "100", "11").lines, [first])).toMatch(/only 10 is still to come/);
     expect(receiptProblem({ ...po, status: "draft" }, first.lines, [])).toMatch(/draft/);
+    // A line listed twice, or rolls covering more than arrived, are refused (PR #13 review).
+    expect(receiptProblem(po, [...first.lines, ...first.lines], [])).toMatch(/appear once/);
+    const carpetLine = { ...first.lines.find((l) => l.productId === "c")!, received: "12" };
+    const tooLong = { ...carpetLine, rolls: [{ rollNumber: "R1", dyeLot: "A", lengthFt: "50" }] };
+    expect(receiptProblem(po, [tooLong], [], [carpet, lvp])).toMatch(/more than the 12 received/);
+    const fits = { ...carpetLine, rolls: [{ rollNumber: "R1", dyeLot: "A", lengthFt: "1" }] };
+    expect(receiptProblem(po, [fits], [], [carpet, lvp])).toBeNull();
     let n = 0;
     const { movements, rolls } = receiptStock(po, first, [carpet, lvp], {
       movementId: () => `m${++n}`,

@@ -127,6 +127,25 @@ Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are str
 | `PATCH /rolls/:id` | `inventory.roll.edit` | `{ bin }` only; any other field is 400 |
 | `POST /stock/corrections` | `inventory.stock.correct` | `{ productId, rollId, locationId, counted, reason }`: an approved count adjustment. 400 `invalid_correction` |
 
+## Purchasing, part 1 (real build, P11, ADR 0036)
+
+Every route needs the `core` module. Line costs (`unitCost`) are stripped without `inventory.product.view_sensitive`. An order's `total` is left out unless the person holds that key or `purchasing.bill.view`.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /suppliers`, `GET /supplier-contacts` | `purchasing.supplier.view` | The directory |
+| `POST /suppliers` | `purchasing.supplier.create` | `SupplierInput`; only a name is required |
+| `PUT /suppliers/:id` | `purchasing.supplier.edit` | Missing fields keep their value |
+| `POST /suppliers/:id/status` | `purchasing.supplier.edit` | `{ status }`. 409 `supplier_in_use` with an open order |
+| `POST /supplier-contacts`, `PUT /supplier-contacts/:id` | create, edit | One primary per supplier |
+| `POST /supplier-contacts/:id/status` | `purchasing.supplier.edit` | A leaving primary is replaced |
+| `GET /purchase-orders` | `purchasing.order.view` | Orders with their lines, newest first |
+| `POST /purchase-orders` | `purchasing.order.create` | `NewPurchaseOrderInput`; a draft, or ordered (emails the rep) |
+| `POST /purchase-orders/:id/order` | `purchasing.order.create` | `{ via }`. 409 `not_draft` |
+| `POST /purchase-orders/:id/cancel` | `purchasing.order.create` | `{ reason }`. 409 `has_receipts`, `already_cancelled` |
+| `GET /receipts` | `purchasing.order.view` | Goods receipts with their lines |
+| `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, or a roll number already in stock |
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.

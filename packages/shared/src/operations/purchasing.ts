@@ -65,16 +65,27 @@ export function receivedByLine(poId: string, receipts: readonly GoodsReceipt[]):
   return out;
 }
 
-/** Why a receipt cannot be recorded, or null (spec D2): something arrived, and never more than is still due. */
+/**
+ * Why a receipt cannot be recorded, or null (spec D2): something arrived, and never more than is
+ * still due. Each order line appears once, and rolls entered for a line are broadloom and never
+ * cover more area than was received on it, so a receipt can never make stock out of nothing
+ * (PR #13 security review). Without `products` (older callers) the roll check is skipped.
+ */
 export function receiptProblem(
   po: PurchaseOrder,
   lines: readonly ReceiptLine[],
   receipts: readonly GoodsReceipt[],
+  products?: readonly Product[],
 ): string | null {
   if (po.status !== "ordered") return `${po.number} is ${po.status === "draft" ? "still a draft" : "cancelled"}.`;
   const got = receivedByLine(po.id, receipts);
+  const seen = new Set<string>();
   let any = false;
   for (const line of lines) {
+    if (seen.has(line.poLineId)) return "Each order line can appear once on a receipt.";
+    seen.add(line.poLineId);
+    const rollProblem = products ? rollsProblem(line, products) : null;
+    if (rollProblem) return rollProblem;
     const ordered = po.lines.find((l) => l.id === line.poLineId);
     if (!ordered) return "A line is not on this purchase order.";
     const received = dec(line.received || "0");
@@ -85,6 +96,20 @@ export function receiptProblem(
     if (received.plus(damaged).gt(open)) return `${ordered.description}: only ${open.toString()} is still to come.`;
   }
   return any ? null : "Enter what arrived on at least one line.";
+}
+
+/** Rolls entered on a receipt line: only for broadloom, each with a length, together no more area than received. */
+function rollsProblem(line: ReceiptLine, products: readonly Product[]): string | null {
+  if (line.rolls.length === 0) return null;
+  const product = products.find((p) => p.id === line.productId);
+  if (!product || stockUnit(product) !== "ft" || !product.widthFt) return "Rolls can only be entered for broadloom.";
+  if (line.rolls.some((roll) => !dec(roll.lengthFt || "0").gt(0))) return "Every roll needs a length.";
+  const area = sum(line.rolls.map((roll) => dec(roll.lengthFt).times(product.widthFt!)));
+  // One square foot of rounding is allowed between the roll labels and the received area.
+  if (area.gt(dec(line.received || "0").plus(1))) {
+    return `The rolls add up to ${area.toString()} sq ft, more than the ${line.received || "0"} received.`;
+  }
+  return null;
 }
 
 /**

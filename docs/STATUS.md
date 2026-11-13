@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 (inventory, part 1) is `feat/inventory-catalog`.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 (purchasing, part 1) is `feat/purchasing-orders`.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`) and PR #11 (`2ddf5bc`).
-- **Last session log:** docs/sessions/2026-11-13-2100-a-inventory-part-1.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`) and PR #12 (`2d483de`).
+- **Last session log:** docs/sessions/2026-11-14-0000-a-purchasing-part-1.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -73,7 +73,8 @@
   - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
   - Retry keeps a message's scheduled time;
   - the explicit `gh pr` allows and the merge and push guard hook.
-- [x] Inventory part 1 on `feat/inventory-catalog` (ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
+- [x] Purchasing part 1 on `feat/purchasing-orders` (ADR 0036): suppliers, contacts, orders and receipts on the API; Summit's purchasing seeded; the Purchasing page in api mode.
+- [x] Inventory part 1, merged to main in PR #12 (`2d483de`, ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
 - [x] P10 part 2, merged to main in PR #11 (`2ddf5bc`, ADR 0034; draft spec docs/specs/settings-users-access.md):
   - Users and Roles API with no-escalation, holder dominance, data scope, the last Owner, seats and audit;
   - server-side step-up with a race-safe lockout;
@@ -83,8 +84,8 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 3, A:** P11 inventory part 1 (ADR 0035), in review. Part 2 (reservations, cut or issue, Ready to cut, quick invoice from Cut roll) moves with sales.
-2. **Tasks 4 and 5, A:** P11 purchasing, then sales with the tax engine.
+1. **Task 4, A:** P11 purchasing part 1 (ADR 0036), in review. Bills and supplier payments move with P12.
+2. **Task 5, A:** P11 sales with the tax engine, and inventory part 2 (reservations, cut or issue, Ready to cut, quick invoice from Cut roll).
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -98,6 +99,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `pnpm db:migrate` parses every provider setting; check only the email section.
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
+- **Purchasing part 1 (ADR 0036):** a supplier with an unpaid bill can be deactivated until bills move with P12; supplier routes show `creditLimit` by the purchasing money keys through `@SensitiveFieldKeys`.
+- **PR #13 reviews (none blocking):**
+  - Make the 1 sq ft roll tolerance on receipts relative, so tiny receipts cannot repeat it.
+  - Use `Object.hasOwn` when `SensitiveFieldKeys` looks up a field name.
+  - Add a status condition to `cancelOrder`'s update, so a cancel cannot overwrite a send that commits in between.
+  - Check how a supplier `creditLimit` in an audit entry is shown in Settings → Audit log (it follows the customer key there).
+  - the fallback roll number for a receipt with no rolls entered (`SKU prefix-receipt number`) can clash; use the full SKU and line position. Before P12, check in the blueprint whether a goods receipt posts to the ledger (inventory against received-not-billed) as well as the bill (rule 10).
 - **PR #12 reviews (none blocking):**
   - `moveRoll` should take the stock lock and refuse a roll in transit, because receiving the transfer resets the bin the audit recorded.
   - A roll correction should also check the `inventory.rolls` switch (and a boxed one `inventory.products`).
