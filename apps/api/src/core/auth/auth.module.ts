@@ -67,6 +67,6 @@ import { AUTH } from "./tokens";
     SessionGuard,
   ],
   controllers: [AuthController],
-  exports: [AUTH, SessionService, SessionGuard],
+  exports: [AUTH, SessionService, SessionGuard, CompanyDirectory],
 })
 export class AuthModule {}
