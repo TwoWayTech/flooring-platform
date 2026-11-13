@@ -51,5 +51,7 @@ export function linkOrigin(
 export function seatProblem(statuses: readonly string[], limit: number | null): string | null {
   if (limit === null) return null;
   const used = statuses.filter((status) => status !== "disabled").length;
-  return used >= limit ? `All ${limit} seats on your plan are in use. Disable a user or ask us to raise the limit.` : null;
+  return used >= limit
+    ? `All ${limit} seats on your plan are in use. Disable a user or ask us to raise the limit.`
+    : null;
 }

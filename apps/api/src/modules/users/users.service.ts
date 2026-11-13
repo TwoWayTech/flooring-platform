@@ -390,7 +390,10 @@ export class UsersService {
   }
 
   private async sendInvitation(companyId: string, to: string, url: string, existing: boolean): Promise<void> {
-    const [company] = await this.control.db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, companyId));
+    const [company] = await this.control.db
+      .select({ name: tenants.name })
+      .from(tenants)
+      .where(eq(tenants.id, companyId));
     const name = (company?.name ?? "your company").replace(/[\r\n]+/g, " ");
     await this.email.send({
       from: this.emailFrom,

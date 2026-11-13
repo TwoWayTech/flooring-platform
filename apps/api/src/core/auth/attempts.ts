@@ -123,7 +123,9 @@ export class AttemptLog {
   async recordStepUp(passed: boolean, sessionId: string, userId: string, ip: string | null): Promise<void> {
     await this.db
       .insert(authAttempts)
-      .values(passed ? { kind: "step_up_ok", subject: sessionId, ip } : { kind: "step_up_failed", subject: userId, ip });
+      .values(
+        passed ? { kind: "step_up_ok", subject: sessionId, ip } : { kind: "step_up_failed", subject: userId, ip },
+      );
   }
 
   /**

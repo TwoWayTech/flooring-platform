@@ -58,7 +58,12 @@ export default tseslint.config(
     rules: { "no-restricted-imports": "off" },
   },
   {
-    files: ["src/core/jobs/**/*.ts", "src/core/notifications/notification.service.ts"],
+    // The invitation service activates a profile from the invitation row, through JobTenants' checks.
+    files: [
+      "src/core/jobs/**/*.ts",
+      "src/core/notifications/notification.service.ts",
+      "src/modules/users/invitations.service.ts",
+    ],
     rules: { "no-restricted-imports": ["error", jobHandlerImports] },
   },
   {
