@@ -226,6 +226,42 @@ describe("purchasing part 1 (P11, needs the local PostgreSQL)", () => {
     });
     expect(over.status).toBe(400);
     expect(over.body.message).toContain("still to come");
+    // One order line listed twice, or rolls longer than what arrived, cannot make stock (PR #13 review).
+    const twice = await call("post", `/purchase-orders/${order.body.id}/receipts`, cookies.warehouse).send({
+      locationId: "",
+      note: "",
+      lines: [
+        { poLineId: tileLine.id, productId: catalog.tile, received: "60", damaged: "0", rolls: [] },
+        { poLineId: tileLine.id, productId: catalog.tile, received: "60", damaged: "0", rolls: [] },
+      ],
+    });
+    expect(twice.body.message).toBe("Each order line can appear once on a receipt.");
+    expect(await onHand(company.id, catalog.tile)).toBe(before + 40);
+    const longRolls = await call("post", `/purchase-orders/${order.body.id}/receipts`, cookies.warehouse).send({
+      locationId: "",
+      note: "",
+      lines: [{ poLineId: tileLine.id, productId: catalog.tile, received: "20", damaged: "0", rolls: [] }],
+    });
+    expect(longRolls.status).toBe(201);
+    const carpetOrder = await call("post", "/purchase-orders", cookies.purchasing)
+      .send(orderBody(supplier, contact, catalog))
+      .expect(201);
+    const carpetLineId = (carpetOrder.body.lines as { id: string }[])[1].id;
+    const inflated = await call("post", `/purchase-orders/${carpetOrder.body.id}/receipts`, cookies.warehouse).send({
+      locationId: "",
+      note: "",
+      lines: [
+        {
+          poLineId: carpetLineId,
+          productId: catalog.carpet,
+          received: "1",
+          damaged: "0",
+          rolls: [{ rollNumber: `NM-${uuidv7().slice(-6)}`, dyeLot: "L8", lengthFt: "9999" }],
+        },
+      ],
+    });
+    expect(inflated.status).toBe(400);
+    expect(inflated.body.message).toContain("more than the 1 received");
     const cancel = await call("post", `/purchase-orders/${order.body.id}/cancel`, cookies.purchasing).send({
       reason: "Changed mind",
     });

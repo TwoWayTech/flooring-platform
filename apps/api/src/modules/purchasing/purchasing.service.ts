@@ -36,7 +36,7 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
+import { loadLocations, loadProducts } from "../inventory/inventory-records";
 import { lockStock } from "../inventory/stock-lock";
 import { loadContacts, loadOrders, loadReceipts, loadSuppliers } from "./purchasing-records";
 
@@ -160,8 +160,8 @@ export class PurchasingService {
           targetType: "supplier",
           targetId: target,
           targetLabel: name,
-          before: before ? { name: before.name, terms: before.terms } : null,
-          after: { name, terms: values.terms },
+          before: before ? auditedSupplier(before) : null,
+          after: auditedSupplier(values),
         },
         tx,
       );
@@ -345,8 +345,9 @@ export class PurchasingService {
       const [supplier] = await loadSuppliers(tx, [input.supplierId]);
       if (!supplier || supplier.status !== "active") throw refuse("Choose a supplier.");
       const contact = input.contactId ? (await loadContacts(tx, [input.contactId]))[0] : undefined;
-      if (input.contactId && contact?.supplierId !== supplier.id)
-        throw refuse("Choose one of this supplier's contacts.");
+      if (input.contactId && (contact?.supplierId !== supplier.id || contact.status !== "active")) {
+        throw refuse("Choose one of this supplier's active contacts.");
+      }
       const locations = await loadLocations(tx);
       const lineLocations = input.lines
         .map((line) => line.locationId)
@@ -424,6 +425,8 @@ export class PurchasingService {
     await db.transaction(async (tx) => {
       const [po] = await loadOrders(tx, [poId]);
       if (!po) throw new NotFoundException({ code: "not_found", message: "This purchase order no longer exists." });
+      const [supplier] = await loadSuppliers(tx, [po.supplierId]);
+      if (supplier?.status !== "active") throw refuse("This supplier is inactive. Reactivate it before ordering.");
       const contact = po.contactId ? (await loadContacts(tx, [po.contactId]))[0] : undefined;
       const [moved] = await tx
         .update(purchaseOrders)
@@ -510,7 +513,8 @@ export class PurchasingService {
           .plus(line.damaged || "0")
           .gt(0),
       );
-      const problem = receiptProblem(po, lines, await loadReceipts(tx, [poId]));
+      const catalog = await loadProducts(tx);
+      const problem = receiptProblem(po, lines, await loadReceipts(tx, [poId]), catalog);
       if (problem) throw refuse(problem);
       const locations = await loadLocations(tx);
       const targets = [
@@ -543,12 +547,14 @@ export class PurchasingService {
         note: input.note.trim(),
         lines: lines.map((line) => ({ ...line, received: line.received || "0", damaged: line.damaged || "0" })),
       };
-      const stock = receiptStock(po, receipt, await loadProducts(tx), {
-        movementId: () => uuidv7(),
-        rollId: () => uuidv7(),
+      const stock = receiptStock(po, receipt, catalog, { movementId: () => uuidv7(), rollId: () => uuidv7() });
+      // Every roll number is unique, deleted rolls included, and within this receipt too.
+      const taken = new Set((await tx.select({ number: rolls.rollNumber }).from(rolls)).map((row) => row.number));
+      const clash = stock.rolls.find((roll) => {
+        if (taken.has(roll.rollNumber)) return true;
+        taken.add(roll.rollNumber);
+        return false;
       });
-      const existingRolls = new Set((await loadRolls(tx)).map((roll) => roll.rollNumber));
-      const clash = stock.rolls.find((roll) => existingRolls.has(roll.rollNumber));
       if (clash)
         throw refuse(`Roll number ${clash.rollNumber} is already in stock. Enter the roll numbers on the label.`);
       await tx.insert(goodsReceipts).values({
@@ -663,6 +669,24 @@ export class PurchasingService {
       this.logger.warn("A purchase order was saved, but its email could not be queued.");
     }
   }
+}
+
+/**
+ * What a supplier's audit entry keeps: everything that changes who gets orders or money, so a
+ * changed email or credit limit can be traced (PR #13 security review). No tax ID is ever stored.
+ */
+function auditedSupplier(supplier: Omit<Supplier, "id" | "status" | "categories" | "externalId">) {
+  return {
+    name: supplier.name,
+    type: supplier.type,
+    terms: supplier.terms,
+    creditLimit: supplier.creditLimit,
+    email: supplier.email,
+    phone: supplier.phone,
+    accountNumber: supplier.accountNumber,
+    track1099: supplier.track1099,
+    w9OnFile: supplier.taxForm?.w9OnFile ?? false,
+  };
 }
 
 /** The rep as they are now, kept on the order so history survives them leaving (ADR 0022). */

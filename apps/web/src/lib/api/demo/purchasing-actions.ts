@@ -159,7 +159,7 @@ export async function recordReceipt(ctx: ActionContext, poId: string, input: Rec
       .plus(l.damaged || "0")
       .gt(0),
   );
-  const problem = receiptProblem(po, lines, ctx.db.list("receipts"));
+  const problem = receiptProblem(po, lines, ctx.db.list("receipts"), ctx.db.list("products"));
   if (problem) throw new DemoRuleError(problem);
   const receipt: GoodsReceipt = {
     id: ctx.newId("gr"),
