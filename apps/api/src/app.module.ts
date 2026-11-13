@@ -5,6 +5,8 @@ import { ApiConfigModule } from "./core/config/config.module";
 import { ControlDbModule } from "./core/database/control-db";
 import { EmailModule } from "./core/email/email.module";
 import { HealthController } from "./core/health/health.controller";
+import { JobsModule } from "./core/jobs/jobs.module";
+import { NotificationsModule } from "./core/notifications/notifications.module";
 import { AccessModule } from "./core/access/access.module";
 import { RequestPipelineModule } from "./core/request-pipeline.module";
 import { TenancyModule } from "./core/tenancy/tenancy.module";
@@ -31,6 +33,8 @@ export class AppModule {
         TenancyModule,
         AccessModule,
         RequestPipelineModule,
+        JobsModule,
+        NotificationsModule,
         BrandingModule,
         ...extraModules,
       ],

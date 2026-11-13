@@ -5,6 +5,9 @@ import type { Request } from "express";
 import type { AuthSession } from "../auth/session.service";
 import { isReadOnly, type CompanyAccess } from "./tenant-directory";
 
+/** The user id a background job acts under; no person holds it (ADR 0032). */
+export const JOB_USER = "system:jobs";
+
 /**
  * The company a request works in, as TenantGuard established it from the verified session
  * (CLAUDE.md rule 2). TenantConnectionService takes only this, never a bare id, so no route can hand
@@ -43,7 +46,17 @@ export class TenantContext {
     return new TenantContext(company.id, session.user.id, company.products, company.status, isReadOnly(company));
   }
 
-  /** Whether a value is a TenantContext made by `fromVerifiedSession`, not a look-alike object. */
+  /**
+   * The context of a background job for one company (ADR 0032). There is no session, so the job
+   * runner (core/jobs) builds it from the company's current access facts, the same facts TenantGuard
+   * checks, and lint keeps every other caller out. `userId` is JOB_USER: a job acts for the system,
+   * never as a person, and holds no permissions.
+   */
+  static forJob(company: CompanyAccess): TenantContext {
+    return new TenantContext(company.id, JOB_USER, company.products, company.status, isReadOnly(company));
+  }
+
+  /** Whether a value is a TenantContext made by `fromVerifiedSession` or `forJob`, not a look-alike object. */
   static isVerified(value: unknown): value is TenantContext {
     return value instanceof TenantContext && value.#verified;
   }

@@ -85,6 +85,20 @@ Every company route declares what it needs: `@RequirePermission(...keys)` (any o
 
 **Audit.** Every successful company write (POST, PUT, PATCH, DELETE) writes an `audit_log` entry: the module's own, with before and after, or the API's safety-net entry (category `data`, the route and the record id). The log is append-only: the database refuses UPDATE, DELETE and TRUNCATE.
 
+## Notifications and Outbox (real build, ADR 0032)
+
+Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /notifications` | Any company member | The person's own in-app notes, newest first (50) |
+| `POST /notifications/read` | Any company member | `{ ids? }`: marks those notes read, or all unread ones; only the person's own |
+| `GET /outbox` | Any company member | The messages the person caused or received; every message with `settings.outbox.view`. Someone else's restricted message is redacted without `hr.employee.view` |
+| `POST /outbox/:id/retry` | `settings.outbox.view` | Sends a failed message again after checking its address. 409 `not_failed` otherwise |
+| `POST /outbox/:id/cancel` | `settings.outbox.view` | Cancels a scheduled message. 409 `not_scheduled` otherwise |
+
+Raising an event is server-side only (`NotificationService.notify`): modules call it when their records change. An Outbox row moves from `queued` (or `scheduled`) to `sent` or `failed`, and from `scheduled` to `cancelled`.
+
 ## Session (demo route handlers, demo mode only)
 
 | Route | Body / response | Notes |

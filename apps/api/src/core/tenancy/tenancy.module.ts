@@ -12,6 +12,6 @@ import { TenantGuard } from "./tenant.guard";
 @Module({
   imports: [AuthModule],
   providers: [TenantDirectory, TenantConnectionService, TenantGuard],
-  exports: [TenantConnectionService, TenantGuard],
+  exports: [TenantConnectionService, TenantGuard, TenantDirectory],
 })
 export class TenancyModule {}

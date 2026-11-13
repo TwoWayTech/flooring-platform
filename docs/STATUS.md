@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/permissions-guards-audit`, P10 part 1, PR #7. Then the notifications core, the last task in the work queue.
+- **In progress:** `feat/notifications-core`, PR #9, the last task of the 2026-11-13 work queue.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`) and PR #6 (`429149d`).
-- **Last session log:** docs/sessions/2026-11-13-0724-a-permissions-guards-audit.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`) and PR #8 (`59ce4e4`).
+- **Last session log:** docs/sessions/2026-11-13-0950-a-notifications-core.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -55,7 +55,7 @@
   - TenantConnectionService through a session-only TenantContext;
   - global deny-by-default session and tenant guards;
   - the company-isolation suite.
-- [x] P10 part 1 on `feat/permissions-guards-audit` (PR #7, ADR 0031; not merged at the time of writing):
+- [x] P10 part 1, merged to main in PR #7 (`39e6a33`, ADR 0031), with its hardening in PR #8 (`59ce4e4`):
   - access from the shared engine on every request;
   - a global deny-by-default PermissionGuard;
   - server-side stripping of sensitive fields;
@@ -63,11 +63,15 @@
   - separation of duties and data-scope rules;
   - default roles and a ceiling for new companies;
   - the role-by-permission matrix.
+- [x] The notifications core on `feat/notifications-core` (PR #9, ADR 0032; not merged at the time of writing):
+  - pg-boss jobs;
+  - `notify` with the Outbox worker;
+  - in-app notes and Outbox endpoints;
+  - the daily 30-day cleanup of sign-in security data.
 
 ## Next three tasks
 The work queue the owner set on 2026-11-13. Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
 1. **Owner:** make the CI `verify` check (it runs the isolation suite) required in GitHub branch protection for `main` (blueprint P9).
-2. **A (Claude):** the notifications core: EmailProvider and the outbox worker on pg-boss, with memory email locally. Include the 30-day cleanup job (Follow-ups).
 
 3. **Next, A:** P10 part 2 with the Settings → Users and Roles API:
    - no-escalation on grants;
@@ -79,7 +83,6 @@ The work queue the owner set on 2026-11-13. Claude runs it in order, each task o
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
 ## Follow-ups (don't forget)
-- **30-day cleanup job (owner decision, 2026-11-13):** a daily pg-boss job deletes `auth_attempts` rows older than 30 days (`created_at`) and `rate_limit` rows older than 30 days (`last_request`). Build it in the notifications core task, which brings pg-boss. Until then nothing prunes these tables (docs/data-model.md, "Retention of sign-in security data").
 - **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
 - **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
@@ -99,6 +102,23 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Claim the database row before `prepare`, so a rerun on a changed status never seeds before it throws.
   - Report migrate-all writes that match no row (status changed mid-run), as provisionCompany does.
   - Decide whether a read-only database should keep serving after a failed migration (availability: new code on an old schema answers 500).
+- **Notifications follow-ups (PR #9 reviews, none blocking):**
+  - Retry should respect `scheduledFor`: a scheduled row with a bad address goes out at once after Retry.
+  - The worker's claim should skip soft-deleted rows.
+  - Confine `JobsService.send` with lint, like `JobTenants`.
+  - Stop pg-boss when shutdown comes while it is still starting.
+  - Tests:
+    - the stale-`sending` Retry;
+    - the provider timeout;
+    - Retry after a company is writable again;
+    - own-row SQL filter cases;
+    - a lint fixture for the `JobTenants` rule.
+  - Check whether Resend replays an earlier error for a reused idempotency key, with the first staging send.
+  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran.
+  - Validate the sender settings with Zod when Settings → Email saves them.
+  - The bounce webhook (`bounced`).
+  - Attachments through StorageProvider.
+  - Business events, raised from their modules.
 - **Concurrent provisioning of one slug:** two runs at once can both pass the resume gate. The final update no longer overwrites another status, but the second run could still re-seed. The fix is to claim the row (a conditional update to a `seeding` status) or take an advisory lock on the tenant id (PR #8 re-review). Running provisioning twice at once is an operator error today.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**

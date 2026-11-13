@@ -51,7 +51,7 @@ Owner decision, 2026-11-13 (ADR 0029, part 2):
 - `auth_attempts` rows are deleted 30 days after `created_at`.
 - `rate_limit` rows are deleted 30 days after `last_request`. That column is in epoch milliseconds, and the table has no `created_at`, because Better Auth owns it.
 - Lockout and MFA events written to `audit_log` follow the audit log's own retention, not the 30 days.
-- The delete is a daily pg-boss job, added with the notifications core when pg-boss arrives. Until then, nothing prunes these tables.
+- The delete is the daily `auth.cleanup` pg-boss job (03:17 UTC, ADR 0032).
 
 ## Company database
 
