@@ -14,4 +14,5 @@ CREATE TABLE "user_invitations" (
 --> statement-breakpoint
 ALTER TABLE "user_invitations" ADD CONSTRAINT "user_invitations_tenant_id_tenants_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "user_invitations_token_uidx" ON "user_invitations" USING btree ("token_hash");--> statement-breakpoint
-CREATE INDEX "user_invitations_user_idx" ON "user_invitations" USING btree ("tenant_id","user_id");
+CREATE INDEX "user_invitations_user_idx" ON "user_invitations" USING btree ("tenant_id","user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "user_invitations_open_uidx" ON "user_invitations" USING btree ("tenant_id","user_id") WHERE accepted_at IS NULL AND revoked_at IS NULL;

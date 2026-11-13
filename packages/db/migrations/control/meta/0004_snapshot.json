@@ -1,5 +1,5 @@
 {
-  "id": "21637a17-e677-49cc-939c-fe5717296e2e",
+  "id": "295d2ce5-2816-4a44-957e-6debb3d16179",
   "prevId": "f1bc79ca-45a3-47f2-b539-bb1f99d6a2c8",
   "version": "7",
   "dialect": "postgresql",
@@ -2116,6 +2116,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_invitations_open_uidx": {
+          "name": "user_invitations_open_uidx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "accepted_at IS NULL AND revoked_at IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

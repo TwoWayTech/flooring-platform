@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { appendOnly, at, business, userRef } from "../columns";
 import { tenants } from "./tenants";
@@ -56,5 +57,9 @@ export const userInvitations = pgTable(
   (table) => [
     uniqueIndex("user_invitations_token_uidx").on(table.tokenHash),
     index("user_invitations_user_idx").on(table.tenantId, table.userId),
+    // At most one open invitation per person and company, even when two invites race (PR #11 review).
+    uniqueIndex("user_invitations_open_uidx")
+      .on(table.tenantId, table.userId)
+      .where(sql`accepted_at IS NULL AND revoked_at IS NULL`),
   ],
 );
