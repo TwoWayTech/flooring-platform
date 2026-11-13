@@ -95,7 +95,11 @@ export class InvitationsService {
         )
         .returning({ id: userInvitations.id });
       if (!claimed) throw new GoneException(GONE);
-      if (hashed) {
+      const [existing] = await tx
+        .select({ id: account.id })
+        .from(account)
+        .where(and(eq(account.userId, found.userId), eq(account.providerId, "credential")));
+      if (hashed && !existing) {
         await tx.insert(account).values({
           id: uuidv7(),
           accountId: found.userId,

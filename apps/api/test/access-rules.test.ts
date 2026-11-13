@@ -18,6 +18,7 @@ function access(keys: PermissionKey[], overrides: Partial<RequestAccess> = {}): 
     branchId: null,
     roleNames: ["Sales"],
     disabled: false,
+    mfaRequired: false,
     ...overrides,
   };
 }

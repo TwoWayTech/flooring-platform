@@ -14,8 +14,13 @@ export type AuthAttemptKind =
   | "verification_email"
   /** A step-up code that passed; the subject is the session id (docs/specs/settings-users-access.md). */
   | "step_up_ok"
-  /** A step-up code that failed; the subject is the user id, for the step-up lockout. */
-  | "step_up_failed"
+  /**
+   * A step-up code about to be checked; the subject is the user id. Like `password_attempt`, it is
+   * written before the check and counts as a failure until a later `step_up_pass`.
+   */
+  | "step_up_attempt"
+  /** A step-up code that passed, for the lockout; the subject is the user id. */
+  | "step_up_pass"
   /** An invitation acceptance or lookup, per IP; the subject is the IP. */
   | "invitation_attempt";
 

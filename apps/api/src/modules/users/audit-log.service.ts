@@ -2,7 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { auditLog } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
-import type { AuditEntry } from "@workspace/shared";
+import type { AuditEntry, PermissionKey } from "@workspace/shared";
+import { stripSensitive } from "../../core/access/sensitive-fields";
 import { desc, inArray } from "drizzle-orm";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
@@ -29,8 +30,12 @@ export class AuditLogService {
     private readonly tenancy: TenantConnectionService,
   ) {}
 
-  /** The newest entries of the company's audit log. */
-  async list(tenant: TenantContext): Promise<AuditEntry[]> {
+  /**
+   * The newest entries of the company's audit log. Before and after values are stripped of
+   * sensitive fields the viewer may not see before they become text, because the response
+   * interceptor cannot look inside a string (CLAUDE.md rule 5; PR #11 security review).
+   */
+  async list(tenant: TenantContext, held: ReadonlySet<PermissionKey>): Promise<AuditEntry[]> {
     const db = await this.tenancy.db(tenant);
     const rows = await db.select().from(auditLog).orderBy(desc(auditLog.at)).limit(AUDIT_PAGE);
     const actorIds = [...new Set(rows.flatMap((row) => (row.actorUserId ? [row.actorUserId] : [])))];
@@ -46,8 +51,8 @@ export class AuditLogService {
       category: row.category,
       action: row.action,
       target: row.targetLabel || row.targetType,
-      before: asText(row.before),
-      after: asText(row.after),
+      before: asText(stripSensitive(row.before, held)),
+      after: asText(stripSensitive(row.after, held)),
     }));
   }
 }

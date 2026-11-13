@@ -1,4 +1,4 @@
-import { auditLog, roles as roleTable } from "@workspace/db/company";
+import { auditLog, rolePermissions, roles as roleTable } from "@workspace/db/company";
 import {
   member,
   planLimits,
@@ -129,7 +129,7 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     await call("patch", `/users/${await harness.userIdOf(admin.email)}`, owner.cookie)
       .send({ roleIds: [created.body.id] })
       .expect(200);
-    const target = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const target = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: [] }));
     await stepUp(admin);
     const notHeld = await call("patch", `/users/${target}`, admin.cookie).send({
       roleIds: [await roleId("accountant")],
@@ -326,6 +326,115 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
       const rows = await handle.db.select().from(auditLog).where(eq(auditLog.action, "Approved support access"));
       expect(rows).toHaveLength(1);
     } finally {
+      await handle.close();
+    }
+  });
+
+  it("never lets someone change a person who holds more than they do (PR #11 security review)", async () => {
+    await stepUp(owner);
+    const created = await call("post", "/roles", owner.cookie)
+      .send({
+        name: "People admin",
+        description: "",
+        dataScope: "all",
+        permissions: ["settings.users.view", "settings.users.manage"],
+      })
+      .expect(201);
+    const admin = await enrolled(await harness.addUser({ companyIds: [company.id], roles: [] }));
+    await stepUp(owner);
+    await call("patch", `/users/${await harness.userIdOf(admin.email)}`, owner.cookie)
+      .send({ roleIds: [created.body.id] })
+      .expect(200);
+    await stepUp(admin);
+    const ownerId = await harness.userIdOf(owner.email);
+    for (const patch of [{ mfaEnrolled: false }, { status: "disabled" }, { roleIds: [created.body.id] }]) {
+      const refused = await call("patch", `/users/${ownerId}`, admin.cookie).send(patch);
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe("holder_owner_only");
+    }
+    const accountant = await harness.userIdOf(
+      await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
+    );
+    expect((await call("patch", `/users/${accountant}`, admin.cookie).send({ status: "disabled" })).body.code).toBe(
+      "holder_not_held",
+    );
+  });
+
+  it("needs a step-up to disable someone, and refuses an MFA reset for a platform admin", async () => {
+    const fresh = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const target = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    expect((await call("patch", `/users/${target}`, fresh.cookie).send({ status: "disabled" })).body.code).toBe(
+      "step_up_required",
+    );
+    await harness.control.db.insert(platformAdmins).values({ userId: target, role: "support", active: true });
+    await stepUp(fresh);
+    expect((await call("patch", `/users/${target}`, fresh.cookie).send({ mfaEnrolled: false })).body.code).toBe(
+      "shared_account",
+    );
+  });
+
+  it("checks at most 5 step-up codes, however many arrive at once (PR #11 security review)", async () => {
+    const racer = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const answers = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        harness.post("/auth/step-up").set("Cookie", racer.cookie).send({ code: "000000" }),
+      ),
+    );
+    expect(answers.filter((answer) => answer.body.code === "step_up_invalid").length).toBeLessThanOrEqual(5);
+    expect(answers.filter((answer) => answer.status === 429).length).toBeGreaterThanOrEqual(7);
+    const locked = await harness
+      .post("/auth/step-up")
+      .set("Cookie", racer.cookie)
+      .send({ code: freshCode(racer.secret) });
+    expect(locked.status).toBe(429);
+  });
+
+  it("refuses a role with a wider data scope than the editor's own", async () => {
+    await stepUp(owner);
+    const branchAdmin = await call("post", "/roles", owner.cookie)
+      .send({
+        name: "Branch roles",
+        description: "",
+        dataScope: "branch",
+        permissions: ["settings.roles.view", "settings.roles.manage"],
+      })
+      .expect(201);
+    const editor = await enrolled(await harness.addUser({ companyIds: [company.id], roles: [] }));
+    await stepUp(owner);
+    await call("patch", `/users/${await harness.userIdOf(editor.email)}`, owner.cookie)
+      .send({ roleIds: [branchAdmin.body.id] })
+      .expect(200);
+    await stepUp(editor);
+    const wider = await call("put", `/roles/${branchAdmin.body.id}`, editor.cookie).send({
+      name: "Branch roles",
+      description: "",
+      dataScope: "all",
+      permissions: ["settings.roles.view", "settings.roles.manage"],
+    });
+    expect(wider.body.code).toBe("scope_wider");
+  });
+
+  it("asks for MFA when a held role needs it, even if member.role missed the change (backstop)", async () => {
+    const email = await harness.addUser({ companyIds: [company.id], roles: ["warehouse"] });
+    const cookie = await harness.signIn(email);
+    await call("get", "/notifications", cookie).expect(200);
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db
+        .insert(rolePermissions)
+        .values({ roleId: await roleId("warehouse"), permissionKey: "hr.payroll.view" });
+      const refused = await call("get", "/notifications", cookie);
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe("mfa_enrolment_required");
+    } finally {
+      await handle.db
+        .delete(rolePermissions)
+        .where(
+          and(
+            eq(rolePermissions.roleId, await roleId("warehouse")),
+            eq(rolePermissions.permissionKey, "hr.payroll.view"),
+          ),
+        );
       await handle.close();
     }
   });

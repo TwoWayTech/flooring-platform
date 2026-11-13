@@ -22,7 +22,8 @@ const CODE = /^(\d{6}|[A-Za-z0-9-]{8,20})$/;
  *
  * - `verify` checks a code against the person's own second factor through Better Auth (TOTP, or
  *   a backup code, which it uses up) and records a pass against the session, valid 5 minutes.
- *   Wrong codes count per person; 5 in 15 minutes lock step-up.
+ *   Every code is recorded before it is checked, under a per-person lock, as for passwords; 5
+ *   failures in 15 minutes lock step-up for 15 minutes.
  * - `require` lets a change through when the session has a fresh step-up, or, for someone whose
  *   only factor is a passkey, when the session itself is under 5 minutes old (a passkey sign-in is
  *   two factors on its own, ADR 0029). Someone with no factor cannot step up at all.
@@ -37,16 +38,18 @@ export class StepUpService {
   /** Checks a code for the signed-in person and records a step-up for this session. */
   async verify(session: AuthSession, code: string, headers: Headers, ip: string | null): Promise<void> {
     if (!session.mfa.totp) throw refuse(session.mfa.passkeys > 0 ? "step_up_required" : "step_up_mfa_required");
-    if (await this.attempts.stepUpLocked(session.user.id)) {
+    const trimmed = code.trim();
+    if (!CODE.test(trimmed)) throw refuse("step_up_invalid");
+    // The attempt is recorded before the code is checked, under a per-user lock, so parallel
+    // guesses cannot get past the lockout (PR #11 security review).
+    if (await this.attempts.reserveStepUp(session.user.id, ip)) {
       throw new HttpException(
         { code: "step_up_locked", message: STEP_UP_REFUSALS.step_up_locked },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    const trimmed = code.trim();
-    const passed = CODE.test(trimmed) && (await this.checkCode(trimmed, headers));
-    await this.attempts.recordStepUp(passed, session.sessionId, session.user.id, ip);
-    if (!passed) throw refuse("step_up_invalid");
+    if (!(await this.checkCode(trimmed, headers))) throw refuse("step_up_invalid");
+    await this.attempts.recordStepUpPass(session.user.id, session.sessionId, ip);
   }
 
   /** Refuses with 403 `step_up_required` unless the session stepped up in the last 5 minutes. */

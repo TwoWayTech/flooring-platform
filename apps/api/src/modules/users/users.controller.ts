@@ -195,7 +195,7 @@ export class AuditLogController {
   /** GET /audit: the newest entries. */
   @Get()
   @RequirePermission("settings.audit.view")
-  list(@CurrentTenant() tenant: TenantContext) {
-    return this.audit.list(tenant);
+  list(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    return this.audit.list(tenant, access.permissions);
   }
 }

@@ -10,8 +10,8 @@ import { and, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 export const LOCKOUT = { failures: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 } as const;
 export const EMAIL_LIMIT = { perWindow: 3, windowMs: 60 * 60_000 } as const;
 
-/** A step-up lasts 5 minutes; 5 wrong codes in 15 minutes lock step-up for 15 minutes (draft spec). */
-export const STEP_UP = { validMs: 5 * 60_000, failures: 5, windowMs: 15 * 60_000 } as const;
+/** A step-up lasts 5 minutes (draft spec); its lockout uses the LOCKOUT numbers. */
+export const STEP_UP = { validMs: 5 * 60_000 } as const;
 
 /** Invitation lookups and acceptances per IP: the sign-in limit, 10 a minute. */
 export const INVITATION_LIMIT = { perWindow: 10, windowMs: 60_000 } as const;
@@ -104,28 +104,46 @@ export class AttemptLog {
     return (row?.n ?? 0) > 0;
   }
 
-  /** Whether this user's step-up is locked by STEP_UP.failures wrong codes in STEP_UP.windowMs. */
-  async stepUpLocked(userId: string, now: Date = new Date()): Promise<boolean> {
-    const [row] = await this.db
-      .select({ n: count() })
-      .from(authAttempts)
-      .where(
-        and(
-          eq(authAttempts.subject, userId),
-          eq(authAttempts.kind, "step_up_failed"),
-          gt(authAttempts.createdAt, new Date(now.getTime() - STEP_UP.windowMs)),
-        ),
-      );
-    return (row?.n ?? 0) >= STEP_UP.failures;
+  /**
+   * Checks the step-up lock and, when there is none, records this attempt, as one step per user
+   * under the same kind of advisory lock as password attempts (PR #11 security review). Parallel
+   * requests therefore cannot check more than LOCKOUT.failures codes before the lock applies.
+   * Returns when the lock ends, or null when the code may be checked now. The lock follows the
+   * password lockout: 5 failures in 15 minutes lock for 15 minutes, and a pass resets the count.
+   */
+  async reserveStepUp(userId: string, ip: string | null, now: Date = new Date()): Promise<Date | null> {
+    const subject = `step:${userId}`;
+    const since = new Date(now.getTime() - LOCKOUT.windowMs - LOCKOUT.lockMs);
+    return this.db.transaction(async (tx) => {
+      await lockSubject(tx, subject);
+      const rows = await tx
+        .select({ kind: authAttempts.kind, at: authAttempts.createdAt })
+        .from(authAttempts)
+        .where(
+          and(
+            eq(authAttempts.subject, subject),
+            inArray(authAttempts.kind, ["step_up_attempt", "step_up_pass"]),
+            gt(authAttempts.createdAt, since),
+          ),
+        )
+        .orderBy(desc(authAttempts.createdAt))
+        .limit(LOCKOUT.failures);
+      const asPassword: PasswordAttempt[] = rows.map((row) => ({
+        kind: row.kind === "step_up_pass" ? "password_ok" : "password_attempt",
+        at: row.at,
+      }));
+      const locked = lockEnd(asPassword, now);
+      if (!locked) await tx.insert(authAttempts).values({ kind: "step_up_attempt", subject, ip });
+      return locked;
+    });
   }
 
-  /** Records a step-up: a pass against the session, a failure against the user. */
-  async recordStepUp(passed: boolean, sessionId: string, userId: string, ip: string | null): Promise<void> {
-    await this.db
-      .insert(authAttempts)
-      .values(
-        passed ? { kind: "step_up_ok", subject: sessionId, ip } : { kind: "step_up_failed", subject: userId, ip },
-      );
+  /** Records a step-up that passed: for the lockout (by user) and for the session's 5 minutes. */
+  async recordStepUpPass(userId: string, sessionId: string, ip: string | null): Promise<void> {
+    await this.db.insert(authAttempts).values([
+      { kind: "step_up_pass", subject: `step:${userId}`, ip },
+      { kind: "step_up_ok", subject: sessionId, ip },
+    ]);
   }
 
   /**

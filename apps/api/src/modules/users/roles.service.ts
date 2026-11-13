@@ -10,7 +10,9 @@ import type { ControlDb, DbHandle } from "@workspace/db";
 import { productPermissions } from "@workspace/db";
 import { roles } from "@workspace/db/company";
 import {
+  canAssignRole,
   escalations,
+  scopeWidens,
   isDefaultRoleKey,
   roleTemplate,
   type DataScope,
@@ -64,8 +66,15 @@ export class RolesService {
     const existing = input.id ? allRoles.find((role) => role.id === input.id) : undefined;
     if (input.id && !existing) throw new NotFoundException({ code: "not_found", message: "That role does not exist." });
     if (existing?.owner) throw ownerLocked();
+    if (existing) this.assertMayChange(actor, existing);
     const proposed = [...new Set(input.permissions)];
     this.assertNoEscalation(actor, proposed, existing?.permissions ?? []);
+    if (scopeWidens(accessOf(actor), input.dataScope, existing?.dataScope ?? null)) {
+      throw new ForbiddenException({
+        code: "scope_wider",
+        message: "You can only give a data scope as wide as your own.",
+      });
+    }
     const name = existing?.system ? existing.name : input.name.trim();
     if (!name) throw new BadRequestException({ code: "invalid_request", message: "Give the role a name." });
 
@@ -139,6 +148,7 @@ export class RolesService {
     if (role.system || role.owner) {
       throw new ConflictException({ code: "system_role", message: "Default roles can be copied but not deleted." });
     }
+    this.assertMayChange(actor, role);
     const holders = [...(await heldRoles(db)).values()].filter((ids) => ids.includes(roleId));
     if (holders.length > 0) {
       throw new ConflictException({
@@ -167,14 +177,24 @@ export class RolesService {
     });
   }
 
+  /**
+   * Changing, resetting or deleting a role changes everyone who holds it, so the actor must be able
+   * to give that role themselves (PR #11 security review): someone without a key cannot strip it from
+   * others, and only an Owner manages a role they could not assign.
+   */
+  private assertMayChange(actor: Actor, role: RoleRecord): void {
+    const denial = canAssignRole(accessOf(actor), role, actor.access.ceiling, actor.access.modules);
+    if (denial) {
+      throw new ForbiddenException({
+        code: `role_${denial}`,
+        message: "This role holds more than you do, so you cannot change it.",
+      });
+    }
+  }
+
   /** Spec rule 10: a save may keep the role's keys but add only keys the actor holds. */
   private assertNoEscalation(actor: Actor, proposed: readonly PermissionKey[], current: readonly PermissionKey[]) {
-    const access = actor.access;
-    const added = escalations(
-      { permissions: access.permissions, dataScope: access.dataScope, isOwner: access.isOwner },
-      proposed,
-      current,
-    );
+    const added = escalations(accessOf(actor), proposed, current);
     if (added.length > 0) {
       throw new ForbiddenException({
         code: "not_held",
@@ -194,6 +214,11 @@ export class RolesService {
     if (!role) throw new NotFoundException();
     return roleView(role, tenant.companyId);
   }
+}
+
+/** The actor's access in the shape the shared engine reads. */
+function accessOf(actor: Actor) {
+  return { permissions: actor.access.permissions, dataScope: actor.access.dataScope, isOwner: actor.access.isOwner };
 }
 
 function ownerLocked(): ForbiddenException {

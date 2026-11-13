@@ -11,6 +11,7 @@ import {
   enabledModules,
   planModulesOf,
   resolveAccess,
+  roleRequiresMfa,
   type DataScope,
   type ModuleKey,
   type PermissionKey,
@@ -38,6 +39,11 @@ export interface RequestAccess {
   roleNames: readonly string[];
   /** Whether the person's profile in this company is disabled; a disabled person holds nothing. */
   disabled: boolean;
+  /**
+   * Whether any role the person holds needs MFA by content (packages/shared `roleRequiresMfa`).
+   * PermissionGuard checks it on every request, as a backstop for `member.role` (PR #11 review).
+   */
+  mfaRequired: boolean;
 }
 
 /**
@@ -71,6 +77,7 @@ export class AccessService {
       branchId: held.branchId,
       roleNames: held.names,
       disabled: held.disabled,
+      mfaRequired: !held.disabled && held.roles.some(roleRequiresMfa),
     };
   }
 

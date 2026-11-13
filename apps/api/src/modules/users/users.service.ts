@@ -14,6 +14,7 @@ import {
   member,
   passkey,
   planLimits,
+  platformAdmins,
   session as sessionTable,
   tenantSubscriptions,
   tenants,
@@ -24,6 +25,7 @@ import {
 import type { EmailProvider } from "@workspace/providers";
 import {
   canAssignRole,
+  canManageHolder,
   hasActiveOwner,
   type CompanyId,
   type PermissionKey,
@@ -72,6 +74,14 @@ export interface Actor {
 const ROLE_REFUSALS = {
   owner_only: "Only an Owner can make someone an Owner.",
   not_held: "You can only give a role whose permissions you hold yourself.",
+  scope_wider: "You can only give a role whose data scope is no wider than your own.",
+} as const;
+
+/** What a refusal to change someone who holds more than the actor says. */
+const HOLDER_REFUSALS = {
+  owner_only: "Only an Owner can change an Owner.",
+  not_held: "This person holds permissions you do not have, so you cannot change them.",
+  scope_wider: "This person sees more records than you do, so you cannot change them.",
 } as const;
 
 /**
@@ -152,6 +162,13 @@ export class UsersService {
       await this.userLimit(tenant.companyId),
     );
     if (seats) throw new ConflictException({ code: "seat_limit", message: seats });
+    const [already] = await this.control.db
+      .select({ id: member.id })
+      .from(member)
+      .innerJoin(user, eq(user.id, member.userId))
+      .where(and(eq(user.email, email), eq(member.organizationId, tenant.companyId)));
+    if (already)
+      throw new ConflictException({ code: "already_member", message: "This person is already in your company." });
     if (!(await this.attempts.reserveEmail(email))) {
       throw new HttpException(
         { code: "email_limit", message: "This address has had 3 emails in the last hour. Try again later." },
@@ -249,15 +266,19 @@ export class UsersService {
       .from(userProfiles)
       .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
     if (!profile) throw new NotFoundException({ code: "not_found", message: "That person is not in your company." });
-    if (patch.roleIds !== undefined || patch.mfaEnrolled === false) await this.stepUp.require(actor.session);
+    // Roles, status and MFA change what someone can do or whether they can sign in: step-up first.
+    if (patch.roleIds !== undefined || patch.status !== undefined || patch.mfaEnrolled === false) {
+      await this.stepUp.require(actor.session);
+    }
 
     const allRoles = await loadRoles(db);
     const held = await heldRoles(db);
     const current = held.get(userId) ?? [];
+    if (userId !== actor.access.userId) this.assertCanManage(actor.access, allRoles, current);
     if (patch.roleIds !== undefined) this.assertCanAssign(actor.access, allRoles, patch.roleIds, current);
     await this.assertOwnerRemains(db, allRoles, held, userId, patch);
+    if (patch.mfaEnrolled === false) await this.assertMfaResettable(tenant, userId);
 
-    if (patch.mfaEnrolled === false) await this.resetMfa(tenant, userId);
     await db.transaction(async (tx) => {
       const changes: Partial<typeof userProfiles.$inferInsert> = {};
       if (patch.status !== undefined) changes.status = patch.status;
@@ -286,8 +307,10 @@ export class UsersService {
         tx,
       );
     });
+    // The audit entry is written first, so an MFA reset never happens without one (PR #11 review).
+    if (patch.mfaEnrolled === false) await this.resetMfa(userId);
     if (patch.roleIds !== undefined) {
-      await syncMemberRoles(this.control.db, tenant.companyId, new Map([[userId, patch.roleIds]]), allRoles);
+      await syncMemberRoles(this.control.db, tenant.companyId, new Map([[userId, patch.roleIds]]), await loadRoles(db));
     }
     const [updated] = (await this.list(tenant)).filter((row) => row.id === userId);
     if (!updated) throw new NotFoundException();
@@ -317,6 +340,21 @@ export class UsersService {
       );
       if (denial) throw new ForbiddenException({ code: denial, message: ROLE_REFUSALS[denial] });
     }
+  }
+
+  /**
+   * Nobody changes someone who holds more than they do (CLAUDE.md rule 4; PR #11 security review):
+   * the actor must be able to give every role the person holds now, and only an Owner changes an
+   * Owner. Changes to oneself are checked by the other rules only.
+   */
+  private assertCanManage(access: RequestAccess, allRoles: readonly RoleRecord[], current: readonly string[]): void {
+    const denial = canManageHolder(
+      { permissions: access.permissions, dataScope: access.dataScope, isOwner: access.isOwner },
+      allRoles.filter((role) => current.includes(role.id)),
+      access.ceiling,
+      access.modules,
+    );
+    if (denial) throw new ForbiddenException({ code: `holder_${denial}`, message: HOLDER_REFUSALS[denial] });
   }
 
   /** Spec rule 13: the change may not leave the company without an active user holding the Owner role. */
@@ -352,21 +390,29 @@ export class UsersService {
   }
 
   /**
-   * Removes the person's authenticator app, backup codes and passkeys, and ends their sessions, so
-   * they enrol again at the next sign-in. Refused for an account that also belongs to another
-   * company, so one company can never weaken another's security (draft spec "MFA reset").
+   * An MFA reset is refused for an account that also belongs to another company, so one company
+   * can never weaken another's security, and for a platform admin, whose MFA only platform support
+   * may reset (draft spec "MFA reset"; PR #11 security review).
    */
-  private async resetMfa(tenant: TenantContext, userId: string): Promise<void> {
+  private async assertMfaResettable(tenant: TenantContext, userId: string): Promise<void> {
+    const [admin] = await this.control.db
+      .select({ id: platformAdmins.id })
+      .from(platformAdmins)
+      .where(and(eq(platformAdmins.userId, userId), isNull(platformAdmins.deletedAt)));
     const [others] = await this.control.db
       .select({ n: count() })
       .from(member)
       .where(and(eq(member.userId, userId), ne(member.organizationId, tenant.companyId)));
-    if ((others?.n ?? 0) > 0) {
+    if (admin || (others?.n ?? 0) > 0) {
       throw new ConflictException({
         code: "shared_account",
         message: "This person also belongs to another company, so only our support team can reset their MFA.",
       });
     }
+  }
+
+  /** Removes the person's authenticator app, backup codes and passkeys, and ends their sessions. */
+  private async resetMfa(userId: string): Promise<void> {
     await this.control.db.transaction(async (tx) => {
       await tx.delete(twoFactor).where(eq(twoFactor.userId, userId));
       await tx.delete(passkey).where(eq(passkey.userId, userId));

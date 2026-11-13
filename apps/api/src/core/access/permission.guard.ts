@@ -9,7 +9,11 @@ import {
 import { Reflector } from "@nestjs/core";
 import { accessLevel } from "../tenancy/access";
 import type { TenantRequest } from "../tenancy/tenant-context";
+import type { AuthSession } from "../auth/session.service";
 import { AccessService, type RequestAccess } from "./access.service";
+
+/** Said when a role needs MFA and the person has no factor yet (the sign-in refusal's words). */
+const MFA_FIRST = "Set up two-step sign-in to continue.";
 import { permissionRequirement, type PermissionRequirement } from "./permission.decorators";
 
 /** The request after PermissionGuard has run. */
@@ -63,6 +67,11 @@ export class PermissionGuard implements CanActivate {
       this.logger.error(`${context.getClass().name}.${context.getHandler().name} declares no permission.`);
     }
     const access = await this.access.resolve(request.tenant);
+    // A role that needs MFA by content needs a factor, whatever member.role says (PR #11 review).
+    const mfa = (request as AccessRequest & { authSession?: AuthSession }).authSession?.mfa;
+    if (access.mfaRequired && mfa && !mfa.totp && mfa.passkeys === 0) {
+      throw new ForbiddenException({ code: "mfa_enrolment_required", message: MFA_FIRST });
+    }
     const refusal = permissionDecision(requirement, access);
     if (refusal) throw new ForbiddenException({ code: refusal, message: PERMISSION_REFUSALS[refusal] });
     request.access = access;
