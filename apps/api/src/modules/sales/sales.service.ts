@@ -1,15 +1,6 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { addresses, customers, measurementRooms, quoteLines, quotes } from "@workspace/db/company";
-import { tenants } from "@workspace/db/control";
 import {
   computeTotals,
   productTaxCategory,
@@ -20,7 +11,6 @@ import {
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
-  scopeAllows,
   taxContextFor,
   type Customer,
   type CustomerAddress,
@@ -41,6 +31,7 @@ import { NotificationService } from "../../core/notifications/notification.servi
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
+import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** What adding a customer carries (ApiClient `NewCustomerInput`). */
@@ -79,14 +70,6 @@ const FIRST_QUOTE = 2001;
 
 /** A rate changed on one document: up to two digits and four decimals, with a reason (spec rule 17). */
 const OVERRIDE_RATE = /^\d{1,2}(\.\d{1,4})?$/;
-
-function refuse(message: string): BadRequestException {
-  return new BadRequestException({ code: "invalid_request", message });
-}
-
-function notFound(what: string): NotFoundException {
-  return new NotFoundException({ code: "not_found", message: `This ${what} no longer exists.` });
-}
 
 /** What a quote's audit entry keeps: everything that decides its price and tax (CLAUDE.md rule 10). */
 function quoteAudit(
@@ -127,13 +110,6 @@ function customerAudit(
   };
 }
 
-/** Today in the company's calendar, as the shared rules compare dates (`yyyy-MM-dd`). */
-function today(timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
-}
-
 /**
  * Sales on the server, part 1 (docs/product-spec/sales.md; ADR 0037): customers and quotes, read
  * through the person's data scope, with quote totals computed here by the shared tax engine from
@@ -151,26 +127,17 @@ export class SalesService {
     private readonly notifications: NotificationService,
   ) {}
 
-  /** Today in the company's own time zone (`yyyy-MM-dd`), as quotes compare expiry and tax dates. */
-  private async today(tenant: TenantContext): Promise<string> {
-    const [company] = await this.control.db
-      .select({ timeZone: tenants.timeZone })
-      .from(tenants)
-      .where(eq(tenants.id, tenant.companyId));
-    return today(company?.timeZone ?? "UTC");
-  }
-
   /** Customers the person may see: own through the rep, branch through the rep's branch, or all. */
   async customers(tenant: TenantContext, access: RequestAccess): Promise<Customer[]> {
     const db = await this.tenancy.db(tenant);
     const [list, branches] = await Promise.all([loadCustomers(db), loadBranches(db)]);
-    return list.filter((customer) => this.seesCustomer(access, customer, branches));
+    return list.filter((customer) => seesCustomer(access, customer, branches));
   }
 
   /** Quotes the person may see: own through the rep, branch through the quote's branch, or all. */
   async quotes(tenant: TenantContext, access: RequestAccess): Promise<Quote[]> {
     const list = await loadQuotes(await this.tenancy.db(tenant));
-    return list.filter((quote) => this.seesQuote(access, quote));
+    return list.filter((quote) => seesDocument(access, quote));
   }
 
   /** Adds a customer (spec "Add a customer"): only a name, the person as rep, the company's terms. */
@@ -220,7 +187,7 @@ export class SalesService {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const [before] = await loadCustomers(tx, [id]);
-      if (!before || !this.seesCustomer(actor.access, before, await loadBranches(tx))) throw notFound("customer");
+      if (!before || !seesCustomer(actor.access, before, await loadBranches(tx))) throw notFound("customer");
       const known = new Set(before.addresses.map((address) => address.id));
       const kept: CustomerAddress[] = [];
       for (const address of input.addresses) {
@@ -302,7 +269,7 @@ export class SalesService {
     const db = await this.tenancy.db(tenant);
     const id = await db.transaction(async (tx) => {
       const before = input.id ? (await loadQuotes(tx, [input.id]))[0] : undefined;
-      if (input.id && (!before || !this.seesQuote(actor.access, before))) throw notFound("quote");
+      if (input.id && (!before || !seesDocument(actor.access, before))) throw notFound("quote");
       if (before && !quoteIsOpen(before)) {
         throw new ConflictException({
           code: "quote_closed",
@@ -310,7 +277,7 @@ export class SalesService {
         });
       }
       const [customer] = await loadCustomers(tx, [input.customerId]);
-      if (!customer || !this.seesCustomer(actor.access, customer, await loadBranches(tx)))
+      if (!customer || !seesCustomer(actor.access, customer, await loadBranches(tx)))
         throw refuse("Choose a customer.");
       const location = (await loadLocations(tx)).find((candidate) => candidate.id === input.locationId);
       if (location?.kind !== "warehouse") throw refuse("Fulfil the quote from a warehouse.");
@@ -338,7 +305,7 @@ export class SalesService {
       const taxOverride: TaxOverride | null = !taxChanged
         ? (before?.taxOverride ?? null)
         : asked && { ...asked, byName: actor.session.user.name, at: new Date().toISOString() };
-      const day = await this.today(tenant);
+      const day = await companyToday(this.control.db, tenant);
       const ctx = taxContextFor(localization, input.jobSite, customer, day, before?.lumpSum ?? false, taxOverride);
       const total = computeTotals(lines, ctx).total;
 
@@ -420,10 +387,10 @@ export class SalesService {
     expiresAt: string | null | undefined,
   ): Promise<Quote> {
     const db = await this.tenancy.db(tenant);
-    const day = await this.today(tenant);
+    const day = await companyToday(this.control.db, tenant);
     const updated = await db.transaction(async (tx) => {
       const [quote] = await loadQuotes(tx, [quoteId]);
-      if (!quote || !this.seesQuote(actor.access, quote)) throw notFound("quote");
+      if (!quote || !seesDocument(actor.access, quote)) throw notFound("quote");
       if (!quoteActions(quote, day).includes(action)) {
         throw new ConflictException({
           code: "quote_state",
@@ -482,26 +449,6 @@ export class SalesService {
       quote.taxOverride,
     );
     return computeTotals(quote.lines, ctx).total;
-  }
-
-  private seesQuote(access: RequestAccess, quote: Pick<Quote, "salesRepId" | "branchId">): boolean {
-    return scopeAllows(
-      access.dataScope,
-      { userId: access.userId, branchId: access.branchId },
-      { ownerUserId: quote.salesRepId, branchId: quote.branchId },
-    );
-  }
-
-  private seesCustomer(
-    access: RequestAccess,
-    customer: Pick<Customer, "salesRepId">,
-    branches: ReadonlyMap<string, string | null>,
-  ): boolean {
-    return scopeAllows(
-      access.dataScope,
-      { userId: access.userId, branchId: access.branchId },
-      { ownerUserId: customer.salesRepId || null, branchId: branches.get(customer.salesRepId) ?? null },
-    );
   }
 
   /**

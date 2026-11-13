@@ -7,6 +7,10 @@ import {
   addresses,
   customers,
   goodsReceipts,
+  invoiceLines,
+  invoices,
+  paymentsReceived,
+  reservations,
   quoteLines,
   quotes,
   products,
@@ -23,7 +27,7 @@ import {
 import { verifyPassword } from "better-auth/crypto";
 import { account, organization, tenantDatabases, tenants, user } from "../src/control";
 import { seedTestCompany } from "../src/seed";
-import { loadDemoCompany } from "../src/seed/fixtures";
+import { loadDemoCompany, seedId } from "../src/seed/fixtures";
 import { scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
@@ -128,6 +132,46 @@ describe("test company seed", () => {
       );
       expect(await company.db.select().from(quotes)).toHaveLength(fixtures.quotes.length);
       expect(await company.db.select().from(quoteLines)).toHaveLength(fixtures.quotes.flatMap((q) => q.lines).length);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds invoices with their lines, payments and reservations (sales, part 2)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const billed = fixtures.invoices.filter((invoice) => !invoice.contractId);
+    const kept = new Set(billed.map((invoice) => invoice.id));
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(invoices)).toHaveLength(billed.length);
+      expect(await company.db.select().from(invoiceLines)).toHaveLength(billed.flatMap((i) => i.lines).length);
+      expect(await company.db.select().from(paymentsReceived)).toHaveLength(
+        fixtures.payments.filter((p) => kept.has(p.invoiceId)).length,
+      );
+      expect(await company.db.select().from(reservations)).toHaveLength(
+        fixtures.reservations.filter((r) => kept.has(r.invoiceId)).length,
+      );
+      // Invoice lines reuse quote-line fixture ids, so their seed ids carry a prefix.
+      const firstLine = billed[0]!.lines[0]!;
+      const [line] = await company.db
+        .select()
+        .from(invoiceLines)
+        .where(eq(invoiceLines.id, seedId(`invoice:${firstLine.id}`)));
+      expect(line?.invoiceId).toBe(seedId(billed[0]!.id));
+      const note = billed.find((invoice) => invoice.creditForInvoiceId)!;
+      const [credited] = await company.db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, seedId(note.creditForInvoiceId!)));
+      expect(credited).toBeDefined();
+      const reviewed = fixtures.payments.find(
+        (p) => p.status === "confirmed" && p.reviewedBy && kept.has(p.invoiceId),
+      )!;
+      const [payment] = await company.db
+        .select()
+        .from(paymentsReceived)
+        .where(eq(paymentsReceived.id, seedId(reviewed.id)));
+      expect(payment?.reviewedById).not.toBeNull();
     } finally {
       await company.close();
     }

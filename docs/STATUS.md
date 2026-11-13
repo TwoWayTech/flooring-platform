@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 (sales, part 1) is `feat/sales-customers-quotes`.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) is `feat/sales-invoices`.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`) and PR #13 (`a66a49d`).
-- **Last session log:** docs/sessions/2026-11-14-0300-a-sales-part-1.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`) and PR #14 (`2dcb6e8`).
+- **Last session log:** docs/sessions/2026-11-14-0600-a-sales-part-2.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -85,7 +85,7 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 5, A:** P11 sales part 1 (ADR 0037), in review. Then sales part 2: invoices, reservations and the cut or issue (inventory part 2), payments, credits and refunds.
+1. **Task 5, A:** sales part 2 (ADR 0038): invoices, payments, credits and refunds, in review. Then inventory part 2: cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -108,7 +108,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Strip `wastePct` on quote responses without `sales.waste.view`, as sales.md asks of the real API; then a missing waste from such a viewer means "keep the saved one".
   - The free-text county picks the county rate; limit it to the company's county rates for the state, or check it against the ZIP.
   - Accountant: should an exemption certificate count only in its own state? `taxContextFor` checks only that it is valid on the date.
-- **Sales part 2 seed:** invoice-line fixture ids repeat quote-line ids (`sm-ln-0001`); seed invoice lines with a prefix (`seedId("invoice:" + id)`) (PR #14 schema review).
+- **Contract invoices and seeded proofs:** the three contract billing invoices (and their two payments) are seeded with the contracts module, because their foreign keys need contract rows. Seeded payments have no proof files, because the fixtures have no bytes (ADR 0038).
+- **Ledger gate (task 6):** until P12 posts their journal entries, the sales money writes answer 409 `ledger_pending` on the real API (`requireLedger` in `modules/sales/sales-common.ts`). P12 must replace each call with its posting and remove the gate (ADR 0038).
+- **PR #15 reviews, open items:**
+  - **Decide in P12, before opening the gate:** a credit note on an unpaid invoice becomes customer credit that one person can refund as cash. The safe default for P12 applies a note to its own invoice's open balance first, so only the rest becomes refundable credit, and makes refunds above the payment threshold wait for a second person. Record it in blueprint-delta.
+  - Rate-limit the three proof routes per IP. The 21 MB body is parsed for any request that carries a session cookie, before the cookie is verified.
+  - The `payment.to_verify` note goes to every holder of `sales.payment.approve`; leave out holders whose data scope doesn't cover the invoice.
 - **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
 - **PR #13 reviews (none blocking):**
   - Make the 1 sq ft roll tolerance on receipts relative, so tiny receipts cannot repeat it.

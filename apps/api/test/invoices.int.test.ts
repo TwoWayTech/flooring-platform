@@ -1,0 +1,436 @@
+import {
+  auditLog,
+  branches,
+  locations,
+  products,
+  rolePermissions,
+  roles,
+  settings,
+  stockMovements,
+  taxRules,
+  userProfiles,
+} from "@workspace/db/company";
+import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
+import { eq } from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import request from "supertest";
+import { v7 as uuidv7 } from "uuid";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { openLedgerForTests } from "../src/modules/sales/sales-common";
+import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+
+/** Summit's localization settings, without the tax tables, as a company's settings row holds them. */
+function summitLocalization() {
+  const file = createRequire(import.meta.url).resolve("@workspace/shared/fixtures/summit.json");
+  const fixtures = JSON.parse(readFileSync(file, "utf8")) as { settings: { localization: Record<string, unknown> } };
+  const { tax, ...rest } = fixtures.settings.localization as { tax: Record<string, unknown> } & Record<string, unknown>;
+  const taxRest: Record<string, unknown> = { ...tax };
+  delete taxRest.rules;
+  delete taxRest.jurisdictions;
+  return { ...rest, tax: taxRest };
+}
+
+/** A small file that starts like a PDF, as proof. */
+const PDF = { name: "receipt.pdf", data: Buffer.from("%PDF-1.4\n% proof of payment\n").toString("base64") };
+/** Text named as an image: its first bytes are not an accepted type. */
+const FAKE_PNG = { name: "photo.png", data: Buffer.from("just some text, not an image").toString("base64") };
+
+/**
+ * Sales, part 2 (docs/product-spec/sales.md "Conversion and invoices", "Payments", "Corrections";
+ * ADR 0038): conversion with stock holds, the two-person check, proof files, corrections, customer
+ * credit and refunds, data scope, audit and company isolation.
+ */
+describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)", () => {
+  const harness = new AuthHarness();
+  let company = { id: "", slug: "" };
+  let other = { id: "", slug: "" };
+  let warehouse = "";
+  let otherWarehouse = "";
+  let otherTile = "";
+  let tile = "";
+  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "" };
+
+  function call(method: "get" | "post", path: string, cookie: string) {
+    return request(harness.app.getHttpServer())
+      [method](path)
+      .set("X-Forwarded-Host", "localhost:3000")
+      .set("Cookie", cookie);
+  }
+
+  /** A branch, a warehouse with 50 sq ft of tile, Summit's settings, payment rules and a Colorado tax rule. */
+  async function setUp(companyId: string) {
+    const handle = await harness.companyDb(companyId);
+    try {
+      const [branch] = await handle.db
+        .insert(branches)
+        .values({ name: "Denver", city: "Denver", state: "CO" })
+        .returning();
+      const address = { street: "1 Main St", city: "Denver", state: "CO", zip: "80202" };
+      const [store] = await handle.db
+        .insert(locations)
+        .values({ name: "Denver warehouse", kind: "warehouse" as const, branchId: branch.id, address, isDefault: true })
+        .returning();
+      const [product] = await handle.db
+        .insert(products)
+        .values({
+          sku: `T-${uuidv7()}`,
+          name: "Slate Tile",
+          category: "porcelain_tile" as const,
+          unit: "sq_ft" as const,
+          price: "4.5000",
+          cost: "2.1000",
+          sqFtPerCarton: "20",
+        })
+        .returning();
+      await handle.db.insert(stockMovements).values({
+        at: new Date(),
+        productId: product.id,
+        locationId: store.id,
+        quantity: "50",
+        kind: "opening",
+        sourceType: "count",
+        sourceId: uuidv7(),
+        sourceNumber: "OPEN",
+      });
+      await handle.db.insert(settings).values([
+        { group: "localization", value: summitLocalization() },
+        {
+          group: "payments",
+          value: {
+            approvalRequired: true,
+            approvalThreshold: "100.00",
+            writeOffMax: "5.00",
+            paymentPrefix: "PAY-",
+            refundPrefix: "RF-",
+          },
+        },
+      ]);
+      await handle.db.insert(taxRules).values({
+        state: "CO",
+        jurisdiction: "Denver combined",
+        ratePct: "8.81",
+        taxable: { material: true, labor: false, freight: false, service: false },
+        lumpSumLaborTaxable: true,
+        validFrom: "2025-01-01",
+        version: 1,
+      });
+      return { branch: branch.id, warehouse: store.id, tile: product.id };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async function placeIn(companyId: string, email: string, branchId: string) {
+    const handle = await harness.companyDb(companyId);
+    try {
+      await handle.db
+        .update(userProfiles)
+        .set({ branchId })
+        .where(eq(userProfiles.userId, await harness.userIdOf(email)));
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async function enrolled(email: string) {
+    const first = await harness.signIn(email);
+    const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
+    const secret = totpSecretFromUri(enabled.body.totpURI as string);
+    const confirmed = await harness
+      .post("/api/auth/two-factor/verify-totp")
+      .set("Cookie", first)
+      .send({ code: totpCode(secret) });
+    return sessionCookie(confirmed.headers["set-cookie"]);
+  }
+
+  /** An accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65), converted to an invoice. */
+  async function invoiced(cookie: string, customerId: string, location = warehouse, product = tile) {
+    const quote = await call("post", "/quotes", cookie)
+      .send({
+        customerId,
+        locationId: location,
+        jobSite: { street: "12 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
+        rooms: [],
+        lines: [
+          {
+            id: "draft-1",
+            productId: product,
+            description: "Slate Tile",
+            category: "material",
+            unit: "sq_ft",
+            quantity: "100",
+            unitPrice: "4.50",
+            unitCost: "0",
+            wastePct: "10",
+          },
+        ],
+        depositPct: "0",
+        taxOverride: null,
+        notes: "",
+      })
+      .expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookie)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookie).send({ action: "accept" }).expect(201);
+    const invoice = await call("post", `/quotes/${quote.body.id}/invoice`, cookie).expect(201);
+    return { quote: quote.body as { id: string }, invoice: invoice.body as { id: string; number: string } };
+  }
+
+  function payment(invoiceId: string, extra: Record<string, unknown> = {}) {
+    return {
+      invoiceId,
+      kind: "payment",
+      amount: "100.00",
+      date: new Date().toISOString().slice(0, 10),
+      method: "check",
+      checkNumber: "1001",
+      cardLast4: "",
+      reference: `CHK-${uuidv7()}`,
+      note: "",
+      extraAsCredit: false,
+      allowDuplicateReference: false,
+      files: [PDF],
+      ...extra,
+    };
+  }
+
+  beforeAll(async () => {
+    // The money rules run here; in the app they wait for P12's journal entries (ADR 0038).
+    openLedgerForTests();
+    await harness.start();
+    company = await harness.provisionCompany("bill");
+    other = await harness.provisionCompany("billother");
+    const mine = await setUp(company.id);
+    const theirs = await setUp(other.id);
+    warehouse = mine.warehouse;
+    otherWarehouse = theirs.warehouse;
+    otherTile = theirs.tile;
+    tile = mine.tile;
+    // A custom role that sees invoices but not money (PR #15 security review).
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [role] = await handle.db
+        .insert(roles)
+        .values({ key: "dispatcher", name: "Dispatcher", dataScope: "all" as const })
+        .returning();
+      await handle.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "sales.invoice.view" });
+    } finally {
+      await handle.close();
+    }
+    const emails = {
+      dispatcher: await harness.addUser({ companyIds: [company.id], roles: ["dispatcher"] }),
+      salesA: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
+      salesB: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
+      accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
+      owner: await harness.addUser({ companyIds: [company.id], roles: ["owner"] }),
+      otherSales: await harness.addUser({ companyIds: [other.id], roles: ["sales"] }),
+    };
+    await placeIn(company.id, emails.salesA, mine.branch);
+    cookies.salesA = await harness.signIn(emails.salesA);
+    cookies.salesB = await harness.signIn(emails.salesB);
+    cookies.accountant = await enrolled(emails.accountant);
+    cookies.owner = await enrolled(emails.owner);
+    cookies.otherSales = await harness.signIn(emails.otherSales);
+    cookies.dispatcher = await harness.signIn(emails.dispatcher);
+  }, 120_000);
+
+  afterAll(async () => {
+    await harness.stop();
+  });
+
+  it("converts an accepted quote once, with server totals, and holds what stock there is", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Rae Chen" }).expect(201);
+    const { quote, invoice } = await invoiced(cookies.salesA, customer.body.id);
+    expect(invoice).toMatchObject({ total: "489.65", tax: "39.65", isReturn: false, quoteId: quote.id });
+    expect(invoice.number).toMatch(/^INV-\d+$/);
+    // Cost is stripped for Sales, which does not hold product cost (rule 5).
+    expect(invoice).not.toHaveProperty("cost");
+    expect((await call("post", `/quotes/${quote.id}/invoice`, cookies.salesA)).status).toBe(409);
+    // 50 sq ft on hand: 50 held and 50 short, which does not block the sale (spec rule 19).
+    const holds = (await call("get", "/reservations", cookies.salesA).expect(200)).body.filter(
+      (r: { invoiceId: string }) => r.invoiceId === invoice.id,
+    );
+    expect(holds).toHaveLength(1);
+    expect(holds[0]).toMatchObject({ quantity: "50.000", shortBy: "50.000", status: "active" });
+    const quotes = (await call("get", "/quotes", cookies.salesA)).body as { id: string; status: string }[];
+    expect(quotes.find((q) => q.id === quote.id)?.status).toBe("converted");
+    // Another rep's own scope does not reach it.
+    const seenByB = (await call("get", "/invoices", cookies.salesB).expect(200)).body.some(
+      (i: { id: string }) => i.id === invoice.id,
+    );
+    expect(seenByB).toBe(false);
+    expect((await call("post", `/invoices/${invoice.id}/sent`, cookies.salesB)).status).toBe(404);
+    const sent = await call("post", `/invoices/${invoice.id}/sent`, cookies.salesA).expect(201);
+    expect(sent.body.sentAt).not.toBeNull();
+  });
+
+  it("checks proof, references and amounts, and makes a second person confirm", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Omar Haddad" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    expect((await call("post", "/payments", cookies.salesA).send(payment(invoice.id, { files: [] }))).status).toBe(400);
+    expect(
+      (await call("post", "/payments", cookies.salesA).send(payment(invoice.id, { files: [FAKE_PNG] }))).status,
+    ).toBe(400);
+    expect(
+      (await call("post", "/payments", cookies.salesA).send(payment(invoice.id, { amount: "500.00" }))).status,
+    ).toBe(400);
+    // Sales sees only its own sales, so what it records always waits (plan N-1).
+    const first = await call("post", "/payments", cookies.salesA)
+      .send(payment(invoice.id, { reference: "CHK-SAME-1" }))
+      .expect(201);
+    expect(first.body).toMatchObject({ status: "pending", amount: "100.00" });
+    expect(first.body.number).toMatch(/^PAY-\d{4}$/);
+    expect(first.body.files).toHaveLength(1);
+    const duplicate = await call("post", "/payments", cookies.salesA).send(
+      payment(invoice.id, { reference: "chk-same-1 " }),
+    );
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.code).toBe("duplicate_reference");
+    await call("post", `/payments/${first.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    // The accountant's own payment above the threshold waits for someone else.
+    const own = await call("post", "/payments", cookies.accountant)
+      .send(payment(invoice.id, { amount: "300.00", method: "ach", checkNumber: "" }))
+      .expect(201);
+    expect(own.body.status).toBe("pending");
+    expect(
+      (await call("post", `/payments/${own.body.id}/review`, cookies.accountant).send({ action: "confirm" })).status,
+    ).toBe(403);
+    expect(
+      (await call("post", `/payments/${own.body.id}/review`, cookies.owner).send({ action: "reject", reason: "" }))
+        .status,
+    ).toBe(400);
+    await call("post", `/payments/${own.body.id}/review`, cookies.owner).send({ action: "confirm" }).expect(201);
+    // The proof opens for whoever sees the invoice, and for nobody else.
+    const fileId = first.body.files[0].id as string;
+    const file = await call("get", `/files/${fileId}`, cookies.salesA).expect(200);
+    expect(file.headers["content-type"]).toContain("application/pdf");
+    expect((await call("get", `/files/${fileId}`, cookies.salesB)).status).toBe(404);
+    expect((await call("get", `/files/${fileId}`, cookies.otherSales)).status).toBe(404);
+    // An invoice with confirmed money cannot be voided.
+    expect(
+      (await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "Wrong job" })).status,
+    ).toBe(400);
+  });
+
+  it("writes off small leftovers, turns credit notes into credit, applies and refunds it", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ines Moreau" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const paid = await call("post", "/payments", cookies.owner)
+      .send(payment(invoice.id, { amount: "489.60", method: "cash", checkNumber: "", reference: "" }))
+      .expect(201);
+    await call("post", `/payments/${paid.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    expect((await call("post", `/invoices/${invoice.id}/write-off`, cookies.owner).send({ reason: "x" })).status).toBe(
+      400,
+    );
+    const writeOff = await call("post", `/invoices/${invoice.id}/write-off`, cookies.owner)
+      .send({ reason: "Rounding" })
+      .expect(201);
+    expect(writeOff.body).toMatchObject({ kind: "write_off", amount: "0.05" });
+    // 100.00 before tax, with tax in proportion: 39.65 × 100 / 450 = 8.81.
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+      .send({ subtotal: "100.00", reason: "Returned two cartons" })
+      .expect(201);
+    expect(note.body).toMatchObject({ isReturn: true, subtotal: "100.00", tax: "8.81", total: "108.81" });
+    expect(note.body.number).toMatch(/^CR-\d+$/);
+    expect(
+      (
+        await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+          subtotal: "400.00",
+          reason: "Too much",
+        })
+      ).status,
+    ).toBe(400);
+    const refund = (amount: string) => ({
+      customerId: customer.body.id,
+      amount,
+      date: new Date().toISOString().slice(0, 10),
+      method: "check",
+      reference: `RF-CHK-${uuidv7()}`,
+      note: "",
+      files: [PDF],
+    });
+    expect((await call("post", "/refunds", cookies.owner).send(refund("200.00"))).status).toBe(400);
+    const refunded = await call("post", "/refunds", cookies.owner).send(refund("50.00")).expect(201);
+    expect(refunded.body.number).toMatch(/^RF-\d{4}$/);
+    const second = await invoiced(cookies.salesA, customer.body.id);
+    const applied = await call("post", `/invoices/${second.invoice.id}/apply-credit`, cookies.owner).expect(201);
+    expect(applied.body).toMatchObject({ kind: "credit_applied", amount: "58.81" });
+    expect((await call("post", `/invoices/${second.invoice.id}/apply-credit`, cookies.owner)).status).toBe(400);
+    // The note's credit is spent, so voiding it would take back money already used.
+    expect(
+      (await call("post", `/invoices/${note.body.id}/void`, cookies.owner).send({ reason: "Mistake" })).status,
+    ).toBe(400);
+    const voided = await call("post", `/payments/${paid.body.id}/void`, cookies.owner)
+      .send({ reason: "Bounced check" })
+      .expect(201);
+    expect(voided.body).toMatchObject({ status: "voided", voidReason: "Bounced check" });
+  });
+
+  it("voids an invoice with nothing confirmed, voiding pending payments and releasing its stock", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Tomas Berg" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const pending = await call("post", "/payments", cookies.salesA).send(payment(invoice.id)).expect(201);
+    // A live credit note would stay customer credit for a void invoice, so it goes first (PR #15 review).
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+      .send({ subtotal: "450.00", reason: "Whole order returned" })
+      .expect(201);
+    expect(note.body.tax).toBe("39.65");
+    expect(
+      (await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "Cancelled" })).status,
+    ).toBe(400);
+    await call("post", `/invoices/${note.body.id}/void`, cookies.owner)
+      .send({ reason: "Issued by mistake" })
+      .expect(201);
+    expect((await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "" })).status).toBe(400);
+    const voided = await call("post", `/invoices/${invoice.id}/void`, cookies.owner)
+      .send({ reason: "Customer cancelled" })
+      .expect(201);
+    expect(voided.body.voidedAt).not.toBeNull();
+    const payments = (await call("get", "/payments", cookies.owner)).body as { id: string; status: string }[];
+    expect(payments.find((p) => p.id === pending.body.id)?.status).toBe("voided");
+    const holds = (await call("get", "/reservations", cookies.owner)).body as { invoiceId: string; status: string }[];
+    expect(holds.filter((r) => r.invoiceId === invoice.id).every((r) => r.status === "released")).toBe(true);
+  });
+
+  it("keeps payments, refunds and proof from someone who may see invoices but not money", async () => {
+    expect((await call("get", "/invoices", cookies.dispatcher)).status).toBe(200);
+    expect((await call("get", "/payments", cookies.dispatcher)).status).toBe(403);
+    expect((await call("get", "/refunds", cookies.dispatcher)).status).toBe(403);
+    expect((await call("get", `/files/${uuidv7()}`, cookies.dispatcher)).status).toBe(403);
+  });
+
+  it("never reaches another company's invoices, payments or files", async () => {
+    const theirs = await call("post", "/customers", cookies.otherSales).send({ name: "Theirs" }).expect(201);
+    const { invoice } = await invoiced(cookies.otherSales, theirs.body.id, otherWarehouse, otherTile);
+    expect((await call("post", `/invoices/${invoice.id}/sent`, cookies.salesA)).status).toBe(404);
+    expect((await call("post", "/payments", cookies.salesA).send(payment(invoice.id))).status).toBe(404);
+    expect((await call("get", "/invoices", cookies.salesA)).body.some((i: { id: string }) => i.id === invoice.id)).toBe(
+      false,
+    );
+  });
+
+  it("audits every invoice and payment change", async () => {
+    const handle = await harness.companyDb(company.id);
+    try {
+      const actions = (await handle.db.select({ action: auditLog.action }).from(auditLog)).map((row) => row.action);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          "Converted quote to invoice",
+          "Marked invoice sent",
+          "Recorded payment",
+          "Confirmed payment",
+          "Wrote off balance",
+          "Issued credit note",
+          "Refunded customer credit",
+          "Applied customer credit",
+          "Voided payment",
+          "Voided invoice",
+        ]),
+      );
+    } finally {
+      await handle.close();
+    }
+  });
+});

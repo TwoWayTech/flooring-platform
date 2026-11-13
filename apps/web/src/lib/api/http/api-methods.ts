@@ -1,7 +1,12 @@
 import type {
   Customer,
   GoodsReceipt,
+  Invoice,
+  InvoiceAdjustment,
   Location,
+  Payment,
+  Refund,
+  Reservation,
   Product,
   PurchaseOrder,
   Quote,
@@ -21,10 +26,17 @@ import type { HttpRoutes } from "./router";
 /**
  * Collections the real API lists through `list`, with their endpoints (docs/api-contract.md).
  * Users and roles are not here: many screens read them for names and pickers next to demo
- * records, so Settings reads them through its own methods instead (ADR 0034).
+ * records, so Settings reads them through its own methods instead (ADR 0034). Invoices and what
+ * settles them move with sales, part 2 (ADR 0038), so every balance on every screen comes from
+ * one place.
  */
 const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   audit: "/audit",
+  invoices: "/invoices",
+  payments: "/payments",
+  invoiceAdjustments: "/invoice-adjustments",
+  refunds: "/refunds",
+  reservations: "/reservations",
 };
 
 /**
@@ -38,14 +50,15 @@ export const API_METHODS: HttpRoutes = {
     (http, demo) =>
     <K extends CollectionName>(collection: K) => {
       const path = SERVED_LISTS[collection];
-      return path ? http.request<Collections[K]>("GET", path) : demo.list(collection);
+      if (!path) return demo.list(collection);
+      return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
     },
   get:
     (http, demo) =>
     async <K extends CollectionName>(collection: K, id: string) => {
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
-      const all = await http.request<ItemOf<K>[]>("GET", path);
+      const all = await seen(http.request<ItemOf<K>[]>("GET", path));
       return all.find((item) => (item as { id: string }).id === id);
     },
   listSettingsUsers: (http) => () => http.request<User[]>("GET", "/users"),
@@ -67,15 +80,16 @@ export const API_METHODS: HttpRoutes = {
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   verifyStepUp: (http) => (code) => http.request<void>("POST", "/auth/step-up", { code }),
   inventoryData: (http) => async () => {
-    const [products, rolls, stockMovements, locations, transfers] = await Promise.all([
+    const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
       seen(http.request<Product[]>("GET", "/products")),
       seen(http.request<Roll[]>("GET", "/rolls")),
       seen(http.request<StockMovement[]>("GET", "/stock-movements")),
       seen(http.request<Location[]>("GET", "/locations")),
       seen(http.request<Transfer[]>("GET", "/transfers")),
+      seen(http.request<Reservation[]>("GET", "/reservations")),
     ]);
-    // Reservations and adjustments come from invoices, which move with sales (ADR 0035).
-    return { products, rolls, stockMovements, locations, transfers, reservations: [], stockAdjustments: [] };
+    // Stock adjustments with approval move with inventory part 2 (ADR 0038).
+    return { products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments: [] };
   },
   salesData: (http) => async () => {
     const [quotes, customers, locations] = await Promise.all([
@@ -93,6 +107,27 @@ export const API_METHODS: HttpRoutes = {
       ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quote)
       : http.request<Quote>("POST", "/quotes", quote),
   updateQuoteStatus: (http) => (quoteId, change) => http.request<Quote>("POST", `/quotes/${quoteId}/status`, change),
+  convertQuoteToInvoice: (http) => (quoteId) => http.request<Invoice>("POST", `/quotes/${quoteId}/invoice`),
+  markInvoiceSent: (http) => (invoiceId) => http.request<Invoice>("POST", `/invoices/${invoiceId}/sent`),
+  voidInvoice: (http) => (invoiceId, reason) =>
+    http.request<Invoice>("POST", `/invoices/${invoiceId}/void`, { reason }),
+  issueCreditNote: (http) => (invoiceId, input) =>
+    http.request<Invoice>("POST", `/invoices/${invoiceId}/credit-notes`, input),
+  writeOffBalance: (http) => (invoiceId, reason) =>
+    http.request<InvoiceAdjustment>("POST", `/invoices/${invoiceId}/write-off`, { reason }),
+  applyCredit: (http) => (invoiceId) => http.request<InvoiceAdjustment>("POST", `/invoices/${invoiceId}/apply-credit`),
+  recordPayment: (http) => async (input, files) =>
+    http.request<Payment>("POST", "/payments", { ...input, files: await encodeFiles(files) }),
+  reviewPayment: (http) => (paymentId, decision) =>
+    http.request<Payment>("POST", `/payments/${paymentId}/review`, decision),
+  voidPayment: (http) => (paymentId, reason) =>
+    http.request<Payment>("POST", `/payments/${paymentId}/void`, { reason }),
+  attachPaymentFiles: (http) => async (paymentId, files) =>
+    http.request<Payment>("POST", `/payments/${paymentId}/files`, { files: await encodeFiles(files) }),
+  refundCredit: (http) => async (input, files) =>
+    http.request<Refund>("POST", "/refunds", { ...input, files: await encodeFiles(files) }),
+  // Files the API stored have UUIDs; expense, contract and employee files are still the demo's.
+  getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
   purchasingData: (http) => async () => {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations] = await Promise.all([
       seen(http.request<Supplier[]>("GET", "/suppliers")),
@@ -132,7 +167,7 @@ export const API_METHODS: HttpRoutes = {
   createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
   receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
   correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
-  // Holds are made by invoices, which move with sales; until then the real API has none.
+  // The Ready to cut list moves with cut and issue in inventory part 2 (ADR 0038).
   listStockHolds: () => async () => [],
 };
 
@@ -146,7 +181,21 @@ async function seen<T>(list: Promise<T[]>): Promise<T[]> {
   }
 }
 
-/** A role id the API made (a UUID); a draft role from the screen has a temporary id. */
+/** Proof files as the API takes them: each name with its bytes in base64 (ADR 0038). */
+async function encodeFiles(files: readonly File[]): Promise<{ name: string; data: string }[]> {
+  return Promise.all(
+    files.map(async (file) => {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let at = 0; at < bytes.length; at += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+      }
+      return { name: file.name, data: btoa(binary) };
+    }),
+  );
+}
+
+/** An id the API made (a UUID); a draft from the screen or a demo record has another kind of id. */
 function isSaved(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }

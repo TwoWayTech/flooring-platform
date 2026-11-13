@@ -1,0 +1,629 @@
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
+import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
+import {
+  invoiceAdjustments,
+  invoiceCommissionSplits,
+  invoiceLines,
+  invoices,
+  paymentsReceived,
+  quotes,
+  reservations,
+} from "@workspace/db/company";
+import {
+  dec,
+  invoiceFromQuote,
+  minDec,
+  moneyString,
+  nextNumber,
+  planReservations,
+  quoteIsOpen,
+  quoteSendProblems,
+  roundMoney,
+  sum,
+  type Invoice,
+  type InvoiceAdjustment,
+  type Payment,
+  type Refund,
+  type Reservation,
+} from "@workspace/shared";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { v7 as uuidv7 } from "uuid";
+import type { RequestAccess } from "../../core/access/access.service";
+import { AuditService } from "../../core/access/audit";
+import type { Actor } from "../../core/access/request-actor";
+import { CONTROL_DB } from "../../core/database/control-db";
+import { NotificationService } from "../../core/notifications/notification.service";
+import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
+import type { TenantContext } from "../../core/tenancy/tenant-context";
+import { loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
+import { lockStock } from "../inventory/stock-lock";
+import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
+import {
+  loadAdjustments,
+  loadInvoices,
+  loadMoneyFormat,
+  loadPaymentSettings,
+  loadPayments,
+  loadRefunds,
+  loadReservations,
+} from "./invoice-records";
+import { companyToday, notFound, refuse, requireLedger, seesCustomer, seesDocument } from "./sales-common";
+import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
+
+/** The first invoice number, as in the demo (`INV-1001`), and the credit note series (`CR-5001`, spec rule 22). */
+const FIRST_INVOICE = 1001;
+const CREDIT_PREFIX = "CR-";
+const FIRST_CREDIT = 5001;
+
+/** What a credit note carries (spec rule 38): the amount before tax and why. */
+export interface CreditNoteRequest {
+  subtotal: string;
+  reason: string;
+}
+
+/** A reason of at least 3 characters, trimmed, or the rule's refusal (spec rules 32 to 34, 38). */
+function reasonFor(reason: string, what: string): string {
+  const why = reason.trim();
+  if (why.length < 3) throw refuse(`Say why ${what}.`);
+  return why;
+}
+
+/**
+ * Sales on the server, part 2: invoices (docs/product-spec/sales.md "Conversion and invoices",
+ * "Corrections"; ADR 0038). Invoices are read through data scope like quotes. Status, paid and
+ * balance are derived from payments, credits and write-offs, never stored (ADR 0013). Money on one
+ * customer changes under that customer's lock, stock under the stock lock, and every write is
+ * audited in its transaction. Ledger postings arrive with P12.
+ */
+@Injectable()
+export class InvoicesService {
+  private readonly logger = new Logger("Invoices");
+
+  constructor(
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
+    private readonly tenancy: TenantConnectionService,
+    private readonly auditLog: AuditService,
+    private readonly notifications: NotificationService,
+  ) {}
+
+  /** Invoices and credit notes the person may see. */
+  async invoices(tenant: TenantContext, access: RequestAccess): Promise<Invoice[]> {
+    const list = await loadInvoices(await this.tenancy.db(tenant));
+    return list.filter((invoice) => seesDocument(access, invoice));
+  }
+
+  /** Payments on invoices the person may see. */
+  async payments(tenant: TenantContext, access: RequestAccess): Promise<Payment[]> {
+    const db = await this.tenancy.db(tenant);
+    const seen = await this.visibleInvoiceIds(db, access);
+    return (await loadPayments(db, this.control.db)).filter((payment) => seen.has(payment.invoiceId));
+  }
+
+  /** Write-offs and credit applied on invoices the person may see. */
+  async adjustments(tenant: TenantContext, access: RequestAccess): Promise<InvoiceAdjustment[]> {
+    const db = await this.tenancy.db(tenant);
+    const seen = await this.visibleInvoiceIds(db, access);
+    return (await loadAdjustments(db, this.control.db)).filter((adjustment) => seen.has(adjustment.invoiceId));
+  }
+
+  /** Refunds to customers the person may see. */
+  async refunds(tenant: TenantContext, access: RequestAccess): Promise<Refund[]> {
+    const db = await this.tenancy.db(tenant);
+    const [list, customers, branches] = await Promise.all([
+      loadRefunds(db, this.control.db),
+      loadCustomers(db),
+      loadBranches(db),
+    ]);
+    const seen = new Set(customers.filter((c) => seesCustomer(access, c, branches)).map((c) => c.id));
+    return list.filter((refund) => seen.has(refund.customerId));
+  }
+
+  /**
+   * Stock held for invoices. Stock viewers see every hold, because availability counts them
+   * (inventory spec C2), but a hold on an invoice outside their data scope comes without its
+   * invoice, line or override reason (PR #15 review). Anyone else sees the holds of their own invoices.
+   */
+  async reservations(tenant: TenantContext, access: RequestAccess): Promise<Reservation[]> {
+    const db = await this.tenancy.db(tenant);
+    const [list, seen] = await Promise.all([loadReservations(db), this.visibleInvoiceIds(db, access)]);
+    const stockViewer =
+      access.permissions.has("inventory.product.view") || access.permissions.has("inventory.roll.view");
+    if (!stockViewer) return list.filter((reservation) => seen.has(reservation.invoiceId));
+    return list.map((reservation) =>
+      seen.has(reservation.invoiceId)
+        ? reservation
+        : { ...reservation, invoiceId: "", lineId: "", overrideReason: null },
+    );
+  }
+
+  /**
+   * Converts an accepted quote into an invoice dated today (spec rule 19): the quote must still
+   * pass every send check, totals are computed again here under the job site's tax rule on the
+   * company's date, and the stock is held under the stock lock. A short line is recorded as short
+   * and does not block the sale.
+   */
+  async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
+    requireLedger();
+    const db = await this.tenancy.db(tenant);
+    const day = await companyToday(this.control.db, tenant);
+    const id = uuidv7();
+    await db.transaction(async (tx) => {
+      // The quote row is locked, so two conversions of one quote cannot both pass the checks.
+      await tx.select({ id: quotes.id }).from(quotes).where(eq(quotes.id, quoteId)).for("update");
+      const [quote] = await loadQuotes(tx, [quoteId]);
+      if (!quote || !seesDocument(actor.access, quote)) throw notFound("quote");
+      if (quote.invoiceId)
+        throw new ConflictException({ code: "conflict", message: "This quote is already invoiced." });
+      if (quote.status !== "accepted" || !quoteIsOpen(quote)) {
+        throw refuse("Mark the quote accepted before converting it to an invoice.");
+      }
+      const problem = Object.values(quoteSendProblems(quote, null, day))[0];
+      if (problem) throw refuse(problem);
+      const [customer] = await loadCustomers(tx, [quote.customerId]);
+      if (!customer) throw refuse("This quote's customer no longer exists.");
+      const localization = await loadLocalization(tx);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
+      const used = await tx.select({ number: invoices.number }).from(invoices);
+      const drafted = invoiceFromQuote(quote, customer, localization, {
+        id,
+        number: nextNumber(
+          localization.documents.invoicePrefix,
+          used.map((row) => row.number),
+          FIRST_INVOICE,
+        ),
+        issuedAt: day,
+        createdBy: actor.access.userId,
+        balanceDueDays: localization.documents.balanceDueDays,
+      });
+      // Invoice lines get their own ids; nothing points at a quote line (ADR 0037).
+      const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
+      await this.insertInvoice(tx, invoice, actor.access.userId);
+      await lockStock(tx);
+      const [products, rolls, movements, held] = await Promise.all([
+        loadProducts(tx),
+        loadRolls(tx),
+        loadMovements(tx),
+        loadReservations(tx),
+      ]);
+      const drafts = planReservations(invoice, products, {
+        rolls,
+        movements,
+        reservations: held.filter((reservation) => reservation.status === "active"),
+      });
+      if (drafts.length > 0) {
+        await tx.insert(reservations).values(
+          drafts.map((draft) => ({
+            invoiceId: id,
+            invoiceLineId: draft.lineId,
+            productId: draft.productId,
+            rollId: draft.rollId,
+            locationId: draft.locationId,
+            quantity: draft.quantity,
+            shortBy: draft.shortBy,
+            status: draft.status,
+            createdBy: actor.access.userId,
+          })),
+        );
+      }
+      await tx
+        .update(quotes)
+        .set({
+          status: "converted",
+          sentAt: quote.sentAt ? undefined : new Date(),
+          total: invoice.total,
+          updatedAt: new Date(),
+        })
+        .where(eq(quotes.id, quoteId));
+      const short = drafts.filter((draft) => dec(draft.shortBy).gt(0)).length;
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Converted quote to invoice",
+          targetType: "invoice",
+          targetId: id,
+          targetLabel: invoice.number,
+          before: { quote: quote.number, status: quote.status },
+          after: {
+            quote: quote.number,
+            total: invoice.total,
+            tax: invoice.tax,
+            taxRule: invoice.taxRule,
+            dueAt: invoice.dueAt,
+            reservations: drafts.length,
+            short,
+          },
+        },
+        tx,
+      );
+    });
+    return (await loadInvoices(db, { ids: [id] }))[0]!;
+  }
+
+  /** Marks an invoice as sent (spec B2) and emails it to the customer (`invoice.sent`). */
+  async markSent(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<Invoice> {
+    const db = await this.tenancy.db(tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId);
+    await db.transaction(async (tx) => {
+      await lockCustomer(tx, found.customerId);
+      const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
+      if (!invoice) throw notFound("invoice");
+      if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is void.`);
+      if (invoice.sentAt) throw refuse(`Invoice ${invoice.number} was already sent.`);
+      const now = new Date();
+      await tx
+        .update(invoices)
+        .set({ sentAt: now, sentBy: actor.access.userId, updatedAt: now })
+        .where(eq(invoices.id, invoiceId));
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Marked invoice sent",
+          targetType: "invoice",
+          targetId: invoiceId,
+          targetLabel: invoice.number,
+          after: { sentAt: now.toISOString() },
+        },
+        tx,
+      );
+    });
+    const [sent] = await loadInvoices(db, { ids: [invoiceId] });
+    await this.emailInvoice(tenant, actor, sent!);
+    return sent!;
+  }
+
+  /**
+   * Voids an invoice (spec rule 33): a reason, and only while no payment is confirmed. Pending
+   * payments are voided with it and its active holds are released; stock already cut stays out. A
+   * credit note whose credit was already used or refunded cannot be voided, or the customer's
+   * credit would go below what was spent.
+   */
+  async voidInvoice(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<Invoice> {
+    requireLedger();
+    const why = reasonFor(reason, "the invoice is voided");
+    const db = await this.tenancy.db(tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId);
+    const day = await companyToday(this.control.db, tenant);
+    await db.transaction(async (tx) => {
+      await lockCustomer(tx, found.customerId);
+      const { invoice, payments, ledger } = await invoiceState(tx, this.control.db, invoiceId, day);
+      if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is already void.`);
+      if (ledger.locked) {
+        throw refuse(`Invoice ${invoice.number} has confirmed payments. Void them first, or issue a credit note.`);
+      }
+      // Applied credit and write-offs have no reversal, so voiding would lose them (spec "Edge cases").
+      if (dec(ledger.credited).gt(0) || dec(ledger.writtenOff).gt(0)) {
+        throw refuse(`Invoice ${invoice.number} has credit applied or a write-off, so it can't be voided.`);
+      }
+      // Its credit notes would stay customer credit for an invoice that no longer exists (PR #15 review).
+      const [liveNote] = await tx
+        .select({ number: invoices.number })
+        .from(invoices)
+        .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
+        .limit(1);
+      if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
+      if (invoice.isReturn && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(invoice.total)) {
+        throw refuse(`Credit from ${invoice.number} was already applied or refunded, so it can't be voided.`);
+      }
+      const now = new Date();
+      const pending = payments.filter((payment) => payment.status === "pending").map((payment) => payment.id);
+      if (pending.length > 0) {
+        await tx
+          .update(paymentsReceived)
+          .set({ status: "voided", voidedById: actor.access.userId, voidedAt: now, voidReason: why, updatedAt: now })
+          .where(inArray(paymentsReceived.id, pending));
+        for (const voided of payments.filter((payment) => payment.status === "pending")) {
+          await this.auditLog.record(
+            tenant,
+            actor.audit,
+            {
+              category: "payment",
+              action: "Voided payment",
+              targetType: "payment",
+              targetId: voided.id,
+              targetLabel: `${voided.number} on ${invoice.number}`,
+              before: { amount: voided.amount, status: "pending" },
+              after: { status: "voided", reason: why, withInvoice: true },
+            },
+            tx,
+          );
+        }
+      }
+      await tx
+        .update(invoices)
+        .set({ voidedAt: now, voidReason: why, updatedAt: now })
+        .where(eq(invoices.id, invoiceId));
+      await lockStock(tx);
+      const released = await tx
+        .update(reservations)
+        .set({ status: "released", closedAt: now, updatedAt: now })
+        .where(
+          and(eq(reservations.invoiceId, invoiceId), eq(reservations.status, "active"), isNull(reservations.deletedAt)),
+        )
+        .returning({ id: reservations.id });
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Voided invoice",
+          targetType: "invoice",
+          targetId: invoiceId,
+          targetLabel: invoice.number,
+          before: { total: invoice.total, state: ledger.state },
+          after: { reason: why, pendingPaymentsVoided: pending.length, reservationsReleased: released.length },
+        },
+        tx,
+      );
+    });
+    return (await loadInvoices(db, { ids: [invoiceId] }))[0]!;
+  }
+
+  /**
+   * Issues a credit note for part of an invoice (spec rule 38): an amount before tax up to what is
+   * not yet credited, with tax and cost in proportion. It becomes customer credit and does not
+   * lower the invoice's balance until the credit is applied.
+   */
+  async creditNote(
+    tenant: TenantContext,
+    actor: Actor,
+    invoiceId: string,
+    request: CreditNoteRequest,
+  ): Promise<Invoice> {
+    requireLedger();
+    const why = reasonFor(request.reason, "the credit note is issued");
+    const db = await this.tenancy.db(tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId);
+    const day = await companyToday(this.control.db, tenant);
+    const id = uuidv7();
+    await db.transaction(async (tx) => {
+      await lockCustomer(tx, found.customerId);
+      const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
+      if (!invoice || invoice.voidedAt || invoice.isReturn) throw refuse("A credit note needs a live invoice.");
+      const amount = dec(request.subtotal);
+      const notes = await tx
+        .select({ subtotal: invoices.subtotal, tax: invoices.tax })
+        .from(invoices)
+        .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)));
+      const already = sum(notes.map((note) => note.subtotal));
+      if (amount.lte(0) || amount.plus(already).gt(invoice.subtotal) || dec(invoice.subtotal).lte(0)) {
+        throw refuse("Enter an amount up to what is left on this invoice before tax.");
+      }
+      const share = (value: string) => roundMoney(dec(value).times(amount).dividedBy(invoice.subtotal));
+      const taxLeft = dec(invoice.tax).minus(sum(notes.map((n) => n.tax)));
+      const tax = amount.plus(already).eq(invoice.subtotal) ? taxLeft : minDec(share(invoice.tax), taxLeft);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
+      const used = await tx.select({ number: invoices.number }).from(invoices).where(eq(invoices.isReturn, true));
+      const note: Invoice = {
+        ...invoice,
+        id,
+        number: nextNumber(
+          CREDIT_PREFIX,
+          used.map((row) => row.number),
+          FIRST_CREDIT,
+        ),
+        quoteId: null,
+        isReturn: true,
+        creditForInvoiceId: invoice.id,
+        issuedAt: day,
+        dueAt: day,
+        sentAt: day,
+        sentBy: actor.access.userId,
+        createdBy: actor.access.userId,
+        refundedAt: null,
+        depositPct: "0",
+        subtotal: moneyString(amount),
+        tax: moneyString(tax),
+        cost: moneyString(share(invoice.cost)),
+        total: moneyString(amount.plus(tax)),
+        lines: [],
+      };
+      await this.insertInvoice(tx, note, actor.access.userId);
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Issued credit note",
+          targetType: "invoice",
+          targetId: id,
+          targetLabel: note.number,
+          after: { for: invoice.number, subtotal: note.subtotal, tax: note.tax, total: note.total, reason: why },
+        },
+        tx,
+      );
+    });
+    return (await loadInvoices(db, { ids: [id] }))[0]!;
+  }
+
+  /**
+   * Writes off the whole balance (spec rule 34): a reason, and only up to the company's write-off
+   * maximum. The invoice then reads Paid.
+   */
+  async writeOff(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<InvoiceAdjustment> {
+    requireLedger();
+    const why = reasonFor(reason, "the balance is written off");
+    const db = await this.tenancy.db(tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId);
+    const [day, settings, money] = await Promise.all([
+      companyToday(this.control.db, tenant),
+      loadPaymentSettings(db),
+      loadMoneyFormat(db),
+    ]);
+    return this.adjust(tenant, actor, found, day, "Wrote off balance", ({ balance, pending }) => {
+      if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to write off.`);
+      // A payment that waits could still settle it; writing off first would turn it into credit.
+      if (pending.gt(0)) throw refuse(`Verify or reject the payment waiting on ${found.number} first.`);
+      const max = settings.writeOffMax.trim();
+      if (max && balance.gt(max)) {
+        throw refuse(
+          `Only balances up to ${money(max)} can be written off; this one is ${money(moneyString(balance))}.`,
+        );
+      }
+      return { kind: "write_off", amount: moneyString(balance), reason: why };
+    });
+  }
+
+  /** Applies the customer's credit to an invoice (spec rule 36): as much as the balance takes. */
+  async applyCredit(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<InvoiceAdjustment> {
+    requireLedger();
+    const db = await this.tenancy.db(tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId);
+    const day = await companyToday(this.control.db, tenant);
+    return this.adjust(tenant, actor, found, day, "Applied customer credit", ({ balance, credit }) => {
+      if (credit.lte(0)) throw refuse("This customer has no credit to apply.");
+      if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to pay.`);
+      return {
+        kind: "credit_applied",
+        amount: moneyString(minDec(credit, balance)),
+        reason: "Customer credit applied",
+      };
+    });
+  }
+
+  /** Writes one adjustment decided from the balance and credit read under the customer's lock. */
+  private async adjust(
+    tenant: TenantContext,
+    actor: Actor,
+    found: Invoice,
+    day: string,
+    action: string,
+    decide: (now: {
+      balance: ReturnType<typeof dec>;
+      credit: ReturnType<typeof dec>;
+      pending: ReturnType<typeof dec>;
+    }) => Pick<InvoiceAdjustment, "kind" | "amount" | "reason">,
+  ): Promise<InvoiceAdjustment> {
+    const db = await this.tenancy.db(tenant);
+    const id = uuidv7();
+    await db.transaction(async (tx) => {
+      await lockCustomer(tx, found.customerId);
+      const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, day);
+      if (ledger.state === "void" || ledger.state === "return") throw refuse(`Invoice ${invoice.number} owes nothing.`);
+      const credit = await creditNow(tx, this.control.db, invoice.customerId, day);
+      const decided = decide({ balance: dec(ledger.balance), credit, pending: dec(ledger.pending) });
+      const now = new Date();
+      await tx.insert(invoiceAdjustments).values({
+        id,
+        invoiceId: invoice.id,
+        customerId: invoice.customerId,
+        ...decided,
+        byUserId: actor.access.userId,
+        at: now,
+        createdBy: actor.access.userId,
+      });
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "payment",
+          action,
+          targetType: "invoice",
+          targetId: invoice.id,
+          targetLabel: invoice.number,
+          before: { balance: ledger.balance },
+          after: { amount: decided.amount, reason: decided.reason },
+        },
+        tx,
+      );
+    });
+    return (await loadAdjustments(db, this.control.db, { ids: [id] }))[0]!;
+  }
+
+  /** Writes an invoice with its lines and commission split. */
+  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string): Promise<void> {
+    const issuedAt = new Date();
+    await tx.insert(invoices).values({
+      id: invoice.id,
+      number: invoice.number,
+      quoteId: invoice.quoteId,
+      customerId: invoice.customerId,
+      salesRepId: invoice.salesRepId,
+      branchId: invoice.branchId,
+      issuedAt,
+      dueAt: invoice.dueAt,
+      sentAt: invoice.sentAt ? issuedAt : null,
+      sentBy: invoice.sentAt ? invoice.sentBy : null,
+      depositPct: invoice.depositPct,
+      isReturn: invoice.isReturn,
+      creditForInvoiceId: invoice.creditForInvoiceId,
+      locationId: invoice.locationId,
+      soldAtLocationId: invoice.soldAtLocationId ?? null,
+      jobSite: invoice.jobSite,
+      taxRule: invoice.taxRule,
+      taxSource: invoice.taxSource,
+      taxOverride: invoice.taxOverride,
+      taxExempt: invoice.taxExempt,
+      subtotal: invoice.subtotal,
+      tax: invoice.tax,
+      total: invoice.total,
+      cost: invoice.cost,
+      createdBy: by,
+    });
+    if (invoice.lines.length > 0) {
+      await tx.insert(invoiceLines).values(
+        invoice.lines.map((line, position) => ({
+          id: line.id,
+          invoiceId: invoice.id,
+          position,
+          productId: line.productId ?? null,
+          description: line.description,
+          category: line.category,
+          unit: line.unit,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          unitCost: line.unitCost,
+          wastePct: line.wastePct ?? null,
+          rollId: line.rollId ?? null,
+          sqFtPerCarton: line.sqFtPerCarton ?? null,
+          locationId: line.locationId ?? null,
+          createdBy: by,
+        })),
+      );
+    }
+    if (invoice.commissionSplit?.length) {
+      await tx.insert(invoiceCommissionSplits).values(
+        invoice.commissionSplit.map((share) => ({
+          invoiceId: invoice.id,
+          userId: share.userId,
+          pct: share.pct,
+          createdBy: by,
+        })),
+      );
+    }
+  }
+
+  /** Ids of the invoices the person's data scope covers. */
+  private async visibleInvoiceIds(db: CompanyDb, access: RequestAccess): Promise<Set<string>> {
+    const rows = await db
+      .select({ id: invoices.id, salesRepId: invoices.salesRepId, branchId: invoices.branchId })
+      .from(invoices)
+      .where(isNull(invoices.deletedAt));
+    return new Set(rows.filter((row) => seesDocument(access, row)).map((row) => row.id));
+  }
+
+  /** Emails the invoice to the customer (`invoice.sent`); a failure is logged and never undoes the send. */
+  private async emailInvoice(tenant: TenantContext, actor: Actor, invoice: Invoice): Promise<void> {
+    try {
+      const db = await this.tenancy.db(tenant);
+      const [[customer], money] = await Promise.all([loadCustomers(db, [invoice.customerId]), loadMoneyFormat(db)]);
+      if (!customer?.email) return;
+      await this.notifications.notify(tenant, actor.access.userId, {
+        event: "invoice.sent",
+        source: { type: "invoice", id: invoice.id },
+        to: [{ kind: "customer", id: customer.id, name: customer.name, email: customer.email }],
+        values: {
+          "customer.name": customer.name,
+          "invoice.number": invoice.number,
+          "invoice.total": money(invoice.total),
+          "invoice.due": invoice.dueAt ?? "",
+        },
+      });
+    } catch {
+      this.logger.warn("An invoice was marked sent, but its email could not be queued.");
+    }
+  }
+}

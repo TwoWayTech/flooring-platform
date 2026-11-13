@@ -4,6 +4,7 @@ import { BrandingModule } from "./core/branding/branding.module";
 import { ApiConfigModule } from "./core/config/config.module";
 import { ControlDbModule } from "./core/database/control-db";
 import { EmailModule } from "./core/email/email.module";
+import { StorageModule } from "./core/storage/storage.module";
 import { HealthController } from "./core/health/health.controller";
 import { JobsModule } from "./core/jobs/jobs.module";
 import { NotificationsModule } from "./core/notifications/notifications.module";
@@ -33,6 +34,7 @@ export class AppModule {
         ApiConfigModule.forRoot(),
         ControlDbModule,
         EmailModule,
+        StorageModule,
         AuthModule,
         TenancyModule,
         AccessModule,

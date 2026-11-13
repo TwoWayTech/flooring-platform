@@ -44,6 +44,18 @@ export class HttpTransport {
     return (response.status === 204 ? undefined : await response.json()) as T;
   }
 
+  /** Fetches a stored file's bytes, such as a payment's proof; failures are ApiErrors like any request. */
+  async blob(path: string): Promise<Blob> {
+    let response: Response;
+    try {
+      response = await this.fetcher(`${this.baseUrl}${path}`, { method: "GET", credentials: "include" });
+    } catch {
+      throw new HttpApiError("The server could not be reached. Check your connection and try again.", 0, "network");
+    }
+    if (!response.ok) throw await this.errorFrom(response);
+    return response.blob();
+  }
+
   private async errorFrom(response: Response): Promise<HttpApiError> {
     const body = (await response.json().catch(() => ({}))) as ErrorBody;
     return new HttpApiError(

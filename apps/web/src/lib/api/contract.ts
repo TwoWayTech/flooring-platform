@@ -903,9 +903,9 @@ export interface ApiClient {
   recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;
   /**
    * What the Inventory and roll pages read: the catalog, rolls, the boxed-stock ledger, warehouses,
-   * transfers, reservations and adjustments. With the real API (inventory, part 1; ADR 0035) the
-   * reservations and adjustments stay empty until sales moves, and a list the person may not see
-   * comes back empty.
+   * transfers, reservations and adjustments. With the real API (ADR 0035, ADR 0038) reservations
+   * come from invoices; adjustments stay empty until inventory part 2, and a list the person may
+   * not see comes back empty.
    */
   inventoryData(): Promise<InventoryData>;
   /**
@@ -916,8 +916,7 @@ export interface ApiClient {
   purchasingData(): Promise<PurchasingData>;
   /**
    * What the Sales and quote pages read: quotes and customers within the person's data scope, and
-   * warehouses. With the real API (sales, part 1; ADR 0037) invoices still come from the demo
-   * until part 2 moves them.
+   * warehouses. Invoices and what settles them are read through `list` (ADR 0038).
    */
   salesData(): Promise<SalesData>;
   /** Moves a roll to another bin; nothing else about a roll changes. Needs inventory.roll.edit. Audited. */

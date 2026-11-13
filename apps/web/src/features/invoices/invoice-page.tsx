@@ -56,19 +56,19 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
     async (client) => {
       const invoice = await client.get("invoices", invoiceId);
       if (!invoice) return null;
-      const [customer, quote, sales, settings, locations, jobs, users, reservations, products, rolls] =
-        await Promise.all([
-          client.get("customers", invoice.customerId),
-          invoice.quoteId ? client.get("quotes", invoice.quoteId) : Promise.resolve(undefined),
-          loadSalesLedger(client),
-          client.getSettings(),
-          client.list("locations"),
-          client.list("jobs"),
-          client.list("users"),
-          client.list("reservations"),
-          client.list("products"),
-          client.list("rolls"),
-        ]);
+      // Customers, quotes and stock come through the module reads, so their ids match the invoice's
+      // whichever data source serves it (ADR 0038).
+      const [salesData, stock, sales, settings, jobs, users] = await Promise.all([
+        client.salesData(),
+        client.inventoryData(),
+        loadSalesLedger(client),
+        client.getSettings(),
+        client.list("jobs"),
+        client.list("users"),
+      ]);
+      const customer = salesData.customers.find((c) => c.id === invoice.customerId);
+      const quote = invoice.quoteId ? salesData.quotes.find((q) => q.id === invoice.quoteId) : undefined;
+      const { locations, reservations, products, rolls } = stock;
       const job = jobs.find((j) => j.invoiceId === invoiceId);
       return { invoice, customer, quote, sales, settings, locations, job, users, reservations, products, rolls };
     },
