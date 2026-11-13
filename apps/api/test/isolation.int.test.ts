@@ -255,7 +255,13 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
   /** Every Nest route the inventory checks: all but the public ones, the API docs and Better Auth's mount. */
   function checkedRoutes() {
     const routes = listRoutes(harness.app.getHttpAdapter().getInstance());
-    const open = new Set(["GET /health", "GET /public/branding"]);
+    // Invitation acceptance is public by design: the emailed token is the credential (draft spec).
+    const open = new Set([
+      "GET /health",
+      "GET /public/branding",
+      "GET /public/invitations/:token",
+      "POST /public/invitations/accept",
+    ]);
     // The OpenAPI document is public on purpose and describes no company data, and Better Auth's
     // mount has its own rules (proxy secret and sessions; see the auth and lockout tests).
     const checked = routes.filter(
@@ -280,13 +286,18 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
   });
 
   it("needs an open company on every route except the session-only ones", async () => {
-    const sessionOnly = new Set(["GET /auth/context"]);
+    // Session-only routes answer for themselves; with an empty body the two POSTs refuse it (400).
+    const sessionOnly = new Map([
+      ["GET /auth/context", 200],
+      ["POST /auth/step-up", 400],
+      ["POST /platform/support-grants", 400],
+    ]);
     const noCompanyYet = await harness.signIn(await harness.addUser({ companyIds: [a.id, b.id] }));
     for (const route of checkedRoutes()) {
       const response = await call(route.verb, route.url, noCompanyYet).send({});
       // HEAD answers have no body, so the status is checked for every route and the code where there is one.
       const expected = sessionOnly.has(route.name)
-        ? { route: route.name, status: 200 }
+        ? { route: route.name, status: sessionOnly.get(route.name) }
         : { route: route.name, status: 403, code: route.verb === "head" ? undefined : "company_required" };
       const actual = sessionOnly.has(route.name)
         ? { route: route.name, status: response.status }
