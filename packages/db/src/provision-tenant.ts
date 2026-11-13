@@ -2,13 +2,15 @@ import { encodeMemberRoles, PRODUCT_DEFAULT_BRANDING, type ProductKey } from "@w
 import type { DatabaseProvisioner } from "@workspace/providers";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
-import type { ControlDb } from "./client";
+import { openCompanyDb, type ControlDb } from "./client";
+import { productPermissions, seedCompanyFoundation } from "./company-foundation";
 import {
   member,
   organization,
   products,
   tenantBranding,
   tenantDatabases,
+  tenantPermissionCeiling,
   tenantProducts,
   tenants,
   user,
@@ -79,11 +81,16 @@ export function slugProblem(slug: string): string | null {
  * 1. the control rows, in one transaction: tenant (`trial`), organization with the same id, its
  *    products, default branding, and the owner as an unverified user with no password and the
  *    `owner` role key in `member.role` (ADR 0029, part 2);
- * 2. its own database through the DatabaseProvisioner, migrated to the current company schema.
+ * 2. its own database through the DatabaseProvisioner, migrated to the current company schema;
+ * 3. its foundation (P10): the products' default roles and the owner's profile with the Owner role.
+ *
+ * The permission ceiling is every permission of the products' modules, and with no subscription
+ * all of the products' modules are on (`enabledModules`), so the owner can work at once. A
+ * platform admin narrows both later.
  *
  * A run that stopped after step 1 is finished by running it again with the same slug. A slug that
- * already has a database is refused. The company starts with no subscription, no roles and an
- * empty permission ceiling, so it is denied by default until P10 and onboarding fill them in.
+ * already has a database is refused. The company starts with no subscription; plans and prices are
+ * open owner decisions.
  */
 export async function provisionTenant(
   control: ControlDb,
@@ -97,11 +104,17 @@ export async function provisionTenant(
   if (company.products.length === 0) throw new Error("Give the company at least one product.");
   const existing = await findUnfinished(control, company);
   const created = existing ?? (await writeControlRows(control, company));
-  await provisionCompany(control, provisioner, encryptionKey, {
+  const url = await provisionCompany(control, provisioner, encryptionKey, {
     tenantId: created.tenantId,
     slug: company.slug,
     provider,
   });
+  const companyDb = openCompanyDb(url, { max: 1 });
+  try {
+    await seedCompanyFoundation(companyDb.db, { products: company.products, ownerUserId: created.ownerUserId });
+  } finally {
+    await companyDb.close();
+  }
   return { ...created, resumed: existing !== null };
 }
 
@@ -163,6 +176,11 @@ async function writeControlRows(control: ControlDb, company: NewCompany): Promis
       .from(products)
       .where(inArray(products.key, [...company.products]));
     await tx.insert(tenantProducts).values(productRows.map((row) => ({ tenantId, productId: row.id })));
+    await tx
+      .insert(tenantPermissionCeiling)
+      .values(
+        productPermissions(company.products).map((permissionKey) => ({ tenantId, permissionKey, allowed: true })),
+      );
     const branding = PRODUCT_DEFAULT_BRANDING[company.products[0]];
     await tx.insert(tenantBranding).values({
       tenantId,

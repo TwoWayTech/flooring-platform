@@ -1,13 +1,41 @@
 import { randomBytes } from "node:crypto";
 import { companyDatabaseName, PostgresServerProvisioner, type DatabaseProvisioner } from "@workspace/providers";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { decryptSecret, migrateControl, openCompanyDb, openControlDb, provisionTenant, type NewCompany } from "../src";
-import { branches } from "../src/company";
-import { member, organization, tenantBranding, tenantDatabases, tenantProducts, tenants, user } from "../src/control";
+import { PRODUCT_ROLES } from "@workspace/shared";
+import {
+  decryptSecret,
+  migrateControl,
+  openCompanyDb,
+  openControlDb,
+  productPermissions,
+  provisionTenant,
+  type NewCompany,
+} from "../src";
+import { auditLog, branches, rolePermissions, roles, userProfiles, userRoles } from "../src/company";
+import {
+  member,
+  organization,
+  tenantBranding,
+  tenantDatabases,
+  tenantPermissionCeiling,
+  tenantProducts,
+  tenants,
+  user,
+} from "../src/control";
 import { adminUrl, scratchDatabase } from "../src/testing";
 
 const encryptionKey = randomBytes(32).toString("base64");
+
+/** Expects a query to be refused by the append-only trigger; Drizzle puts the database error in `cause`. */
+async function expectRefused(query: PromiseLike<unknown>): Promise<void> {
+  const error = await Promise.resolve(query).then(
+    () => null,
+    (failure: unknown) => failure,
+  );
+  const cause = (error as { cause?: { message?: string } } | null)?.cause?.message ?? "";
+  expect(cause).toMatch(/append-only/);
+}
 /** Slugs unique to this run, so parallel or earlier runs never collide on the shared server. */
 const run = `${process.pid}${randomBytes(2).toString("hex")}`.replace(/[^a-z0-9]/g, "");
 
@@ -141,6 +169,67 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
       expect(await handle.db.select().from(tenants).where(eq(tenants.slug, slug))).toHaveLength(1);
     } finally {
       await handle.close();
+    }
+  });
+
+  /** Opens the provisioned company database of a tenant, for checks behind the API. */
+  async function companyOf(tenantId: string) {
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const [database] = await handle.db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId));
+      return openCompanyDb(decryptSecret(database.encryptedUrl, encryptionKey), { max: 1 });
+    } finally {
+      await handle.close();
+    }
+  }
+
+  it("gives a new company its default roles, an owner with the Owner role, and a full ceiling (P10)", async () => {
+    const result = await provision(company(`hrco${run}`, { products: ["hr"] }));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      const ceiling = await handle.db
+        .select({ key: tenantPermissionCeiling.permissionKey })
+        .from(tenantPermissionCeiling)
+        .where(eq(tenantPermissionCeiling.tenantId, result.tenantId));
+      expect(ceiling.map((row) => row.key).sort()).toEqual([...productPermissions(["hr"])].sort());
+    } finally {
+      await handle.close();
+    }
+    const db = await companyOf(result.tenantId);
+    try {
+      const roleRows = await db.db.select().from(roles);
+      expect(roleRows.map((row) => row.key).sort()).toEqual([...PRODUCT_ROLES.hr].sort());
+      expect(roleRows.every((row) => row.system)).toBe(true);
+      const allowed: ReadonlySet<string> = new Set(productPermissions(["hr"]));
+      const held = await db.db.select({ key: rolePermissions.permissionKey }).from(rolePermissions);
+      expect(held.every((row) => allowed.has(row.key))).toBe(true);
+      const [profile] = await db.db.select().from(userProfiles).where(eq(userProfiles.userId, result.ownerUserId));
+      expect(profile.status).toBe("invited");
+      const [link] = await db.db
+        .select({ key: roles.key })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(eq(userRoles.userId, result.ownerUserId));
+      expect(link.key).toBe("owner");
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("keeps audit_log append-only, even for the company login that owns the database (P10)", async () => {
+    const result = await provision(company(`audit${run}`));
+    const db = await companyOf(result.tenantId);
+    try {
+      const [row] = await db.db
+        .insert(auditLog)
+        .values({ category: "data", action: "Created", targetType: "test" })
+        .returning();
+      await expectRefused(db.db.update(auditLog).set({ action: "Changed" }).where(eq(auditLog.id, row.id)));
+      await expectRefused(db.db.delete(auditLog).where(eq(auditLog.id, row.id)));
+      await expectRefused(db.db.execute(sql`TRUNCATE audit_log`));
+      expect(await db.db.select().from(auditLog)).toHaveLength(1);
+    } finally {
+      await db.close();
     }
   });
 });
