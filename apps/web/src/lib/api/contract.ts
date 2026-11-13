@@ -666,6 +666,13 @@ export interface ApiClient {
   /** Creates or replaces a record. Screens call domain methods; this backs them. */
   save<K extends CollectionName>(collection: K, item: ItemOf<K>, audit?: AuditInput): Promise<ItemOf<K>>;
 
+  /**
+   * Settings → Users' list of people, with their roles and MFA state. Other screens keep using
+   * `list("users")` for names and pickers until their modules move to the API (ADR 0034).
+   */
+  listSettingsUsers(): Promise<User[]>;
+  /** Settings → Users and Security roles' list of roles with their permissions. */
+  listSettingsRoles(): Promise<Role[]>;
   /** Invites a user; fails when the seat limit is reached (spec "Settings: Users"). */
   inviteUser(input: InviteUserInput): Promise<User>;
   /** Changes a user's roles, status, MFA or branch and audits it. */
@@ -688,6 +695,12 @@ export interface ApiClient {
   /** Open reservations with their invoice number, customer and payment state. Needs inventory.roll.view or inventory.product.view. */
   /** The signed-in user's id. */
   whoAmI(): Promise<string>;
+  /**
+   * Confirms it is the signed-in person with a code from their authenticator app before a
+   * high-impact change (spec rule 23). The real API checks the code and remembers the step-up for
+   * 5 minutes; the demo accepts any 6 digits.
+   */
+  verifyStepUp(code: string): Promise<void>;
   /** Saves a draft expense or records one with its receipt (spec F1). */
   saveExpense(input: ExpenseInput, files: File[]): Promise<Expense>;
   /** Approves or rejects an expense. */

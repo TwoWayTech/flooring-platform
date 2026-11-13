@@ -12,6 +12,7 @@ import { CompanyDirectory } from "./company-directory";
 import { MfaPolicy } from "./mfa-policy";
 import { SessionGuard } from "./session.guard";
 import { SessionService } from "./session.service";
+import { StepUpService } from "./step-up.service";
 import { AUTH } from "./tokens";
 
 /**
@@ -66,8 +67,9 @@ import { AUTH } from "./tokens";
     },
     SessionService,
     SessionGuard,
+    StepUpService,
   ],
   controllers: [AuthController],
-  exports: [AUTH, SessionService, SessionGuard, CompanyDirectory],
+  exports: [AUTH, SessionService, SessionGuard, CompanyDirectory, AttemptLog, MfaPolicy, StepUpService],
 })
 export class AuthModule {}

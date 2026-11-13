@@ -65,7 +65,7 @@ export function can(access: Access, key: PermissionKey): boolean {
 }
 
 /** Why a grant was refused, or null when it is allowed. */
-export type GrantDenial = "not_held" | "owner_only" | null;
+export type GrantDenial = "not_held" | "owner_only" | "scope_wider" | null;
 
 /**
  * No privilege escalation (blueprint rule 2): a user can grant a permission only if they
@@ -77,8 +77,9 @@ export function canGrant(granter: Access, key: PermissionKey): boolean {
 
 /**
  * Whether a user may assign a role to someone. The role's active permissions (inside the
- * ceiling and enabled modules) must be a subset of the granter's, and only an Owner can make
- * someone else an Owner (blueprint rules 1 and 2).
+ * ceiling and enabled modules) must be a subset of the granter's, its data scope may not be wider
+ * than the granter's, and only an Owner can make someone else an Owner (blueprint rules 1 and 2;
+ * data scope is part of what a person holds, PR #11 security review).
  */
 export function canAssignRole(
   granter: Access,
@@ -89,7 +90,7 @@ export function canAssignRole(
   if (role.owner && !granter.isOwner) return "owner_only";
   const active = effectivePermissions([role], ceiling, modules);
   for (const key of active) if (!granter.permissions.has(key)) return "not_held";
-  return null;
+  return scopeWidens(granter, role.dataScope, null) ? "scope_wider" : null;
 }
 
 /** Permissions in a proposed role that the granter does not hold; empty means the save is allowed. */
@@ -100,6 +101,34 @@ export function escalations(
 ): PermissionKey[] {
   const before = new Set(current);
   return proposed.filter((key) => !before.has(key) && !granter.permissions.has(key));
+}
+
+/**
+ * Whether saving a role with this data scope would give more than the granter holds: a scope wider
+ * than their own that the role did not already have. Owners hold every scope.
+ */
+export function scopeWidens(granter: Access, proposed: DataScope, current: DataScope | null): boolean {
+  if (granter.isOwner || proposed === current) return false;
+  return SCOPE_RANK[proposed] > SCOPE_RANK[granter.dataScope];
+}
+
+/**
+ * Whether the granter may change a person who holds these roles (their roles, status or MFA):
+ * they must be able to give every one of those roles themselves, so nobody acts on someone who
+ * holds more than they do, and only an Owner acts on an Owner (PR #11 security review).
+ */
+export function canManageHolder(
+  granter: Access,
+  heldRoles: readonly RoleLike[],
+  ceiling: Iterable<PermissionKey>,
+  modules: readonly ModuleKey[],
+): GrantDenial {
+  const allowed = [...ceiling];
+  for (const role of heldRoles) {
+    const denial = canAssignRole(granter, role, allowed, modules);
+    if (denial) return denial;
+  }
+  return null;
 }
 
 /** The parts of a user the owner rule needs. */

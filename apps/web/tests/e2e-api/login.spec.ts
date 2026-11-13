@@ -76,6 +76,31 @@ test.describe("real sign-in with MFA (api mode)", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
+  test("changing a person's roles asks for a code the API checks (step-up)", async ({ page }) => {
+    await signIn(page, seedPassword());
+    await page.getByLabel("Authenticator code").fill(nextCode(secret));
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    await page.goto("/settings/users");
+    const setRoles = async (from: RegExp, to: RegExp, code: string) => {
+      await page.getByRole("button", { name: "Actions for Priya Natarajan" }).click();
+      await page.getByRole("menuitem", { name: "Change roles" }).click();
+      await page.getByRole("checkbox", { name: to }).check();
+      await page.getByRole("checkbox", { name: from }).uncheck();
+      await page.getByRole("button", { name: "Save roles" }).click();
+      await page.getByLabel("Authenticator code").fill(code);
+      await page.getByRole("button", { name: "Confirm" }).click();
+    };
+    await setRoles(/^Sales/, /^Accountant/, "000000");
+    await expect(page.getByText("That code is not right.")).toBeVisible();
+    await page.getByLabel("Authenticator code").fill(totpCode(secret));
+    await page.getByRole("button", { name: "Confirm" }).click();
+    await expect(page.getByText("Roles updated for Priya Natarajan")).toBeVisible();
+    // Put Priya back, so the next run starts from the seed.
+    await setRoles(/^Accountant/, /^Sales/, nextCode(secret));
+    await expect(page.getByText("Roles updated for Priya Natarajan").last()).toBeVisible();
+  });
+
   test("a wrong password is refused with a plain message", async ({ page }) => {
     await signIn(page, `${seedPassword()}-wrong`);
     await expect(page.getByRole("alert").filter({ hasText: /./ })).toHaveText(

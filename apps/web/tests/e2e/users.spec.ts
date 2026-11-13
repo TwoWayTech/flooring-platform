@@ -8,6 +8,8 @@ async function invite(page: Page, name: string) {
   await dialog.getByLabel("Email").fill(`${name.toLowerCase().replace(/ /g, ".")}@summitfloor.example`);
   await dialog.getByLabel(/^Sales/).check();
   await dialog.getByRole("button", { name: "Send invitation" }).click();
+  await page.getByLabel("Authenticator code").fill("123456");
+  await page.getByRole("button", { name: "Confirm" }).click();
 }
 
 test.describe("settings: users", () => {
@@ -26,6 +28,8 @@ test.describe("settings: users", () => {
     await signInAs(page, SUMMIT_OWNER, "/settings/users");
     await page.getByRole("button", { name: "Actions for Dana Whitfield" }).click();
     await page.getByRole("menuitem", { name: "Disable user" }).click();
+    await page.getByLabel("Authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByText("This is the last active Owner. Make someone else an Owner first.")).toBeVisible();
   });
 

@@ -10,6 +10,12 @@ import { and, count, desc, eq, gt, inArray, sql } from "drizzle-orm";
 export const LOCKOUT = { failures: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 } as const;
 export const EMAIL_LIMIT = { perWindow: 3, windowMs: 60 * 60_000 } as const;
 
+/** A step-up lasts 5 minutes (draft spec); its lockout uses the LOCKOUT numbers. */
+export const STEP_UP = { validMs: 5 * 60_000 } as const;
+
+/** Invitation lookups and acceptances per IP: the sign-in limit, 10 a minute. */
+export const INVITATION_LIMIT = { perWindow: 10, windowMs: 60_000 } as const;
+
 /** What the person is told while their account is locked. */
 export const LOCKED_MESSAGE = "Too many failed sign-in attempts. Try again in 15 minutes.";
 
@@ -79,12 +85,93 @@ export class AttemptLog {
   }
 
   /** Records a sent email or a correct password for an address. */
-  async record(kind: Exclude<AuthAttemptKind, "password_attempt">, email: string, ip: string | null): Promise<void> {
+  async record(kind: "password_ok" | "verification_email", email: string, ip: string | null): Promise<void> {
     await this.db.insert(authAttempts).values({ kind, subject: attemptSubject(email), ip });
   }
 
+  /** Whether a step-up passed for this session in the last STEP_UP.validMs. */
+  async hasFreshStepUp(sessionId: string, now: Date = new Date()): Promise<boolean> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(authAttempts)
+      .where(
+        and(
+          eq(authAttempts.subject, sessionId),
+          eq(authAttempts.kind, "step_up_ok"),
+          gt(authAttempts.createdAt, new Date(now.getTime() - STEP_UP.validMs)),
+        ),
+      );
+    return (row?.n ?? 0) > 0;
+  }
+
   /**
-   * Reserves one verification (later also reset) email for this address, or returns false when it
+   * Checks the step-up lock and, when there is none, records this attempt, as one step per user
+   * under the same kind of advisory lock as password attempts (PR #11 security review). Parallel
+   * requests therefore cannot check more than LOCKOUT.failures codes before the lock applies.
+   * Returns when the lock ends, or null when the code may be checked now. The lock follows the
+   * password lockout: 5 failures in 15 minutes lock for 15 minutes, and a pass resets the count.
+   */
+  async reserveStepUp(userId: string, ip: string | null, now: Date = new Date()): Promise<Date | null> {
+    const subject = `step:${userId}`;
+    const since = new Date(now.getTime() - LOCKOUT.windowMs - LOCKOUT.lockMs);
+    return this.db.transaction(async (tx) => {
+      await lockSubject(tx, subject);
+      const rows = await tx
+        .select({ kind: authAttempts.kind, at: authAttempts.createdAt })
+        .from(authAttempts)
+        .where(
+          and(
+            eq(authAttempts.subject, subject),
+            inArray(authAttempts.kind, ["step_up_attempt", "step_up_pass"]),
+            gt(authAttempts.createdAt, since),
+          ),
+        )
+        .orderBy(desc(authAttempts.createdAt))
+        .limit(LOCKOUT.failures);
+      const asPassword: PasswordAttempt[] = rows.map((row) => ({
+        kind: row.kind === "step_up_pass" ? "password_ok" : "password_attempt",
+        at: row.at,
+      }));
+      const locked = lockEnd(asPassword, now);
+      if (!locked) await tx.insert(authAttempts).values({ kind: "step_up_attempt", subject, ip });
+      return locked;
+    });
+  }
+
+  /** Records a step-up that passed: for the lockout (by user) and for the session's 5 minutes. */
+  async recordStepUpPass(userId: string, sessionId: string, ip: string | null): Promise<void> {
+    await this.db.insert(authAttempts).values([
+      { kind: "step_up_pass", subject: `step:${userId}`, ip },
+      { kind: "step_up_ok", subject: sessionId, ip },
+    ]);
+  }
+
+  /**
+   * Reserves one invitation lookup or acceptance for this IP, or returns false when it has had
+   * INVITATION_LIMIT.perWindow in the last minute. Runs under a per-IP lock like reserveEmail.
+   */
+  async reserveInvitationAttempt(ip: string, now: Date = new Date()): Promise<boolean> {
+    const subject = `ip:${ip}`;
+    return this.db.transaction(async (tx) => {
+      await lockSubject(tx, subject);
+      const [row] = await tx
+        .select({ n: count() })
+        .from(authAttempts)
+        .where(
+          and(
+            eq(authAttempts.subject, subject),
+            eq(authAttempts.kind, "invitation_attempt"),
+            gt(authAttempts.createdAt, new Date(now.getTime() - INVITATION_LIMIT.windowMs)),
+          ),
+        );
+      if ((row?.n ?? 0) >= INVITATION_LIMIT.perWindow) return false;
+      await tx.insert(authAttempts).values({ kind: "invitation_attempt", subject, ip });
+      return true;
+    });
+  }
+
+  /**
+   * Reserves one verification, password-reset or invitation email for this address, or returns false when it
    * has had EMAIL_LIMIT.perWindow in the last hour. Count and insert run under the same per-address
    * lock as password attempts, so parallel requests cannot send more than the limit.
    */

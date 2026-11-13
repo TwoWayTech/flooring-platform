@@ -70,6 +70,21 @@ async function sendVerification(deps: AuthDeps, to: string, url: string): Promis
 }
 
 /**
+ * Sends a password-reset link (docs/specs/settings-users-access.md). It shares the 3-an-hour
+ * per-address limit with verification emails, and a skipped email is silent, so the answer never
+ * shows whether an address has an account or hit the limit.
+ */
+async function sendReset(deps: AuthDeps, to: string, url: string): Promise<void> {
+  if (!(await deps.attempts.reserveEmail(to))) return;
+  await deps.email.send({
+    from: deps.emailFrom,
+    to: [to],
+    subject: "Reset your password",
+    text: `Someone asked to reset the password for this email address. To choose a new password, open:\n\n${url}\n\nThe link works for one hour. If it was not you, ignore this email; your password stays the same.`,
+  });
+}
+
+/**
  * The company a new session opens. A session made to replace another (after an authenticator app
  * is confirmed) keeps the company that was open, when the host and memberships still allow it;
  * otherwise the host's company, the user's only company, or none until they choose (ADR 0029).
@@ -113,6 +128,12 @@ export function createAuth(deps: AuthDeps) {
       disableSignUp: true,
       requireEmailVerification: true,
       minPasswordLength: MIN_PASSWORD_LENGTH,
+      // Password reset (owner's work queue, 2026-11-13): one-hour links, every session ended.
+      resetPasswordTokenExpiresIn: 60 * 60,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        void sendReset(deps, user.email, url).catch(() => deps.logError("Could not send a password-reset email."));
+      },
     },
     emailVerification: {
       sendOnSignIn: true,
@@ -140,6 +161,8 @@ export function createAuth(deps: AuthDeps) {
         "/two-factor/verify-totp": SIGN_IN_RATE,
         "/two-factor/verify-backup-code": SIGN_IN_RATE,
         "/passkey/verify-authentication": SIGN_IN_RATE,
+        "/request-password-reset": SIGN_IN_RATE,
+        "/reset-password": SIGN_IN_RATE,
         // Every signed-in endpoint that checks the password, /verify-password among them.
         ...Object.fromEntries(SESSION_PASSWORD_PATHS.map((path) => [path, SIGN_IN_RATE])),
       },

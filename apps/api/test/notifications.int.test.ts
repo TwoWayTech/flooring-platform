@@ -1,5 +1,5 @@
 import { notifications, outboxMessages, rolePermissions, roles, userRoles } from "@workspace/db/company";
-import { authAttempts, rateLimit, tenants } from "@workspace/db/control";
+import { authAttempts, rateLimit, tenants, userInvitations } from "@workspace/db/control";
 import { eq } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -233,6 +233,17 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     await harness.control.db
       .insert(rateLimit)
       .values({ key: `cleanup-${subject}`, count: 1, lastRequest: old.getTime() });
+    // Invitations: one closed long ago goes, an open one stays (ADR 0034).
+    const invited = uuidv7();
+    await harness.control.db.insert(userInvitations).values([
+      { tenantId: company.id, userId: invited, tokenHash: `old-${subject}`, expiresAt: old, revokedAt: old },
+      {
+        tenantId: company.id,
+        userId: invited,
+        tokenHash: `open-${subject}`,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
+    ]);
     await harness.app.get(JobsService).send(CLEANUP_QUEUE, {});
     await eventually(async () => {
       const left = await harness.control.db.select().from(authAttempts).where(eq(authAttempts.subject, subject));
@@ -250,6 +261,11 @@ describe("notifications core (needs the local PostgreSQL)", () => {
         .from(rateLimit)
         .where(eq(rateLimit.key, `cleanup-${subject}`)),
     ).toHaveLength(0);
+    const invitations = await harness.control.db
+      .select({ tokenHash: userInvitations.tokenHash })
+      .from(userInvitations)
+      .where(eq(userInvitations.userId, invited));
+    expect(invitations.map((row) => row.tokenHash)).toEqual([`open-${subject}`]);
   });
 
   it("stores in-app notes for the people named, not the actor", async () => {

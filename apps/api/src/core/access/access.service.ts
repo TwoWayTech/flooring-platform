@@ -11,6 +11,7 @@ import {
   enabledModules,
   planModulesOf,
   resolveAccess,
+  roleRequiresMfa,
   type DataScope,
   type ModuleKey,
   type PermissionKey,
@@ -26,6 +27,8 @@ export interface RequestAccess {
   /** Effective permissions = role permissions ∩ company ceiling ∩ enabled modules (CLAUDE.md rule 4). */
   permissions: ReadonlySet<PermissionKey>;
   modules: readonly ModuleKey[];
+  /** The company's permission ceiling, for the no-escalation rules (spec rule 11). */
+  ceiling: readonly PermissionKey[];
   /** The widest data scope across the person's roles. */
   dataScope: DataScope;
   isOwner: boolean;
@@ -36,6 +39,11 @@ export interface RequestAccess {
   roleNames: readonly string[];
   /** Whether the person's profile in this company is disabled; a disabled person holds nothing. */
   disabled: boolean;
+  /**
+   * Whether any role the person holds needs MFA by content (packages/shared `roleRequiresMfa`).
+   * PermissionGuard checks it on every request, as a backstop for `member.role` (PR #11 review).
+   */
+  mfaRequired: boolean;
 }
 
 /**
@@ -62,12 +70,14 @@ export class AccessService {
     return {
       permissions: access.permissions,
       modules,
+      ceiling,
       dataScope: access.dataScope,
       isOwner: access.isOwner && !held.disabled,
       userId: tenant.userId,
       branchId: held.branchId,
       roleNames: held.names,
       disabled: held.disabled,
+      mfaRequired: !held.disabled && held.roles.some(roleRequiresMfa),
     };
   }
 

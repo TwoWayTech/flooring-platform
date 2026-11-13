@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 is `fix/platform-owner-decisions`, PR #10.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`); task 2 is `feat/settings-users-roles`, PR #11.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`) and PR #9 (`38bf221`).
-- **Last session log:** docs/sessions/2026-11-13-1200-a-owner-decisions.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`) and PR #10 (`a1b0840`).
+- **Last session log:** docs/sessions/2026-11-13-1600-a-users-roles-access.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -68,23 +68,22 @@
   - `notify` with the Outbox worker;
   - in-app notes and Outbox endpoints;
   - the daily 30-day cleanup of sign-in security data.
-- [x] The owner's decisions of 2026-11-13, on `fix/platform-owner-decisions` (PR #10, ADR 0033):
+- [x] The owner's decisions of 2026-11-13, merged to main in PR #10 (`a1b0840`, ADR 0033):
   - the company life cycle (lapsed plan 14 days full, 30 read-only, then locked; an unpaid trial that is suspended, cancelled or ended is read-only for 30 days, then locked; data is never deleted);
   - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
   - Retry keeps a message's scheduled time;
-  - the explicit `gh pr` allows.
+  - the explicit `gh pr` allows and the merge and push guard hook.
+- [x] P10 part 2 on `feat/settings-users-roles` (PR #11, ADR 0034; draft spec docs/specs/settings-users-access.md):
+  - Users and Roles API with no-escalation, holder dominance, data scope, the last Owner, seats and audit;
+  - server-side step-up with a race-safe lockout;
+  - MFA by role content, with a per-request backstop;
+  - invitations, password reset, MFA reset and support-access grants;
+  - Users, Roles and the audit log on the API in api mode, with forgot, reset and accept-invitation pages.
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 2, A:** P10 part 2 with Settings → Users and Roles:
-   - no-escalation on grants;
-   - the active-Owner rule;
-   - server-side step-up MFA;
-   - support-access grants;
-   - invitations, whose acceptance sets the password and MFA;
-   - password reset with the 3-per-hour email limit;
-   - `member.role` sync with MFA decided by role content.
-2. **Tasks 3 to 5, A:** P11 inventory, then purchasing, then sales with the tax engine.
+1. **Task 3, A:** P11 inventory (docs/product-spec/inventory.md).
+2. **Tasks 4 and 5, A:** P11 purchasing, then sales with the tax engine.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -98,14 +97,26 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `pnpm db:migrate` parses every provider setting; check only the email section.
   - Keep the full migration error out of `platform_audit_log.after` (it can quote a row value); store the SQLSTATE code there and the text only in `last_error`.
   - Optionally make the merge and push guard refuse `GIT_CONFIG_*` variables and `-c remote.*`/`-c push.*`.
+- **PR #11 security review (none blocking):**
+  - **First:** keep a branch-scoped admin's branch changes and invitations to their own branch, and refuse changes to one's own branch unless an Owner or of scope `all` (third review, medium).
+  - Better Auth's password reset gives an invited account a password, which sidesteps the invitation's expiry; hold the membership until acceptance, or refuse `/reset-password` for an account with no password (third review).
+  - Consider adding `settings.import.manage` (and perhaps `settings.company.manage`) to `MFA_REQUIRED_KEYS` (third review).
+  - Inviting an address that already has an account gives the membership and roles at once, and the users list shows that account's own name. Hold the membership until acceptance, or treat `invited` profiles as holding nothing, and show the typed name until then.
+  - Write an `audit_log` entry when an invitation is accepted.
+  - Route the public invitation endpoints through the auth proxy, so their per-IP limit uses the client IP the web proxy vouches for (today the API sees the web server's IP).
+  - Passkey-only step-up counts a session under 5 minutes old; record how the session signed in (a passkey) and accept only that.
+  - Write support-access requests to the company's `audit_log` as well, and limit how many requests an admin may send.
+  - An invitation's control-database rows are committed before the company profile; clean up a membership whose profile was never written.
+  - A role edit may remove keys from a role whose other holders hold more than the editor; this only reduces access. Note it in the spec or check it.
+  - Better Auth does not mark a TOTP code used, so a code seen at sign-in works for step-up within its 30 seconds.
+  - In api mode the Users screen's branch picker still lists the demo's branches, so the API stores no branch for them until Settings → Locations moves.
+  - The provisioned owner's profile starts `invited` and has no password: owner invitations at provisioning come with the platform-admin screens (P17).
 - **CHECK constraints on status columns:** `tenants.status` and `tenant_subscriptions.status` have no CHECK constraint. `companyPhase` now locks a status it does not know, but a constraint would stop a bad value being written (a change to existing tables, so it waits for the owner; PR #10 review).
 - **Pools after a provider move:** `TenantConnectionService` caches a pool per company and never re-reads the connection URL. `move-tenant` must clear the company's pool when it ends maintenance (PR #10 review).
 - **Trial with no subscription stays `full`:** until plan prices exist, a fresh trial has no end. Revisit when plans are priced (PR #10 review).
 - **"Paid" in the life cycle:** `companyPhase` counts a cancelled subscription as paid when its price is above zero. The billing webhook must store trial rows with price `0`, or record payment in its own column such as `first_paid_at` (PR #10 security review).
 - **move-tenant must set `maintenance_reason = 'move'`** when it turns maintenance mode on, so a later migration never ends it (ADR 0033).
 - **Maintenance and suspended screens:** the web app shows the API's message today. Give it a full-page "under maintenance" and "account suspended" screen with the platform-admin screens (ADR 0033).
-- **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
-- **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
@@ -148,6 +159,5 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
-- **Password reset and invitation acceptance:** the blueprint names the routes (p31), but no spec exists yet. They come later with Settings → Users.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).
 - **`.env.example`:** Claude Code is denied `.env.*` files, so docs/environment.md lists the variables instead. The owner's `.env.local` exists with `BETTER_AUTH_SECRET` and `SEED_USER_PASSWORD`, so this is not a blocker.

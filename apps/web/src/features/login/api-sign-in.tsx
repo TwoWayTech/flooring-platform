@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { MailCheck } from "lucide-react";
@@ -181,6 +182,9 @@ function PasswordForm({ notice, onVerifyEmail, onSecondFactor, onSignedIn }: Pas
       <Button type="submit" size="lg" disabled={pending} className="h-10">
         {pending ? "Signing in" : "Sign in"}
       </Button>
+      <Link href="/forgot-password" className="text-brand-ink self-start text-sm underline-offset-4 hover:underline">
+        Forgot your password?
+      </Link>
     </form>
   );
 }

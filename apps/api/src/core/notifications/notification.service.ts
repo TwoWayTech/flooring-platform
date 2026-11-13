@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { notificationRules, notifications, outboxMessages, settings } from "@workspace/db/company";
-import { authAttempts, rateLimit, tenantBranding, tenants } from "@workspace/db/control";
+import { authAttempts, rateLimit, tenantBranding, tenants, userInvitations } from "@workspace/db/control";
 import type { EmailProvider } from "@workspace/providers";
 import {
   effectiveRule,
@@ -394,6 +394,16 @@ export class NotificationService implements OnApplicationBootstrap {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000);
     await this.control.db.delete(authAttempts).where(lt(authAttempts.createdAt, cutoff));
     await this.control.db.delete(rateLimit).where(lt(rateLimit.lastRequest, cutoff.getTime()));
+    // Closed invitations (accepted, revoked or expired) go 30 days after they closed (ADR 0034).
+    await this.control.db
+      .delete(userInvitations)
+      .where(
+        or(
+          lt(userInvitations.acceptedAt, cutoff),
+          lt(userInvitations.revokedAt, cutoff),
+          lt(userInvitations.expiresAt, cutoff),
+        ),
+      );
   }
 
   private async rulesFor(db: CompanyDb, event: NotificationEventKey): Promise<NotificationRule[]> {

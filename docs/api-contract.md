@@ -87,6 +87,30 @@ Every company route declares what it needs: `@RequirePermission(...keys)` (any o
 
 **Audit.** Every successful company write (POST, PUT, PATCH, DELETE) writes an `audit_log` entry: the module's own, with before and after, or the API's safety-net entry (category `data`, the route and the record id). The log is append-only: the database refuses UPDATE, DELETE and TRUNCATE.
 
+## Users, roles, step-up, invitations and support access (real build, P10 part 2, ADR 0034)
+
+Draft spec: docs/specs/settings-users-access.md.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /users` | `settings.users.view` or `settings.users.manage` | Everyone with a profile in the company (`User`) |
+| `POST /users/invite` | `settings.users.manage` | `{ name, email, title, roleIds, branchId }`: account, membership, profile `invited`, roles, and an emailed link (7 days, once). 409 `seat_limit`, `already_member`; 403 `not_held`, `owner_only`; 429 `email_limit` |
+| `PATCH /users/:id` | `settings.users.manage` | `{ roleIds?, status?, branchId?, title?, mfaEnrolled?: false }`. Roles and MFA reset need a step-up. 409 `last_owner`, `shared_account` (MFA reset of an account in another company) |
+| `GET /roles` | `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage` | The company's roles with their keys |
+| `POST /roles`, `PUT /roles/:id` | `settings.roles.manage` and a step-up | `{ name, description, dataScope, permissions }`. 403 `not_held` (adds a key the editor lacks), `owner_locked` |
+| `POST /roles/:id/reset` | `settings.roles.manage` and a step-up | Back to the shipped template, limited to the products. 409 `not_default` |
+| `DELETE /roles/:id` | `settings.roles.manage` and a step-up | 409 `system_role`, `role_in_use` |
+| `GET /audit` | `settings.audit.view` | The newest 500 audit entries (`AuditEntry`) |
+| `POST /auth/step-up` | A session (no company needed) | `{ code }`: a TOTP or backup code; valid 5 minutes for this session. 403 `step_up_invalid`, `step_up_mfa_required`; 429 `step_up_locked` after 5 wrong codes in 15 minutes |
+| `GET /public/invitations/:token` | Public, 10 a minute per IP | `{ email, companyName, needsPassword }`; 410 `invitation_invalid` |
+| `POST /public/invitations/accept` | Public, 10 a minute per IP | `{ token, password? }`: sets the password of a new account (12 to 128 characters), verifies the email, activates the profile. 400 `weak_password`; 410 `invitation_invalid` |
+| `GET /support-grants` | The Owner role | The company's support-access requests and their status |
+| `POST /support-grants/:id/approve` | The Owner role and a step-up | 409 `grant_closed` |
+| `POST /support-grants/:id/revoke` | The Owner role | 409 `grant_closed` |
+| `POST /platform/support-grants` | An active platform admin's session | `{ companyId, reason, hours ≤ 72 }` |
+
+A route that needs a step-up answers 403 `step_up_required` without one from the last 5 minutes. Someone whose only factor is a passkey steps up by signing in again with it: a session under 5 minutes old counts. Password reset is Better Auth's `/api/auth/request-password-reset` and `/api/auth/reset-password` (one-hour links, every session ended; 3 emails an hour per address, shared with verification and invitation emails).
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.

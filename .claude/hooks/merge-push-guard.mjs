@@ -42,7 +42,8 @@ function words(args) {
   return args
     .split(/\s+/)
     .map((word) => word.replace(/^["']+|["')]+$/g, ""))
-    .filter(Boolean);
+    // Shell redirections such as `2>&1` or `>/dev/null` are not push arguments.
+    .filter((word) => word && !/^\d*[<>]/.test(word));
 }
 
 /** Why a push is refused, or null. */

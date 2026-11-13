@@ -4,6 +4,7 @@ import {
   PRODUCT_MODULES,
   canAssignRole,
   canGrant,
+  canManageHolder,
   dataScope,
   effectivePermissions,
   escalations,
@@ -12,6 +13,7 @@ import {
   permissionsForModules,
   resolveAccess,
   roleTemplate,
+  scopeWidens,
   SENSITIVE,
   type ModuleKey,
   type PermissionKey,
@@ -131,5 +133,30 @@ describe("default roles", () => {
     ] as const) {
       for (const p of roleTemplate(key).permissions) expect(permissionDef(p), `${key}: ${p}`).toBeDefined();
     }
+  });
+});
+
+describe("data scope and managing holders (PR #11 security review)", () => {
+  const branchAdmin = resolveAccess(
+    [{ id: "b", owner: false, dataScope: "branch", permissions: ["settings.roles.manage", "sales.quote.view"] }],
+    FULL_CEILING,
+    FLOORING,
+  );
+
+  it("never lets a non-Owner widen a role's data scope past their own", () => {
+    expect(scopeWidens(branchAdmin, "all", "branch")).toBe(true);
+    expect(scopeWidens(branchAdmin, "all", "all")).toBe(false);
+    expect(scopeWidens(branchAdmin, "own", "all")).toBe(false);
+    const wide: RoleLike = { id: "w", owner: false, dataScope: "all", permissions: ["sales.quote.view"] };
+    expect(canAssignRole(branchAdmin, wide, FULL_CEILING, FLOORING)).toBe("scope_wider");
+    const owner = resolveAccess([asRole("owner")], FULL_CEILING, FLOORING);
+    expect(scopeWidens(owner, "all", "own")).toBe(false);
+  });
+
+  it("lets a person change someone only when they could give every role that person holds", () => {
+    const manager = resolveAccess([asRole("manager")], FULL_CEILING, FLOORING);
+    expect(canManageHolder(manager, [asRole("sales")], FULL_CEILING, FLOORING)).toBeNull();
+    expect(canManageHolder(manager, [asRole("owner")], FULL_CEILING, FLOORING)).toBe("owner_only");
+    expect(canManageHolder(manager, [asRole("accountant")], FULL_CEILING, FLOORING)).not.toBeNull();
   });
 });

@@ -10,7 +10,7 @@ import { SESSION_COOKIE } from "./lib/session/session";
  * answers 401 itself (sign-in, verification links and the session check go through it).
  */
 function isPublic(pathname: string): boolean {
-  if (pathname === "/login" || pathname === "/design") return true;
+  if (["/login", "/design", "/forgot-password", "/reset-password", "/accept-invite"].includes(pathname)) return true;
   if (isDemoMode()) return pathname.startsWith("/api/demo/");
   return pathname.startsWith(`${AUTH_BASE_PATH}/`) || pathname.startsWith(`${API_PROXY_PATH}/`);
 }

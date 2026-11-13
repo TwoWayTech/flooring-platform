@@ -39,7 +39,7 @@ export function RolesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [unsaved, setUnsaved] = useState<Role | null>(null);
   const data = useApiQuery(async (client) => {
-    const [roles, users] = await Promise.all([client.list("roles"), client.list("users")]);
+    const [roles, users] = await Promise.all([client.listSettingsRoles(), client.listSettingsUsers()]);
     return { roles, users };
   }, []);
 

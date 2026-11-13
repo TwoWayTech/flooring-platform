@@ -10,6 +10,7 @@ import { NotificationsModule } from "./core/notifications/notifications.module";
 import { AccessModule } from "./core/access/access.module";
 import { RequestPipelineModule } from "./core/request-pipeline.module";
 import { TenancyModule } from "./core/tenancy/tenancy.module";
+import { UsersModule } from "./modules/users/users.module";
 
 /**
  * The API's root module. core/ holds what every request passes through (config, database,
@@ -36,6 +37,7 @@ export class AppModule {
         JobsModule,
         NotificationsModule,
         BrandingModule,
+        UsersModule,
         ...extraModules,
       ],
       controllers: [HealthController],
