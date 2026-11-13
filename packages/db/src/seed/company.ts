@@ -707,6 +707,8 @@ async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
       .onConflictDoNothing();
   }
   const held = fixtures.reservations.filter((reservation) => kept.has(reservation.invoiceId));
+  // A hold is made by issuing its invoice, so the invoice's author made it.
+  const authorOf = new Map(billed.map((invoice) => [invoice.id, seededUserId(invoice.createdBy)]));
   if (held.length > 0) {
     await tx
       .insert(reservations)
@@ -724,6 +726,7 @@ async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
           closedAt: reservation.closedAt ? utc(reservation.closedAt) : null,
           overrideReason: reservation.overrideReason,
           createdAt: utc(reservation.createdAt),
+          createdBy: authorOf.get(reservation.invoiceId) ?? null,
         })),
       )
       .onConflictDoNothing();
