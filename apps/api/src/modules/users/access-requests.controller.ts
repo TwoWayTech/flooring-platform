@@ -9,7 +9,7 @@ import type { AuthSession } from "../../core/auth/session.service";
 import { Public, SessionOnly } from "../../core/tenancy/access";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { InvitationsService } from "./invitations.service";
-import { actorOf, parse } from "./request-helpers";
+import { actorOf, parse } from "../../core/access/request-actor";
 import { MAX_SUPPORT_HOURS, SupportGrantsService } from "./support-grants.service";
 
 /** A token as emailed: 43 URL-safe characters (32 bytes); anything else is not a token. */
