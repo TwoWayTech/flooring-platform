@@ -189,8 +189,8 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /ledger/trial-balance?through=` | `reports.financial.view` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
-| `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage` | `{ closedThrough }`, the last closed day or null |
+| `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
+| `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
 
 ## Notifications and Outbox (real build, ADR 0032)

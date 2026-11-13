@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Inject, Post, Query, Req } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import type { Request } from "express";
 import { z } from "zod";
@@ -16,6 +16,16 @@ import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-con
 import { companyToday, DAY, refuse } from "../sales/sales-common";
 
 const THROUGH = z.object({ through: DAY.optional() });
+
+/**
+ * The books are company-wide totals and cannot be cut to one branch, so they are for people whose
+ * data scope is the whole company (CLAUDE.md rule 3; PR #16 review). Anyone else gets 403.
+ */
+function requireCompanyWide(access: RequestAccess): void {
+  if (access.dataScope !== "all") {
+    throw new ForbiddenException({ code: "forbidden", message: "The books cover the whole company." });
+  }
+}
 const CLOSE = z.object({ through: DAY, note: z.string().max(500) });
 
 /**
@@ -35,7 +45,12 @@ export class LedgerController {
   /** GET /ledger/trial-balance?through=: every account's totals, and whether debits equal credits. */
   @Get("trial-balance")
   @RequirePermission("reports.financial.view")
-  async trialBalance(@CurrentTenant() tenant: TenantContext, @Query() query: unknown) {
+  async trialBalance(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @Query() query: unknown,
+  ) {
+    requireCompanyWide(access);
     const { through } = parse(THROUGH, query);
     return this.ledger.trialBalance(await this.tenancy.db(tenant), through);
   }
@@ -43,7 +58,8 @@ export class LedgerController {
   /** GET /ledger/period-close: the last closed day, or null. */
   @Get("period-close")
   @RequirePermission("reports.financial.view", "settings.company.manage")
-  async closedThrough(@CurrentTenant() tenant: TenantContext) {
+  async closedThrough(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireCompanyWide(access);
     return { closedThrough: await this.ledger.closedThrough(await this.tenancy.db(tenant)) };
   }
 
@@ -59,13 +75,16 @@ export class LedgerController {
     @Body() body: unknown,
   ) {
     const { through, note } = parse(CLOSE, body);
-    // Closing a day that has not happened would stop all recording until someone reopens it.
-    if (through > (await companyToday(this.control.db, tenant))) throw refuse("Close only a day that has passed.");
+    requireCompanyWide(access);
+    // Closing a day that has not come would stop all recording until someone reopens it. Today may
+    // be closed at the end of the day.
+    if (through > (await companyToday(this.control.db, tenant))) {
+      throw refuse("Close only today or an earlier day.");
+    }
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);
-    const before = await this.ledger.closedThrough(db);
     await db.transaction(async (tx) => {
-      await this.ledger.closePeriod(tx, through, note.trim(), access.userId);
+      const before = await this.ledger.closePeriod(tx, through, note.trim(), access.userId);
       await this.auditLog.record(
         tenant,
         actor.audit,

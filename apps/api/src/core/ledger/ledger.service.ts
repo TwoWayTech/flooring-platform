@@ -169,7 +169,7 @@ export class LedgerService {
 
   /** Every account's debits, credits and balance through a day (or all time), and their totals. */
   async trialBalance(db: CompanyDb, through?: string): Promise<TrialBalance> {
-    await this.accounts(db);
+    // A read only: accounts are made by the first posting, so a read-only company stays unchanged.
     const rows = await db
       .select({
         key: ledgerAccounts.key,
@@ -208,10 +208,13 @@ export class LedgerService {
   /**
    * Closes the books through a day (or reopens to an earlier one); the newest close decides. It
    * waits for postings in flight, which hold the period lock shared, so none slips in behind it.
+   * Returns the day that was closed before, read under the lock.
    */
-  async closePeriod(tx: CompanyDb, through: string, note: string, by: string): Promise<void> {
+  async closePeriod(tx: CompanyDb, through: string, note: string, by: string): Promise<string | null> {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ledger:period'))`);
+    const before = await this.closedThrough(tx);
     await tx.insert(periodCloses).values({ id: uuidv7(), closedThrough: through, note, createdBy: by });
+    return before;
   }
 
   private async assertOpen(tx: CompanyDb, date: string): Promise<void> {

@@ -117,6 +117,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - A pending payment dated in a closed period can't be confirmed (409 `period_closed`). Decide whether a late confirm should post on the review day.
   - Consider adding `settings.company.manage` (period close) to `MFA_REQUIRED_KEYS`. Owners have MFA anyway.
   - Once part 3 posts cost of goods, gate the trial balance's cost and margin rows on `sales.margin.view_sensitive`.
+  - A credit note's settlement is found by its reason text (`Credit note CR-…`). Add a `credit_note_id` column on `invoice_adjustments`; this alters an existing table, so it needs the owner's approval.
+  - Soft-deleting a default account would break the postings that use it. Handle this with the chart-of-accounts screen, which should refuse deleting a keyed account.
+  - Closes are ordered by UUID v7 from the API clock. With several API instances, order by a database sequence instead.
+  - Add a property test that reconciles the ledger's receivables and customer credit with the documents after random event sequences.
+  - A payment on a seeded or imported invoice that never posted drives that customer's receivable negative. The import must post its opening-balance entry before imported invoices take payments.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.

@@ -54,7 +54,7 @@
 - **Concurrency:** posting holds a shared advisory lock and closing a period an exclusive one, so no posting slips in behind a close. Closes are ordered by id, because UUID v7 sorts by time. A period can't be closed through a day that hasn't come yet.
 - **No lines added later:** lines may only join an entry created in the same transaction.
 - **Routes** (modules/finance):
-  - `GET /ledger/trial-balance?through=` needs `reports.financial.view`.
+  - `GET /ledger/trial-balance?through=` needs `reports.financial.view` and company-wide data scope, because the books cannot be cut to one branch (PR #16 review). It writes nothing.
   - `GET /ledger/period-close` shows the last closed day.
   - `POST /ledger/period-close` needs `settings.company.manage` (Owner) and is audited as "Closed books" or "Reopened books".
 - **Not in this part:**

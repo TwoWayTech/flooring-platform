@@ -49,7 +49,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   let otherWarehouse = "";
   let otherTile = "";
   let tile = "";
-  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "" };
+  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "", manager: "" };
 
   function call(method: "get" | "post", path: string, cookie: string) {
     return request(harness.app.getHttpServer())
@@ -219,6 +219,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     }
     const emails = {
       dispatcher: await harness.addUser({ companyIds: [company.id], roles: ["dispatcher"] }),
+      manager: await harness.addUser({ companyIds: [company.id], roles: ["manager"] }),
       salesA: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       salesB: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
@@ -232,6 +233,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     cookies.owner = await enrolled(emails.owner);
     cookies.otherSales = await harness.signIn(emails.otherSales);
     cookies.dispatcher = await harness.signIn(emails.dispatcher);
+    cookies.manager = await harness.signIn(emails.manager);
   }, 120_000);
 
   afterAll(async () => {
@@ -493,6 +495,9 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       .send({ through: "2000-01-01", note: "Reopened" })
       .expect(201);
     expect((await call("get", "/ledger/trial-balance", cookies.salesA)).status).toBe(403);
+    // A branch-scoped role with the report key still may not see company-wide books.
+    expect((await call("get", "/ledger/trial-balance", cookies.manager)).status).toBe(403);
+    expect((await call("get", "/ledger/trial-balance?through=2026-02-30", cookies.owner)).status).toBe(400);
   });
 
   it("keeps payments, refunds and proof from someone who may see invoices but not money", async () => {

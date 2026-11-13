@@ -8,7 +8,13 @@ import type { RequestAccess } from "../../core/access/access.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 
 /** A day as the screens send it, `yyyy-MM-dd`. */
-export const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date.");
+export const DAY = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date.")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+  }, "Enter a real date.");
 
 /** A switched-off feature is hidden everywhere, the API included (CLAUDE.md rule 13): 404. */
 export function requireFeature(key: FeatureKey): void {
