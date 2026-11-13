@@ -1,5 +1,6 @@
 import type { AccountType } from "@workspace/shared";
-import { boolean, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, index, pgTable, text, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { appendOnly, business, day, money } from "../columns";
 import { customers } from "./customers";
 import { locations } from "./organization";
@@ -19,8 +20,11 @@ export const ledgerAccounts = pgTable(
     active: boolean().notNull().default(true),
   },
   (table) => [
+    // A key stays unique even on a deleted account, because postings find accounts by key.
     uniqueIndex("ledger_accounts_key_uidx").on(table.key),
-    uniqueIndex("ledger_accounts_code_uidx").on(table.code),
+    uniqueIndex("ledger_accounts_code_uidx")
+      .on(table.code)
+      .where(sql`${table.deletedAt} is null`),
   ],
 );
 
@@ -41,11 +45,12 @@ export const journalEntries = pgTable(
     sourceNumber: text().notNull(),
     memo: text().notNull().default(""),
     /** Set on a reversing entry: the entry it undoes. */
-    reversesId: uuid(),
+    reversesId: uuid().references((): AnyPgColumn => journalEntries.id),
   },
   (table) => [
     uniqueIndex("journal_entries_source_event_uidx").on(table.sourceType, table.sourceId, table.event),
     index("journal_entries_date_idx").on(table.date),
+    index("journal_entries_reverses_idx").on(table.reversesId),
   ],
 );
 
@@ -68,6 +73,12 @@ export const journalLines = pgTable(
   (table) => [
     index("journal_lines_entry_idx").on(table.entryId),
     index("journal_lines_account_idx").on(table.accountId),
+    index("journal_lines_location_idx").on(table.locationId),
+    index("journal_lines_customer_idx").on(table.customerId),
+    check(
+      "journal_lines_one_sided",
+      sql`${table.debit} >= 0 and ${table.credit} >= 0 and ((${table.debit} > 0) <> (${table.credit} > 0))`,
+    ),
   ],
 );
 

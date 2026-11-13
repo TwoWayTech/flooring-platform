@@ -1,5 +1,5 @@
 {
-  "id": "53024c8b-706d-4ad6-930e-203a4c11877e",
+  "id": "e2f8f7d7-baeb-4403-a9db-03adf3ebe36f",
   "prevId": "532e4e18-58b3-47bf-9991-07c5433ab53b",
   "version": "7",
   "dialect": "postgresql",
@@ -6482,9 +6482,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "journal_entries_reverses_idx": {
+          "name": "journal_entries_reverses_idx",
+          "columns": [
+            {
+              "expression": "reverses_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "journal_entries_reverses_id_journal_entries_id_fk": {
+          "name": "journal_entries_reverses_id_journal_entries_id_fk",
+          "tableFrom": "journal_entries",
+          "tableTo": "journal_entries",
+          "columnsFrom": [
+            "reverses_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -6588,6 +6617,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "journal_lines_location_idx": {
+          "name": "journal_lines_location_idx",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "journal_lines_customer_idx": {
+          "name": "journal_lines_customer_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6647,7 +6706,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "journal_lines_one_sided": {
+          "name": "journal_lines_one_sided",
+          "value": "\"journal_lines\".\"debit\" >= 0 and \"journal_lines\".\"credit\" >= 0 and ((\"journal_lines\".\"debit\" > 0) <> (\"journal_lines\".\"credit\" > 0))"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.ledger_accounts": {
@@ -6745,6 +6809,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"ledger_accounts\".\"deleted_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}

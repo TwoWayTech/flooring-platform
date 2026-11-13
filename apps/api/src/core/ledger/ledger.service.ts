@@ -67,7 +67,8 @@ export class LedgerService {
     const [row] = await db
       .select({ through: periodCloses.closedThrough })
       .from(periodCloses)
-      .orderBy(desc(periodCloses.createdAt), desc(periodCloses.id))
+      // UUID v7 ids sort by time; created_at is the transaction's start, so it is not the order.
+      .orderBy(desc(periodCloses.id))
       .limit(1);
     return row?.through ?? null;
   }
@@ -183,12 +184,18 @@ export class LedgerService {
     };
   }
 
-  /** Closes the books through a day (or reopens to an earlier one); the newest close decides. */
+  /**
+   * Closes the books through a day (or reopens to an earlier one); the newest close decides. It
+   * waits for postings in flight, which hold the period lock shared, so none slips in behind it.
+   */
   async closePeriod(tx: CompanyDb, through: string, note: string, by: string): Promise<void> {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ledger:period'))`);
     await tx.insert(periodCloses).values({ id: uuidv7(), closedThrough: through, note, createdBy: by });
   }
 
   private async assertOpen(tx: CompanyDb, date: string): Promise<void> {
+    // Shared with other postings, exclusive against a close, until this transaction ends.
+    await tx.execute(sql`select pg_advisory_xact_lock_shared(hashtext('ledger:period'))`);
     const closed = await this.closedThrough(tx);
     if (closed && date <= closed) {
       throw refused("period_closed", `The books are closed through ${closed}, so nothing can be recorded on ${date}.`);

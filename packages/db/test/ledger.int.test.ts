@@ -74,6 +74,19 @@ describe("ledger tables (needs the local PostgreSQL)", () => {
     ).rejects.toThrow(/one_sided/);
   });
 
+  it("never adds lines to an entry posted earlier, even in balance", async () => {
+    const id = await post("2026-11-03", [
+      [cash, "2.00", "0"],
+      [sales, "0", "2.00"],
+    ]);
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`insert into journal_lines (id, entry_id, account_id, debit, credit) values
+          (${uuidv7()}, ${id}, ${cash}, 5, 0), (${uuidv7()}, ${id}, ${sales}, 0, 5)`;
+      }),
+    ).rejects.toThrow(/already posted/);
+  });
+
   it("never changes or deletes what was posted", async () => {
     await expect(sql`update journal_lines set debit = debit + 1`).rejects.toThrow(/append-only/);
     await expect(sql`delete from journal_entries`).rejects.toThrow(/append-only/);
@@ -93,5 +106,11 @@ describe("ledger tables (needs the local PostgreSQL)", () => {
       [sales, "0", "1.00"],
     ]);
     await expect(sql`update period_closes set closed_through = '2026-01-01'`).rejects.toThrow(/append-only/);
+    // Reopening is a newer close with an earlier day; the newest decides.
+    await sql`insert into period_closes (id, closed_through) values (${uuidv7()}, '2026-01-01')`;
+    await post("2026-10-31", [
+      [cash, "1.00", "0"],
+      [sales, "0", "1.00"],
+    ]);
   });
 });
