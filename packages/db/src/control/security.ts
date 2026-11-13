@@ -1,12 +1,22 @@
-import { index, pgTable, text } from "drizzle-orm/pg-core";
-import { appendOnly } from "../columns";
+import { index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { appendOnly, at, business, userRef } from "../columns";
+import { tenants } from "./tenants";
 
 /**
  * What an auth attempt row records; see AttemptLog in apps/api for how each kind is counted.
  * `password_attempt` is written before the password is checked and counts as a failure until a
  * later `password_ok` for the same address, so parallel guesses cannot slip past the lockout.
  */
-export type AuthAttemptKind = "password_attempt" | "password_ok" | "verification_email";
+export type AuthAttemptKind =
+  | "password_attempt"
+  | "password_ok"
+  | "verification_email"
+  /** A step-up code that passed; the subject is the session id (docs/specs/settings-users-access.md). */
+  | "step_up_ok"
+  /** A step-up code that failed; the subject is the user id, for the step-up lockout. */
+  | "step_up_failed"
+  /** An invitation acceptance or lookup, per IP; the subject is the IP. */
+  | "invitation_attempt";
 
 /**
  * Password attempts and sent auth emails, append-only, for the password lockout and the
@@ -23,4 +33,28 @@ export const authAttempts = pgTable(
     ip: text(),
   },
   (table) => [index("auth_attempts_subject_kind_idx").on(table.subject, table.kind, table.createdAt)],
+);
+
+/**
+ * An invitation to join a company (docs/specs/settings-users-access.md). Only the SHA-256 of the
+ * emailed token is stored, so a copy of this table cannot accept anything. A token is used once
+ * and expires after 7 days; inviting the same person again revokes the open one.
+ */
+export const userInvitations = pgTable(
+  "user_invitations",
+  {
+    ...business(),
+    tenantId: uuid()
+      .notNull()
+      .references(() => tenants.id),
+    userId: userRef().notNull(),
+    tokenHash: text().notNull(),
+    expiresAt: at().notNull(),
+    acceptedAt: at(),
+    revokedAt: at(),
+  },
+  (table) => [
+    uniqueIndex("user_invitations_token_uidx").on(table.tokenHash),
+    index("user_invitations_user_idx").on(table.tenantId, table.userId),
+  ],
 );
