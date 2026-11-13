@@ -73,6 +73,7 @@
   - maintenance mode on a failed migration (no reads or writes, an audit row, and an email to the platform admins);
   - Retry keeps a message's scheduled time;
   - the explicit `gh pr` allows and the merge and push guard hook.
+- [x] Inventory part 1 on `feat/inventory-catalog` (ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
 - [x] P10 part 2, merged to main in PR #11 (`2ddf5bc`, ADR 0034; draft spec docs/specs/settings-users-access.md):
   - Users and Roles API with no-escalation, holder dominance, data scope, the last Owner, seats and audit;
   - server-side step-up with a race-safe lockout;
@@ -82,7 +83,7 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 3, A:** P11 inventory (docs/product-spec/inventory.md).
+1. **Task 3, A:** P11 inventory part 1 (ADR 0035), in review. Part 2 (reservations, cut or issue, Ready to cut, quick invoice from Cut roll) moves with sales.
 2. **Tasks 4 and 5, A:** P11 purchasing, then sales with the tax engine.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
