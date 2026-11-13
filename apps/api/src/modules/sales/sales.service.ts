@@ -39,7 +39,7 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { loadLocations, loadProducts } from "../inventory/inventory-records";
+import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** What adding a customer carries (ApiClient `NewCustomerInput`). */
@@ -59,8 +59,19 @@ export type CustomerEdit = Pick<
 /** What a quote save carries; status, sending and conversion change only through their own calls. */
 export type QuoteInput = Pick<
   Quote,
-  "customerId" | "locationId" | "jobSite" | "rooms" | "lines" | "depositPct" | "taxOverride" | "notes"
-> & { id?: string; soldAtLocationId?: string };
+  "customerId" | "locationId" | "jobSite" | "rooms" | "lines" | "depositPct" | "notes"
+> & {
+  id?: string;
+  soldAtLocationId?: string;
+  /** A rate changed on the quote, with why; who and when are the server's to record. */
+  taxOverride: RequestedOverride | null;
+};
+
+/** What the screen sends to change tax on one document. */
+export interface RequestedOverride {
+  ratePct: string;
+  reason: string;
+}
 
 /** The first quote number, as in the demo (`Q-2001`). */
 const FIRST_QUOTE = 2001;
@@ -74,6 +85,45 @@ function refuse(message: string): BadRequestException {
 
 function notFound(what: string): NotFoundException {
   return new NotFoundException({ code: "not_found", message: `This ${what} no longer exists.` });
+}
+
+/** What a quote's audit entry keeps: everything that decides its price and tax (CLAUDE.md rule 10). */
+function quoteAudit(
+  quote: Pick<Quote, "customerId" | "locationId" | "jobSite" | "depositPct" | "lines" | "taxOverride"> & {
+    soldAtLocationId?: string;
+  },
+  total: string,
+) {
+  return {
+    customerId: quote.customerId,
+    locationId: quote.locationId,
+    soldAtLocationId: quote.soldAtLocationId ?? null,
+    jobSite: { state: quote.jobSite.state, county: quote.jobSite.county ?? null, zip: quote.jobSite.zip },
+    depositPct: quote.depositPct,
+    taxOverride: quote.taxOverride ? { ratePct: quote.taxOverride.ratePct, reason: quote.taxOverride.reason } : null,
+    lines: quote.lines.map(({ productId, quantity, unitPrice, wastePct }) => ({
+      productId,
+      quantity,
+      unitPrice,
+      wastePct,
+    })),
+    total,
+  };
+}
+
+/** What a customer's audit entry keeps. */
+function customerAudit(
+  customer: Pick<Customer, "type" | "name" | "contactName" | "email" | "phone" | "terms" | "addresses">,
+) {
+  return {
+    type: customer.type,
+    name: customer.name,
+    contactName: customer.contactName,
+    email: customer.email,
+    phone: customer.phone,
+    terms: customer.terms,
+    addresses: customer.addresses.map(({ label, street, city, state, zip }) => ({ label, street, city, state, zip })),
+  };
 }
 
 /** Today in the company's calendar, as the shared rules compare dates (`yyyy-MM-dd`). */
@@ -230,8 +280,8 @@ export class SalesService {
           targetType: "customer",
           targetId: id,
           targetLabel: name,
-          before: { name: before.name, email: before.email, phone: before.phone, addresses: before.addresses.length },
-          after: { name, email: input.email.trim(), phone: input.phone.trim(), addresses: kept.length },
+          before: customerAudit(before),
+          after: customerAudit({ ...input, name, addresses: kept }),
         },
         tx,
       );
@@ -266,6 +316,8 @@ export class SalesService {
       const localization = await loadLocalization(tx);
       const catalog = new Map((await loadProducts(tx)).map((product) => [product.id, product]));
       const lines = this.trustedLines(input.lines, before, catalog);
+      await this.assertReferences(tx, lines, input.soldAtLocationId);
+      this.assertRooms(actor.access, input.rooms, before);
       this.assertWaste(actor.access, lines, before, catalog, localization.documents.defaultWastePct);
       const asked = input.taxOverride
         ? { ratePct: input.taxOverride.ratePct, reason: input.taxOverride.reason.trim() }
@@ -280,20 +332,15 @@ export class SalesService {
         ? (before?.taxOverride ?? null)
         : asked && { ...asked, byName: actor.session.user.name, at: new Date().toISOString() };
       const day = await this.today(tenant);
-      const ctx = taxContextFor(
-        localization,
-        input.jobSite,
-        customer,
-        day,
-        before?.lumpSum ?? false,
-        input.taxOverride,
-      );
+      const ctx = taxContextFor(localization, input.jobSite, customer, day, before?.lumpSum ?? false, taxOverride);
       const total = computeTotals(lines, ctx).total;
 
       const quoteId = before?.id ?? uuidv7();
       const values = {
         customerId: customer.id,
         locationId: location.id,
+        // The quote's branch is its warehouse's, so data scope follows where it is fulfilled from.
+        branchId: location.branchId,
         soldAtLocationId: input.soldAtLocationId ?? null,
         jobSite: input.jobSite,
         depositPct: input.depositPct,
@@ -317,7 +364,6 @@ export class SalesService {
           id: quoteId,
           number,
           salesRepId: actor.access.userId,
-          branchId: location.branchId,
           status: "draft",
           createdBy: actor.access.userId,
         });
@@ -332,8 +378,8 @@ export class SalesService {
           targetType: "quote",
           targetId: quoteId,
           targetLabel: number,
-          before: before ? { total: before.total, lines: before.lines.length } : null,
-          after: { total, lines: lines.length, taxSource: ctx.source },
+          before: before ? quoteAudit(before, before.total) : null,
+          after: { ...quoteAudit({ ...input, lines, taxOverride }, total), taxSource: ctx.source },
         },
         tx,
       );
@@ -455,6 +501,36 @@ export class SalesService {
     });
   }
 
+  /**
+   * A quote's references must be the company's live records: each roll belongs to its line's
+   * product and is not travelling, each line warehouse is a live warehouse, and the sold-at
+   * location, which decides whose revenue the sale is (spec rule 11), is a live location.
+   */
+  private async assertReferences(tx: CompanyDb, lines: readonly DocLine[], soldAt: string | undefined): Promise<void> {
+    const locations = await loadLocations(tx);
+    if (soldAt && !locations.some((location) => location.id === soldAt)) throw refuse("Choose where the sale is made.");
+    const rollIds = lines.flatMap((line) => (line.rollId ? [line.rollId] : []));
+    const rolls = rollIds.length > 0 ? await loadRolls(tx, rollIds) : [];
+    for (const line of lines) {
+      if (line.locationId && locations.find((location) => location.id === line.locationId)?.kind !== "warehouse") {
+        throw refuse("A line's warehouse no longer exists.");
+      }
+      if (!line.rollId) continue;
+      const roll = rolls.find((candidate) => candidate.id === line.rollId);
+      if (!roll || roll.productId !== line.productId || roll.transferId)
+        throw refuse("Choose a roll of this product in stock.");
+    }
+  }
+
+  /** Drawing rooms is Retail's (spec "Draw rooms on the canvas"); others keep the rooms as saved. */
+  private assertRooms(access: RequestAccess, rooms: readonly Room[], before: Quote | undefined): void {
+    const same = JSON.stringify(rooms) === JSON.stringify(before?.rooms ?? []);
+    if (same) return;
+    if (!access.modules.includes("retail") || !access.permissions.has("retail.room.measure")) {
+      throw new ForbiddenException({ code: "forbidden", message: "Your role does not allow measuring rooms." });
+    }
+  }
+
   /** Spec rule 8: waste is internal; changing it from what the line had, or from the default, needs `sales.waste.view`. */
   private assertWaste(
     access: RequestAccess,
@@ -476,7 +552,7 @@ export class SalesService {
   }
 
   /** Spec rule 17: a changed tax needs `sales.tax.override`, a rate of up to 2 digits and 4 decimals, and a reason. */
-  private assertOverride(access: RequestAccess, override: TaxOverride | null | undefined): void {
+  private assertOverride(access: RequestAccess, override: RequestedOverride | null | undefined): void {
     if (!access.permissions.has("sales.tax.override")) {
       throw new ForbiddenException({
         code: "forbidden",

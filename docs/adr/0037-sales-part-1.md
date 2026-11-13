@@ -10,7 +10,9 @@
   - **Editing:** changes the name, contact details, terms and addresses. New addresses get server ids, the defaults follow them, and removed addresses are soft-deleted.
   - **Fields never taken from a request:** credit limit, tax exemption, certificate and rep have no edit screen. The credit limit is stripped without `customers.customer.view_sensitive`.
 - **Quotes:**
-  - **What the server sets:** status, sent and expiry dates change only through `POST /quotes/:id/status`, using the shared `quoteActions` and `quoteSendProblems`. The rep, the branch (the warehouse's) and the number (taken under a lock) are the server's.
+  - **What the server sets:** status, sent and expiry dates change only through `POST /quotes/:id/status`, using the shared `quoteActions` and `quoteSendProblems`. The rep and the number (taken under a lock) are the server's. The branch is always the warehouse's, re-derived whenever the warehouse changes, so data scope follows where the quote is fulfilled from.
+  - **States:** a job-site or address state is trimmed, uppercased and must be a real US code. A send needs one. Tax rules match the code exactly, so a lowercase or made-up state would otherwise collect nothing (PR #14 security review).
+  - **References:** each roll belongs to its line's product and is in stock; line warehouses and the sold-at location are live. Drawing rooms needs the Retail module and `retail.room.measure`.
   - **Totals:** computed on the server with the shared `computeTotals` and the tax engine (`taxContextFor` → `resolveTaxRule` → `withOverride`). The engine reads the company's own tax rules, county rates and company default, on today's date in the company's time zone. A total sent by the screen is ignored.
   - **Line cost:** comes from the catalog, never from the request (rule 5), and is stripped without `inventory.product.view_sensitive`.
   - **Rights:** a waste change needs `sales.waste.view`. A tax change needs `sales.tax.override`, a valid rate and a reason; who changed it and when are recorded by the server, and the change is audited on its own.

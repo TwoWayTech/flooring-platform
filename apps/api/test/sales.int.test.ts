@@ -218,6 +218,23 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     } finally {
       await handle.close();
     }
+    // A lowercase state is the same state; a made-up one is refused, so tax can't be skipped (PR #14 review).
+    const site = (state: string) => ({ jobSite: { street: "12 Pine Rd", city: "Denver", state, zip: "80202" } });
+    const lower = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, site("co")))
+      .expect(201);
+    expect(lower.body).toMatchObject({ total: "489.65", jobSite: { state: "CO" } });
+    expect(
+      (await call("post", "/quotes", cookies.salesA).send(quoteBody(customer.body.id, warehouse, tile, site("ZZ"))))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await call("post", "/quotes", cookies.salesA).send(
+          quoteBody(customer.body.id, warehouse, tile, { depositPct: "500" }),
+        )
+      ).status,
+    ).toBe(400);
     expect(
       (await call("get", "/quotes", cookies.salesB).expect(200)).body.some(
         (q: { id: string }) => q.id === quote.body.id,

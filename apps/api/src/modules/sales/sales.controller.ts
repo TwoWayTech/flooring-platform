@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { featureOn, type FeatureKey } from "@workspace/shared";
+import { dec, featureOn, isStateCode, type FeatureKey } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -13,9 +13,20 @@ import { SalesService } from "./sales.service";
 
 const QUANTITY = z.string().regex(/^\d{1,10}(\.\d{1,3})?$/, "Enter a quantity such as 12 or 12.5.");
 const PRICE = z.string().regex(/^\d{1,10}(\.\d{1,4})?$/, "Enter a price such as 3.05.");
-const PERCENT = z.string().regex(/^\d{1,3}(\.\d{1,4})?$/, "Enter a percent such as 10.");
+const PERCENT = z
+  .string()
+  .regex(/^\d{1,3}(\.\d{1,4})?$/, "Enter a percent such as 10.")
+  .refine((value) => dec(value).lte(100), "A percent is at most 100.");
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date.");
-const STATE = z.string().regex(/^[A-Za-z]{0,2}$/, "Enter a two-letter state.");
+/**
+ * A state as stored: trimmed and uppercased, a real US code, or empty on a draft. Tax rules match
+ * the code exactly, so "co" or a made-up code would collect nothing (PR #14 security review).
+ */
+const STATE = z
+  .string()
+  .max(2)
+  .transform((value) => value.trim().toUpperCase())
+  .refine((value) => value === "" || isStateCode(value), "Choose a US state, such as CO.");
 const ADDRESS = z.object({
   street: z.string().max(200),
   city: z.string().max(100),
@@ -93,15 +104,8 @@ const QUOTE = z.object({
     )
     .max(300),
   depositPct: PERCENT,
-  // Who changed the tax and when are set by the server, never taken from the request.
-  taxOverride: z
-    .object({
-      ratePct: z.string().max(10),
-      reason: z.string().max(500),
-      byName: z.string().max(200).default(""),
-      at: z.string().max(40).default(""),
-    })
-    .nullable(),
+  // Who changed the tax and when are set by the server; anything else sent is dropped.
+  taxOverride: z.object({ ratePct: z.string().max(10), reason: z.string().max(500) }).nullable(),
   notes: z.string().max(5000).default(""),
 });
 
