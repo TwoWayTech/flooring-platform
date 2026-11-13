@@ -28,7 +28,8 @@
 
 ### Maintenance mode
 - **What it blocks:** maintenance mode now stops reads as well as writes. It answers 503 `company_maintenance` with "Your company's account is under maintenance."
-- **Why it is on:** `tenants.maintenance_reason` records the cause, `migration_failed` or `move`.
+- **Why it is on:** `tenants.maintenance_reason` records the cause, `migration_failed` or `move`. Only migrate-all writes it today; `move-tenant` (not built yet, STATUS) must set `move` when it turns maintenance on. A reason left empty is never cleared by a migration.
+- **Error text:** the error is capped at 500 characters before it goes into `last_error`, the audit row and the email.
 - **When a migration fails, migrate-all:**
   - turns maintenance on;
   - writes `company.migration_failed` to `platform_audit_log`;
