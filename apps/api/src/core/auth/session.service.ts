@@ -1,6 +1,7 @@
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { session as sessionTable } from "@workspace/db/control";
+import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { CONTROL_DB } from "../database/control-db";
 import type { Auth } from "./auth";
@@ -48,7 +49,7 @@ export class SessionService {
    */
   async verify(headers: Headers, options: VerifyOptions = {}): Promise<AuthSession> {
     const now = options.now ?? new Date();
-    const result = await this.auth.api.getSession({ headers });
+    const result = await this.readSession(headers);
     if (!result) throw new UnauthorizedException("Sign in to continue.");
     const { session, user } = result;
     const companyId = session.activeOrganizationId ?? null;
@@ -65,5 +66,19 @@ export class SessionService {
       await this.control.db.update(sessionTable).set({ updatedAt: now }).where(eq(sessionTable.id, session.id));
     }
     return { user: { id: user.id, name: user.name, email: user.email }, sessionId: session.id, companyId, mfa };
+  }
+
+  /**
+   * Better Auth's session for these headers, or null. Its own refusals, such as a host that is not
+   * in AUTH_ALLOWED_HOSTS, mean the request is not signed in on a host we serve, so they answer 401
+   * instead of a 500. Any other failure still propagates.
+   */
+  private async readSession(headers: Headers) {
+    try {
+      return await this.auth.api.getSession({ headers });
+    } catch (error) {
+      if (error instanceof APIError) return null;
+      throw error;
+    }
   }
 }

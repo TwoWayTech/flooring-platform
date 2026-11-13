@@ -1,10 +1,23 @@
 import { randomBytes } from "node:crypto";
-import type { INestApplication } from "@nestjs/common";
-import { openControlDb, type ControlDb, type DbHandle } from "@workspace/db";
-import { account, member, organization, tenantBranding, tenants, user } from "@workspace/db/control";
+import type { INestApplication, Type } from "@nestjs/common";
+import {
+  decryptSecret,
+  openCompanyDb,
+  openControlDb,
+  provisionTenant,
+  type CompanyDb,
+  type ControlDb,
+  type DbHandle,
+} from "@workspace/db";
+import { account, member, organization, tenantBranding, tenantDatabases, tenants, user } from "@workspace/db/control";
 import { seededTenantId, seedTestCompany } from "@workspace/db/seed";
-import { scratchDatabase } from "@workspace/db/testing";
-import { MemoryEmailProvider, NoopProvisioner } from "@workspace/providers";
+import { adminUrl, scratchDatabase } from "@workspace/db/testing";
+import {
+  companyDatabaseName,
+  MemoryEmailProvider,
+  NoopProvisioner,
+  PostgresServerProvisioner,
+} from "@workspace/providers";
 import { hashPassword } from "better-auth/crypto";
 import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa } from "@workspace/shared";
 import { eq } from "drizzle-orm";
@@ -34,11 +47,18 @@ export class AuthHarness {
   app!: INestApplication;
   control!: DbHandle<ControlDb>;
   private readonly scratch: { url: string; drop: () => Promise<void> }[] = [];
+  /** Company databases made with provisionCompany, dropped by stop(). */
+  private readonly provisioned: string[] = [];
+  private encryptionKey = "";
 
-  /** Creates the databases, seeds Summit and starts the app. */
-  async start(): Promise<void> {
+  /**
+   * Creates the databases, seeds Summit and starts the app. `modules` mounts test-only controllers,
+   * such as the isolation probe.
+   */
+  async start(modules: readonly Type[] = []): Promise<void> {
     this.scratch.push(await scratchDatabase("auth_control"), await scratchDatabase("auth_company"));
     const encryptionKey = randomBytes(32).toString("base64");
+    this.encryptionKey = encryptionKey;
     await seedTestCompany({
       controlUrl: this.scratch[0].url,
       encryptionKey,
@@ -57,7 +77,7 @@ export class AuthHarness {
       EMAIL_PROVIDER: "memory",
       NODE_ENV: "test",
     });
-    this.app = await createApp();
+    this.app = await createApp(modules);
     await this.app.init();
     this.control = openControlDb(this.scratch[0].url, { max: 1 });
   }
@@ -66,7 +86,43 @@ export class AuthHarness {
   async stop(): Promise<void> {
     await this.app?.close();
     await this.control?.close();
+    const provisioner = new PostgresServerProvisioner(adminUrl);
+    for (const slug of this.provisioned) await provisioner.drop(companyDatabaseName(slug));
     for (const database of this.scratch) await database.drop();
+  }
+
+  /**
+   * Provisions a company the real way, with a database of its own on the local server (P9), and
+   * returns its tenant id. The slug gets a suffix unique to this run.
+   */
+  async provisionCompany(name: string): Promise<{ id: string; slug: string }> {
+    const slug = `${name}${process.pid}${randomBytes(2).toString("hex")}`.replace(/[^a-z0-9]/g, "");
+    const result = await provisionTenant(
+      this.control.db,
+      new PostgresServerProvisioner(adminUrl),
+      this.encryptionKey,
+      "postgres",
+      {
+        slug,
+        name,
+        legalName: `${name} LLC`,
+        state: "TX",
+        timeZone: "America/Chicago",
+        products: ["flooring"],
+        owner: { name: "Owner", email: `owner-${slug}@example.test` },
+      },
+    );
+    this.provisioned.push(slug);
+    return { id: result.tenantId, slug };
+  }
+
+  /** Opens a company database directly, to set up or check rows behind the API's back. */
+  async companyDb(companyId: string): Promise<DbHandle<CompanyDb>> {
+    const [row] = await this.control.db
+      .select({ encryptedUrl: tenantDatabases.encryptedUrl })
+      .from(tenantDatabases)
+      .where(eq(tenantDatabases.tenantId, companyId));
+    return openCompanyDb(decryptSecret(row.encryptedUrl, this.encryptionKey), { max: 1 });
   }
 
   /** The emails the API has "sent" through the memory adapter. */
