@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NoopProvisioner } from "@workspace/providers";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { decryptSecret, migrateAllCompanies, openCompanyDb, openControlDb } from "../src";
+import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import { roles, userProfiles } from "../src/company";
 import { verifyPassword } from "better-auth/crypto";
 import { account, organization, tenantDatabases, tenants, user } from "../src/control";
@@ -40,7 +40,7 @@ describe("test company seed", () => {
       expect((await control.db.select().from(user)).length).toBe(15);
       const [database] = await control.db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId));
       expect(database.status).toBe("ready");
-      expect(database.schemaVersion).toBe("0000_company_base");
+      expect(database.schemaVersion).toBe(latestVersion(MIGRATIONS.company));
       expect(database.encryptedUrl).not.toContain("postgres://");
       expect(decryptSecret(database.encryptedUrl, encryptionKey)).toBe(scratch[1].url);
     } finally {
@@ -76,7 +76,7 @@ describe("test company seed", () => {
     const control = openControlDb(scratch[0].url, { max: 1 });
     try {
       expect(await migrateAllCompanies(control.db, encryptionKey)).toEqual([
-        { tenantId, version: "0000_company_base" },
+        { tenantId, version: latestVersion(MIGRATIONS.company) },
       ]);
     } finally {
       await control.close();

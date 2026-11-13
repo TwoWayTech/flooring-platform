@@ -8,3 +8,4 @@ export * from "./crypto";
 export * from "./migrate";
 export * from "./provision";
 export * from "./provision-tenant";
+export * from "./company-foundation";

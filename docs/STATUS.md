@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** `feat/tenancy-company-databases`, P9, PR #6. The work queue continues with P10, then the notifications core.
+- **In progress:** `feat/permissions-guards-audit`, P10 part 1, PR #7. Then the notifications core, the last task in the work queue.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`) and PR #5 (`1c47288`).
-- **Last session log:** docs/sessions/2026-11-13-0700-a-tenancy-company-databases.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`) and PR #6 (`429149d`).
+- **Last session log:** docs/sessions/2026-11-13-0724-a-permissions-guards-audit.md
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -50,17 +50,31 @@
   - the password lockout (5 in 15 minutes, 15-minute lock), per-IP limits through the web proxy's `AUTH_PROXY_SECRET`, and 3 verification emails an hour;
   - `GET /public/branding?host=`;
   - Claude's self-merge rule.
-- [x] P9 on `feat/tenancy-company-databases` (PR #6, ADR 0030; not merged at the time of writing):
+- [x] P9, merged to main in PR #6 (`429149d`, ADR 0030):
   - `pnpm db:provision-tenant`;
   - TenantConnectionService through a session-only TenantContext;
   - global deny-by-default session and tenant guards;
   - the company-isolation suite.
+- [x] P10 part 1 on `feat/permissions-guards-audit` (PR #7, ADR 0031; not merged at the time of writing):
+  - access from the shared engine on every request;
+  - a global deny-by-default PermissionGuard;
+  - server-side stripping of sensitive fields;
+  - an append-only audit_log with a safety-net interceptor;
+  - separation of duties and data-scope rules;
+  - default roles and a ceiling for new companies;
+  - the role-by-permission matrix.
 
 ## Next three tasks
 The work queue the owner set on 2026-11-13. Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
 1. **Owner:** make the CI `verify` check (it runs the isolation suite) required in GitHub branch protection for `main` (blueprint P9).
-2. **A (Claude):** P10 (R4): permissions in the API reusing the engine in packages/shared, deny-by-default guards, the audit log and approvals.
-3. **A (Claude):** the notifications core: EmailProvider and the outbox worker on pg-boss, with memory email locally. Include the 30-day cleanup job (Follow-ups).
+2. **A (Claude):** the notifications core: EmailProvider and the outbox worker on pg-boss, with memory email locally. Include the 30-day cleanup job (Follow-ups).
+
+3. **Next, A:** P10 part 2 with the Settings → Users and Roles API:
+   - no-escalation on grants;
+   - the active-Owner rule;
+   - server-side step-up MFA, which needs a design;
+   - support-access grants;
+   - `member.role` sync with MFA by role content.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
@@ -69,18 +83,30 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
 - **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
-- **P10: deny company routes that declare no product.** A route without `@RequireProduct()` serves any company; add this to the route-inventory test (PR #6 review, finding 5).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
+- **P10 review follow-ups (none blocking):**
+  - **Next, in `fix/access-audit-hardening`:**
+    - read `@Audited()` from the handler only;
+    - record the audit entry when serialising fails after a committed write;
+    - make the error filter safe when `details` cannot be serialised;
+    - base "never subscribed" on tenant status, not on finding no rows;
+    - mark a company database ready only after its foundation is seeded;
+    - keep `__proto__` keys (PR #7 re-review 1, 2, 3, 6, 7 and 8).
+  - Ban `@Res()` without passthrough and `@Next()` in modules. Give exports a shared stripping helper.
+  - Widen the sensitive-field scan to the company schema and to totals (`totalCost`, `extendedCost`, `profit`, `markup`, `cogs`).
+  - A runtime database role that does not own the company database, so the `audit_log` trigger cannot be disabled or dropped by the app's login.
+  - An alert, not only a log line, when the audit safety net fails to write.
+  - Exports must strip their data with `stripSensitive` before building a file.
+  - Job costing must use `jobCost`, `jobMargin` and `jobMarginPct` (ADR 0031).
+  - Make the role matrix test independent of `productPermissions` and `enabledModules`.
+  - Check route decorators directly in the inventory test, not only over HTTP.
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
 - **TenantConnectionService hardening (PR #6 third review, none blocking):**
   - **Leases:** count users per pool (a `withDb(tenant, fn)` wrapper or acquire and release), so the over-cap close and eviction never end a pool that a request is still using. Today that can happen once more than 2 × `TENANT_POOL_CACHE` companies are active within 30 s.
   - **A real connection bound:** bound the total connections rather than the pool count, pass `end({ timeout })`, and lower the `TENANT_POOL_CACHE` maximum (500 × 3 × 2 is far above PostgreSQL's 100).
   - **Shutdown:** await the opens still in flight before draining, so none leaks.
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
-- **P10, enforce rule 2 with tooling:**
-  - add `no-restricted-imports` in apps/api for `openCompanyDb` and `decryptSecret`, allowed only in `core/tenancy` and tests;
-  - keep `TenantContext.fromVerifiedSession` to TenantGuard's module (a module-private token or a WeakSet of issued contexts), so a job or admin path cannot fabricate a session or company input.
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.

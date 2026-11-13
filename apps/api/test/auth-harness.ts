@@ -19,8 +19,9 @@ import {
   PostgresServerProvisioner,
 } from "@workspace/providers";
 import { hashPassword } from "better-auth/crypto";
-import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa } from "@workspace/shared";
-import { eq } from "drizzle-orm";
+import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa, type ProductKey } from "@workspace/shared";
+import { roles, userProfiles, userRoles } from "@workspace/db/company";
+import { eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { createApp } from "../src/app";
@@ -95,7 +96,10 @@ export class AuthHarness {
    * Provisions a company the real way, with a database of its own on the local server (P9), and
    * returns its tenant id. The slug gets a suffix unique to this run.
    */
-  async provisionCompany(name: string): Promise<{ id: string; slug: string }> {
+  async provisionCompany(
+    name: string,
+    products: readonly ProductKey[] = ["flooring"],
+  ): Promise<{ id: string; slug: string }> {
     const slug = `${name}${process.pid}${randomBytes(2).toString("hex")}`.replace(/[^a-z0-9]/g, "");
     const result = await provisionTenant(
       this.control.db,
@@ -108,7 +112,7 @@ export class AuthHarness {
         legalName: `${name} LLC`,
         state: "TX",
         timeZone: "America/Chicago",
-        products: ["flooring"],
+        products,
         owner: { name: "Owner", email: `owner-${slug}@example.test` },
       },
     );
@@ -123,6 +127,12 @@ export class AuthHarness {
       .from(tenantDatabases)
       .where(eq(tenantDatabases.tenantId, companyId));
     return openCompanyDb(decryptSecret(row.encryptedUrl, this.encryptionKey), { max: 1 });
+  }
+
+  /** The user id of a test user's email. */
+  async userIdOf(email: string): Promise<string> {
+    const [row] = await this.control.db.select({ id: user.id }).from(user).where(eq(user.email, email));
+    return row.id;
   }
 
   /** The emails the API has "sent" through the memory adapter. */
@@ -222,8 +232,37 @@ export class AuthHarness {
         role: encodeMemberRoles(options.roles ?? ["sales"]),
         createdAt: now,
       });
+      await this.grantRoles(organizationId, id, options.roles ?? ["sales"]);
     }
     return email;
+  }
+
+  /**
+   * Gives a user an active profile and the roles with these keys in a company's own database, as
+   * Settings → Users will (P10). Companies made with addCompany have no database, so they are skipped.
+   */
+  async grantRoles(companyId: string, userId: string, roleKeys: readonly string[]): Promise<void> {
+    const [database] = await this.control.db
+      .select({ id: tenantDatabases.id })
+      .from(tenantDatabases)
+      .where(eq(tenantDatabases.tenantId, companyId));
+    if (!database) return;
+    const handle = await this.companyDb(companyId);
+    try {
+      await handle.db.insert(userProfiles).values({ userId, status: "active" }).onConflictDoNothing();
+      const held = await handle.db
+        .select({ id: roles.id })
+        .from(roles)
+        .where(inArray(roles.key, [...roleKeys]));
+      if (held.length > 0) {
+        await handle.db
+          .insert(userRoles)
+          .values(held.map((role) => ({ userId, roleId: role.id })))
+          .onConflictDoNothing();
+      }
+    } finally {
+      await handle.close();
+    }
   }
 }
 

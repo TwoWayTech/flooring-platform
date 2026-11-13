@@ -1,26 +1,17 @@
 import { Global, Module } from "@nestjs/common";
-import { APP_GUARD } from "@nestjs/core";
 import { AuthModule } from "../auth/auth.module";
-import { SessionGuard } from "../auth/session.guard";
 import { TenantConnectionService } from "./tenant-connection.service";
 import { TenantDirectory } from "./tenant-directory";
 import { TenantGuard } from "./tenant.guard";
 
 /**
- * Tenancy (blueprint P9): the global guards and TenantConnectionService. The guards run on every
- * Nest route in this order: SessionGuard, then TenantGuard. A route opts out only with `@Public()` or
- * `@SessionOnly()`, so a new route is closed until it says otherwise (CLAUDE.md rule 3).
+ * Tenancy (blueprint P9): TenantGuard and TenantConnectionService, the only way to a company
+ * database. RequestPipelineModule registers the guard globally, in order with the others.
  */
 @Global()
 @Module({
   imports: [AuthModule],
-  providers: [
-    TenantDirectory,
-    TenantConnectionService,
-    TenantGuard,
-    { provide: APP_GUARD, useExisting: SessionGuard },
-    { provide: APP_GUARD, useExisting: TenantGuard },
-  ],
-  exports: [TenantConnectionService],
+  providers: [TenantDirectory, TenantConnectionService, TenantGuard],
+  exports: [TenantConnectionService, TenantGuard],
 })
 export class TenancyModule {}
