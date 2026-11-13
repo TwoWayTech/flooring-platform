@@ -7,3 +7,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-12 | #1 | Real-build base: API, database, providers, CI and handoff system | @TwoWayTech | feat/platform-base | `7f6baf7` |
 | 2026-11-13 | #2 | P8 part 1: Better Auth sign-in | @TwoWayTech | feat/auth-better-auth | `31e2297` |
 | 2026-11-13 | #3 | Claude tooling: /feature, /review, three subagents and a Stop hook | @TwoWayTech | feat/tooling-claude-agents | `ab57891` |
+| 2026-11-13 | #4 | P8 part 2: MFA, passkeys, lockout, rate limits, public branding | @TwoWayTech | feat/auth-mfa | `0ec9f6c` |
