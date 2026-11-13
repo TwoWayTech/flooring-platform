@@ -22,11 +22,13 @@ const companyDatabaseImports = {
   ],
 };
 
-const tenantContextMessage = "Only TenantGuard builds a TenantContext, from the verified session (CLAUDE.md rule 2).";
+const tenantContextMessage =
+  "Only TenantGuard (from the verified session) and the job runner build a TenantContext (CLAUDE.md rule 2).";
 
 /** Every way to reach the factory: a property read, a computed read, destructuring, or an alias. */
 const tenantContextFactory = [
   "MemberExpression[object.name='TenantContext'][property.name='fromVerifiedSession']",
+  "MemberExpression[object.name='TenantContext'][property.name='forJob']",
   "MemberExpression[object.name='TenantContext'][computed=true]",
   "VariableDeclarator[init.name='TenantContext'] > ObjectPattern",
   "ImportSpecifier[imported.name='TenantContext'][local.name!='TenantContext']",
@@ -47,7 +49,7 @@ export default tseslint.config(
     rules: { "no-restricted-imports": "off" },
   },
   {
-    files: ["src/core/tenancy/tenant.guard.ts", "src/core/tenancy/tenant-context.ts"],
+    files: ["src/core/tenancy/tenant.guard.ts", "src/core/tenancy/tenant-context.ts", "src/core/jobs/job-tenants.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
 );

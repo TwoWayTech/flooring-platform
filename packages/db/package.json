@@ -22,6 +22,7 @@
     "auth:generate": "tsx scripts/generate-auth-schema.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.10.0",
     "@workspace/providers": "workspace:*",
     "@workspace/shared": "workspace:*",
     "better-auth": "1.7.22",

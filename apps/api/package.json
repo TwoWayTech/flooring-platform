@@ -27,6 +27,7 @@
     "better-auth": "1.7.22",
     "decimal.js": "10.6.0",
     "drizzle-orm": "0.45.4",
+    "pg-boss": "12.38.0",
     "postgres": "4.1.1",
     "reflect-metadata": "0.2.2",
     "resend": "6.38.0",

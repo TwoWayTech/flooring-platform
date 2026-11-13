@@ -46,6 +46,16 @@ const apiEnvSchema = z.object({
   PASSKEY_RP_ID: z.string().min(1).optional(),
   /** How many company database pools one API instance keeps open (LRU, P9). Each holds up to 3 connections. */
   TENANT_POOL_CACHE: z.coerce.number().int().min(1).max(500).default(20),
+  /**
+   * Whether this instance runs background workers (pg-boss, ADR 0032). Every instance can queue
+   * jobs; set it to `false` on instances that only serve requests.
+   */
+  JOBS_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  /** How often idle workers poll for jobs, in seconds (pg-boss `pollingIntervalSeconds`). */
+  JOBS_POLL_SECONDS: z.coerce.number().min(0.5).max(60).default(2),
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });
