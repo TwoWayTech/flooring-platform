@@ -56,7 +56,9 @@
 
 ## Follow-ups (don't forget)
 - **30-day cleanup job (owner decision, 2026-11-13):** a daily pg-boss job deletes `auth_attempts` rows older than 30 days (`created_at`) and `rate_limit` rows older than 30 days (`last_request`). Build it in the notifications core task, which brings pg-boss. Until then nothing prunes these tables (docs/data-model.md, "Retention of sign-in security data").
-- **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.emailAllowed` (ADR 0029, part 2).
+- **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
+- **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
+- **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.

@@ -79,7 +79,7 @@ export class AuthHarness {
       .post(path)
       .set("Origin", WEB_ORIGIN)
       .set("X-Forwarded-Host", host)
-      .set("X-Forwarded-For", ip);
+      .set("X-Client-IP", ip);
   }
 
   /** A GET request as the web app's proxy sends it. */
@@ -88,7 +88,7 @@ export class AuthHarness {
       .get(path)
       .set("Origin", WEB_ORIGIN)
       .set("X-Forwarded-Host", host)
-      .set("X-Forwarded-For", ip);
+      .set("X-Client-IP", ip);
   }
 
   /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */
@@ -153,15 +153,13 @@ export class AuthHarness {
       updatedAt: now,
     });
     for (const organizationId of options.companyIds) {
-      await this.control.db
-        .insert(member)
-        .values({
-          id: uuidv7(),
-          organizationId,
-          userId: id,
-          role: encodeMemberRoles(options.roles ?? ["sales"]),
-          createdAt: now,
-        });
+      await this.control.db.insert(member).values({
+        id: uuidv7(),
+        organizationId,
+        userId: id,
+        role: encodeMemberRoles(options.roles ?? ["sales"]),
+        createdAt: now,
+      });
     }
     return email;
   }

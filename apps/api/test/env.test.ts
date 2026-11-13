@@ -39,9 +39,19 @@ describe("validateEnv", () => {
     expect(() => validateEnv({ ...production, AUTH_ALLOWED_HOSTS: "app.example.com, *.vercel.app" })).toThrow(
       /AUTH_ALLOWED_HOSTS: Wildcards are not allowed/,
     );
-    expect(validateEnv({ ...production, AUTH_ALLOWED_HOSTS: "app.example.com" }).AUTH_ALLOWED_HOSTS).toEqual([
+    const complete = { ...production, AUTH_PROXY_SECRET: "s".repeat(32), PASSKEY_RP_ID: "example.com" };
+    expect(validateEnv({ ...complete, AUTH_ALLOWED_HOSTS: "app.example.com" }).AUTH_ALLOWED_HOSTS).toEqual([
       "app.example.com",
     ]);
+  });
+
+  it("needs the proxy secret and the passkey domain in production (ADR 0029, part 2)", () => {
+    const production = { ...base, NODE_ENV: "production", AUTH_ALLOWED_HOSTS: "app.example.com" };
+    expect(() => validateEnv(production)).toThrow(/AUTH_PROXY_SECRET: Required in production/);
+    expect(() => validateEnv(production)).toThrow(/PASSKEY_RP_ID: Required in production/);
+    expect(() => validateEnv({ ...production, AUTH_PROXY_SECRET: "too-short", PASSKEY_RP_ID: "example.com" })).toThrow(
+      /AUTH_PROXY_SECRET: Must be at least 32 characters/,
+    );
   });
 
   it("checks the provider settings too", () => {

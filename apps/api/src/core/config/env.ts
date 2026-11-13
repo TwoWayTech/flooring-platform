@@ -34,6 +34,16 @@ const apiEnvSchema = z.object({
         .map((host) => host.trim())
         .filter(Boolean),
     ),
+  /**
+   * Shared with the web host, which sends it with every proxied auth request so the API can trust
+   * the client IP it forwards (ADR 0029, part 2). Required in production.
+   */
+  AUTH_PROXY_SECRET: z.string().min(32, "Must be at least 32 characters.").optional(),
+  /**
+   * The WebAuthn relying party for passkeys: the registrable domain the product hosts share, such as
+   * `flooringsuite.com`. Defaults to `localhost` outside production; required in production.
+   */
+  PASSKEY_RP_ID: z.string().min(1).optional(),
   /** Shown by /health so a deploy can be checked; set by the image build. */
   APP_VERSION: z.string().default("dev"),
 });
@@ -54,6 +64,15 @@ function allowedHostsIssues(env: z.infer<typeof apiEnvSchema>): string[] {
     : [];
 }
 
+/** Settings that may be left out in development but must be set in production. */
+function productionOnlyIssues(env: z.infer<typeof apiEnvSchema>): string[] {
+  if (env.NODE_ENV !== "production") return [];
+  return [
+    ...(env.AUTH_PROXY_SECRET ? [] : ["AUTH_PROXY_SECRET: Required in production."]),
+    ...(env.PASSKEY_RP_ID ? [] : ["PASSKEY_RP_ID: Required in production."]),
+  ];
+}
+
 /** The API's settings after checking: its own plus the provider choices. */
 export type ApiEnv = z.infer<typeof apiEnvSchema> & { providers: ProviderEnv };
 
@@ -67,6 +86,7 @@ export function validateEnv(raw: Record<string, unknown>): ApiEnv {
   const problems = [
     ...(parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)),
     ...(parsed.success ? allowedHostsIssues(parsed.data) : []),
+    ...(parsed.success ? productionOnlyIssues(parsed.data) : []),
     ...providerEnvIssues(env),
   ];
   if (!parsed.success || problems.length > 0) throw new Error(`Invalid API environment. ${problems.join("; ")}`);

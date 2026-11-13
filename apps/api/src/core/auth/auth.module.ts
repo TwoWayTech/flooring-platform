@@ -59,6 +59,7 @@ import { AUTH } from "./tokens";
           allowedHosts: config.get("AUTH_ALLOWED_HOSTS", { infer: true }),
           trustedOrigins: config.get("CORS_ORIGINS", { infer: true }),
           secureCookies: config.get("NODE_ENV", { infer: true }) === "production",
+          passkeyRpId: config.get("PASSKEY_RP_ID", { infer: true }) ?? "localhost",
           logError: (message) => logger.error(message),
         });
       },

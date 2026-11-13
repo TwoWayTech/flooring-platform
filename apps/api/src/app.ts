@@ -4,9 +4,11 @@ import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { toNodeHandler } from "better-auth/node";
 import { AppModule } from "./app.module";
 import type { Auth } from "./core/auth/auth";
+import { settleClientIp } from "./core/auth/client-ip";
 import { AUTH } from "./core/auth/tokens";
 import type { ApiEnv } from "./core/config/env";
 import { ErrorFilter } from "./core/errors/error-filter";
@@ -32,10 +34,19 @@ export const AUTH_BASE_PATH = "/api/auth";
 /**
  * Mounts Better Auth on /api/auth/* ahead of the JSON body parser, which would otherwise consume
  * the request body before Better Auth reads it, then turns body parsing on for every other route.
+ * Each auth request first gets a client IP the API can trust.
  */
-function mountAuth(app: NestExpressApplication): void {
+function mountAuth(app: NestExpressApplication, proxySecret: string | undefined): void {
   const auth = app.get<Auth>(AUTH);
-  app.getHttpAdapter().getInstance().all(`${AUTH_BASE_PATH}/*splat`, toNodeHandler(auth));
+  const handler = toNodeHandler(auth);
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .all(`${AUTH_BASE_PATH}/*splat`, (request: IncomingMessage, response: ServerResponse) => {
+      // The per-IP limits read only the client IP our web proxy vouches for (client-ip.ts).
+      settleClientIp(request, proxySecret);
+      return handler(request, response);
+    });
   app.useBodyParser("json");
   app.useBodyParser("urlencoded", { extended: true });
 }
@@ -51,7 +62,7 @@ export async function createApp(): Promise<INestApplication> {
   });
   const config = app.get<ConfigService<ApiEnv, true>>(ConfigService);
   app.enableCors({ origin: config.get("CORS_ORIGINS", { infer: true }), credentials: true });
-  mountAuth(app);
+  mountAuth(app, config.get("AUTH_PROXY_SECRET", { infer: true }));
   app.useGlobalFilters(new ErrorFilter());
   app.enableShutdownHooks();
   setUpOpenApi(app);

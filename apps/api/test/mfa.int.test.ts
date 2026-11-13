@@ -114,13 +114,19 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       const first = await harness.signIn(email);
       const started = new Date(Date.now() - 60 * 60_000);
       await harness.control.db.update(session).set({ createdAt: started }).where(eq(session.userId, person.id));
-      const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
+      const enabled = await harness
+        .post("/api/auth/two-factor/enable")
+        .set("Cookie", first)
+        .send({ password: PASSWORD });
       await harness
         .post("/api/auth/two-factor/verify-totp")
         .set("Cookie", first)
         .send({ code: totpCode(totpSecretFromUri(enabled.body.totpURI as string)) })
         .expect(200);
-      const rows = await harness.control.db.select({ createdAt: session.createdAt }).from(session).where(eq(session.userId, person.id));
+      const rows = await harness.control.db
+        .select({ createdAt: session.createdAt })
+        .from(session)
+        .where(eq(session.userId, person.id));
       expect(rows).toHaveLength(1);
       expect(Math.abs(rows[0].createdAt.getTime() - started.getTime())).toBeLessThan(1000);
     });
@@ -293,7 +299,10 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       const refused = await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", cookie);
       expect(refused.status).toBe(403);
       expect(refused.body.code).toBe("password_confirmation_required");
-      const wrong = await harness.post("/api/auth/verify-password").set("Cookie", cookie).send({ password: `${PASSWORD}x` });
+      const wrong = await harness
+        .post("/api/auth/verify-password")
+        .set("Cookie", cookie)
+        .send({ password: `${PASSWORD}x` });
       expect(wrong.status).not.toBe(200);
       expect((await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", cookie)).status).toBe(403);
       await harness.post("/api/auth/verify-password").set("Cookie", cookie).send({ password: PASSWORD }).expect(200);
@@ -301,7 +310,9 @@ describe("MFA: TOTP, backup codes, passkeys and mandatory enrolment (P8 part 2, 
       expect(allowed.status).toBe(200);
       expect(allowed.body.rp.id).toBe("localhost");
       const otherSession = await harness.signIn(await harness.addUser({ companyIds: [SUMMIT_ID] }));
-      expect((await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", otherSession)).status).toBe(403);
+      expect(
+        (await harness.get("/api/auth/passkey/generate-register-options").set("Cookie", otherSession)).status,
+      ).toBe(403);
     });
 
     it("refuses a passkey registration that would start a new session", async () => {

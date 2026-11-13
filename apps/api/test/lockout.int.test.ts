@@ -123,4 +123,11 @@ describe("password lockout and rate limits (P8 part 2, needs the local PostgreSQ
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(harness.outbox.sent.filter((message) => message.to.includes(email))).toHaveLength(3);
   });
+
+  it("sends at most 3 verification emails even when the requests arrive in parallel", async () => {
+    const email = await harness.addUser({ companyIds: [SUMMIT_ID], verified: false });
+    await Promise.all(Array.from({ length: 8 }, () => attempt(email, true)));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(harness.outbox.sent.filter((message) => message.to.includes(email))).toHaveLength(3);
+  });
 });

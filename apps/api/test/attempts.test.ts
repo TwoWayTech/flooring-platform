@@ -4,7 +4,7 @@ import { mfaState } from "../src/core/auth/mfa-policy";
 
 const now = new Date("2026-11-13T12:00:00Z");
 const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_000);
-const failed = (minutes: number): PasswordAttempt => ({ kind: "password_failed", at: minutesAgo(minutes) });
+const failed = (minutes: number): PasswordAttempt => ({ kind: "password_attempt", at: minutesAgo(minutes) });
 const ok = (minutes: number): PasswordAttempt => ({ kind: "password_ok", at: minutesAgo(minutes) });
 
 describe("lockEnd (owner decision 2026-11-13: 5 failures in 15 minutes lock for 15 minutes)", () => {

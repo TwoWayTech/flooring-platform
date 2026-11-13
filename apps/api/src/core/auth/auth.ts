@@ -9,6 +9,7 @@ import { organization, twoFactor } from "better-auth/plugins";
 import { v7 as uuidv7 } from "uuid";
 import { LOCKOUT, type AttemptLog } from "./attempts";
 import { afterAuthHook, AUTH_REFUSALS, beforeAuthHook, requestHost } from "./auth-hooks";
+import { CLIENT_IP_HEADER } from "./client-ip";
 import type { CompanyDirectory } from "./company-directory";
 import { hostCompanySlug, pickCompany } from "./company-pick";
 import type { MfaPolicy } from "./mfa-policy";
@@ -32,6 +33,8 @@ export interface AuthDeps {
    * HTTPS from, so every deployment served over HTTPS must run with NODE_ENV=production.
    */
   secureCookies: boolean;
+  /** The WebAuthn relying party for passkeys (PASSKEY_RP_ID; `localhost` in development). */
+  passkeyRpId: string;
   /** Where unexpected failures are reported, without tokens or passwords. */
   logError: (message: string) => void;
 }
@@ -48,14 +51,16 @@ export const APP_NAME = "Flooring Platform";
 /** Owner decision, 2026-11-13: sign-in and MFA checks allow 10 a minute from one IP address. */
 const SIGN_IN_RATE = { window: 60, max: 10 } as const;
 
+/** How recent a sign-in must be for sensitive steps (Better Auth `freshAge`): 10 minutes. */
+const FRESH_SESSION_SECONDS = 10 * 60;
+
 /**
  * Sends a verification email unless the address has had 3 in the last hour (owner decision,
  * 2026-11-13). Not awaited by the caller, so the answer takes the same time whether or not an
  * email goes out, and a skipped email is silent for the same reason.
  */
 async function sendVerification(deps: AuthDeps, to: string, url: string): Promise<void> {
-  if (!(await deps.attempts.emailAllowed(to))) return;
-  await deps.attempts.record("verification_email", to, null);
+  if (!(await deps.attempts.reserveEmail(to))) return;
   await deps.email.send({
     from: deps.emailFrom,
     to: [to],
@@ -97,7 +102,9 @@ export function createAuth(deps: AuthDeps) {
   return betterAuth({
     appName: APP_NAME,
     secret: deps.secret,
-    baseURL: { allowedHosts: deps.allowedHosts },
+    // Behind the web host the API sees plain HTTP, so production states HTTPS for the origins that
+    // passkeys and links are checked against; `x-forwarded-proto` is never trusted.
+    baseURL: { allowedHosts: deps.allowedHosts, ...(deps.secureCookies ? { protocol: "https" as const } : {}) },
     trustedOrigins: deps.trustedOrigins,
     database: drizzleAdapter(deps.db, { provider: "pg", schema: controlSchema }),
     emailAndPassword: {
@@ -118,9 +125,13 @@ export function createAuth(deps: AuthDeps) {
       expiresIn: SESSION_CEILING_SECONDS,
       // Activity and expiry are recorded by SessionService on each guarded request instead.
       disableSessionRefresh: true,
+      // Sensitive steps such as adding a passkey need a session at most 10 minutes old. Better
+      // Auth's default of a day is longer than the absolute timeout, so it would allow every session.
+      freshAge: FRESH_SESSION_SECONDS,
     },
     // Kept in the database so the limits hold across API instances. Better Auth keys them by IP and
-    // path; the IP comes from x-forwarded-for, which the web host sets (ADR 0029, part 2).
+    // path; the IP comes from x-client-ip, which the web host sets and client-ip.ts vouches for
+    // (ADR 0029, part 2). x-forwarded-for is never read: a browser can set it.
     rateLimit: {
       enabled: true,
       storage: "database",
@@ -129,6 +140,7 @@ export function createAuth(deps: AuthDeps) {
         "/two-factor/verify-totp": SIGN_IN_RATE,
         "/two-factor/verify-backup-code": SIGN_IN_RATE,
         "/passkey/verify-authentication": SIGN_IN_RATE,
+        "/verify-password": SIGN_IN_RATE,
       },
     },
     advanced: {
@@ -136,7 +148,7 @@ export function createAuth(deps: AuthDeps) {
       useSecureCookies: deps.secureCookies,
       // The web app proxies /api/auth/* here, so the browser's host arrives as x-forwarded-host.
       trustedProxyHeaders: true,
-      ipAddress: { ipAddressHeaders: ["x-forwarded-for"] },
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
     databaseHooks: {
       session: {
@@ -169,8 +181,15 @@ export function createAuth(deps: AuthDeps) {
           durationSeconds: LOCKOUT.lockMs / 1000,
         },
       }),
-      // No rpID: each product host is its own relying party, taken from the allowed request host.
-      passkey({ rpName: APP_NAME }),
+      // The relying party is the domain the product hosts share; the origin is checked against the
+      // allowed request host. Better Auth cannot derive the rpID from a per-request base URL.
+      // User verification (PIN or biometric) is required, so a passkey is two factors on its own and
+      // counts as MFA (owner decision, 2026-11-13). A security key without a PIN is refused.
+      passkey({
+        rpName: APP_NAME,
+        rpID: deps.passkeyRpId,
+        authenticatorSelection: { userVerification: "required" },
+      }),
     ],
   });
 }

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isDemoMode } from "./lib/data-source";
 import { PRODUCT_COOKIE, PRODUCT_HEADER, productForRequest } from "./lib/product";
 import { API_PROXY_PATH, AUTH_BASE_PATH, AUTH_SESSION_COOKIES } from "./lib/session/auth-cookie";
+import { withAuthProxyHeaders } from "./lib/session/auth-proxy";
 import { SESSION_COOKIE } from "./lib/session/session";
 
 /**
@@ -37,7 +38,11 @@ export function proxy(request: NextRequest) {
     request.cookies.get(PRODUCT_COOKIE)?.value,
   );
   const signedIn = hasSessionCookie(request);
-  const forwarded = new Headers(request.headers);
+  const forwarded = withAuthProxyHeaders(
+    new Headers(request.headers),
+    request.nextUrl.pathname,
+    process.env.AUTH_PROXY_SECRET,
+  );
   forwarded.set(PRODUCT_HEADER, product);
   const response =
     signedIn || isPublic(request.nextUrl.pathname)

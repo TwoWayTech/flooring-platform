@@ -1,7 +1,10 @@
+import { session as sessionTable } from "@workspace/db/control";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { deleteSessionCookie } from "better-auth/cookies";
+import { eq } from "drizzle-orm";
 import { LOCKED_MESSAGE } from "./attempts";
 import type { AuthDeps } from "./auth";
+import { CLIENT_IP_HEADER } from "./client-ip";
 import { hostCompanySlug } from "./company-pick";
 import { SESSION_ENDED_MESSAGES, sessionExpiry } from "./session-timeouts";
 
@@ -47,12 +50,35 @@ const ENROLMENT_PATHS = new Set([
   "/two-factor/enable",
   "/two-factor/get-totp-uri",
   "/two-factor/verify-totp",
+  "/verify-password",
   "/passkey/generate-register-options",
   "/passkey/verify-registration",
   "/get-session",
   "/organization/set-active",
   "/organization/list",
 ]);
+
+/** The two steps of adding a passkey. */
+const PASSKEY_REGISTER_PATHS = new Set(["/passkey/generate-register-options", "/passkey/verify-registration"]);
+
+/**
+ * How long a confirmed password allows adding a passkey. Turning on the authenticator app needs
+ * the password (blueprint p27), so adding a passkey, which signs in on its own, needs it too:
+ * POST /verify-password first, then register within this time, on the same session.
+ */
+const PASSKEY_STEP_UP_MS = 5 * 60_000;
+
+/** The verification row that records a password confirmed for adding a passkey on one session. */
+function passkeyStepUpId(sessionId: string): string {
+  return `passkey-step-up:${sessionId}`;
+}
+
+/**
+ * When an authenticator app is confirmed, Better Auth swaps the session for a new one with a new
+ * created time. The old created time is kept here between the before and after hooks, so the swap
+ * cannot restart the company's absolute timeout (blueprint p28).
+ */
+const sessionStarts = new WeakMap<Request, Date>();
 
 /** What each auth refusal tells the person, by code (docs/api-contract.md, Authentication). */
 export const AUTH_REFUSALS = {
@@ -64,6 +90,8 @@ export const AUTH_REFUSALS = {
   mfa_required: "Two-step sign-in is required for your role, so it cannot be turned off.",
   passkey_required: "Your account uses a passkey for two-step sign-in. Sign in with your passkey.",
   trust_device_unsupported: "Every sign-in asks for a second step; devices cannot be remembered.",
+  password_confirmation_required: "Confirm your password, then add the passkey within 5 minutes.",
+  create_session_unsupported: "Adding a passkey keeps your current session; it does not start a new one.",
 } as const;
 
 /** Whether an auth endpoint is exempt from the company timeouts. */
@@ -76,9 +104,9 @@ export function requestHost(headers: Headers | undefined): string | undefined {
   return headers?.get("x-forwarded-host") ?? headers?.get("host") ?? undefined;
 }
 
-/** The client IP the web proxy forwarded, for the attempt log. */
+/** The client IP the rate limiter also uses (settled by client-ip.ts), for the attempt log. */
 function requestIp(headers: Headers | undefined): string | null {
-  return headers?.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  return headers?.get(CLIENT_IP_HEADER) || null;
 }
 
 /** A request body's fields, whatever was sent. */
@@ -132,16 +160,33 @@ async function checkNoDowngrade(deps: AuthDeps, path: string, userId: string): P
   if (refused) throw new APIError("FORBIDDEN", { code: "mfa_required", message: AUTH_REFUSALS.mfa_required });
 }
 
+/** Tells the person a passkey was added, so one added by someone else does not go unnoticed. */
+async function notifyPasskeyAdded(deps: AuthDeps, to: string): Promise<void> {
+  await deps.email.send({
+    from: deps.emailFrom,
+    to: [to],
+    subject: "A passkey was added to your account",
+    text: "A passkey was just added to your account, and it can now be used to sign in.\n\nIf this was not you, sign in, remove the passkey, change your password and tell your company's owner.",
+  });
+}
+
 /**
  * Runs before every Better Auth endpoint: closes endpoints we do not offer, refuses a locked
  * account, applies the company timeouts, keeps a session that must enrol MFA to the enrolment
- * endpoints, and checks company switches.
+ * endpoints, asks for the password before a passkey is added, and checks company switches.
  */
 export function beforeAuthHook(deps: AuthDeps) {
   return createAuthMiddleware(async (ctx) => {
     const path = ctx.path;
     if ((path.startsWith("/organization/") && !OPEN_ORGANIZATION_PATHS.has(path)) || CLOSED_PATHS.has(path)) {
       throw new APIError("NOT_FOUND");
+    }
+    // A new session here would restart the absolute timeout (blueprint p28).
+    if (path === "/passkey/verify-registration" && fieldsOf(ctx.body).createSession === true) {
+      throw new APIError("BAD_REQUEST", {
+        code: "create_session_unsupported",
+        message: AUTH_REFUSALS.create_session_unsupported,
+      });
     }
     if (SECOND_FACTOR_PATHS.has(path) && fieldsOf(ctx.body).trustDevice === true) {
       throw new APIError("BAD_REQUEST", {
@@ -153,7 +198,7 @@ export function beforeAuthHook(deps: AuthDeps) {
     if (!ctx.request) return;
     if (path === "/sign-in/email") {
       const email = signInEmail(ctx.body);
-      if (email && (await deps.attempts.lockedUntil(email))) {
+      if (email && (await deps.attempts.reservePasswordAttempt(email, requestIp(ctx.request.headers)))) {
         throw new APIError("TOO_MANY_REQUESTS", { code: "account_locked", message: LOCKED_MESSAGE });
       }
     }
@@ -176,6 +221,16 @@ export function beforeAuthHook(deps: AuthDeps) {
       });
     }
     await checkNoDowngrade(deps, path, current.user.id);
+    if (PASSKEY_REGISTER_PATHS.has(path)) {
+      const proof = await ctx.context.internalAdapter.findVerificationValue(passkeyStepUpId(current.session.id));
+      if (!proof || new Date(proof.expiresAt) <= new Date()) {
+        throw new APIError("FORBIDDEN", {
+          code: "password_confirmation_required",
+          message: AUTH_REFUSALS.password_confirmation_required,
+        });
+      }
+    }
+    if (path === "/two-factor/verify-totp") sessionStarts.set(ctx.request, new Date(current.session.createdAt));
     if (path === "/organization/set-active") {
       await checkCompanySwitch(deps, ctx.body, current.user.id, requestHost(ctx.request.headers));
     }
@@ -183,31 +238,56 @@ export function beforeAuthHook(deps: AuthDeps) {
 }
 
 /**
- * Runs after every Better Auth endpoint. On a password sign-in it records the outcome for the
- * lockout, and refuses a password-only sign-in by someone who must use MFA and has only a passkey:
- * for them a password alone is never enough, so they sign in with the passkey instead.
+ * Runs after every Better Auth endpoint. On a password sign-in, a correct password resets the
+ * lockout count (a wrong one needs nothing: its reserved attempt already counts as a failure), and
+ * a password-only sign-in by someone who must use MFA and has only a passkey is refused. It also
+ * keeps the absolute timeout across the authenticator-app session swap, and records the password
+ * step before a passkey is added.
  */
 export function afterAuthHook(deps: AuthDeps) {
   return createAuthMiddleware(async (ctx) => {
-    if (ctx.path !== "/sign-in/email" || !ctx.request) return;
-    const email = signInEmail(ctx.body);
-    if (!email) return;
+    if (!ctx.request) return;
     const returned = ctx.context.returned;
-    const ip = requestIp(ctx.request.headers);
-    if (returned instanceof APIError) {
-      if (returned.body?.code === "INVALID_EMAIL_OR_PASSWORD") await deps.attempts.record("password_failed", email, ip);
+    const succeeded = !(returned instanceof APIError);
+    if (ctx.path === "/sign-in/email") {
+      const email = signInEmail(ctx.body);
+      // Better Auth reports an unconfirmed email only after checking the password.
+      const passwordRight = succeeded || (returned instanceof APIError && returned.body?.code === "EMAIL_NOT_VERIFIED");
+      if (email && passwordRight) await deps.attempts.record("password_ok", email, requestIp(ctx.request.headers));
+      const created = ctx.context.newSession;
+      // With an authenticator app enrolled, the two-factor plugin asks for the code next.
+      if (!succeeded || !created || created.user.twoFactorEnabled === true) return;
+      const status = await deps.mfa.statusOf(created.user.id);
+      if (status.required && !status.totp && status.passkeys > 0) {
+        await ctx.context.internalAdapter.deleteSession(created.session.token);
+        deleteSessionCookie(ctx);
+        ctx.context.setNewSession(null);
+        throw new APIError("FORBIDDEN", { code: "passkey_required", message: AUTH_REFUSALS.passkey_required });
+      }
       return;
     }
-    await deps.attempts.record("password_ok", email, ip);
-    const created = ctx.context.newSession;
-    // With an authenticator app enrolled, the two-factor plugin asks for the code next.
-    if (!created || created.user.twoFactorEnabled === true) return;
-    const status = await deps.mfa.statusOf(created.user.id);
-    if (status.required && !status.totp && status.passkeys > 0) {
-      await ctx.context.internalAdapter.deleteSession(created.session.token);
-      deleteSessionCookie(ctx);
-      ctx.context.setNewSession(null);
-      throw new APIError("FORBIDDEN", { code: "passkey_required", message: AUTH_REFUSALS.passkey_required });
+    if (!succeeded) return;
+    if (ctx.path === "/two-factor/verify-totp") {
+      const startedAt = sessionStarts.get(ctx.request);
+      const created = ctx.context.newSession;
+      if (startedAt && created) {
+        await deps.db.update(sessionTable).set({ createdAt: startedAt }).where(eq(sessionTable.id, created.session.id));
+      }
+      return;
+    }
+    if (ctx.path !== "/verify-password" && ctx.path !== "/passkey/verify-registration") return;
+    const current = await getSessionFromCtx(ctx);
+    if (ctx.path === "/verify-password" && current) {
+      const id = passkeyStepUpId(current.session.id);
+      await ctx.context.internalAdapter.deleteVerificationByIdentifier(id);
+      await ctx.context.internalAdapter.createVerificationValue({
+        identifier: id,
+        value: current.user.id,
+        expiresAt: new Date(Date.now() + PASSKEY_STEP_UP_MS),
+      });
+    } else if (ctx.path === "/passkey/verify-registration" && current) {
+      await ctx.context.internalAdapter.deleteVerificationByIdentifier(passkeyStepUpId(current.session.id));
+      void notifyPasskeyAdded(deps, current.user.email).catch(() => deps.logError("Could not send a passkey notice."));
     }
   });
 }
