@@ -12,6 +12,7 @@ import { addresses, customers, measurementRooms, quoteLines, quotes } from "@wor
 import { tenants } from "@workspace/db/control";
 import {
   computeTotals,
+  productTaxCategory,
   defaultWastePct,
   nextNumber,
   QUOTE_ACTION_STATUS,
@@ -315,7 +316,7 @@ export class SalesService {
       if (location?.kind !== "warehouse") throw refuse("Fulfil the quote from a warehouse.");
       const localization = await loadLocalization(tx);
       const catalog = new Map((await loadProducts(tx)).map((product) => [product.id, product]));
-      const lines = this.trustedLines(input.lines, before, catalog);
+      const lines = this.trustedLines(actor.access, input.lines, before, catalog);
       await this.assertReferences(tx, lines, input.soldAtLocationId);
       this.assertRooms(actor.access, input.rooms, before);
       this.assertWaste(actor.access, lines, before, catalog, localization.documents.defaultWastePct);
@@ -327,6 +328,12 @@ export class SalesService {
         : null;
       const taxChanged = JSON.stringify(had) !== JSON.stringify(asked);
       if (taxChanged) this.assertOverride(actor.access, input.taxOverride);
+      // A rate approved for one place does not follow the quote to another without the tax key.
+      const moved =
+        before !== undefined &&
+        (before.jobSite.state !== input.jobSite.state ||
+          (before.jobSite.county ?? "") !== (input.jobSite.county ?? ""));
+      if (!taxChanged && moved && before?.taxOverride) this.assertOverride(actor.access, input.taxOverride);
       // Who changed the tax and when are the server's to record.
       const taxOverride: TaxOverride | null = !taxChanged
         ? (before?.taxOverride ?? null)
@@ -429,10 +436,12 @@ export class SalesService {
         if (problem) throw refuse(problem);
       }
       const status = QUOTE_ACTION_STATUS[action];
+      const total = action === "send" ? await this.priceOn(tx, quote, day) : quote.total;
       const [moved] = await tx
         .update(quotes)
         .set({
           status,
+          total,
           expiresAt: expiry,
           sentAt: quote.sentAt ? undefined : action === "send" ? new Date() : undefined,
         })
@@ -460,6 +469,21 @@ export class SalesService {
     return (await loadQuotes(db, [quoteId]))[0]!;
   }
 
+  /** A quote's total on a day, from the company's rules and the customer's certificate then. */
+  private async priceOn(tx: CompanyDb, quote: Quote, day: string): Promise<string> {
+    const [customer] = await loadCustomers(tx, [quote.customerId]);
+    if (!customer) throw refuse("This quote's customer no longer exists.");
+    const ctx = taxContextFor(
+      await loadLocalization(tx),
+      quote.jobSite,
+      customer,
+      day,
+      quote.lumpSum,
+      quote.taxOverride,
+    );
+    return computeTotals(quote.lines, ctx).total;
+  }
+
   private seesQuote(access: RequestAccess, quote: Pick<Quote, "salesRepId" | "branchId">): boolean {
     return scopeAllows(
       access.dataScope,
@@ -485,19 +509,36 @@ export class SalesService {
    * the request, so a person who cannot see cost can neither read nor set it (CLAUDE.md rule 5).
    */
   private trustedLines(
+    access: RequestAccess,
     lines: readonly DocLine[],
     before: Quote | undefined,
     catalog: ReadonlyMap<string, Product>,
   ): DocLine[] {
+    const mayChangeTax = access.permissions.has("sales.tax.override");
     return lines.map((line) => {
       const product = line.productId ? catalog.get(line.productId) : undefined;
       if (line.productId && !product) throw refuse("A product on the quote no longer exists.");
       const saved = before?.lines.find((candidate) => candidate.id === line.id);
-      return {
-        ...line,
-        unitCost: product?.cost ?? saved?.unitCost ?? "0",
-        ...(product?.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
-      };
+      if (product) {
+        // The tax category and unit are the product's, so a line cannot be made untaxed by
+        // calling a material labor (blueprint "Sales tax engine"; PR #14 security review).
+        return {
+          ...line,
+          category: productTaxCategory(product),
+          unit: product.unit,
+          unitCost: product.cost,
+          ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+        };
+      }
+      // A line with no product keeps the category it was saved with; a new one, or a changed
+      // category, decides tax, so it needs the tax key.
+      if (!mayChangeTax && saved?.category !== line.category) {
+        throw new ForbiddenException({
+          code: "forbidden",
+          message: "Only someone who may change tax can add a line without a product.",
+        });
+      }
+      return { ...line, unitCost: saved?.unitCost ?? "0" };
     });
   }
 

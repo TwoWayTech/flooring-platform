@@ -228,6 +228,23 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       (await call("post", "/quotes", cookies.salesA).send(quoteBody(customer.body.id, warehouse, tile, site("ZZ"))))
         .status,
     ).toBe(400);
+    // A material line called labor is still a material: its category comes from the product (PR #14 review).
+    const relabelled = quoteBody(customer.body.id, warehouse, tile).lines.map((line) => ({
+      ...line,
+      category: "labor",
+    }));
+    const material = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, { lines: relabelled }))
+      .expect(201);
+    expect(material.body.total).toBe("489.65");
+    const noProduct = [{ ...relabelled[0], productId: "", description: "Haul away", category: "service" }];
+    expect(
+      (
+        await call("post", "/quotes", cookies.salesA).send(
+          quoteBody(customer.body.id, warehouse, tile, { lines: noProduct }),
+        )
+      ).status,
+    ).toBe(403);
     expect(
       (
         await call("post", "/quotes", cookies.salesA).send(

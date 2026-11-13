@@ -14,7 +14,8 @@
   - **States:** a job-site or address state is trimmed, uppercased and must be a real US code. A send needs one. Tax rules match the code exactly, so a lowercase or made-up state would otherwise collect nothing (PR #14 security review).
   - **References:** each roll belongs to its line's product and is in stock; line warehouses and the sold-at location are live. Drawing rooms needs the Retail module and `retail.room.measure`.
   - **Totals:** computed on the server with the shared `computeTotals` and the tax engine (`taxContextFor` → `resolveTaxRule` → `withOverride`). The engine reads the company's own tax rules, county rates and company default, on today's date in the company's time zone. A total sent by the screen is ignored.
-  - **Line cost:** comes from the catalog, never from the request (rule 5), and is stripped without `inventory.product.view_sensitive`.
+  - **Line cost, category and unit:** come from the catalog, never from the request (rule 5; the category decides tax). A line without a product keeps its saved category; adding one or changing its category needs `sales.tax.override`. Cost is stripped without `inventory.product.view_sensitive`.
+  - **Moving the job site:** a quote with a tax override cannot change state or county without `sales.tax.override`. Sending prices the quote again on the day it goes out.
   - **Rights:** a waste change needs `sales.waste.view`. A tax change needs `sales.tax.override`, a valid rate and a reason; who changed it and when are recorded by the server, and the change is audited on its own.
   - **Rooms and lines:** replaced as a whole on each save, with line room links following the rooms' new ids.
   - **Email:** `quote.sent` emails the customer through NotificationService.
