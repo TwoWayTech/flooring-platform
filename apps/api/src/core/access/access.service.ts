@@ -148,6 +148,7 @@ export class AccessService {
         ...subscription,
         modules: moduleRows.filter((row) => row.planId === subscription.planId).map((row) => row.module),
       })),
+      tenant.status === "trial",
     );
     const overrides = await this.control.db
       .select({ module: tenantModuleOverrides.module, enabled: tenantModuleOverrides.enabled })

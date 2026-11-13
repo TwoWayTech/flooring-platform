@@ -232,4 +232,21 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
       await db.close();
     }
   });
+
+  it("finishes a company whose database never became ready, and refuses one that is ready", async () => {
+    const slug = `unready${run}`;
+    const first = await provision(company(slug));
+    const handle = openControlDb(control.url, { max: 1 });
+    try {
+      await handle.db
+        .update(tenantDatabases)
+        .set({ status: "provisioning" })
+        .where(eq(tenantDatabases.tenantId, first.tenantId));
+    } finally {
+      await handle.close();
+    }
+    const again = await provision(company(slug));
+    expect(again).toMatchObject({ tenantId: first.tenantId, resumed: true });
+    await expect(provision(company(slug))).rejects.toThrow(/already exists/);
+  });
 });

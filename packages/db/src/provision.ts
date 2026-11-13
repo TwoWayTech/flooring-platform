@@ -15,20 +15,23 @@ export interface ProvisionCompanyInput {
 /**
  * Gives a company its own database and brings it to the current schema (blueprint p13, steps
  * 2, 3 and 5): create through the DatabaseProvisioner, store the connection string encrypted,
- * migrate, record the version. Running it again for a company that has a database only migrates.
- * Returns the plain connection URL for the caller's next step (seeding); it is never logged.
+ * migrate, run `prepare` (seeding), and only then mark it ready, so a company is never ready
+ * without its first rows. Running it again for a company that has a database only migrates and
+ * prepares again. Returns the plain connection URL; it is never logged.
  */
 export async function provisionCompany(
   control: ControlDb,
   provisioner: DatabaseProvisioner,
   encryptionKey: string,
   input: ProvisionCompanyInput,
+  prepare: (url: string) => Promise<void> = () => Promise.resolve(),
 ): Promise<string> {
   const [existing] = await control.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, input.tenantId));
   const url = existing
     ? decryptSecret(existing.encryptedUrl, encryptionKey)
     : await createDatabase(control, provisioner, encryptionKey, input);
   const version = await migrateCompany(url);
+  await prepare(url);
   await control
     .update(tenantDatabases)
     .set({ status: "ready", schemaVersion: version, migratedAt: new Date(), lastError: null })

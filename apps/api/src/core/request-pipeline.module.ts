@@ -14,7 +14,9 @@ import { TenantGuard } from "./tenancy/tenant.guard";
  * 1. SessionGuard: a verified session, unless the route is `@Public()`;
  * 2. TenantGuard: the session's open company, unless `@Public()` or `@SessionOnly()`;
  * 3. PermissionGuard: the route's declared permissions and module, deny by default;
- * then, around the handler, the AuditInterceptor (outer) and the SensitiveFieldsInterceptor (inner).
+ * then, around the handler, the SensitiveFieldsInterceptor (outer) and the AuditInterceptor
+ * (inner). Audit sits next to the handler, so a committed write is recorded before anything that
+ * could still fail, such as serialising the response (PR #7 re-review).
  * Guards and interceptors are registered here only, so their order is fixed in one place.
  */
 @Module({
@@ -23,8 +25,8 @@ import { TenantGuard } from "./tenancy/tenant.guard";
     { provide: APP_GUARD, useExisting: SessionGuard },
     { provide: APP_GUARD, useExisting: TenantGuard },
     { provide: APP_GUARD, useExisting: PermissionGuard },
-    { provide: APP_INTERCEPTOR, useExisting: AuditInterceptor },
     { provide: APP_INTERCEPTOR, useExisting: SensitiveFieldsInterceptor },
+    { provide: APP_INTERCEPTOR, useExisting: AuditInterceptor },
   ],
 })
 export class RequestPipelineModule {}

@@ -18,7 +18,8 @@ function isBinary(value: unknown): boolean {
 function stripJson(value: unknown, held: ReadonlySet<PermissionKey>): unknown {
   if (Array.isArray(value)) return value.map((item) => stripJson(item, held));
   if (typeof value !== "object" || value === null) return value;
-  const result: Record<string, unknown> = {};
+  // No prototype, so a field named __proto__ stays data instead of changing the object.
+  const result = Object.create(null) as Record<string, unknown>;
   for (const [field, inner] of Object.entries(value)) {
     const key = sensitiveKeyFor(field);
     if (key && !held.has(key)) continue;

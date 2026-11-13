@@ -104,17 +104,20 @@ export async function provisionTenant(
   if (company.products.length === 0) throw new Error("Give the company at least one product.");
   const existing = await findUnfinished(control, company);
   const created = existing ?? (await writeControlRows(control, company));
-  const url = await provisionCompany(control, provisioner, encryptionKey, {
-    tenantId: created.tenantId,
-    slug: company.slug,
-    provider,
-  });
-  const companyDb = openCompanyDb(url, { max: 1 });
-  try {
-    await seedCompanyFoundation(companyDb.db, { products: company.products, ownerUserId: created.ownerUserId });
-  } finally {
-    await companyDb.close();
-  }
+  await provisionCompany(
+    control,
+    provisioner,
+    encryptionKey,
+    { tenantId: created.tenantId, slug: company.slug, provider },
+    async (url) => {
+      const companyDb = openCompanyDb(url, { max: 1 });
+      try {
+        await seedCompanyFoundation(companyDb.db, { products: company.products, ownerUserId: created.ownerUserId });
+      } finally {
+        await companyDb.close();
+      }
+    },
+  );
   return { ...created, resumed: existing !== null };
 }
 
@@ -134,10 +137,11 @@ async function findUnfinished(
     .where(and(eq(tenants.slug, slug), isNull(tenants.deletedAt)));
   if (!tenant) return null;
   const [database] = await control
-    .select({ id: tenantDatabases.id })
+    .select({ status: tenantDatabases.status })
     .from(tenantDatabases)
     .where(eq(tenantDatabases.tenantId, tenant.id));
-  if (database) throw new Error(`A company with the slug "${slug}" already exists.`);
+  // A database that never became ready (seeding failed) is finished on a rerun (PR #7 re-review).
+  if (database?.status === "ready") throw new Error(`A company with the slug "${slug}" already exists.`);
   const [owner] = await control
     .select({ userId: member.userId, email: user.email })
     .from(member)

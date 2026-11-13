@@ -80,29 +80,42 @@ describe("separateDuties (blueprint Security: a second person approves)", () => 
   });
 });
 
-describe("planModulesOf (PR #7 review: a cancelled plan never turns into a trial)", () => {
+describe("planModulesOf (PR #7 reviews: only a trial company gets all modules)", () => {
+  const now = new Date(Date.UTC(2026, 10, 13));
   const at = (day: number) => new Date(Date.UTC(2026, 10, day));
 
-  it("is null only for a company that never had a subscription", () => {
-    expect(planModulesOf([])).toBeNull();
+  it("gives a trial company with no current subscription all of its products' modules", () => {
+    expect(planModulesOf([], true, now)).toBeNull();
+  });
+
+  it("gives a company that is not a trial and has no subscription rows no plan modules", () => {
+    expect(planModulesOf([], false, now)).toEqual([]);
+    expect(enabledModules(["flooring"], planModulesOf([], false, now), [])).toEqual(["platform"]);
   });
 
   it("unions the plans of current subscriptions, one per product", () => {
-    const modules = planModulesOf([
-      { status: "active", currentPeriodEnd: at(30), modules: ["core", "retail"] },
-      { status: "trial", currentPeriodEnd: at(20), modules: ["hr"] },
-      { status: "cancelled", currentPeriodEnd: at(29), modules: ["contracts"] },
-    ]);
+    const modules = planModulesOf(
+      [
+        { status: "active", currentPeriodEnd: at(30), modules: ["core", "retail"] },
+        { status: "trial", currentPeriodEnd: at(20), modules: ["hr"] },
+        { status: "cancelled", currentPeriodEnd: at(29), modules: ["contracts"] },
+      ],
+      false,
+      now,
+    );
     expect([...(modules ?? [])].sort()).toEqual(["core", "hr", "retail"]);
   });
 
-  it("keeps only the latest plan when every subscription is cancelled", () => {
-    const modules = planModulesOf([
-      { status: "cancelled", currentPeriodEnd: at(1), modules: ["core", "contracts"] },
-      { status: "cancelled", currentPeriodEnd: at(15), modules: ["core"] },
+  it("keeps only the latest plan when no subscription is current, and never turns into a trial", () => {
+    const subscriptions = [
+      { status: "cancelled" as const, currentPeriodEnd: at(1), modules: ["core", "contracts"] as const },
+      { status: "trial" as const, currentPeriodEnd: at(5), modules: ["core"] as const },
+    ];
+    expect(planModulesOf(subscriptions, false, now)).toEqual(["core"]);
+    expect(enabledModules(["flooring"], planModulesOf(subscriptions, false, now), []).sort()).toEqual([
+      "core",
+      "platform",
     ]);
-    expect(modules).toEqual(["core"]);
-    expect(enabledModules(["flooring"], modules, []).sort()).toEqual(["core", "platform"]);
   });
 });
 

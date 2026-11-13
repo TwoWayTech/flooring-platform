@@ -266,4 +266,33 @@ describe("permissions, sensitive fields and audit (P10, needs the local PostgreS
     }
     expect((await call("get", `${PROBE}/products`, cookie)).body.code).toBe("forbidden");
   });
+
+  it("audits writes in a controller marked @Audited() at class level, and a write whose response failed after it committed", async () => {
+    const manager = await member("flooring", ["manager"]);
+    // Other tests (the route inventory) also call these routes, so entries are counted around this call.
+    const failedAction = `POST ${PROBE}/audited/unserialisable`;
+    const countFailed = async () => {
+      const handle = await harness.companyDb(companies.flooring.id);
+      try {
+        return (await handle.db.select().from(auditLog).where(eq(auditLog.action, failedAction))).length;
+      } finally {
+        await handle.close();
+      }
+    };
+    const before = await countFailed();
+    const created = await call("post", `${PROBE}/audited/branches`, manager).expect(201);
+    const failed = await call("post", `${PROBE}/audited/unserialisable`, manager);
+    expect(failed.status).toBe(500);
+    expect(await countFailed()).toBe(before + 1);
+    const handle = await harness.companyDb(companies.flooring.id);
+    try {
+      const entries = await handle.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.action, `POST ${PROBE}/audited/branches`));
+      expect(entries.map((entry) => entry.targetId)).toContain(created.body.id);
+    } finally {
+      await handle.close();
+    }
+  });
 });
