@@ -366,4 +366,53 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     expect((await rowsOf(sourceId))[0].status).toBe("cancelled");
     sends.mockRestore();
   });
+
+  it("sends a retried row scheduled for later at its time, not at once, and keeps it cancellable (owner's work queue)", async () => {
+    const sourceId = uuidv7();
+    const sends = vi.spyOn(harness.outbox, "send");
+    await service().notify(
+      tenant,
+      null,
+      quoteSent(sourceId, "not-an-address", { scheduledFor: new Date(Date.now() + 3_600_000) }),
+    );
+    const [failed] = await rowsOf(sourceId);
+    expect(failed.status).toBe("failed");
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db
+        .update(outboxMessages)
+        .set({ recipientEmail: "later@example.test" })
+        .where(eq(outboxMessages.id, failed.id));
+    } finally {
+      await handle.close();
+    }
+    await service().retry(tenant, failed.id);
+    expect((await rowsOf(sourceId))[0].status).toBe("scheduled");
+    // An early job for the row (an older Retry, a duplicate) must not send it before its time.
+    await harness.app.get(JobsService).send(SEND_QUEUE, { companyId: company.id, messageId: failed.id });
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(callsTo(sends, "later@example.test")).toBe(0);
+    expect((await rowsOf(sourceId))[0].status).toBe("scheduled");
+    await service().cancel(tenant, failed.id);
+    expect((await rowsOf(sourceId))[0].status).toBe("cancelled");
+    sends.mockRestore();
+  });
+
+  it("sends nothing for a company in maintenance mode (owner decision 2026-11-13)", async () => {
+    const sourceId = uuidv7();
+    await harness.control.db
+      .update(tenants)
+      .set({ maintenanceMode: true, maintenanceReason: "migration_failed" })
+      .where(eq(tenants.id, company.id));
+    try {
+      await service().notify(tenant, null, quoteSent(sourceId, "pat@example.test"));
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      expect((await rowsOf(sourceId))[0].status).toBe("queued");
+    } finally {
+      await harness.control.db
+        .update(tenants)
+        .set({ maintenanceMode: false, maintenanceReason: null })
+        .where(eq(tenants.id, company.id));
+    }
+  });
 });

@@ -21,7 +21,7 @@ import {
   type OutboxAttachment,
   type OutboxRecipient,
 } from "@workspace/shared";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Job } from "pg-boss";
 import { CONTROL_DB } from "../database/control-db";
 import { EMAIL, EMAIL_FROM } from "../email/email.module";
@@ -243,9 +243,12 @@ export class NotificationService implements OnApplicationBootstrap {
         .where(eq(outboxMessages.id, row.id));
       return;
     }
+    // A row scheduled for later goes back to waiting for its time, still cancellable, instead of
+    // going out at once (PR #9 review; owner's work queue, 2026-11-13).
+    const later = row.scheduledFor !== null && row.scheduledFor.getTime() > Date.now() ? row.scheduledFor : null;
     const [requeued] = await db
       .update(outboxMessages)
-      .set({ status: "queued", failureType: null, failureDetail: null })
+      .set({ status: later ? "scheduled" : "queued", failureType: null, failureDetail: null })
       .where(and(eq(outboxMessages.id, row.id), retryable))
       .returning({ id: outboxMessages.id });
     // Another Retry moved it first, or it is sending right now (PR #9 review).
@@ -254,7 +257,7 @@ export class NotificationService implements OnApplicationBootstrap {
         code: "not_failed",
         message: "Only a failed or waiting message can be sent again.",
       });
-    await this.queue(tenant.companyId, row.id, null);
+    await this.queue(tenant.companyId, row.id, later);
   }
 
   /** Cancels a scheduled row before it is sent (spec `cancelOutbox`). */
@@ -302,7 +305,8 @@ export class NotificationService implements OnApplicationBootstrap {
   /**
    * Sends one row (ADR 0032). The row is claimed first with one conditional update (queued or
    * scheduled to sending), so a second job, a second Retry or a cancel can never send it twice or
-   * after it was cancelled. A read-only company (suspended, cancelled, in maintenance) sends
+   * after it was cancelled. The claim skips a deleted row and a row whose scheduled time has not
+   * come (by the database clock), so no early job sends it before then; its own delayed job does. A read-only company (suspended, cancelled, in maintenance) sends
    * nothing: its rows stay queued, and Retry (or the sweeper, STATUS) sends them once it is
    * writable. A
    * provider failure marks the row failed and tells the actor; Retry sends it again.
@@ -320,7 +324,14 @@ export class NotificationService implements OnApplicationBootstrap {
     const [row] = await db
       .update(outboxMessages)
       .set({ status: "sending" })
-      .where(and(eq(outboxMessages.id, job.data.messageId), inArray(outboxMessages.status, ["queued", "scheduled"])))
+      .where(
+        and(
+          eq(outboxMessages.id, job.data.messageId),
+          inArray(outboxMessages.status, ["queued", "scheduled"]),
+          isNull(outboxMessages.deletedAt),
+          or(isNull(outboxMessages.scheduledFor), lte(outboxMessages.scheduledFor, sql`now()`)),
+        ),
+      )
       .returning();
     if (!row) return;
     let sentId: string;
