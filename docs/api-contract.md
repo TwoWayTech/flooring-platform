@@ -71,6 +71,20 @@ The company always comes from the verified session. A `companyId` or `tenantId` 
 | 403 `company_read_only` | A write (anything but GET, HEAD or OPTIONS) to a company that is suspended, cancelled, in maintenance mode, or whose database is read-only. Reading still works (blueprint p29, p40) |
 | 503 `company_unavailable` | The company database is not ready (provisioning, migrating or failed) |
 
+## Permissions, sensitive fields and audit (real build, P10, ADR 0031)
+
+Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
+
+| Status and code | When |
+| --- | --- |
+| 403 `forbidden` | The person holds none of the route's keys, or their profile in the company is disabled. Message: "Your role does not allow this. Ask an Owner to change your security role." |
+| 403 `module_not_enabled` | The route's module is not on for the company (not in its products or plan, or switched off) |
+| 403 `permission_undeclared` | The route declares no permission. This is a bug in the route, refused so it fails closed |
+
+**Sensitive fields.** A company response never contains `cost`, `unitCost`, `averageCost`, `landedCost`, `margin`, `marginPct`, `grossMargin`, `jobMargin`, `payRate`, `hourlyRate`, `salary`, `creditLimit` or `estimatedCost` unless the viewer holds the key that reveals that field (`SENSITIVE_FIELDS` in packages/shared). The server removes them at any depth. These property names are reserved for sensitive values.
+
+**Audit.** Every successful company write (POST, PUT, PATCH, DELETE) writes an `audit_log` entry: the module's own, with before and after, or the API's safety-net entry (category `data`, the route and the record id). The log is append-only: the database refuses UPDATE, DELETE and TRUNCATE.
+
 ## Session (demo route handlers, demo mode only)
 
 | Route | Body / response | Notes |

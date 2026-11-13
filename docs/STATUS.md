@@ -69,7 +69,6 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Reset email limit:** when password reset gets a spec (with Settings → Users), apply the same limit as verification emails, 3 an hour per address, through `AttemptLog.reserveEmail` (ADR 0029, part 2).
 - **MFA by role content, not key (before role management, P10):** a role copied from Accountant or HR gets a new key, so it would not require MFA. Decide from what the role can do (a `requiresMfa` rule in packages/shared), and keep `member.role` in sync whenever roles are assigned (PR #4 security review, finding 7).
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
-- **P10: deny company routes that declare no product.** A route without `@RequireProduct()` serves any company; add this to the route-inventory test (PR #6 review, finding 5).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
 - **move-tenant:** maintenance mode, pg_dump/pg_restore, checksums, the connection swap, and `TenantConnectionService.invalidate(companyId)` (ADR 0030).
@@ -78,9 +77,6 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **A real connection bound:** bound the total connections rather than the pool count, pass `end({ timeout })`, and lower the `TENANT_POOL_CACHE` maximum (500 × 3 × 2 is far above PostgreSQL's 100).
   - **Shutdown:** await the opens still in flight before draining, so none leaks.
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
-- **P10, enforce rule 2 with tooling:**
-  - add `no-restricted-imports` in apps/api for `openCompanyDb` and `decryptSecret`, allowed only in `core/tenancy` and tests;
-  - keep `TenantContext.fromVerifiedSession` to TenantGuard's module (a module-private token or a WeakSet of issued contexts), so a job or admin path cannot fabricate a session or company input.
 
 ## Blockers and open questions
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions, plan prices.
