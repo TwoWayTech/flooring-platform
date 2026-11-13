@@ -868,6 +868,15 @@ export class DemoStore implements ApiClient {
     return { products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments };
   }
 
+  async salesData() {
+    const [quotes, customers, locations] = await Promise.all([
+      this.list("quotes"),
+      this.list("customers"),
+      this.list("locations"),
+    ]);
+    return { quotes, customers, locations };
+  }
+
   async purchasingData() {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
       await Promise.all([

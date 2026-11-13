@@ -23,12 +23,10 @@ export function SalesPage() {
   const router = useRouter();
   const params = useSearchParams();
   const data = useApiQuery(async (client) => {
-    const [quotes, sales, customers, users, locations, roles] = await Promise.all([
-      client.list("quotes"),
+    const [{ quotes, customers, locations }, sales, users, roles] = await Promise.all([
+      client.salesData(),
       loadSalesLedger(client),
-      client.list("customers"),
       client.list("users"),
-      client.list("locations"),
       client.list("roles"),
     ]);
     return { quotes, sales, customers, users, locations, roles };

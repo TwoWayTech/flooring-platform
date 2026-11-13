@@ -25,6 +25,12 @@ const ADDRESS = z.object({
   lat: z.number().optional(),
   lng: z.number().optional(),
 });
+/** An optional id; the screen sends "" for none, which reads as none. */
+const OPTIONAL_ID = z
+  .union([z.string().uuid(), z.literal("")])
+  .optional()
+  .transform((value) => value || undefined);
+
 const TERMS = z.enum(["due_on_receipt", "net_15", "net_30", "net_45"]);
 
 const NEW_CUSTOMER = z.object({
@@ -49,10 +55,10 @@ const CUSTOMER = z.object({
 });
 
 const QUOTE = z.object({
-  id: z.string().uuid().optional(),
+  id: OPTIONAL_ID,
   customerId: z.string().uuid(),
   locationId: z.string().uuid(),
-  soldAtLocationId: z.string().uuid().optional(),
+  soldAtLocationId: OPTIONAL_ID,
   jobSite: ADDRESS,
   rooms: z
     .array(
@@ -70,7 +76,7 @@ const QUOTE = z.object({
     .array(
       z.object({
         id: z.string().max(100),
-        productId: z.string().uuid().optional(),
+        productId: OPTIONAL_ID,
         description: z.string().max(300),
         category: z.enum(["material", "labor", "freight", "service"]),
         unit: z.enum(["sq_ft", "each", "step", "ft", "hour"]),
@@ -80,9 +86,9 @@ const QUOTE = z.object({
         unitCost: z.string().max(30).default("0"),
         wastePct: PERCENT.optional(),
         roomIds: z.array(z.string().max(100)).max(100).optional(),
-        rollId: z.string().uuid().optional(),
+        rollId: OPTIONAL_ID,
         sqFtPerCarton: QUANTITY.optional(),
-        locationId: z.string().uuid().optional(),
+        locationId: OPTIONAL_ID,
       }),
     )
     .max(300),

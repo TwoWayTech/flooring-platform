@@ -480,6 +480,13 @@ export interface SupplierInput {
 export type SupplierContactInput = Omit<SupplierContact, "id" | "status"> & { id?: string };
 
 /** A physical count that disagrees with the books (plan A-1). */
+/** The records the Sales and quote pages read together (ApiClient `salesData`). */
+export interface SalesData {
+  quotes: Quote[];
+  customers: Customer[];
+  locations: Location[];
+}
+
 /** The records the Purchasing page reads together (ApiClient `purchasingData`). */
 export interface PurchasingData {
   suppliers: Supplier[];
@@ -907,6 +914,12 @@ export interface ApiClient {
    * and supplier payments stay empty until they move with the ledger (P12).
    */
   purchasingData(): Promise<PurchasingData>;
+  /**
+   * What the Sales and quote pages read: quotes and customers within the person's data scope, and
+   * warehouses. With the real API (sales, part 1; ADR 0037) invoices still come from the demo
+   * until part 2 moves them.
+   */
+  salesData(): Promise<SalesData>;
   /** Moves a roll to another bin; nothing else about a roll changes. Needs inventory.roll.edit. Audited. */
   moveRoll(rollId: string, bin: string): Promise<Roll>;
   /** Sets stock to what was counted, with a reason (plan A-1). Needs inventory.stock.correct. Audited. */
