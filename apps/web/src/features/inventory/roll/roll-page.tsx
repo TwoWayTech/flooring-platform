@@ -50,16 +50,13 @@ export function RollPage({ rollId }: { rollId: string }) {
   const [dialog, setDialog] = useState<"cut" | "move" | "label" | "correct" | null>(null);
   const data = useApiQuery(
     async (client) => {
-      const [rolls, products, users, locations, transfers, reservations, customers, holds] = await Promise.all([
-        client.list("rolls"),
-        client.list("products"),
+      const [stock, users, customers, holds] = await Promise.all([
+        client.inventoryData(),
         client.list("users"),
-        client.list("locations"),
-        client.list("transfers"),
-        client.list("reservations"),
         client.list("customers"),
         client.listStockHolds(),
       ]);
+      const { rolls, products, locations, transfers, reservations } = stock;
       const roll = rolls.find((r) => r.id === rollId);
       return {
         roll,

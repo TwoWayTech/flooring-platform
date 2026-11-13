@@ -1,5 +1,8 @@
 import type {
   BusinessFilters,
+  Product,
+  Roll,
+  StockMovement,
   BusinessReport,
   Expense,
   RecurringExpense,
@@ -477,6 +480,17 @@ export interface SupplierInput {
 export type SupplierContactInput = Omit<SupplierContact, "id" | "status"> & { id?: string };
 
 /** A physical count that disagrees with the books (plan A-1). */
+/** The stock records the Inventory and roll pages read together (ApiClient `inventoryData`). */
+export interface InventoryData {
+  products: Product[];
+  rolls: Roll[];
+  stockMovements: StockMovement[];
+  locations: Location[];
+  transfers: Transfer[];
+  reservations: Reservation[];
+  stockAdjustments: StockAdjustment[];
+}
+
 export interface StockCorrectionInput {
   productId: string;
   rollId: string | null;
@@ -868,6 +882,15 @@ export interface ApiClient {
   issueReservation(reservationId: string, overrideReason?: string): Promise<Reservation>;
   /** Records a stock adjustment with a reason; above the company's quantity it waits for approval. Audited. */
   recordAdjustment(input: AdjustmentInput): Promise<StockAdjustment>;
+  /**
+   * What the Inventory and roll pages read: the catalog, rolls, the boxed-stock ledger, warehouses,
+   * transfers, reservations and adjustments. With the real API (inventory, part 1; ADR 0035) the
+   * reservations and adjustments stay empty until sales moves, and a list the person may not see
+   * comes back empty.
+   */
+  inventoryData(): Promise<InventoryData>;
+  /** Moves a roll to another bin; nothing else about a roll changes. Needs inventory.roll.edit. Audited. */
+  moveRoll(rollId: string, bin: string): Promise<Roll>;
   /** Sets stock to what was counted, with a reason (plan A-1). Needs inventory.stock.correct. Audited. */
   correctStockCount(input: StockCorrectionInput): Promise<StockAdjustment>;
   /** Approves or rejects a waiting adjustment; needs inventory.stock.approve and someone else. Audited. */
