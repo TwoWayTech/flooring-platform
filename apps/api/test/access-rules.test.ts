@@ -11,6 +11,7 @@ function access(keys: PermissionKey[], overrides: Partial<RequestAccess> = {}): 
   return {
     permissions: new Set(keys),
     modules: ["platform", "core"],
+    ceiling: keys,
     dataScope: "own",
     isOwner: false,
     userId: "u1",

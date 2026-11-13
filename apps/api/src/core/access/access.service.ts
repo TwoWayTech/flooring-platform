@@ -26,6 +26,8 @@ export interface RequestAccess {
   /** Effective permissions = role permissions ∩ company ceiling ∩ enabled modules (CLAUDE.md rule 4). */
   permissions: ReadonlySet<PermissionKey>;
   modules: readonly ModuleKey[];
+  /** The company's permission ceiling, for the no-escalation rules (spec rule 11). */
+  ceiling: readonly PermissionKey[];
   /** The widest data scope across the person's roles. */
   dataScope: DataScope;
   isOwner: boolean;
@@ -62,6 +64,7 @@ export class AccessService {
     return {
       permissions: access.permissions,
       modules,
+      ceiling,
       dataScope: access.dataScope,
       isOwner: access.isOwner && !held.disabled,
       userId: tenant.userId,
