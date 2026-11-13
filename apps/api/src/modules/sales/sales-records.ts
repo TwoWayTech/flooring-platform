@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import type { CompanyDb } from "@workspace/db";
 import {
   addresses,
@@ -26,7 +27,13 @@ function dayOf(value: Date): string {
  */
 export async function loadLocalization(db: CompanyDb): Promise<LocalizationSettings> {
   const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, "localization"));
-  if (!row) throw new Error("The company has no localization settings.");
+  // A company set up without settings collects nothing and sells nothing until they exist (fail closed).
+  if (!row) {
+    throw new ConflictException({
+      code: "settings_missing",
+      message: "Finish Settings → Localization and tax before creating quotes.",
+    });
+  }
   const stored = row.value as LocalizationSettings;
   const [rules, jurisdictions] = await Promise.all([
     db.select().from(taxRules).where(isNull(taxRules.deletedAt)),
