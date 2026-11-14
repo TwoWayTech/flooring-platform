@@ -204,15 +204,15 @@ Behind the `finance.expenses` switch. Money is decimal strings; receipts are bas
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /expenses` | `finance.expense.view` | `Expense[]` within data scope: own by recorder, branch by the location's branch; company-wide ones need scope `all` or being the recorder |
-| `GET /recurring-expenses` | `finance.expense.view` | `RecurringExpense[]` |
-| `POST /expenses` | `finance.expense.create` | `{ date, supplierId, category, locationId, amount, tax, paymentMethod, reference, note, settlement, asDraft, files }`. A draft needs a date and an amount; recording needs a vendor, an amount above zero and a receipt, then confirms (and posts) or waits for approval. No future dates; payroll is refused. Audited |
+| `GET /recurring-expenses` | `finance.expense.view` | `RecurringExpense[]`: all with scope `all`, otherwise those at a location in the reader's branch |
+| `POST /expenses` | `finance.expense.create` | `{ date, supplierId, category, locationId, amount, tax, paymentMethod, reference, note, settlement, asDraft, files }`. A draft needs a date and an amount; recording needs a vendor, an amount above zero and a receipt, then confirms (and posts) or waits for approval. No future dates; payroll is refused. Branch scope writes only at a location in its own branch, and a company-wide expense needs scope `all` (403). Audited |
 | `PUT /expenses/:id` | `finance.expense.create` | The same body: saves or finishes a draft. A recorded expense is 400. Audited |
 | `POST /expenses/:id/review` | `finance.expense.approve` | `{ action: "approve" }` confirms and posts; `{ action: "reject", reason }` returns it to draft. Never the recorder. Audited |
 | `POST /expenses/:id/void` | `finance.expense.void` | `{ reason }`: voids a pending or confirmed expense; a confirmed one posts its reversal on the void day; a pay-later one retires its bill, refused while a supplier payment is allocated to it. Audited |
-| `POST /recurring-expenses`, `PUT /recurring-expenses/:id` | `finance.expense.create` | Saves a template (day of month 1 to 31) and raises the drafts it owes. Audited |
+| `POST /recurring-expenses`, `PUT /recurring-expenses/:id` | `finance.expense.create`, data scope `all` | Saves a template (day of month 1 to 31) and raises the drafts it owes. Audited |
 | `GET /files/:id` | as for payments, or `finance.expense.view` | An expense receipt, within the expense's data scope |
 
-A daily job raises recurring drafts for every company in its own day.
+A daily job raises recurring drafts for every company in its own day. Payroll months are hidden from anyone without `hr.payroll.view`.
 
 ## Notifications and Outbox (real build, ADR 0032)
 

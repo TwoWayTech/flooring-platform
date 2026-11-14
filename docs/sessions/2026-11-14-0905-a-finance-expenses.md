@@ -30,3 +30,27 @@ The schema already has `expenses` and `recurring_expenses`; no migration.
 - **Void of a pending expense:** allowed, posts nothing (it never posted).
 - **Future dates:** refused beyond today in the company's day.
 - **Finishing a draft:** the finisher becomes the recorder (as the demo), so the two-person rule compares against them.
+
+## What was built
+As planned (ADR 0041, PR #20), with the review changes below. Files: `packages/shared/src/accounting/postings.ts` (`expensePosting`, `EXPENSE_ACCOUNTS`); `apps/api/src/modules/finance/expenses.*`, `expense-records.ts`, `recurring-expenses.job.ts`; `apps/api/src/core/access/audit.ts` (`recordSystem`); `apps/api/src/app.ts` (receipt body size); the receipt branch of `/files/:id`; `packages/db/src/seed/company.ts`; `apps/web/src/lib/api` (`expensesData` and the four expense methods) and `expenses-view.tsx`.
+
+## Reviews
+- **Test-writer:** found that a draft could not be saved without new files (the payment proof check needs one file). Fixed: `expenseProblem` decides.
+- **First security review:** 2 blocking, both fixed.
+  - Data scope was not applied to writes: a branch manager could record at another branch's location or company-wide. Fix: `requireWritableAt` (403).
+  - `POST` and `PUT /expenses` had the small body limit, so a real receipt got 413. Fix: both are proof routes.
+  - Should-fix items, all done: payroll months hidden from anyone without `hr.payroll.view`; templates scoped (writes need company-wide scope); raised drafts audited (`recordSystem`); the bill id in the expense's audit entries; amounts capped at 11 digits so amount plus tax fits; the file count checked again under the row lock; a re-saved draft's audit keeps its earlier values.
+- **Second security review:** see PR #20.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck`: pass.
+- `pnpm test`: shared 372, api unit 56, db 11, providers 11, web 13, hooks: all pass.
+- `pnpm test:api`: 195 of 195 before the review fixes; `expenses.int.test.ts` 17 of 17 after them.
+- Playwright api mode (`tests/e2e-api/expenses.spec.ts`): could not run locally. The local database's seeded users no longer take the local seed password, so even the existing purchasing spec fails at sign-in. CI seeds a fresh database and runs it.
+
+## What is left
+- P12 part 3 must not post bills that an expense raised, and must lock the bill row in both the void check and the supplier payment allocation (review note).
+- Settings → Expenses (the approval rule) still saves to the demo in api mode until the Settings module moves.
+
+## Next prompt
+"/resume. Continue the owner's queue of 2026-11-14: P12 part 3, supplier bills and payments with receipt, stock and cost-of-goods postings (purchasing.md, ADR 0039 to 0041)."
