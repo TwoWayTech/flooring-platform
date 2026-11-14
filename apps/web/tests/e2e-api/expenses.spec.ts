@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MANAGER_EMAIL, seedPassword } from "./accounts";
+import { MANAGER_EMAIL, signInAs } from "./accounts";
 
 const pdf = {
   name: "receipt.pdf",
@@ -10,24 +10,17 @@ const pdf = {
 /**
  * Expenses on the real API (P12 part 2; ADR 0041): Summit's expenses, vendors and locations come
  * from its own database, and a recorded expense is saved, numbered and posted by apps/api. The
- * store manager sees the expenses of the Denver branch and needs no MFA.
+ * store manager sees the Denver branch and needs no MFA. One test signs in once, so the run stays
+ * inside the sign-in rate limit the other specs share.
  */
 test.describe("expenses (api mode)", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(MANAGER_EMAIL);
-    await page.getByLabel("Password").fill(seedPassword());
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-  });
+  test("a manager sees the branch's expenses, saves a draft and records one with its receipt", async ({ page }) => {
+    await signInAs(page, MANAGER_EMAIL);
 
-  test("a manager sees the branch's expenses with their vendors from the API", async ({ page }) => {
     await page.goto("/finance?view=expenses");
     await expect(page.getByRole("row", { name: /EXP-0001/ })).toContainText("Redrock Property Management");
-  });
 
-  test("won't record without a receipt, saves a draft, then records one with its receipt", async ({ page }) => {
-    await page.goto("/finance?view=expenses");
+    // A branch manager records at a location in their own branch (PR #20 security review).
     await page.getByRole("button", { name: "New expense" }).click();
     await page.getByRole("dialog").getByLabel("Location").click();
     await page.getByRole("option", { name: "Denver Central" }).click();
@@ -38,7 +31,6 @@ test.describe("expenses (api mode)", () => {
     await expect(page.getByText("Draft saved")).toBeVisible();
 
     await page.getByRole("button", { name: "New expense" }).click();
-    // A branch manager records at a location in their own branch (PR #20 security review).
     await page.getByRole("dialog").getByLabel("Location").click();
     await page.getByRole("option", { name: "Denver Central" }).click();
     await page.getByLabel("Amount before tax").fill("37.25");
