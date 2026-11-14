@@ -614,7 +614,7 @@ const ONE_SIGN_IN_PER_EMPLOYEE = "user_profiles_employee_uidx";
  * `link` already unlinks the others under the employee's lock, so this only answers a race that
  * gets past it, or data written outside the app, with a clear refusal instead of a 500.
  */
-async function linkedOnce<T>(save: Promise<T>): Promise<T> {
+export async function linkedOnce<T>(save: Promise<T>): Promise<T> {
   try {
     return await save;
   } catch (error) {

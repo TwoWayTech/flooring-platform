@@ -35,6 +35,7 @@ The owner's queue of 2026-11-14 (docs/real-build-plan.md row 13; week 17 "portal
   - 3: the clock routes ignored `hr.portal`: both now need it (integration test).
   - Notes taken: the team calendar is limited to the last 92 days on and leaves out people who have left (integration test). Recorded in ADR 0049 "Residual risks": override lines on a manager's own statement, margin base derivable as on HR → Commissions, the flat-sum bonus premium inside the true-up, one link per employee enforced by People only (STATUS follow-up for a unique index), leavers keeping the portal, HR form vs portal lost update, commission book cost.
 - Second security review (fresh, 0796c03): PASS, 0 blocking; should-fix 1 (sign stale terms) fixed; notes 1–2 fixed, 3–4 accepted.
+- Third security review (fresh, 6a1cf1b): PASS, 0 blocking; should-fix 1 (no API test for the 409 `employee_already_linked`) fixed with a portal integration test that feeds the real driver error through `linkedOnce`; notes accepted. Schema review of migration 0004: PASS, 0 blocking (pre-launch, seeded data only, so no tenant has duplicate links; the seed test passes with the index).
   - Should-fix 1: `POST /commission-assignments/:id/acknowledge` takes `{ signedName, planId, planVersion, planUpdatedAt }` and answers 409 `plan_changed` under the lock unless they are the assignment's current plan; `planUpdatedAt` because a plan unused by approved statements is edited in place with the same id and version. Audit `after` records `planVersion`. Web contract, client, demo and My commission pass the plan shown. Integration test: another plan id, another version, and a plan edited between the read and the signature each get 409.
   - Note 1: people who have left get no team calendar and no clock (`portalVisibility`; shared and integration tests).
   - Note 2: time-off `hours` and `pending` as fixed three-place strings (`quantityString` in packages/shared money; API and demo).
@@ -43,6 +44,7 @@ The owner's queue of 2026-11-14 (docs/real-build-plan.md row 13; week 17 "portal
 - Owner decision 3 (one sign-in per employee): `user_profiles_employee_uidx` (partial, NULL and deleted rows ignored), migration `0004_user_profiles_one_per_employee.sql`; People save maps a violation to 409 `employee_already_linked`; `packages/db/test/user-profiles.int.test.ts`.
 
 ## Commands run and results
+- After the third review: `portal.int.test.ts` 15 of 15; typecheck and lint pass.
 - `pnpm -s typecheck`: pass.
 - `pnpm -s lint`: pass (after formatting `packages/shared/src/hr/portal.ts`).
 - `pnpm -s test`: shared 436, api 56, web 13, db 11, providers 11, all pass (after classifying the portal's `rates` flag as not sensitive in `access-rules.test.ts`).

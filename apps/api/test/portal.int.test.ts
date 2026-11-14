@@ -24,6 +24,8 @@ import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ConflictException } from "@nestjs/common";
+import { linkedOnce } from "../src/modules/hr/people.service";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
@@ -1012,6 +1014,21 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
       await sign(cookies.ben, ids.benAssignment, "Test User"),
       "This plan assignment has ended, so there is nothing to sign.",
     );
+  });
+
+  it("turns a second live link to one employee, from the real driver error, into 409 employee_already_linked", async () => {
+    const dana = await person({ name: "Dana Link" });
+    await member(["employee"], dana.id);
+    const other = await member(["employee"], null);
+    const second = rows((db) =>
+      db.update(userProfiles).set({ employeeId: dana.id }).where(eq(userProfiles.userId, other.userId)),
+    );
+    const refused = await linkedOnce(second).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ConflictException);
+    expect((refused as ConflictException).getResponse()).toMatchObject({ code: "employee_already_linked" });
   });
 
   it("opens one's own employee documents with hr.portal.view, and nobody else's", async () => {
