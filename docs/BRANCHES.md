@@ -5,7 +5,7 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `fix/hr-california-pay-switch` | A (Claude) | California pay rules behind `hr.payroll.california`, off by default, with pending-review and off notes (ADR 0050) | Draft | [#29](https://github.com/TwoWayTech/flooring-platform/pull/29) | this commit |
+| `fix/hr-commission-audit-visibility` | A (Claude) | Commission plan terms and adjustment reasons in the audit log only for the Owner and pay view_sensitive holders; hint under the adjustment reason (owner decision 2026-11-14, ADR 0048) | Draft, waiting for the security review | [#30](https://github.com/TwoWayTech/flooring-platform/pull/30) | this commit |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
 Merged on 2026-11-14: PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.

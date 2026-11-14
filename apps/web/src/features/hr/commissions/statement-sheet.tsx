@@ -74,8 +74,14 @@ function AdjustForm({ row, invoices }: { row: CommissionStatementRow; invoices: 
             placeholder="150 or -75"
           />
         </Field>
-        <Field id="adj-reason" label="Reason">
-          <Input id="adj-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+        {/* The reason goes to the audit log; amounts stay out of it (owner decision 2026-11-14, ADR 0048). */}
+        <Field id="adj-reason" label="Reason" hint="Don't type amounts here.">
+          <Input
+            id="adj-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            aria-describedby="adj-reason-hint"
+          />
         </Field>
       </div>
       {amount.trim().startsWith("-") ? (

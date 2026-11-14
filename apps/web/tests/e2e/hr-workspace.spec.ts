@@ -92,6 +92,8 @@ test.describe("HR workspace (spec C1)", () => {
       .getByRole("row", { name: /^Open .*statement$/ })
       .first()
       .click();
+    // The reason goes to the audit log, so it asks for no amounts (owner decision 2026-11-14).
+    await expect(page.getByLabel("Reason")).toHaveAccessibleDescription("Don't type amounts here.");
     await page.getByLabel("Amount").fill("-20");
     await page.getByLabel("Reason").fill("Return");
     await page.getByRole("button", { name: "Add adjustment" }).click();
