@@ -1,4 +1,14 @@
-import { auditLog, branches, ledgerAccounts, locations, products, settings, taxRules } from "@workspace/db/company";
+import {
+  auditLog,
+  branches,
+  ledgerAccounts,
+  locations,
+  products,
+  rolePermissions,
+  roles,
+  settings,
+  taxRules,
+} from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { dec, moneyString } from "@workspace/shared";
 import { eq, like } from "drizzle-orm";
@@ -204,6 +214,25 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
     const refused = await call("get", "/settings/accounting", unenrolled);
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe("mfa_enrolment_required");
+    // The settings decide where the whole company's cash posts, so a branch-scoped role is refused
+    // even with the permission (PR #19 security review).
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [role] = await handle.db
+        .insert(roles)
+        .values({ key: "branch-bookkeeper", name: "Branch bookkeeper", dataScope: "branch" as const })
+        .returning();
+      await handle.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.payments.manage" });
+    } finally {
+      await handle.close();
+    }
+    const bookkeeper = await enrolled(
+      await harness.addUser({ companyIds: [company.id], roles: ["branch-bookkeeper"] }),
+    );
+    expect((await call("get", "/settings/accounting", bookkeeper)).status).toBe(403);
+    expect(
+      (await call("put", "/settings/accounting", bookkeeper).send({ ...read.body, salesTaxBasis: "cash" })).status,
+    ).toBe(403);
   });
 
   it("makes a ledger account per bank account and refuses ambiguous or forged lists", async () => {
@@ -334,8 +363,11 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
         files: [PDF],
       })
       .expect(201);
+    const pending = await balances();
     await call("post", `/payments/${paid.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
     const before = await balances();
+    // Confirmed on review, the card payment posts to the bank card payments now go to.
+    expect(moneyString(dec(before.get(operating)!).minus(pending.get(operating) ?? "0"))).toBe("500.00");
     await call("post", "/refunds", cookies.owner)
       .send({
         customerId: bill.customerId,

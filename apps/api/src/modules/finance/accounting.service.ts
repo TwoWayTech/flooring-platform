@@ -92,6 +92,12 @@ export class AccountingService {
    */
   private async remove(tx: CompanyDb, keys: BankAccountKey[]): Promise<void> {
     if (keys.length === 0) return;
+    // Lock the accounts first, so a posting that skipped the settings lock can't add a line meanwhile.
+    await tx
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(inArray(ledgerAccounts.key, keys))
+      .for("update");
     const used = await tx
       .selectDistinct({ name: ledgerAccounts.name })
       .from(journalLines)

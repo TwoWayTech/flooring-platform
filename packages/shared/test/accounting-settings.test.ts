@@ -66,6 +66,13 @@ describe("accounting settings (ADR 0040, owner decision 2026-11-14)", () => {
     expect(accountingSettingsProblem(withBanks([{ key: OPERATING, name: "Operating", methods: ["ach"] }]))).toBeNull();
   });
 
+  it("refuses a bank account name that carries an account number (rule 14)", () => {
+    expect(accountingSettingsProblem(withBanks([{ name: "Operating 123456789", methods: [] }]))).toMatch(
+      /without its account number/,
+    );
+    expect(accountingSettingsProblem(withBanks([{ name: "Operating 2026", methods: [] }]))).toBeNull();
+  });
+
   it("knows which accounts hold cash", () => {
     expect(isCashAccount("cash")).toBe(true);
     expect(isCashAccount(OPERATING)).toBe(true);

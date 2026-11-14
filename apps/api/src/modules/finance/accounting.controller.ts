@@ -11,6 +11,7 @@ import { ACCOUNTING_INPUT, loadAccounting } from "../../core/ledger/accounting-s
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { AccountingService } from "./accounting.service";
+import { requireCompanyWide } from "./company-wide";
 
 /**
  * How the company keeps its books: costing method, sales tax basis and bank accounts (owner
@@ -29,7 +30,8 @@ export class AccountingController {
   /** GET /settings/accounting: the saved settings, or the defaults. */
   @Get()
   @RequirePermission("settings.payments.manage")
-  async read(@CurrentTenant() tenant: TenantContext) {
+  async read(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireCompanyWide(access);
     return loadAccounting(await this.tenancy.db(tenant));
   }
 
@@ -44,6 +46,7 @@ export class AccountingController {
     @Req() request: Request,
     @Body() body: unknown,
   ) {
+    requireCompanyWide(access);
     const input = parse(ACCOUNTING_INPUT, body);
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);

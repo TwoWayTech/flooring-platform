@@ -55,6 +55,8 @@ export function accountingSettingsProblem(value: AccountingSettings): string | n
   for (const bank of value.bankAccounts) {
     const name = bank.name.trim().toLowerCase();
     if (names.has(name)) return `Two bank accounts are named ${bank.name.trim()}.`;
+    // Only a name is kept, never an account number (CLAUDE.md rule 14; PR #19 review).
+    if (/\d{6,}/.test(bank.name)) return "Name the bank account without its account number.";
     names.add(name);
     if (bank.key) {
       if (keys.has(bank.key)) return "A bank account is listed twice.";

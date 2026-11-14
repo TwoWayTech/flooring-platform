@@ -295,6 +295,9 @@ export class LedgerService {
 function accountOf(accounts: ReadonlyMap<string, string>, key: LedgerKey): string {
   const id = accounts.get(key);
   if (!id)
-    throw refused("ledger_account_missing", `The ledger has no live ${key} account. Check Settings → Accounting.`);
+    throw refused(
+      "ledger_account_missing",
+      "An account this posting needs is missing or retired. Check Settings → Accounting.",
+    );
   return id;
 }
