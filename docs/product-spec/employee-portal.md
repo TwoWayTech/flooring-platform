@@ -214,4 +214,8 @@ None. The portal offers template downloads for hours and no report export.
 - **`/my/time-off` has no guard for a 1099 or unlinked person who types the address.** The store refuses a 1099 request. For an unlinked person the Request form reads `portal.employee!` and would fail.
 - **Portal actions on approved requests.** Cancel is shown on pending requests only, although the store allows cancelling an approved request that has not started.
 - **Documents are read-only.** People cannot add their own.
+
+## Real build (ADR 0049)
+
+The API closes the known limits above. `GET /me/portal` takes the person from the session only (the user and the employee linked to their sign-in). The pay rate is sent only when the company shows rates and the person holds `hr.employee.view_sensitive`. With commission hidden, statements, assignment and plan are absent and the plan can't be signed in the portal. Pay rows carry no other person's lines or exclusions. `teamOut` has no kind, note, reason, policy, hours or decider, and `teamNames` names only the people in it. `hr.clock` and the clock setting decide both clock-in and clock-out. A person opens only their own documents. An unlinked person gets an empty overview. My meetings stays on the demo client until Meetings moves. docs/api-contract.md, "Employee portal".
 - **Hiding commission changes the portal only.** The pay period file HR exports still includes it.

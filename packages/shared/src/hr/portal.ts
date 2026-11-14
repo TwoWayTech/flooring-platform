@@ -15,7 +15,11 @@ export interface PortalVisibility {
 /** The company switches the portal reads (Settings → HR, CLAUDE.md rule 12). */
 export type PortalSwitches = Pick<
   HrSettings,
-  "showPayToEmployees" | "showCommissionToEmployees" | "showRatesToEmployees" | "showTeamCalendarToEmployees" | "clockEnabled"
+  | "showPayToEmployees"
+  | "showCommissionToEmployees"
+  | "showRatesToEmployees"
+  | "showTeamCalendarToEmployees"
+  | "clockEnabled"
 >;
 
 /**

@@ -1187,10 +1187,11 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       );
     for (const ownerType of ["expense", "payment", "refund", "bill", "supplier_payment", "contract"]) {
       const id = await proof(ownerType);
-      // HR passes the route (hr.employee.view) but holds none of the owner type's keys.
+      // HR passes the route (hr.employee.view), and Wes and Warehouse pass it with hr.portal.view
+      // (ADR 0049), but none holds the owner type's keys, so the service refuses.
       status(await fileBytes(cookies.hr, id), 404);
-      status(await fileBytes(cookies.wes, id), 403);
-      status(await fileBytes(cookies.warehouse, id), 403);
+      status(await fileBytes(cookies.wes, id), 404);
+      status(await fileBytes(cookies.warehouse, id), 404);
     }
     const expenseProof = await proof("expense");
     status(await fileBytes(cookies.sales, expenseProof), 404);

@@ -139,6 +139,7 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
   taxRate: "sales tax",
   fxRate: "currency exchange",
   accrualRate: "time-off accrual hours",
+  rates: "the portal flag for whether a person may see their own rate (ADR 0049), not a rate",
   limit: "a generic count",
   limits: "plan limits",
   userLimit: "plan seats",
