@@ -40,7 +40,7 @@ As planned (ADR 0041, PR #20), with the review changes below. Files: `packages/s
   - Data scope was not applied to writes: a branch manager could record at another branch's location or company-wide. Fix: `requireWritableAt` (403).
   - `POST` and `PUT /expenses` had the small body limit, so a real receipt got 413. Fix: both are proof routes.
   - Should-fix items, all done: payroll months hidden from anyone without `hr.payroll.view`; templates scoped (writes need company-wide scope); raised drafts audited (`recordSystem`); the bill id in the expense's audit entries; amounts capped at 11 digits so amount plus tax fits; the file count checked again under the row lock; a re-saved draft's audit keeps its earlier values.
-- **Second security review:** see PR #20.
+- **Second security review:** PASS, no blocking findings. Should-fix items done: own scope sees no recurring template; a draft's scope is checked again under the row lock; the server refuses a goods-only or inactive vendor (spec rule 10), with a test; draft and template audit entries hold every edited field. Notes carried to STATUS: lock the bill row in part 3; per-IP limits on the large-body routes; check the approval threshold with Zod when Settings → Expenses moves.
 
 ## Commands run and results
 - `pnpm lint`, `pnpm typecheck`: pass.

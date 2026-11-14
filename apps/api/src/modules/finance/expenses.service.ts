@@ -108,15 +108,16 @@ export class ExpensesService {
   }
 
   /**
-   * The recurring templates the person's scope covers: all of them with company-wide scope,
-   * otherwise those at a location in their own branch (PR #20 security review).
+   * The recurring templates the person's scope covers: all of them with company-wide scope, those
+   * at a location in their own branch with branch scope, none with own scope (PR #20 reviews).
    */
   async listRecurring(tenant: TenantContext, access: RequestAccess): Promise<RecurringExpense[]> {
     const db = await this.tenancy.db(tenant);
     const [rows, branches] = await Promise.all([loadRecurringExpenses(db), locationBranches(db)]);
-    return access.dataScope === "all"
-      ? rows
-      : rows.filter((row) => row.locationId !== null && branches.get(row.locationId) === access.branchId);
+    if (access.dataScope === "all") return rows;
+    // Own scope sees only its own expenses, so no template: they belong to the company (PR #20 review).
+    if (access.dataScope === "own") return [];
+    return rows.filter((row) => row.locationId !== null && branches.get(row.locationId) === access.branchId);
   }
 
   /**
@@ -145,6 +146,17 @@ export class ExpensesService {
       db.transaction(async (tx) => {
         await tx.execute(NUMBER_LOCK);
         const current = before ? await this.lockDraft(tx, before.id) : null;
+        // Checked again under the lock: someone may have moved the draft since it was read.
+        if (current) {
+          const branches = await locationBranches(tx);
+          const locked = {
+            recordedById: current.recordedById,
+            locationId: current.locationId,
+            category: current.category,
+          };
+          if (!seesExpense(actor.access, locked, branches) || !seesPayroll(actor.access, locked))
+            throw notFound("expense");
+        }
         const now = new Date();
         const values = {
           ...fields,
@@ -176,11 +188,9 @@ export class ExpensesService {
         // Counted again under the row lock, so two saves at once can't pass the limit together.
         const fileCount = await this.fileCount(tx, row.id);
         if (fileCount > MAX_PROOF_FILES) throw refuse(`An expense keeps at most ${MAX_PROOF_FILES} files.`);
-        const previous = current
-          ? { amount: current.amount, supplierId: current.supplierId, locationId: current.locationId }
-          : null;
+        const previous = current ? editable(current) : null;
         if (input.asDraft) {
-          await this.audit(tenant, actor, tx, "Saved expense draft", row, previous, { amount: row.amount });
+          await this.audit(tenant, actor, tx, "Saved expense draft", row, previous, editable(row));
           return;
         }
         const problem = expenseProblem(row, fileCount);
@@ -188,11 +198,11 @@ export class ExpensesService {
         const waits = needsExpenseApproval(settingsRule, row) || actor.access.dataScope === "own";
         if (waits) {
           await tx.update(expenses).set({ status: "pending" }).where(eq(expenses.id, row.id));
-          await this.audit(tenant, actor, tx, "Recorded expense for approval", row, previous, { amount: row.amount });
+          await this.audit(tenant, actor, tx, "Recorded expense for approval", row, previous, editable(row));
           return;
         }
         const billId = await this.confirm(tx, row, null, actor.access.userId);
-        await this.audit(tenant, actor, tx, "Recorded expense", row, previous, { amount: row.amount, billId });
+        await this.audit(tenant, actor, tx, "Recorded expense", row, previous, { ...editable(row), billId });
       }),
     );
     return (await loadExpenses(db, this.control.db, [expenseId]))[0]!;
@@ -325,22 +335,13 @@ export class ExpensesService {
           tx,
           "Edited recurring expense",
           values.category,
-          before.amount,
-          values.amount,
+          templateFields(before),
+          values,
           id,
         );
       } else {
         await tx.insert(recurringExpenses).values({ id: savedId, ...values, createdBy: actor.access.userId });
-        await this.auditRecurring(
-          tenant,
-          actor,
-          tx,
-          "Added recurring expense",
-          values.category,
-          null,
-          values.amount,
-          savedId,
-        );
+        await this.auditRecurring(tenant, actor, tx, "Added recurring expense", values.category, null, values, savedId);
       }
     });
     await raiseRecurringDrafts(db, clock.day, this.auditLog);
@@ -394,12 +395,23 @@ export class ExpensesService {
     if (fields.locationId) await this.checkLocation(db, fields.locationId);
   }
 
+  /**
+   * An expense's vendor is an active supplier of services or expenses, never a goods-only one
+   * (spec rule 10, checked here and not only on the screen; PR #20 review).
+   */
   private async checkVendor(db: CompanyDb, supplierId: string): Promise<void> {
     const [row] = await db
       .select({ id: suppliers.id })
       .from(suppliers)
-      .where(and(eq(suppliers.id, supplierId), isNull(suppliers.deletedAt)));
-    if (!row) throw refuse("Choose the vendor.");
+      .where(
+        and(
+          eq(suppliers.id, supplierId),
+          isNull(suppliers.deletedAt),
+          eq(suppliers.status, "active"),
+          ne(suppliers.type, "goods"),
+        ),
+      );
+    if (!row) throw refuse("Choose an active vendor of services.");
   }
 
   private async checkLocation(db: CompanyDb, locationId: string): Promise<void> {
@@ -466,8 +478,8 @@ export class ExpensesService {
     tx: CompanyDb,
     action: string,
     category: ExpenseCategory,
-    before: string | null,
-    after: string,
+    before: Record<string, unknown> | null,
+    after: Record<string, unknown>,
     id: string,
   ): Promise<void> {
     return this.auditLog.record(
@@ -479,8 +491,8 @@ export class ExpensesService {
         targetType: "recurring_expense",
         targetId: id,
         targetLabel: EXPENSE_CATEGORY_LABELS[category],
-        before: before === null ? null : { amount: before },
-        after: { amount: after },
+        before,
+        after,
       },
       tx,
     );
@@ -498,6 +510,44 @@ async function requireWritableAt(db: CompanyDb, access: RequestAccess, locationI
   if (locationId === null || branches.get(locationId) !== access.branchId) {
     throw new ForbiddenException({ code: "forbidden", message: "Choose a location in your own branch." });
   }
+}
+
+/** The fields a person edits on a recurring template, for its audit entries (CLAUDE.md rule 10). */
+function templateFields(row: typeof recurringExpenses.$inferSelect) {
+  const {
+    supplierId,
+    category,
+    locationId,
+    amount,
+    tax,
+    paymentMethod,
+    frequency,
+    dayOfMonth,
+    startsOn,
+    endsOn,
+    active,
+    note,
+  } = row;
+  return {
+    supplierId,
+    category,
+    locationId,
+    amount,
+    tax,
+    paymentMethod,
+    frequency,
+    dayOfMonth,
+    startsOn,
+    endsOn,
+    active,
+    note,
+  };
+}
+
+/** The fields a person edits on an expense, for its audit entries (CLAUDE.md rule 10). */
+function editable(row: ExpenseRow) {
+  const { date, supplierId, category, locationId, amount, tax, paymentMethod, settlement, reference, note } = row;
+  return { date, supplierId, category, locationId, amount, tax, paymentMethod, settlement, reference, note };
 }
 
 /** The form's fields as stored: a sales tax payment is company-wide with no tax (spec rule 8). */

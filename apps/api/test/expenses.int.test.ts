@@ -515,4 +515,27 @@ describe("expenses API (needs the local PostgreSQL)", () => {
       .expect(200);
     expect(finished.body.files).toHaveLength(2);
   });
+
+  it("refuses a goods-only or inactive vendor (spec rule 10, checked on the server)", async () => {
+    const address = { street: "2 Mill Rd", city: "Denver", state: "CO", zip: "80202" };
+    const [goods, retired] = await rows((db) =>
+      db
+        .insert(suppliers)
+        .values([
+          { name: "Mill Goods Co", type: "goods" as const, terms: "net_30" as const, address },
+          {
+            name: "Old Cleaning Co",
+            type: "services" as const,
+            status: "inactive" as const,
+            terms: "net_30" as const,
+            address,
+          },
+        ])
+        .returning(),
+    );
+    for (const vendor of [goods!, retired!]) {
+      const refused = await call("post", "/expenses", cookies.accountant).send(form({ supplierId: vendor.id }));
+      expect(refused.status).toBe(400);
+    }
+  });
 });
