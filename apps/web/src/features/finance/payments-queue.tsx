@@ -46,14 +46,13 @@ export function PaymentsQueue() {
   const [viewing, setViewing] = useState<FileMeta | null>(null);
   const [rejecting, setRejecting] = useState<QueueRow | null>(null);
   const data = useApiQuery(async (client): Promise<QueueRow[]> => {
-    // Customers come through salesData, so their ids match the payments' with the real API (ADR 0038).
-    const [payments, invoices, { customers }, supplierPayments, suppliers, bills] = await Promise.all([
+    // Customers come through salesData and suppliers through purchasingData, so every id matches
+    // the payments' with the real API (ADR 0038, ADR 0042).
+    const [payments, invoices, { customers }, { supplierPayments, suppliers, bills }] = await Promise.all([
       client.list("payments"),
       client.list("invoices"),
       client.salesData(),
-      client.list("supplierPayments"),
-      client.list("suppliers"),
-      client.list("bills"),
+      client.purchasingData(),
     ]);
     const incoming: QueueRow[] = can("sales.payment.approve")
       ? payments
