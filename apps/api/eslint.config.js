@@ -63,6 +63,7 @@ export default tseslint.config(
       "src/core/jobs/**/*.ts",
       "src/core/notifications/notification.service.ts",
       "src/modules/users/invitations.service.ts",
+      "src/modules/finance/recurring-expenses.job.ts",
     ],
     rules: { "no-restricted-imports": ["error", jobHandlerImports] },
   },

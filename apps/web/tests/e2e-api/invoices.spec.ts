@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MANAGER_EMAIL, seedPassword } from "./accounts";
+import { MANAGER_EMAIL, signInAs } from "./accounts";
 
 /**
  * Sales, part 2 on the real API (ADR 0038): Summit's invoices, their payments and their
@@ -7,11 +7,7 @@ import { MANAGER_EMAIL, seedPassword } from "./accounts";
  */
 test.describe("invoices (api mode)", () => {
   test("a manager opens a branch invoice with its customer and payments from the API", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(MANAGER_EMAIL);
-    await page.getByLabel("Password").fill(seedPassword());
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    await signInAs(page, MANAGER_EMAIL);
     await page.goto("/sales?view=invoices");
     await expect(page.getByText("INV-1004").first()).toBeVisible();
     await page.getByText("INV-1004").first().click();

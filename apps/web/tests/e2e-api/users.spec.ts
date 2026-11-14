@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MANAGER_EMAIL, seedPassword } from "./accounts";
+import { MANAGER_EMAIL, signInAs } from "./accounts";
 
 /**
  * Settings → Users on the real API, and the public password and invitation pages (P10 part 2;
@@ -8,11 +8,7 @@ import { MANAGER_EMAIL, seedPassword } from "./accounts";
  */
 test.describe("users and account access (api mode)", () => {
   test("a manager sees the company's people from the API but cannot change them", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(MANAGER_EMAIL);
-    await page.getByLabel("Password").fill(seedPassword());
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    await signInAs(page, MANAGER_EMAIL);
     await page.goto("/settings/users");
     await expect(page.getByRole("cell", { name: "Dana Whitfield" }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Invite user" })).toHaveCount(0);

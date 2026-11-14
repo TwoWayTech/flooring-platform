@@ -5,6 +5,9 @@ import type { StorageProvider } from "@workspace/providers";
 import { detectProofType, MAX_PROOF_FILES, proofFilesProblem, type ProofType } from "@workspace/shared";
 import { v7 as uuidv7 } from "uuid";
 
+/** What a stored proof file belongs to: a payment, a refund or an expense receipt. */
+export type ProofOwner = "payment" | "refund" | "expense";
+
 /** A proof file as the screen sends it: its name and its bytes in base64 (ADR 0038). */
 export interface ProofUpload {
   name: string;
@@ -62,9 +65,7 @@ export async function withStoredProofs<T>(
   storage: StorageProvider,
   companyId: string,
   files: readonly CheckedProof[],
-  save: (
-    attach: (tx: CompanyDb, ownerType: "payment" | "refund", ownerId: string, by: string) => Promise<void>,
-  ) => Promise<T>,
+  save: (attach: (tx: CompanyDb, ownerType: ProofOwner, ownerId: string, by: string) => Promise<void>) => Promise<T>,
 ): Promise<T> {
   const stored: StoredProof[] = [];
   try {

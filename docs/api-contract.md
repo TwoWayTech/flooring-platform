@@ -192,10 +192,27 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 | `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
 | `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
-| `GET /settings/accounting` | `settings.payments.manage` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040) |
-| `PUT /settings/accounting` | `settings.payments.manage` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited |
+| `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040) |
+| `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited |
 
 Cash lines post to the bank account for the payment's method, or to Cash and Bank when no bank account claims it. A void credits the account the payment first posted to (ADR 0040).
+
+## Expenses (real build, P12 part 2, ADR 0041)
+
+Behind the `finance.expenses` switch. Money is decimal strings; receipts are base64 in the body, as payment proof (ADR 0038).
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /expenses` | `finance.expense.view` | `Expense[]` within data scope: own by recorder, branch by the location's branch; company-wide ones need scope `all` or being the recorder |
+| `GET /recurring-expenses` | `finance.expense.view` | `RecurringExpense[]`: all with scope `all`, otherwise those at a location in the reader's branch |
+| `POST /expenses` | `finance.expense.create` | `{ date, supplierId, category, locationId, amount, tax, paymentMethod, reference, note, settlement, asDraft, files }`. A draft needs a date and an amount; recording needs a vendor, an amount above zero and a receipt, then confirms (and posts) or waits for approval. No future dates; payroll is refused. Branch scope writes only at a location in its own branch, and a company-wide expense needs scope `all` (403). Audited |
+| `PUT /expenses/:id` | `finance.expense.create` | The same body: saves or finishes a draft. A recorded expense is 400. Audited |
+| `POST /expenses/:id/review` | `finance.expense.approve` | `{ action: "approve" }` confirms and posts; `{ action: "reject", reason }` returns it to draft. Never the recorder. Audited |
+| `POST /expenses/:id/void` | `finance.expense.void` | `{ reason }`: voids a pending or confirmed expense; a confirmed one posts its reversal on the void day; a pay-later one retires its bill, refused while a supplier payment is allocated to it. Audited |
+| `POST /recurring-expenses`, `PUT /recurring-expenses/:id` | `finance.expense.create`, data scope `all` | Saves a template (day of month 1 to 31) and raises the drafts it owes. Audited |
+| `GET /files/:id` | as for payments, or `finance.expense.view` | An expense receipt, within the expense's data scope |
+
+A daily job raises recurring drafts for every company in its own day. Payroll months are hidden from anyone without `hr.payroll.view`.
 
 ## Notifications and Outbox (real build, ADR 0032)
 

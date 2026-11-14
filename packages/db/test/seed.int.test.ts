@@ -8,6 +8,8 @@ import {
   customers,
   goodsReceipts,
   invoiceLines,
+  expenses,
+  recurringExpenses,
   invoices,
   paymentsReceived,
   reservations,
@@ -115,6 +117,8 @@ describe("test company seed", () => {
       expect(await company.db.select().from(supplierContacts)).toHaveLength(fixtures.supplierContacts.length);
       expect(await company.db.select().from(purchaseOrders)).toHaveLength(fixtures.purchaseOrders.length);
       expect(await company.db.select().from(goodsReceipts)).toHaveLength(fixtures.receipts.length);
+      expect(await company.db.select().from(expenses)).toHaveLength(fixtures.expenses.length);
+      expect(await company.db.select().from(recurringExpenses)).toHaveLength(fixtures.recurringExpenses.length);
       const linked = (await company.db.select().from(products)).filter((product) => product.supplierId !== null);
       expect(linked).toHaveLength(fixtures.products.filter((product) => product.supplierId).length);
     } finally {

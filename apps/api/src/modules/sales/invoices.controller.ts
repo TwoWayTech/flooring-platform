@@ -295,16 +295,16 @@ export class InvoicesController {
     return this.payments.refund(tenant, actorOf(access, session, request), input, files);
   }
 
-  /** GET /files/:id: a proof file, opened in place; only within the person's data scope. */
+  /** GET /files/:id: a proof file or expense receipt, opened in place; only within the person's data scope. */
   @Get("files/:id")
-  @RequirePermission("sales.payment.view", "sales.payment.approve", "sales.payment.refund")
+  @RequirePermission("sales.payment.view", "sales.payment.approve", "sales.payment.refund", "finance.expense.view")
   async file(
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,
     @Param("id", new ParseUUIDPipe()) id: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    requireFeature("sales.payments");
+    // Each owner type checks its own feature switch in the service.
     const file = await this.payments.file(tenant, access, id);
     response.set({
       "Content-Type": file.contentType,

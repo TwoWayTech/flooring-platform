@@ -1,3 +1,4 @@
+import { expect, test, type Page } from "@playwright/test";
 import { totpCode } from "@workspace/db/testing";
 
 /** Summit's owner, seeded with SEED_USER_PASSWORD by `pnpm db:seed`. The Owner role requires MFA. */
@@ -25,3 +26,25 @@ export function nextCode(secret: string): string {
 }
 
 export { totpCode };
+
+/**
+ * Signs a seeded user without MFA in through the real login page and waits for the app shell. The
+ * API allows 10 sign-ins a minute from one address (ADR 0029), and the whole suite signs in from
+ * one, so a refusal for that reason waits out the minute once and tries again.
+ */
+export async function signInAs(page: Page, email: string): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password").fill(seedPassword());
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const shell = page.getByRole("navigation", { name: "Main" });
+    const limited = page.getByText("Too many attempts from this network.");
+    await expect(shell.or(limited)).toBeVisible();
+    if (await shell.isVisible()) return;
+    // The wait is longer than a test may run by default, so the test gets that much more time.
+    test.info().setTimeout(test.info().timeout + 70_000);
+    await page.waitForTimeout(61_000);
+  }
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+}

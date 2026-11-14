@@ -487,6 +487,14 @@ export interface SalesData {
   locations: Location[];
 }
 
+/** The records the Expenses tab reads together (ApiClient `expensesData`). */
+export interface ExpensesData {
+  expenses: Expense[];
+  recurring: RecurringExpense[];
+  suppliers: Supplier[];
+  locations: Location[];
+}
+
 /** The records the Purchasing page reads together (ApiClient `purchasingData`). */
 export interface PurchasingData {
   suppliers: Supplier[];
@@ -914,6 +922,11 @@ export interface ApiClient {
    * and supplier payments stay empty until they move with the ledger (P12).
    */
   purchasingData(): Promise<PurchasingData>;
+  /**
+   * What the Expenses tab reads: expenses within the person's data scope, recurring templates,
+   * vendors and locations, from one source so their ids match (P12 part 2; ADR 0041).
+   */
+  expensesData(): Promise<ExpensesData>;
   /**
    * What the Sales and quote pages read: quotes and customers within the person's data scope, and
    * warehouses. Invoices and what settles them are read through `list` (ADR 0038).

@@ -39,12 +39,7 @@ export function ExpensesView() {
   const [asking, setAsking] = useState<"reject" | "void" | null>(null);
   const [managing, setManaging] = useState(false);
   const data = useApiQuery(async (client) => {
-    const [expenses, suppliers, locations, recurring] = await Promise.all([
-      client.list("expenses"),
-      client.list("suppliers"),
-      client.list("locations"),
-      client.list("recurringExpenses"),
-    ]);
+    const { expenses, suppliers, locations, recurring } = await client.expensesData();
     return { expenses: expenses.filter((e) => e.category !== "payroll"), suppliers, locations, recurring };
   }, []);
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading expenses" />;

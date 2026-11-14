@@ -4,6 +4,7 @@ import { attachments, invoices, paymentsReceived, refunds, rolePermissions, user
 import type { StorageProvider } from "@workspace/providers";
 import {
   cashAccountFor,
+  featureOn,
   dec,
   invoiceLedger,
   paymentPosting,
@@ -27,6 +28,7 @@ import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { loadAccountingForPosting } from "../../core/ledger/accounting-settings";
+import { loadExpenses, locationBranches, seesExpense, seesPayroll } from "../finance/expense-records";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { STORAGE } from "../../core/storage/storage.module";
@@ -459,19 +461,27 @@ export class PaymentsService {
       .where(and(eq(attachments.id, fileId), isNull(attachments.deletedAt)));
     if (!row) throw notFound("file");
     const may = (...keys: PermissionKey[]) => keys.some((key) => access.permissions.has(key));
-    if (row.ownerType === "payment" && may("sales.payment.view", "sales.payment.approve")) {
+    const payments = featureOn("sales.payments");
+    if (row.ownerType === "payment" && payments && may("sales.payment.view", "sales.payment.approve")) {
       await this.paymentInScope(db, access, row.ownerId, (await companyClock(this.control.db, tenant)).zone).catch(
         () => {
           throw notFound("file");
         },
       );
-    } else if (row.ownerType === "refund" && may("sales.payment.view", "sales.payment.refund")) {
+    } else if (row.ownerType === "refund" && payments && may("sales.payment.view", "sales.payment.refund")) {
       const [refund] = await loadRefunds(db, this.control.db, { ids: [row.ownerId] });
       const [[customer], branches] = await Promise.all([
         loadCustomers(db, refund ? [refund.customerId] : []),
         loadBranches(db),
       ]);
       if (!customer || !seesCustomer(access, customer, branches)) throw notFound("file");
+    } else if (row.ownerType === "expense" && may("finance.expense.view") && featureOn("finance.expenses")) {
+      // An expense receipt is read only within the expense's data scope (blueprint-delta 2026-11-14).
+      const [[expense], branches] = await Promise.all([
+        loadExpenses(db, this.control.db, [row.ownerId]),
+        locationBranches(db),
+      ]);
+      if (!expense || !seesExpense(access, expense, branches) || !seesPayroll(access, expense)) throw notFound("file");
     } else {
       throw notFound("file");
     }
