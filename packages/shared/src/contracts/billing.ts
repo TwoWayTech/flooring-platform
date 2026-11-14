@@ -104,8 +104,9 @@ export function heldByLine(billings: readonly ContractBilling[], lines: readonly
 }
 
 /**
- * Shares a release over the lines by what each holds, the last line taking the remainder so the
- * parts add up exactly (ADR 0026: X_L = round2(X × H_L ÷ H)).
+ * Shares a release over the lines by what each holds (ADR 0026, ADR 0045): each share is
+ * X × H_L ÷ H rounded down, and the cents left over go one at a time to the lines with room,
+ * largest fraction first, so the parts add up exactly and none is negative or above H_L.
  */
 export function allocateRelease(amount: string, held: ReadonlyMap<string, Dec>): { lineId: string; amount: string }[] {
   const lines = [...held.entries()].filter(([, h]) => h.gt(0));

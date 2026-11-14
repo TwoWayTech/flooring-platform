@@ -354,7 +354,6 @@ export class ContractBillingService {
     billing: NewBilling,
     amounts: readonly LineAmount[],
   ): Promise<{ document: string; notice: InvoiceNotice | null }> {
-    // A billing raises an invoice or a bill, so their own switches must be on too (CLAUDE.md rule 13).
     const by = actor.access.userId;
     await tx.insert(contractBillings).values({
       id: billing.id,
