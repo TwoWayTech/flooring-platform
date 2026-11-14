@@ -495,6 +495,21 @@ export interface ExpensesData {
   locations: Location[];
 }
 
+/** The records the contract screens and widget read together (ApiClient `contractsData`). */
+export interface ContractsData {
+  contracts: Contract[];
+  lines: ContractLine[];
+  changeOrders: ChangeOrder[];
+  billings: ContractBilling[];
+  waivers: LienWaiver[];
+  certificates: InsuranceCertificate[];
+  customers: Customer[];
+  suppliers: Supplier[];
+  locations: Location[];
+  bills: Bill[];
+  supplierPayments: SupplierPayment[];
+}
+
 /** The records the Purchasing page reads together (ApiClient `purchasingData`). */
 export interface PurchasingData {
   suppliers: Supplier[];
@@ -927,6 +942,13 @@ export interface ApiClient {
    * vendors and locations, from one source so their ids match (P12 part 2; ADR 0041).
    */
   expensesData(): Promise<ExpensesData>;
+  /**
+   * What the contract screens and the dashboard widget read: contracts within the person's data
+   * scope with their lines, change orders, billings, waivers and certificates, and the customers,
+   * suppliers, warehouses, bills and supplier payments they point at, from one source so their ids
+   * match (contracts part 1; ADR 0044). A list the person may not see comes back empty.
+   */
+  contractsData(): Promise<ContractsData>;
   /**
    * What the Sales and quote pages read: quotes and customers within the person's data scope, and
    * warehouses. Invoices and what settles them are read through `list` (ADR 0038).

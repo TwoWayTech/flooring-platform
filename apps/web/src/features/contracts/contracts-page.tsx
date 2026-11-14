@@ -25,16 +25,9 @@ export function ContractsPage() {
   const formatDate = useFormatDate();
   const [adding, setAdding] = useState(false);
   const data = useApiQuery(async (client) => {
-    const [contracts, lines, billings, orders, customers, suppliers, locations] = await Promise.all([
-      client.list("contracts"),
-      client.list("contractLines"),
-      client.list("contractBillings"),
-      client.list("changeOrders"),
-      client.list("customers"),
-      client.list("suppliers"),
-      client.list("locations"),
-    ]);
-    return { contracts, lines, billings, orders, customers, suppliers, locations };
+    // One source for contracts and the companies they name, so their ids match (ADR 0044).
+    const { contracts, lines, billings, changeOrders, customers, suppliers, locations } = await client.contractsData();
+    return { contracts, lines, billings, orders: changeOrders, customers, suppliers, locations };
   }, []);
   if (!can("contracts.contract.view")) return <NoAccess />;
   const today = api.today();

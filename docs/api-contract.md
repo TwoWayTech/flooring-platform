@@ -229,6 +229,29 @@ Behind the `purchasing.orders` switch. No data scope. Files are base64 in the bo
 
 Goods receipts post their received value (Inventory against Goods Received Not Billed) and move boxed goods to the moving average cost; stock count corrections post at cost.
 
+## Contracts, part 1 (real build, ADR 0044)
+
+Module `contracts`. Every route needs `contracts.register`; billings also `contracts.billing`, waivers and insurance also `contracts.compliance` (404 when off). Data scope `byRep`: own by rep, branch by the contract's branch; lines, change orders, billings, waivers and certificates follow their contract, and a write outside scope is 404. `estimatedCost` is stripped without `contracts.contract.view_sensitive`. Money is decimal strings.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /contracts`, `GET /contract-lines`, `GET /change-orders` | `contracts.contract.view` | `Contract[]` (with files and signature), `ContractLine[]`, `ChangeOrder[]` with their rows |
+| `GET /contract-billings` | `contracts.billing.view` | `ContractBilling[]` with lines and releases. Read only until part 2 |
+| `GET /lien-waivers`, `GET /insurance-certificates` | `contracts.compliance.view` | `LienWaiver[]`, `InsuranceCertificate[]` with coverages |
+| `POST /contracts` | `contracts.contract.create` | `{ direction, kind, customerId, supplierId, title, scope, branchId?, locationId, jobSite, startsAt, endsAt, renewal, retainagePct, storedRetainagePct, bondInLieu, taxTreatment, notes, lines }`: a draft `CTR-`. Rep is the creator, branch the creator's (`branchId` only for someone with no branch and scope `all`). A master stores no value, retainage or lines. Audited |
+| `PUT /contracts/:id` | `contracts.contract.edit` | The same body: edits a draft and replaces its lines; rep and branch stay. A line's `estimatedCost` left out (or sent without view_sensitive) keeps the stored one by code. Audited |
+| `POST /contracts/:id/send`, `/recall` | `contracts.contract.edit` | Draft to sent (`draftProblem`; emails `contract.signature`), sent to draft. Audited |
+| `POST /contracts/:id/sign` | `contracts.contract.approve` | `{ signerName, signerRole }`: simulated signature, sent to active; name of 3 or more characters. Audited |
+| `POST /contracts/:id/complete` | `contracts.contract.edit` | Active project to completed. Audited |
+| `POST /contracts/:id/close` | `contracts.contract.edit` | `{ overrideReason }`: completed to closed when nothing is held, its invoices and bills are paid and a final waiver is received; overriding a failed check needs `contracts.contract.approve` (403) and a reason. Audited |
+| `POST /contracts/:id/terminate` | `contracts.contract.approve` | `{ reason }`: active or completed to terminated. Audited |
+| `POST /contracts/:id/renew` | `contracts.contract.create` | A new draft for the next term, linked by `renewedFromId`. Audited |
+| `POST /contracts/:id/files` | `contracts.contract.edit` | `{ files }` base64, at most 3 per contract. Read through `GET /files/:id` with `contracts.contract.view` in scope. Audited |
+| `POST /contracts/:id/change-orders` | `contracts.change_order.create` | `{ reason, lines: [{ contractLineId, description, category, amountDelta }] }`: `CO-n`, pending, on an active or completed project. Audited |
+| `POST /change-orders/:id/decision` | `contracts.change_order.approve` | `{ action: "approve" \| "reject", reason }`: approval runs `changeOrderProblem` (rows on one line added together; a new line above zero) and changes line values or adds lines at once; rejection needs a reason. Change-order routes also need the `contracts.billing` switch. Audited |
+| `POST /contracts/:id/lien-waivers` | `contracts.compliance.manage` | `{ type, paymentId, supplierPaymentId, amount, throughDate, statutoryForm }` on a project; unconditional needs a confirmed payment of the contract's party. Audited |
+| `PUT /contracts/:id/insurance-certificate` | `contracts.compliance.manage` | `{ producer, holder, additionalInsured, coverages }` on a subcontract; replaces the one certificate. Audited |
+
 ## Issuing stock, the roll quick invoice and the commission split (real build, inventory part 2, ADR 0043)
 
 | Route | Needs | Does |

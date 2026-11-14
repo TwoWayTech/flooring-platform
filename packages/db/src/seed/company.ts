@@ -16,6 +16,13 @@ import {
   quotes,
   documentSequences,
   billReceipts,
+  changeOrderLines,
+  changeOrders,
+  contractLines,
+  contracts,
+  insuranceCertificates,
+  insuranceCoverages,
+  lienWaivers,
   expenses,
   paymentAllocations,
   paymentsMade,
@@ -910,9 +917,170 @@ async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
 }
 
 /**
+ * Contracts, part 1 (ADR 0044): contracts with their schedule lines, change orders with their
+ * rows, lien waivers and certificates of insurance with their coverages. Billings, contract
+ * invoices and subcontract bills wait for part 2, and so does a waiver whose payment is not seeded
+ * (one paying a contract invoice). Seeded signed PDFs have no bytes, so contract files are not seeded.
+ */
+async function seedContracts(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
+  const billed = new Set(fixtures.invoices.filter((invoice) => !invoice.contractId).map((invoice) => invoice.id));
+  const payments = new Set(fixtures.payments.filter((p) => billed.has(p.invoiceId)).map((p) => p.id));
+  const supplierPayments = new Set(fixtures.supplierPayments.map((payment) => payment.id));
+  const ref = (id: string | null) => (id ? seedId(id) : null);
+  const creatorOf = new Map(fixtures.contracts.map((contract) => [contract.id, seededUserId(contract.salesRepId)]));
+  for (const contract of fixtures.contracts) {
+    await tx
+      .insert(contracts)
+      .values({
+        id: seedId(contract.id),
+        number: contract.number,
+        direction: contract.direction,
+        kind: contract.kind,
+        masterId: ref(contract.masterId),
+        customerId: ref(contract.customerId),
+        supplierId: ref(contract.supplierId),
+        parentContractId: ref(contract.parentContractId),
+        title: contract.title,
+        scope: contract.scope,
+        branchId: seedId(contract.branchId),
+        locationId: seedId(contract.locationId),
+        jobSite: contract.jobSite,
+        salesRepId: seededUserId(contract.salesRepId),
+        startsAt: contract.startsAt,
+        endsAt: contract.endsAt,
+        renewalMode: contract.renewal.mode,
+        renewalNoticeDays: contract.renewal.noticeDays,
+        renewedFromId: ref(contract.renewedFromId),
+        originalValue: contract.originalValue,
+        retainagePct: contract.retainagePct,
+        storedRetainagePct: contract.storedRetainagePct,
+        bondInLieu: contract.bondInLieu,
+        taxTreatment: contract.taxTreatment,
+        status: contract.status,
+        sentAt: contract.sentAt ? utc(contract.sentAt) : null,
+        signedAt: contract.signedAt ? utc(contract.signedAt) : null,
+        signature: contract.signature,
+        substantialCompletionAt: contract.substantialCompletionAt,
+        finalAcceptanceAt: contract.finalAcceptanceAt,
+        terminatedAt: contract.terminatedAt ? utc(contract.terminatedAt) : null,
+        terminationReason: contract.terminationReason,
+        closeOverrideReason: contract.closeOverrideReason,
+        notes: contract.notes,
+        createdBy: creatorOf.get(contract.id),
+      })
+      .onConflictDoNothing();
+  }
+  // Lines a change order added point at it, so change orders go in first, then lines, then their rows.
+  for (const order of fixtures.changeOrders) {
+    await tx
+      .insert(changeOrders)
+      .values({
+        id: seedId(order.id),
+        number: order.number,
+        contractId: seedId(order.contractId),
+        status: order.status,
+        reason: order.reason,
+        submittedAt: order.submittedAt ? utc(order.submittedAt) : null,
+        decidedAt: order.decidedAt ? utc(order.decidedAt) : null,
+        decidedById: userOf(order.decidedBy ? byName.get(order.decidedBy) : null),
+        decisionReason: order.decisionReason,
+        createdBy: creatorOf.get(order.contractId),
+      })
+      .onConflictDoNothing();
+  }
+  for (const line of fixtures.contractLines) {
+    await tx
+      .insert(contractLines)
+      .values({
+        id: seedId(line.id),
+        contractId: seedId(line.contractId),
+        code: line.code,
+        description: line.description,
+        category: line.category,
+        billing: line.billing,
+        scheduledValue: line.scheduledValue,
+        retainagePct: line.retainagePct,
+        storedRetainagePct: line.storedRetainagePct,
+        milestoneDueAt: line.milestoneDueAt,
+        changeOrderId: ref(line.changeOrderId),
+        estimatedCost: line.estimatedCost,
+        createdBy: creatorOf.get(line.contractId),
+      })
+      .onConflictDoNothing();
+  }
+  for (const order of fixtures.changeOrders) {
+    for (const [index, row] of order.lines.entries()) {
+      await tx
+        .insert(changeOrderLines)
+        .values({
+          id: seedId(`${order.id}:line:${index}`),
+          changeOrderId: seedId(order.id),
+          contractLineId: ref(row.lineId),
+          description: row.description,
+          category: row.category,
+          amountDelta: row.amountDelta,
+          createdBy: creatorOf.get(order.contractId),
+        })
+        .onConflictDoNothing();
+    }
+  }
+  const waivers = fixtures.lienWaivers.filter(
+    (waiver) =>
+      (!waiver.paymentId || payments.has(waiver.paymentId)) &&
+      (!waiver.supplierPaymentId || supplierPayments.has(waiver.supplierPaymentId)),
+  );
+  for (const waiver of waivers) {
+    await tx
+      .insert(lienWaivers)
+      .values({
+        id: seedId(waiver.id),
+        contractId: seedId(waiver.contractId),
+        direction: waiver.direction,
+        type: waiver.type,
+        paymentId: ref(waiver.paymentId),
+        supplierPaymentId: ref(waiver.supplierPaymentId),
+        amount: waiver.amount,
+        throughDate: waiver.throughDate,
+        state: waiver.state,
+        statutoryForm: waiver.statutoryForm,
+        signedOn: waiver.signedOn,
+        status: waiver.status,
+        createdBy: creatorOf.get(waiver.contractId),
+      })
+      .onConflictDoNothing();
+  }
+  for (const certificate of fixtures.insuranceCertificates) {
+    await tx
+      .insert(insuranceCertificates)
+      .values({
+        id: seedId(certificate.id),
+        supplierId: seedId(certificate.supplierId),
+        contractId: seedId(certificate.contractId),
+        producer: certificate.producer,
+        holder: certificate.holder,
+        additionalInsured: certificate.additionalInsured,
+        createdBy: creatorOf.get(certificate.contractId),
+      })
+      .onConflictDoNothing();
+    for (const [index, coverage] of certificate.coverages.entries()) {
+      await tx
+        .insert(insuranceCoverages)
+        .values({
+          id: seedId(`${certificate.id}:coverage:${index}`),
+          certificateId: seedId(certificate.id),
+          ...coverage,
+          createdBy: creatorOf.get(certificate.contractId),
+        })
+        .onConflictDoNothing();
+    }
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
- * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), and bills and supplier payments (P12 part 3). Business records
+ * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and supplier payments (P12 part 3), and contracts (contracts part 1). Business records
  * arrive module by module
  * (docs/real-build-plan.md), each with its own seed.
  */
@@ -927,5 +1095,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedInvoices(tx, demo);
     await seedExpenses(tx, demo);
     await seedPayables(tx, demo);
+    await seedContracts(tx, demo);
   });
 }

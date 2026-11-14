@@ -887,6 +887,47 @@ export class DemoStore implements ApiClient {
     return { expenses, recurring, suppliers, locations };
   }
 
+  async contractsData() {
+    const [
+      contracts,
+      lines,
+      changeOrders,
+      billings,
+      waivers,
+      certificates,
+      customers,
+      suppliers,
+      locations,
+      bills,
+      supplierPayments,
+    ] = await Promise.all([
+      this.list("contracts"),
+      this.list("contractLines"),
+      this.list("changeOrders"),
+      this.list("contractBillings"),
+      this.list("lienWaivers"),
+      this.list("insuranceCertificates"),
+      this.list("customers"),
+      this.list("suppliers"),
+      this.list("locations"),
+      this.list("bills"),
+      this.list("supplierPayments"),
+    ]);
+    return {
+      contracts,
+      lines,
+      changeOrders,
+      billings,
+      waivers,
+      certificates,
+      customers,
+      suppliers,
+      locations,
+      bills,
+      supplierPayments,
+    };
+  }
+
   async purchasingData() {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
       await Promise.all([

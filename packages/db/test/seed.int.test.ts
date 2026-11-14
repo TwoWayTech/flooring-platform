@@ -5,6 +5,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
   addresses,
+  changeOrderLines,
+  changeOrders,
+  contractBillings,
+  contractLines,
+  contracts,
+  insuranceCertificates,
+  insuranceCoverages,
+  lienWaivers,
   customers,
   goodsReceipts,
   invoiceLines,
@@ -183,6 +191,37 @@ describe("test company seed", () => {
         .from(paymentsReceived)
         .where(eq(paymentsReceived.id, seedId(reviewed.id)));
       expect(payment?.reviewedById).not.toBeNull();
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds contracts with their lines, change orders, waivers and insurance, but no billings (contracts, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const billed = new Set(fixtures.invoices.filter((invoice) => !invoice.contractId).map((invoice) => invoice.id));
+    const payments = new Set(fixtures.payments.filter((p) => billed.has(p.invoiceId)).map((p) => p.id));
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(contracts)).toHaveLength(fixtures.contracts.length);
+      expect(await company.db.select().from(contractLines)).toHaveLength(fixtures.contractLines.length);
+      expect(await company.db.select().from(changeOrders)).toHaveLength(fixtures.changeOrders.length);
+      expect(await company.db.select().from(changeOrderLines)).toHaveLength(
+        fixtures.changeOrders.flatMap((order) => order.lines).length,
+      );
+      // A waiver for a payment on a contract invoice waits for part 2 with that invoice.
+      expect(await company.db.select().from(lienWaivers)).toHaveLength(
+        fixtures.lienWaivers.filter((w) => !w.paymentId || payments.has(w.paymentId)).length,
+      );
+      expect(await company.db.select().from(insuranceCertificates)).toHaveLength(fixtures.insuranceCertificates.length);
+      expect(await company.db.select().from(insuranceCoverages)).toHaveLength(
+        fixtures.insuranceCertificates.flatMap((certificate) => certificate.coverages).length,
+      );
+      expect(await company.db.select().from(contractBillings)).toHaveLength(0);
+      const [first] = await company.db
+        .select()
+        .from(contracts)
+        .where(eq(contracts.id, seedId(fixtures.contracts[0]!.id)));
+      expect(first?.number).toBe(fixtures.contracts[0]!.number);
     } finally {
       await company.close();
     }

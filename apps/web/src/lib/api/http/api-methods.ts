@@ -1,10 +1,16 @@
 import type {
   Bill,
+  ChangeOrder,
+  Contract,
+  ContractBilling,
+  ContractLine,
   Customer,
   Expense,
   GoodsReceipt,
+  InsuranceCertificate,
   Invoice,
   InvoiceAdjustment,
+  LienWaiver,
   Location,
   Payment,
   Refund,
@@ -24,7 +30,7 @@ import type {
   User,
 } from "@workspace/shared";
 import { HttpApiError } from "./transport";
-import type { CollectionName, Collections, ItemOf, StockHold } from "../contract";
+import type { CollectionName, Collections, ContractInput, ItemOf, StockHold } from "../contract";
 import type { HttpRoutes } from "./router";
 
 /**
@@ -130,7 +136,7 @@ export const API_METHODS: HttpRoutes = {
     http.request<Payment>("POST", `/payments/${paymentId}/files`, { files: await encodeFiles(files) }),
   refundCredit: (http) => async (input, files) =>
     http.request<Refund>("POST", "/refunds", { ...input, files: await encodeFiles(files) }),
-  // Files the API stored have UUIDs (payments, refunds, expenses, bills); contract and employee files are still the demo's.
+  // Files the API stored have UUIDs (payments, refunds, expenses, bills, contracts); employee files are still the demo's.
   getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
   expensesData: (http) => async () => {
     const [expenses, recurring, suppliers, locations] = await Promise.all([
@@ -219,7 +225,135 @@ export const API_METHODS: HttpRoutes = {
   setCommissionSplit: (http) => async (invoiceId, split) => {
     await http.request<{ ok: true }>("PUT", `/invoices/${invoiceId}/commission-split`, { split });
   },
+  // Contracts part 1 (ADR 0044): the register, change orders, waivers and insurance. Billing writes are part 2.
+  contractsData: (http) => async () => {
+    const [
+      contracts,
+      lines,
+      changeOrders,
+      billings,
+      waivers,
+      certificates,
+      customers,
+      suppliers,
+      locations,
+      bills,
+      supplierPayments,
+    ] = await Promise.all([
+      seen(http.request<Contract[]>("GET", "/contracts")),
+      seen(http.request<ContractLine[]>("GET", "/contract-lines")),
+      seenOrOff(http.request<ChangeOrder[]>("GET", "/change-orders")),
+      // Billings and compliance have their own switches; switched off they read as empty.
+      seenOrOff(http.request<ContractBilling[]>("GET", "/contract-billings")),
+      seenOrOff(http.request<LienWaiver[]>("GET", "/lien-waivers")),
+      seenOrOff(http.request<InsuranceCertificate[]>("GET", "/insurance-certificates")),
+      seen(http.request<Customer[]>("GET", "/customers")),
+      seen(http.request<Supplier[]>("GET", "/suppliers")),
+      seen(http.request<Location[]>("GET", "/locations")),
+      seenOrOff(http.request<Bill[]>("GET", "/bills")),
+      seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+    ]);
+    return {
+      contracts,
+      lines,
+      changeOrders,
+      billings,
+      waivers,
+      certificates,
+      customers,
+      suppliers,
+      locations,
+      bills,
+      supplierPayments,
+    };
+  },
+  saveContract: (http) => (input) => {
+    const body = contractBody(input);
+    return input.id && isSaved(input.id)
+      ? http.request<Contract>("PUT", `/contracts/${input.id}`, body)
+      : http.request<Contract>("POST", "/contracts", body);
+  },
+  sendContract: (http) => (id) => http.request<Contract>("POST", `/contracts/${id}/send`),
+  recallContract: (http) => (id) => http.request<Contract>("POST", `/contracts/${id}/recall`),
+  signContract: (http) => (id, input) => http.request<Contract>("POST", `/contracts/${id}/sign`, input),
+  completeContract: (http) => (id) => http.request<Contract>("POST", `/contracts/${id}/complete`),
+  closeContract: (http) => (id, overrideReason) =>
+    http.request<Contract>("POST", `/contracts/${id}/close`, { overrideReason }),
+  terminateContract: (http) => (id, reason) => http.request<Contract>("POST", `/contracts/${id}/terminate`, { reason }),
+  renewContract: (http) => (id) => http.request<Contract>("POST", `/contracts/${id}/renew`),
+  addContractFiles: (http) => async (contractId, files) => {
+    await http.request<Contract>("POST", `/contracts/${contractId}/files`, { files: await encodeFiles(files) });
+  },
+  saveChangeOrder: (http) => (contractId, input) =>
+    http.request<ChangeOrder>("POST", `/contracts/${contractId}/change-orders`, {
+      reason: input.reason,
+      lines: input.lines.map((line) => ({
+        contractLineId: line.lineId,
+        description: line.description,
+        category: line.category,
+        amountDelta: line.amountDelta,
+      })),
+    }),
+  decideChangeOrder: (http) => (id, decision) =>
+    http.request<ChangeOrder>("POST", `/change-orders/${id}/decision`, {
+      action: decision.approve ? "approve" : "reject",
+      reason: decision.reason,
+    }),
+  recordWaiver: (http) => (contractId, input) =>
+    http.request<LienWaiver>("POST", `/contracts/${contractId}/lien-waivers`, {
+      type: input.type,
+      paymentId: input.paymentId,
+      supplierPaymentId: input.supplierPaymentId,
+      amount: input.amount,
+      throughDate: input.throughDate,
+      statutoryForm: input.statutoryForm,
+    }),
+  saveCertificate: (http) => (contractId, input) =>
+    http.request<InsuranceCertificate>("PUT", `/contracts/${contractId}/insurance-certificate`, {
+      producer: input.producer,
+      holder: input.holder,
+      additionalInsured: input.additionalInsured,
+      coverages: input.coverages,
+    }),
 };
+
+/**
+ * A contract as the API takes it: only the form's fields, since an edit starts from the whole
+ * stored contract. The rep is always the creator on the server, and an estimated cost the person
+ * can't see is left out so the stored one is kept (ADR 0044).
+ */
+function contractBody(input: ContractInput) {
+  return {
+    direction: input.direction,
+    kind: input.kind,
+    customerId: input.customerId || null,
+    supplierId: input.supplierId || null,
+    title: input.title,
+    scope: input.scope,
+    branchId: input.branchId || null,
+    locationId: input.locationId,
+    jobSite: input.jobSite,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    renewal: input.renewal,
+    retainagePct: input.retainagePct,
+    storedRetainagePct: input.storedRetainagePct,
+    bondInLieu: input.bondInLieu,
+    taxTreatment: input.taxTreatment,
+    notes: input.notes,
+    lines: input.lines.map((line) => ({
+      code: line.code,
+      description: line.description,
+      category: line.category,
+      billing: line.billing,
+      scheduledValue: line.scheduledValue,
+      retainagePct: line.retainagePct,
+      storedRetainagePct: line.storedRetainagePct,
+      milestoneDueAt: line.milestoneDueAt,
+      ...(line.estimatedCost === undefined ? {} : { estimatedCost: line.estimatedCost }),
+    })),
+  };
+}
 
 /** A list the person may not see (403) comes back empty, as the demo hides what a role cannot open. */
 async function seen<T>(list: Promise<T[]>): Promise<T[]> {

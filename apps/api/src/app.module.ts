@@ -6,6 +6,7 @@ import { ControlDbModule } from "./core/database/control-db";
 import { EmailModule } from "./core/email/email.module";
 import { StorageModule } from "./core/storage/storage.module";
 import { LedgerModule } from "./core/ledger/ledger.module";
+import { ContractsModule } from "./modules/contracts/contracts.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { HealthController } from "./core/health/health.controller";
 import { JobsModule } from "./core/jobs/jobs.module";
@@ -50,6 +51,7 @@ export class AppModule {
         PurchasingModule,
         SalesModule,
         FinanceModule,
+        ContractsModule,
         ...extraModules,
       ],
       controllers: [HealthController],

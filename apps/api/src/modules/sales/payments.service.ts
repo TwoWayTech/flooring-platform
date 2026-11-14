@@ -1,6 +1,14 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { attachments, invoices, paymentsReceived, refunds, rolePermissions, userRoles } from "@workspace/db/company";
+import {
+  attachments,
+  contracts,
+  invoices,
+  paymentsReceived,
+  refunds,
+  rolePermissions,
+  userRoles,
+} from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
   cashAccountFor,
@@ -37,7 +45,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
 import { loadMoneyFormat, loadPaymentSettings, loadPayments, loadRefunds } from "./invoice-records";
 import { checkProofs, withStoredProofs, type ProofUpload } from "./proof-files";
-import { companyClock, notFound, refuse, seesCustomer } from "./sales-common";
+import { companyClock, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
 import { loadBranches, loadCustomers } from "./sales-records";
 
 /** A reviewer's decision on a pending payment (spec rule 28). */
@@ -488,6 +496,13 @@ export class PaymentsService {
       may("purchasing.bill.view", "purchasing.payment.record", "purchasing.payment.approve")
     ) {
       // Purchasing has no data scope (purchasing.md "Who uses it"); the keys decide.
+    } else if (row.ownerType === "contract" && may("contracts.contract.view") && featureOn("contracts.register")) {
+      // A contract document is read only within the contract's data scope (contracts.md "Who uses it").
+      const [contract] = await db
+        .select({ salesRepId: contracts.salesRepId, branchId: contracts.branchId })
+        .from(contracts)
+        .where(and(eq(contracts.id, row.ownerId), isNull(contracts.deletedAt)));
+      if (!contract || !seesDocument(access, contract) || !access.modules.includes("contracts")) throw notFound("file");
     } else {
       throw notFound("file");
     }

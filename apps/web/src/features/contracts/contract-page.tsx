@@ -74,35 +74,15 @@ export function ContractPage({ id }: { id: string }) {
   const [refusing, setRefusing] = useState<ChangeOrder | null>(null);
   const data = useApiQuery(
     async (client) => {
-      const [
-        contract,
-        lines,
-        billings,
-        orders,
-        waivers,
-        certificates,
-        customers,
-        suppliers,
-        locations,
-        invoices,
-        payments,
-        bills,
-        supplierPayments,
-      ] = await Promise.all([
-        client.get("contracts", id),
-        client.list("contractLines"),
-        client.list("contractBillings"),
-        client.list("changeOrders"),
-        client.list("lienWaivers"),
-        client.list("insuranceCertificates"),
-        client.list("customers"),
-        client.list("suppliers"),
-        client.list("locations"),
+      // One source for the contract, its papers and the companies they name, so ids match (ADR 0044).
+      const [all, invoices, payments] = await Promise.all([
+        client.contractsData(),
         client.list("invoices"),
         client.list("payments"),
-        client.list("bills"),
-        client.list("supplierPayments"),
       ]);
+      const { lines, billings, waivers, certificates, customers, suppliers, locations, bills, supplierPayments } = all;
+      const contract = all.contracts.find((c) => c.id === id);
+      const orders = all.changeOrders;
       return {
         contract,
         lines,
