@@ -1,5 +1,6 @@
 import {
   auditLog,
+  bonuses,
   branches,
   commissionAdjustments,
   commissionAssignments,
@@ -1792,5 +1793,107 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(JSON.stringify(owner)).toContain("Spiff for the Maple job");
     expect(JSON.stringify(hr)).toContain("Returned trim");
     expect(JSON.stringify(owner)).toMatch(/baseRatePct/);
+  });
+
+  // Owner decision 2026-11-15 (ADR 0048 "Audit visibility"): below company-wide scope, a pay viewer
+  // reads pay details only for people in their scope, and plan terms not at all.
+  it("shows a branch-scoped pay viewer the pay details of themselves and their reports only", async () => {
+    await rows(async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: "payaudit", name: "payaudit", dataScope: "branch" })
+        .returning();
+      await db.insert(rolePermissions).values(
+        ["settings.audit.view", "hr.employee.view_sensitive"].map((permissionKey) => ({
+          roleId: role!.id,
+          permissionKey,
+        })),
+      );
+    });
+    const leadEmail = await harness.addUser({ companyIds: [company.id], roles: ["payaudit"] });
+    const reportEmail = await harness.addUser({ companyIds: [company.id], roles: ["sales"] });
+    const lead = await person({ name: "Lena Lead" });
+    const report = await person({ name: "Rory Report", managerId: lead.id });
+    const outsider = await person({ name: "Otto Outside" });
+    const reportUser = await harness.userIdOf(reportEmail);
+    for (const [email, employeeId] of [
+      [leadEmail, lead.id],
+      [reportEmail, report.id],
+    ] as const) {
+      const userId = await harness.userIdOf(email);
+      await rows((db) => db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId)));
+    }
+    const cookie = await enrolled(leadEmail);
+    const probe = "Scoped audit probe";
+    const bonusOf = async (employeeId: string) =>
+      (
+        await rows((db) =>
+          db
+            .insert(bonuses)
+            .values({
+              employeeId,
+              amount: "100.00",
+              kind: "flat_sum",
+              periodStart: companyDay(),
+              periodEnd: companyDay(),
+              approvedById: ids.owner,
+              reason: "Probe",
+            })
+            .returning(),
+        )
+      )[0]!.id;
+    const adjustmentOf = async (userId: string) =>
+      (
+        await rows((db) =>
+          db
+            .insert(commissionAdjustments)
+            .values({ userId, month: M1, amount: "0.00", reason: "Probe", byUserId: ids.owner, at: new Date() })
+            .returning(),
+        )
+      )[0]!.id;
+    const entry = (action: string, targetType: string, targetId: string, after: Record<string, unknown>) => ({
+      actorUserId: ids.owner,
+      actorRole: "Owner",
+      category: "data" as const,
+      action,
+      targetType,
+      targetId,
+      targetLabel: probe,
+      before: null,
+      after,
+    });
+    const entries = [
+      entry("Added bonus", "bonus", await bonusOf(report.id), { reason: "Reason: Rory bonus" }),
+      entry("Voided bonus", "bonus", await bonusOf(outsider.id), { reason: "Reason: Otto bonus" }),
+      entry("Left out of pay period", "pay_period", uuidv7(), { employeeId: lead.id, reason: "Reason: Lena" }),
+      entry("Brought back into pay period", "pay_period", uuidv7(), { employeeId: outsider.id, reason: null }),
+      entry("Adjusted commission statement", "commission_statement", await adjustmentOf(reportUser), {
+        reason: "Reason: Rory adjustment",
+      }),
+      entry("Adjusted commission statement", "commission_statement", await adjustmentOf(ids.repA), {
+        reason: "Reason: Rae adjustment",
+      }),
+      entry("Edited commission plan", "commission_plan", uuidv7(), { baseRatePct: "9.9999" }),
+    ];
+    await rows((db) => db.insert(auditLog).values(entries));
+    type Entry = { target: string; after: string | null };
+    const read = async (as: string) =>
+      ((await call("get", "/audit", as).expect(200)).body as Entry[]).filter((e) => e.target === probe);
+    const details = (seen: Entry[]) => seen.map((e) => e.after ?? "").join("\n");
+
+    const seen = await read(cookie);
+    expect(seen).toHaveLength(entries.length);
+    const text = details(seen);
+    for (const own of ["Reason: Rory bonus", "Reason: Lena", "Reason: Rory adjustment"]) expect(text).toContain(own);
+    for (const other of ["Reason: Otto bonus", outsider.id, "Reason: Rae adjustment", "9.9999"]) {
+      expect(text).not.toContain(other);
+    }
+    expect(seen.filter((e) => e.after === HIDDEN_PAY_DETAILS)).toHaveLength(4);
+    // The Owner and a company-wide HR manager read every entry; the Accountant, without the key, none.
+    for (const as of [cookies.owner, cookies.hrB]) {
+      const all = details(await read(as));
+      for (const any of ["Reason: Otto bonus", "Reason: Rae adjustment", "9.9999"]) expect(all).toContain(any);
+    }
+    expect((await read(cookies.accountant)).every((e) => e.after === HIDDEN_PAY_DETAILS)).toBe(true);
   });
 });

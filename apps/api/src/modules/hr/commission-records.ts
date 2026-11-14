@@ -385,7 +385,7 @@ export interface RunCommission {
  * the pay. A statement stored before that column with no employee falls back to the rep's sign-in
  * link today, as runs paid it before. Null when neither exists.
  */
-function paidEmployee(
+export function paidEmployee(
   statement: Pick<StatementRow, "employeeId" | "userId">,
   links: ReadonlyMap<string, string>,
 ): string | null {
