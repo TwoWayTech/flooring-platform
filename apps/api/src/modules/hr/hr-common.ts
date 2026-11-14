@@ -1,13 +1,14 @@
 import type { CompanyDb, ControlDb } from "@workspace/db";
 import { employees, ptoRequests, rolePermissions, timesheets, userProfiles, userRoles } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
-import type { AuditCategory, PermissionKey } from "@workspace/shared";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { seesPersonRecords, type AuditCategory, type Employee, type PermissionKey } from "@workspace/shared";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import type { AccessService } from "../../core/access/access.service";
 import type { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { notFound } from "../sales/sales-common";
-import type { EmployeeRow, PersonScope } from "./hr-records";
+import { viewerEmployeeId, type EmployeeRow, type PersonScope } from "./hr-records";
 
 /** A stored timesheet row. */
 export type TimesheetRow = typeof timesheets.$inferSelect;
@@ -36,6 +37,39 @@ export async function lockTimesheet(tx: CompanyDb, id: string, scope: PersonScop
   const [row] = await tx.select().from(timesheets).where(eq(timesheets.id, id)).for("update");
   if (!row || row.deletedAt) throw notFound("timesheet");
   return row;
+}
+
+/**
+ * Locks several timesheets for a batch decision: every employee first, in employee-id order, then
+ * the sheets in id order. One global order means two batches at once wait instead of deadlocking
+ * (security review of PR #25). Any sheet missing or outside `scope` answers 404 for the batch.
+ */
+export async function lockTimesheets(
+  tx: CompanyDb,
+  ids: readonly string[],
+  scope: PersonScope,
+): Promise<TimesheetRow[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const peek = await tx
+    .select({ id: timesheets.id, employeeId: timesheets.employeeId })
+    .from(timesheets)
+    .where(inArray(timesheets.id, unique));
+  if (peek.length !== unique.length) throw notFound("timesheet");
+  const people = [...new Set(peek.map((row) => row.employeeId))].sort();
+  for (const employeeId of people) {
+    await lockEmployee(tx, employeeId, scope).catch(() => {
+      throw notFound("timesheet");
+    });
+  }
+  const rows = await tx
+    .select()
+    .from(timesheets)
+    .where(inArray(timesheets.id, unique))
+    .orderBy(asc(timesheets.id))
+    .for("update");
+  if (rows.length !== unique.length || rows.some((row) => row.deletedAt)) throw notFound("timesheet");
+  return rows;
 }
 
 /** Locks a time-off request after its employee; outside the person's scope it answers 404. */
@@ -81,10 +115,20 @@ export interface Recipient {
 }
 
 /**
- * The active members whose roles hold a key (hr.md "Events": `usersWith` reads role permissions,
- * not the ceiling), for in-app notes and emails to approvers. Disabled or invited people get nothing.
+ * The active members who may act on an employee's record and should hear about it (hr.md
+ * "Events"): their effective permissions (role ∩ company ceiling ∩ enabled modules, by the engine
+ * the guards use; CLAUDE.md rule 4) hold `key`, and their HR data scope covers the employee
+ * (`seesPersonRecords`). The employee is never told to approve their own record. Disabled or
+ * invited people get nothing (security review of PR #25: role keys alone reached people out of scope).
  */
-export async function holdersOf(db: CompanyDb, control: ControlDb, key: PermissionKey): Promise<Recipient[]> {
+export async function holdersOf(
+  db: CompanyDb,
+  control: ControlDb,
+  access: AccessService,
+  tenant: TenantContext,
+  key: PermissionKey,
+  employee: Pick<Employee, "id" | "managerId">,
+): Promise<Recipient[]> {
   const rows = await db
     .selectDistinct({ userId: userRoles.userId })
     .from(userRoles)
@@ -99,10 +143,18 @@ export async function holdersOf(db: CompanyDb, control: ControlDb, key: Permissi
         isNull(userProfiles.deletedAt),
       ),
     );
-  return people(
-    control,
+  const candidates = await access.membersAccess(
+    tenant,
     rows.map((row) => row.userId),
   );
+  const allowed: string[] = [];
+  for (const member of candidates) {
+    if (member.disabled || !member.permissions.has(key)) continue;
+    const own = await viewerEmployeeId(db, member.userId);
+    if (own === employee.id || !seesPersonRecords(member.dataScope, own, employee)) continue;
+    allowed.push(member.userId);
+  }
+  return people(control, allowed);
 }
 
 /** The active member linked to an employee, or null; a person with no sign-in gets no message. */

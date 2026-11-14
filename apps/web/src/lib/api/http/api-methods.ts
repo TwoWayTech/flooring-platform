@@ -30,10 +30,11 @@ import type {
   SupplierContact,
   TimeOffEntry,
   TimeOffPolicy,
-  Timesheet,
+  TimesheetWire,
   Transfer,
   User,
 } from "@workspace/shared";
+import { hoursToWire, timesheetFromWire } from "@workspace/shared";
 import { HttpApiError } from "./transport";
 import type {
   CollectionName,
@@ -349,14 +350,22 @@ export const API_METHODS: HttpRoutes = {
     const [employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations] = await Promise.all([
       seenOrOff(http.request<Employee[]>("GET", "/employees")),
       // Each HR screen has its own switch; switched off, its records read as empty.
-      seenOrOff(http.request<Timesheet[]>("GET", "/timesheets")),
+      seenOrOff(http.request<TimesheetWire[]>("GET", "/timesheets")),
       seenOrOff(http.request<PtoRequest[]>("GET", "/pto-requests")),
       seenOrOff(http.request<TimeOffPolicy[]>("GET", "/time-off-policies")),
       seenOrOff(http.request<TimeOffEntry[]>("GET", "/time-off-entries")),
       // HR Suite companies have no warehouses module, so locations may answer 403 or 404.
       seenOrOff(http.request<Location[]>("GET", "/locations")),
     ]);
-    return { employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations };
+    // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046).
+    return {
+      employees,
+      timesheets: timesheets.map(timesheetFromWire),
+      ptoRequests,
+      timeOffPolicies,
+      timeOffEntries,
+      locations,
+    };
   },
   saveEmployee: (http) => (input) => {
     const body = employeeBody(input);
@@ -371,17 +380,21 @@ export const API_METHODS: HttpRoutes = {
   addEmployeeDocuments: (http) => async (employeeId, files) => {
     await http.request<Employee>("POST", `/employees/${employeeId}/documents`, { files: await encodeFiles(files) });
   },
-  saveTimesheet: (http) => (input) =>
-    http.request<Timesheet>("PUT", "/timesheets", {
-      employeeId: input.employeeId,
-      weekStart: input.weekStart,
-      days: input.days,
-    }),
-  submitTimesheet: (http) => (id) => http.request<Timesheet>("POST", `/timesheets/${id}/submit`),
+  saveTimesheet: (http) => async (input) =>
+    timesheetFromWire(
+      await http.request<TimesheetWire>("PUT", "/timesheets", {
+        employeeId: input.employeeId,
+        weekStart: input.weekStart,
+        days: hoursToWire(input.days),
+      }),
+    ),
+  submitTimesheet: (http) => async (id) =>
+    timesheetFromWire(await http.request<TimesheetWire>("POST", `/timesheets/${id}/submit`)),
   decideTimesheets: (http) => async (ids, decision) => {
     await http.request<{ ok: true }>("POST", "/timesheets/decisions", { ...decision, ids });
   },
-  reopenTimesheet: (http) => (id, reason) => http.request<Timesheet>("POST", `/timesheets/${id}/reopen`, { reason }),
+  reopenTimesheet: (http) => async (id, reason) =>
+    timesheetFromWire(await http.request<TimesheetWire>("POST", `/timesheets/${id}/reopen`, { reason })),
   uploadTimesheets: (http) => (input) =>
     http.request<TimesheetUploadResult>("POST", "/timesheets/upload", {
       table: input.table,

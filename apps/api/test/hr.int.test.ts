@@ -3,6 +3,7 @@ import {
   auditLog,
   clockEntries,
   employees,
+  notifications,
   payPeriods,
   ptoRequests,
   rolePermissions,
@@ -34,6 +35,11 @@ function week(weeksAgo: number): string {
   return addDays(workweekStartOf(companyDay(), 1), -7 * weeksAgo);
 }
 
+/** A week of hours as the API takes and sends them: decimal strings (CLAUDE.md rule 6; ADR 0046). */
+function hours(...days: number[]): string[] {
+  return days.map(String);
+}
+
 const PDF = { name: "contract-copy.pdf", data: Buffer.from("%PDF-1.4\n% personnel file\n").toString("base64") };
 
 interface EmployeeBody {
@@ -52,7 +58,7 @@ interface SheetBody {
   id: string;
   employeeId: string;
   weekStart: string;
-  days: number[];
+  days: string[];
   status: string;
   source: string;
   rejectionReason: string | null;
@@ -190,8 +196,13 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     return created.body;
   }
 
-  async function saveWeek(cookie: string, employeeId: string, weekStart: string, days: number[]): Promise<SheetBody> {
-    const saved = await call("put", "/timesheets", cookie).send({ employeeId, weekStart, days });
+  async function saveWeek(
+    cookie: string,
+    employeeId: string,
+    weekStart: string,
+    days: readonly (number | string)[],
+  ): Promise<SheetBody> {
+    const saved = await call("put", "/timesheets", cookie).send({ employeeId, weekStart, days: days.map(String) });
     status(saved, 200);
     return saved.body;
   }
@@ -611,23 +622,27 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(await auditOf("Started offboarding", nia.id)).toHaveLength(1);
     status(await call("post", `/employees/${uuidv7()}/offboarding`, cookies.hr), 404);
     // Someone who has left no longer files hours.
-    const hours = await call("put", "/timesheets", cookies.hr).send({
+    const filed = await call("put", "/timesheets", cookies.hr).send({
       employeeId: nia.id,
       weekStart: week(7),
-      days: [8, 8, 8, 8, 8, 0, 0],
+      days: hours(8, 8, 8, 8, 8, 0, 0),
     });
-    status(hours, 400);
-    expect(hours.body.message).toContain("does not use timesheets");
+    status(filed, 400);
+    expect(filed.body.message).toContain("does not use timesheets");
   });
 
   it("saves and submits one's own week, refuses bad hours and other people's weeks, and locks a submitted week", async () => {
     const w = week(1);
     const saved = await saveWeek(cookies.wes, ids.wes, w, [12, 12, 12, 6, 0, 0, 0]);
-    expect(saved).toMatchObject({ status: "draft", days: [12, 12, 12, 6, 0, 0, 0], weekStart: w });
+    expect(saved).toMatchObject({ status: "draft", days: hours(12, 12, 12, 6, 0, 0, 0), weekStart: w });
     const bad: [Record<string, unknown>, string][] = [
-      [{ days: [8, 8, 8, 8, 8, 0] }, "seven days"],
-      [{ days: [25, 0, 0, 0, 0, 0, 0] }, "between 0 and 24"],
-      [{ days: [7.555, 0, 0, 0, 0, 0, 0] }, "two decimals"],
+      [{ days: hours(8, 8, 8, 8, 8, 0) }, "seven days"],
+      [{ days: hours(25, 0, 0, 0, 0, 0, 0) }, "between 0 and 24"],
+      [{ days: hours(7.555, 0, 0, 0, 0, 0, 0) }, "two decimals"],
+      [{ days: ["-1", "0", "0", "0", "0", "0", "0"] }, "between 0 and 24"],
+      [{ days: ["8 h", "0", "0", "0", "0", "0", "0"] }, "as a number"],
+      // Hours are decimal strings on the wire; a JSON number is refused (CLAUDE.md rule 6).
+      [{ days: [8, 8, 8, 8, 8, 0, 0] }, ""],
       [{ weekStart: addDays(w, 1) }, "first day of the company's workweek"],
       [{ weekStart: week(-1) }, "future week"],
       [{ note: "x" }, ""],
@@ -636,7 +651,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       const refused = await call("put", "/timesheets", cookies.wes).send({
         employeeId: ids.wes,
         weekStart: w,
-        days: [8, 8, 8, 8, 8, 0, 0],
+        days: hours(8, 8, 8, 8, 8, 0, 0),
         ...over,
       });
       status(refused, 400);
@@ -644,7 +659,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       expect(refused.body.message).toContain(message);
     }
     // Someone else's week needs approve and scope: Wes holds neither, the manager is out of scope for Olive.
-    const theirs = { employeeId: ids.olive, weekStart: week(6), days: [8, 8, 8, 8, 8, 0, 0] };
+    const theirs = { employeeId: ids.olive, weekStart: week(6), days: hours(8, 8, 8, 8, 8, 0, 0) };
     status(await call("put", "/timesheets", cookies.wes).send(theirs), 404);
     status(await call("put", "/timesheets", cookies.mgr).send(theirs), 404);
     const oliveSheet = await saveWeek(cookies.hr, ids.olive, week(6), theirs.days);
@@ -656,13 +671,13 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const locked = await call("put", "/timesheets", cookies.wes).send({
       employeeId: ids.wes,
       weekStart: w,
-      days: [1, 1, 1, 1, 1, 0, 0],
+      days: hours(1, 1, 1, 1, 1, 0, 0),
     });
     status(locked, 400);
     expect(locked.body.message).toContain("waits for approval");
     status(await call("post", `/timesheets/${saved.id}/submit`, cookies.wes), 400);
     status(await call("post", "/timesheets/decisions", cookies.wes).send({ action: "approve", ids: [saved.id] }), 403);
-    expect((await sheetsOf(cookies.wes)).find((s) => s.id === saved.id)?.days).toEqual([12, 12, 12, 6, 0, 0, 0]);
+    expect((await sheetsOf(cookies.wes)).find((s) => s.id === saved.id)?.days).toEqual(hours(12, 12, 12, 6, 0, 0, 0));
     expect(await auditOf("Saved timesheet hours", saved.id)).toHaveLength(1);
     expect(await auditOf("Submitted timesheet", saved.id)).toHaveLength(1);
   });
@@ -679,7 +694,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const locked = await call("put", "/timesheets", cookies.wes).send({
       employeeId: ids.wes,
       weekStart: week(1),
-      days: [1, 1, 1, 1, 1, 0, 0],
+      days: hours(1, 1, 1, 1, 1, 0, 0),
     });
     status(locked, 400);
     expect(locked.body.message).toContain("locked");
@@ -847,7 +862,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const refused = await call("put", "/timesheets", cookies.hrSuiteHr, "hr").send({
       employeeId: lena.body.id,
       weekStart: week(1),
-      days: [8, 8, 8, 8, 8, 0, 0],
+      days: hours(8, 8, 8, 8, 8, 0, 0),
     });
     status(refused, 409);
     expect(refused.body.code).toBe("settings_missing");
@@ -1179,5 +1194,277 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(await fileBytes(cookies.hrSuiteHr, wesDoc.id, "hr"), 404);
     // And the flooring session cannot act as the HR Suite.
     status(await call("get", "/employees", cookies.hr, "hr"), 403);
+  });
+  /** A template upload of hours rows, one per [email, date, hours], under the template's own headers. */
+  function upload(cookie: string, cells: [string, string, string][], apply: boolean, own = false) {
+    return call("post", "/timesheets/upload", cookie).send({
+      table: {
+        headers: ["employee_email", "employee_external_id", "employee_name", "work_date", "hours_worked", "note"],
+        rows: cells.map(([email, date, h]) => [email, "", "", date, h, ""]),
+      },
+      fileName: "hours.csv",
+      apply,
+      own,
+    });
+  }
+
+  /** A member with a role, signed in, linked to an employee when one is given. */
+  async function member(role: string, employeeId: string | null) {
+    const email = await harness.addUser({ companyIds: [company.id], roles: [role] });
+    const userId = await harness.userIdOf(email);
+    if (employeeId) {
+      await rows((db) => db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId)));
+    }
+    return { email, userId, cookie: await harness.signIn(email) };
+  }
+
+  /** The problems of each planned row of an upload, as one line per row. */
+  function rowProblems(body: { rows: { problems: { message: string }[] }[] }): string[] {
+    return body.rows.map((row) => row.problems.map((p) => p.message).join(" "));
+  }
+
+  it("refuses a submitted week in an upload, and applies the save checks to every uploaded row", async () => {
+    const email = "wes.walker@example.test";
+    await rows((db) => db.update(employees).set({ email }).where(eq(employees.id, ids.wes)));
+    const w = week(9);
+    const sheet = await saveWeek(cookies.hr, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, sheet.id);
+    const checked = await upload(cookies.hr, [[email, addDays(w, 1), "2"]], false);
+    status(checked, 201);
+    expect(rowProblems(checked.body)[0]).toContain("waits for approval");
+    status(await upload(cookies.hr, [[email, addDays(w, 1), "2"]], true), 400);
+    expect((await sheetsOf(cookies.hr)).find((s) => s.id === sheet.id)).toMatchObject({
+      status: "submitted",
+      days: hours(8, 8, 8, 8, 8, 0, 0),
+    });
+
+    // A future week, three decimals and someone who does not use timesheets are refused by row.
+    const exempt = await person({
+      name: "Exempt Ed",
+      email: "ed@example.test",
+      flsaStatus: "exempt",
+      exemptionBasis: "administrative",
+    });
+    const refused = await upload(
+      cookies.hr,
+      [
+        [email, addDays(week(-1), 1), "8"],
+        [email, addDays(week(10), 1), "7.555"],
+        [exempt.email, addDays(week(10), 1), "8"],
+      ],
+      false,
+    );
+    status(refused, 201);
+    const problems = rowProblems(refused.body);
+    expect(problems[0]).toContain("future week");
+    expect(problems[1]).toContain("two decimals");
+    expect(problems[2]).toContain("does not use timesheets");
+    status(await upload(cookies.hr, [[email, addDays(week(10), 1), "6.5"]], true), 201);
+    const filed = (await sheetsOf(cookies.hr)).find((s) => s.employeeId === ids.wes && s.weekStart === week(10))!;
+    expect(filed).toMatchObject({ days: hours(0, 6.5, 0, 0, 0, 0, 0), source: "upload" });
+  });
+
+  it("refuses an approver's own rows in an upload without hr.timesheet.edit, and their own week by form", async () => {
+    await rows(async (db) => {
+      const [role] = await db.insert(roles).values({ key: "approver", name: "approver", dataScope: "all" }).returning();
+      await db.insert(rolePermissions).values(
+        ["hr.timesheet.view", "hr.timesheet.approve", "hr.pto.view", "hr.pto.approve"].map((permissionKey) => ({
+          roleId: role!.id,
+          permissionKey,
+        })),
+      );
+    });
+    const abe = await person({ name: "Abe Approver", email: "abe@example.test" });
+    const approver = await member("approver", abe.id);
+    const w = week(11);
+    const own = await upload(approver.cookie, [["abe@example.test", addDays(w, 1), "8"]], false);
+    status(own, 400);
+    expect(own.body.message).toContain("can't upload your own hours");
+    status(await upload(approver.cookie, [["abe@example.test", addDays(w, 1), "8"]], true), 400);
+    status(
+      await call("put", "/timesheets", approver.cookie).send({
+        employeeId: abe.id,
+        weekStart: w,
+        days: hours(8, 8, 8, 8, 8, 0, 0),
+      }),
+      404,
+    );
+    expect((await sheetsOf(cookies.hr)).some((s) => s.employeeId === abe.id)).toBe(false);
+    // Someone else's rows are still the approver's to upload.
+    status(await upload(approver.cookie, [["wes.walker@example.test", addDays(w, 2), "4"]], true), 201);
+  });
+
+  it("refuses self-dealing to a sign-in that matches an employee only by email", async () => {
+    const twinEmail = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const uma = await person({ name: "Uma Unlinked", email: `  ${twinEmail.toUpperCase()} `, payRate: "30.00" });
+    const twin = await enrolled(twinEmail);
+    const umaForm = (over: Record<string, unknown>) =>
+      form({ name: "Uma Unlinked", email: twinEmail, payRate: "30.00", ...over });
+
+    // The pay rate and the other pay facts on one's own record.
+    for (const over of [
+      { payRate: "99.00" },
+      { payType: "salary" },
+      { flsaStatus: "exempt", exemptionBasis: "administrative" },
+      { salaryHoursPerWeek: 30 },
+      { workerType: "1099" },
+    ]) {
+      const refused = await call("put", `/employees/${uma.id}`, twin).send(umaForm(over));
+      status(refused, 400);
+      expect(refused.body.message).toContain("Someone else must change your own pay rate");
+    }
+    expect(await storedPay(uma.id)).toBe("30.00");
+    status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ title: "Lead" })), 200);
+    // A linked sign-in can't change its own salaried hours either.
+    const hana = await call("put", `/employees/${ids.hana}`, cookies.hr).send(
+      form({
+        name: "Hana Hartley",
+        payType: "salary",
+        flsaStatus: "exempt",
+        exemptionBasis: "administrative",
+        payRate: "52.00",
+        salaryHoursPerWeek: 30,
+      }),
+    );
+    status(hana, 400);
+
+    // Timesheets: neither decide nor reopen one's own.
+    const sheet = await saveWeek(cookies.hr, uma.id, week(8), [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, sheet.id);
+    const decided = await call("post", "/timesheets/decisions", twin).send({ action: "approve", ids: [sheet.id] });
+    status(decided, 400);
+    expect(decided.body.message).toContain("Someone else must decide your own timesheet");
+    status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [sheet.id] }), 201);
+    const reopened = await call("post", `/timesheets/${sheet.id}/reopen`, twin).send({ reason: "Fixing hours" });
+    status(reopened, 400);
+    expect(reopened.body.message).toContain("Someone else must reopen your own timesheet");
+    // A linked manager can't reopen their own approved week (Mara's, approved by HR earlier).
+    const mara = (await sheetsOf(cookies.mgr)).find((s) => s.employeeId === ids.mara && s.weekStart === week(4))!;
+    status(await call("post", `/timesheets/${mara.id}/reopen`, cookies.mgr).send({ reason: "Fixing hours" }), 400);
+
+    // Time off: neither adjust one's own balance nor decide one's own request.
+    const policy = await addPolicy({ name: "Vacation Twin" });
+    const adjust = (cookie: string) =>
+      call("post", "/time-off-adjustments", cookie).send({
+        employeeId: uma.id,
+        policyId: policy.id,
+        hours: "16",
+        note: "Starting balance",
+      });
+    const own = await adjust(twin);
+    status(own, 400);
+    expect(own.body.message).toContain("Someone else must adjust your own balance");
+    status(await adjust(cookies.hr), 201);
+    const start = addDays(companyDay(), 60);
+    const asked = await call("post", "/pto-requests", cookies.hr).send({
+      employeeId: uma.id,
+      policyId: policy.id,
+      start,
+      end: start,
+      hours: "8",
+      note: "",
+    });
+    status(asked, 201);
+    const decision = await call("post", `/pto-requests/${asked.body.id}/decision`, twin).send({ action: "approve" });
+    status(decision, 400);
+    expect(decision.body.message).toContain("Someone else must decide your own time off");
+    const stillPending = ((await call("get", "/pto-requests", cookies.hr)).body as RequestBody[]).find(
+      (r) => r.id === asked.body.id,
+    );
+    expect(stillPending?.status).toBe("pending");
+  });
+
+  it("keeps the stored pay type and salaried hours when someone without view_sensitive saves", async () => {
+    const sal = await addEmployee(cookies.hr, {
+      name: "Sal Salaried",
+      payType: "salary",
+      flsaStatus: "exempt",
+      exemptionBasis: "administrative",
+      salaryHoursPerWeek: 35,
+    });
+    const edited = await call("put", `/employees/${sal.id}`, cookies.clerk).send(
+      form({
+        name: "Sal Salaried",
+        title: "Office lead",
+        payType: "hourly",
+        flsaStatus: "exempt",
+        exemptionBasis: "administrative",
+        salaryHoursPerWeek: 40,
+      }),
+    );
+    status(edited, 200);
+    const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, sal.id)));
+    expect(stored).toMatchObject({ title: "Office lead", payType: "salary", salaryHoursPerWeek: 35 });
+  });
+
+  it("refuses a clock-out that would put more than 24 hours on one day, and keeps the punch open", async () => {
+    const [open] = await rows((db) =>
+      db
+        .insert(clockEntries)
+        .values({ employeeId: ids.olive, date: companyDay(), inAt: new Date(Date.now() - 25 * 3_600_000) })
+        .returning(),
+    );
+    try {
+      const out = await call("post", "/clock/out", cookies.olive);
+      status(out, 400);
+      expect(out.body.message).toContain("more than 24 hours");
+      const [still] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
+      expect(still!.outAt).toBeNull();
+    } finally {
+      await rows((db) => db.update(clockEntries).set({ deletedAt: new Date() }).where(eq(clockEntries.id, open!.id)));
+    }
+  });
+
+  it("tells only approvers whose effective access and data scope cover the employee", async () => {
+    // A manager whose branch scope covers Carla, not Wes.
+    const carlaManager = await member("manager", ids.carla);
+    const policy = await addPolicy({ name: "Vacation Notes", allowNegative: true });
+    const start = addDays(companyDay(), 70);
+    status(
+      await call("post", "/pto-requests", cookies.wes).send({
+        employeeId: ids.wes,
+        policyId: policy.id,
+        start,
+        end: start,
+        hours: "8",
+        note: "",
+      }),
+      201,
+    );
+    const sheet = await saveWeek(cookies.wes, ids.wes, week(12), [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.wes, sheet.id);
+    const told = async (title: string) =>
+      new Set(
+        (await rows((db) => db.select().from(notifications).where(eq(notifications.title, title)))).map(
+          (row) => row.userId,
+        ),
+      );
+    for (const title of ["Time off request from Wes Walker", "Timesheet from Wes Walker to approve"]) {
+      const recipients = await told(title);
+      expect(recipients.has(users.mgr), `${title}: Wes's manager`).toBe(true);
+      expect(recipients.has(users.hr), `${title}: HR`).toBe(true);
+      expect(recipients.has(carlaManager.userId), `${title}: another team's manager`).toBe(false);
+      expect(recipients.has(users.olive), `${title}: an employee`).toBe(false);
+    }
+  });
+
+  it("decides overlapping batches at once without a deadlock: one wins, the other is refused", async () => {
+    const w = week(13);
+    const a = await saveWeek(cookies.hr, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
+    const b = await saveWeek(cookies.hr, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, a.id);
+    await submit(cookies.hr, b.id);
+    const [first, second] = await Promise.all([
+      call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [a.id, b.id] }),
+      call("post", "/timesheets/decisions", cookies.hr).send({
+        action: "reject",
+        ids: [b.id, a.id],
+        reason: "Check the hours",
+      }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([201, 400]);
+    const sheets = await sheetsOf(cookies.hr);
+    const states = new Set([a.id, b.id].map((id) => sheets.find((s) => s.id === id)!.status));
+    expect(states.size).toBe(1);
   });
 });

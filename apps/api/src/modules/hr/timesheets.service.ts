@@ -3,15 +3,17 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { clockEntries, employees, payPeriods, timeEntries, timesheets } from "@workspace/db/company";
 import {
   addDays,
-  clockedHours,
+  clockedHoursText,
   daysBetween,
-  hoursProblem,
+  hoursTextProblem,
+  hoursToWire,
   IMPORT_HANDLERS,
   needsTimesheet,
   overtimeRuleFor,
   planImport,
   splitOvertime,
-  withClockedHours,
+  timesheetFromWire,
+  withClockedHoursText,
   workweekStartOf,
   type ClockEntry,
   type CompanyId,
@@ -22,10 +24,11 @@ import {
   type ImportCounts,
   type Timesheet,
   type TimesheetEvent,
+  type TimesheetWire,
 } from "@workspace/shared";
 import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
-import type { RequestAccess } from "../../core/access/access.service";
+import { AccessService, type RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
@@ -33,22 +36,33 @@ import { NotificationService } from "../../core/notifications/notification.servi
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, notFound, refuse } from "../sales/sales-common";
-import { auditHr, holdersOf, linkedUser, lockEmployee, lockTimesheet, type TimesheetRow } from "./hr-common";
+import {
+  auditHr,
+  holdersOf,
+  linkedUser,
+  lockEmployee,
+  lockTimesheet,
+  lockTimesheets,
+  type TimesheetRow,
+} from "./hr-common";
 import {
   loadClockEntries,
   loadEmployees,
   loadHrRules,
+  hoursText,
   loadTimesheets,
   personScope,
+  selfCheck,
   type EmployeeRow,
+  type IsSelf,
   type PersonScope,
 } from "./hr-records";
 
-/** A week of hours as the form sends it. */
+/** A week of hours as the form sends it: seven decimal strings (CLAUDE.md rule 6; ADR 0046). */
 export interface TimesheetFields {
   employeeId: string;
   weekStart: string;
-  days: number[];
+  days: string[];
 }
 
 /** A decision on submitted sheets; a rejection needs a reason. */
@@ -67,6 +81,8 @@ const TIMESHEET_MAPPING = Object.fromEntries(IMPORT_HANDLERS.timesheets.def.fiel
 
 const label = (name: string, weekStart: string) => `${name}, week of ${weekStart}`;
 
+const EMPTY_WEEK: readonly string[] = ["0", "0", "0", "0", "0", "0", "0"];
+
 /**
  * Timesheets and the clock on the API (hr.md "Timesheets"; ADR 0046). A week is draft, submitted,
  * approved or sent back; nobody decides their own sheet; an approved week is locked until it is
@@ -82,10 +98,11 @@ export class TimesheetsService {
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
+    private readonly access: AccessService,
   ) {}
 
   /** The sheets the person's data scope covers (hr.md "Data scope", `ownOrReports`). */
-  async list(tenant: TenantContext, access: RequestAccess): Promise<Timesheet[]> {
+  async list(tenant: TenantContext, access: RequestAccess): Promise<TimesheetWire[]> {
     const db = await this.tenancy.db(tenant);
     const [rows, scope] = await Promise.all([loadTimesheets(db, this.control.db), personScope(db, access)]);
     return rows.filter((row) => scope.sees(row.employeeId));
@@ -104,8 +121,8 @@ export class TimesheetsService {
    * hours, a real workweek start that is not in the future. A submitted or approved week is
    * locked (blueprint-delta 2026-11-14: the approver must decide the hours that were sent).
    */
-  async save(tenant: TenantContext, actor: Actor, input: TimesheetFields): Promise<Timesheet> {
-    const problem = hoursProblem(input.days);
+  async save(tenant: TenantContext, actor: Actor, input: TimesheetFields): Promise<TimesheetWire> {
+    const problem = hoursTextProblem(input.days);
     if (problem) throw refuse(problem);
     const db = await this.tenancy.db(tenant);
     const [clock, rules] = await Promise.all([companyClock(this.control.db, tenant), loadHrRules(db)]);
@@ -115,7 +132,8 @@ export class TimesheetsService {
     if (input.weekStart > clock.day) throw refuse("Hours can't be entered for a future week.");
     const id = await db.transaction(async (tx) => {
       const scope = await personScope(tx, actor.access);
-      const employee = await this.lockForEdit(tx, actor.access, scope, input.employeeId);
+      const isSelf = await selfCheck(tx, actor);
+      const employee = await this.lockForEdit(tx, actor.access, scope, isSelf, input.employeeId);
       if (!needsTimesheet(employee)) throw refuse("This person does not use timesheets.");
       const existing = await this.sheetOf(tx, employee.id, input.weekStart);
       if (existing?.status === "approved") throw refuse("This week is approved, so it is locked.");
@@ -124,7 +142,7 @@ export class TimesheetsService {
       const sheetId = await this.putSheet(tx, actor.access.userId, existing, {
         employeeId: employee.id,
         weekStart: input.weekStart,
-        days: input.days,
+        days: input.days.map((h) => hoursText(h)),
         source: existing?.source === "clock" ? "clock" : "form",
       });
       await auditHr(this.auditLog, tenant, actor, tx, {
@@ -133,7 +151,7 @@ export class TimesheetsService {
         targetId: sheetId,
         targetLabel: label(employee.name, input.weekStart),
         before: null,
-        after: { days: input.days },
+        after: { days: input.days.map((h) => hoursText(h)) },
       });
       return sheetId;
     });
@@ -141,12 +159,12 @@ export class TimesheetsService {
   }
 
   /** Sends a sheet for approval and tells the people who decide sheets, in the app (hr.md "To submitted"). */
-  async submit(tenant: TenantContext, actor: Actor, id: string): Promise<Timesheet> {
+  async submit(tenant: TenantContext, actor: Actor, id: string): Promise<TimesheetWire> {
     const db = await this.tenancy.db(tenant);
     const submitted = await db.transaction(async (tx) => {
       const scope = await personScope(tx, actor.access);
       const sheet = await lockTimesheet(tx, id, scope);
-      const employee = await this.lockForEdit(tx, actor.access, scope, sheet.employeeId);
+      const employee = await this.lockForEdit(tx, actor.access, scope, await selfCheck(tx, actor), sheet.employeeId);
       if (sheet.status === "approved" || sheet.status === "submitted") {
         throw refuse("This timesheet has already been submitted.");
       }
@@ -171,14 +189,15 @@ export class TimesheetsService {
       });
       return { sheet, employee, at: now };
     });
-    await this.tellApprovers(tenant, actor, db, submitted.sheet, submitted.employee.name, submitted.at);
+    await this.tellApprovers(tenant, actor, db, submitted.sheet, submitted.employee, submitted.at);
     return this.one(db, id);
   }
 
   /**
    * Approves or rejects submitted sheets (hr.md "To approved or rejected"), all or none. Each must
    * be within the decider's data scope (404 otherwise; blueprint-delta 2026-11-14) and none may be
-   * their own. A rejection needs a reason; hours never change. Each approval records its overtime
+   * their own, by sign-in link or verified email (`selfCheck`). People are locked in employee-id
+   * order, then the sheets, so two batches at once can't deadlock. A rejection needs a reason; hours never change. Each approval records its overtime
    * split by the company's rule and the work state (hr.md rules 7 and 8).
    */
   async decide(
@@ -191,17 +210,16 @@ export class TimesheetsService {
     if (decision.action === "reject" && (reason ?? "").length < 3) {
       throw refuse("Say what needs correcting, so the employee can fix it.");
     }
-    const unique = [...new Set(ids)].sort();
     const db = await this.tenancy.db(tenant);
     const rules = await loadHrRules(db);
     const status = decision.action === "approve" ? "approved" : "rejected";
     const decided = await db.transaction(async (tx) => {
       const scope = await personScope(tx, actor.access);
+      const isSelf = await selfCheck(tx, actor);
       const done: { sheet: TimesheetRow; employee: EmployeeRow }[] = [];
-      for (const id of unique) {
-        const sheet = await lockTimesheet(tx, id, scope);
+      for (const sheet of await lockTimesheets(tx, ids, scope)) {
         const employee = await lockEmployee(tx, sheet.employeeId);
-        if (employee.id === scope.employeeId) throw refuse("Someone else must decide your own timesheet.");
+        if (isSelf(employee.id)) throw refuse("Someone else must decide your own timesheet.");
         if (sheet.status !== "submitted") throw refuse(`${employee.name}'s timesheet is not waiting for approval.`);
         done.push({ sheet, employee });
       }
@@ -222,7 +240,8 @@ export class TimesheetsService {
             updatedAt: now,
           })
           .where(eq(timesheets.id, sheet.id));
-        const week = days.get(sheet.id) ?? [];
+        // The shared overtime rules read numbers; the stored hours have at most two decimals.
+        const week = (days.get(sheet.id) ?? []).map(Number);
         const split = splitOvertime(week, overtimeRuleFor(employee.state, rules.overtimeRule));
         await auditHr(this.auditLog, tenant, actor, tx, {
           action: status === "approved" ? "Approved timesheet" : "Rejected timesheet",
@@ -243,8 +262,11 @@ export class TimesheetsService {
     }
   }
 
-  /** Reopens an approved sheet with a reason, unless its week is in an approved or exported pay period. */
-  async reopen(tenant: TenantContext, actor: Actor, id: string, reason: string): Promise<Timesheet> {
+  /**
+   * Reopens an approved sheet with a reason, unless its week is in an approved or exported pay
+   * period. Nobody reopens their own week (separation of duties; security review of PR #25).
+   */
+  async reopen(tenant: TenantContext, actor: Actor, id: string, reason: string): Promise<TimesheetWire> {
     const why = reason.trim();
     if (why.length < 3) throw refuse("Say why this timesheet is being reopened.");
     const db = await this.tenancy.db(tenant);
@@ -252,6 +274,7 @@ export class TimesheetsService {
       const scope = await personScope(tx, actor.access);
       const sheet = await lockTimesheet(tx, id, scope);
       const employee = await lockEmployee(tx, sheet.employeeId);
+      if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must reopen your own timesheet.");
       if (sheet.status !== "approved") throw refuse("Only an approved timesheet can be reopened.");
       const end = addDays(sheet.weekStart, 6);
       const [locked] = await tx
@@ -292,8 +315,11 @@ export class TimesheetsService {
 
   /**
    * Hours from the template (hr.md rule 22), with the same rows and checks as the import wizard.
-   * A dry run writes nothing. Saving locks every person in reach and plans again under the locks.
-   * Only people the uploader's scope covers can match a row; an own upload refuses anyone else's.
+   * A dry run writes nothing. Saving locks every person in reach, in employee-id order, and plans
+   * again under the locks, then locks the sheets in id order (the order `decide` uses). Only people
+   * the uploader's scope covers can match a row; an own upload refuses anyone else's. Rows for the
+   * uploader's own employee need `hr.timesheet.edit` whatever the upload is called, and every
+   * written week passes the checks of `save` again (security review of PR #25).
    */
   async upload(
     tenant: TenantContext,
@@ -307,11 +333,11 @@ export class TimesheetsService {
       if (input.own && !scope.employeeId) throw refuse("Your sign-in is not linked to an employee.");
       const people = (await loadEmployees(tx, this.control.db, tenant.companyId)).filter((e) => scope.sees(e.id));
       const sheets = await loadTimesheets(tx, this.control.db, { employeeIds: people.map((e) => e.id) });
-      return planImport(
+      const result = planImport(
         IMPORT_HANDLERS.timesheets,
         { kind: "timesheets", table: input.table, fileName: input.fileName, mapping: TIMESHEET_MAPPING },
         {
-          world: emptyWorld({ employees: people, timesheets: sheets }),
+          world: emptyWorld({ employees: people, timesheets: sheets.map(timesheetFromWire) }),
           companyId: tenant.companyId as CompanyId,
           today: clock.day,
           now: clock.now.toISOString().slice(0, 16),
@@ -322,9 +348,15 @@ export class TimesheetsService {
           ...(input.own ? { onlyEmployeeId: scope.employeeId ?? "" } : {}),
         },
       );
+      const isSelf = await selfCheck(tx, actor);
+      const ownRows = result.changes.some((change) => isSelf((change.after as Timesheet).employeeId));
+      if (ownRows && !actor.access.permissions.has("hr.timesheet.edit")) {
+        throw refuse("You can't upload your own hours. Leave your rows out, or ask someone else to enter them.");
+      }
+      return { result, people: new Map(people.map((e) => [e.id, e])) };
     };
     if (!input.apply) {
-      const dry = await plan(db);
+      const { result: dry } = await plan(db);
       return { rows: dry.rows, counts: dry.counts };
     }
     const saved = await db.transaction(async (tx) => {
@@ -334,17 +366,19 @@ export class TimesheetsService {
         .where(isNull(employees.deletedAt))
         .orderBy(asc(employees.id))
         .for("update");
-      const result = await plan(tx);
+      const { result, people } = await plan(tx);
       if (result.counts.create + result.counts.update === 0) {
         throw refuse("Nothing to save: every row is blank or has errors.");
       }
-      for (const change of result.changes) {
-        const sheet = change.after as Timesheet;
+      const weeks = result.changes.map((change) => change.after as Timesheet).sort((a, b) => a.id.localeCompare(b.id));
+      for (const sheet of weeks) {
         const existing = await this.sheetById(tx, sheet.id);
+        const days = hoursToWire(sheet.days);
+        checkUploadedWeek(people.get(sheet.employeeId), existing, sheet, days, clock.day);
         await this.putSheet(tx, actor.access.userId, existing, {
           employeeId: sheet.employeeId,
           weekStart: sheet.weekStart,
-          days: sheet.days,
+          days,
           source: "upload",
         });
       }
@@ -389,7 +423,9 @@ export class TimesheetsService {
 
   /**
    * Clocks out and adds the hours to that week's sheet (spec C2, ADR 0024): a draft or sent-back
-   * sheet takes them; a submitted or approved one is left alone and the punch alone is kept.
+   * sheet takes them; a submitted or approved one is left alone and the punch alone is kept. A
+   * shift that would put more than 24 hours on the day is refused, as `save` would refuse it
+   * (security review of PR #25).
    */
   async clockOut(tenant: TenantContext, actor: Actor): Promise<ClockEntry> {
     const db = await this.tenancy.db(tenant);
@@ -400,15 +436,21 @@ export class TimesheetsService {
       if (!open) throw refuse("You are not clocked in.");
       const now = new Date();
       await tx.update(clockEntries).set({ outAt: now, updatedAt: now }).where(eq(clockEntries.id, open.id));
-      const hours = clockedHours(open.inAt.toISOString(), now.toISOString());
+      const hours = clockedHoursText(open.inAt.toISOString(), now.toISOString());
       const weekStart = workweekStartOf(open.date, rules.workweekStartDay);
       const sheet = await this.sheetOf(tx, employee.id, weekStart);
       if (sheet?.status !== "approved" && sheet?.status !== "submitted") {
-        const days = sheet ? ((await this.daysOf(tx, [sheet])).get(sheet.id) ?? []) : [0, 0, 0, 0, 0, 0, 0];
+        const days = sheet ? ((await this.daysOf(tx, [sheet])).get(sheet.id) ?? []) : EMPTY_WEEK;
+        const next = withClockedHoursText(days, daysBetween(weekStart, open.date), hours);
+        if (hoursTextProblem(next)) {
+          throw refuse(
+            `Clocking out now would put more than 24 hours on ${open.date}. Ask whoever approves timesheets to fix that week.`,
+          );
+        }
         await this.putSheet(tx, actor.access.userId, sheet, {
           employeeId: employee.id,
           weekStart,
-          days: withClockedHours(days, daysBetween(weekStart, open.date), hours),
+          days: next,
           source: "clock",
         });
       }
@@ -425,17 +467,20 @@ export class TimesheetsService {
     return this.punch(db, id);
   }
 
-  /** Locks the person whose hours are written: one's own needs `edit`, anyone else's `approve` and scope. */
+  /**
+   * Locks the person whose hours are written: one's own needs `edit`, anyone else's `approve` and
+   * scope. An employee whose email is the actor's counts as their own for the `edit` refusal only.
+   */
   private async lockForEdit(
     tx: CompanyDb,
     access: RequestAccess,
     scope: PersonScope,
+    isSelf: IsSelf,
     employeeId: string,
   ): Promise<EmployeeRow> {
-    if (employeeId === scope.employeeId) {
-      if (!access.permissions.has("hr.timesheet.edit")) throw notFound("employee");
-      return lockEmployee(tx, employeeId);
-    }
+    const linked = employeeId === scope.employeeId;
+    if ((linked || isSelf(employeeId)) && !access.permissions.has("hr.timesheet.edit")) throw notFound("employee");
+    if (linked) return lockEmployee(tx, employeeId);
     if (!access.permissions.has("hr.timesheet.approve")) throw notFound("employee");
     return lockEmployee(tx, employeeId, scope);
   }
@@ -471,8 +516,8 @@ export class TimesheetsService {
     return row ?? null;
   }
 
-  /** The seven days of each sheet, as numbers in workweek order. */
-  private async daysOf(tx: CompanyDb, sheets: readonly TimesheetRow[]): Promise<Map<string, number[]>> {
+  /** The seven days of each sheet, as decimal strings in workweek order. */
+  private async daysOf(tx: CompanyDb, sheets: readonly TimesheetRow[]): Promise<Map<string, string[]>> {
     if (sheets.length === 0) return new Map();
     const rows = await tx
       .select({ timesheetId: timeEntries.timesheetId, date: timeEntries.date, hours: timeEntries.hours })
@@ -486,11 +531,11 @@ export class TimesheetsService {
           ),
         ),
       );
-    const byKey = new Map(rows.map((row) => [`${row.timesheetId}|${row.date}`, Number(row.hours)]));
+    const byKey = new Map(rows.map((row) => [`${row.timesheetId}|${row.date}`, hoursText(row.hours)]));
     return new Map(
       sheets.map((sheet) => [
         sheet.id,
-        Array.from({ length: 7 }, (_, i) => byKey.get(`${sheet.id}|${addDays(sheet.weekStart, i)}`) ?? 0),
+        Array.from({ length: 7 }, (_, i) => byKey.get(`${sheet.id}|${addDays(sheet.weekStart, i)}`) ?? "0"),
       ]),
     );
   }
@@ -503,7 +548,7 @@ export class TimesheetsService {
     tx: CompanyDb,
     by: string,
     existing: TimesheetRow | null,
-    week: { employeeId: string; weekStart: string; days: readonly number[]; source: TimesheetRow["source"] },
+    week: { employeeId: string; weekStart: string; days: readonly string[]; source: TimesheetRow["source"] },
   ): Promise<string> {
     let id: string;
     if (existing) {
@@ -528,7 +573,7 @@ export class TimesheetsService {
         week.days.map((hours, i) => ({
           timesheetId: id,
           date: addDays(week.weekStart, i),
-          hours: String(hours),
+          hours,
           createdBy: by,
         })),
       )
@@ -539,17 +584,21 @@ export class TimesheetsService {
     return id;
   }
 
-  /** Tells every active holder of `hr.timesheet.approve`, in the app only (hr.md "Events"). */
+  /**
+   * Tells the active people who may approve this person's sheet, in the app only (hr.md "Events"):
+   * effective `hr.timesheet.approve` and a data scope that covers the employee (`holdersOf`).
+   */
   private async tellApprovers(
     tenant: TenantContext,
     actor: Actor,
     db: CompanyDb,
     sheet: TimesheetRow,
-    name: string,
+    employee: EmployeeRow,
     at: Date,
   ): Promise<void> {
+    const name = employee.name;
     try {
-      const approvers = await holdersOf(db, this.control.db, "hr.timesheet.approve");
+      const approvers = await holdersOf(db, this.control.db, this.access, tenant, "hr.timesheet.approve", employee);
       await this.notifications.notify(tenant, actor.access.userId, {
         event: "timesheet.submitted",
         source: { type: "timesheet", id: sheet.id },
@@ -601,7 +650,7 @@ export class TimesheetsService {
     }
   }
 
-  private async one(db: CompanyDb, id: string): Promise<Timesheet> {
+  private async one(db: CompanyDb, id: string): Promise<TimesheetWire> {
     const [sheet] = await loadTimesheets(db, this.control.db, { ids: [id] });
     if (!sheet) throw notFound("timesheet");
     return sheet;
@@ -641,4 +690,27 @@ function emptyWorld(hr: { employees: Employee[]; timesheets: Timesheet[] }): Imp
     supplierPayments: [],
     reservations: [],
   };
+}
+
+/**
+ * Refuses an uploaded week that `save` would refuse, checked again under the locks (security
+ * review of PR #25): someone who does not use timesheets, a sheet of someone else, a future week,
+ * a submitted or approved week, or hours outside 0 to 24 or with more than two decimals.
+ */
+function checkUploadedWeek(
+  employee: Employee | undefined,
+  existing: TimesheetRow | null,
+  week: Pick<Timesheet, "employeeId" | "weekStart">,
+  days: readonly string[],
+  today: string,
+): void {
+  if (!employee || !needsTimesheet(employee)) throw refuse("This person does not use timesheets.");
+  if (existing && (existing.employeeId !== week.employeeId || existing.weekStart !== week.weekStart)) {
+    throw notFound("timesheet");
+  }
+  if (week.weekStart > today) throw refuse("Hours can't be entered for a future week.");
+  if (existing?.status === "approved") throw refuse("This week is approved, so it is locked.");
+  if (existing?.status === "submitted") throw refuse("This week waits for approval. Ask for it to be sent back first.");
+  const problem = hoursTextProblem(days);
+  if (problem) throw refuse(problem);
 }

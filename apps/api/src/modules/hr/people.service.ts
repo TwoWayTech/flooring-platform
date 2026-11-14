@@ -23,7 +23,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
 import { notFound, refuse } from "../sales/sales-common";
 import { auditHr, lockEmployee } from "./hr-common";
-import { loadEmployees, personScope, viewerEmployeeId, workFactsOnly, type EmployeeRow } from "./hr-records";
+import { loadEmployees, personScope, selfCheck, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
 export interface EmployeeFields {
@@ -54,7 +54,8 @@ export interface EmployeeFields {
  * People on the API (hr.md "People"; ADR 0046): the register, onboarding and offboarding
  * checklists, documents and the sign-in link. Every write locks the employee and writes audit_log
  * in the same transaction. The pay rate is stripped from responses by the sensitive-fields
- * interceptor and kept as stored when someone without the key saves (CLAUDE.md rule 5).
+ * interceptor; it, the pay type and the salaried hours are kept as stored when someone without the
+ * key saves (CLAUDE.md rule 5). Nobody changes their own pay facts.
  */
 @Injectable()
 export class PeopleService {
@@ -98,26 +99,32 @@ export class PeopleService {
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     await db.transaction(async (tx) => {
       const before = id ? await lockEmployee(tx, id) : null;
-      // Without the key the stored rate stays, and a new person starts at zero (hr.md "Who uses it").
-      const payRate = seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00");
-      // Nobody sets their own pay (separation of duties, blueprint "Security"; blueprint-delta 2026-11-14).
-      if (
-        before &&
-        dec(payRate).cmp(before.payRate) !== 0 &&
-        before.id === (await viewerEmployeeId(tx, actor.access.userId))
-      ) {
-        throw refuse("Someone else must change your own pay rate.");
+      // Without the key the stored rate, pay type and salaried hours stay, and a new person starts
+      // at a zero rate (hr.md "Who uses it"; CLAUDE.md rule 5; security review of PR #25).
+      const keep = !seesPay && before !== null;
+      const pay: PayFacts = {
+        payRate: seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00"),
+        payType: keep ? before.payType : input.payType,
+        workerType: input.workerType,
+        flsaStatus: input.workerType === "1099" ? "not_applicable" : input.flsaStatus,
+        // A California salary covers 40 hours (Labor Code 515), whoever saves.
+        salaryHoursPerWeek: input.state === "CA" ? 40 : keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek,
+      };
+      // Nobody sets their own pay or overtime status (separation of duties, blueprint "Security";
+      // blueprint-delta 2026-11-14), also when their sign-in is matched only by email (`selfCheck`).
+      if (before && payFactsChanged(before, pay) && (await selfCheck(tx, actor))(before.id)) {
+        throw refuse("Someone else must change your own pay rate, pay type, worker type or overtime status.");
       }
       await this.checkManager(tx, employeeId, input.managerId);
       if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
-      const flsaStatus = input.workerType === "1099" ? "not_applicable" : input.flsaStatus;
+      const { flsaStatus } = pay;
       const values = {
         name,
         title: input.title.trim(),
         department: input.department.trim(),
-        workerType: input.workerType,
-        payType: input.payType,
-        payRate,
+        workerType: pay.workerType,
+        payType: pay.payType,
+        payRate: pay.payRate,
         state: input.state,
         email: input.email.trim(),
         phone: input.phone.trim(),
@@ -126,7 +133,7 @@ export class PeopleService {
         managerId: input.managerId,
         flsaStatus,
         exemptionBasis: flsaStatus === "exempt" ? input.exemptionBasis : null,
-        salaryHoursPerWeek: input.state === "CA" ? 40 : input.salaryHoursPerWeek,
+        salaryHoursPerWeek: pay.salaryHoursPerWeek,
         commissionVisible: input.commissionVisible,
         homeLocationId: input.homeLocationId,
         emergencyContact: input.emergencyContact,
@@ -355,6 +362,20 @@ export class PeopleService {
     if (!employee) throw notFound("employee");
     return employee;
   }
+}
+
+/** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
+type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
+
+/** Whether a save changes any pay fact, which nobody may do on their own record (security review of PR #25). */
+function payFactsChanged(before: EmployeeRow, after: PayFacts): boolean {
+  return (
+    dec(after.payRate).cmp(before.payRate) !== 0 ||
+    after.payType !== before.payType ||
+    after.workerType !== before.workerType ||
+    after.flsaStatus !== before.flsaStatus ||
+    after.salaryHoursPerWeek !== before.salaryHoursPerWeek
+  );
 }
 
 /** The fields a person edits, for audit entries: never the pay rate (CLAUDE.md rule 5). */

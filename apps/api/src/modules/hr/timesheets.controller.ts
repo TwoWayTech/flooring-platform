@@ -11,12 +11,15 @@ import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-con
 import { DAY, requireFeature } from "../sales/sales-common";
 import { TimesheetsService } from "./timesheets.service";
 
-/** A week of hours: seven numbers from the company's workweek day (hr.md rules 5 and 6). */
+/**
+ * A week of hours: seven decimal strings such as "7.5" from the company's workweek day (hr.md
+ * rules 5 and 6; CLAUDE.md rule 6). The service checks 0 to 24 and two decimals (ADR 0046).
+ */
 const TIMESHEET = z
   .object({
     employeeId: z.uuid(),
     weekStart: DAY,
-    days: z.array(z.number()).length(7, "A week has seven days."),
+    days: z.array(z.string().max(12, "Enter hours as a number, such as 8 or 7.5.")).length(7, "A week has seven days."),
   })
   .strict();
 
@@ -145,7 +148,8 @@ export class TimesheetsController {
   ) {
     requireFeature("hr.timesheets");
     const input = parse(UPLOAD, body);
-    // Someone else's rows need approve; one's own upload needs edit (hr.md "Who uses it").
+    // Someone else's rows need approve; one's own upload needs edit (hr.md "Who uses it"). The
+    // service also refuses one's own rows in an approver's upload without edit.
     if (!access.permissions.has(input.own ? "hr.timesheet.edit" : "hr.timesheet.approve")) {
       throw new ForbiddenException({ code: "forbidden", message: "You can't upload these hours." });
     }

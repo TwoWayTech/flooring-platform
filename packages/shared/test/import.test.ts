@@ -10,6 +10,7 @@ import {
   importKind,
   importKindsFor,
   mappingProblems,
+  needsTimesheet,
   planImport,
   readCell,
   templateTable,
@@ -78,8 +79,9 @@ const field = (type: ImportField["type"], extra: Partial<ImportField> = {}): Imp
 
 describe("what Undo puts back (spec G1)", () => {
   it("treats a timesheet built from several rows as new, so Undo removes it", () => {
-    const employee = summit.employees.find((e) => e.workerType !== "1099" && e.status !== "terminated")!;
-    const rows = ["2030-01-07", "2030-01-08"].map((work_date) => ({
+    const employee = summit.employees.find(needsTimesheet)!;
+    // A past week with no sheet yet: a future week is refused, as when saving by hand.
+    const rows = ["2020-01-06", "2020-01-07"].map((work_date) => ({
       employee_email: employee.email,
       work_date,
       hours_worked: "8",
@@ -88,6 +90,25 @@ describe("what Undo puts back (spec G1)", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0]!.before).toBeNull();
     expect(changes[0]!.after).toMatchObject({ days: [8, 8, 0, 0, 0, 0, 0] });
+  });
+
+  it("refuses timesheet rows for a submitted week, a future week, an exempt person or three decimals", () => {
+    const employee = summit.employees.find(needsTimesheet)!;
+    const exempt = summit.employees.find((e) => e.workerType === "w2" && e.flsaStatus === "exempt")!;
+    const ctx = context();
+    const submitted = { ...summit.timesheets[0]!, employeeId: employee.id, weekStart: "2020-01-06" };
+    ctx.world = { ...ctx.world, timesheets: [{ ...submitted, status: "submitted" }] };
+    const cases: [Record<string, string>, string][] = [
+      [{ employee_email: employee.email, work_date: "2020-01-07", hours_worked: "8" }, "waits for approval"],
+      [{ employee_email: employee.email, work_date: "2099-01-05", hours_worked: "8" }, "future week"],
+      [{ employee_email: exempt.email, work_date: "2020-01-07", hours_worked: "8" }, "does not use timesheets"],
+      [{ employee_email: employee.email, work_date: "2020-02-04", hours_worked: "7.555" }, "two decimals"],
+    ];
+    for (const [row, message] of cases) {
+      const { rows, changes } = plan("timesheets", [row], ctx);
+      expect(changes).toEqual([]);
+      expect(rows[0]!.problems.map((p) => p.message).join(" ")).toContain(message);
+    }
   });
 });
 

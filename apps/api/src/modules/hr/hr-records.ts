@@ -25,10 +25,11 @@ import {
   type PtoRequest,
   type TimeOffEntry,
   type TimeOffPolicy,
-  type Timesheet,
+  type TimesheetWire,
 } from "@workspace/shared";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
+import type { Actor } from "../../core/access/request-actor";
 import { fileRows, filesByOwner, loadNames, minuteOf } from "../sales/invoice-records";
 
 /** A stored employee row. */
@@ -84,6 +85,32 @@ export async function viewerEmployeeId(db: CompanyDb, userId: string): Promise<s
     .from(userProfiles)
     .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
   return row?.employeeId ?? null;
+}
+
+/** Whether an employee is the acting person's own; see `selfCheck`. */
+export type IsSelf = (employeeId: string) => boolean;
+
+/**
+ * Which employees count as the acting person's own, for refusals only (separation of duties;
+ * security review of PR #25): the employee linked to their sign-in (user_profiles.employee_id), and
+ * any employee whose email is the session's verified email, compared trimmed and case-insensitive.
+ * A sign-in that was never linked therefore can't approve, adjust, reopen or pay itself. Never use
+ * this to widen what someone sees or may do: data scope stays on the link alone (`personScope`).
+ */
+export async function selfCheck(db: CompanyDb, actor: Pick<Actor, "access" | "session">): Promise<IsSelf> {
+  const email = actor.session.user.email.trim().toLowerCase();
+  const [linked, byEmail] = await Promise.all([
+    viewerEmployeeId(db, actor.access.userId),
+    email
+      ? db
+          .select({ id: employees.id })
+          .from(employees)
+          .where(sql`lower(trim(${employees.email})) = ${email}`)
+      : Promise.resolve([]),
+  ]);
+  const own = new Set(byEmail.map((row) => row.id));
+  if (linked) own.add(linked);
+  return (employeeId) => own.has(employeeId);
 }
 
 /** Whose HR records a person sees: their own employee and, by data scope, everyone or their direct reports. */
@@ -199,12 +226,12 @@ export interface SheetFilter {
   employeeIds?: readonly string[];
 }
 
-/** Timesheets with their seven days of hours, newest week first; deciders by name. */
+/** Timesheets with their seven days of hours as decimal strings, newest week first; deciders by name. */
 export async function loadTimesheets(
   db: CompanyDb,
   control: ControlDb,
   filter: SheetFilter = {},
-): Promise<Timesheet[]> {
+): Promise<TimesheetWire[]> {
   const rows = await db
     .select()
     .from(timesheets)
@@ -235,13 +262,13 @@ export async function loadTimesheets(
       rows.map((row) => row.decidedById),
     ),
   ]);
-  const hours = new Map(entries.map((entry) => [`${entry.timesheetId}|${entry.date}`, Number(entry.hours)]));
+  const hours = new Map(entries.map((entry) => [`${entry.timesheetId}|${entry.date}`, hoursText(entry.hours)]));
   return rows.map((row) => ({
     id: row.id,
     employeeId: row.employeeId,
     weekStart: row.weekStart,
-    // Hours are stored as numeric(14,3) per day; the screens and shared rules read numbers (ADR 0024).
-    days: Array.from({ length: 7 }, (_, i) => hours.get(`${row.id}|${addDays(row.weekStart, i)}`) ?? 0),
+    // Hours are stored as numeric(14,3) per day and travel as decimal strings (CLAUDE.md rule 6; ADR 0046).
+    days: Array.from({ length: 7 }, (_, i) => hours.get(`${row.id}|${addDays(row.weekStart, i)}`) ?? "0"),
     status: row.status,
     submittedAt: row.submittedAt ? minuteOf(row.submittedAt) : null,
     decidedBy: row.decidedById ? (names.get(row.decidedById) ?? "") : null,
