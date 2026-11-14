@@ -25,14 +25,10 @@ import {
   type Reservation,
 } from "@workspace/shared";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { dayIn } from "./sales-common";
 
 /** Who did something, by user id, as the screens show it. Users live in the control database (rule 8). */
 export type Names = ReadonlyMap<string, string>;
-
-/** A day as the screens read it, `yyyy-MM-dd`. */
-function dayOf(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
 
 /** A moment as the screens read it, `yyyy-MM-ddTHH:mm`, in UTC. */
 function minuteOf(value: Date): string {
@@ -66,8 +62,11 @@ export interface RecordFilter {
   customerId?: string;
 }
 
-/** Live invoices and credit notes with their lines and commission split, newest first. */
-export async function loadInvoices(db: CompanyDb, filter: RecordFilter = {}): Promise<Invoice[]> {
+/**
+ * Live invoices and credit notes with their lines and commission split, newest first. Their dates
+ * are the company's days, in its time zone `zone` (`companyClock`).
+ */
+export async function loadInvoices(db: CompanyDb, zone: string, filter: RecordFilter = {}): Promise<Invoice[]> {
   const rows = await db
     .select()
     .from(invoices)
@@ -104,17 +103,17 @@ export async function loadInvoices(db: CompanyDb, filter: RecordFilter = {}): Pr
       branchId: row.branchId,
       locationId: row.locationId,
       ...(row.soldAtLocationId ? { soldAtLocationId: row.soldAtLocationId } : {}),
-      issuedAt: dayOf(row.issuedAt),
+      issuedAt: dayIn(row.issuedAt, zone),
       dueAt: row.dueAt,
       createdBy: row.createdBy ?? "",
-      sentAt: row.sentAt ? dayOf(row.sentAt) : null,
+      sentAt: row.sentAt ? dayIn(row.sentAt, zone) : null,
       sentBy: row.sentBy,
-      voidedAt: row.voidedAt ? dayOf(row.voidedAt) : null,
+      voidedAt: row.voidedAt ? dayIn(row.voidedAt, zone) : null,
       voidReason: row.voidReason,
       depositPct: row.depositPct,
       isReturn: row.isReturn,
       creditForInvoiceId: row.creditForInvoiceId,
-      refundedAt: row.refundedAt ? dayOf(row.refundedAt) : null,
+      refundedAt: row.refundedAt ? dayIn(row.refundedAt, zone) : null,
       jobSite: row.jobSite,
       lines: lines
         .filter((line) => line.invoiceId === row.id)

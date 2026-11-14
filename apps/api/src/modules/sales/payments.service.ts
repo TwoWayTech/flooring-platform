@@ -35,7 +35,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
 import { loadMoneyFormat, loadPaymentSettings, loadPayments, loadRefunds } from "./invoice-records";
 import { checkProofs, withStoredProofs, type ProofUpload } from "./proof-files";
-import { companyToday, notFound, refuse, seesCustomer } from "./sales-common";
+import { companyClock, notFound, refuse, seesCustomer } from "./sales-common";
 import { loadBranches, loadCustomers } from "./sales-records";
 
 /** A reviewer's decision on a pending payment (spec rule 28). */
@@ -88,24 +88,21 @@ export class PaymentsService {
   ): Promise<Payment> {
     const proofs = checkProofs(files);
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, input.invoiceId);
-    const [day, settings, money] = await Promise.all([
-      companyToday(this.control.db, tenant),
-      loadPaymentSettings(db),
-      loadMoneyFormat(db),
-    ]);
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, input.invoiceId, clock.zone);
+    const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
     const id = uuidv7();
     const recorded = await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
         await lockCustomer(tx, found.customerId);
-        const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, day);
+        const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, clock);
         if (ledger.state === "void" || ledger.state === "return" || dec(ledger.balance).lte(0)) {
           throw refuse(`Invoice ${invoice.number} has nothing left to pay.`);
         }
         firstProblem(
           validatePayment(input, {
             issuedAt: invoice.issuedAt,
-            today: day,
+            today: clock.day,
             balance: ledger.balance,
             canCredit: actor.access.permissions.has("sales.payment.apply_credit"),
             formatMoney: money,
@@ -201,10 +198,10 @@ export class PaymentsService {
    */
   async review(tenant: TenantContext, actor: Actor, paymentId: string, decision: PaymentDecision): Promise<Payment> {
     const db = await this.tenancy.db(tenant);
-    const before = await this.paymentInScope(db, actor.access, paymentId);
+    const clock = await companyClock(this.control.db, tenant);
+    const before = await this.paymentInScope(db, actor.access, paymentId, clock.zone);
     const reason = decision.action === "reject" ? decision.reason.trim() : "";
     if (decision.action === "reject" && reason.length < 3) throw refuse("Say why the payment is rejected.");
-    const day = await companyToday(this.control.db, tenant);
     await db.transaction(async (tx) => {
       await lockCustomer(tx, before.customerId);
       const [payment] = await loadPayments(tx, this.control.db, { ids: [paymentId] });
@@ -217,7 +214,7 @@ export class PaymentsService {
         });
       }
       const state =
-        decision.action === "confirm" ? await invoiceState(tx, this.control.db, payment.invoiceId, day) : null;
+        decision.action === "confirm" ? await invoiceState(tx, this.control.db, payment.invoiceId, clock) : null;
       if (state) {
         const { ledger } = state;
         if (dec(payment.amount).gt(ledger.balance) && !actor.access.permissions.has("sales.payment.apply_credit")) {
@@ -274,11 +271,16 @@ export class PaymentsService {
     const why = reason.trim();
     if (why.length < 3) throw refuse("Say why the payment is voided.");
     const db = await this.tenancy.db(tenant);
-    const before = await this.paymentInScope(db, actor.access, paymentId);
-    const day = await companyToday(this.control.db, tenant);
+    const clock = await companyClock(this.control.db, tenant);
+    const before = await this.paymentInScope(db, actor.access, paymentId, clock.zone);
     await db.transaction(async (tx) => {
       await lockCustomer(tx, before.customerId);
-      const { invoice, payments, adjustments, ledger } = await invoiceState(tx, this.control.db, before.invoiceId, day);
+      const { invoice, payments, adjustments, ledger } = await invoiceState(
+        tx,
+        this.control.db,
+        before.invoiceId,
+        clock,
+      );
       const payment = payments.find((p) => p.id === paymentId);
       if (!payment) throw notFound("payment");
       if (payment.status !== "confirmed" && payment.status !== "pending") {
@@ -287,7 +289,7 @@ export class PaymentsService {
       const after = invoiceLedger(
         invoice,
         { payments: payments.map((p) => (p.id === paymentId ? { ...p, status: "voided" as const } : p)), adjustments },
-        day,
+        clock.day,
       );
       // A credit note on the invoice may have become credit only because this payment counted.
       const [liveNote] = await tx
@@ -299,7 +301,7 @@ export class PaymentsService {
         throw refuse(`Invoice ${invoice.number} has credit note ${liveNote.number}, so its payments can't be voided.`);
       }
       const lostCredit = dec(ledger.overpaid).minus(after.overpaid);
-      if (lostCredit.gt(0) && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(lostCredit)) {
+      if (lostCredit.gt(0) && (await creditNow(tx, this.control.db, invoice.customerId, clock)).lt(lostCredit)) {
         throw refuse(`Credit from payment ${payment.number} was already applied or refunded, so it can't be voided.`);
       }
       const now = new Date();
@@ -315,7 +317,7 @@ export class PaymentsService {
         await this.books.reverse(
           tx,
           posted,
-          day,
+          clock.day,
           actor.access.userId,
           paymentVoidLines(payment, moneyString(lostCredit), cash),
         );
@@ -346,7 +348,8 @@ export class PaymentsService {
     files: readonly ProofUpload[],
   ): Promise<Payment> {
     const db = await this.tenancy.db(tenant);
-    const before = await this.paymentInScope(db, actor.access, paymentId);
+    const clock = await companyClock(this.control.db, tenant);
+    const before = await this.paymentInScope(db, actor.access, paymentId, clock.zone);
     const proofs = checkProofs(files, before.files.length);
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
@@ -391,17 +394,14 @@ export class PaymentsService {
     const db = await this.tenancy.db(tenant);
     const [[customer], branches] = await Promise.all([loadCustomers(db, [input.customerId]), loadBranches(db)]);
     if (!customer || !seesCustomer(actor.access, customer, branches)) throw notFound("customer");
-    const [day, settings, money] = await Promise.all([
-      companyToday(this.control.db, tenant),
-      loadPaymentSettings(db),
-      loadMoneyFormat(db),
-    ]);
+    const clock = await companyClock(this.control.db, tenant);
+    const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
     const id = uuidv7();
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
         await lockCustomer(tx, customer.id);
-        const credit = moneyString(await creditNow(tx, this.control.db, customer.id, day));
-        firstProblem(validateRefund(input, { credit, today: day, formatMoney: money }));
+        const credit = moneyString(await creditNow(tx, this.control.db, customer.id, clock));
+        firstProblem(validateRefund(input, { credit, today: clock.day, formatMoney: money }));
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:refund-number'))`);
         const used = await tx.select({ number: refunds.number }).from(refunds);
         const now = new Date();
@@ -459,9 +459,11 @@ export class PaymentsService {
     if (!row) throw notFound("file");
     const may = (...keys: PermissionKey[]) => keys.some((key) => access.permissions.has(key));
     if (row.ownerType === "payment" && may("sales.payment.view", "sales.payment.approve")) {
-      await this.paymentInScope(db, access, row.ownerId).catch(() => {
-        throw notFound("file");
-      });
+      await this.paymentInScope(db, access, row.ownerId, (await companyClock(this.control.db, tenant)).zone).catch(
+        () => {
+          throw notFound("file");
+        },
+      );
     } else if (row.ownerType === "refund" && may("sales.payment.view", "sales.payment.refund")) {
       const [refund] = await loadRefunds(db, this.control.db, { ids: [row.ownerId] });
       const [[customer], branches] = await Promise.all([
@@ -480,10 +482,15 @@ export class PaymentsService {
   }
 
   /** A payment whose invoice the person's data scope covers, or 404. */
-  private async paymentInScope(db: CompanyDb, access: RequestAccess, paymentId: string): Promise<Payment> {
+  private async paymentInScope(
+    db: CompanyDb,
+    access: RequestAccess,
+    paymentId: string,
+    zone: string,
+  ): Promise<Payment> {
     const [payment] = await loadPayments(db, this.control.db, { ids: [paymentId] });
     if (!payment) throw notFound("payment");
-    await invoiceInScope(db, access, payment.invoiceId).catch(() => {
+    await invoiceInScope(db, access, payment.invoiceId, zone).catch(() => {
       throw notFound("payment");
     });
     return payment;
@@ -539,10 +546,10 @@ export class PaymentsService {
   ): Promise<void> {
     try {
       const db = await this.tenancy.db(tenant);
-      const day = await companyToday(this.control.db, tenant);
+      const clock = await companyClock(this.control.db, tenant);
       const [[customer], state] = await Promise.all([
         loadCustomers(db, [payment.customerId]),
-        invoiceState(db, this.control.db, payment.invoiceId, day),
+        invoiceState(db, this.control.db, payment.invoiceId, clock),
       ]);
       if (!customer?.email) return;
       await this.notifications.notify(tenant, actor.access.userId, {
