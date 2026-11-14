@@ -115,7 +115,7 @@ describe("expenses API (needs the local PostgreSQL)", () => {
   }
 
   async function record(cookie: string, over: Record<string, unknown> = {}): Promise<ExpenseBody> {
-    const r = await call("post", "/expenses", cookie).send(form(over)); if (r.status !== 201) throw new Error(JSON.stringify(r.body)); return r.body;
+    return (await call("post", "/expenses", cookie).send(form(over)).expect(201)).body;
   }
 
   async function balances(): Promise<Map<string, string>> {
@@ -271,17 +271,25 @@ describe("expenses API (needs the local PostgreSQL)", () => {
   });
 
   it("finishes a draft with a receipt, and refuses to edit a recorded expense", async () => {
-    const draft = await record(cookies.accountant, { asDraft: true, files: [] });
+    const draft = await record(cookies.accountant, { asDraft: true });
     const before = await balances();
     const finished = await call("put", `/expenses/${draft.id}`, cookies.accountant)
       .send(form({ files: [PDF] }))
       .expect(200);
     expect(finished.body.status).toBe("confirmed");
-    expect(finished.body.files).toHaveLength(1);
+    expect(finished.body.files).toHaveLength(2);
     expect(moved(before, await balances(), "rent")).toBe("40.00");
     const edit = await call("put", `/expenses/${draft.id}`, cookies.accountant).send(form({ amount: "45.00" }));
     expect(edit.status).toBe(400);
     expect(edit.body.message).toContain("can't be edited");
+  });
+
+  it("finishes a draft that already holds its receipt without sending the file again", async () => {
+    const draft = await record(cookies.accountant, { asDraft: true });
+    const finished = await call("put", `/expenses/${draft.id}`, cookies.accountant).send(form({ files: [] }));
+    expect(finished.status).toBe(200);
+    expect(finished.body.status).toBe("confirmed");
+    expect(finished.body.files).toHaveLength(1);
   });
 
   it("raises a supplier bill for a pay-later expense and credits accounts payable, not cash", async () => {
