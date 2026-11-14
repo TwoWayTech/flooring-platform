@@ -45,6 +45,7 @@ The owner's queue of 2026-11-14 (docs/real-build-plan.md row 13; week 17 "portal
 
 ## Commands run and results
 - After the third review: `portal.int.test.ts` 15 of 15; typecheck and lint pass.
+- CI verify (edacf7b) failed 2 of 362: contracts and payables expected 403 for a warehouse user opening a file. Every role now holds `hr.portal.view`, so the route admits them and the service answers its usual 404. Both tests now expect 404, with a comment; contracts and payables 31 of 31 locally.
 - `pnpm -s typecheck`: pass.
 - `pnpm -s lint`: pass (after formatting `packages/shared/src/hr/portal.ts`).
 - `pnpm -s test`: shared 436, api 56, web 13, db 11, providers 11, all pass (after classifying the portal's `rates` flag as not sensitive in `access-rules.test.ts`).
