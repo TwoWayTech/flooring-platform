@@ -16,7 +16,10 @@ Owner decision of 2026-11-14, verbatim: "audit log entries that contain plan ter
 - **Out of scope:** "Changed commission split" (percentages) and "Assigned commission plan" (plan name) are not plan terms; other free-text reasons (bonuses, exclusions) are outside this decision. Recorded in the ADR.
 
 ## Reviews
-- Security review: not run in this session; the lead runs a fresh security-reviewer on PR #30.
+- Security review (fresh, b258ec9): PASS, 0 blocking; should-fix 1–3 done.
+  - 1: a variable action is skipped only inside the named pass-through helper `auditPlan`; any `this.audit…(` call is scanned, and `auditMove` call sites are checked as its fixed action.
+  - 2: an action left readable fails when its entry mentions plan terms or a reason (`ownTarget`'s true or false is allowed).
+  - 3: the scan covers pay periods, bonuses and `setCommissionSplit`; bonus and exclusion reasons stay visible (not in the owner's decision), listed with "owner question: bonus/exclusion reasons (STATUS)", and STATUS asks the owner about them and about plan terms for pay viewers regardless of data scope.
 
 ## Commands run and results
 - `pnpm -s typecheck`: pass (6 of 6 tasks).

@@ -265,6 +265,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Owner questions (commission audit visibility, PR #30):** should bonus reasons ("Added bonus", "Voided bonus") and pay-run exclusion reasons ("Left out of pay period") be hidden from audit viewers without pay access too? Today they stay visible, because the decision of 2026-11-14 covers plan terms and commission adjustment reasons only. And should pay viewers (`hr.employee.view_sensitive`) see plan terms in the audit log company-wide whatever their data scope, as now (the audit log has no data scope)?
 - **Accountant questions (ledger, ADR 0039):**
   - Is the default chart of accounts right, and which accounts should be added or renamed? **Default chosen, awaiting accountant:** the default chart.
   - Which costing method for stock and cost of goods? **Default chosen, awaiting accountant:** average cost, as a company setting.
