@@ -30,12 +30,17 @@ As planned (ADR 0043, PR #22). Files:
 - **Test-writer:** 9 tests, no product bugs. Two changes came from its notes:
   - a missing override permission now answers 403;
   - a roll invoice for a customer with no job site is refused, so tax is never silently nothing (a test checks it).
-- **Security review:** see PR #22.
+- **First security review:** 3 blocking, all fixed with tests.
+  - `/stock-holds` ignored data scope: an own-scope Sales rep saw every customer and invoice. Now the invoice fields show only within the reader's scope or to people who cut.
+  - The commission split took any user id and could drop the rep. Now it takes only active people of the company, keeps the rep unless the caller holds `hr.commission.manage`, and refuses credit notes.
+  - A cut that left a remnant stranded the parent roll's other holds, so the remnant could be sold twice. Those holds now move to the remnant.
+  - Should-fix items done: in-transit rolls are refused on a roll invoice; the job-site state and ZIP are checked; cost of goods credits the roll's current warehouse; a boxed issue checks on-hand; `validateCut` replaces passing raw errors; the `sales.team`, `inventory.reservations` and `inventory.rolls` switches are checked; the audit says "active".
+- **Second security review:** see PR #22.
 
 ## Commands run and results
-- `stock-issue.int.test.ts`: 10 of 10.
+- `stock-issue.int.test.ts`: 13 of 13 after the review fixes (one run failed in setup while enrolling two MFA users at once; three reruns passed).
 - `invoices`, `sales` and `inventory` integration tests: 23 of 23.
-- Full lint, typecheck, test and test:api: see PR #22.
+- Full lint, typecheck, test and test:api before the review fixes: all pass (API 226, db 31, shared 378).
 
 ## What is left
 - Returns that put goods back must post the cost back.
