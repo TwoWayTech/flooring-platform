@@ -309,6 +309,21 @@ export const FEATURES = {
     enabled: true,
     screens: ["/hr/pay-periods"],
   },
+  /**
+   * California overtime and pay rules (ADR 0024): daily and seventh-day overtime and double time,
+   * the flat-sum bonus premium and the 40-hour California salary. Off until a qualified payroll
+   * person reviews them (owner, 2026-11-14; ADR 0050): everyone is then paid on the federal
+   * weekly rule. California's refusals (exempt salary floor, monthly pay, vacation carryover) stay
+   * on whatever this switch says.
+   */
+  "hr.payroll.california": {
+    title: "California overtime and pay rules",
+    product: "both",
+    module: "hr",
+    status: "build",
+    enabled: false,
+    screens: [],
+  },
   "hr.portal": {
     title: "Employee portal",
     product: "both",

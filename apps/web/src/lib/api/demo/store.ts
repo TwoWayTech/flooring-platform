@@ -7,6 +7,7 @@ import {
   isDefaultRoleKey,
   permissionsForModules,
   featureOn,
+  overtimeRuleProblem,
   PRODUCT_MODULES,
   roleTemplate,
   boxedStock,
@@ -412,6 +413,11 @@ export class DemoStore implements ApiClient {
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
     await this.assertCan(db, settingsPermissions(section));
+    if (section === "localization") {
+      // California only while its switch is on (ADR 0050).
+      const problem = overtimeRuleProblem((value as CompanySettings["localization"]).payroll.overtimeRule);
+      if (problem) throw new DemoRuleError(problem);
+    }
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);

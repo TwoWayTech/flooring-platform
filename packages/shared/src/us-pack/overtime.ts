@@ -1,3 +1,4 @@
+import { featureOn, FEATURES, type FeatureRegister } from "../features";
 import { dec, maxDec, minDec, type Dec } from "../money";
 
 /**
@@ -74,9 +75,49 @@ function split(regular: Dec, overtime: Dec, doubleTime: Dec, flaggedDays: number
 }
 
 /**
- * The overtime rule for one worker: California's daily rule follows the work state, so a
- * California worker gets it whatever the company default is (US pack example).
+ * True when the California pay rules may be used: the `hr.payroll.california` switch, off until a
+ * qualified payroll person reviews them (owner, 2026-11-14; ADR 0050). Deny by default.
  */
-export function overtimeRuleFor(workState: string, companyRule: OvertimeRule): OvertimeRule {
+export function californiaPayOn(register: FeatureRegister = FEATURES): boolean {
+  return featureOn("hr.payroll.california", register);
+}
+
+/**
+ * Why a company overtime rule cannot be saved, or null. California is refused while its switch is
+ * off, as the payroll rule picker hides it (ADR 0050); anything but the two rules is refused.
+ */
+export function overtimeRuleProblem(rule: unknown, californiaOn: boolean = californiaPayOn()): string | null {
+  if (rule === "federal") return null;
+  if (rule === "california") {
+    return californiaOn
+      ? null
+      : "California pay rules are switched off until a payroll review. Choose the federal rule.";
+  }
+  return "Choose the federal or the California overtime rule.";
+}
+
+/**
+ * The company's overtime rule as it is applied: California only while the California switch is on,
+ * otherwise federal (ADR 0050). Screens show this, not the stored choice.
+ */
+export function companyOvertimeRule(
+  companyRule: OvertimeRule,
+  californiaOn: boolean = californiaPayOn(),
+): OvertimeRule {
+  return californiaOn ? companyRule : "federal";
+}
+
+/**
+ * The overtime rule for one worker. With the California switch on, California's daily rule follows
+ * the work state, so a California worker gets it whatever the company default is (US pack example).
+ * With it off, everyone is on the federal weekly rule, even where the company chose California
+ * (ADR 0050).
+ */
+export function overtimeRuleFor(
+  workState: string,
+  companyRule: OvertimeRule,
+  californiaOn: boolean = californiaPayOn(),
+): OvertimeRule {
+  if (!californiaOn) return "federal";
   return workState === "CA" ? "california" : companyRule;
 }

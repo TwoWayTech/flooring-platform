@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import {
+  CALIFORNIA_PENDING_NOTE,
+  californiaPayNote,
+  californiaPayOn,
+  companyOvertimeRule,
   OVERTIME_RULE_LABELS,
   payFrequencyProblem,
   WEEKDAY_LABELS,
@@ -21,6 +25,7 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CaliforniaPayNote } from "@/features/hr/california-pay-note";
 import { Choice } from "../form/choice";
 import { SettingRow } from "../form/setting-row";
 import { SettingsForm } from "../form/settings-form";
@@ -189,14 +194,21 @@ export function HrSettingsPage() {
           />
         )}
       </SettingsForm>
-      <Panel title="Overtime rule">
+      <Panel title="Overtime rule" bodyClassName="flex flex-col gap-3">
         <p className="text-sm">
-          {OVERTIME_RULE_LABELS[settings.localization.payroll.overtimeRule]}. Change it in{" "}
+          {OVERTIME_RULE_LABELS[companyOvertimeRule(settings.localization.payroll.overtimeRule)]}. Change it in{" "}
           <Link className="text-brand-ink underline underline-offset-2" href="/settings/localization?tab=payroll">
             Tax and localization, Payroll
           </Link>
-          . Workers in California follow the California rule whatever is chosen.
+          .{californiaPayOn() ? " Workers in California follow the California rule whatever is chosen." : null}
         </p>
+        <CaliforniaPayNote
+          note={
+            californiaPayOn()
+              ? CALIFORNIA_PENDING_NOTE
+              : californiaPayNote(employees, settings.localization.payroll.overtimeRule)
+          }
+        />
       </Panel>
       <Panel
         title="Time-off policies"
