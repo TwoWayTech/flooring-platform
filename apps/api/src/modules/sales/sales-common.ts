@@ -44,6 +44,8 @@ export interface CompanyClock {
   day: string;
   /** An IANA time zone such as America/Chicago. */
   zone: string;
+  /** The moment `day` was read at; documents stamped with it read back as `day` (PR #18 review). */
+  now: Date;
 }
 
 /** The company's clock, from its time zone in the control database (quotes, invoices, payments). */
@@ -52,8 +54,10 @@ export async function companyClock(control: ControlDb, tenant: TenantContext): P
     .select({ timeZone: tenants.timeZone })
     .from(tenants)
     .where(eq(tenants.id, tenant.companyId));
-  const zone = company?.timeZone ?? "UTC";
-  return { day: todayIn(zone), zone };
+  // TenantContext is built from this row, so a missing one is a fault, not a reason to use UTC.
+  if (!company) throw new Error(`Company ${tenant.companyId} has no control row.`);
+  const now = new Date();
+  return { day: dayIn(now, company.timeZone), zone: company.timeZone, now };
 }
 
 /** Today in the company's own time zone, read from the control database (quotes, invoices, payments). */

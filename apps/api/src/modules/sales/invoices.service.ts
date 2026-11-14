@@ -182,7 +182,7 @@ export class InvoicesService {
       });
       // Invoice lines get their own ids; nothing points at a quote line (ADR 0037).
       const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
-      await this.insertInvoice(tx, invoice, actor.access.userId);
+      await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
       await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       await lockStock(tx);
@@ -455,7 +455,7 @@ export class InvoicesService {
         total: moneyString(amount.plus(tax)),
         lines: [],
       };
-      await this.insertInvoice(tx, note, actor.access.userId);
+      await this.insertInvoice(tx, note, actor.access.userId, clock.now);
       await this.books.post(tx, creditNotePosting(note), actor.access.userId);
       // A note settles its own invoice's open balance first, so only money received can become
       // refundable credit (ADR 0039; PR #15 security review).
@@ -621,9 +621,12 @@ export class InvoicesService {
     return adjustment.amount;
   }
 
-  /** Writes an invoice with its lines and commission split. */
-  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string): Promise<void> {
-    const issuedAt = new Date();
+  /**
+   * Writes an invoice with its lines and commission split. `issuedAt` is the moment the company's
+   * day was read, so the stored invoice reads back on the day its entry posts, even when the
+   * conversion waited on a lock past midnight (PR #18 review).
+   */
+  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string, issuedAt: Date): Promise<void> {
     await tx.insert(invoices).values({
       id: invoice.id,
       number: invoice.number,
