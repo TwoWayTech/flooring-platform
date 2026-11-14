@@ -25,13 +25,14 @@ import {
   type Reservation,
 } from "@workspace/shared";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import type { ProofOwner } from "./proof-files";
 import { dayIn } from "./sales-common";
 
 /** Who did something, by user id, as the screens show it. Users live in the control database (rule 8). */
 export type Names = ReadonlyMap<string, string>;
 
 /** A moment as the screens read it, `yyyy-MM-ddTHH:mm`, in UTC. */
-function minuteOf(value: Date): string {
+export function minuteOf(value: Date): string {
   return value.toISOString().slice(0, 16);
 }
 
@@ -148,8 +149,8 @@ export async function loadInvoices(db: CompanyDb, zone: string, filter: RecordFi
   });
 }
 
-/** Proof file rows of payments or refunds, oldest first. */
-function fileRows(db: CompanyDb, ownerType: "payment" | "refund", ownerIds?: readonly string[]) {
+/** Proof file rows of payments, refunds or expenses, oldest first. */
+export function fileRows(db: CompanyDb, ownerType: ProofOwner, ownerIds?: readonly string[]) {
   return db
     .select()
     .from(attachments)
@@ -164,7 +165,7 @@ function fileRows(db: CompanyDb, ownerType: "payment" | "refund", ownerIds?: rea
 }
 
 /** Proof files by owner id, as the screens show them. */
-function filesByOwner(rows: Awaited<ReturnType<typeof fileRows>>, names: Names): Map<string, FileMeta[]> {
+export function filesByOwner(rows: Awaited<ReturnType<typeof fileRows>>, names: Names): Map<string, FileMeta[]> {
   const byOwner = new Map<string, FileMeta[]>();
   for (const row of rows) {
     const list = byOwner.get(row.ownerId) ?? [];
