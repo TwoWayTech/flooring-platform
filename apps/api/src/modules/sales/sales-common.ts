@@ -38,13 +38,42 @@ export function todayIn(timeZone: string): string {
   );
 }
 
-/** Today in the company's own time zone, read from the control database (quotes, invoices, payments). */
-export async function companyToday(control: ControlDb, tenant: TenantContext): Promise<string> {
+/** The company's time zone and today in it: the business day every sales date is read in. */
+export interface CompanyClock {
+  /** Today in the company's time zone, `yyyy-MM-dd`. */
+  day: string;
+  /** An IANA time zone such as America/Chicago. */
+  zone: string;
+  /** The moment `day` was read at; documents stamped with it read back as `day` (PR #18 review). */
+  now: Date;
+}
+
+/** The company's clock, from its time zone in the control database (quotes, invoices, payments). */
+export async function companyClock(control: ControlDb, tenant: TenantContext): Promise<CompanyClock> {
   const [company] = await control
     .select({ timeZone: tenants.timeZone })
     .from(tenants)
     .where(eq(tenants.id, tenant.companyId));
-  return todayIn(company?.timeZone ?? "UTC");
+  // TenantContext is built from this row, so a missing one is a fault, not a reason to use UTC.
+  if (!company) throw new Error(`Company ${tenant.companyId} has no control row.`);
+  const now = new Date();
+  return { day: dayIn(now, company.timeZone), zone: company.timeZone, now };
+}
+
+/** Today in the company's own time zone, read from the control database (quotes, invoices, payments). */
+export async function companyToday(control: ControlDb, tenant: TenantContext): Promise<string> {
+  return (await companyClock(control, tenant)).day;
+}
+
+/**
+ * The company's day a moment falls on. Invoices keep the moment they were issued, sent or voided;
+ * read as a UTC day, an invoice issued after 6 pm in Chicago would read as tomorrow, and a payment
+ * made that evening would be refused as "before the invoice date".
+ */
+export function dayIn(moment: Date, zone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+    moment,
+  );
 }
 
 /**

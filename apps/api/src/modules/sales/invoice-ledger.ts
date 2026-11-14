@@ -12,7 +12,7 @@ import {
 import { sql } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { loadAdjustments, loadInvoices, loadPayments, loadRefunds } from "./invoice-records";
-import { notFound, seesDocument } from "./sales-common";
+import { notFound, seesDocument, type CompanyClock } from "./sales-common";
 
 /** An invoice with its payments and the ledger derived from them (ADR 0013: never stored). */
 export interface InvoiceState {
@@ -32,8 +32,13 @@ export async function lockCustomer(tx: CompanyDb, customerId: string): Promise<v
 }
 
 /** An invoice the person's data scope covers, or 404 (spec "Data scope"). */
-export async function invoiceInScope(db: CompanyDb, access: RequestAccess, invoiceId: string): Promise<Invoice> {
-  const [invoice] = await loadInvoices(db, { ids: [invoiceId] });
+export async function invoiceInScope(
+  db: CompanyDb,
+  access: RequestAccess,
+  invoiceId: string,
+  zone: string,
+): Promise<Invoice> {
+  const [invoice] = await loadInvoices(db, zone, { ids: [invoiceId] });
   if (!invoice || !seesDocument(access, invoice)) throw notFound("invoice");
   return invoice;
 }
@@ -43,25 +48,30 @@ export async function invoiceState(
   tx: CompanyDb,
   control: ControlDb,
   invoiceId: string,
-  today: string,
+  clock: CompanyClock,
 ): Promise<InvoiceState> {
-  const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
+  const [invoice] = await loadInvoices(tx, clock.zone, { ids: [invoiceId] });
   if (!invoice) throw notFound("invoice");
   const [payments, adjustments] = await Promise.all([
     loadPayments(tx, control, { invoiceIds: [invoiceId] }),
     loadAdjustments(tx, control, { invoiceIds: [invoiceId] }),
   ]);
-  return { invoice, payments, adjustments, ledger: invoiceLedger(invoice, { payments, adjustments }, today) };
+  return { invoice, payments, adjustments, ledger: invoiceLedger(invoice, { payments, adjustments }, clock.day) };
 }
 
 /** A customer's credit now (spec rule 35): overpayments and open credit notes, less what was used or refunded. */
-export async function creditNow(tx: CompanyDb, control: ControlDb, customerId: string, today: string): Promise<Dec> {
+export async function creditNow(
+  tx: CompanyDb,
+  control: ControlDb,
+  customerId: string,
+  clock: CompanyClock,
+): Promise<Dec> {
   const [invoices, payments, adjustments, refunds] = await Promise.all([
-    loadInvoices(tx, { customerId }),
+    loadInvoices(tx, clock.zone, { customerId }),
     loadPayments(tx, control, { customerId }),
     loadAdjustments(tx, control, { customerId }),
     loadRefunds(tx, control, { customerId }),
   ]);
-  const ledgers = ledgerIndex(invoices, { payments, adjustments }, today);
+  const ledgers = ledgerIndex(invoices, { payments, adjustments }, clock.day);
   return customerCredit(customerId, invoices, ledgers, adjustments, refunds);
 }

@@ -18,6 +18,7 @@ import { createRequire } from "node:module";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { dayIn } from "../src/modules/sales/sales-common";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Summit's localization settings, without the tax tables, as a company's settings row holds them. */
@@ -29,6 +30,14 @@ function summitLocalization() {
   delete taxRest.rules;
   delete taxRest.jurisdictions;
   return { ...rest, tax: taxRest };
+}
+
+/**
+ * Today in the test companies' time zone (`AuthHarness.provisionCompany` uses America/Chicago). The
+ * API dates everything by the company's day, so the UTC day is "tomorrow" in the evening.
+ */
+function companyDay(): string {
+  return dayIn(new Date(), "America/Chicago");
 }
 
 /** A small file that starts like a PDF, as proof. */
@@ -183,7 +192,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       invoiceId,
       kind: "payment",
       amount: "100.00",
-      date: new Date().toISOString().slice(0, 10),
+      date: companyDay(),
       method: "check",
       checkNumber: "1001",
       cardLast4: "",
@@ -359,7 +368,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const refund = (amount: string) => ({
       customerId: customer.body.id,
       amount,
-      date: new Date().toISOString().slice(0, 10),
+      date: companyDay(),
       method: "check",
       reference: `RF-CHK-${uuidv7()}`,
       note: "",
@@ -421,7 +430,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const refund = {
       customerId: customer.body.id,
       amount: "10.00",
-      date: new Date().toISOString().slice(0, 10),
+      date: companyDay(),
       method: "cash",
       reference: "",
       note: "",
@@ -481,7 +490,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(dec(credit(one)).minus(credit(both)).toFixed(2)).toBe("110.35");
     expect(one.balanced).toBe(true);
     // Closing the books through today refuses anything dated today; reopening lets it through again.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = companyDay();
     expect(
       (await call("post", "/ledger/period-close", cookies.accountant).send({ through: today, note: "" })).status,
     ).toBe(403);

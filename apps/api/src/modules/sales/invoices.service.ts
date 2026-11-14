@@ -51,7 +51,7 @@ import {
   loadRefunds,
   loadReservations,
 } from "./invoice-records";
-import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
+import { companyClock, notFound, refuse, seesCustomer, seesDocument, type CompanyClock } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** The first invoice number, as in the demo (`INV-1001`), and the credit note series (`CR-5001`, spec rule 22). */
@@ -93,7 +93,8 @@ export class InvoicesService {
 
   /** Invoices and credit notes the person may see. */
   async invoices(tenant: TenantContext, access: RequestAccess): Promise<Invoice[]> {
-    const list = await loadInvoices(await this.tenancy.db(tenant));
+    const { zone } = await companyClock(this.control.db, tenant);
+    const list = await loadInvoices(await this.tenancy.db(tenant), zone);
     return list.filter((invoice) => seesDocument(access, invoice));
   }
 
@@ -149,7 +150,7 @@ export class InvoicesService {
    */
   async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
     const db = await this.tenancy.db(tenant);
-    const day = await companyToday(this.control.db, tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const id = uuidv7();
     await db.transaction(async (tx) => {
       // The quote row is locked, so two conversions of one quote cannot both pass the checks.
@@ -161,7 +162,7 @@ export class InvoicesService {
       if (quote.status !== "accepted" || !quoteIsOpen(quote)) {
         throw refuse("Mark the quote accepted before converting it to an invoice.");
       }
-      const problem = Object.values(quoteSendProblems(quote, null, day))[0];
+      const problem = Object.values(quoteSendProblems(quote, null, clock.day))[0];
       if (problem) throw refuse(problem);
       const [customer] = await loadCustomers(tx, [quote.customerId]);
       if (!customer) throw refuse("This quote's customer no longer exists.");
@@ -175,13 +176,13 @@ export class InvoicesService {
           used.map((row) => row.number),
           FIRST_INVOICE,
         ),
-        issuedAt: day,
+        issuedAt: clock.day,
         createdBy: actor.access.userId,
         balanceDueDays: localization.documents.balanceDueDays,
       });
       // Invoice lines get their own ids; nothing points at a quote line (ADR 0037).
       const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
-      await this.insertInvoice(tx, invoice, actor.access.userId);
+      await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
       await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       await lockStock(tx);
@@ -244,16 +245,17 @@ export class InvoicesService {
         tx,
       );
     });
-    return (await loadInvoices(db, { ids: [id] }))[0]!;
+    return (await loadInvoices(db, clock.zone, { ids: [id] }))[0]!;
   }
 
   /** Marks an invoice as sent (spec B2) and emails it to the customer (`invoice.sent`). */
   async markSent(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<Invoice> {
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, invoiceId);
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
     await db.transaction(async (tx) => {
       await lockCustomer(tx, found.customerId);
-      const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
+      const [invoice] = await loadInvoices(tx, clock.zone, { ids: [invoiceId] });
       if (!invoice) throw notFound("invoice");
       if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is void.`);
       if (invoice.sentAt) throw refuse(`Invoice ${invoice.number} was already sent.`);
@@ -276,7 +278,7 @@ export class InvoicesService {
         tx,
       );
     });
-    const [sent] = await loadInvoices(db, { ids: [invoiceId] });
+    const [sent] = await loadInvoices(db, clock.zone, { ids: [invoiceId] });
     await this.emailInvoice(tenant, actor, sent!);
     return sent!;
   }
@@ -290,11 +292,11 @@ export class InvoicesService {
   async voidInvoice(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<Invoice> {
     const why = reasonFor(reason, "the invoice is voided");
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, invoiceId);
-    const day = await companyToday(this.control.db, tenant);
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
     await db.transaction(async (tx) => {
       await lockCustomer(tx, found.customerId);
-      const { invoice, payments, ledger } = await invoiceState(tx, this.control.db, invoiceId, day);
+      const { invoice, payments, ledger } = await invoiceState(tx, this.control.db, invoiceId, clock);
       if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is already void.`);
       if (ledger.locked) {
         throw refuse(`Invoice ${invoice.number} has confirmed payments. Void them first, or issue a credit note.`);
@@ -325,7 +327,7 @@ export class InvoicesService {
           .limit(1);
         if (settlement) throw refuse(`Credit note ${invoice.number} settled its invoice, so it can't be voided.`);
       }
-      if (invoice.isReturn && (await creditNow(tx, this.control.db, invoice.customerId, day)).lt(invoice.total)) {
+      if (invoice.isReturn && (await creditNow(tx, this.control.db, invoice.customerId, clock)).lt(invoice.total)) {
         throw refuse(`Credit from ${invoice.number} was already applied or refunded, so it can't be voided.`);
       }
       const now = new Date();
@@ -357,7 +359,12 @@ export class InvoicesService {
         .set({ voidedAt: now, voidReason: why, updatedAt: now })
         .where(eq(invoices.id, invoiceId));
       const event = invoice.isReturn ? "credit_note.issued" : "invoice.issued";
-      await this.books.reverse(tx, { sourceType: "invoice", sourceId: invoiceId, event }, day, actor.access.userId);
+      await this.books.reverse(
+        tx,
+        { sourceType: "invoice", sourceId: invoiceId, event },
+        clock.day,
+        actor.access.userId,
+      );
       await lockStock(tx);
       const released = await tx
         .update(reservations)
@@ -381,7 +388,7 @@ export class InvoicesService {
         tx,
       );
     });
-    return (await loadInvoices(db, { ids: [invoiceId] }))[0]!;
+    return (await loadInvoices(db, clock.zone, { ids: [invoiceId] }))[0]!;
   }
 
   /**
@@ -397,16 +404,16 @@ export class InvoicesService {
   ): Promise<Invoice> {
     const why = reasonFor(request.reason, "the credit note is issued");
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, invoiceId);
-    const day = await companyToday(this.control.db, tenant);
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
     const id = uuidv7();
     await db.transaction(async (tx) => {
       await lockCustomer(tx, found.customerId);
-      const [invoice] = await loadInvoices(tx, { ids: [invoiceId] });
+      const [invoice] = await loadInvoices(tx, clock.zone, { ids: [invoiceId] });
       if (!invoice || invoice.voidedAt || invoice.isReturn) throw refuse("A credit note needs a live invoice.");
       // A written-off balance was never paid; a note on it would turn the write-off into refundable
       // credit (PR #16 review). With no write-off, notes become credit only up to money received.
-      const { ledger: current } = await invoiceState(tx, this.control.db, invoiceId, day);
+      const { ledger: current } = await invoiceState(tx, this.control.db, invoiceId, clock);
       if (dec(current.writtenOff).gt(0)) {
         throw refuse(`Invoice ${invoice.number} has a write-off, so it can't take a credit note.`);
       }
@@ -435,9 +442,9 @@ export class InvoicesService {
         quoteId: null,
         isReturn: true,
         creditForInvoiceId: invoice.id,
-        issuedAt: day,
-        dueAt: day,
-        sentAt: day,
+        issuedAt: clock.day,
+        dueAt: clock.day,
+        sentAt: clock.day,
         sentBy: actor.access.userId,
         createdBy: actor.access.userId,
         refundedAt: null,
@@ -448,11 +455,11 @@ export class InvoicesService {
         total: moneyString(amount.plus(tax)),
         lines: [],
       };
-      await this.insertInvoice(tx, note, actor.access.userId);
+      await this.insertInvoice(tx, note, actor.access.userId, clock.now);
       await this.books.post(tx, creditNotePosting(note), actor.access.userId);
       // A note settles its own invoice's open balance first, so only money received can become
       // refundable credit (ADR 0039; PR #15 security review).
-      const settled = await this.settleWithNote(tx, actor.access.userId, invoice, note, day);
+      const settled = await this.settleWithNote(tx, actor.access.userId, invoice, note, clock);
       await this.auditLog.record(
         tenant,
         actor.audit,
@@ -474,7 +481,7 @@ export class InvoicesService {
         tx,
       );
     });
-    return (await loadInvoices(db, { ids: [id] }))[0]!;
+    return (await loadInvoices(db, clock.zone, { ids: [id] }))[0]!;
   }
 
   /**
@@ -484,13 +491,10 @@ export class InvoicesService {
   async writeOff(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<InvoiceAdjustment> {
     const why = reasonFor(reason, "the balance is written off");
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, invoiceId);
-    const [day, settings, money] = await Promise.all([
-      companyToday(this.control.db, tenant),
-      loadPaymentSettings(db),
-      loadMoneyFormat(db),
-    ]);
-    return this.adjust(tenant, actor, found, day, "Wrote off balance", ({ balance, pending }) => {
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
+    const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
+    return this.adjust(tenant, actor, found, clock, "Wrote off balance", ({ balance, pending }) => {
       if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to write off.`);
       // A payment that waits could still settle it; writing off first would turn it into credit.
       if (pending.gt(0)) throw refuse(`Verify or reject the payment waiting on ${found.number} first.`);
@@ -507,9 +511,9 @@ export class InvoicesService {
   /** Applies the customer's credit to an invoice (spec rule 36): as much as the balance takes. */
   async applyCredit(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<InvoiceAdjustment> {
     const db = await this.tenancy.db(tenant);
-    const found = await invoiceInScope(db, actor.access, invoiceId);
-    const day = await companyToday(this.control.db, tenant);
-    return this.adjust(tenant, actor, found, day, "Applied customer credit", ({ balance, credit }) => {
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
+    return this.adjust(tenant, actor, found, clock, "Applied customer credit", ({ balance, credit }) => {
       if (credit.lte(0)) throw refuse("This customer has no credit to apply.");
       if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to pay.`);
       return {
@@ -525,7 +529,7 @@ export class InvoicesService {
     tenant: TenantContext,
     actor: Actor,
     found: Invoice,
-    day: string,
+    clock: CompanyClock,
     action: string,
     decide: (now: {
       balance: ReturnType<typeof dec>;
@@ -537,9 +541,9 @@ export class InvoicesService {
     const id = uuidv7();
     await db.transaction(async (tx) => {
       await lockCustomer(tx, found.customerId);
-      const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, day);
+      const { invoice, ledger } = await invoiceState(tx, this.control.db, found.id, clock);
       if (ledger.state === "void" || ledger.state === "return") throw refuse(`Invoice ${invoice.number} owes nothing.`);
-      const credit = await creditNow(tx, this.control.db, invoice.customerId, day);
+      const credit = await creditNow(tx, this.control.db, invoice.customerId, clock);
       const decided = decide({ balance: dec(ledger.balance), credit, pending: dec(ledger.pending) });
       const now = new Date();
       await tx.insert(invoiceAdjustments).values({
@@ -556,7 +560,7 @@ export class InvoicesService {
         adjustmentPosting(
           { id, invoiceId: invoice.id, customerId: invoice.customerId, ...decided, byName: "", at: "" },
           invoice.number,
-          day,
+          clock.day,
         ),
         actor.access.userId,
       );
@@ -587,9 +591,9 @@ export class InvoicesService {
     by: string,
     invoice: Invoice,
     note: Invoice,
-    day: string,
+    clock: CompanyClock,
   ): Promise<string> {
-    const { ledger } = await invoiceState(tx, this.control.db, invoice.id, day);
+    const { ledger } = await invoiceState(tx, this.control.db, invoice.id, clock);
     const amount = minDec(dec(note.total), dec(ledger.balance));
     if (amount.lte(0)) return "0.00";
     const adjustment: InvoiceAdjustment = {
@@ -613,13 +617,16 @@ export class InvoicesService {
       at: new Date(),
       createdBy: by,
     });
-    await this.books.post(tx, adjustmentPosting(adjustment, invoice.number, day), by);
+    await this.books.post(tx, adjustmentPosting(adjustment, invoice.number, clock.day), by);
     return adjustment.amount;
   }
 
-  /** Writes an invoice with its lines and commission split. */
-  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string): Promise<void> {
-    const issuedAt = new Date();
+  /**
+   * Writes an invoice with its lines and commission split. `issuedAt` is the moment the company's
+   * day was read, so the stored invoice reads back on the day its entry posts, even when the
+   * conversion waited on a lock past midnight (PR #18 review).
+   */
+  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string, issuedAt: Date): Promise<void> {
     await tx.insert(invoices).values({
       id: invoice.id,
       number: invoice.number,
