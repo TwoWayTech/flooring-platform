@@ -45,8 +45,21 @@ export async function loadContracts(
     .from(contracts)
     .where(and(isNull(contracts.deletedAt), ids ? inArray(contracts.id, [...ids]) : undefined))
     .orderBy(desc(contracts.number));
-  const fileList = rows.length === 0 ? [] : await fileRows(db, "contract", rows.map((row) => row.id));
-  const files = filesByOwner(fileList, await loadNames(control, fileList.map((row) => row.createdBy)));
+  const fileList =
+    rows.length === 0
+      ? []
+      : await fileRows(
+          db,
+          "contract",
+          rows.map((row) => row.id),
+        );
+  const files = filesByOwner(
+    fileList,
+    await loadNames(
+      control,
+      fileList.map((row) => row.createdBy),
+    ),
+  );
   return rows.map((row) => ({
     id: row.id,
     number: row.number,
@@ -205,9 +218,7 @@ export async function loadBillings(
       : db
           .select()
           .from(contractBillingReleases)
-          .where(
-            and(isNull(contractBillingReleases.deletedAt), inArray(contractBillingReleases.billingId, billingIds)),
-          )
+          .where(and(isNull(contractBillingReleases.deletedAt), inArray(contractBillingReleases.billingId, billingIds)))
           .orderBy(asc(contractBillingReleases.createdAt), asc(contractBillingReleases.id)),
     loadNames(
       control,

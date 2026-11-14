@@ -69,7 +69,15 @@ export function auditContract(
   return auditLog.record(
     tenant,
     actor.audit,
-    { category: "data", action, targetType: "contract", targetId: row.id, targetLabel: contractLabel(row), before, after },
+    {
+      category: "data",
+      action,
+      targetType: "contract",
+      targetId: row.id,
+      targetLabel: contractLabel(row),
+      before,
+      after,
+    },
     tx,
   );
 }

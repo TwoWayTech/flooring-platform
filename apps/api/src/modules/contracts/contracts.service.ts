@@ -26,7 +26,7 @@ import {
   type LienWaiver,
   type SignatureRecord,
 } from "@workspace/shared";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -252,9 +252,18 @@ export class ContractsService {
       const problem = draftProblem(contract!, await loadContractLines(tx, [id]));
       if (problem) throw refuse(problem);
       await this.setStatus(tx, id, { status: "sent", sentAt: clock.now });
-      await auditContract(this.auditLog, tenant, actor, tx, "Sent contract for signature", before, { status: "draft" }, {
-        status: "sent",
-      });
+      await auditContract(
+        this.auditLog,
+        tenant,
+        actor,
+        tx,
+        "Sent contract for signature",
+        before,
+        { status: "draft" },
+        {
+          status: "sent",
+        },
+      );
       return before;
     });
     await this.askToSign(tenant, actor, db, row, clock.now);
@@ -307,10 +316,19 @@ export class ContractsService {
         ],
       };
       await this.setStatus(tx, id, { status: "active", signedAt: clock.now, signature });
-      await auditContract(this.auditLog, tenant, actor, tx, "Recorded simulated signature", before, { status: "sent" }, {
-        status: "active",
-        signerName,
-      });
+      await auditContract(
+        this.auditLog,
+        tenant,
+        actor,
+        tx,
+        "Recorded simulated signature",
+        before,
+        { status: "sent" },
+        {
+          status: "active",
+          signerName,
+        },
+      );
     });
     return this.one(db, clock, id);
   }
@@ -343,16 +361,28 @@ export class ContractsService {
       if (problem) {
         if (!reason) throw refuse(problem);
         if (!actor.access.permissions.has("contracts.contract.approve")) {
-          throw new ForbiddenException({ code: "forbidden", message: "Only someone who approves contracts can override." });
+          throw new ForbiddenException({
+            code: "forbidden",
+            message: "Only someone who approves contracts can override.",
+          });
         }
         if (reason.length < 3) throw refuse("Say why the contract closes despite the check.");
       }
       const override = problem ? reason : null;
       await this.setStatus(tx, id, { status: "closed", finalAcceptanceAt: clock.day, closeOverrideReason: override });
-      await auditContract(this.auditLog, tenant, actor, tx, "Closed contract", before, { status: "completed" }, {
-        status: "closed",
-        ...(override ? { overrideReason: override, problem } : {}),
-      });
+      await auditContract(
+        this.auditLog,
+        tenant,
+        actor,
+        tx,
+        "Closed contract",
+        before,
+        { status: "completed" },
+        {
+          status: "closed",
+          ...(override ? { overrideReason: override, problem } : {}),
+        },
+      );
     });
     return this.one(db, clock, id);
   }
@@ -365,12 +395,22 @@ export class ContractsService {
     const clock = await companyClock(this.control.db, tenant);
     await db.transaction(async (tx) => {
       const before = await lockContract(tx, actor.access, id);
-      if (before.status !== "active" && before.status !== "completed") throw refuse("This contract can't be terminated.");
+      if (before.status !== "active" && before.status !== "completed")
+        throw refuse("This contract can't be terminated.");
       await this.setStatus(tx, id, { status: "terminated", terminatedAt: clock.now, terminationReason: why });
-      await auditContract(this.auditLog, tenant, actor, tx, "Terminated contract", before, { status: before.status }, {
-        status: "terminated",
-        reason: why,
-      });
+      await auditContract(
+        this.auditLog,
+        tenant,
+        actor,
+        tx,
+        "Terminated contract",
+        before,
+        { status: before.status },
+        {
+          status: "terminated",
+          reason: why,
+        },
+      );
     });
     return this.one(db, clock, id);
   }
@@ -453,7 +493,9 @@ export class ContractsService {
         const [count] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(attachments)
-          .where(and(eq(attachments.ownerType, "contract"), eq(attachments.ownerId, id), isNull(attachments.deletedAt)));
+          .where(
+            and(eq(attachments.ownerType, "contract"), eq(attachments.ownerId, id), isNull(attachments.deletedAt)),
+          );
         if ((count?.count ?? 0) > MAX_PROOF_FILES) throw refuse(`A contract keeps at most ${MAX_PROOF_FILES} files.`);
         await auditContract(this.auditLog, tenant, actor, tx, "Added contract files", before, null, {
           files: proofs.map((file) => file.name),
@@ -602,8 +644,9 @@ export class ContractsService {
 }
 
 /**
- * The lines to store on save. Without view_sensitive the estimated cost is never taken from the
- * request: a line keeps the stored cost of the line with the same code, else zero (CLAUDE.md rule 5).
+ * The lines to store on save. The estimated cost is taken from the request only from someone with
+ * view_sensitive who sent one; otherwise a line keeps the stored cost of the line with the same
+ * code, else zero (CLAUDE.md rule 5; spec edge case 13).
  */
 function linesToStore(lines: readonly ContractLineFields[], kept: readonly ContractLine[], access: RequestAccess) {
   const seesCost = access.permissions.has(SENSITIVE_COST);
@@ -618,7 +661,7 @@ function linesToStore(lines: readonly ContractLineFields[], kept: readonly Contr
     storedRetainagePct: line.storedRetainagePct,
     milestoneDueAt: line.milestoneDueAt,
     estimatedCost: moneyString(
-      seesCost ? (line.estimatedCost ?? "0") : (keptCost.get(line.code.trim()) ?? "0"),
+      seesCost && line.estimatedCost !== undefined ? line.estimatedCost : (keptCost.get(line.code.trim()) ?? "0"),
     ),
   }));
 }
@@ -670,8 +713,18 @@ function renewedTerms(row: ContractRow) {
 
 /** The fields a person edits on a contract, for its audit entries (CLAUDE.md rule 10). */
 function editable(row: ContractRow) {
-  const { title, direction, kind, customerId, supplierId, startsAt, endsAt, originalValue, retainagePct, taxTreatment } =
-    row;
+  const {
+    title,
+    direction,
+    kind,
+    customerId,
+    supplierId,
+    startsAt,
+    endsAt,
+    originalValue,
+    retainagePct,
+    taxTreatment,
+  } = row;
   return {
     title,
     direction,

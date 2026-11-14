@@ -10,13 +10,8 @@ import { useApiQuery } from "@/lib/api/use-api";
 /** The dashboard's Contracts widget (spec D2): milestones due, contracts ending soon and retainage held. */
 export function ContractsWidget() {
   const data = useApiQuery(async (client) => {
-    const [contracts, lines, billings, orders] = await Promise.all([
-      client.list("contracts"),
-      client.list("contractLines"),
-      client.list("contractBillings"),
-      client.list("changeOrders"),
-    ]);
-    return { contracts, lines, billings, orders };
+    const { contracts, lines, billings, changeOrders } = await client.contractsData();
+    return { contracts, lines, billings, orders: changeOrders };
   }, []);
   if (data.status !== "ready") return null;
   const { contracts, lines, billings, orders } = data.data;

@@ -212,9 +212,7 @@ describe("test company seed", () => {
       expect(await company.db.select().from(lienWaivers)).toHaveLength(
         fixtures.lienWaivers.filter((w) => !w.paymentId || payments.has(w.paymentId)).length,
       );
-      expect(await company.db.select().from(insuranceCertificates)).toHaveLength(
-        fixtures.insuranceCertificates.length,
-      );
+      expect(await company.db.select().from(insuranceCertificates)).toHaveLength(fixtures.insuranceCertificates.length);
       expect(await company.db.select().from(insuranceCoverages)).toHaveLength(
         fixtures.insuranceCertificates.flatMap((certificate) => certificate.coverages).length,
       );

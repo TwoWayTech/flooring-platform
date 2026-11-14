@@ -185,7 +185,12 @@ export class ContractChangesService {
    * after a confirmed payment. A payment must be the contract party's own: a customer payment on a
    * customer contract, a supplier payment on a subcontract.
    */
-  async recordWaiver(tenant: TenantContext, actor: Actor, contractId: string, input: WaiverFields): Promise<LienWaiver> {
+  async recordWaiver(
+    tenant: TenantContext,
+    actor: Actor,
+    contractId: string,
+    input: WaiverFields,
+  ): Promise<LienWaiver> {
     const db = await this.tenancy.db(tenant);
     const clock = await companyClock(this.control.db, tenant);
     const id = uuidv7();
@@ -300,7 +305,10 @@ export class ContractChangesService {
         const line = lines.find((l) => l.id === change.lineId)!;
         await tx
           .update(contractLines)
-          .set({ scheduledValue: moneyString(dec(line.scheduledValue).plus(change.amountDelta)), updatedAt: new Date() })
+          .set({
+            scheduledValue: moneyString(dec(line.scheduledValue).plus(change.amountDelta)),
+            updatedAt: new Date(),
+          })
           .where(eq(contractLines.id, line.id));
         continue;
       }
