@@ -134,7 +134,7 @@ export function HrDashboard() {
                 <Num kind="count" value={active.filter((e) => e.workerType === "1099").length} />
               </Figure>
               <Figure label="Hours this week">
-                <Num kind="quantity" value={rows.reduce((s, r) => s + r.total, 0)} />
+                <Num kind="quantity" value={sum(rows.map((r) => r.total)).toString()} />
               </Figure>
               <Figure label="Overtime hours">
                 <Num kind="quantity" value={sum(rows.map((r) => r.extraHours))} />
