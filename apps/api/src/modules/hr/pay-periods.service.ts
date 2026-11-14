@@ -36,7 +36,7 @@ import {
   type TimeOffPolicy,
   type Timesheet,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, max } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, max, ne, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -95,6 +95,27 @@ function runSourceId(periodId: string, approvedAt: Date): string {
   return uuidv5(`${periodId}:${approvedAt.toISOString()}`, RUN_NAMESPACE);
 }
 
+/**
+ * Serialises approvals and reopens company-wide, taken first in their transactions (lock order:
+ * this lock, then the period row, then employees in id order). Two runs over the same days then
+ * can't both pass the overlap check (second security review of PR #26). Nothing else takes it.
+ */
+const PAYROLL_LOCK = sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`;
+
+/**
+ * The database clock now, to the millisecond, read inside the transaction once its locks are held.
+ * Approval times and audit times (`AuditService`, `clock_timestamp()`) come from this one clock,
+ * so a pay change that waited on an approval's locks is stamped after the approval (ADR 0047;
+ * second security review of PR #26). Milliseconds, so the value round-trips through a JS Date and
+ * a reopen finds the same journal source id from the stored `approved_at`.
+ */
+async function databaseNow(tx: CompanyDb): Promise<Date> {
+  const [row] = await tx.execute<{ ms: string }>(
+    sql`select (extract(epoch from date_trunc('milliseconds', clock_timestamp())) * 1000)::bigint::text as ms`,
+  );
+  return new Date(Number(row!.ms));
+}
+
 const label = (period: Pick<PayPeriodRow, "start" | "end">) => `${period.start} to ${period.end}`;
 
 /** The employee fields an "Edited employee" entry carries that decide whether and how much a person is paid. */
@@ -123,7 +144,8 @@ interface RunInputs {
  * reviewed live from approved timesheets, approved time off and bonuses with the shared gross pay
  * rule, then approved (frozen lines, time-off accrual, the payroll accrual in the ledger), reopened
  * (reversed, never edited) or exported. Payroll is company-wide. Every write locks the period
- * first, then employees in id order, and writes audit_log in the same transaction.
+ * first (approve and reopen take `PAYROLL_LOCK` before it), then employees in id order, and writes
+ * audit_log in the same transaction.
  */
 @Injectable()
 export class PayPeriodsService {
@@ -296,7 +318,8 @@ export class PayPeriodsService {
    * the staff (rule 16), every workweek ending in it must be approved or its person left out, and
    * no other approved run may cover its days. Separation of duties, unless the approver is the
    * Owner: nobody approves a run that pays them, or one they shaped by leaving someone out, bringing
-   * them back, adding a bonus in it, adding a person in it or changing their pay facts; and the
+   * them back, adding a bonus in it, adding a person in it or changing their pay facts, or changing
+   * whether a time-off policy is paid since someone else last approved a run; and the
    * approver's sign-in must be linked to their employee. The lines are frozen, time off accrues
    * (rule 12) and the gross pay posts to Wages against Accrued Payroll, all in one transaction.
    */
@@ -304,17 +327,19 @@ export class PayPeriodsService {
     const db = await this.tenancy.db(tenant);
     const clock = await companyClock(this.control.db, tenant);
     await db.transaction(async (tx) => {
+      await tx.execute(PAYROLL_LOCK);
       const period = await lockPayPeriod(tx, id);
       if (period.status === "approved" || period.status === "exported") {
         throw refuse("This pay period is already approved.");
       }
       if (period.end >= clock.day) throw refuse("A pay period can be approved after it ends.");
-      // A day is paid once: no other approved or exported run may cover any of these days.
+      await requireLinkedDecider(tx, actor.access);
+      const payable = await this.lockPayable(tx, tenant, period);
+      // A day is paid once: no other approved or exported run may cover any of these days. Checked
+      // under the payroll lock with the people locked, so no other approval can slip in between.
       if (await inClosedPayPeriod(tx, period.start, period.end, period.id)) {
         throw refuse("Another approved pay period covers some of these days.");
       }
-      await requireLinkedDecider(tx, actor.access);
-      const payable = await this.lockPayable(tx, tenant, period);
       const excluded = await this.excludedIds(tx, period.id);
       const inputs = await this.inputs(tx, payable);
       const blockers = payRunBlockers(period, payable, inputs.sheets, excluded, inputs.workweekStartDay);
@@ -325,7 +350,7 @@ export class PayPeriodsService {
       await this.checkApprover(tx, actor, period, included, inputs.bonuses);
       await this.checkCommission(tx, included);
       const lines = included.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
-      const now = new Date();
+      const now = await databaseNow(tx);
       await tx
         .update(payPeriods)
         .set({ status: "approved", approvedById: actor.access.userId, approvedAt: now, updatedAt: now })
@@ -366,6 +391,7 @@ export class PayPeriodsService {
     const db = await this.tenancy.db(tenant);
     const clock = await companyClock(this.control.db, tenant);
     await db.transaction(async (tx) => {
+      await tx.execute(PAYROLL_LOCK);
       const period = await lockPayPeriod(tx, id);
       if (period.status === "exported") throw refuse("An exported pay period can't be reopened.");
       if (period.status !== "approved") throw refuse("Only an approved pay period can be reopened.");
@@ -544,6 +570,47 @@ export class PayPeriodsService {
     if (await this.setPayOfAnyone(tx, actor.access.userId, included)) {
       throw refuse("Someone else must approve a pay run that pays a person whose pay you added or changed.");
     }
+    if (await this.changedPaidLeave(tx, actor.access.userId)) {
+      throw refuse("Someone else must approve the next pay run after you changed whether a time-off policy is paid.");
+    }
+  }
+
+  /**
+   * Whether the approver added a time-off policy, or changed whether one is paid or its kind, since
+   * the company's latest approval by someone else (second security review of PR #26): paid leave is
+   * part of gross pay (hr.md rule 17), so a policy change shapes every run that pays leave under it.
+   * Company-wide and kept simple: the window opens at that approval, or is open-ended without one.
+   * Both times come from the database clock (`databaseNow`, audit `clock_timestamp()`), and
+   * `savePolicy` records the policy before and after.
+   */
+  private async changedPaidLeave(tx: CompanyDb, approverId: string): Promise<boolean> {
+    const [latest] = await tx
+      .select({ at: max(payPeriods.approvedAt) })
+      .from(payPeriods)
+      .where(
+        and(
+          isNull(payPeriods.deletedAt),
+          inArray(payPeriods.status, ["approved", "exported"]),
+          ne(payPeriods.approvedById, approverId),
+        ),
+      );
+    const entries = await tx
+      .select({ action: auditLog.action, before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.actorUserId, approverId),
+          eq(auditLog.targetType, "time_off_policy"),
+          inArray(auditLog.action, ["Added time-off policy", "Edited time-off policy"]),
+          latest?.at ? gte(auditLog.at, latest.at) : undefined,
+        ),
+      );
+    return entries.some((entry) => {
+      if (entry.action === "Added time-off policy") return true;
+      const before = (entry.before ?? {}) as Record<string, unknown>;
+      const after = (entry.after ?? {}) as Record<string, unknown>;
+      return before.paid !== after.paid || before.kind !== after.kind;
+    });
   }
 
   /**
@@ -593,7 +660,9 @@ export class PayPeriodsService {
     const since = new Map(paid.map((row) => [row.employeeId, row.approvedAt]));
     return relevant.some((entry) => {
       const last = entry.targetId ? since.get(entry.targetId) : null;
-      return !last || entry.at > last;
+      // `approved_at` is the database clock to the millisecond and `at` reads back truncated to one,
+      // so an entry in the same millisecond counts as after the approval: the safe side.
+      return !last || entry.at >= last;
     });
   }
 

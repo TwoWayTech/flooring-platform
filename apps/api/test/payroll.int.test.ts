@@ -17,7 +17,7 @@ import {
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { addDays, dec, moneyString, sum, workweekStartOf } from "@workspace/shared";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -944,6 +944,126 @@ describe("payroll API (needs the local PostgreSQL)", () => {
       expect(sum(after.filter((e) => e.employeeId === employeeId).map((e) => e.hours)).isZero()).toBe(true);
     }
     expect(after.length).toBe(earned.length * 2);
+  });
+
+  it("refuses an approver who changed a time-off policy's pay since another person last approved a run", async () => {
+    await approveHours(13);
+    const period = await open(13);
+    const sick = (
+      (await call("get", "/time-off-policies", cookies.hr4).expect(200)).body as { id: string; name: string }[]
+    ).find((p) => p.name === "Sick")!;
+    const edited = await call("put", `/time-off-policies/${sick.id}`, cookies.hr4).send({
+      name: "Sick",
+      kind: "sick",
+      paid: false,
+      accrualMethod: "per_pay_period",
+      accrualRate: "2",
+      capHours: "",
+      annualUseLimitHours: "",
+      carryoverHours: "",
+      waitingPeriodDays: 0,
+      allowNegative: true,
+    });
+    status(edited, 200);
+    const [entry] = await auditOf("Edited time-off policy", sick.id);
+    expect(entry).toMatchObject({ before: { paid: true, kind: "sick" }, after: { paid: false, kind: "sick" } });
+    const refused = await post(`/pay-periods/${period.id}/approve`, cookies.hr4);
+    status(refused, 400);
+    expect(refused.body.message).toContain("time-off policy");
+  });
+
+  it("counts a pay edit that waited on an approval's locks as made after it (one clock, in commit order)", async () => {
+    // Week 13's run (left by the test above) is approved by Hal's HR manager while Ivy's HR manager
+    // raises Olive's rate. The raise starts first but waits on Olive's lock until the approval commits.
+    const period = (await call("get", "/pay-periods", cookies.owner).expect(200)).body.find(
+      (p: PeriodBody) => p.start === week(13),
+    ) as PeriodBody;
+    const holder = await harness.companyDb(company.id);
+    const watcher = await harness.companyDb(company.id);
+    const waiting = async (count: number) => {
+      for (let i = 0; i < 200; i += 1) {
+        const result = await watcher.db.execute<{ n: number }>(
+          sql`select count(*)::int as n from pg_stat_activity
+              where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if (Number(result[0]!.n) >= count) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`Expected ${count} sessions waiting on a lock.`);
+    };
+    let approving: Promise<Response> | undefined;
+    let raising: Promise<Response> | undefined;
+    try {
+      await holder.db.transaction(async (tx) => {
+        // Hold Olive's row so the approval stops at her lock, holding the period and earlier people.
+        await tx.select({ id: employees.id }).from(employees).where(eq(employees.id, ids.olive)).for("update");
+        approving = post(`/pay-periods/${period.id}/approve`, cookies.hr2).then((r) => r);
+        await waiting(1);
+        // The raise begins now, before the approval, and queues behind it on Olive's lock.
+        raising = call("put", `/employees/${ids.olive}`, cookies.hr4)
+          .send(employeeForm({ payRate: "26.00" }))
+          .then((r) => r);
+        await waiting(2);
+      });
+      status(await approving!, 201);
+      status(await raising!, 200);
+    } finally {
+      await holder.close();
+      await watcher.close();
+    }
+    // The raise committed after the approval that paid Olive, so it is not paid out yet: Ivy's HR
+    // manager may not approve the next run that pays it.
+    await approveHours(10);
+    const next = await open(10);
+    const refused = await post(`/pay-periods/${next.id}/approve`, cookies.hr4);
+    status(refused, 400);
+    expect(refused.body.message).toContain("whose pay you added or changed");
+  });
+
+  it("lets only one of two overlapping runs approved at the same time through", async () => {
+    // Week 1's run (reopened above) and a short run left inside it from another schedule.
+    const weekly = (await call("get", "/pay-periods", cookies.owner).expect(200)).body.find(
+      (p: PeriodBody) => p.start === week(1) && p.frequency === "weekly",
+    ) as PeriodBody;
+    const [inside] = await rows((db) =>
+      db
+        .insert(payPeriods)
+        .values({
+          frequency: "monthly",
+          start: week(1),
+          end: addDays(week(1), 2),
+          payDate: addDays(week(1), 7),
+          status: "open",
+        })
+        .returning(),
+    );
+    const holder = await harness.companyDb(company.id);
+    const watcher = await harness.companyDb(company.id);
+    let both: Promise<Response[]> | undefined;
+    try {
+      await holder.db.transaction(async (tx) => {
+        // Hold the payroll lock, so both approvals queue on it and then run one after the other.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`);
+        both = Promise.all(
+          [weekly.id, inside!.id].map((id) => post(`/pay-periods/${id}/approve`, cookies.owner).then((r) => r)),
+        );
+        for (let i = 0; i < 200; i += 1) {
+          const result = await watcher.db.execute<{ n: number }>(
+            sql`select count(*)::int as n from pg_stat_activity
+                where datname = current_database() and wait_event_type = 'Lock'`,
+          );
+          if (Number(result[0]!.n) >= 2) break;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      });
+    } finally {
+      await holder.close();
+      await watcher.close();
+    }
+    // The lock is released as the holder commits; then one approval runs, and the other sees it.
+    const results = await both!;
+    expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+    expect(results.find((r) => r.status === 400)!.body.message).toContain("Another approved pay period covers");
   });
 
   it("writes audit rows without any amount, and only for these business records", async () => {

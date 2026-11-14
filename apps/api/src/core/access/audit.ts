@@ -3,6 +3,7 @@ import { Reflector } from "@nestjs/core";
 import type { CompanyDb } from "@workspace/db";
 import { auditLog } from "@workspace/db/company";
 import type { AuditCategory } from "@workspace/shared";
+import { sql } from "drizzle-orm";
 import { from, mergeMap, type Observable } from "rxjs";
 import { TenantConnectionService } from "../tenancy/tenant-connection.service";
 import type { TenantContext } from "../tenancy/tenant-context";
@@ -30,6 +31,15 @@ export interface AuditActor {
 }
 
 /**
+ * The moment an entry is written, by the database clock at the insert, not the transaction start
+ * (`now()`): an entry written after waiting on a lock is then stamped after whatever held the lock
+ * committed, so audit times follow commit order where locks order them. Payroll separation of duties
+ * compares these times with `approved_at`, read from the same clock (ADR 0047; second security
+ * review of PR #26).
+ */
+const entryClock = () => sql`clock_timestamp()`;
+
+/**
  * Writes the company's append-only audit log (CLAUDE.md rule 10; blueprint "Security"). A module
  * calls `record` with its own transaction, so the change and its entry commit together; without one
  * it writes through the company's pool. The table refuses UPDATE, DELETE and TRUNCATE (company
@@ -43,6 +53,7 @@ export class AuditService {
   async record(tenant: TenantContext, actor: AuditActor, entry: AuditInput, tx?: CompanyDb): Promise<void> {
     const db = tx ?? (await this.tenancy.db(tenant));
     await db.insert(auditLog).values({
+      at: entryClock(),
       actorUserId: actor.access.userId,
       actorRole: actor.access.roleNames.join(", "),
       category: entry.category,
@@ -63,6 +74,7 @@ export class AuditService {
    */
   async recordSystem(tx: CompanyDb, actorRole: string, entry: AuditInput): Promise<void> {
     await tx.insert(auditLog).values({
+      at: entryClock(),
       actorUserId: null,
       actorRole,
       category: entry.category,
