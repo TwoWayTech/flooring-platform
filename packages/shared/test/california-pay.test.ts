@@ -127,6 +127,8 @@ describe("California pay rules switch (hr.payroll.california, ADR 0050)", () => 
     expect(californiaPayNote([{ state: "CO", status: "active" }], "california", false)).toBe(CALIFORNIA_OFF_NOTE);
     expect(californiaPayNote([{ state: "CA", status: "terminated" }], "federal", true)).toBeNull();
     expect(californiaPayNote([{ state: "CO", status: "active" }], "federal", true)).toBeNull();
+    // Overtime law does not reach 1099 contractors, so a California contractor alone needs no note.
+    expect(californiaPayNote([{ state: "CA", status: "active", workerType: "1099" }], "federal")).toBeNull();
     expect(CALIFORNIA_PENDING_NOTE).toBe(
       "California pay rules are pending payroll review — don't use them for real pay.",
     );

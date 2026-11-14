@@ -6,6 +6,7 @@ import request from "supertest";
 import type { Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { withCaliforniaRules } from "./california-switch";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -25,17 +26,6 @@ function week(weeksAgo: number): string {
 interface ReviewBody {
   rows: { line: { employeeId: string; overtimeHours: string; doubleTimeHours: string; grossPay: string } }[];
   warnings: string[];
-}
-
-/** Runs `fn` with the California pay rules switched on (off by default, ADR 0050), then off again. */
-async function withCaliforniaRules(fn: () => Promise<void>): Promise<void> {
-  const feature = FEATURES["hr.payroll.california"] as { enabled: boolean };
-  feature.enabled = true;
-  try {
-    await fn();
-  } finally {
-    feature.enabled = false;
-  }
 }
 
 /**

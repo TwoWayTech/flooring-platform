@@ -15,8 +15,9 @@ export const CALIFORNIA_PENDING_NOTE = "California pay rules are pending payroll
 export const CALIFORNIA_OFF_NOTE =
   "California pay rules are off: people who work in California are paid on the federal weekly rule here. Check their pay with your payroll provider.";
 
-/** True for someone who works in California and has not left. */
-const worksInCalifornia = (e: Pick<Employee, "state" | "status">) => e.state === "CA" && e.status !== "terminated";
+/** True for a W-2 worker in California who has not left; overtime law does not reach 1099 contractors. */
+const worksInCalifornia = (e: Pick<Employee, "state" | "status"> & Partial<Pick<Employee, "workerType">>) =>
+  e.state === "CA" && e.status !== "terminated" && e.workerType !== "1099";
 
 /**
  * The California note a pay or hours screen shows, or null when California plays no part: pending
@@ -24,7 +25,7 @@ const worksInCalifornia = (e: Pick<Employee, "state" | "status">) => e.state ===
  * rule), off when they would have been (switch off, same condition).
  */
 export function californiaPayNote(
-  employees: readonly Pick<Employee, "state" | "status">[],
+  employees: readonly (Pick<Employee, "state" | "status"> & Partial<Pick<Employee, "workerType">>)[],
   companyRule: OvertimeRule,
   californiaOn: boolean = californiaPayOn(),
 ): string | null {

@@ -24,7 +24,8 @@
   - the employee form for a W-2 person in California.
 
   The presenter guide's Timesheets step follows the switch.
-- **Frozen runs.** The warning on an approved run reflects the switch now, not when the run was approved. Its lines keep the figures frozen at approval.
+- **Frozen runs.** The warning on an approved run reflects the switch now, not when the run was approved. Its lines keep the figures frozen at approval. Review of a frozen run reads the stored rule without refusing (`storedOvertimeRule`, federal when it was never saved), so a missing settings row cannot block it.
+- **Who counts.** The review warning counts the run's payable W-2 people only. The screen notes ignore 1099 contractors, because overtime law does not reach them.
 - **Fixtures.** `pnpm fixtures` was run again, so one frozen Harbor pay line in `harbor.json` changed to the federal figure. Summit's seed is not affected.
 
 ## Consequences
@@ -33,3 +34,5 @@
 - Turning the switch on is a one-line change to `enabled: true`, and it applies to every company on that build. Turning it on for one company only would need a per-company override that does not exist today.
 - Tests: `packages/shared/test/california-pay.test.ts` covers the shared rules and `apps/api/test/california-pay.int.test.ts` covers the API, each with the switch off and on. Existing tests that relied on the California rules turn the switch on rather than being weakened. `hr.spec.ts` now checks the federal rule and the off note.
 - The payroll CSV exports are unchanged: their columns are a contract with the payroll provider. The notes are on the screen that exports them.
+- **Accepted risk (security review of PR #29).** With the switch off, someone who may edit pay can save a California non-exempt salary covering more than 40 hours (up to the form's 60). That lowers the regular rate below what California allows. This follows from "everyone on the federal rule", and the off note covers it. Records saved while the switch was on keep their 40.
+- **Before the switch is turned on**, the pending note must also reach the outputs that don't carry it yet: the summary and workweek CSV, the approve response and the portal's My pay (the employee portal task). This is a follow-up in STATUS.

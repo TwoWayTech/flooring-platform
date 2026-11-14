@@ -32,6 +32,7 @@ import {
   type Employee,
   type PayPeriod,
   type PayPeriodLine,
+  type OvertimeRule,
   type PayRunBlocker,
   type PtoRequest,
   type TimeOffPolicy,
@@ -56,6 +57,7 @@ import { auditHr, databaseNow, inClosedPayPeriod, lockEmployee, requireLinkedDec
 import {
   loadEmployees,
   loadHrRules,
+  storedOvertimeRule,
   loadPolicies,
   loadPtoRequests,
   loadTimeOffEntries,
@@ -246,11 +248,15 @@ export class PayPeriodsService {
     let lines: PayPeriodLine[];
     let blockers: PayRunBlocker[] = [];
     let stranded: StrandedCommission[] = [];
+    const payable = payableEmployees(people, period);
+    let rule: OvertimeRule;
     if (frozen) {
       lines = period.lines;
+      // A frozen run reads no hours, so a missing settings row must not stop its review.
+      rule = await storedOvertimeRule(db);
     } else {
-      const payable = payableEmployees(people, period);
       const inputs = await this.inputs(db, clock, payable, period.id);
+      rule = inputs.overtimeRule;
       lines = payable.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
       blockers = payRunBlockers(period, payable, inputs.sheets, new Set(excluded.keys()), inputs.workweekStartDay);
       stranded = await strandedCommission(db, this.control.db);
@@ -267,7 +273,8 @@ export class PayPeriodsService {
       strandedCommission: stranded,
       contractors,
       contractorNames: Object.fromEntries(people.filter((e) => e.workerType === "1099").map((e) => [e.id, e.name])),
-      warnings: [californiaPayNote(people, (await loadHrRules(db)).overtimeRule)].flatMap((note) => note ?? []),
+      // Only the run's W-2 people: overtime law does not reach contractors (ADR 0050).
+      warnings: [californiaPayNote(payable, rule)].flatMap((note) => note ?? []),
     };
   }
 

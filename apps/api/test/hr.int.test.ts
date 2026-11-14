@@ -12,13 +12,14 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { addDays, FEATURES, PRODUCT_HEADER, workweekStartOf } from "@workspace/shared";
+import { addDays, PRODUCT_HEADER, workweekStartOf } from "@workspace/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { withCaliforniaRules } from "./california-switch";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -38,17 +39,6 @@ function week(weeksAgo: number): string {
 /** A week of hours as the API takes and sends them: decimal strings (CLAUDE.md rule 6; ADR 0046). */
 function hours(...days: number[]): string[] {
   return days.map(String);
-}
-
-/** Runs `fn` with the California pay rules switched on (off by default, ADR 0050), then off again. */
-async function withCaliforniaRules(fn: () => Promise<void>): Promise<void> {
-  const feature = FEATURES["hr.payroll.california"] as { enabled: boolean };
-  feature.enabled = true;
-  try {
-    await fn();
-  } finally {
-    feature.enabled = false;
-  }
 }
 
 const PDF = { name: "contract-copy.pdf", data: Buffer.from("%PDF-1.4\n% personnel file\n").toString("base64") };
