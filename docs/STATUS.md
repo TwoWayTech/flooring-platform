@@ -5,7 +5,7 @@
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`), PR #20 (`1ba1019`), PR #21 (`881712f`), PR #22 (`069ccb3`), PR #23 (`59ce102`), PR #24 (`2e0a846`), PR #25 (`57664d9`) and PR #26 (`ba3902d`). The owner merged PR #17 (`9b6cbd0`).
-- **Last session log:** docs/sessions/2026-11-14-2200-a-commissions.md
+- **Last session log:** docs/sessions/2026-11-15-0030-a-commission-audit-visibility.md
 
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
@@ -20,6 +20,7 @@
 - **Queue:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), inventory part 2. Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
 
 ## Done
+- [x] Commission audit visibility, `fix/hr-commission-audit-visibility` (draft PR #30, owner decision 2026-11-14, ADR 0048 "Audit visibility"): audit entries with plan terms or an adjustment or reversal-decision reason show their before and after only to the Owner and holders of `hr.employee.view_sensitive`; others keep the row with "Hidden: pay details" (API, CSV export, demo). The adjustment reason field says "Don't type amounts here." Closes the PR #27 fourth-review note on plan terms and reasons in the audit log. Waiting for the security review.
 - [x] HR part 2, merged to main in PR #26 (`ba3902d`, ADR 0047): pay periods (open on the schedule, review, exclusions, approve with frozen lines, accrual and the payroll entry, reopen by reversal, export), bonuses and contractor payments with Contract Labor (6050); separation of duties at approval read from the audit log on the database clock; the PR #25 fifth review's hardening first.
 - [x] HR part 1, merged to main in PR #25 (`57664d9`, ADR 0046): people with checklists and documents, timesheets with the clock and overtime, time off with policies and the ledger; data scope by link and reports; `selfCheck` and linked deciders; pay rate and contact details protected; Summit's HR seeded and sign-ins linked.
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
