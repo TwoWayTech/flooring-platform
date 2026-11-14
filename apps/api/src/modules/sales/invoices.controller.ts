@@ -386,6 +386,7 @@ export class InvoicesController {
     "purchasing.bill.view",
     "purchasing.payment.record",
     "purchasing.payment.approve",
+    "contracts.contract.view",
   )
   async file(
     @CurrentTenant() tenant: TenantContext,

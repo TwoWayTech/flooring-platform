@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ForbiddenException, Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { attachments, branches, contractLines, contracts, locations, suppliers } from "@workspace/db/company";
+import { attachments, auditLog, branches, contractLines, contracts, locations, suppliers } from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
   addDays,
@@ -302,7 +302,8 @@ export class ContractsService {
       const signedAt = clock.now.toISOString().slice(0, 16);
       const signature: SignatureRecord = {
         documentId: before.id,
-        version: 1,
+        // One version per time it was sent for signature, so a recall and resend is a new version.
+        version: await sendCount(tx, before.id),
         hash: termsHash(before, lines),
         signerName,
         signerEmail: party.email,
@@ -681,9 +682,35 @@ function termsHash(row: ContractRow, lines: readonly ContractLine[]): string {
     storedRetainagePct: row.storedRetainagePct,
     taxTreatment: row.taxTreatment,
     notes: row.notes,
-    lines: lines.map((line) => [line.code, line.description, line.category, line.billing, line.scheduledValue]),
+    direction: row.direction,
+    kind: row.kind,
+    locationId: row.locationId,
+    jobSite: row.jobSite,
+    bondInLieu: row.bondInLieu,
+    renewalMode: row.renewalMode,
+    renewalNoticeDays: row.renewalNoticeDays,
+    // Every term a line carries except its estimated cost, which is internal (PR #23 review).
+    lines: lines.map((line) => [
+      line.code,
+      line.description,
+      line.category,
+      line.billing,
+      line.scheduledValue,
+      line.retainagePct ?? null,
+      line.storedRetainagePct ?? null,
+      line.milestoneDueAt ?? null,
+    ]),
   };
   return createHash("sha256").update(JSON.stringify(terms)).digest("hex");
+}
+
+/** How many times a contract was sent for signature, from its audit entries. */
+async function sendCount(tx: CompanyDb, contractId: string): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(auditLog)
+    .where(and(eq(auditLog.targetId, contractId), eq(auditLog.action, "Sent contract for signature")));
+  return Math.max(row?.count ?? 0, 1);
 }
 
 /** The terms a renewal carries over from the contract it renews (ADR 0044). */

@@ -248,7 +248,7 @@ Module `contracts`. Every route needs `contracts.register`; billings also `contr
 | `POST /contracts/:id/renew` | `contracts.contract.create` | A new draft for the next term, linked by `renewedFromId`. Audited |
 | `POST /contracts/:id/files` | `contracts.contract.edit` | `{ files }` base64, at most 3 per contract. Read through `GET /files/:id` with `contracts.contract.view` in scope. Audited |
 | `POST /contracts/:id/change-orders` | `contracts.change_order.create` | `{ reason, lines: [{ contractLineId, description, category, amountDelta }] }`: `CO-n`, pending, on an active or completed project. Audited |
-| `POST /change-orders/:id/decision` | `contracts.change_order.approve` | `{ action: "approve" \| "reject", reason }`: approval runs `changeOrderProblem` and changes line values or adds lines at once; rejection needs a reason. Audited |
+| `POST /change-orders/:id/decision` | `contracts.change_order.approve` | `{ action: "approve" \| "reject", reason }`: approval runs `changeOrderProblem` (rows on one line added together; a new line above zero) and changes line values or adds lines at once; rejection needs a reason. Change-order routes also need the `contracts.billing` switch. Audited |
 | `POST /contracts/:id/lien-waivers` | `contracts.compliance.manage` | `{ type, paymentId, supplierPaymentId, amount, throughDate, statutoryForm }` on a project; unconditional needs a confirmed payment of the contract's party. Audited |
 | `PUT /contracts/:id/insurance-certificate` | `contracts.compliance.manage` | `{ producer, holder, additionalInsured, coverages }` on a subcontract; replaces the one certificate. Audited |
 

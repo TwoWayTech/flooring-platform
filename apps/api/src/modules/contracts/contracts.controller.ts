@@ -188,6 +188,7 @@ export class ContractsController {
   @RequirePermission("contracts.contract.view")
   listChangeOrders(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
     requireFeature("contracts.register");
+    requireFeature("contracts.billing"); // change orders sit under billing (features.ts)
     return this.contracts.listChangeOrders(tenant, access);
   }
 
@@ -387,6 +388,7 @@ export class ContractsController {
     @Body() body: unknown,
   ) {
     requireFeature("contracts.register");
+    requireFeature("contracts.billing"); // change orders sit under billing (features.ts)
     return this.changes.submitChangeOrder(tenant, actorOf(access, session, request), id, parse(CHANGE_ORDER, body));
   }
 
@@ -403,6 +405,7 @@ export class ContractsController {
     @Body() body: unknown,
   ) {
     requireFeature("contracts.register");
+    requireFeature("contracts.billing"); // change orders sit under billing (features.ts)
     return this.changes.decideChangeOrder(tenant, actorOf(access, session, request), id, parse(DECISION, body));
   }
 

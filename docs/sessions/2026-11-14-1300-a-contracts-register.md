@@ -24,3 +24,18 @@ The build was handed to a general-purpose subagent with a full brief (CLAUDE.md 
   - masters take no completion, change orders or waivers;
   - change-order rows name only their own contract's lines;
   - a waiver's payment must belong to the contract's party.
+
+## Reviews
+- **Test-writer:** 12 tests, no product bugs.
+- **First security review:** 1 blocking, fixed. A change order with two rows on one line lost one when approved. Now rows on a line add up in both the check and the change, with a test.
+  - Should-fix items done:
+    - a new line needs an amount above zero (shared `changeOrderProblem`, tested);
+    - change-order routes need the `contracts.billing` switch;
+    - the signature hash covers every signed term, and its version counts the sends;
+    - `GET /files/:id` accepts `contracts.contract.view`;
+    - only a not-found lock error reads as 404.
+  - Owner question, recorded in STATUS: the same person may submit and approve a change order (spec edge case 19).
+- **Second security review:** see PR #23.
+
+## Commands run and results
+- `contracts.int.test.ts`: 13 of 13. `pnpm typecheck`, lint and shared tests (378) pass.

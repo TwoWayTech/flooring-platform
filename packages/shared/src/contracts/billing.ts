@@ -137,6 +137,16 @@ export function contractFigures(
   };
 }
 
+/** What a change order adds to each existing line, its rows on one line added together (spec rule 17). */
+export function changeOrderDeltas(order: Pick<ChangeOrder, "lines">): Map<string, Dec> {
+  const deltas = new Map<string, Dec>();
+  for (const change of order.lines) {
+    if (!change.lineId) continue;
+    deltas.set(change.lineId, (deltas.get(change.lineId) ?? dec(0)).plus(change.amountDelta));
+  }
+  return deltas;
+}
+
 /** Why a change order cannot be approved, or null: a deduction may not take a line below what is billed (ADR 0026). */
 export function changeOrderProblem(
   order: ChangeOrder,
@@ -144,12 +154,16 @@ export function changeOrderProblem(
   billings: readonly ContractBilling[],
 ): string | null {
   if (order.lines.length === 0) return "Add at least one line to the change order.";
-  for (const change of order.lines) {
-    if (!change.lineId) continue;
-    const line = lines.find((l) => l.id === change.lineId);
+  // A new line starts at its amount, so it must be above zero (PR #23 review).
+  if (order.lines.some((change) => !change.lineId && dec(change.amountDelta).lte(0))) {
+    return "A new line on a change order needs an amount above zero.";
+  }
+  // Rows on one line add up before the check, so two rows can't pass where their sum would not.
+  for (const [lineId, delta] of changeOrderDeltas(order)) {
+    const line = lines.find((l) => l.id === lineId);
     if (!line) return "A line on this change order no longer exists.";
     const { completed, stored } = lineToDate(line.id, billings);
-    if (dec(line.scheduledValue).plus(change.amountDelta).lt(completed.plus(stored))) {
+    if (dec(line.scheduledValue).plus(delta).lt(completed.plus(stored))) {
       return `${line.code}: the change would take it below what is already billed.`;
     }
   }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   changeOrderLines,
@@ -11,6 +11,7 @@ import {
   paymentsReceived,
 } from "@workspace/db/company";
 import {
+  changeOrderDeltas,
   changeOrderProblem,
   dec,
   moneyString,
@@ -147,8 +148,10 @@ export class ContractChangesService {
     const [found] = await loadChangeOrders(db, this.control.db, { ids: [id] });
     if (!found) throw notFound("change order");
     await db.transaction(async (tx) => {
-      const contract = await lockContract(tx, actor.access, found.contractId).catch(() => {
-        throw notFound("change order");
+      const contract = await lockContract(tx, actor.access, found.contractId).catch((error: unknown) => {
+        // Out of scope reads as missing; any other failure stays what it is.
+        if (error instanceof NotFoundException) throw notFound("change order");
+        throw error;
       });
       const [order] = await loadChangeOrders(tx, this.control.db, { ids: [id] });
       if (!order) throw notFound("change order");
@@ -300,18 +303,16 @@ export class ContractChangesService {
     const lines = await loadContractLines(tx, [contract.id]);
     const problem = changeOrderProblem(order, lines, await loadBillings(tx, this.control.db, [contract.id]));
     if (problem) throw refuse(problem);
+    // Each line moves once by the sum of its rows, so two rows on one line both count (PR #23 review).
+    for (const [lineId, delta] of changeOrderDeltas(order)) {
+      const line = lines.find((l) => l.id === lineId)!;
+      await tx
+        .update(contractLines)
+        .set({ scheduledValue: moneyString(dec(line.scheduledValue).plus(delta)), updatedAt: new Date() })
+        .where(eq(contractLines.id, line.id));
+    }
     for (const [index, change] of order.lines.entries()) {
-      if (change.lineId) {
-        const line = lines.find((l) => l.id === change.lineId)!;
-        await tx
-          .update(contractLines)
-          .set({
-            scheduledValue: moneyString(dec(line.scheduledValue).plus(change.amountDelta)),
-            updatedAt: new Date(),
-          })
-          .where(eq(contractLines.id, line.id));
-        continue;
-      }
+      if (change.lineId) continue;
       // A new line: code `<CO number>.<row>`, percent billing, the contract's rates, no estimated cost.
       await tx.insert(contractLines).values({
         id: uuidv7(),
