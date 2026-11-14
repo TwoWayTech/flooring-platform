@@ -45,7 +45,8 @@ import { seedId, type DemoCompany } from "./fixtures";
 function settingsRows(companyId: string, value: CompanySettings) {
   const { branding, localization, ...rest } = value;
   const { rules, jurisdictions, ...tax } = localization.tax;
-  const groups: Record<SettingsGroup, unknown> = { ...rest, localization: { ...localization, tax } };
+  // Accounting is not seeded: a company without the row uses DEFAULT_ACCOUNTING_SETTINGS (ADR 0040).
+  const groups: Record<Exclude<SettingsGroup, "accounting">, unknown> = { ...rest, localization: { ...localization, tax } };
   return Object.entries(groups).map(([group, groupValue]) => ({
     id: seedId(`${companyId}:settings:${group}`),
     group: group as SettingsGroup,
