@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) is `feat/ledger-bills-supplier-payments` (PR #21).
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) in PR #21 (`881712f`); inventory part 2 (issue and cut, roll quick invoice, commission split, ADR 0043) is `feat/inventory-issue-cut` (PR #22).
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`) and PR #20 (`1ba1019`). The owner merged PR #17 (`9b6cbd0`).
-- **Last session log:** docs/sessions/2026-11-14-1010-a-bills-supplier-payments.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`), PR #20 (`1ba1019`) and PR #21 (`881712f`). The owner merged PR #17 (`9b6cbd0`).
+- **Last session log:** docs/sessions/2026-11-14-1130-a-inventory-issue-cut.md
 
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
@@ -88,6 +88,7 @@
 - [x] Sales part 1 on `feat/sales-customers-quotes` (ADR 0037): customers and quotes through data scope, server totals with the tax engine; Summit's customers and quotes seeded; the Sales and quote pages in api mode.
 - [x] Purchasing part 1, merged to main in PR #13 (`a66a49d`, ADR 0036): suppliers, contacts, orders and receipts on the API; Summit's purchasing seeded; the Purchasing page in api mode.
 - [x] Inventory part 1, merged to main in PR #12 (`2d483de`, ADR 0035): catalog, rolls, ledger, warehouses, transfers, roll moves and stock correction on the API; Summit's catalog seeded; the Inventory and roll pages in api mode.
+- [x] Bills, supplier payments and stock postings, merged to main in PR #21 (`881712f`, ADR 0042): goods received, bills, supplier payments and stock corrections post; boxed goods keep a moving average cost; bills and payments read from the API in api mode.
 - [x] Expenses on the API, merged to main in PR #20 (`1ba1019`, ADR 0041): drafts, receipts, approval, void, the pay-later bill, postings, recurring drafts from a daily job, data scope on reads and writes, payroll hidden.
 - [x] Accounting settings, merged to main in PR #19 (`157f8ae`, ADR 0040): average cost and the sales tax basis as settings; bank accounts as ledger accounts per payment method; postings read the settings under a shared lock; company migration 0003 refuses lines on retired accounts.
 - [x] P10 part 2, merged to main in PR #11 (`2ddf5bc`, ADR 0034; draft spec docs/specs/settings-users-access.md):
@@ -99,9 +100,9 @@
 
 ## Next three tasks
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **P12 part 3:** supplier bills and payments; receipt and stock postings; average cost (ADR 0042), in review as PR #21.
-2. **Inventory part 2:** cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
-3. **Contracts** (docs/real-build-plan.md), then HR with commissions and the employee portal, then meetings.
+1. **Inventory part 2:** cut or issue against a hold with cost of goods, Ready to cut, the roll quick invoice and the commission split (ADR 0043), in review as PR #22. Stock adjustments with approval stay unbuilt while `inventory.adjustments` is off.
+2. **Contracts** (contracts.md; docs/real-build-plan.md week 10), with progress billing and subcontract bills.
+3. **HR** with commissions and the employee portal, then meetings.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 

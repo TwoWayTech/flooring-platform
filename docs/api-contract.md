@@ -229,6 +229,17 @@ Behind the `purchasing.orders` switch. No data scope. Files are base64 in the bo
 
 Goods receipts post their received value (Inventory against Goods Received Not Billed) and move boxed goods to the moving average cost; stock count corrections post at cost.
 
+## Issuing stock, the roll quick invoice and the commission split (real build, inventory part 2, ADR 0043)
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /stock-holds` | `inventory.roll.view` or `inventory.product.view` | `StockHold[]`: active holds with the invoice number, customer name and `mayIssue` |
+| `POST /reservations/:id/issue` | `inventory.roll.cut`; before payment also `inventory.reservation.override` | `{ overrideReason? }` (3 characters or more): cuts the roll (remnant rule) or issues boxed goods, posts cost of goods. Audited |
+| `POST /rolls/:id/invoice` | `sales.invoice.create` | `{ customerId, lengthFt }`: a one-line invoice by the sq ft, posted, the roll held for it. Audited |
+| `PUT /invoices/:id/commission-split` | `hr.commission.manage` or `sales.invoice.edit` | `{ split: [{ userId, pct }] }`: at most two, 100% in all; locked after the first confirmed payment. Audited |
+
+An invoice whose stock was cut or issued can't be voided.
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.

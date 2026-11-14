@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, Res, StreamableFile } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Req,
+  Res,
+  StreamableFile,
+} from "@nestjs/common";
 import { MAX_PROOF_FILES } from "@workspace/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -62,6 +74,34 @@ const REFUND = z.object({
 });
 
 const ATTACH = z.object({ files: FILES });
+
+/** A quick invoice for a length of one roll (inventory rule 18): ft with at most two decimals. */
+const ROLL_INVOICE = z
+  .object({
+    customerId: z.uuid(),
+    lengthFt: z
+      .string()
+      .trim()
+      .regex(/^\d{1,6}(\.\d{1,2})?$/, "Enter the length to cut, in ft."),
+  })
+  .strict();
+
+/** Who shares an invoice's commission (sales rule 39). */
+const SPLIT = z
+  .object({
+    split: z
+      .array(
+        z.object({
+          userId: z.uuid(),
+          pct: z
+            .string()
+            .trim()
+            .regex(/^\d{1,3}(\.\d{1,2})?$/, "Enter each share as a percent."),
+        }),
+      )
+      .max(2),
+  })
+  .strict();
 
 /** A file name safe inside a Content-Disposition header: no quotes, slashes or control characters. */
 function safeFileName(name: string): string {
@@ -293,6 +333,47 @@ export class InvoicesController {
     requireFeature("sales.payments");
     const { files, ...input } = parse(REFUND, body);
     return this.payments.refund(tenant, actorOf(access, session, request), input, files);
+  }
+
+  /** POST /rolls/:id/invoice: a quick invoice for a length of one roll, with the roll reserved. */
+  @Post("rolls/:id/invoice")
+  @RequirePermission("sales.invoice.create")
+  @Audited()
+  rollInvoice(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) rollId: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("sales.invoices");
+    requireFeature("inventory.rolls");
+    requireFeature("inventory.reservations");
+    // A roll's number and free length are stock facts: the creator needs to see rolls too.
+    if (!access.permissions.has("inventory.roll.view")) {
+      throw new ForbiddenException({ code: "forbidden", message: "You can't see rolls." });
+    }
+    const input = parse(ROLL_INVOICE, body);
+    return this.invoices.rollInvoice(tenant, actorOf(access, session, request), { rollId, ...input });
+  }
+
+  /** PUT /invoices/:id/commission-split: who shares the commission, until the first confirmed payment. */
+  @Put("invoices/:id/commission-split")
+  @RequirePermission("hr.commission.manage", "sales.invoice.edit")
+  @Audited()
+  async commissionSplit(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("sales.invoices");
+    requireFeature("sales.team");
+    await this.invoices.setCommissionSplit(tenant, actorOf(access, session, request), id, parse(SPLIT, body).split);
+    return { ok: true };
   }
 
   /** GET /files/:id: a proof file or expense receipt, opened in place; only within the person's data scope. */
