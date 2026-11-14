@@ -59,3 +59,8 @@ The build was handed to a general-purpose subagent with a full brief; tests and 
   - only progress billings set the last period.
   Owner question recorded in STATUS: subcontract billing amounts are visible to `contracts.billing.view` holders (from part 1).
 - **Fourth security review:** see PR #24.
+- **Fourth security review:** 1 blocking, fixed. `allocateRelease` rounded shares half up and gave the last line an uncapped remainder, so a release could leave a line holding a negative cent, and the new retainage rule then refused every later billing. Changes, with unit tests:
+  - each share now rounds down, and the leftover cents go only to lines with room, so no share is negative or above what its line holds;
+  - `retainageProblem` checks only lines whose retainage goes down;
+  - the document switch is checked right after the contract lock in billing, release and void.
+- **Fifth security review:** see PR #24.

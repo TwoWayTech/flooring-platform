@@ -98,6 +98,14 @@ const POSTED_EVENT = "contract_billing.posted" as const;
 const NEGATIVE_DOCUMENT =
   "This billing would hold back more retainage than it bills. Bill the work and stored materials together, or lower the retainage.";
 
+/**
+ * A billing raises, and a void undoes, an invoice or a bill, so that document's switch must be on
+ * too; checked right after the contract lock, before any rule could answer (CLAUDE.md rule 13).
+ */
+function requireDocumentSwitch(row: Pick<ContractRow, "direction">): void {
+  if (!featureOn(row.direction === "customer" ? "sales.invoices" : "purchasing.orders")) throw new NotFoundException();
+}
+
 @Injectable()
 export class ContractBillingService {
   private readonly logger = new Logger("ContractBilling");
@@ -122,6 +130,7 @@ export class ContractBillingService {
     const id = uuidv7();
     const notice = await db.transaction(async (tx) => {
       const row = await lockContract(tx, actor.access, contractId);
+      requireDocumentSwitch(row);
       if (row.kind !== "project") throw refuse("A master agreement is not billed. Bill its project contracts.");
       if (row.status !== "active" && row.status !== "completed") {
         throw refuse("Only an active or completed contract can be billed.");
@@ -189,6 +198,7 @@ export class ContractBillingService {
     const id = uuidv7();
     const notice = await db.transaction(async (tx) => {
       const row = await lockContract(tx, actor.access, contractId);
+      requireDocumentSwitch(row);
       if (row.kind !== "project") throw refuse("A master agreement holds no retainage.");
       const { contract, lines, past } = await this.contractState(tx, clock, contractId);
       const held = heldByLine(past, lines);
@@ -255,6 +265,7 @@ export class ContractBillingService {
         if (error instanceof NotFoundException) throw notFound("billing");
         throw error;
       });
+      requireDocumentSwitch(row);
       if (row.status === "closed") throw refuse("This contract is closed, so its billings can't be voided.");
       const [billing] = await tx
         .select()
@@ -344,10 +355,6 @@ export class ContractBillingService {
     amounts: readonly LineAmount[],
   ): Promise<{ document: string; notice: InvoiceNotice | null }> {
     // A billing raises an invoice or a bill, so their own switches must be on too (CLAUDE.md rule 13).
-    if (!featureOn(row.direction === "customer" ? "sales.invoices" : "purchasing.orders")) {
-      // As every switched-off feature answers (CLAUDE.md rule 13).
-      throw new NotFoundException();
-    }
     const by = actor.access.userId;
     await tx.insert(contractBillings).values({
       id: billing.id,
