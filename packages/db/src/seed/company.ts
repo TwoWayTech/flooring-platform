@@ -15,7 +15,10 @@ import {
   quoteLines,
   quotes,
   documentSequences,
+  billReceipts,
   expenses,
+  paymentAllocations,
+  paymentsMade,
   recurringExpenses,
   supplierBills,
   goodsReceipts,
@@ -826,9 +829,90 @@ async function seedExpenses(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
 }
 
 /**
+ * Supplier bills for received goods, with their receipts, and supplier payments with their
+ * allocations (P12 part 3; ADR 0042). Bills a pay-later expense raised are seeded with expenses;
+ * subcontract bills wait for the contracts module, and so does any payment that pays one. Seeded
+ * history posts no journal entry (the ledger starts at go-live), and seeded files have no bytes.
+ */
+async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
+  const owner = fixtures.users.find((user) => user.roleIds.some((role) => role.endsWith("-owner")));
+  const expenseBills = new Set(fixtures.expenses.flatMap((expense) => (expense.billId ? [expense.billId] : [])));
+  const bills = fixtures.bills.filter((bill) => !bill.contractId && !expenseBills.has(bill.id));
+  const seeded = new Set([...expenseBills, ...bills.map((bill) => bill.id)]);
+  for (const bill of bills) {
+    await tx
+      .insert(supplierBills)
+      .values({
+        id: seedId(bill.id),
+        number: bill.number,
+        supplierId: seedId(bill.supplierId),
+        poId: bill.poId ? seedId(bill.poId) : null,
+        issuedAt: bill.issuedAt,
+        dueAt: bill.dueAt,
+        total: bill.total,
+        matchIssues: bill.matchIssues,
+        createdBy: userOf(owner?.id),
+      })
+      .onConflictDoNothing();
+    for (const receiptId of bill.receiptIds) {
+      await tx
+        .insert(billReceipts)
+        .values({
+          id: seedId(`${bill.id}:receipt:${receiptId}`),
+          billId: seedId(bill.id),
+          receiptId: seedId(receiptId),
+          createdBy: userOf(owner?.id),
+        })
+        .onConflictDoNothing();
+    }
+  }
+  for (const payment of fixtures.supplierPayments) {
+    if (!payment.allocations.every((entry) => seeded.has(entry.billId))) continue;
+    await tx
+      .insert(paymentsMade)
+      .values({
+        id: seedId(payment.id),
+        number: payment.number,
+        supplierId: seedId(payment.supplierId),
+        date: payment.date,
+        method: payment.method,
+        reference: payment.reference,
+        note: payment.note,
+        amount: payment.amount,
+        status: payment.status,
+        recordedById: seededUserId(payment.recordedById),
+        recordedAt: utc(payment.recordedAt),
+        reviewedById: userOf(payment.reviewedBy ? byName.get(payment.reviewedBy) : null),
+        reviewedAt: payment.reviewedAt ? utc(payment.reviewedAt) : null,
+        rejectReason: payment.rejectReason,
+        voidedById: userOf(payment.voidedBy ? byName.get(payment.voidedBy) : null),
+        voidedAt: payment.voidedAt ? utc(payment.voidedAt) : null,
+        voidReason: payment.voidReason,
+        createdAt: utc(payment.recordedAt),
+        createdBy: seededUserId(payment.recordedById),
+      })
+      .onConflictDoNothing();
+    for (const [index, entry] of payment.allocations.entries()) {
+      await tx
+        .insert(paymentAllocations)
+        .values({
+          id: seedId(`${payment.id}:allocation:${index}`),
+          paymentId: seedId(payment.id),
+          billId: seedId(entry.billId),
+          amount: entry.amount,
+          createdAt: utc(payment.recordedAt),
+          createdBy: seededUserId(payment.recordedById),
+        })
+        .onConflictDoNothing();
+    }
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
- * purchase orders with their receipts (purchasing part 1), and expenses (P12 part 2). Business records
+ * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), and bills and supplier payments (P12 part 3). Business records
  * arrive module by module
  * (docs/real-build-plan.md), each with its own seed.
  */
@@ -842,5 +926,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedSales(tx, demo);
     await seedInvoices(tx, demo);
     await seedExpenses(tx, demo);
+    await seedPayables(tx, demo);
   });
 }
