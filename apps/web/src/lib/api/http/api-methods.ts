@@ -24,7 +24,7 @@ import type {
   User,
 } from "@workspace/shared";
 import { HttpApiError } from "./transport";
-import type { CollectionName, Collections, ItemOf } from "../contract";
+import type { CollectionName, Collections, ItemOf, StockHold } from "../contract";
 import type { HttpRoutes } from "./router";
 
 /**
@@ -208,8 +208,17 @@ export const API_METHODS: HttpRoutes = {
   createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
   receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
   correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
-  // The Ready to cut list moves with cut and issue in inventory part 2 (ADR 0038).
-  listStockHolds: () => async () => [],
+  // Ready to cut, issuing and cutting, the roll quick invoice and the split moved in inventory part 2 (ADR 0043).
+  listStockHolds: (http) => () => seen(http.request<StockHold[]>("GET", "/stock-holds")),
+  issueReservation: (http) => (reservationId, overrideReason) =>
+    http.request<Reservation>("POST", `/reservations/${reservationId}/issue`, overrideReason ? { overrideReason } : {}),
+  createRollInvoice:
+    (http) =>
+    ({ rollId, ...body }) =>
+      http.request<Invoice>("POST", `/rolls/${rollId}/invoice`, body),
+  setCommissionSplit: (http) => async (invoiceId, split) => {
+    await http.request<{ ok: true }>("PUT", `/invoices/${invoiceId}/commission-split`, { split });
+  },
 };
 
 /** A list the person may not see (403) comes back empty, as the demo hides what a role cannot open. */
