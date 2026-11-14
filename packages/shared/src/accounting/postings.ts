@@ -28,7 +28,9 @@ export interface PostingDraft {
     | "supplier_payment"
     | "stock_adjustment"
     | "stock_issue"
-    | "contract_billing";
+    | "contract_billing"
+    | "pay_period"
+    | "contractor_payment";
   sourceId: string;
   sourceNumber: string;
   /** The accounting date, `yyyy-MM-dd`. */
@@ -52,6 +54,8 @@ export type PostingEvent =
   | "stock.adjusted"
   | "goods.issued"
   | "contract_billing.posted"
+  | "payroll.approved"
+  | "contractor_payment.paid"
   | `${
       | "invoice.issued"
       | "credit_note.issued"
@@ -59,7 +63,9 @@ export type PostingEvent =
       | "expense.confirmed"
       | "supplier_payment.confirmed"
       | "goods.issued"
-      | "contract_billing.posted"}.reversed`;
+      | "contract_billing.posted"
+      | "payroll.approved"
+      | "contractor_payment.paid"}.reversed`;
 
 const ZERO = "0.00";
 

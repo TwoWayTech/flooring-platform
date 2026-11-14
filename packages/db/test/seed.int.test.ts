@@ -5,7 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
   addresses,
+  bonuses,
   clockEntries,
+  contractorPayments,
+  payPeriodExclusions,
+  payPeriodLines,
+  payPeriods,
   employeeChecklistItems,
   employees,
   ptoRequests,
@@ -286,8 +291,11 @@ describe("test company seed", () => {
       expect(await company.db.select().from(ptoRequests)).toHaveLength(fixtures.ptoRequests.length);
       const ledger = await company.db.select().from(timeOffEntries);
       expect(ledger).toHaveLength(fixtures.timeOffEntries.length);
-      // Pay periods arrive with HR part 2, so no ledger line points at one yet.
-      expect(ledger.filter((entry) => entry.payPeriodId !== null)).toHaveLength(0);
+      // Accrual lines point at the pay period that posted them (HR part 2; ADR 0047).
+      expect(ledger.filter((entry) => entry.payPeriodId !== null)).toHaveLength(
+        fixtures.timeOffEntries.filter((entry) => entry.payPeriodId).length,
+      );
+      expect(ledger.filter((entry) => entry.payPeriodId !== null)).toHaveLength(54);
       const linked = (await company.db.select().from(userProfiles)).filter((profile) => profile.employeeId);
       expect(linked).toHaveLength(fixtures.users.filter((person) => person.employeeId).length);
       const fixture = fixtures.employees.find((e) => e.managerId)!;
@@ -298,6 +306,30 @@ describe("test company seed", () => {
       expect(row).toMatchObject({ managerId: seedId(fixture.managerId!), payRate: fixture.payRate });
       // No Social Security or bank columns exist on the table (CLAUDE.md rule 14).
       expect(Object.keys(row!).some((key) => /ssn|social|bank|routing|account/i.test(key))).toBe(false);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds pay periods, their lines, bonuses and contractor payments, with no journal entries (HR, part 2)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      const periods = await company.db.select().from(payPeriods);
+      expect(periods).toHaveLength(fixtures.payPeriods.length);
+      expect(periods.filter((period) => period.status === "exported").every((period) => period.approvedById)).toBe(
+        true,
+      );
+      expect(await company.db.select().from(payPeriodExclusions)).toHaveLength(
+        fixtures.payPeriods.flatMap((period) => period.excluded).length,
+      );
+      const lines = await company.db.select().from(payPeriodLines);
+      expect(lines).toHaveLength(fixtures.payPeriods.flatMap((period) => period.lines).length);
+      expect(await company.db.select().from(bonuses)).toHaveLength(fixtures.bonuses.length);
+      expect(await company.db.select().from(contractorPayments)).toHaveLength(fixtures.contractorPayments.length);
+      // Seeded history posts nothing: the ledger starts at go-live.
+      const entries = await company.db.select().from(journalEntries);
+      expect(entries.filter((entry) => ["pay_period", "contractor_payment"].includes(entry.sourceType))).toEqual([]);
     } finally {
       await company.close();
     }
