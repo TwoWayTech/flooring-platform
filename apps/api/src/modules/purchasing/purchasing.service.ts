@@ -768,7 +768,6 @@ function auditedSupplier(supplier: Omit<Supplier, "id" | "status" | "categories"
   };
 }
 
-/** The rep as they are now, kept on the order so history survives them leaving (ADR 0022). */
 /**
  * A receipt's received value at the order's cost, per warehouse it went into (purchasing rules 19
  * and 21): each line rounds to cents, damaged units excluded.
@@ -784,6 +783,7 @@ function receivedByWarehouse(po: PurchaseOrder, receipt: GoodsReceipt): ValueAt[
   return [...byWarehouse].map(([locationId, value]) => ({ locationId, value: moneyString(value) }));
 }
 
+/** The rep as they are now, kept on the order so history survives them leaving (ADR 0022). */
 function snapshotOf(contact: SupplierContact) {
   return { name: contact.name, email: contact.email, phone: contact.mobile || contact.officePhone };
 }

@@ -634,4 +634,39 @@ describe("payables API (needs the local PostgreSQL)", () => {
     expect(results.map((result) => result.status).sort()).toEqual([201, 400]);
     await balances();
   });
+
+  it("lets a payment and an expense void at once settle on one outcome (bill row lock)", async () => {
+    const expense = await call("post", "/expenses", cookies.accountant)
+      .send({
+        date: companyDay(),
+        supplierId: servicesSupplier,
+        category: "rent",
+        locationId: warehouse,
+        amount: "45.00",
+        tax: "",
+        paymentMethod: "cash",
+        reference: "",
+        note: "",
+        settlement: "on_account",
+        asDraft: false,
+        files: [PDF],
+      })
+      .expect(201);
+    const billId = expense.body.billId as string;
+    const [voided, paid] = await Promise.all([
+      call("post", `/expenses/${expense.body.id}/void`, cookies.accountant).send({ reason: "Entered twice" }),
+      pay(cookies.purchasing, servicesSupplier, "45.00", { billIds: [billId] }),
+    ]);
+    expect([voided.status, paid.status].sort()).toEqual([201, 400]);
+    // Never a live payment on a retired bill.
+    const [bill] = await rows((db) => db.select().from(supplierBills).where(eq(supplierBills.id, billId)));
+    if (bill!.deletedAt) expect(paid.status).toBe(400);
+    await balances();
+  });
+
+  it("keeps money out of the supplier payment audit too", async () => {
+    const paid = await rows((db) => db.select().from(auditLog).where(eq(auditLog.action, "Paid supplier")));
+    for (const entry of paid)
+      expect(Object.keys(entry.after as object).sort()).toEqual(["bills", "method", "reference", "status"]);
+  });
 });

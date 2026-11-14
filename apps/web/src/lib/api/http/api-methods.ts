@@ -175,8 +175,9 @@ export const API_METHODS: HttpRoutes = {
         seen(http.request<Product[]>("GET", "/products")),
         seen(http.request<Location[]>("GET", "/locations")),
         // Bills and supplier payments post to the ledger, so they moved with P12 part 3 (ADR 0042).
-        seen(http.request<Bill[]>("GET", "/bills")),
-        seen(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+        // With `purchasing.orders` off these answer 404; the queue and other screens read them as empty.
+        seenOrOff(http.request<Bill[]>("GET", "/bills")),
+        seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
       ]);
     return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments };
   },
@@ -217,6 +218,16 @@ async function seen<T>(list: Promise<T[]>): Promise<T[]> {
     return await list;
   } catch (failure) {
     if (failure instanceof HttpApiError && failure.status === 403) return [];
+    throw failure;
+  }
+}
+
+/** Like `seen`, and a switched-off feature's 404 is an empty list too (CLAUDE.md rule 13). */
+async function seenOrOff<T>(list: Promise<T[]>): Promise<T[]> {
+  try {
+    return await seen(list);
+  } catch (failure) {
+    if (failure instanceof HttpApiError && failure.status === 404) return [];
     throw failure;
   }
 }

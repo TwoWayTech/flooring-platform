@@ -261,7 +261,8 @@ export class PayablesService {
             targetType: "supplier_payment",
             targetId: id,
             targetLabel: `${number} to ${supplierName}`,
-            after: { amount: moneyString(amount), method: input.method, reference, status, allocations },
+            // No money: the audit log is read by roles that may not see supplier money (rule 5).
+            after: { method: input.method, reference, status, bills: allocations.length },
           },
           tx,
         );

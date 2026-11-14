@@ -46,7 +46,7 @@ As planned (ADR 0042, PR #21). Files:
   - The average-cost change is audited under `cost` (stripped without view_sensitive) and sets `updatedAt`.
   - A rejected supplier payment no longer blocks an expense void.
   - A race test checks that two payments at once can't take the same balance.
-- **Second security review:** see PR #21.
+- **Second security review:** PASS, no blocking findings. Done: the "Paid supplier" audit holds no money either; a payment-versus-expense-void race test; with `purchasing.orders` off, `/bills` and `/supplier-payments` read as empty, so the payments queue still works. Owner question recorded in STATUS: a Purchasing user can enter a bill above the received value and pay it in payments under the approval threshold with no second person (spec rules 21 and 28, as built).
 
 ## Commands run and results
 - `pnpm lint`, `pnpm typecheck`: pass.

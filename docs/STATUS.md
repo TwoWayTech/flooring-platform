@@ -157,6 +157,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Seeded receipts posted nothing, so billing one after go-live debits Goods Received Not Billed with no credit; the import's opening entry must cover it.
   - The same supplier bill number can be entered on two orders (the spec allows it); consider a warning.
   - Stock count corrections now post to Inventory Adjustments with no second person.
+  - **Owner question (as built, per spec rules 21 and 28):** one Purchasing user can enter a bill above the received value and pay it in payments under the approval threshold with no second person. Options: send any payment on a bill with a match issue to approval, or check the threshold against the bill's running total.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.
