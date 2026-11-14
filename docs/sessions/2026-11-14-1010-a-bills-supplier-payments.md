@@ -27,3 +27,41 @@ The schema already has `supplier_bills`, `bill_receipts`, `payments_made` and `p
 - **Cost of goods:** the posting rule is here; it is posted when stock is cut or issued, which arrives with inventory part 2.
 - **Average cost:** boxed goods keep a moving average on the product; rolls keep their own cost per sq ft.
 - **Purchasing data scope:** none, as purchasing part 1 (the spec gives purchasing no scope).
+
+## What was built
+As planned (ADR 0042, PR #21). Files:
+- `packages/shared/src/accounting/stock-postings.ts`, and two accounts in `accounts.ts`;
+- `apps/api/src/modules/purchasing/payables.*` and `payables-records.ts`;
+- receipt posting and average cost in `purchasing.service.ts`;
+- the correction posting in `inventory.service.ts`;
+- the bill-row lock in the expense void;
+- file reads in `payments.service.ts`, and the body routes in `app.ts`;
+- the seed;
+- `purchasingData` and the four payables methods, and the payments queue.
+
+## Reviews
+- **Test-writer:** 14 tests, no product bugs.
+- **First security review:** 1 blocking, fixed. The "Entered bill" audit entry stored order money (received value, bill total, match text) under names the audit reader does not strip, so roles such as the HR manager could read unit costs. It now records only `receipts` and `matched`, with a test.
+- **Should-fix items, all done:**
+  - The average-cost change is audited under `cost` (stripped without view_sensitive) and sets `updatedAt`.
+  - A rejected supplier payment no longer blocks an expense void.
+  - A race test checks that two payments at once can't take the same balance.
+- **Second security review:** see PR #21.
+
+## Commands run and results
+- `pnpm lint`, `pnpm typecheck`: pass.
+- `pnpm test`: shared 378, api unit 56, db 11, providers 11, web 13, hooks: all pass.
+- `pnpm test:api`: 213 of 213; db 31 of 31; then payables plus expenses 33 of 33, purchasing plus inventory 13 of 13 after the review fixes.
+- Playwright api mode (`purchasing.spec.ts` now also opens the bills tab) runs in CI.
+
+## What is left
+- **Inventory part 2:** cut or issue against a hold, posting cost of goods with `costOfGoodsPosting` at the average cost; Ready to cut; the roll quick invoice.
+- **Review notes (STATUS):**
+  - Whole-table loads while holding locks.
+  - Bill price differences don't feed the average cost.
+  - Duplicate supplier bill numbers aren't warned about.
+  - Stock count corrections now post with no second person.
+  - A question for the accountant: GRNI at go-live, and a purchase price variance account.
+
+## Next prompt
+"/resume. Continue the owner's queue of 2026-11-14: inventory part 2 (inventory.md rules 13 to 18; cost of goods with ADR 0042)."
