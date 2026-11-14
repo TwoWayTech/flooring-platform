@@ -10,7 +10,7 @@ import {
 } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import { seesPersonRecords, type AuditCategory, type Employee, type PermissionKey } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne } from "drizzle-orm";
 import type { AccessService, RequestAccess } from "../../core/access/access.service";
 import type { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -118,9 +118,10 @@ export const CLOSED_WEEK = "This week is in an approved pay period, so it is loc
  * Whether an approved or exported pay period covers any day from `from` to `to`: those days are
  * paid, so no hours are saved, uploaded, clocked, submitted, decided or reopened into them, and no
  * time off is requested, approved or cancelled on them (hr.md "Timesheets"; third and fifth
- * security reviews of PR #25).
+ * security reviews of PR #25). `exceptId` leaves one period out, so a run being approved can check
+ * that no other closed run covers its days (first security review of PR #26).
  */
-export async function inClosedPayPeriod(tx: CompanyDb, from: string, to: string): Promise<boolean> {
+export async function inClosedPayPeriod(tx: CompanyDb, from: string, to: string, exceptId?: string): Promise<boolean> {
   const [locked] = await tx
     .select({ id: payPeriods.id })
     .from(payPeriods)
@@ -130,6 +131,7 @@ export async function inClosedPayPeriod(tx: CompanyDb, from: string, to: string)
         inArray(payPeriods.status, ["approved", "exported"]),
         lte(payPeriods.start, to),
         gte(payPeriods.end, from),
+        exceptId ? ne(payPeriods.id, exceptId) : undefined,
       ),
     )
     .limit(1);

@@ -83,7 +83,14 @@ function sumHours(map: Map<string, Dec>, start: string, end: string): Dec {
   return total;
 }
 
-const qty = (n: number | Dec | string) => dec(n).toDecimalPlaces(2).toString();
+/**
+ * Hours and the base rate on a pay line, as two-decimal strings ("45.00", "28.85"). The live line
+ * and the frozen one (stored to two places) read the same, so approving a run changes no figure on
+ * screen (hr.md "PayPeriodLine"; first security review of PR #26).
+ */
+export const payLineFigure = (n: number | Dec | string): string => dec(n).toDecimalPlaces(2).toFixed(2);
+
+const qty = payLineFigure;
 
 /** A demo sheet's numeric days as the decimal strings `splitOvertime` takes. */
 const daysText = (days: readonly number[]) => days.map((h) => String(h));
@@ -203,7 +210,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     doubleTimeHours: qty(dtTotal),
     paidLeaveHours: qty(paidHours),
     unpaidLeaveHours: qty(unpaidHours),
-    baseRate: base.toDecimalPlaces(4).toString(),
+    baseRate: payLineFigure(base),
     straightTimePay: moneyString(straight),
     overtimePremium: moneyString(premiumTotal),
     paidLeavePay: moneyString(paidLeavePay),

@@ -83,15 +83,18 @@ describe("payroll postings", () => {
   });
 
   it("pays a contractor from the bank account for the method, into Contract Labor", () => {
-    const payment = { id: "cp-1", amount: "436.34", description: "Placement fee" };
+    const payment = { id: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c", amount: "436.34", description: "Placement fee" };
     for (const cash of ["cash", "bank:0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"] as const) {
       const draft = contractorPaymentPosting(payment, "2026-11-14", cash);
       expect(draft).toMatchObject({
         event: "contractor_payment.paid",
         sourceType: "contractor_payment",
-        sourceId: "cp-1",
+        sourceId: payment.id,
         date: "2026-11-14",
+        // A short reference only: the form's free-text description never reaches the ledger.
+        memo: "Contractor payment CP-2e3f4a5c",
       });
+      expect(draft.memo).not.toContain("Placement");
       expect(sides(draft.lines)).toEqual([
         ["contract_labor", "436.34", "0.00", null],
         [cash, "0.00", "436.34", null],

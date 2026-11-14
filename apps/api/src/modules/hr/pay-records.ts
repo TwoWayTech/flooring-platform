@@ -11,6 +11,7 @@ import {
 import {
   dec,
   moneyString,
+  payLineFigure,
   type Bonus,
   type CompanySettings,
   type ContractorPayment,
@@ -75,20 +76,17 @@ export function requireCompanyWidePayroll(access: RequestAccess): void {
   }
 }
 
-/** Two decimals for hours on a pay line, as `grossPay` makes them (hr.md "PayPeriodLine"). */
-const hours = (value: string) => dec(value).toDecimalPlaces(2).toString();
-
-/** A stored pay line as the screens read it. */
+/** A stored pay line as the screens read it, hours and rate formatted as `grossPay` makes them live. */
 export function lineView(row: PayLineRow): PayPeriodLine {
   return {
     employeeId: row.employeeId,
-    hoursWorked: hours(row.hoursWorked),
-    overtimeHours: hours(row.overtimeHours),
-    doubleTimeHours: hours(row.doubleTimeHours),
-    paidLeaveHours: hours(row.paidLeaveHours),
-    unpaidLeaveHours: hours(row.unpaidLeaveHours),
-    // Stored to the cent (numeric(14,2)); the live line carries four decimals (ADR 0047).
-    baseRate: dec(row.baseRate).toString(),
+    hoursWorked: payLineFigure(row.hoursWorked),
+    overtimeHours: payLineFigure(row.overtimeHours),
+    doubleTimeHours: payLineFigure(row.doubleTimeHours),
+    paidLeaveHours: payLineFigure(row.paidLeaveHours),
+    unpaidLeaveHours: payLineFigure(row.unpaidLeaveHours),
+    // Stored to the cent (numeric(14,2)), as the live line shows it.
+    baseRate: payLineFigure(row.baseRate),
     straightTimePay: moneyString(row.straightTimePay),
     overtimePremium: moneyString(row.overtimePremium),
     paidLeavePay: moneyString(row.paidLeavePay),

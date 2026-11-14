@@ -133,7 +133,7 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
       policies,
     })!;
     expect(line.grossPay).toBe("640.00");
-    expect(line.unpaidLeaveHours).toBe("8");
+    expect(line.unpaidLeaveHours).toBe("8.00");
   });
 
   it("does not count paid leave as hours worked toward overtime", () => {
@@ -149,7 +149,7 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
       leave,
       policies,
     })!;
-    expect(line.overtimeHours).toBe("0");
+    expect(line.overtimeHours).toBe("0.00");
     expect(line.grossPay).toBe("960.00");
   });
 

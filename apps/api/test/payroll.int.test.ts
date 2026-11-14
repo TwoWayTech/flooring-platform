@@ -7,9 +7,12 @@ import {
   journalLines,
   ledgerAccounts,
   locations,
+  payPeriodLines,
+  payPeriods,
   rolePermissions,
   roles,
   settings,
+  timeOffEntries,
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
@@ -84,12 +87,13 @@ interface PaymentBody {
 describe("payroll API (needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
   let company = { id: "", slug: "" };
-  const ids = { hana: "", wes: "", olive: "", hal: "", cora: "", locA: "", locB: "" };
+  const ids = { hana: "", wes: "", olive: "", hal: "", ivy: "", cora: "", locA: "", locB: "" };
   const cookies = {
     owner: "",
     hr: "", // linked to Hana, who is in every run
     hr2: "", // linked to Hal, who is in no run
     hr3: "", // no employee link
+    hr4: "", // linked to Ivy, who is in no run
     accountant: "",
     branchPayroll: "",
     sales: "",
@@ -287,6 +291,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
       hr: await harness.addUser({ companyIds: [company.id], roles: ["hr"] }),
       hr2: await harness.addUser({ companyIds: [company.id], roles: ["hr"] }),
       hr3: await harness.addUser({ companyIds: [company.id], roles: ["hr"] }),
+      hr4: await harness.addUser({ companyIds: [company.id], roles: ["hr"] }),
       accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
       branchPayroll: await harness.addUser({ companyIds: [company.id], roles: ["branchpayroll"] }),
       sales: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
@@ -303,11 +308,13 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     const olive = await person({ name: "Olive Otis", payRate: "19.00", homeLocationId: ids.locB });
     // Hal is hired today, so he is in no past run: a linked sign-in that is never a line of its own.
     const hal = await person({ name: "Hal Hendry", hiredAt: companyDay() });
+    const ivy = await person({ name: "Ivy Irving", hiredAt: companyDay() });
     const cora = await person({ name: "Cora Contract", workerType: "1099", payRate: "60.00" });
-    Object.assign(ids, { hana: hana.id, wes: wes.id, olive: olive.id, hal: hal.id, cora: cora.id });
+    Object.assign(ids, { hana: hana.id, wes: wes.id, olive: olive.id, hal: hal.id, ivy: ivy.id, cora: cora.id });
     for (const [email, employeeId] of [
       [emails.hr, hana.id],
       [emails.hr2, hal.id],
+      [emails.hr4, ivy.id],
       [emails.wes, wes.id],
     ] as const) {
       const userId = await harness.userIdOf(email);
@@ -316,6 +323,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     cookies.hr = await enrolled(emails.hr);
     cookies.hr2 = await enrolled(emails.hr2);
     cookies.hr3 = await enrolled(emails.hr3);
+    cookies.hr4 = await enrolled(emails.hr4);
     cookies.accountant = await enrolled(emails.accountant);
     cookies.branchPayroll = await enrolled(emails.branchPayroll);
     cookies.sales = await harness.signIn(emails.sales);
@@ -740,6 +748,202 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     expect(moved(before, await balances(), "contract_labor")).toBe("0.00");
     const listed = (await call("get", "/contractor-payments", cookies.hr)).body as PaymentBody[];
     expect(listed.find((p) => p.id === seeded!.id)?.status).toBe("paid");
+  });
+
+  /** A person as the People form sends them; Olive's stored facts unless overridden. */
+  function employeeForm(over: Record<string, unknown> = {}) {
+    return {
+      name: "Olive Otis",
+      title: "",
+      department: "",
+      workerType: "w2",
+      payType: "hourly",
+      payRate: "19.00",
+      state: "TX",
+      email: "",
+      phone: "",
+      hiredAt: "2024-01-08",
+      status: "active",
+      managerId: null,
+      flsaStatus: "non_exempt",
+      exemptionBasis: null,
+      salaryHoursPerWeek: 40,
+      commissionVisible: null,
+      homeLocationId: ids.locB,
+      emergencyContact: null,
+      ...over,
+    };
+  }
+
+  it("refuses an approver who added someone in the run or changed their pay since it was last approved", async () => {
+    // Hal's HR manager adds a salaried exempt person, who needs no timesheet, so nothing blocks the run.
+    await approveHours(3);
+    const added = await post(
+      "/employees",
+      cookies.hr2,
+      employeeForm({
+        name: "Mona Madeup",
+        payType: "salary",
+        payRate: "52000.00",
+        flsaStatus: "exempt",
+        exemptionBasis: "administrative",
+        homeLocationId: null,
+      }),
+    );
+    status(added, 201);
+    const mona = added.body.id as string;
+    const period = await open(3);
+    const own = await post(`/pay-periods/${period.id}/approve`, cookies.hr2);
+    status(own, 400);
+    expect(own.body.message).toContain("whose pay you added or changed");
+    // Another linked HR manager, who touched nobody in the run, approves it.
+    const approved = await post(`/pay-periods/${period.id}/approve`, cookies.hr4);
+    status(approved, 201);
+    expect((approved.body.lines as LineBody[]).map((l) => l.employeeId)).toContain(mona);
+
+    // A pay-rate raise by the approver is refused the same way, while the earlier add, already
+    // approved by someone else, no longer counts against Hal's HR manager.
+    await approveHours(2);
+    const next = await open(2);
+    status(await call("put", `/employees/${ids.olive}`, cookies.hr4).send(employeeForm({ payRate: "25.00" })), 200);
+    const raised = await post(`/pay-periods/${next.id}/approve`, cookies.hr4);
+    status(raised, 400);
+    expect(raised.body.message).toContain("whose pay you added or changed");
+    const second = await post(`/pay-periods/${next.id}/approve`, cookies.hr2);
+    status(second, 201);
+    const olive = (second.body.lines as LineBody[]).find((l) => l.employeeId === ids.olive)!;
+    // Frozen hours and rate read as two-decimal strings, as the live review shows them.
+    expect(olive).toMatchObject({
+      hoursWorked: "40.00",
+      overtimeHours: "0.00",
+      baseRate: "25.00",
+      grossPay: "1000.00",
+    });
+  });
+
+  it("shows live hours and rates as two-decimal strings, the same as the frozen lines", async () => {
+    await approveHours(1);
+    const period = await open(1);
+    const live = (await review(cookies.owner, period.id)).rows.find((r) => r.line.employeeId === ids.wes)!.line;
+    expect(live).toMatchObject({ hoursWorked: "45.00", overtimeHours: "5.00", baseRate: "20.00" });
+    const salaried = (await review(cookies.owner, period.id)).rows.find((r) => r.line.employeeId === ids.hana)!.line;
+    expect(salaried.hoursWorked).toBe("0.00");
+  });
+
+  it("refuses to open a period over a live one, or to approve a run another approved run covers", async () => {
+    const insertPeriod = (values: Partial<typeof payPeriods.$inferInsert> & { start: string; end: string }) =>
+      rows(
+        async (db) =>
+          (
+            await db
+              .insert(payPeriods)
+              .values({ frequency: "biweekly", payDate: addDays(values.end, 5), status: "approved", ...values })
+              .returning()
+          )[0]!,
+      );
+    // A biweekly run left from an earlier schedule covers week 12; a weekly one there would pay its days twice.
+    await insertPeriod({ start: week(12), end: addDays(week(12), 13), approvedAt: new Date() });
+    const over = await post("/pay-periods", cookies.hr, { date: week(12) });
+    status(over, 400);
+    expect(over.body.message).toContain("Another pay period already covers");
+    // An approved run inside week 1's period: week 1 can't be approved over it.
+    const period = await open(1);
+    const inside = await insertPeriod({
+      frequency: "monthly",
+      start: addDays(week(1), 2),
+      end: addDays(week(1), 2),
+      approvedAt: new Date(),
+    });
+    const refused = await post(`/pay-periods/${period.id}/approve`, cookies.owner);
+    status(refused, 400);
+    expect(refused.body.message).toContain("Another approved pay period covers");
+    await rows((db) => db.update(payPeriods).set({ deletedAt: new Date() }).where(eq(payPeriods.id, inside.id)));
+  });
+
+  it("lets a payroll viewer open only today's period; an earlier one takes the approve key", async () => {
+    const today = await post("/pay-periods", cookies.accountant);
+    status(today, 201);
+    expect(today.body.start).toBe(week(0));
+    status(await post("/pay-periods", cookies.accountant, { date: companyDay() }), 201);
+    const earlier = await post("/pay-periods", cookies.accountant, { date: week(1) });
+    status(earlier, 403);
+    expect(earlier.body.message).toContain("Only someone who approves payroll");
+    status(await post("/pay-periods", cookies.hr, { date: week(1) }), 201);
+  });
+
+  it("refuses to reopen a run approved before the books started, which has no entry to reverse", async () => {
+    const [seeded] = await rows((db) =>
+      db
+        .insert(payPeriods)
+        .values({
+          frequency: "weekly",
+          start: week(14),
+          end: addDays(week(14), 6),
+          payDate: addDays(week(14), 11),
+          status: "approved",
+          approvedAt: new Date(),
+        })
+        .returning(),
+    );
+    const zero = {
+      hoursWorked: "40",
+      overtimeHours: "0",
+      doubleTimeHours: "0",
+      paidLeaveHours: "0",
+      unpaidLeaveHours: "0",
+      baseRate: "20.00",
+      straightTimePay: "800.00",
+      overtimePremium: "0.00",
+      paidLeavePay: "0.00",
+      salaryAmount: "0.00",
+      salaryDeduction: "0.00",
+      commissionPay: "0.00",
+      nondiscretionaryBonus: "0.00",
+      discretionaryBonus: "0.00",
+      overtimeTrueUp: "0.00",
+      grossPay: "800.00",
+    };
+    await rows((db) => db.insert(payPeriodLines).values({ payPeriodId: seeded!.id, employeeId: ids.wes, ...zero }));
+    const before = await balances();
+    const refused = await post(`/pay-periods/${seeded!.id}/reopen`, cookies.hr2);
+    status(refused, 400);
+    expect(refused.body.message).toContain("approved before the books started");
+    expect(moved(before, await balances(), "wages")).toBe("0.00");
+    const listed = (await call("get", "/pay-periods", cookies.owner)).body as PeriodBody[];
+    expect(listed.find((p) => p.id === seeded!.id)?.status).toBe("approved");
+  });
+
+  it("takes back a run's time-off accrual on reopen, with the people locked", async () => {
+    const policy = await post("/time-off-policies", cookies.hr, {
+      name: "Sick",
+      kind: "sick",
+      paid: true,
+      accrualMethod: "per_pay_period",
+      accrualRate: "2",
+      capHours: "",
+      annualUseLimitHours: "",
+      carryoverHours: "",
+      waitingPeriodDays: 0,
+      allowNegative: true,
+    });
+    status(policy, 201);
+    const period = await open(1);
+    status(await post(`/pay-periods/${period.id}/approve`, cookies.owner), 201);
+    const accrued = async () =>
+      rows((db) =>
+        db
+          .select()
+          .from(timeOffEntries)
+          .where(and(eq(timeOffEntries.payPeriodId, period.id), eq(timeOffEntries.policyId, policy.body.id))),
+      );
+    const earned = await accrued();
+    expect(earned.length).toBeGreaterThan(0);
+    status(await post(`/pay-periods/${period.id}/reopen`, cookies.hr2), 201);
+    const after = await accrued();
+    for (const employeeId of new Set(after.map((e) => e.employeeId))) {
+      expect(sum(after.filter((e) => e.employeeId === employeeId).map((e) => e.hours)).isZero()).toBe(true);
+    }
+    expect(after.length).toBe(earned.length * 2);
   });
 
   it("writes audit rows without any amount, and only for these business records", async () => {

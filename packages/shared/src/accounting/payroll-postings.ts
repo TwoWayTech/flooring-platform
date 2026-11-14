@@ -66,11 +66,12 @@ export function payrollPosting(run: PayrollRunRef, lines: readonly PayrollLineAm
 /**
  * A contractor payment once it is paid (hr.md "ContractorPayment"; ADR 0047): debit Contract
  * Labor, credit the bank account for its method (`cashAccountFor`, ADR 0040). It names no person
- * in the ledger. Approving a payment to make posts nothing; a void of a paid one posts the reversal
- * on the void day.
+ * in the ledger, and its memo carries no free text from the form, only a short reference to the
+ * payment (first security review of PR #26). Approving a payment to make posts nothing; a void of a
+ * paid one posts the reversal on the void day.
  */
 export function contractorPaymentPosting(
-  payment: { id: string; amount: string; description: string },
+  payment: { id: string; amount: string },
   paidOn: string,
   cashAccount: LedgerKey,
 ): PostingDraft {
@@ -81,7 +82,7 @@ export function contractorPaymentPosting(
     sourceId: payment.id,
     sourceNumber: `CP ${paidOn}`,
     date: paidOn,
-    memo: `Contractor payment: ${payment.description}`,
+    memo: `Contractor payment CP-${payment.id.slice(-8)}`,
     lines: amount.gt(0) ? [line("contract_labor", amount, dec(0)), line(cashAccount, dec(0), amount)] : [],
   };
 }

@@ -1,9 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   auditLog,
   bonuses,
   commissionStatements,
+  employees,
   payPeriodExclusions,
   payPeriodLines,
   payPeriods,
@@ -25,6 +26,7 @@ import {
   timeOffBalance,
   timesheetFromWire,
   type Bonus,
+  type Dec,
   type ContractorPayment,
   type Employee,
   type PayPeriod,
@@ -34,7 +36,7 @@ import {
   type TimeOffPolicy,
   type Timesheet,
 } from "@workspace/shared";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, max } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -43,7 +45,7 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, refuse } from "../sales/sales-common";
-import { auditHr, lockEmployee, requireLinkedDecider } from "./hr-common";
+import { auditHr, inClosedPayPeriod, lockEmployee, requireLinkedDecider } from "./hr-common";
 import {
   loadEmployees,
   loadHrRules,
@@ -95,6 +97,17 @@ function runSourceId(periodId: string, approvedAt: Date): string {
 
 const label = (period: Pick<PayPeriodRow, "start" | "end">) => `${period.start} to ${period.end}`;
 
+/** The employee fields an "Edited employee" entry carries that decide whether and how much a person is paid. */
+const PAY_FACTS = ["payType", "workerType", "flsaStatus", "salaryHoursPerWeek", "status", "hiredAt", "state"] as const;
+
+/** Whether an "Edited employee" audit entry changed someone's pay facts or their rate. */
+function changedPayFacts(entry: { before: unknown; after: unknown }): boolean {
+  const before = (entry.before ?? {}) as Record<string, unknown>;
+  const after = (entry.after ?? {}) as Record<string, unknown>;
+  if (after.payRateChanged === true) return true;
+  return PAY_FACTS.some((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null));
+}
+
 /** Everything gross pay reads for the people of a run (hr.md rule 17). */
 interface RunInputs {
   sheets: Timesheet[];
@@ -130,7 +143,9 @@ export class PayPeriodsService {
    * Opens the period holding a day (today unless given) on the company's pay schedule (hr.md rule
    * 14, `ensureCurrentPeriod`), unless one with that start and frequency exists: safe to repeat.
    * Its pay date is five days after it ends. The schedule row is locked, so two calls can't open
-   * the same period twice.
+   * the same period twice. Anyone who reads payroll may open today's period (the screen does on
+   * load); an earlier one takes `hr.payroll.approve`. A period may not overlap a live one, say after
+   * the pay frequency changed, since a day must be paid once (first security review of PR #26).
    */
   async open(tenant: TenantContext, actor: Actor, day: string | null): Promise<PayPeriod> {
     const db = await this.tenancy.db(tenant);
@@ -141,6 +156,13 @@ export class PayPeriodsService {
       await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "hr")).for("update");
       const schedule = await loadPaySchedule(tx);
       const { start, end } = periodFor(date, schedule.frequency, schedule.anchor);
+      const current = periodFor(clock.day, schedule.frequency, schedule.anchor);
+      if (start !== current.start && !actor.access.permissions.has("hr.payroll.approve")) {
+        throw new ForbiddenException({
+          code: "forbidden",
+          message: "Only someone who approves payroll can open an earlier pay period.",
+        });
+      }
       const [existing] = await tx
         .select({ id: payPeriods.id })
         .from(payPeriods)
@@ -148,6 +170,12 @@ export class PayPeriodsService {
           and(eq(payPeriods.start, start), eq(payPeriods.frequency, schedule.frequency), isNull(payPeriods.deletedAt)),
         );
       if (existing) return existing.id;
+      const [overlapping] = await tx
+        .select({ id: payPeriods.id })
+        .from(payPeriods)
+        .where(and(isNull(payPeriods.deletedAt), lte(payPeriods.start, end), gte(payPeriods.end, start)))
+        .limit(1);
+      if (overlapping) throw refuse("Another pay period already covers some of these days.");
       const [row] = await tx
         .insert(payPeriods)
         .values({
@@ -265,9 +293,10 @@ export class PayPeriodsService {
 
   /**
    * Approves a run (hr.md "To approved"; ADR 0047). It must have ended, the pay frequency must suit
-   * the staff (rule 16), and every workweek ending in it must be approved or its person left out.
-   * Separation of duties, unless the approver is the Owner: nobody approves a run that pays them,
-   * or one they shaped by leaving someone out, bringing them back or adding a bonus in it; and the
+   * the staff (rule 16), every workweek ending in it must be approved or its person left out, and
+   * no other approved run may cover its days. Separation of duties, unless the approver is the
+   * Owner: nobody approves a run that pays them, or one they shaped by leaving someone out, bringing
+   * them back, adding a bonus in it, adding a person in it or changing their pay facts; and the
    * approver's sign-in must be linked to their employee. The lines are frozen, time off accrues
    * (rule 12) and the gross pay posts to Wages against Accrued Payroll, all in one transaction.
    */
@@ -280,13 +309,12 @@ export class PayPeriodsService {
         throw refuse("This pay period is already approved.");
       }
       if (period.end >= clock.day) throw refuse("A pay period can be approved after it ends.");
+      // A day is paid once: no other approved or exported run may cover any of these days.
+      if (await inClosedPayPeriod(tx, period.start, period.end, period.id)) {
+        throw refuse("Another approved pay period covers some of these days.");
+      }
       await requireLinkedDecider(tx, actor.access);
-      const people = await loadEmployees(tx, this.control.db, tenant.companyId);
-      const problem = payFrequencyProblem(period.frequency, people);
-      if (problem) throw refuse(problem);
-      const payable = payableEmployees(people, period);
-      // Hours, time off and bonuses can't change under the run (they lock the employee first).
-      for (const employeeId of payable.map((e) => e.id).sort()) await lockEmployee(tx, employeeId);
+      const payable = await this.lockPayable(tx, tenant, period);
       const excluded = await this.excludedIds(tx, period.id);
       const inputs = await this.inputs(tx, payable);
       const blockers = payRunBlockers(period, payable, inputs.sheets, excluded, inputs.workweekStartDay);
@@ -342,13 +370,23 @@ export class PayPeriodsService {
       if (period.status === "exported") throw refuse("An exported pay period can't be reopened.");
       if (period.status !== "approved") throw refuse("Only an approved pay period can be reopened.");
       await requireLinkedDecider(tx, actor.access);
-      if (period.approvedAt) {
-        await this.books.reverse(
-          tx,
-          { sourceType: "pay_period", sourceId: runSourceId(period.id, period.approvedAt), event: "payroll.approved" },
-          clock.day,
-          actor.access.userId,
-        );
+      const reversed = period.approvedAt
+        ? await this.books.reverse(
+            tx,
+            {
+              sourceType: "pay_period",
+              sourceId: runSourceId(period.id, period.approvedAt),
+              event: "payroll.approved",
+            },
+            clock.day,
+            actor.access.userId,
+          )
+        : null;
+      // A run that paid something but has no entry was approved before the books started (seeded or
+      // imported): reopening it would post nothing and leave the books apart from the record, so it
+      // is refused, as contractor voids are (first security review of PR #26).
+      if (reversed === null && (await this.frozenGross(tx, period.id)).gt(0)) {
+        throw refuse("This pay period was approved before the books started, so it can't be reopened here.");
       }
       await this.takeBackAccrual(tx, period, clock.day, actor.access.userId);
       const now = new Date();
@@ -435,6 +473,27 @@ export class PayPeriodsService {
     };
   }
 
+  /**
+   * The people a run pays, locked: everyone payable is locked in id order (so hours, time off,
+   * bonuses and pay facts can't change under the run; they lock the employee first), then read
+   * again, so the run is worked out from the locked rows only. Someone who became payable between
+   * the two reads was not locked, so the approval is refused to be tried again (first security
+   * review of PR #26). The pay frequency must suit the staff (hr.md rule 16).
+   */
+  private async lockPayable(tx: CompanyDb, tenant: TenantContext, period: PayPeriodRow): Promise<Employee[]> {
+    const seen = payableEmployees(await loadEmployees(tx, this.control.db, tenant.companyId), period);
+    const locked = new Set(seen.map((e) => e.id));
+    for (const employeeId of [...locked].sort()) await lockEmployee(tx, employeeId);
+    const people = await loadEmployees(tx, this.control.db, tenant.companyId);
+    const problem = payFrequencyProblem(period.frequency, people);
+    if (problem) throw refuse(problem);
+    const payable = payableEmployees(people, period);
+    if (payable.some((e) => !locked.has(e.id))) {
+      throw refuse("Someone was added to this pay run while it was being approved. Try again.");
+    }
+    return payable;
+  }
+
   private async excludedIds(tx: CompanyDb, periodId: string): Promise<Set<string>> {
     const rows = await tx
       .select({ employeeId: payPeriodExclusions.employeeId })
@@ -447,7 +506,7 @@ export class PayPeriodsService {
    * Separation of duties at approval (ADR 0047), waived for the Owner: no line for the approver's
    * own employee (by sign-in link or verified email, `selfCheck`), and the approver neither left
    * anyone out of nor brought anyone back into this run (its audit entries, which are append-only)
-   * nor added a bonus paid in it.
+   * nor added a bonus paid in it, nor added or changed the pay of anyone in it (`setPayOfAnyone`).
    */
   private async checkApprover(
     tx: CompanyDb,
@@ -482,6 +541,69 @@ export class PayPeriodsService {
     if (shaped || added.length > 0) {
       throw refuse("Someone else must approve a pay run you changed by leaving someone out or adding a bonus.");
     }
+    if (await this.setPayOfAnyone(tx, actor.access.userId, included)) {
+      throw refuse("Someone else must approve a pay run that pays a person whose pay you added or changed.");
+    }
+  }
+
+  /**
+   * Whether the approver added someone in the run, or changed what decides their pay, since that
+   * person's pay was last approved (first security review of PR #26): otherwise an HR manager could
+   * add a salaried person, who needs no timesheet, or raise a rate, and approve the run that pays
+   * it. The window per person runs from the latest approval of a run with a live line for them, so
+   * a change another approver has already paid out stops counting; for someone never paid in an
+   * approved run it is open-ended. Audit entries are append-only, and "Edited employee" records the
+   * pay facts before and after, with only whether the rate changed (people.service.ts `save`).
+   */
+  private async setPayOfAnyone(tx: CompanyDb, approverId: string, included: readonly Employee[]): Promise<boolean> {
+    if (included.length === 0) return false;
+    const ids = included.map((e) => e.id);
+    const entries = await tx
+      .select({
+        targetId: auditLog.targetId,
+        action: auditLog.action,
+        at: auditLog.at,
+        before: auditLog.before,
+        after: auditLog.after,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.actorUserId, approverId),
+          eq(auditLog.targetType, "employee"),
+          inArray(auditLog.targetId, ids),
+          inArray(auditLog.action, ["Added employee", "Edited employee"]),
+        ),
+      );
+    const relevant = entries.filter((entry) => entry.action === "Added employee" || changedPayFacts(entry));
+    if (relevant.length === 0) return false;
+    const paid = await tx
+      .select({ employeeId: payPeriodLines.employeeId, approvedAt: max(payPeriods.approvedAt) })
+      .from(payPeriodLines)
+      .innerJoin(payPeriods, eq(payPeriods.id, payPeriodLines.payPeriodId))
+      .where(
+        and(
+          isNull(payPeriodLines.deletedAt),
+          isNull(payPeriods.deletedAt),
+          inArray(payPeriods.status, ["approved", "exported"]),
+          inArray(payPeriodLines.employeeId, ids),
+        ),
+      )
+      .groupBy(payPeriodLines.employeeId);
+    const since = new Map(paid.map((row) => [row.employeeId, row.approvedAt]));
+    return relevant.some((entry) => {
+      const last = entry.targetId ? since.get(entry.targetId) : null;
+      return !last || entry.at > last;
+    });
+  }
+
+  /** The gross pay of a run's live frozen lines, added as decimals. */
+  private async frozenGross(tx: CompanyDb, periodId: string): Promise<Dec> {
+    const rows = await tx
+      .select({ grossPay: payPeriodLines.grossPay })
+      .from(payPeriodLines)
+      .where(and(eq(payPeriodLines.payPeriodId, periodId), isNull(payPeriodLines.deletedAt)));
+    return sum(rows.map((row) => row.grossPay));
   }
 
   /**
@@ -568,6 +690,11 @@ export class PayPeriodsService {
       const entry = net.get(key) ?? { employeeId: row.employeeId, policyId: row.policyId, hours: [] };
       entry.hours.push(row.hours);
       net.set(key, entry);
+    }
+    // Balances move, so the people are locked after the period and in id order, as `approve` locks them.
+    // A person removed since still gets their accrual taken back, so the lock skips the live check.
+    for (const employeeId of [...new Set(rows.map((row) => row.employeeId))].sort()) {
+      await tx.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).for("update");
     }
     const back = [...net.values()].flatMap((entry) => {
       const total = sum(entry.hours);
