@@ -438,7 +438,7 @@ describe("payables API (needs the local PostgreSQL)", () => {
 
     const next = (await pay(cookies.accountant, supplier, "660.00").expect(201)).body as PaymentBody;
     expect(next.status).toBe("pending");
-    const review = (body: unknown) => call("post", `/supplier-payments/${next.id}/review`, cookies.owner).send(body);
+    const review = (body: object) => call("post", `/supplier-payments/${next.id}/review`, cookies.owner).send(body);
     expect((await review({ action: "reject", reason: "no" })).status).toBe(400);
     expect((await review({ action: "reject" })).status).toBe(400);
     expect((await review({ action: "approve" })).status).toBe(400);
