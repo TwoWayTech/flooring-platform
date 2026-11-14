@@ -42,6 +42,8 @@ export function commissionInputs(ctx: ActionContext): CommissionInputs {
     invoices: db.list("invoices"),
     payments: db.list("payments"),
     adjustments: db.list("invoiceAdjustments"),
+    // The API pays the override to the manager on the line's confirmed day (ADR 0048). Demo data
+    // keeps no manager history, so every day reads today's manager and the date is not needed.
     managerOf: (userId) => {
       const self = users.find((u) => u.id === userId);
       const managerId = employees.find((e) => e.id === self?.employeeId)?.managerId;

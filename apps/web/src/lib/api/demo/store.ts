@@ -27,7 +27,7 @@ import {
   quoteState,
   quoteStateLabel,
   type AuditEntry,
-  canSeePayAudit,
+  payAuditDetailsVisible,
   redactPayAudit,
   type Company,
   type CompanyId,
@@ -454,10 +454,7 @@ export class DemoStore implements ApiClient {
     if (collection === "contractLines" && !(await can("contracts.contract.view_sensitive"))) {
       return (items as ContractLine[]).map((l) => ({ ...l, estimatedCost: "0.00" })) as unknown as Collections[K];
     }
-    // Plan terms and reasons only for the Owner and pay viewers, as the API does (ADR 0048 "Audit visibility").
-    if (collection === "audit" && !canSeePayAudit((await this.granter(db)).access)) {
-      return (items as AuditEntry[]).map((e) => redactPayAudit(e, false)) as unknown as Collections[K];
-    }
+    if (collection === "audit") return (await this.auditAsSeen(db, items as AuditEntry[])) as unknown as Collections[K];
     return items;
   }
 
@@ -1633,6 +1630,21 @@ export class DemoStore implements ApiClient {
     const self = db.get("users", this.viewer!.userId)!;
     const company = await this.getCompany();
     return { access: viewerAccess(company, db.list("roles"), self, this.viewer!.viewAsRoleId), company };
+  }
+
+  /**
+   * The audit log as the viewer may read it: plan terms and pay reasons only for the Owner, and for
+   * pay viewers only about people in their data scope (owner decisions 2026-11-14 and 2026-11-15; ADR
+   * 0048 "Audit visibility"), through the same shared rule the API uses. The API looks up each
+   * entry's person; demo entries carry no person id, so each one counts as about the company and a
+   * non-Owner pay viewer below scope `all` sees no pay details. That is stricter than the API, never
+   * looser.
+   */
+  private async auditAsSeen(db: CompanyDb, entries: readonly AuditEntry[]): Promise<AuditEntry[]> {
+    const { access } = await this.granter(db);
+    const employeeId = db.get("users", this.viewer!.userId)?.employeeId ?? null;
+    const seesPay = payAuditDetailsVisible({ ...access, employeeId }, { kind: "company" });
+    return entries.map((entry) => redactPayAudit(entry, seesPay));
   }
 
   /**
