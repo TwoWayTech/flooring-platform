@@ -137,7 +137,12 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Documents that never posted (seeded, imported, contract billings) make the ledger drift from the documents when anything acts on them. That covers a payment, credit note, write-off or applied credit on such an invoice, and voiding a seeded payment or note (its reversal finds no entry). The import must post its opening-balance entry first. Consider refusing money writes on an invoice with no `invoice.issued` entry until then.
   - A refund may be dated any earlier day. Refuse dates before the customer's first credit, or before go-live.
   - When a chart-of-accounts screen lets companies add accounts, create the default accounts at provisioning, or refuse their codes, so a code clash can't stop postings.
-  - The closed-period API test uses the UTC day; around midnight it can disagree with the company's day.
+  - Done (PR #18): invoice dates are read in the company's time zone, invoices are stamped with the moment the clock was read, and the invoice tests use the company's day. Still open (PR #18 review, none blocking):
+    - Quote and customer `createdAt` and quote `sentAt` are read as UTC days (`sales-records.ts`). Read them with `dayIn` too.
+    - Adjustment `at`, and payment `recordedAt` and `voidedAt`, are read as UTC moments (`invoice-records.ts`, `minuteOf`). Reports (`business-report.ts`) and commissions cut them to a day. Give them company days before reports or commissions move to the API.
+    - Check the IANA time zone at provisioning (`provision-tenant.ts`): a typo makes every sales call answer 500.
+    - Invoice days come from `tenants.time_zone` at read time, but journal dates are stored, so changing a company's zone would move past invoice days. Any screen that changes the time zone must handle this, for example with a stored day column.
+    - Add an integration test with the clock faked to an evening hour.
   - The demo's `issueCreditNote` does not settle its own invoice the way the API does; align it if the demo is updated.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
