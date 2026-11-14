@@ -106,14 +106,13 @@
 
 ## Next three tasks
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Employee portal** (ADR 0049), on `feat/hr-employee-portal`, draft PR #28: `GET /me/portal` for the session's own person with the spec's known limits closed on the server, `PATCH /me/employee`, plan signing, the clock switch on clock-out, one's own documents; the portal methods in `API_METHODS`. Next: security review findings, then ready and self-merge under the CLAUDE.md rule.
+1. **Employee portal** (ADR 0049), on `feat/hr-employee-portal`, draft PR #28: `GET /me/portal` for the session's own person with the spec's known limits closed on the server, `PATCH /me/employee`, plan signing, the clock switch on clock-out, one's own documents; the portal methods in `API_METHODS`. Owner decisions of 2026-11-14 built (own rate by the setting alone as `ownPayRate`; hidden commission kept, with an HR hint; one sign-in per employee, migration 0004) and the second security review's should-fix and notes fixed (signing names the terms read, 409 `plan_changed`). Next: a fresh review of the new commit, then ready and self-merge under the CLAUDE.md rule.
 2. **Meetings** (then My meetings moves off the demo client).
 3. The rest of docs/real-build-plan.md in order.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
 ## Follow-ups (don't forget)
-- **One sign-in per employee in the database:** `user_profiles.employee_id` has no unique index; People enforces one link per employee, and the portal, own documents and pay rely on it (ADR 0049, PR #28 review). Add a partial unique index on `employee_id` where `deleted_at` is null when the owner approves a schema change.
 - **Dated manager history for overrides:** overrides are worked out with today's manager, so an Owner reorg moves unapproved months' override lines to the new manager (ADR 0048, PR #27 second review). Store a dated manager history (or override lines at approval) when a schema change is approved by the owner.
 - **Commission pay to the employee at approval:** commission is paid to whichever employee the person's sign-in is linked to when the run is approved; re-links are Owner-only and audited (ADR 0048, PR #27 third review). Store the employee id on `commission_statements` at approval and pay that employee, when a schema change is approved by the owner.
 - **Commission carry-out column:** the carry is derived from each person's whole history (ADR 0048, PR #27 first review); store `carry_out` on `commission_statements` at approval when a migration is next allowed, so an approved month's carry is frozen like its payable.
@@ -171,9 +170,6 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Owner question (as built, per spec rules 21 and 28):** one Purchasing user can enter a bill above the received value and pay it in payments under the approval threshold with no second person. Options: send any payment on a bill with a match issue to approval, or check the threshold against the bill's running total.
 - **Owner question (contracts):** subcontract billing amounts (gross, withheld, released) are visible to anyone with `contracts.billing.view` (Sales included), while `GET /bills` needs `purchasing.bill.view`. Should they need a purchasing or contracts sensitive key?
 - **Accountant question (ADR 0045):** subcontracted work posts to Cost of Goods Sold; a separate subcontract cost account?
-- **Owner questions (employee portal, ADR 0049):**
-  - Should "Show pay rates to employees" reveal a person's own rate and salary on My profile and My pay without `hr.employee.view_sensitive`? Today the API sends neither (CLAUDE.md rule 5), so a salaried person's My pay shows hours pay and gross pay without the salary line.
-  - A rep whose commission is hidden (the company default) can't sign their plan in the portal, because the terms stay on the server. Labor Code 2751 needs a signed receipt: should HR show commission to everyone on a plan, or keep signing on paper?
 - **Owner questions (as built, not blocking):**
   - Contract change orders: the same person may submit and approve one (contracts.md edge case 19; ADR 0044). Approval changes what gets billed.
   - Inventory: the Sales role holds `inventory.roll.view`, so it reads the holds list (only the stock facts outside its scope).
