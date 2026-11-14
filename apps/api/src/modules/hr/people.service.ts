@@ -5,6 +5,7 @@ import {
   commissionPlans,
   commissionStatements,
   employeeChecklistItems,
+  employeeManagerHistory,
   employees,
   locations,
   userProfiles,
@@ -30,8 +31,8 @@ import { STORAGE } from "../../core/storage/storage.module";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
-import { notFound, refuse } from "../sales/sales-common";
-import { auditHr, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
+import { companyClock, dayIn, notFound, refuse } from "../sales/sales-common";
+import { auditHr, databaseNow, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
 import { loadEmployees, personScope, selfCheck, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
@@ -95,7 +96,8 @@ export class PeopleService {
    * Adds or edits a person (hr.md rule 2). A 1099 worker is outside overtime law; a W-2 worker is
    * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
    * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
-   * onboarding checklist.
+   * onboarding checklist. Setting or moving a manager adds to the dated manager history on the
+   * company's day (`recordManager`), so overrides follow the manager on each sale's day.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -105,6 +107,7 @@ export class PeopleService {
       throw refuse("Choose whether this W-2 worker is exempt or non-exempt.");
     }
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const employeeId = id ?? uuidv7();
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     const seesContact = actor.access.permissions.has("hr.employee.view");
@@ -178,6 +181,11 @@ export class PeopleService {
             .values({ id: employeeId, ...values, createdBy: actor.access.userId })
             .returning()) as [EmployeeRow];
           await this.addChecklist(tx, row.id, "onboarding", ONBOARDING_STEPS, actor.access.userId);
+        }
+        if (managerChanged(before, values)) {
+          // The company's day by the database clock, read once the locks are held (ADR 0047).
+          const today = dayIn(await databaseNow(tx), clock.zone);
+          await recordManager(tx, row.id, before, values.managerId, today, actor.access.userId);
         }
         if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
         // The sign-in link before and after, on every entry: whose commission is paid to this person
@@ -321,8 +329,8 @@ export class PeopleService {
    * paid to the employee their sign-in is linked to, and their manager's user is paid an override on
    * their sales, so:
    * - only the Owner changes the manager of someone on a plan that pays their manager an override
-   *   (second security review of PR #27); any assignment counts, past or future, because statements
-   *   are worked out with today's manager;
+   *   (second security review of PR #27); any assignment counts, past or future, the safest reading,
+   *   kept when overrides moved to the manager on each line's day (owner decision 2026-11-15);
    * - only the Owner changes the sign-in link (link, unlink, or link another record to them) of
    *   someone with any commission assignment or approved commission not yet paid, since a re-link
    *   moves that pay to another employee (third security review of PR #27);
@@ -511,6 +519,41 @@ function checkSelfEdit(actor: Actor, before: EmployeeRow | null, own: boolean, v
 /** Whether a save sets or moves the person's manager: a new person with one, or a different one. */
 function managerChanged(before: EmployeeRow | null, values: EmployeeValues): boolean {
   return before ? values.managerId !== before.managerId : values.managerId !== null;
+}
+
+/**
+ * Appends a manager change to the person's dated history (owner decision 2026-11-15; ADR 0048):
+ * commission overrides go to the manager on each line's day (`managerOn` in packages/shared), so
+ * the history must say who managed whom when. Called in the save's transaction, under its locks
+ * (`PAYROLL_LOCK` → employee), so an approval never reads half a change.
+ * - A new person's first row applies since records began, as nothing about them is earlier.
+ * - A person with no row yet (added outside the app) first gets a since-records-began row with the
+ *   manager they had, so the days before this change keep that manager.
+ * - The change applies from `today`, the company's day. Several changes on one day each add a row;
+ *   the one recorded last wins (UUID v7 ids sort in recorded order).
+ */
+async function recordManager(
+  tx: CompanyDb,
+  employeeId: string,
+  before: EmployeeRow | null,
+  managerId: string | null,
+  today: string,
+  by: string,
+): Promise<void> {
+  if (!before) {
+    await tx.insert(employeeManagerHistory).values({ employeeId, managerId, effectiveFrom: null, createdBy: by });
+    return;
+  }
+  const [recorded] = await tx
+    .select({ id: employeeManagerHistory.id })
+    .from(employeeManagerHistory)
+    .where(eq(employeeManagerHistory.employeeId, employeeId))
+    .limit(1);
+  const rows = [
+    ...(recorded ? [] : [{ employeeId, managerId: before.managerId, effectiveFrom: null, createdBy: by }]),
+    { employeeId, managerId, effectiveFrom: today, createdBy: by },
+  ];
+  await tx.insert(employeeManagerHistory).values(rows);
 }
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */

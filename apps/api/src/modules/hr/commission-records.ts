@@ -5,6 +5,7 @@ import {
   commissionAssignments,
   commissionPlans,
   commissionStatements,
+  employeeManagerHistory,
   employees,
   journalEntries,
   journalLines,
@@ -18,6 +19,7 @@ import {
   commissionStatementRows,
   dec,
   featureOn,
+  managerOn,
   moneyString,
   statementKey,
   sum,
@@ -28,6 +30,7 @@ import {
   type CommissionPlan,
   type CommissionStatement,
   type CommissionStatementRow,
+  type ManagerHistoryRow,
   type WeekAllocation,
 } from "@workspace/shared";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
@@ -158,27 +161,109 @@ export async function employeesByUser(db: CompanyDb): Promise<Map<string, string
 }
 
 /**
- * Each person's manager by user id, for overrides (commissions.md): user → linked employee →
- * `managerId` → that employee's user. Null when any link is missing.
+ * Who managed whom, for overrides (commissions.md; owner decision 2026-11-15, ADR 0048): today's
+ * sign-in links both ways, each live employee's manager today, and each employee's dated manager
+ * history (employee_manager_history), grouped by employee.
  */
-export async function loadManagerOf(db: CompanyDb): Promise<(userId: string) => string | null> {
-  const [links, managers] = await Promise.all([
+interface ManagerChain {
+  /** Each user's live employee today (`employeesByUser`). */
+  links: Map<string, string>;
+  /** Each linked live employee's user today. */
+  userOfEmployee: Map<string, string>;
+  /** Each live employee's manager today (`employees.manager_id`), for an employee with no history. */
+  current: Map<string, string | null>;
+  /** Each employee's history rows. */
+  history: Map<string, ManagerHistoryRow[]>;
+}
+
+/** Reads the manager chain in one go: links, today's managers and every history row. */
+async function loadManagerChain(db: CompanyDb): Promise<ManagerChain> {
+  const [links, managers, rows] = await Promise.all([
     employeesByUser(db),
     db.select({ id: employees.id, managerId: employees.managerId }).from(employees).where(isNull(employees.deletedAt)),
+    db
+      .select({
+        id: employeeManagerHistory.id,
+        employeeId: employeeManagerHistory.employeeId,
+        managerId: employeeManagerHistory.managerId,
+        effectiveFrom: employeeManagerHistory.effectiveFrom,
+      })
+      .from(employeeManagerHistory),
   ]);
-  const managerOfEmployee = new Map(managers.map((row) => [row.id, row.managerId]));
-  const userOfEmployee = new Map([...links.entries()].map(([userId, employeeId]) => [employeeId, userId]));
-  return (userId) => {
-    const managerId = managerOfEmployee.get(links.get(userId) ?? "");
-    return managerId ? (userOfEmployee.get(managerId) ?? null) : null;
+  const history = new Map<string, ManagerHistoryRow[]>();
+  for (const row of rows) {
+    // The UUID v7 id sorts in the order rows were recorded, so it breaks a same-day tie (`managerOn`).
+    const own = history.get(row.employeeId) ?? [];
+    own.push({
+      employeeId: row.employeeId,
+      managerId: row.managerId,
+      effectiveFrom: row.effectiveFrom,
+      recordedOrder: row.id,
+    });
+    history.set(row.employeeId, own);
+  }
+  return {
+    links,
+    userOfEmployee: new Map([...links.entries()].map(([userId, employeeId]) => [employeeId, userId])),
+    current: new Map(managers.map((row) => [row.id, row.managerId])),
+    history,
   };
+}
+
+/** The manager employee of a live employee on a day, from their history, else today's manager. */
+function managerEmployeeOn(chain: ManagerChain, employeeId: string, date: string): string | null {
+  return managerOn(chain.history.get(employeeId) ?? [], employeeId, date, chain.current.get(employeeId) ?? null);
+}
+
+/**
+ * Each person's manager by user id on a day, for overrides (commissions.md; owner decision
+ * 2026-11-15, ADR 0048): user → today's linked employee → their manager on that day
+ * (`managerOn` over employee_manager_history; an employee with no history reads today's
+ * `managerId`) → that manager's user today. Null when any link is missing.
+ */
+export async function loadManagerOf(db: CompanyDb): Promise<(userId: string, date: string) => string | null> {
+  const chain = await loadManagerChain(db);
+  return (userId, date) => {
+    const employeeId = chain.links.get(userId);
+    if (!employeeId) return null;
+    const managerId = managerEmployeeOn(chain, employeeId, date);
+    return managerId ? (chain.userOfEmployee.get(managerId) ?? null) : null;
+  };
+}
+
+/**
+ * The users who managed these people on any day from `from` to `to` (ADR 0048), by today's sign-in
+ * links: the manager in force on `from`, and every manager a history row dated after it and on or
+ * before `to` names. A row overtaken later the same day still counts, so the answer is never
+ * narrower than the truth. It scans each person's history rows, not every day.
+ */
+export async function loadManagersBetween(
+  db: CompanyDb,
+  userIds: readonly string[],
+  from: string,
+  to: string,
+): Promise<Set<string>> {
+  const chain = await loadManagerChain(db);
+  const managers = new Set<string>();
+  for (const userId of userIds) {
+    const employeeId = chain.links.get(userId);
+    if (!employeeId) continue;
+    const later = (chain.history.get(employeeId) ?? []).filter(
+      (row) => row.effectiveFrom !== null && row.effectiveFrom > from && row.effectiveFrom <= to,
+    );
+    for (const managerId of [managerEmployeeOn(chain, employeeId, from), ...later.map((row) => row.managerId)]) {
+      const managerUser = managerId ? chain.userOfEmployee.get(managerId) : undefined;
+      if (managerUser) managers.add(managerUser);
+    }
+  }
+  return managers;
 }
 
 /**
  * Everything the commission engine reads (`commissionLines`), from the company's records: plans,
  * assignments, invoices with their cost (never sent on; CLAUDE.md rule 5), payments, credit applied,
- * the manager chain for overrides (user, employee, `managerId`, that employee's user), the frozen
- * months and HR's reversal decisions. `today` is the company's day.
+ * the manager chain for overrides (user, employee, their manager on the line's day, that employee's
+ * user; `loadManagerOf`), the frozen months and HR's reversal decisions. `today` is the company's day.
  */
 export async function loadCommissionInputs(
   db: CompanyDb,
@@ -295,10 +380,24 @@ export interface RunCommission {
 }
 
 /**
+ * The employee an approved statement pays (owner decision 2026-11-15; ADR 0048 "Sign-in re-link"):
+ * the one stored at approval (`commission_statements.employee_id`), so a later re-link never moves
+ * the pay. A statement stored before that column with no employee falls back to the rep's sign-in
+ * link today, as runs paid it before. Null when neither exists.
+ */
+function paidEmployee(
+  statement: Pick<StatementRow, "employeeId" | "userId">,
+  links: ReadonlyMap<string, string>,
+): string | null {
+  return statement.employeeId ?? links.get(statement.userId) ?? null;
+}
+
+/**
  * The approved, unpaid statements a run pays, by employee (commissions.md "To paid"; ADR 0048):
- * the statements of the people in it that wait for a run (`pay_period_id` null) or already joined
- * this one. Each pays what its approval posted (`postedCommission`), so the run never pays a figure
- * worked out again. Lines are worked out only when some statement waits, for the true-up.
+ * those whose paid employee (`paidEmployee`: stored at approval, else today's link) is in the run,
+ * that wait for a run (`pay_period_id` null) or already joined this one. Each pays what its approval
+ * posted (`postedCommission`), so the run never pays a figure worked out again. Lines are worked out
+ * only when some statement waits, for the true-up.
  */
 export async function commissionForRun(
   db: CompanyDb,
@@ -309,26 +408,35 @@ export async function commissionForRun(
   weekStartDay: number,
 ): Promise<Map<string, RunCommission>> {
   if (employeeIds.length === 0) return new Map();
-  const byUser = new Map(
-    [...(await employeesByUser(db)).entries()].filter(([, employeeId]) => employeeIds.includes(employeeId)),
-  );
-  if (byUser.size === 0) return new Map();
-  const waiting = await db
+  const inRun = new Set(employeeIds);
+  const links = await employeesByUser(db);
+  // Only a statement with no stored employee is matched by today's link (legacy rows).
+  const linkedUsers = [...links.entries()].flatMap(([userId, employeeId]) => (inRun.has(employeeId) ? [userId] : []));
+  const candidates = await db
     .select()
     .from(commissionStatements)
     .where(
       and(
         isNull(commissionStatements.deletedAt),
         eq(commissionStatements.status, "approved"),
-        inArray(commissionStatements.userId, [...byUser.keys()]),
+        or(
+          inArray(commissionStatements.employeeId, [...inRun]),
+          linkedUsers.length
+            ? and(isNull(commissionStatements.employeeId), inArray(commissionStatements.userId, linkedUsers))
+            : undefined,
+        ),
         or(isNull(commissionStatements.payPeriodId), eq(commissionStatements.payPeriodId, periodId)),
       ),
     )
     .orderBy(asc(commissionStatements.id));
+  const waiting = candidates.flatMap((statement) => {
+    const employeeId = paidEmployee(statement, links);
+    return employeeId && inRun.has(employeeId) ? [{ statement, employeeId }] : [];
+  });
   if (waiting.length === 0) return new Map();
   const posted = await postedCommission(
     db,
-    waiting.map((s) => s.id),
+    waiting.map((w) => w.statement.id),
   );
   const [statements, adjustments] = await Promise.all([
     loadCommissionStatements(db, control),
@@ -338,8 +446,7 @@ export async function commissionForRun(
     await loadCommissionInputs(db, control, clock.zone, clock.day, statements, adjustments),
   ).filter((l) => l.kind !== "reversal" || l.reversalState === "applied");
   const out = new Map<string, RunCommission>();
-  for (const statement of waiting) {
-    const employeeId = byUser.get(statement.userId)!;
+  for (const { statement, employeeId } of waiting) {
     const seen = out.get(employeeId) ?? { amount: "0.00", allocations: [], statementIds: [] };
     const own = lines.filter((l) => l.userId === statement.userId && l.month === statement.month);
     out.set(employeeId, {
@@ -362,13 +469,19 @@ export interface StrandedCommission {
 
 /**
  * Approved statements with something to pay that wait for a run no run will ever include
- * (commissions.md "To paid"; ADR 0048): the rep's sign-in is no longer linked to an employee, the
- * employee is a 1099 contractor, or they have left. The pay-period review lists them for HR, who
- * pays or settles them outside the run; they are never marked paid silently.
+ * (commissions.md "To paid"; ADR 0048), judged on the employee the statement pays (`paidEmployee`:
+ * stored at approval, else today's link): there is none, its record was removed, it is a 1099
+ * contractor, or they have left. The pay-period review lists them for HR, who pays or settles them
+ * outside the run; they are never marked paid silently.
  */
 export async function strandedCommission(db: CompanyDb, control: ControlDb): Promise<StrandedCommission[]> {
   const waiting = await db
-    .select({ id: commissionStatements.id, userId: commissionStatements.userId, month: commissionStatements.month })
+    .select({
+      id: commissionStatements.id,
+      userId: commissionStatements.userId,
+      month: commissionStatements.month,
+      employeeId: commissionStatements.employeeId,
+    })
     .from(commissionStatements)
     .where(
       and(
@@ -383,15 +496,22 @@ export async function strandedCommission(db: CompanyDb, control: ControlDb): Pro
     db,
     waiting.map((s) => s.id),
   );
-  const owing = waiting.filter((s) => dec(posted.get(s.id) ?? 0).gt(0));
-  if (owing.length === 0) return [];
   const links = await employeesByUser(db);
-  const linked = [...new Set(owing.flatMap((s) => links.get(s.userId) ?? []))];
-  const people = linked.length
+  const owing = waiting
+    .filter((s) => dec(posted.get(s.id) ?? 0).gt(0))
+    .map((s) => ({ ...s, paidTo: paidEmployee(s, links) }));
+  if (owing.length === 0) return [];
+  const paidTo = [...new Set(owing.flatMap((s) => s.paidTo ?? []))];
+  const people = paidTo.length
     ? await db
-        .select({ id: employees.id, workerType: employees.workerType, status: employees.status })
+        .select({
+          id: employees.id,
+          workerType: employees.workerType,
+          status: employees.status,
+          deletedAt: employees.deletedAt,
+        })
         .from(employees)
-        .where(inArray(employees.id, linked))
+        .where(inArray(employees.id, paidTo))
     : [];
   const byId = new Map(people.map((p) => [p.id, p]));
   const names = await loadNames(
@@ -399,14 +519,16 @@ export async function strandedCommission(db: CompanyDb, control: ControlDb): Pro
     owing.map((s) => s.userId),
   );
   return owing.flatMap((s) => {
-    const employee = byId.get(links.get(s.userId) ?? "");
+    const employee = s.paidTo ? byId.get(s.paidTo) : undefined;
     const reason = !employee
       ? "Their sign-in is not linked to an employee."
-      : employee.workerType !== "w2"
-        ? "They are a 1099 contractor, and pay runs pay W-2 staff only."
-        : employee.status === "terminated"
-          ? "They have left, so no pay run includes them."
-          : null;
+      : employee.deletedAt
+        ? "Their employee record was removed, so no pay run includes them."
+        : employee.workerType !== "w2"
+          ? "They are a 1099 contractor, and pay runs pay W-2 staff only."
+          : employee.status === "terminated"
+            ? "They have left, so no pay run includes them."
+            : null;
     if (!reason) return [];
     return [
       { statementId: s.id, userId: s.userId, name: names.get(s.userId) ?? "Former employee", month: s.month, reason },

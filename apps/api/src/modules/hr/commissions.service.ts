@@ -50,7 +50,7 @@ import {
   loadCommissionAssignments,
   loadCommissionBook,
   loadCommissionPlans,
-  loadManagerOf,
+  loadManagersBetween,
   type CommissionBook,
 } from "./commission-records";
 import { auditHr, databaseNow, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
@@ -201,7 +201,9 @@ export class CommissionsService {
    * (`selfMadeManager`), the Owner included; nobody but the Owner approves one whose plan,
    * assignment, adjustment, reversal decision or sale split they set (`checkApprover`), and the
    * approver's sign-in must be linked. The payable is
-   * accrued (debit Commissions, credit Accrued Payroll) and is what the next pay run pays.
+   * accrued (debit Commissions, credit Accrued Payroll) and is what the next pay run pays, to the
+   * employee the rep's sign-in is linked to now, stored on the statement so a later re-link never
+   * moves it (owner decision 2026-11-15; ADR 0048 "Sign-in re-link").
    */
   async approve(tenant: TenantContext, actor: Actor, userId: string, month: string): Promise<CommissionStatement> {
     const db = await this.tenancy.db(tenant);
@@ -226,12 +228,13 @@ export class CommissionsService {
         );
       }
       if (!actor.access.isOwner) await this.checkApprover(tx, actor.access.userId, row, book);
-      const locationId = await this.payrollHome(tx, userId, row.payable);
+      const home = await this.payrollHome(tx, userId, row.payable);
       const now = await databaseNow(tx);
       const values = {
         status: "approved" as const,
         approvedById: actor.access.userId,
         approvedAt: now,
+        employeeId: home.employeeId,
         updatedAt: now,
       };
       const [saved] = stored
@@ -242,7 +245,7 @@ export class CommissionsService {
             .returning();
       await this.books.post(
         tx,
-        commissionStatementPosting({ id: saved!.id, month }, row.payable, locationId),
+        commissionStatementPosting({ id: saved!.id, month }, row.payable, home.locationId),
         actor.access.userId,
       );
       // No amount in the log: commission is pay (CLAUDE.md rule 5; ADR 0047 "Sensitive data and audit").
@@ -413,6 +416,7 @@ export class CommissionsService {
             tx,
             isSelf,
             onIt.map((a) => a.userId),
+            clock.day,
           )
         ) {
           throw refuse("Someone else must change a plan that pays you an override.");
@@ -454,6 +458,7 @@ export class CommissionsService {
    */
   async assign(tenant: TenantContext, actor: Actor, input: AssignmentFields): Promise<CommissionAssignment> {
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const id = await db.transaction(async (tx) => {
       await tx.execute(PAYROLL_LOCK);
       await requireLinkedDecider(tx, actor.access);
@@ -463,7 +468,7 @@ export class CommissionsService {
       const [plan] = await tx.select().from(commissionPlans).where(eq(commissionPlans.id, input.planId));
       if (!plan || plan.deletedAt) throw refuse("Choose a plan.");
       if (plan.status !== "active" || plan.effectiveTo) throw refuse("Choose an active plan.");
-      if (dec(plan.overridePct).gt(0) && (await this.paysActorOverride(tx, isSelf, [input.userId]))) {
+      if (dec(plan.overridePct).gt(0) && (await this.paysActorOverride(tx, isSelf, [input.userId], clock.day))) {
         throw refuse("Someone else must put your own people on a plan that pays you an override.");
       }
       if (input.effectiveFrom < plan.effectiveFrom) throw refuse(`This plan starts on ${plan.effectiveFrom}.`);
@@ -531,13 +536,21 @@ export class CommissionsService {
     };
   }
 
-  /** Whether the acting person is the manager of any of these people, so paid an override on their sales. */
-  private async paysActorOverride(tx: CompanyDb, isSelf: IsSelfUser, userIds: readonly string[]): Promise<boolean> {
-    const managerOf = await loadManagerOf(tx);
-    return userIds.some((userId) => {
-      const manager = managerOf(userId);
-      return manager !== null && isSelf(manager);
-    });
+  /**
+   * Whether the acting person managed any of these people on any day from the first of the oldest
+   * month a statement shows (`last12Months`) through today, so may be paid an override on their sales
+   * (ADR 0048, never one's own). Overrides follow the manager on each line's day (owner decision
+   * 2026-11-15), so a past manager counts too: the safest reading.
+   */
+  private async paysActorOverride(
+    tx: CompanyDb,
+    isSelf: IsSelfUser,
+    userIds: readonly string[],
+    today: string,
+  ): Promise<boolean> {
+    const from = `${last12Months(today)[0]!}-01`;
+    const managers = await loadManagersBetween(tx, userIds, from, today);
+    return [...managers].some(isSelf);
   }
 
   /**
@@ -605,19 +618,25 @@ export class CommissionsService {
   }
 
   /**
-   * Where approved commission is booked, and a check it can be paid (hr.md rule 19): a statement
-   * that pays something needs the person's sign-in linked to a W-2 employee, since commission is
-   * paid through a pay run; their home location carries the expense. Nothing to pay needs neither.
+   * Whom an approved statement pays and where it is booked (hr.md rule 19; ADR 0048): the employee
+   * the person's sign-in is linked to now, stored on the statement (null with no link), and their
+   * home location, which carries the expense. A statement that pays something needs that employee
+   * to be W-2, since commission is paid through a pay run; nothing to pay needs neither check nor
+   * location.
    */
-  private async payrollHome(tx: CompanyDb, userId: string, payable: string): Promise<string | null> {
-    if (!dec(payable).gt(0)) return null;
-    const employeeId = (await employeesByUser(tx)).get(userId);
+  private async payrollHome(
+    tx: CompanyDb,
+    userId: string,
+    payable: string,
+  ): Promise<{ employeeId: string | null; locationId: string | null }> {
+    const employeeId = (await employeesByUser(tx)).get(userId) ?? null;
+    if (!dec(payable).gt(0)) return { employeeId, locationId: null };
     if (!employeeId) {
       throw refuse("Link this person's sign-in to their employee record first: commission is paid through payroll.");
     }
     const employee = await lockEmployee(tx, employeeId);
     if (employee.workerType !== "w2") throw refuse("Commission is paid through payroll, which pays W-2 staff only.");
-    return employee.homeLocationId;
+    return { employeeId, locationId: employee.homeLocationId };
   }
 
   /**

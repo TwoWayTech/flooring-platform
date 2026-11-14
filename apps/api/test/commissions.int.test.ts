@@ -6,6 +6,7 @@ import {
   commissionPlans,
   commissionStatements,
   customers,
+  employeeManagerHistory,
   employees,
   invoices,
   journalEntries,
@@ -339,6 +340,15 @@ describe("commissions API (needs the local PostgreSQL)", () => {
             .returning()
         )[0]!,
     );
+  }
+
+  /**
+   * Records that `managerId` has managed the employee since `day`. Overrides follow the manager on
+   * each line's day (owner decision 2026-11-15; ADR 0048), and these tests set a manager through
+   * People today, then record sales in earlier months, so the history must reach back to them.
+   */
+  async function managedSince(employeeId: string, managerId: string, day: string) {
+    await rows((db) => db.insert(employeeManagerHistory).values({ employeeId, managerId, effectiveFrom: day }));
   }
 
   async function addInvoice(
@@ -1325,6 +1335,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       }),
       200,
     );
+    await managedSince(repT.id, ids.empHrA, "2024-01-08");
     // The Owner adds a plan that pays the manager a 2% override, in force since M3.
     const added = await send(
       "post",
@@ -1441,6 +1452,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     const edit = (cookie: string, over: Record<string, unknown> = {}) =>
       send("put", `/employees/${empU.id}`, cookie, form(over));
     status(await edit(cookies.hrB), 200);
+    await managedSince(empU.id, ids.empHrB, "2024-01-08");
     // hrA (not Rep U's manager) puts Rep U on the 2% override plan.
     status(
       await send("post", "/commission-assignments", cookies.hrA, {
