@@ -4,6 +4,7 @@ import {
   commissionAdjustments,
   commissionAssignments,
   commissionPlans,
+  commissionStatements,
   customers,
   employees,
   invoices,
@@ -1622,6 +1623,19 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       "Someone else must approve a pay run that pays a person whose pay you added or changed.",
     );
     status(await approve(cookies.hrA, repQ, M1), 201);
+
+    // With no plan left and the statement already in an approved run, Rep Q still counts: a reopen
+    // hands the statement back to the next run (fourth review of PR #27).
+    await rows((db) =>
+      db.update(commissionAssignments).set({ deletedAt: new Date() }).where(eq(commissionAssignments.userId, repQ)),
+    );
+    await rows((db) =>
+      db
+        .update(commissionStatements)
+        .set({ payPeriodId: run.body.id as string })
+        .where(eq(commissionStatements.userId, repQ)),
+    );
+    refused(await save(cookies.hrA, empQ.id, "Quinn Quade", { userId: null }), onlyOwner);
   });
 
   it("refuses everyone, the Owner too, making their own employee the manager of someone on an override plan", async () => {

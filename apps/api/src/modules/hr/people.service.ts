@@ -580,7 +580,8 @@ async function hasOverridePlan(tx: CompanyDb, userIds: readonly string[]): Promi
 
 /**
  * Whether any of these people has commission a re-link would move to another employee (ADR 0048):
- * an assignment to any plan, past or future, or an approved statement no pay run has paid yet.
+ * an assignment to any plan, past or future, or any approved statement. A statement already in an
+ * approved run still counts, because a reopen hands it back to the next run (fourth review of PR #27).
  */
 async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[]): Promise<boolean> {
   const [assigned] = await tx
@@ -596,7 +597,6 @@ async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[]): 
       and(
         inArray(commissionStatements.userId, [...userIds]),
         eq(commissionStatements.status, "approved"),
-        isNull(commissionStatements.payPeriodId),
         isNull(commissionStatements.deletedAt),
       ),
     )
