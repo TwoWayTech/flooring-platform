@@ -52,6 +52,7 @@ export * from "./hr/california";
 export * from "./hr/pay-run";
 export * from "./hr/pay-export";
 export * from "./hr/people";
+export * from "./hr/manager-history";
 export * from "./hr/timesheets";
 export * from "./us-pack/holidays";
 export * from "./hr/time-off";

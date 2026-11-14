@@ -366,7 +366,8 @@ function buildStatements(
   const months = last12Months(ctx.anchor);
   const paidMonths = months.slice(0, -2);
   const people = [...new Set(inputs.assignments.map((a) => a.userId))];
-  const managers = people.flatMap((u) => inputs.managerOf(u) ?? []);
+  // The fixtures keep one manager per person (no dated history), so any day reads the same one.
+  const managers = people.flatMap((u) => inputs.managerOf(u, ctx.anchor) ?? []);
   const everyone = [...new Set([...people, ...managers])];
   const frozen = new Set(everyone.flatMap((u) => paidMonths.map((m) => statementKey(u, m))));
   const lines = commissionLines({ ...inputs, frozen });
@@ -491,6 +492,7 @@ export function withHrRecords(ctx: GenContext, f: CompanyFixtures): CompanyFixtu
   const commissionPlans = f.invoices.length ? buildPlans(prefix) : [];
   const commissionAssignments = f.invoices.length ? buildAssignments(ctx, f, commissionPlans) : [];
   const userOf = (employeeId: string | null) => f.users.find((u) => u.employeeId === employeeId) ?? null;
+  // Today's manager on every day: the demo stores no dated manager history (ADR 0048).
   const managerOf = (userId: string) => {
     const self = f.users.find((u) => u.id === userId);
     return userOf(employees.find((e) => e.id === self?.employeeId)?.managerId ?? null)?.id ?? null;

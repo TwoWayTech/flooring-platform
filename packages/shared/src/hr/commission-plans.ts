@@ -62,8 +62,12 @@ export interface CommissionInputs {
   invoices: readonly Invoice[];
   payments: readonly Payment[];
   adjustments: readonly InvoiceAdjustment[];
-  /** Each person's manager user id, for overrides. */
-  managerOf: (userId: string) => string | null;
+  /**
+   * A person's manager user id on a day, for overrides: the override on a line goes to the manager
+   * on the line's confirmed day, not today's (owner decision 2026-11-15; ADR 0048; `managerOn` reads
+   * the dated history). Null means no override.
+   */
+  managerOf: (userId: string, date: string) => string | null;
   /** Months whose statements are approved: a void there reverses instead of disappearing. */
   frozen: ReadonlySet<string>;
   /** HR's decisions on reversals that arrived outside their window, by reversal line id. */
@@ -212,7 +216,9 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
         base: moneyString(share),
         commission: moneyString(commission),
       });
-      const manager = dec(onPlan.plan.overridePct).gt(0) ? inputs.managerOf(s.userId) : null;
+      // The manager on the confirmed day earns the override (ADR 0048); reversal lines copy this
+      // line's userId, so a later reorg never moves a reversal to the new manager.
+      const manager = dec(onPlan.plan.overridePct).gt(0) ? inputs.managerOf(s.userId, event.confirmedOn) : null;
       if (manager) {
         const override = roundMoney(pctOf(after, onPlan.plan.overridePct)).minus(
           roundMoney(pctOf(before, onPlan.plan.overridePct)),

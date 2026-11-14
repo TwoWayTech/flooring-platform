@@ -5,12 +5,14 @@ import {
   commissionLines,
   commissionShortfalls,
   dec,
+  managerOn,
   statementChain,
   statementKey,
   type CommissionAssignment,
   type CommissionInputs,
   type CommissionPlan,
   type Invoice,
+  type ManagerHistoryRow,
   type Payment,
 } from "../src";
 
@@ -323,5 +325,90 @@ describe("statements and draws (spec C1, ADR 0025)", () => {
         { employeeId: "e3", grossPay: "1000.00", commissionPay: "0.00" },
       ]),
     ).toEqual(["e1"]);
+  });
+});
+
+describe("dated managers for overrides (owner decision 2026-11-15; ADR 0048)", () => {
+  const row = (
+    employeeId: string,
+    managerId: string | null,
+    effectiveFrom: string | null,
+    recordedOrder: string,
+  ): ManagerHistoryRow => ({ employeeId, managerId, effectiveFrom, recordedOrder });
+
+  it("reads the latest row on or before the day, a since-records-began row first", () => {
+    const history = [
+      row("e-dana", "e-new", "2026-11-15", "02"),
+      row("e-dana", "e-boss", null, "01"),
+      row("e-luis", "e-other", null, "03"),
+    ];
+    expect(managerOn(history, "e-dana", "2026-01-01", "e-today")).toBe("e-boss");
+    expect(managerOn(history, "e-dana", "2026-11-14", "e-today")).toBe("e-boss");
+    expect(managerOn(history, "e-dana", "2026-11-15", "e-today")).toBe("e-new");
+    expect(managerOn(history, "e-dana", "2027-03-01", "e-today")).toBe("e-new");
+  });
+
+  it("breaks a same-day tie by the later recorded row, and a row can clear the manager", () => {
+    const history = [
+      row("e-dana", "e-boss", null, "01"),
+      row("e-dana", null, "2026-11-15", "03"),
+      row("e-dana", "e-new", "2026-11-15", "02"),
+    ];
+    expect(managerOn(history, "e-dana", "2026-11-15", "e-today")).toBeNull();
+    expect(managerOn(history, "e-dana", "2026-11-14", "e-today")).toBe("e-boss");
+  });
+
+  it("falls back to today's manager with no rows, and reads the first row before it begins", () => {
+    expect(managerOn([], "e-dana", "2026-11-15", "e-today")).toBe("e-today");
+    expect(managerOn([row("e-luis", "e-x", null, "01")], "e-dana", "2026-11-15", null)).toBeNull();
+    const added = [row("e-dana", "e-boss", "2026-11-10", "01"), row("e-dana", "e-new", "2026-11-20", "02")];
+    expect(managerOn(added, "e-dana", "2026-11-01", "e-today")).toBe("e-boss");
+  });
+
+  // Dana reports to Boss until Newboss takes over on 2026-11-15 (a reorg mid-month).
+  const reorg = [row("e-dana", "e-boss", null, "01"), row("e-dana", "e-new", "2026-11-15", "02")];
+  const employeeOf: Readonly<Record<string, string>> = { dana: "e-dana" };
+  const userOfEmployee: Readonly<Record<string, string>> = { "e-boss": "boss", "e-new": "newboss" };
+  /** User, then employee, then the manager on the day, then that manager's user, as the API does. */
+  const managerOf = (userId: string, date: string) => {
+    const manager = managerOn(reorg, employeeOf[userId] ?? "", date, null);
+    return manager ? (userOfEmployee[manager] ?? null) : null;
+  };
+
+  it("pays a mid-month reorg's override to the old manager before the change day and the new one from it", () => {
+    const pays = [
+      payment("p1", "1000.00", "2026-11-14"),
+      payment("p2", "1000.00", "2026-11-15"),
+      payment("p3", "1000.00", "2026-11-28"),
+    ];
+    const lines = commissionLines(
+      inputs({
+        plans: [plan({ overridePct: "2" })],
+        invoices: [invoice({ subtotal: "3000.00", total: "3000.00", cost: "0" })],
+        payments: pays,
+        managerOf,
+      }),
+    );
+    const overrides = lines.filter((l) => l.kind === "override");
+    expect(overrides.map((l) => [l.sourceId, l.userId, l.subjectUserId, l.commission])).toEqual([
+      ["p1", "boss", "dana", "20.00"],
+      ["p2", "newboss", "dana", "20.00"],
+      ["p3", "newboss", "dana", "20.00"],
+    ]);
+  });
+
+  it("reverses an override against the manager who earned it, not the manager on the day of the void", () => {
+    const voided = payment("p1", "1000.00", "2026-11-10", { status: "voided", voidedAt: "2026-12-05T09:00" });
+    const lines = commissionLines(
+      inputs({
+        plans: [plan({ overridePct: "2" })],
+        invoices: [invoice({ subtotal: "1000.00", total: "1000.00", cost: "0" })],
+        payments: [voided],
+        managerOf,
+        frozen: new Set([statementKey("dana", "2026-11")]),
+      }),
+    );
+    const reversal = lines.find((l) => l.kind === "reversal" && l.subjectUserId === "dana");
+    expect(reversal).toMatchObject({ userId: "boss", month: "2026-12", commission: "-20.00" });
   });
 });
