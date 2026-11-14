@@ -14,6 +14,7 @@ import {
   creditNotePosting,
   dec,
   invoiceFromQuote,
+  invoiceFromRoll,
   invoicePosting,
   minDec,
   moneyString,
@@ -21,6 +22,7 @@ import {
   planReservations,
   quoteIsOpen,
   quoteSendProblems,
+  rollAvailable,
   roundMoney,
   sum,
   type Invoice,
@@ -248,6 +250,143 @@ export class InvoicesService {
     return (await loadInvoices(db, clock.zone, { ids: [id] }))[0]!;
   }
 
+  /**
+   * A quick invoice for a length of one roll (inventory rule 18): the roll's product at its price,
+   * by the sq ft at the roll's cost, taxed like any invoice, posted, and the roll reserved for it.
+   * The cut follows once the deposit or payment is in. Number and stock locks in the same order
+   * as converting a quote.
+   */
+  async rollInvoice(
+    tenant: TenantContext,
+    actor: Actor,
+    input: { rollId: string; customerId: string; lengthFt: string },
+  ): Promise<Invoice> {
+    const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
+    const length = dec(input.lengthFt);
+    if (length.lte(0)) throw refuse("Enter the length to cut, in ft.");
+    const id = uuidv7();
+    await db.transaction(async (tx) => {
+      const [[customer], branches] = await Promise.all([loadCustomers(tx, [input.customerId]), loadBranches(tx)]);
+      if (!customer || !seesCustomer(actor.access, customer, branches)) throw refuse("Choose a customer.");
+      const branchId = actor.access.branchId ?? branches.get(customer.salesRepId) ?? null;
+      if (!branchId) throw refuse("This invoice needs a branch: set yours, or the customer's sales rep's.");
+      const localization = await loadLocalization(tx);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
+      await lockStock(tx);
+      const [[roll], products, held] = await Promise.all([
+        loadRolls(tx, [input.rollId]),
+        loadProducts(tx),
+        loadReservations(tx),
+      ]);
+      if (!roll) throw refuse("This roll no longer exists.");
+      const product = products.find((candidate) => candidate.id === roll.productId);
+      if (!product) throw refuse("This roll's product no longer exists.");
+      const free = rollAvailable(
+        roll,
+        held.filter((reservation) => reservation.status === "active"),
+      );
+      if (length.gt(free)) throw refuse(`Only ${free.toString()} ft of ${roll.rollNumber} is free.`);
+      const used = await tx.select({ number: invoices.number }).from(invoices);
+      const invoice = invoiceFromRoll(roll, product, customer, length.toString(), localization, {
+        id,
+        lineId: uuidv7(),
+        number: nextNumber(
+          localization.documents.invoicePrefix,
+          used.map((row) => row.number),
+          FIRST_INVOICE,
+        ),
+        issuedAt: clock.day,
+        createdBy: actor.access.userId,
+        branchId,
+      });
+      await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
+      await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
+      await tx.insert(reservations).values({
+        invoiceId: id,
+        invoiceLineId: invoice.lines[0]!.id,
+        productId: roll.productId,
+        rollId: roll.id,
+        locationId: roll.locationId,
+        quantity: length.toString(),
+        shortBy: "0",
+        status: "active",
+        createdBy: actor.access.userId,
+      });
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Created invoice for a roll cut",
+          targetType: "invoice",
+          targetId: id,
+          targetLabel: `${invoice.number} for roll ${roll.rollNumber}`,
+          after: { lengthFt: length.toString(), total: invoice.total, reservations: 1 },
+        },
+        tx,
+      );
+    });
+    return (await loadInvoices(db, clock.zone, { ids: [id] }))[0]!;
+  }
+
+  /**
+   * Shares an invoice's commission between at most two people, 100% in all (sales rule 39). It
+   * locks at the first confirmed payment, because commission is earned from then on. Audited.
+   */
+  async setCommissionSplit(
+    tenant: TenantContext,
+    actor: Actor,
+    invoiceId: string,
+    split: readonly { userId: string; pct: string }[],
+  ): Promise<void> {
+    if (split.length > 2) throw refuse("An invoice can be shared between two people at most.");
+    if (new Set(split.map((share) => share.userId)).size !== split.length) throw refuse("Name each person once.");
+    if (split.length > 0 && !sum(split.map((share) => share.pct)).eq(100))
+      throw refuse("The shares must add up to 100%.");
+    if (split.some((share) => dec(share.pct).lte(0))) throw refuse("Each share must be above 0%.");
+    const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
+    const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
+    await db.transaction(async (tx) => {
+      await lockCustomer(tx, found.customerId);
+      const { invoice, payments } = await invoiceState(tx, this.control.db, invoiceId, clock);
+      if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is void.`);
+      if (payments.some((payment) => payment.status === "confirmed")) {
+        throw refuse("A confirmed payment has been recorded, so the split is locked.");
+      }
+      const before = await tx
+        .select({ userId: invoiceCommissionSplits.userId, pct: invoiceCommissionSplits.pct })
+        .from(invoiceCommissionSplits)
+        .where(and(eq(invoiceCommissionSplits.invoiceId, invoiceId), isNull(invoiceCommissionSplits.deletedAt)));
+      await tx
+        .update(invoiceCommissionSplits)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(invoiceCommissionSplits.invoiceId, invoiceId), isNull(invoiceCommissionSplits.deletedAt)));
+      if (split.length > 0) {
+        await tx
+          .insert(invoiceCommissionSplits)
+          .values(
+            split.map((share) => ({ invoiceId, userId: share.userId, pct: share.pct, createdBy: actor.access.userId })),
+          );
+      }
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "data",
+          action: "Changed commission split",
+          targetType: "invoice",
+          targetId: invoiceId,
+          targetLabel: invoice.number,
+          before: { split: before },
+          after: { split },
+        },
+        tx,
+      );
+    });
+  }
+
   /** Marks an invoice as sent (spec B2) and emails it to the customer (`invoice.sent`). */
   async markSent(tenant: TenantContext, actor: Actor, invoiceId: string): Promise<Invoice> {
     const db = await this.tenancy.db(tenant);
@@ -312,6 +451,15 @@ export class InvoicesService {
         .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
         .limit(1);
       if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
+      // Goods that left posted their cost; they come back only through a return (ADR 0043).
+      const [issued] = await tx
+        .select({ id: reservations.id })
+        .from(reservations)
+        .where(
+          and(eq(reservations.invoiceId, invoiceId), eq(reservations.status, "issued"), isNull(reservations.deletedAt)),
+        )
+        .limit(1);
+      if (issued) throw refuse(`Stock was already cut or issued for invoice ${invoice.number}, so it can't be voided.`);
       // A note that settled its own invoice has no reversal for that settlement (ADR 0039).
       if (invoice.isReturn && invoice.creditForInvoiceId) {
         const [settlement] = await tx
