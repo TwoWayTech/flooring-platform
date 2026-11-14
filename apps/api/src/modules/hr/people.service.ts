@@ -3,6 +3,7 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { employeeChecklistItems, employees, locations, userProfiles } from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
+  dec,
   featureOn,
   isStateCode,
   OFFBOARDING_STEPS,
@@ -22,7 +23,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
 import { notFound, refuse } from "../sales/sales-common";
 import { auditHr, lockEmployee } from "./hr-common";
-import { loadEmployees, personScope, workFactsOnly, type EmployeeRow } from "./hr-records";
+import { loadEmployees, personScope, viewerEmployeeId, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
 export interface EmployeeFields {
@@ -97,6 +98,16 @@ export class PeopleService {
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     await db.transaction(async (tx) => {
       const before = id ? await lockEmployee(tx, id) : null;
+      // Without the key the stored rate stays, and a new person starts at zero (hr.md "Who uses it").
+      const payRate = seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00");
+      // Nobody sets their own pay (separation of duties, blueprint "Security"; blueprint-delta 2026-11-14).
+      if (
+        before &&
+        dec(payRate).cmp(before.payRate) !== 0 &&
+        before.id === (await viewerEmployeeId(tx, actor.access.userId))
+      ) {
+        throw refuse("Someone else must change your own pay rate.");
+      }
       await this.checkManager(tx, employeeId, input.managerId);
       if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
       const flsaStatus = input.workerType === "1099" ? "not_applicable" : input.flsaStatus;
@@ -106,8 +117,7 @@ export class PeopleService {
         department: input.department.trim(),
         workerType: input.workerType,
         payType: input.payType,
-        // Without the key the stored rate stays, and a new person starts at zero (hr.md "Who uses it").
-        payRate: seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00"),
+        payRate,
         state: input.state,
         email: input.email.trim(),
         phone: input.phone.trim(),
