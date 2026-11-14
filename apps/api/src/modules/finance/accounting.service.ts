@@ -7,9 +7,9 @@ import {
   type BankAccountKey,
   type BankAccountSetting,
 } from "@workspace/shared";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
-import { loadAccounting } from "../../core/ledger/accounting-settings";
+import { loadAccounting, lockAccountingForSave } from "../../core/ledger/accounting-settings";
 import { refuse } from "../sales/sales-common";
 
 /** Bank accounts take the free codes after Cash and Bank (1000) and before receivables (1100). */
@@ -31,8 +31,8 @@ export interface AccountingChange {
 export class AccountingService {
   /** Saves the settings and keeps the bank ledger accounts in step, in the caller's transaction. */
   async save(tx: CompanyDb, input: AccountingSettings, by: string): Promise<AccountingChange> {
-    // One save at a time, so two saves can't both take the same free account code.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('settings:accounting'))`);
+    // One save at a time, so two saves can't take one free code; postings in flight finish first.
+    await lockAccountingForSave(tx);
     const problem = accountingSettingsProblem(input);
     if (problem) throw refuse(problem);
     const before = await loadAccounting(tx);
@@ -86,9 +86,9 @@ export class AccountingService {
   }
 
   /**
-   * Retires bank accounts that left the list; refuses one whose ledger account has postings. A
-   * posting that read the old settings just before the removal commits finds no account and rolls
-   * back (fails closed), so nothing posts to a retired account.
+   * Retires bank accounts that left the list; refuses one whose ledger account has postings. The
+   * save holds the settings lock exclusively, so every posting in flight has committed and its lines
+   * are seen here; the `journal_lines_live_account` trigger refuses a line on a retired account.
    */
   private async remove(tx: CompanyDb, keys: BankAccountKey[]): Promise<void> {
     if (keys.length === 0) return;

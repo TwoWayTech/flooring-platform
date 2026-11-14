@@ -126,7 +126,7 @@ The blueprint lists `user_profiles` twice with different columns: once with "bra
 | --- | --- | --- | --- | --- |
 | LedgerAccount | Company | `ledger_accounts` | `id`, `key` (stable, for postings; null on a company's own accounts), `code`, `name`, `type` (`asset`, `liability`, `equity`, `revenue`, `expense`), `active` | Referenced by `journal_lines.account_id` |
 | JournalEntry | Company | `journal_entries` (append-only) | `id`, `date`, `event`, `sourceType`, `sourceId`, `sourceNumber`, `memo`; unique by source and event | `reversesId -> JournalEntry`; parent of `journal_lines` |
-| JournalLine | Company | `journal_lines` (append-only) | `id`, `debit`, `credit` (one side above zero) | `entryId -> JournalEntry`, `accountId -> LedgerAccount`, `locationId -> Location`, `customerId -> Customer` |
+| JournalLine | Company | `journal_lines` (append-only) | `id`, `debit`, `credit` (one side above zero); the account must be live, not soft-deleted (migration 0003, ADR 0040) | `entryId -> JournalEntry`, `accountId -> LedgerAccount`, `locationId -> Location`, `customerId -> Customer` |
 | PeriodClose | Company | `period_closes` (append-only) | `id`, `closedThrough`, `note`; the newest row decides | |
 
 ### Installation (switched off, data kept)

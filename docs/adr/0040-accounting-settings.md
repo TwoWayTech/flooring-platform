@@ -22,6 +22,9 @@
   - A payment void credits the cash account the payment first posted to (`LedgerService.postedCashAccount`). The money goes back out of the bank it went into, even after the method moves to another bank.
   - Renaming a bank account renames its ledger account.
   - A bank account with entries can't be removed: 409 `bank_account_in_use`. Taking its methods away stops new postings to it. One with no entries is soft-deleted.
+  - Postings read the settings under a shared advisory lock (`loadAccountingForPosting`), and a save takes it exclusively. A save that retires a bank account therefore waits for postings in flight and sees their lines (PR #19 security review).
+  - Company migration 0003 adds the `journal_lines_live_account` trigger: no line may name a soft-deleted account.
+  - Stored settings are checked with the same Zod schema when read. A row that fails is 409 `settings_invalid`, never the defaults, which would quietly post a bank's money to Cash and Bank.
 - **Routes** (modules/finance):
   - `GET /settings/accounting` and `PUT /settings/accounting` need `settings.payments.manage` (Owner and Accountant; it needs MFA).
   - The body is checked with Zod (strict, so unknown fields such as an account number are refused) and with `accountingSettingsProblem`.
@@ -29,6 +32,7 @@
   - It is audited as "Changed accounting settings".
 
 ## Consequences
-- P12 part 2 (expenses) and part 3 (supplier payments) post their cash with `cashAccountFor` and void with `postedCashAccount`.
+- P12 part 2 (expenses) and part 3 (supplier payments) read the settings with `loadAccountingForPosting`, post their cash with `cashAccountFor` and void with `postedCashAccount`.
+- A refund void, when one is added, credits back through `postedCashAccount` for the refund, not `cashAccountFor`.
 - The settings screen in the web app comes with the Settings module. Until then the API is the only way to set bank accounts.
 - When the accountant answers, each default is changed by saving the setting. No code changes are needed, except for a costing method other than average.

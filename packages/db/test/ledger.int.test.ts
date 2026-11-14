@@ -93,6 +93,18 @@ describe("ledger tables (needs the local PostgreSQL)", () => {
     await expect(sql`truncate journal_lines`).rejects.toThrow(/append-only/);
   });
 
+  it("refuses a line on a retired account (ADR 0040)", async () => {
+    const retired = uuidv7();
+    await sql`insert into ledger_accounts (id, key, code, name, type, deleted_at)
+      values (${retired}, ${`bank:${retired}`}, '1010', 'Old bank', 'asset', now())`;
+    await expect(
+      post("2026-11-02", [
+        [retired, "5.00", "0"],
+        [sales, "0", "5.00"],
+      ]),
+    ).rejects.toThrow(/retired/);
+  });
+
   it("refuses entries dated on or before the last closed day", async () => {
     await sql`insert into period_closes (id, closed_through) values (${uuidv7()}, '2026-10-31')`;
     await expect(

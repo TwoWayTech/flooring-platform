@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Put, Req } from "@nestjs/common";
-import { PAYMENT_METHODS } from "@workspace/shared";
 import type { Request } from "express";
-import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import { Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
@@ -9,33 +7,10 @@ import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
-import { loadAccounting } from "../../core/ledger/accounting-settings";
+import { ACCOUNTING_INPUT, loadAccounting } from "../../core/ledger/accounting-settings";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { AccountingService } from "./accounting.service";
-
-/** Settings → Accounting as the screen sends it (ADR 0040). Bank account keys come from the server. */
-const ACCOUNTING = z
-  .object({
-    costingMethod: z.literal("average"),
-    salesTaxBasis: z.enum(["accrual", "cash"]),
-    bankAccounts: z
-      .array(
-        z
-          .object({
-            key: z
-              .string()
-              .regex(/^bank:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, "Unknown bank account.")
-              .transform((key) => key as `bank:${string}`)
-              .optional(),
-            name: z.string().trim().min(1, "Name the bank account.").max(80),
-            methods: z.array(z.enum(PAYMENT_METHODS)).max(PAYMENT_METHODS.length),
-          })
-          .strict(),
-      )
-      .max(20),
-  })
-  .strict();
 
 /**
  * How the company keeps its books: costing method, sales tax basis and bank accounts (owner
@@ -69,7 +44,7 @@ export class AccountingController {
     @Req() request: Request,
     @Body() body: unknown,
   ) {
-    const input = parse(ACCOUNTING, body);
+    const input = parse(ACCOUNTING_INPUT, body);
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);
     return db.transaction(async (tx) => {

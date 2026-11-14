@@ -1,5 +1,6 @@
 import { auditLog, branches, ledgerAccounts, locations, products, settings, taxRules } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
+import { dec, moneyString } from "@workspace/shared";
 import { eq, like } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -67,7 +68,7 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
   }
 
   /** An invoice for 100 sq ft of tile (489.65 with tax), made by the owner. */
-  async function invoice(): Promise<{ id: string }> {
+  async function invoice(): Promise<{ id: string; customerId: string }> {
     const customer = await call("post", "/customers", cookies.owner)
       .send({ name: `Cust ${uuidv7()}` })
       .expect(201);
@@ -198,6 +199,11 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
     expect(
       (await call("put", "/settings/accounting", cookies.sales).send({ ...read.body, salesTaxBasis: "cash" })).status,
     ).toBe(403);
+    // The key needs MFA: an Accountant who has not set it up is refused (PR #19 security review).
+    const unenrolled = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }));
+    const refused = await call("get", "/settings/accounting", unenrolled);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("mfa_enrolment_required");
   });
 
   it("makes a ledger account per bank account and refuses ambiguous or forged lists", async () => {
@@ -300,6 +306,64 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
       const byName = new Map(rows.map((row) => [row.name, row]));
       expect(byName.get("Card settlements")?.deletedAt).toBeNull();
       expect(byName.get("Spare")?.deletedAt).not.toBeNull();
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("posts a refund to the bank account for its method", async () => {
+    const current = (await call("get", "/settings/accounting", cookies.owner).expect(200)).body as {
+      bankAccounts: { key: string; name: string; methods: string[] }[];
+    };
+    const operating = current.bankAccounts.find((bank) => bank.methods.includes("check"))!.key;
+    const bill = await invoice();
+    // 500.00 on a 489.65 invoice leaves 10.35 of credit; above the threshold, so someone else confirms.
+    const paid = await call("post", "/payments", cookies.owner)
+      .send({
+        invoiceId: bill.id,
+        kind: "payment",
+        amount: "500.00",
+        date: companyDay(),
+        method: "card",
+        checkNumber: "",
+        cardLast4: "4242",
+        reference: `TXN-${uuidv7()}`,
+        note: "",
+        extraAsCredit: true,
+        allowDuplicateReference: false,
+        files: [PDF],
+      })
+      .expect(201);
+    await call("post", `/payments/${paid.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    const before = await balances();
+    await call("post", "/refunds", cookies.owner)
+      .send({
+        customerId: bill.customerId,
+        amount: "10.00",
+        date: companyDay(),
+        method: "check",
+        reference: `RF-CHK-${uuidv7()}`,
+        note: "",
+        files: [PDF],
+      })
+      .expect(201);
+    const after = await balances();
+    expect(moneyString(dec(after.get(operating)!).minus(before.get(operating) ?? "0"))).toBe("-10.00");
+    expect(after.get("cash") ?? "0.00").toBe(before.get("cash") ?? "0.00");
+  });
+
+  it("refuses to post on stored settings that fail their schema, rather than using the defaults", async () => {
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [row] = await handle.db.select().from(settings).where(eq(settings.group, "accounting"));
+      await handle.db
+        .update(settings)
+        .set({ value: { costingMethod: "average", salesTaxBasis: "accrual", bankAccounts: null } })
+        .where(eq(settings.group, "accounting"));
+      const read = await call("get", "/settings/accounting", cookies.owner);
+      expect(read.status).toBe(409);
+      expect(read.body.code).toBe("settings_invalid");
+      await handle.db.update(settings).set({ value: row!.value }).where(eq(settings.group, "accounting"));
     } finally {
       await handle.close();
     }

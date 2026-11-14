@@ -26,7 +26,7 @@ import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
-import { loadAccounting } from "../../core/ledger/accounting-settings";
+import { loadAccountingForPosting } from "../../core/ledger/accounting-settings";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { STORAGE } from "../../core/storage/storage.module";
@@ -159,7 +159,7 @@ export class PaymentsService {
         if (row.status === "confirmed") {
           // A payment counts, and posts, once confirmed; a pending one waits for its reviewer.
           const [saved] = await loadPayments(tx, this.control.db, { ids: [id] });
-          const cash = cashAccountFor(await loadAccounting(tx), saved!.method);
+          const cash = cashAccountFor(await loadAccountingForPosting(tx), saved!.method);
           await this.books.post(tx, paymentPosting(saved!, invoice.number, ledger.balance, cash), actor.access.userId);
         }
         await this.auditLog.record(
@@ -235,7 +235,7 @@ export class PaymentsService {
         })
         .where(eq(paymentsReceived.id, paymentId));
       if (state) {
-        const cash = cashAccountFor(await loadAccounting(tx), payment.method);
+        const cash = cashAccountFor(await loadAccountingForPosting(tx), payment.method);
         await this.books.post(
           tx,
           paymentPosting(payment, state.invoice.number, state.ledger.balance, cash),
@@ -313,6 +313,7 @@ export class PaymentsService {
       if (payment.status === "confirmed") {
         const posted = { sourceType: "payment", sourceId: paymentId, event: "payment.confirmed" } as const;
         // Credit the bank the money went into, whatever the method's bank account is now (ADR 0040).
+        // Null only when the payment never posted, and then `reverse` posts nothing either.
         const cash = (await this.books.postedCashAccount(tx, posted)) ?? "cash";
         await this.books.reverse(
           tx,
@@ -425,7 +426,7 @@ export class PaymentsService {
         await tx.insert(refunds).values(row);
         await attach(tx, "refund", id, actor.access.userId);
         const [saved] = await loadRefunds(tx, this.control.db, { ids: [id] });
-        const cash = cashAccountFor(await loadAccounting(tx), saved!.method);
+        const cash = cashAccountFor(await loadAccountingForPosting(tx), saved!.method);
         await this.books.post(tx, refundPosting(saved!, cash), actor.access.userId);
         await this.auditLog.record(
           tenant,
