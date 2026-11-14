@@ -118,6 +118,56 @@ test("refuses pushes to main, pushes of HEAD from main, steered and forced pushe
 
 });
 
+test("does not read the quoted title or body of a PR or issue call (owner, 2026-11-14)", () => {
+  for (const ok of [
+    "gh pr review 16 --comment --body 'Merge with gh pr merge 16 --squash; never git push origin main.'",
+    "gh pr review 16 --comment -b \"Never gh pr merge 16 --admin | git push origin main\"",
+    "gh pr comment 16 --body='gh api -X POST repos/x; git push --force origin main'",
+    "gh pr create --draft --title 'chore: git push origin main is refused' --body 'See gh pr merge 1 --rebase'",
+    "gh pr edit 16 --body 'It''s fine: git push origin main' --add-label docs",
+    "gh issue comment 3 -b 'gh repo edit --enable-rebase-merge'",
+    "gh pr create --draft --title 'x' --body-file body.md",
+  ]) {
+    assert.equal(refusal(ok), null, ok);
+  }
+});
+
+test("still reads anything that is not a literal title or body", () => {
+  for (const bad of [
+    // Commands after the body run, so they are checked.
+    "gh pr comment 16 --body 'note'; git push origin main",
+    "gh pr comment 16 --body 'note' && gh pr merge 16 --rebase",
+    "gh pr comment 16 --body \"note\" | git push origin main",
+    // Double quotes that could expand or end early are read as shell.
+    "gh pr comment 16 --body \"$(git push origin main)\"",
+    "gh pr comment 16 --body \"`git push origin main`\"",
+    "gh pr comment 16 --body \"a\\\"; git push origin main; echo \\\"\"",
+    // The PR call must start the command; a quote opened elsewhere is not a body.
+    "echo \"gh pr comment 1 -b '\" ; git push origin main ; echo \"'\"",
+    "git push origin main; gh pr comment 1 --body 'x'",
+    "bash -c 'gh pr comment 1 -b \"x\"; git push origin main'",
+    // A quote the shell does not see as one is not a body (PR #17 security review).
+    "gh pr comment 1 # -b '\ngit push origin main\n#'",
+    "gh pr comment 1 # -b '\ngh pr merge 16 --rebase\n#'",
+    "gh pr comment 1 <# -b '#> ; git push origin main ; <# '#>",
+    "gh pr comment 1 -b 'x’; git push origin main; ‘y'",
+    "gh pr comment 1 -b \"x”; git push origin main; “y\"",
+    "gh pr comment 1 --% -b 'x | git push origin main #'",
+    "gh pr comment 1 @a -b 'x' | git push origin main",
+    "gh pr comment 1\t-b 'x' ; git push origin main",
+    "gh pr comment 1 -b 'x'\"; git push origin main\"",
+    // A cmd.exe shim would re-read `"` and `&` (PR #17 second review).
+    "gh pr comment 1 -b 'x \" & git push origin main & \"'",
+    // Only the first 20 bodies are masked; later ones are read as shell.
+    `gh pr comment 1${" -b 'x'".repeat(20)} -b 'git push origin main'`,
+    // Other gh commands are not prose.
+    "gh pr merge 16 --rebase --body 'x'",
+    "gh api -X POST repos/x/y/pulls/1/reviews -f body='ok'",
+  ]) {
+    assert.notEqual(refusal(bad), null, bad);
+  }
+});
+
 test("blocks with exit code 2, fails closed, and ignores other tools", () => {
   const run = (input) =>
     spawnSync(process.execPath, [HOOK], {
