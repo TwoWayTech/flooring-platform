@@ -68,8 +68,9 @@ function mountAuth(app: NestExpressApplication, proxySecret: string | undefined)
 /** The largest proof-carrying body: three files of 5 MB in base64, with room for the form fields. */
 const PROOF_BODY_LIMIT = "21mb";
 
-/** POST /payments, /payments/:id/files, /refunds and /expenses carry proof files. */
-const PROOF_ROUTES = /^\/(payments(\/[0-9a-fA-F-]{36}\/files)?|refunds|expenses)\/?$/;
+/** POST /payments, /payments/:id/files, /refunds, /expenses, /supplier-payments and order bills carry files. */
+const PROOF_ROUTES =
+  /^\/(payments(\/[0-9a-fA-F-]{36}\/files)?|refunds|expenses|supplier-payments|purchase-orders\/[0-9a-fA-F-]{36}\/bills)\/?$/;
 
 /** PUT /expenses/:id finishes a draft with its receipts (ADR 0041). */
 const PROOF_PUT_ROUTES = /^\/expenses\/[0-9a-fA-F-]{36}\/?$/;

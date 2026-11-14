@@ -297,7 +297,15 @@ export class InvoicesController {
 
   /** GET /files/:id: a proof file or expense receipt, opened in place; only within the person's data scope. */
   @Get("files/:id")
-  @RequirePermission("sales.payment.view", "sales.payment.approve", "sales.payment.refund", "finance.expense.view")
+  @RequirePermission(
+    "sales.payment.view",
+    "sales.payment.approve",
+    "sales.payment.refund",
+    "finance.expense.view",
+    "purchasing.bill.view",
+    "purchasing.payment.record",
+    "purchasing.payment.approve",
+  )
   async file(
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,
