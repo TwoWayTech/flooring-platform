@@ -1,5 +1,7 @@
 import { dec, minDec, moneyString, sum, type Dec } from "../money";
-import type { Invoice, InvoiceAdjustment, Payment, Refund } from "../types";
+import { expenseCost } from "../expenses";
+import type { Expense, ExpenseCategory, Invoice, InvoiceAdjustment, Payment, Refund } from "../types";
+import type { AccountKey } from "./accounts";
 import type { LedgerKey } from "./settings";
 
 /** One side of one account in a journal entry. Exactly one of debit and credit is above zero. */
@@ -15,7 +17,7 @@ export interface PostingLine {
 /** What a business event posts (ADR 0039). `event` and the source make it unique, so nothing posts twice. */
 export interface PostingDraft {
   event: PostingEvent;
-  sourceType: "invoice" | "payment" | "adjustment" | "refund";
+  sourceType: "invoice" | "payment" | "adjustment" | "refund" | "expense";
   sourceId: string;
   sourceNumber: string;
   /** The accounting date, `yyyy-MM-dd`. */
@@ -32,7 +34,8 @@ export type PostingEvent =
   | "write_off"
   | "credit.applied"
   | "refund"
-  | `${"invoice.issued" | "credit_note.issued" | "payment.confirmed"}.reversed`;
+  | "expense.confirmed"
+  | `${"invoice.issued" | "credit_note.issued" | "payment.confirmed" | "expense.confirmed"}.reversed`;
 
 const ZERO = "0.00";
 
@@ -183,6 +186,54 @@ export function refundPosting(refund: Refund, cashAccount: LedgerKey): PostingDr
     date: refund.date,
     memo: `Refund ${refund.number}`,
     lines: nonZero([debit("customer_credit", amount, customer), credit(cashAccount, amount, customer)]),
+  };
+}
+
+/**
+ * The ledger account each expense category posts to (finance-expenses.md rule 16; ADR 0023).
+ * Payroll months come from the seed and the import; a sales tax payment pays down what was
+ * collected, so it debits Sales Tax Payable and is never a cost (rules 2 and 8).
+ */
+export const EXPENSE_ACCOUNTS: Record<ExpenseCategory, AccountKey> = {
+  rent: "rent",
+  electricity: "utilities",
+  water: "utilities",
+  internet_phone: "utilities",
+  fuel_vehicles: "vehicles",
+  other: "other_expenses",
+  supplies: "supplies",
+  maintenance: "repairs_maintenance",
+  insurance: "insurance",
+  taxes_licenses: "taxes_licences",
+  marketing: "marketing",
+  professional_fees: "professional_fees",
+  payroll: "wages",
+  sales_tax_payment: "sales_tax_payable",
+};
+
+/**
+ * A confirmed expense (finance-expenses.md rule 16; ADR 0023): debit the category's account for the
+ * whole cost (tax on a purchase is part of its cost, rule 1) at the expense's location; credit the
+ * bank account for its method when it is paid already, or Accounts Payable when it is paid later
+ * (the linked bill then carries the payable, rule 6). A void posts the reversal on the void day.
+ */
+export function expensePosting(
+  expense: Pick<Expense, "id" | "number" | "date" | "category" | "locationId" | "amount" | "tax" | "settlement">,
+  cashAccount: LedgerKey,
+): PostingDraft {
+  const cost = expenseCost(expense);
+  const credited: LedgerKey = expense.settlement === "on_account" ? "accounts_payable" : cashAccount;
+  return {
+    event: "expense.confirmed",
+    sourceType: "expense",
+    sourceId: expense.id,
+    sourceNumber: expense.number,
+    date: expense.date,
+    memo: `Expense ${expense.number}`,
+    lines: nonZero([
+      debit(EXPENSE_ACCOUNTS[expense.category], cost, { locationId: expense.locationId }),
+      credit(credited, cost),
+    ]),
   };
 }
 
