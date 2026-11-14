@@ -29,21 +29,11 @@ const SOURCES = [
 ];
 
 /**
- * Entries that carry a free-text reason the owner's decision does not cover (it covers plan terms and
- * commission adjustment reasons only), so the reason checks below let exactly these through.
- * owner question: bonus/exclusion reasons (STATUS)
- */
-const REASON_EXEMPT: ReadonlySet<string> = new Set([
-  "Left out of pay period",
-  "Brought back into pay period",
-  "Added bonus",
-  "Voided bonus",
-]);
-
-/**
- * Pay audit actions that carry neither plan terms nor a commission adjustment or decision reason
- * (ADR 0048 "No amounts in the log"), so every audit viewer reads them. A new action must be put here
- * or in PAY_SENSITIVE_AUDIT_ACTIONS, so nobody adds one without deciding who may read it.
+ * Pay audit actions that carry neither plan terms nor a reason (ADR 0048 "No amounts in the log"), so
+ * every audit viewer reads them. Every reason is pay-sensitive: commission adjustments and decisions
+ * (owner decision 2026-11-14), bonuses and pay-run exclusions (owner decision 2026-11-15). A new
+ * action must be put here or in PAY_SENSITIVE_AUDIT_ACTIONS, so nobody adds one without deciding who
+ * may read it.
  */
 const NOT_PAY_SENSITIVE = new Set([
   "Approved commission statement", // status and month only
@@ -59,7 +49,6 @@ const NOT_PAY_SENSITIVE = new Set([
   "Added commission statement to pay period",
   "Paid commission statement",
   "Released commission statement from pay period",
-  ...REASON_EXEMPT,
 ]);
 
 /** Helpers that pass their caller's action through; their callers are checked instead. */
@@ -142,18 +131,20 @@ describe("pay-sensitive audit actions (owner decision 2026-11-14; ADR 0048 'Audi
     }
   });
 
-  it("lists every plan-terms entry and every commission entry that carries a reason", () => {
+  it("lists every plan-terms entry and every pay entry that carries a reason", () => {
     for (const call of calls) {
       const viaPlan = call.body.startsWith("this.auditPlan(");
       if (!viaPlan && !/\breason\b/.test(call.body)) continue;
       for (const action of call.actions) {
-        if (REASON_EXEMPT.has(action)) continue;
         expect(PAY_SENSITIVE_AUDIT_ACTIONS.has(action), `${where(call)}: "${action}"`).toBe(true);
       }
     }
   });
 
-  it("has every pay audit action decided: pay-sensitive or not", () => {
+  it("has every pay audit action decided once: pay-sensitive or not", () => {
+    for (const action of NOT_PAY_SENSITIVE) {
+      expect(PAY_SENSITIVE_AUDIT_ACTIONS.has(action), `"${action}" is in both lists`).toBe(false);
+    }
     for (const call of calls) {
       for (const action of call.actions) {
         const decided = PAY_SENSITIVE_AUDIT_ACTIONS.has(action) || NOT_PAY_SENSITIVE.has(action);
@@ -164,7 +155,7 @@ describe("pay-sensitive audit actions (owner decision 2026-11-14; ADR 0048 'Audi
 
   it("finds no plan terms or reason in an entry left readable to every audit viewer", () => {
     for (const call of calls) {
-      const open = call.actions.filter((a) => NOT_PAY_SENSITIVE.has(a) && !REASON_EXEMPT.has(a));
+      const open = call.actions.filter((a) => NOT_PAY_SENSITIVE.has(a));
       if (open.length === 0) continue;
       expect(withoutKnownBooleans(call.body), `${where(call)}: ${open.join(", ")}`).not.toMatch(TERMS_OR_REASON);
     }
