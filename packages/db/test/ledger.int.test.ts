@@ -102,7 +102,36 @@ describe("ledger tables (needs the local PostgreSQL)", () => {
         [retired, "5.00", "0"],
         [sales, "0", "5.00"],
       ]),
-    ).rejects.toThrow(/retired/);
+    ).rejects.toMatchObject({ code: "23514", message: expect.stringMatching(/retired/) });
+  });
+
+  it("makes a posting wait for a retire in flight, then refuses it", async () => {
+    const bank = uuidv7();
+    await sql`insert into ledger_accounts (id, key, code, name, type) values (${bank}, ${`bank:${bank}`}, '1011', 'Racing bank', 'asset')`;
+    const other = postgres(scratch[0].url, { max: 1, onnotice: () => undefined });
+    try {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let retired: () => void = () => undefined;
+      const updated = new Promise<void>((resolve) => (retired = resolve));
+      // The retire is uncommitted while the posting starts; it commits only after the posting waits.
+      const retire = other.begin(async (tx) => {
+        await tx`update ledger_accounts set deleted_at = now() where id = ${bank}`;
+        retired();
+        await held;
+      });
+      await updated;
+      const posting = post("2026-11-03", [
+        [bank, "5.00", "0"],
+        [sales, "0", "5.00"],
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      release();
+      await retire;
+      await expect(posting).rejects.toThrow(/retired/);
+    } finally {
+      await other.end();
+    }
   });
 
   it("refuses entries dated on or before the last closed day", async () => {

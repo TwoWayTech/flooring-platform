@@ -231,6 +231,7 @@ The blueprint's `commissions` table has no stored equivalent. Commission lines a
 | `numbers` | Company | `number_format` |
 | `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint |
 | `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold |
+| `accounting` | Company | `settings`. Real-build group (ADR 0040): `costingMethod`, `salesTaxBasis`, `bankAccounts` (name and methods only; each one is a `ledger_accounts` row keyed `bank:<uuid>`, code 1010 to 1099) |
 | `sharedCosts`, `hr`, `meetings`, `email` | Company | `settings`. New groups in this demo |
 
 Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to the control tables `country_packs`, `pack_states` and `pack_tax_models`.
