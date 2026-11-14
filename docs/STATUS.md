@@ -104,7 +104,14 @@
 ## Next three tasks
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
 1. **HR part 1:** people, timesheets and time off (ADR 0046), in review as PR #25.
-2. **HR part 2:** pay periods, bonuses and contractor payments with payroll postings; link the 54 seeded time-off lines to their pay periods.
+2. **HR part 2:** pay periods, bonuses and contractor payments with payroll postings; link the 54 seeded time-off lines to their pay periods. **First, from the PR #25 fifth review** (pay goes out in this part, so these come before it):
+   - refuse time-off approvals that overlap an approved or exported pay period;
+   - maker-checker: nobody decides a sheet or request they entered themselves, unless they are the Owner (store the user id in history);
+   - `pay.ts` and the HR week view add hours with decimal.js, not floats, before dividing money;
+   - a linked sign-in for "someone else" timesheet and time-off writes;
+   - `viewerEmployeeId` requires a live employee;
+   - audit the previous hours on save;
+   - give clock-outs into submitted or approved weeks a note and an audit reason.
 3. **Commissions**, the **employee portal**, then **meetings**.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
