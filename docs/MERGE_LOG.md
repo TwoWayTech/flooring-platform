@@ -33,3 +33,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #27 | Commissions on the API with postings and payroll hand-off (ADR 0048) | @TwoWayTech | feat/hr-commissions | `b7c2163` |
 | 2026-11-14 | #28 | Employee portal on the API (ADR 0049) | @TwoWayTech | feat/hr-employee-portal | `b792f54` |
 | 2026-11-14 | #29 | fix(hr): California pay rules behind hr.payroll.california, off by default | @TwoWayTech | fix/hr-california-pay-switch | `f9b18a9` |
+| 2026-11-14 | #30 | fix(audit): commission plan terms and reasons only for pay viewers | @TwoWayTech | fix/hr-commission-audit-visibility | `e2ff2ae` |
