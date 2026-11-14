@@ -21,3 +21,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-13 | #15 | P11 sales part 2: invoices, payments, credits and refunds on the API | @TwoWayTech | feat/sales-invoices | `f8b0ef4` |
 | 2026-11-14 | #16 | P12 ledger part 1: LedgerService, journal and sales postings | @TwoWayTech | feat/ledger-core | `328ca36` |
 | 2026-11-14 | #18 | fix(api): read invoice dates in the company's time zone | @TwoWayTech | fix/sales-invoice-company-day | `82535cd` |
+| 2026-11-14 | #17 | fix(deploy): only demo deploys on Vercel; self-merge counts GitHub Actions; guard ignores PR comment text | @TwoWayTech | fix/deploy-vercel-demo-only | `9b6cbd0` |
