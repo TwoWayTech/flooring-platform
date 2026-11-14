@@ -3,7 +3,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
-import type { Invoice } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
@@ -14,7 +13,7 @@ import { ScrollRegion } from "@/components/scroll-region";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
-import type { CommissionStatementRow } from "@/lib/api/contract";
+import type { CommissionInvoiceRef, CommissionStatementRow } from "@/lib/api/contract";
 import { useFormatDate } from "@/lib/use-format-date";
 
 function Line({ label, value, strong }: { label: ReactNode; value: string; strong?: boolean }) {
@@ -37,7 +36,7 @@ const KIND = { earned: "Earned", override: "Manager override", reversal: "Revers
 const NO_INVOICE = "none";
 
 /** Adds a manual change with a reason; a deduction names its invoice (spec C1, ADR 0025). */
-function AdjustForm({ row, invoices }: { row: CommissionStatementRow; invoices: readonly Invoice[] }) {
+function AdjustForm({ row, invoices }: { row: CommissionStatementRow; invoices: readonly CommissionInvoiceRef[] }) {
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [invoiceId, setInvoiceId] = useState(NO_INVOICE);
@@ -110,7 +109,7 @@ export function StatementSheet({
   onClose,
 }: {
   row: CommissionStatementRow;
-  invoices: readonly Invoice[];
+  invoices: readonly CommissionInvoiceRef[];
   onClose: () => void;
 }) {
   const can = useCan();
@@ -205,7 +204,12 @@ export function StatementSheet({
                         </td>
                         <td className="py-1.5">{formatDate(l.confirmedOn)}</td>
                         <td className="py-1.5 text-right">
-                          <Num kind="money" value={l.base} />
+                          {/* Margin dollars are hidden without the margin key (ADR 0048). */}
+                          {l.base === null ? (
+                            <span className="text-muted-foreground">Hidden</span>
+                          ) : (
+                            <Num kind="money" value={l.base} />
+                          )}
                         </td>
                         <td className="py-1.5 text-right">
                           <Num kind="money" value={l.commission} />

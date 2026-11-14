@@ -93,7 +93,12 @@ function Commission({ portal }: { portal: MyPortal }) {
               {s.lines.map((l) => (
                 <li key={l.id} className="flex justify-between gap-3 py-1">
                   <span className="text-muted-foreground">
-                    {formatDate(l.confirmedOn)}, on <Num kind="money" value={l.base} />
+                    {formatDate(l.confirmedOn)}
+                    {l.base === null ? null : (
+                      <>
+                        , on <Num kind="money" value={l.base} />
+                      </>
+                    )}
                   </span>
                   <Num kind="money" value={l.commission} />
                 </li>

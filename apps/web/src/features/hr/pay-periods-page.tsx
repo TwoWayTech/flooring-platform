@@ -166,6 +166,18 @@ function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPe
           </ul>
         </Panel>
       ) : null}
+      {review.strandedCommission?.length ? (
+        <Panel title="Approved commission no pay run can pay">
+          <ul className="flex flex-col gap-1 text-sm">
+            {review.strandedCommission.map((s) => (
+              <li key={s.statementId} className="flex flex-wrap items-center gap-2">
+                <TriangleAlert aria-hidden="true" className="text-warning-ink size-4" />
+                {s.name}, {s.month}: {s.reason}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {canApprove && !locked ? (
           <Button onClick={() => void run(() => api.approvePayPeriod(period.id), "Pay period approved")}>

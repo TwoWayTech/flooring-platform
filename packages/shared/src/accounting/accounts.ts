@@ -34,6 +34,7 @@ export const DEFAULT_ACCOUNTS = [
   { key: "inventory_adjustments", code: "5100", name: "Inventory Adjustments", type: "expense" },
   { key: "wages", code: "6000", name: "Wages", type: "expense" },
   { key: "contract_labor", code: "6050", name: "Contract Labor", type: "expense" },
+  { key: "commissions_expense", code: "6060", name: "Commissions", type: "expense" },
   { key: "rent", code: "6100", name: "Rent", type: "expense" },
   { key: "utilities", code: "6200", name: "Utilities", type: "expense" },
   { key: "vehicles", code: "6300", name: "Vehicles", type: "expense" },

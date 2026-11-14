@@ -181,7 +181,10 @@ export function auditHr(
       | "clock_entry"
       | "pay_period"
       | "bonus"
-      | "contractor_payment";
+      | "contractor_payment"
+      | "commission_statement"
+      | "commission_plan"
+      | "commission_assignment";
     targetId: string | null;
     targetLabel: string;
     before: Record<string, unknown> | null;
@@ -272,3 +275,17 @@ async function people(control: ControlDb, ids: readonly string[]): Promise<Recip
  * commits before an approval reads the policies or is stamped after it (third review of PR #26).
  */
 export const PAYROLL_LOCK = sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`;
+
+/**
+ * The database clock now, to the millisecond, read inside the transaction once its locks are held.
+ * Approval times and audit times (`AuditService`, `clock_timestamp()`) come from this one clock,
+ * so a pay change that waited on an approval's locks is stamped after the approval (ADR 0047;
+ * second security review of PR #26). Milliseconds, so the value round-trips through a JS Date and
+ * a reopen finds the same journal source id from the stored `approved_at`.
+ */
+export async function databaseNow(tx: CompanyDb): Promise<Date> {
+  const [row] = await tx.execute<{ ms: string }>(
+    sql`select (extract(epoch from date_trunc('milliseconds', clock_timestamp())) * 1000)::bigint::text as ms`,
+  );
+  return new Date(Number(row!.ms));
+}

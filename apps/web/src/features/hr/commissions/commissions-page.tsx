@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CircleCheck, CircleDashed, Pencil, Plus, Send, TriangleAlert, Wallet } from "lucide-react";
 import { toast } from "sonner";
-import { last12Months, type CommissionAssignment, type CommissionPlan, type User } from "@workspace/shared";
+import { last12Months, type CommissionAssignment, type CommissionPlan } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -26,7 +26,7 @@ import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
-import type { CommissionStatementRow } from "@/lib/api/contract";
+import type { CommissionPerson, CommissionStatementRow } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { HrTabs } from "../hr-tabs";
@@ -66,7 +66,7 @@ function AssignDialog({
   plans,
   onClose,
 }: {
-  users: readonly User[];
+  users: readonly CommissionPerson[];
   plans: readonly CommissionPlan[];
   onClose: () => void;
 }) {
@@ -149,16 +149,8 @@ export function CommissionsPage() {
   const [openUser, setOpenUser] = useState<string | null>(null);
   const [planEdit, setPlanEdit] = useState<CommissionPlan | "new" | null>(null);
   const [assigning, setAssigning] = useState(false);
-  const data = useApiQuery(async (client) => {
-    const [statements, plans, assignments, users, invoices] = await Promise.all([
-      client.listCommissionStatements(),
-      client.list("commissionPlans"),
-      client.list("commissionAssignments"),
-      client.list("users"),
-      client.list("invoices"),
-    ]);
-    return { statements, plans, assignments, users, invoices };
-  }, []);
+  // One source for the page, so HR needs no access to Sales to name people and invoices (ADR 0048).
+  const data = useApiQuery((client) => client.commissionData(), []);
   if (!can("hr.commission.view")) return <NoAccess />;
   const canManage = can("hr.commission.manage");
 
@@ -185,7 +177,7 @@ export function CommissionsPage() {
         ),
     },
   ];
-  const nameOf = (userId: string) => data.data?.users.find((u) => u.id === userId)?.name ?? "Unknown";
+  const nameOf = (userId: string) => data.data?.people.find((u) => u.id === userId)?.name ?? "Unknown";
   const planOf = (planId: string) => data.data?.plans.find((p) => p.id === planId);
   const current = (data.data?.assignments ?? []).filter((a) => !a.effectiveTo);
   const assignmentColumns: ColumnSpec<CommissionAssignment>[] = [
@@ -217,7 +209,7 @@ export function CommissionsPage() {
     (s) => s.month === month && (s.lines.length > 0 || s.status !== "draft"),
   );
   const open = rows.find((r) => r.userId === openUser);
-  const canBeAssigned = (data.data?.users ?? []).filter((u) => u.status !== "disabled");
+  const canBeAssigned = (data.data?.people ?? []).filter((p) => p.active);
 
   return (
     <>

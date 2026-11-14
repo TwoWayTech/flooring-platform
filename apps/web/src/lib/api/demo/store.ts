@@ -1213,6 +1213,24 @@ export class DemoStore implements ApiClient {
     return statementRows(this.actionContext(db));
   }
 
+  async commissionData() {
+    const db = this.open();
+    await this.assertCan(db, ["hr.commission.view"]);
+    return {
+      statements: statementRows(this.actionContext(db)),
+      plans: db.list("commissionPlans"),
+      assignments: db.list("commissionAssignments"),
+      people: db.list("users").map((u) => ({ id: u.id, name: u.name, active: u.status !== "disabled" })),
+      invoices: db.list("invoices").map(({ id, number, salesRepId, isReturn, voidedAt }) => ({
+        id,
+        number,
+        salesRepId,
+        isReturn,
+        voidedAt,
+      })),
+    };
+  }
+
   async teamCommission(range: { from: string; to: string }) {
     const db = this.open();
     return teamCommission(this.actionContext(db), this.subject(db), range);

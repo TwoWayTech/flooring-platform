@@ -23,6 +23,12 @@ export interface CommissionLine {
   sourceId: string;
   subjectUserId: string | null;
   planId: string;
+  /**
+   * The basis of the plan that worked out `base`: on a split sale the first member's plan sets the
+   * invoice's base for everyone in the split, and override and reversal lines keep it, so whether
+   * `base` is margin dollars (CLAUDE.md rule 5; `hideMarginBase`) follows this, not `planId`.
+   */
+  basis: CommissionPlan["basis"];
   collected: string;
   base: string;
   commission: string;
@@ -100,11 +106,11 @@ function netInvoice(invoice: Invoice, invoices: readonly Invoice[], before: stri
 }
 
 /** The commission base of what has been collected on an invoice (ADR 0025, steps 3 and 4). */
-function baseOf(plan: CommissionPlan, collected: Dec, net: ReturnType<typeof netInvoice>): Dec {
+function baseOf(basis: CommissionPlan["basis"], collected: Dec, net: ReturnType<typeof netInvoice>): Dec {
   if (net.G.lte(0) || net.S.lte(0)) return dec(0);
   const K = minDec(collected, net.G);
   const revenue = roundMoney(K.times(net.S).dividedBy(net.G));
-  if (plan.basis === "paid_revenue") return revenue;
+  if (basis === "paid_revenue") return revenue;
   return maxDec(roundMoney(revenue.times(net.S.minus(net.C)).dividedBy(net.S)), 0);
 }
 
@@ -162,7 +168,7 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
     const first = planOn(inputs, split[0]!.userId, event.confirmedOn);
     if (!first) continue;
     const net = netInvoice(invoice, invoices, event.confirmedOn);
-    const base = baseOf(first.plan, collected, net);
+    const base = baseOf(first.plan.basis, collected, net);
     if (event.isVoid) {
       liveByInvoice.set(invoice.id, base);
       continue;
@@ -192,6 +198,7 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
         invoiceId: invoice.id,
         sourceId: event.sourceId,
         planId: onPlan.plan.id,
+        basis: first.plan.basis,
         collected: moneyString(event.amount),
         confirmedOn: event.confirmedOn,
         windowEndsOn,
@@ -274,12 +281,13 @@ function creditNoteReversals(inputs: CommissionInputs, lines: readonly Commissio
     if (!invoice || credit.issuedAt > inputs.today) continue;
     const owned = lines.filter((l) => l.invoiceId === invoice.id && l.kind === "earned");
     if (owned.length === 0) continue;
-    const plan = inputs.plans.find((p) => p.id === owned[0]!.planId)!;
     const net = netInvoice(invoice, inputs.invoices, credit.issuedAt);
     const collected = sum(
       inputs.payments.filter((p) => p.invoiceId === invoice.id && p.status === "confirmed").map((p) => p.amount),
     );
-    const fall = owned.reduce((total, l) => total.plus(leftOn(l)), dec(0)).minus(baseOf(plan, collected, net));
+    const fall = owned
+      .reduce((total, l) => total.plus(leftOn(l)), dec(0))
+      .minus(baseOf(owned[0]!.basis, collected, net));
     if (fall.lte(0)) continue;
     const split = splitOf(invoice);
     let allocated = dec(0);
@@ -333,15 +341,20 @@ export interface StatementFigures {
   needsReview: boolean;
 }
 
-/** Every month's statement for one person, oldest first, so each carry feeds the next. */
+/**
+ * Every month's statement for one person, oldest first, so each carry feeds the next. `carryIn` is
+ * what the month before the first one carried out; `commissionStatementRows` works it out from the
+ * person's whole history, so the carry never restarts at 0 as the twelve-month window slides (ADR 0048).
+ */
 export function statementChain(
   userId: string,
   months: readonly string[],
   lines: readonly CommissionLine[],
   adjustments: readonly CommissionAdjustment[],
   planFor: (month: string) => CommissionPlan | null,
+  carryIn = "0.00",
 ): StatementFigures[] {
-  let carry = dec(0);
+  let carry = dec(carryIn);
   return [...months].sort().map((month) => {
     const own = lines.filter((l) => l.userId === userId && l.month === month);
     const earned = sum(own.filter((l) => l.kind === "earned").map((l) => l.commission));
@@ -398,7 +411,10 @@ export function commissionTotals(
 }
 
 /** Each line's commission against the workweek its payment was confirmed, for the overtime true-up (ADR 0024). */
-export function commissionAllocations(lines: readonly CommissionLine[], weekStartDay: number): WeekAllocation[] {
+export function commissionAllocations(
+  lines: readonly Pick<CommissionLine, "confirmedOn" | "commission">[],
+  weekStartDay: number,
+): WeekAllocation[] {
   const totals = new Map<string, Dec>();
   for (const line of lines) {
     const week = workweekStartOf(line.confirmedOn, weekStartDay);
@@ -407,10 +423,16 @@ export function commissionAllocations(lines: readonly CommissionLine[], weekStar
   return [...totals.entries()].map(([weekStart, amount]) => ({ weekStart, amount: moneyString(amount) }));
 }
 
-/** Why a statement adjustment cannot be saved (spec C1, ADR 0025). */
+/** The largest statement adjustment either way, in dollars (ADR 0048): a typo can't post millions. */
+export const MAX_ADJUSTMENT = "1000000.00";
+
+/** A statement adjustment as typed: dollars and cents, up to twelve digits, optionally negative. */
+export const ADJUSTMENT_AMOUNT = /^-?\d{1,12}(\.\d{1,2})?$/;
+
+/** Why a statement adjustment cannot be saved (spec C1, ADR 0025; bounded by ADR 0048). */
 export function adjustmentProblem(amount: string, reason: string, invoiceId: string | null): string | null {
-  if (!/^-?\d+(\.\d{1,2})?$/.test(amount.trim()) || dec(amount).isZero())
-    return "Enter an amount, for example 150 or -75.";
+  if (!ADJUSTMENT_AMOUNT.test(amount.trim()) || dec(amount).isZero()) return "Enter an amount, for example 150 or -75.";
+  if (dec(amount).abs().gt(MAX_ADJUSTMENT)) return "An adjustment can be at most 1,000,000.00 either way.";
   if (reason.trim().length < 3) return "Give a reason; it stays on the statement.";
   if (dec(amount).lt(0) && !invoiceId) return "A deduction must name the invoice it relates to.";
   return null;

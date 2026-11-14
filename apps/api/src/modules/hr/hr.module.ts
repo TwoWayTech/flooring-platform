@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { NotificationsModule } from "../../core/notifications/notifications.module";
 import { BonusesService } from "./bonuses.service";
+import { CommissionsController, CommissionTotalsController } from "./commissions.controller";
+import { CommissionsService } from "./commissions.service";
 import { ContractorPaymentsService } from "./contractor-payments.service";
 import { PayItemsController } from "./pay-items.controller";
 import { PayPeriodsController } from "./pay-periods.controller";
@@ -15,12 +17,20 @@ import { TimesheetsService } from "./timesheets.service";
 /**
  * HR (hr.md; ADR 0046 and 0047): people with their checklists and documents, timesheets with the
  * clock and overtime, time off with its policies and ledger, and payroll: pay periods, bonuses and
- * contractor payments with their ledger postings. One module for both products: Flooring Suite
+ * contractor payments with their ledger postings, and commissions (ADR 0048), paid through pay runs. One module for both products: Flooring Suite
  * companies with HR and HR Suite companies.
  */
 @Module({
   imports: [NotificationsModule],
-  controllers: [PeopleController, TimesheetsController, TimeOffController, PayPeriodsController, PayItemsController],
+  controllers: [
+    PeopleController,
+    TimesheetsController,
+    TimeOffController,
+    PayPeriodsController,
+    PayItemsController,
+    CommissionsController,
+    CommissionTotalsController,
+  ],
   providers: [
     PeopleService,
     TimesheetsService,
@@ -28,6 +38,7 @@ import { TimesheetsService } from "./timesheets.service";
     PayPeriodsService,
     BonusesService,
     ContractorPaymentsService,
+    CommissionsService,
   ],
 })
 export class HrModule {}

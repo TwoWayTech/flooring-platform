@@ -7,6 +7,10 @@ import {
   addresses,
   bonuses,
   clockEntries,
+  commissionAdjustments,
+  commissionAssignments,
+  commissionPlans,
+  commissionStatements,
   contractorPayments,
   payPeriodExclusions,
   payPeriodLines,
@@ -330,6 +334,38 @@ describe("test company seed", () => {
       // Seeded history posts nothing: the ledger starts at go-live.
       const entries = await company.db.select().from(journalEntries);
       expect(entries.filter((entry) => ["pay_period", "contractor_payment"].includes(entry.sourceType))).toEqual([]);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds commission plans, assignments, statements and adjustments, with no journal entries (commissions)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      const plans = await company.db.select().from(commissionPlans);
+      expect(plans).toHaveLength(fixtures.commissionPlans.length);
+      expect(plans.length).toBeGreaterThan(0);
+      const assignments = await company.db.select().from(commissionAssignments);
+      expect(assignments).toHaveLength(fixtures.commissionAssignments.length);
+      expect(assignments.every((a) => plans.some((p) => p.id === a.planId))).toBe(true);
+      const statements = await company.db.select().from(commissionStatements);
+      expect(statements).toHaveLength(fixtures.commissionStatements.length);
+      // Seeded statements are approved by a person and the ones a seeded run paid point at it.
+      expect(statements.every((s) => s.approvedById && s.approvedAt)).toBe(true);
+      expect(statements.filter((s) => s.payPeriodId)).toHaveLength(
+        fixtures.commissionStatements.filter((s) => s.payPeriodId).length,
+      );
+      const margin = fixtures.commissionPlans.find((p) => p.basis === "gross_margin")!;
+      const [row] = await company.db
+        .select()
+        .from(commissionPlans)
+        .where(eq(commissionPlans.id, seedId(margin.id)));
+      expect(row).toMatchObject({ name: margin.name, basis: "gross_margin", clawbackDays: margin.clawbackDays });
+      expect(await company.db.select().from(commissionAdjustments)).toHaveLength(fixtures.commissionAdjustments.length);
+      // Seeded history posts nothing: approval accrues commission only from go-live (ADR 0048).
+      const entries = await company.db.select().from(journalEntries);
+      expect(entries.filter((entry) => entry.sourceType === "commission_statement")).toEqual([]);
     } finally {
       await company.close();
     }

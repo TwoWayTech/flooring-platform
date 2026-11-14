@@ -1,6 +1,10 @@
 import type {
   Bill,
   ChangeOrder,
+  CommissionAssignment,
+  CommissionPlan,
+  CommissionStatement,
+  TeamCommission,
   Contract,
   ContractBilling,
   ContractLine,
@@ -40,6 +44,7 @@ import { HttpApiError } from "./transport";
 import type {
   CollectionName,
   Collections,
+  CommissionData,
   ContractInput,
   EmployeeInput,
   ItemOf,
@@ -245,6 +250,46 @@ export const API_METHODS: HttpRoutes = {
   setCommissionSplit: (http) => async (invoiceId, split) => {
     await http.request<{ ok: true }>("PUT", `/invoices/${invoiceId}/commission-split`, { split });
   },
+  // Commissions (ADR 0048): statements, plans and assignments; paid through pay runs.
+  commissionData: (http) => () => http.request<CommissionData>("GET", "/commissions"),
+  // HR Home reads it beside other panels: a 403 (say a branch-scope role) is no statements, not a failed page.
+  listCommissionStatements: (http) => () =>
+    seen(http.request<CommissionData>("GET", "/commissions").then((data) => data.statements)),
+  teamCommission: (http) => (range) =>
+    http.request<[string, TeamCommission][]>(
+      "GET",
+      `/commission-totals?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
+    ),
+  approveStatement: (http) => (userId, month) =>
+    http.request<CommissionStatement>("POST", "/commission-statements/approve", { userId, month }),
+  addCommissionAdjustment: (http) => async (input) => {
+    await http.request<{ ok: true }>("POST", "/commission-adjustments", input);
+  },
+  decideReversal: (http) => async (input) => {
+    await http.request<{ ok: true }>("POST", "/commission-reversals/decide", input);
+  },
+  saveCommissionPlan: (http) => (plan) => {
+    // Version, status and dates are the server's (commissions.md rule 13); only the terms are sent.
+    const body = {
+      name: plan.name,
+      basis: plan.basis,
+      baseRatePct: plan.baseRatePct,
+      monthlyTarget: plan.monthlyTarget,
+      tierMode: plan.tierMode,
+      tiers: plan.tiers,
+      overridePct: plan.overridePct,
+      draw: plan.draw,
+      clawbackDays: plan.clawbackDays,
+    };
+    return isSaved(plan.id)
+      ? http.request<CommissionPlan>("PUT", `/commission-plans/${plan.id}`, body)
+      : http.request<CommissionPlan>("POST", "/commission-plans", body);
+  },
+  assignPlan: (http) => (input) =>
+    http.request<CommissionAssignment>("POST", "/commission-assignments", {
+      ...input,
+      monthlyTargetOverride: input.monthlyTargetOverride || null,
+    }),
   // Contracts (ADR 0044 and 0045): the register, change orders, billings, waivers and insurance.
   contractsData: (http) => async () => {
     const [

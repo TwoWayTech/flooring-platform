@@ -1,6 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { employeeChecklistItems, employees, locations, userProfiles } from "@workspace/db/company";
+import {
+  commissionAssignments,
+  commissionPlans,
+  commissionStatements,
+  employeeChecklistItems,
+  employees,
+  locations,
+  userProfiles,
+} from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
   dec,
@@ -11,7 +19,7 @@ import {
   SENSITIVE,
   type Employee,
 } from "@workspace/shared";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -22,7 +30,7 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
 import { notFound, refuse } from "../sales/sales-common";
-import { auditHr, lockEmployee, requireLinkedDecider } from "./hr-common";
+import { auditHr, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
 import { loadEmployees, personScope, selfCheck, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
@@ -99,7 +107,12 @@ export class PeopleService {
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     const seesContact = actor.access.permissions.has("hr.employee.view");
     await db.transaction(async (tx) => {
+      // The payroll lock first, as every pay and commission approval takes it: a manager or sign-in
+      // link changed here can't race a statement or pay-run approval reading them (third security
+      // review of PR #27). Lock order PAYROLL_LOCK → employee → user_profiles.
+      await tx.execute(PAYROLL_LOCK);
       const before = id ? await lockEmployee(tx, id) : null;
+      const linkedBefore = before ? await linkedUsers(tx, before.id) : [];
       const own = before !== null && (await selfCheck(tx, actor))(before.id);
       // Without hr.employee.view the saver never saw the contact fields, so the stored ones stay
       // (like the pay fields; second security review of PR #25). The birthday is not on the form.
@@ -137,6 +150,14 @@ export class PeopleService {
       // differ, so it could change its own work state, hire date or status unseen: only an Owner
       // writes people from one (third and fourth security reviews of PR #25; ADR 0046).
       await requireLinkedDecider(tx, actor.access);
+      await this.checkCommissionPeople(
+        tx,
+        actor,
+        linkedBefore,
+        values.managerId,
+        managerChanged(before, values),
+        input.userId,
+      );
       await this.checkManager(tx, employeeId, input.managerId);
       if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
       let row: EmployeeRow;
@@ -153,17 +174,21 @@ export class PeopleService {
           .returning()) as [EmployeeRow];
         await this.addChecklist(tx, row.id, "onboarding", ONBOARDING_STEPS, actor.access.userId);
       }
-      const link = input.userId === undefined ? {} : { userId: await this.link(tx, actor, row.id, input.userId) };
+      if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
+      // The sign-in link before and after, on every entry: whose commission is paid to this person
+      // follows it, so statement and pay-run approvals read link changes from here (third security
+      // review of PR #27; ADR 0048).
+      const linkedAfter = await linkedUsers(tx, row.id);
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: before ? "Edited employee" : "Added employee",
         targetType: "employee",
         targetId: row.id,
         targetLabel: row.name,
-        before: before ? editable(before) : null,
+        before: before ? { ...editable(before), userId: linkedBefore[0] ?? null } : null,
         // The rate itself never goes into the log, only whether it changed (CLAUDE.md rule 5).
         after: {
           ...editable(row),
-          ...link,
+          userId: linkedAfter[0] ?? null,
           ...(seesPay && before ? { payRateChanged: before.payRate !== row.payRate } : {}),
         },
       });
@@ -283,6 +308,48 @@ export class PeopleService {
       }),
     );
     return this.one(db, tenant, actor, employeeId);
+  }
+
+  /**
+   * The commission rules on a person's manager and sign-in link (ADR 0048). A person's commission is
+   * paid to the employee their sign-in is linked to, and their manager's user is paid an override on
+   * their sales, so:
+   * - only the Owner changes the manager of someone on a plan that pays their manager an override
+   *   (second security review of PR #27); any assignment counts, past or future, because statements
+   *   are worked out with today's manager;
+   * - only the Owner changes the sign-in link (link, unlink, or link another record to them) of
+   *   someone with any commission assignment or approved commission not yet paid, since a re-link
+   *   moves that pay to another employee (third security review of PR #27);
+   * - nobody, the Owner included, makes their own employee the manager of someone on an override
+   *   plan: the override would pay the one who set it, and nobody could then approve it.
+   */
+  private async checkCommissionPeople(
+    tx: CompanyDb,
+    actor: Actor,
+    linked: readonly string[],
+    managerId: string | null,
+    managerMoved: boolean,
+    linkTo: string | null | undefined,
+  ): Promise<void> {
+    const linkMoved =
+      linkTo !== undefined && (linkTo ? linked.length !== 1 || linked[0] !== linkTo : linked.length > 0);
+    if (!managerMoved && !linkMoved) return;
+    const people = [...new Set([...linked, ...(linkTo ? [linkTo] : [])])];
+    if (people.length === 0) return;
+    const onOverride = managerMoved && (await hasOverridePlan(tx, people));
+    if (!actor.access.isOwner) {
+      if (onOverride) {
+        throw refuse("This person earns their manager an override, so only the Owner can change their manager.");
+      }
+      if (linkMoved && (await hasCommissionHistory(tx, people))) {
+        throw refuse(
+          "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.",
+        );
+      }
+    }
+    if (onOverride && managerId && (await selfCheck(tx, actor))(managerId)) {
+      throw refuse("Nobody makes themselves the manager of someone whose sales pay them an override.");
+    }
   }
 
   /** A manager must be another live employee, and the chain may not loop back to this person. */
@@ -430,10 +497,14 @@ function checkSelfEdit(actor: Actor, before: EmployeeRow | null, own: boolean, v
   } else if (sessionEmail && emailKey(values.email) === sessionEmail) {
     throw refuse("Your own sign-in email can only be on your own record.");
   }
-  const managerChanged = before ? values.managerId !== before.managerId : values.managerId !== null;
-  if (managerChanged && actor.access.dataScope !== "all") {
+  if (managerChanged(before, values) && actor.access.dataScope !== "all") {
     throw refuse("Only someone who sees everyone's records can change a manager.");
   }
+}
+
+/** Whether a save sets or moves the person's manager: a new person with one, or a different one. */
+function managerChanged(before: EmployeeRow | null, values: EmployeeValues): boolean {
+  return before ? values.managerId !== before.managerId : values.managerId !== null;
 }
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
@@ -477,4 +548,58 @@ function editable(row: EmployeeRow) {
     commissionVisible,
     homeLocationId,
   };
+}
+
+/** The members whose sign-in is linked to this employee (user_profiles.employee_id), in a stable order. */
+async function linkedUsers(tx: CompanyDb, employeeId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ userId: userProfiles.userId })
+    .from(userProfiles)
+    .where(and(eq(userProfiles.employeeId, employeeId), isNull(userProfiles.deletedAt)))
+    .orderBy(asc(userProfiles.userId));
+  return rows.map((row) => row.userId);
+}
+
+/** Whether any of these people has an assignment, past or future, to a plan that pays an override. */
+async function hasOverridePlan(tx: CompanyDb, userIds: readonly string[]): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: commissionAssignments.id })
+    .from(commissionAssignments)
+    .innerJoin(commissionPlans, eq(commissionPlans.id, commissionAssignments.planId))
+    .where(
+      and(
+        inArray(commissionAssignments.userId, [...userIds]),
+        isNull(commissionAssignments.deletedAt),
+        isNull(commissionPlans.deletedAt),
+        gt(commissionPlans.overridePct, "0"),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Whether any of these people has commission a re-link would move to another employee (ADR 0048):
+ * an assignment to any plan, past or future, or any approved statement. A statement already in an
+ * approved run still counts, because a reopen hands it back to the next run (fourth review of PR #27).
+ */
+async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[]): Promise<boolean> {
+  const [assigned] = await tx
+    .select({ id: commissionAssignments.id })
+    .from(commissionAssignments)
+    .where(and(inArray(commissionAssignments.userId, [...userIds]), isNull(commissionAssignments.deletedAt)))
+    .limit(1);
+  if (assigned) return true;
+  const [waiting] = await tx
+    .select({ id: commissionStatements.id })
+    .from(commissionStatements)
+    .where(
+      and(
+        inArray(commissionStatements.userId, [...userIds]),
+        eq(commissionStatements.status, "approved"),
+        isNull(commissionStatements.deletedAt),
+      ),
+    )
+    .limit(1);
+  return waiting !== undefined;
 }

@@ -27,6 +27,12 @@ export function monthOf(iso: string): string {
   return iso.slice(0, 7);
 }
 
+/** The last day of a month given as YYYY-MM, as YYYY-MM-DD. */
+export function monthEnd(month: string): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
 /** The 12 months ending with the month of `today`, oldest first, as YYYY-MM. */
 export function last12Months(today: string): string[] {
   const [y, m] = today.split("-").map(Number) as [number, number];

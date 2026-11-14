@@ -43,6 +43,12 @@ describe("mandatory MFA by role content (P10 part 2)", () => {
     for (const key of MFA_REQUIRED_KEYS) expect(ALL_PERMISSION_KEYS).toContain(key);
   });
 
+  it("covers every commission key, as it covers pay (ADR 0048): commission is pay", () => {
+    const commission = ALL_PERMISSION_KEYS.filter((key) => key.startsWith("hr.commission."));
+    expect(commission.length).toBe(4);
+    for (const key of commission) expect(MFA_REQUIRED_KEYS).toContain(key);
+  });
+
   it("requires MFA for the Owner, Accountant and HR manager templates and their copies, and no other template", () => {
     for (const key of ["owner", "accountant", "hr"] as const) {
       expect(roleRequiresMfa(template(key))).toBe(true);

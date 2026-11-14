@@ -1,0 +1,390 @@
+import { describe, expect, it } from "vitest";
+import {
+  assignmentChanges,
+  commissionLines,
+  commissionPlanProblem,
+  commissionStatementPosting,
+  commissionStatementRows,
+  DEFAULT_ACCOUNTS,
+  frozenThrough,
+  hideMarginBase,
+  monthEnd,
+  payrollPosting,
+  postingProblem,
+  reversalDecisionProblem,
+  reversedLines,
+  statementApprovalProblem,
+  totals,
+  type CommissionInputs,
+  type CommissionPlan,
+  type CommissionStatement,
+  type CommissionStatementRow,
+  type Invoice,
+  type Payment,
+} from "../src";
+
+const sides = (lines: { account: string; debit: string; credit: string; locationId: string | null }[]) =>
+  lines.map((entry) => [entry.account, entry.debit, entry.credit, entry.locationId]);
+
+const statement = { id: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c", month: "2026-10" };
+
+/** Commission postings (commissions.md rule 11; ADR 0048). */
+describe("commission postings", () => {
+  it("adds Commissions to the default chart, as an expense next to Wages and Contract Labor", () => {
+    expect(DEFAULT_ACCOUNTS.find((a) => a.key === "commissions_expense")).toMatchObject({
+      code: "6060",
+      name: "Commissions",
+      type: "expense",
+    });
+    expect(new Set(DEFAULT_ACCOUNTS.map((a) => a.code)).size).toBe(DEFAULT_ACCOUNTS.length);
+  });
+
+  it("accrues an approved statement's payable: debit Commissions at the home location, credit Accrued Payroll, dated the month's end", () => {
+    const draft = commissionStatementPosting(statement, "1234.56", "loc-a");
+    expect(draft).toMatchObject({
+      event: "commission.approved",
+      sourceType: "commission_statement",
+      sourceId: statement.id,
+      sourceNumber: "CS 2026-10",
+      date: "2026-10-31",
+      memo: "Commission statement CS-2e3f4a5c, 2026-10",
+    });
+    expect(sides(draft.lines)).toEqual([
+      ["commissions_expense", "1234.56", "0.00", "loc-a"],
+      ["accrued_payroll", "0.00", "1234.56", null],
+    ]);
+    expect(postingProblem(draft.lines)).toBeNull();
+    expect(postingProblem(reversedLines(draft.lines))).toBeNull();
+    // The memo names the statement, never the person or the amount.
+    expect(draft.memo).not.toMatch(/1234/);
+  });
+
+  it("posts nothing for a statement with nothing to pay", () => {
+    expect(commissionStatementPosting(statement, "0.00", null).lines).toEqual([]);
+  });
+
+  it("dates by the month's last day, leap years included", () => {
+    expect(monthEnd("2028-02")).toBe("2028-02-29");
+    expect(monthEnd("2026-02")).toBe("2026-02-28");
+    expect(monthEnd("2026-12")).toBe("2026-12-31");
+  });
+
+  it("leaves accrued commission out of the run's Wages, so it is expensed once", () => {
+    const run = { sourceId: "run-1", period: { start: "2026-11-02", end: "2026-11-15" } };
+    const draft = payrollPosting(run, [
+      { grossPay: "2500.00", commissionPay: "900.00", locationId: "loc-a" },
+      { grossPay: "1000.00", locationId: "loc-a" },
+      // A gross pulled below the commission by deductions never posts a negative wage.
+      { grossPay: "100.00", commissionPay: "150.00", locationId: "loc-b" },
+    ]);
+    expect(sides(draft.lines)).toEqual([
+      ["wages", "2600.00", "0.00", "loc-a"],
+      ["accrued_payroll", "0.00", "2600.00", null],
+    ]);
+    const statementEntry = commissionStatementPosting(statement, "900.00", "loc-a");
+    const all = [...statementEntry.lines, ...draft.lines];
+    const sums = totals(all);
+    expect(sums.debit.eq(sums.credit)).toBe(true);
+    // Accrued Payroll ends at the gross the provider pays: 2600.00 of wages plus 900.00 of commission.
+    const accrued = all.filter((l) => l.account === "accrued_payroll").reduce((t, l) => t + Number(l.credit), 0);
+    expect(accrued).toBe(3500);
+  });
+});
+
+const plan = (patch: Partial<CommissionPlan> = {}): CommissionPlan => ({
+  id: "p",
+  name: "Test",
+  version: 1,
+  status: "active",
+  effectiveFrom: "2026-01-01",
+  effectiveTo: null,
+  basis: "paid_revenue",
+  baseRatePct: "5",
+  monthlyTarget: "100000",
+  tierMode: "marginal",
+  tiers: [],
+  overridePct: "0",
+  draw: { kind: "none", monthlyAmount: "0" },
+  clawbackDays: 90,
+  ...patch,
+});
+
+const invoice = (id: string, patch: Partial<Invoice> = {}): Invoice =>
+  ({
+    id,
+    salesRepId: "dana",
+    voidedAt: null,
+    isReturn: false,
+    creditForInvoiceId: null,
+    issuedAt: "2026-08-01",
+    subtotal: "1000.00",
+    cost: "600.00",
+    total: "1000.00",
+    ...patch,
+  }) as Invoice;
+
+const payment = (id: string, invoiceId: string, date: string): Payment =>
+  ({
+    id,
+    invoiceId,
+    amount: "1000.00",
+    status: "confirmed",
+    recordedAt: `${date}T10:00`,
+    reviewedAt: null,
+    voidedAt: null,
+  }) as Payment;
+
+function rowsFor(
+  over: Partial<CommissionInputs> = {},
+  statements: CommissionStatement[] = [],
+): CommissionStatementRow[] {
+  const inputs: CommissionInputs = {
+    plans: [plan()],
+    assignments: [
+      {
+        id: "a1",
+        userId: "dana",
+        planId: "p",
+        effectiveFrom: "2026-01-01",
+        effectiveTo: null,
+        monthlyTargetOverride: null,
+        acknowledgement: null,
+      },
+    ],
+    invoices: [invoice("i1"), invoice("i2")],
+    payments: [payment("pay-1", "i1", "2026-08-10"), payment("pay-2", "i2", "2026-09-10")],
+    adjustments: [],
+    managerOf: () => null,
+    frozen: new Set(),
+    today: "2026-11-14",
+    ...over,
+  };
+  return commissionStatementRows({
+    inputs,
+    lines: commissionLines(inputs),
+    statements,
+    adjustments: [],
+    nameOf: () => "Dana",
+  });
+}
+
+const stored = (month: string, status: CommissionStatement["status"]): CommissionStatement => ({
+  id: `s-${month}`,
+  userId: "dana",
+  month,
+  status,
+  approvedBy: "HR",
+  approvedAt: `${month}-28T10:00`,
+  payPeriodId: null,
+});
+
+/** Statement rules the API and the demo share (commissions.md rules 9 to 14; ADR 0048). */
+describe("commission statements", () => {
+  it("builds a row per month for everyone on a plan, with figures and status", () => {
+    const rows = rowsFor({}, [stored("2026-08", "paid")]);
+    expect(rows).toHaveLength(12);
+    const august = rows.find((r) => r.month === "2026-08")!;
+    expect(august).toMatchObject({ earned: "50.00", payable: "50.00", status: "paid", name: "Dana", monthEnded: true });
+    expect(rows.find((r) => r.month === "2026-11")).toMatchObject({ status: "draft", monthEnded: false });
+  });
+
+  it("approves only an ended, open month with no review waiting, and earlier months first", () => {
+    const rows = rowsFor();
+    expect(statementApprovalProblem(rows, "dana", "2026-11", "2026-11-14")).toMatch(/month has ended/);
+    expect(statementApprovalProblem(rows, "dana", "2026-09", "2026-11-14")).toMatch(/2026-08 first/);
+    expect(statementApprovalProblem(rows, "dana", "2026-08", "2026-11-14")).toBeNull();
+    expect(statementApprovalProblem(rows, "nobody", "2026-08", "2026-11-14")).toMatch(/no longer exists/);
+    const approved = rowsFor({}, [stored("2026-08", "approved")]);
+    expect(statementApprovalProblem(approved, "dana", "2026-08", "2026-11-14")).toMatch(/already approved/);
+    expect(statementApprovalProblem(approved, "dana", "2026-09", "2026-11-14")).toBeNull();
+  });
+
+  it("freezes every month up to the latest approved or paid one", () => {
+    expect(frozenThrough([stored("2026-07", "paid"), stored("2026-09", "approved")], "dana")).toBe("2026-09");
+    expect(frozenThrough([stored("2026-07", "paid")], "luis")).toBeNull();
+  });
+
+  it("decides only a reversal waiting for review on that statement", () => {
+    const row = rowsFor()[0]!;
+    const waiting = {
+      ...row,
+      lines: [{ ...row.lines[0]!, id: "rv-x", kind: "reversal" as const, reversalState: "needs_review" as const }],
+    };
+    expect(reversalDecisionProblem(waiting, "rv-x")).toBeNull();
+    expect(reversalDecisionProblem(waiting, "rv-other")).toMatch(/not waiting/);
+    expect(reversalDecisionProblem(undefined, "rv-x")).toMatch(/not waiting/);
+    const applied = { ...waiting, lines: [{ ...waiting.lines[0]!, reversalState: "applied" as const }] };
+    expect(reversalDecisionProblem(applied, "rv-x")).toMatch(/not waiting/);
+  });
+
+  it("hides the base of margin plan lines, which is margin dollars, and keeps paid revenue bases", () => {
+    const margin = plan({ id: "m", basis: "gross_margin" });
+    const rows = rowsFor({
+      plans: [plan(), margin],
+      assignments: [
+        {
+          id: "a1",
+          userId: "dana",
+          planId: "m",
+          effectiveFrom: "2026-01-01",
+          effectiveTo: null,
+          monthlyTargetOverride: null,
+          acknowledgement: null,
+        },
+      ],
+    });
+    const lines = rows.flatMap((r) => r.lines);
+    expect(lines.length).toBeGreaterThan(0);
+    // 40% margin on 1000.00 collected.
+    expect(lines[0]!.base).toBe("400.00");
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
+    expect(hidden.every((l) => l.base === null)).toBe(true);
+    expect(hidden[0]!.commission).toBe(lines[0]!.commission);
+    const revenue = hideMarginBase(rowsFor()).flatMap((r) => r.lines);
+    expect(revenue.every((l) => l.base !== null)).toBe(true);
+  });
+
+  it("hides margin dollars on a split sale by the basis that set the base: the co-rep, the override and the reversal", () => {
+    const on = (id: string, userId: string, planId: string) => ({
+      id,
+      userId,
+      planId,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      monthlyTargetOverride: null,
+      acknowledgement: null,
+    });
+    // Dana (margin plan) sold it and shares half with Luis (paid revenue plan with an override for Mia).
+    const sale = invoice("i1", {
+      commissionSplit: [
+        { userId: "dana", pct: "50" },
+        { userId: "luis", pct: "50" },
+      ],
+    });
+    const credit = invoice("c1", {
+      creditForInvoiceId: "i1",
+      issuedAt: "2026-08-20",
+      subtotal: "100.00",
+      cost: "60.00",
+      total: "100.00",
+    });
+    const rows = rowsFor({
+      plans: [plan({ overridePct: "1" }), plan({ id: "m", basis: "gross_margin" })],
+      assignments: [on("a1", "dana", "m"), on("a2", "luis", "p")],
+      invoices: [sale, credit],
+      payments: [payment("pay-1", "i1", "2026-08-10")],
+      managerOf: (userId) => (userId === "luis" ? "mia" : null),
+    });
+    const lines = rows.flatMap((r) => r.lines);
+    // 400.00 of margin split in two: the co-rep's line is on a paid revenue plan, yet its base is margin.
+    const coRep = lines.filter((l) => l.userId === "luis" && l.kind === "earned");
+    expect(coRep).toHaveLength(1);
+    expect(coRep[0]).toMatchObject({ planId: "p", basis: "gross_margin", base: "200.00" });
+    expect(lines.find((l) => l.kind === "override")).toMatchObject({
+      userId: "mia",
+      planId: "p",
+      basis: "gross_margin",
+    });
+    const reversals = lines.filter((l) => l.kind === "reversal");
+    expect(reversals.length).toBeGreaterThan(0);
+    expect(reversals.every((l) => l.basis === "gross_margin")).toBe(true);
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
+    expect(hidden).toHaveLength(lines.length);
+    expect(hidden.every((l) => l.base === null)).toBe(true);
+  });
+
+  it("hides every base on an invoice whose plan changed basis between payments, so revenue beside margin gives no cost away", () => {
+    const on = (id: string, planId: string, from: string, to: string | null) => ({
+      id,
+      userId: "dana",
+      planId,
+      effectiveFrom: from,
+      effectiveTo: to,
+      monthlyTargetOverride: null,
+      acknowledgement: null,
+    });
+    // Half of I1 is paid in August on a margin plan, the rest in September on a paid revenue plan.
+    const rows = rowsFor({
+      plans: [plan(), plan({ id: "m", basis: "gross_margin" })],
+      assignments: [on("a1", "m", "2026-01-01", "2026-08-31"), on("a2", "p", "2026-09-01", null)],
+      invoices: [invoice("i1"), invoice("i2")],
+      payments: [
+        { ...payment("pay-1", "i1", "2026-08-10"), amount: "500.00" },
+        { ...payment("pay-2", "i1", "2026-09-10"), amount: "500.00" },
+        payment("pay-3", "i2", "2026-09-12"),
+      ],
+    });
+    const onI1 = rows.flatMap((r) => r.lines).filter((l) => l.invoiceId === "i1");
+    expect(onI1.map((l) => l.basis).sort()).toEqual(["gross_margin", "paid_revenue"]);
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
+    expect(hidden.filter((l) => l.invoiceId === "i1").every((l) => l.base === null)).toBe(true);
+    // I2, paid only under the paid revenue plan, keeps its base.
+    expect(hidden.find((l) => l.invoiceId === "i2")!.base).toBe("1000.00");
+  });
+
+  it("starts the window with the carry of the months before it, so a deficit leaving the window still carries", () => {
+    // Paid in 2025-10 (approved), voided in 2025-11: a 50.00 clawback in a month no longer among the
+    // last twelve on 2026-11-14. It carries until August's 50.00 recovers it.
+    const rows = rowsFor({
+      assignments: [
+        {
+          id: "a1",
+          userId: "dana",
+          planId: "p",
+          effectiveFrom: "2025-01-01",
+          effectiveTo: null,
+          monthlyTargetOverride: null,
+          acknowledgement: null,
+        },
+      ],
+      invoices: [invoice("i9"), invoice("i1"), invoice("i2")],
+      payments: [
+        { ...payment("pay-9", "i9", "2025-10-05"), status: "voided", voidedAt: "2025-11-20T10:00" } as Payment,
+        payment("pay-1", "i1", "2026-08-10"),
+        payment("pay-2", "i2", "2026-09-10"),
+      ],
+      frozen: new Set(["dana|2025-10"]),
+    });
+    expect(rows[0]).toMatchObject({ month: "2025-12", carryIn: "50.00", carryOut: "50.00", payable: "0.00" });
+    expect(rows.find((r) => r.month === "2026-08")).toMatchObject({
+      earned: "50.00",
+      carryIn: "50.00",
+      payable: "0.00",
+    });
+    expect(rows.find((r) => r.month === "2026-09")).toMatchObject({ carryIn: "0.00", payable: "50.00" });
+  });
+
+  it("checks a plan's terms", () => {
+    const ok = plan({ tiers: [{ fromPctOfTarget: "100", ratePct: "6" }] });
+    expect(commissionPlanProblem(ok)).toBeNull();
+    expect(commissionPlanProblem({ ...ok, name: " " })).toMatch(/name/);
+    expect(commissionPlanProblem({ ...ok, baseRatePct: "101" })).toMatch(/base rate/);
+    expect(commissionPlanProblem({ ...ok, baseRatePct: "-1" })).toMatch(/base rate/);
+    expect(commissionPlanProblem({ ...ok, monthlyTarget: "10.555" })).toMatch(/target/);
+    expect(
+      commissionPlanProblem({
+        ...ok,
+        tiers: [
+          { fromPctOfTarget: "100", ratePct: "6" },
+          { fromPctOfTarget: "100.0", ratePct: "7" },
+        ],
+      }),
+    ).toMatch(/same point/);
+    expect(commissionPlanProblem({ ...ok, draw: { kind: "none", monthlyAmount: "500" } })).toMatch(/no draw/);
+    expect(commissionPlanProblem({ ...ok, draw: { kind: "recoverable", monthlyAmount: "500" } })).toBeNull();
+    expect(commissionPlanProblem({ ...ok, clawbackDays: 1.5 })).toMatch(/clawback/);
+  });
+
+  it("ends a running assignment the day before a new one and replaces one starting on or after it", () => {
+    const existing = [
+      { id: "old", userId: "dana", effectiveFrom: "2025-01-01", effectiveTo: null },
+      { id: "closed", userId: "dana", effectiveFrom: "2024-01-01", effectiveTo: "2024-12-31" },
+      { id: "later", userId: "dana", effectiveFrom: "2026-12-01", effectiveTo: null },
+      { id: "other", userId: "luis", effectiveFrom: "2025-01-01", effectiveTo: null },
+    ];
+    expect(assignmentChanges(existing, "dana", "2026-11-01")).toEqual({
+      end: [{ id: "old", effectiveTo: "2026-10-31" }],
+      remove: ["later"],
+    });
+  });
+});
