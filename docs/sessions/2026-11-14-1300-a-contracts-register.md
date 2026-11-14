@@ -1,0 +1,26 @@
+# Session 2026-11-14 13:00, A (Claude): contracts part 1, the register
+
+The owner's queue of 2026-11-14, task 5 (docs/real-build-plan.md week 10). Branch `feat/contracts-register`, from main at `34471ea` (PR #22 merged as `069ccb3`).
+
+## Read first
+docs/product-spec/contracts.md (all of it), the demo's contract-actions.ts, packages/shared/src/contracts, ADRs 0038 to 0043.
+
+## Plan
+Contracts lands in two parts, like sales:
+1. **This part (ADR 0044):** the register (draft, send, recall, simulated signature, complete, close, terminate, renew, files), lines, change orders, lien waivers and insurance on the API, with data scope by rep and branch; read-only billings; the seed (no billings); `contractsData()` for the contract screens.
+2. **Part 2:** progress billings and retainage releases raising invoices or subcontract bills, with their postings and voids; the billing seed.
+
+The build was handed to a general-purpose subagent with a full brief (CLAUDE.md rules, the spec, the patterns of the expenses and payables modules); reviews and tests below.
+
+## Safest options taken (ADR 0044, blueprint-delta)
+- **Scope:** waivers and certificates follow their contract's data scope.
+- **Rep and branch:** a new contract's rep is always the creator, and its branch the creator's (company-wide scope may choose).
+- **Customers:** a customer must be in the creator's scope.
+- **Estimated cost:** it survives a save by someone without view_sensitive, or a save that leaves it out.
+- **Signature:** no PDF on the API; a SHA-256 of the signed terms is kept.
+- **Close:** it also counts unpaid subcontract bills.
+- **Renew:** it makes a fresh draft.
+- **Stricter checks than the demo:**
+  - masters take no completion, change orders or waivers;
+  - change-order rows name only their own contract's lines;
+  - a waiver's payment must belong to the contract's party.
