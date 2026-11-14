@@ -98,7 +98,7 @@ export class InvoicesService {
   async invoices(tenant: TenantContext, access: RequestAccess): Promise<Invoice[]> {
     const { zone } = await companyClock(this.control.db, tenant);
     const list = await loadInvoices(await this.tenancy.db(tenant), zone);
-    return list.filter((invoice) => seesDocument(access, invoice));
+    return list.filter((invoice) => seesDocument(access, invoice)).map((invoice) => contractCostShown(access, invoice));
   }
 
   /** Payments on invoices the person may see. */
@@ -846,4 +846,21 @@ export class InvoicesService {
       this.logger.warn("An invoice was marked sent, but its email could not be queued.");
     }
   }
+}
+
+/**
+ * A contract invoice's cost is the contract's estimated cost in proportion (plan K-10), so it is
+ * shown only with `contracts.contract.view_sensitive` as well (CLAUDE.md rule 5; PR #24 review).
+ * Ordinary invoices keep the response interceptor's `inventory.product.view_sensitive` rule.
+ */
+export function contractCostShown(access: Pick<RequestAccess, "permissions">, invoice: Invoice): Invoice {
+  if (!invoice.contractId || access.permissions.has("contracts.contract.view_sensitive")) return invoice;
+  const lines = invoice.lines.map((line) => {
+    const copy: Record<string, unknown> = { ...line };
+    delete copy.unitCost;
+    return copy;
+  });
+  const shown: Record<string, unknown> = { ...invoice, lines };
+  delete shown.cost;
+  return shown as unknown as Invoice;
 }

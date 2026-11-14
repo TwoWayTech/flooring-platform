@@ -836,4 +836,31 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
       for (const money of ["500.00", "475.00", "25.00", "gross", "total"]) expect(text).not.toContain(money);
     }
   });
+
+  it("refuses a billing whose retainage would outrun what it bills, so no invoice goes negative", async () => {
+    // 10 % on work, 0 % on stored materials: moving 1000.00 of stored materials into work holds 100.00
+    // of retainage on no new gross, so with 10.00 of new work the invoice would come to about -80.
+    const id = await activate(
+      customerForm({
+        retainagePct: "10",
+        storedRetainagePct: "0",
+        lines: [
+          line({ code: "S1", category: "labor", scheduledValue: "1000.00" }),
+          line({ code: "S2", category: "labor", scheduledValue: "500.00" }),
+        ],
+      }),
+    );
+    const [first, second] = await linesOf(id);
+    await postBilling("owner", id, [[first!.id as string, "0.00", "1000.00"]]);
+    const before = await balances();
+    const refused = await call("post", `/contracts/${id}/billings`, "owner").send(
+      billingBody([
+        [first!.id as string, "1000.00", "0.00"],
+        [second!.id as string, "10.00", "0.00"],
+      ]),
+    );
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain("more retainage");
+    expectSame(before, await balances());
+  });
 });

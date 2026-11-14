@@ -36,3 +36,14 @@ The build was handed to a general-purpose subagent with a full brief; tests and 
 - typecheck, lint: pass. `pnpm test`: shared 385, api 56, db 11, web 13, providers 11.
 - `seed.int.test.ts`: 10 of 10.
 - contracts, invoices, payables and accounting integration tests: 46 of 46.
+
+## Reviews
+- **Test-writer:** 11 tests, no product bugs.
+- **First security review:** 2 blocking.
+  - Fixed: retainage could outrun the gross when lines carry different rates, so an invoice or bill could go negative and read as refundable customer credit. A negative document is now refused, with an integration test. The billing void also refuses once credit from its invoice was applied or refunded, as the invoice void does.
+  - Already done: the API tests were not yet committed when it looked; they were committed in `ccb9924`.
+  - Should-fix items done:
+    - a contract invoice's cost and line cost are stripped without `contracts.contract.view_sensitive` too (`contractCostShown`);
+    - the bill a void deletes gets its own audit entry, with no money;
+    - `updatedAt` is set on the billing's document link.
+- **Second security review:** see PR #24.

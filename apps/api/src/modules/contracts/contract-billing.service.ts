@@ -40,7 +40,7 @@ import { NotificationService } from "../../core/notifications/notification.servi
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadSuppliers } from "../purchasing/purchasing-records";
-import { invoiceState, lockCustomer } from "../sales/invoice-ledger";
+import { creditNow, invoiceState, lockCustomer } from "../sales/invoice-ledger";
 import { loadMoneyFormat } from "../sales/invoice-records";
 import { insertInvoice, takeInvoiceNumber } from "../sales/invoice-writes";
 import { companyClock, notFound, refuse, type CompanyClock } from "../sales/sales-common";
@@ -92,6 +92,10 @@ const POSTED_EVENT = "contract_billing.posted" as const;
  * costs only shape the invoice's cost share; they never appear in a response, an audit entry or
  * an error.
  */
+/** A billing whose retainage outruns its gross and tax would make a negative document (PR #24 review). */
+const NEGATIVE_DOCUMENT =
+  "This billing would hold back more retainage than it bills. Bill the work and stored materials together, or lower the retainage.";
+
 @Injectable()
 export class ContractBillingService {
   private readonly logger = new Logger("ContractBilling");
@@ -261,7 +265,23 @@ export class ContractBillingService {
         .limit(1);
       if (latest?.id !== billingId) throw refuse("Only the latest billing can be voided.");
       if (billing.invoiceId) await this.voidInvoice(tenant, actor, tx, clock, billing.invoiceId, why);
-      if (billing.billId) await this.dropBill(tx, billing.billId);
+      if (billing.billId) {
+        await this.dropBill(tx, billing.billId);
+        // The bill's own trail, with no money (supplier money stays out of the audit, ADR 0042).
+        await this.auditLog.record(
+          tenant,
+          actor.audit,
+          {
+            category: "data",
+            action: "Deleted bill for a voided contract billing",
+            targetType: "bill",
+            targetId: billing.billId,
+            targetLabel: `${row.number} #${billing.number}`,
+            after: { reason: why },
+          },
+          tx,
+        );
+      }
       await this.books.reverse(
         tx,
         { sourceType: "contract_billing", sourceId: billingId, event: POSTED_EVENT },
@@ -357,6 +377,10 @@ export class ContractBillingService {
     };
     if (row.direction === "customer") {
       const invoice = await this.raiseInvoice(tx, actor, clock, row, contract, lines, billing, amounts);
+      // Retainage can outrun the gross when lines carry different rates; a negative invoice would read
+      // as overpaid and become refundable credit, so it is refused and the transaction rolls back
+      // (PR #24 review). A negative amount is a credit note's job.
+      if (dec(invoice.total).lt(0)) throw refuse(NEGATIVE_DOCUMENT);
       await this.books.post(tx, contractInvoicePosting(ref, invoice), by);
       await this.auditLog.record(
         tenant,
@@ -382,6 +406,7 @@ export class ContractBillingService {
       { gross: billing.gross, withheld: billing.withheld, released: billing.released },
       { id: uuidv7(), number: `${row.number}-${billing.number}`, issuedAt: clock.day, billingId: billing.id },
     );
+    if (dec(bill.total).lt(0)) throw refuse(NEGATIVE_DOCUMENT);
     await tx.insert(supplierBills).values({
       id: bill.id,
       number: bill.number,
@@ -399,7 +424,10 @@ export class ContractBillingService {
       retainageReleased: billing.released,
       createdBy: by,
     });
-    await tx.update(contractBillings).set({ billId: bill.id }).where(eq(contractBillings.id, billing.id));
+    await tx
+      .update(contractBillings)
+      .set({ billId: bill.id, updatedAt: new Date() })
+      .where(eq(contractBillings.id, billing.id));
     await this.books.post(
       tx,
       contractBillPosting(
@@ -499,6 +527,15 @@ export class ContractBillingService {
       .where(and(eq(invoices.creditForInvoiceId, invoiceId), isNull(invoices.voidedAt), isNull(invoices.deletedAt)))
       .limit(1);
     if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
+    // Credit this invoice gave the customer that was already spent can't be taken back (as voidInvoice).
+    if (
+      dec(ledger.overpaid).gt(0) &&
+      (await creditNow(tx, this.control.db, invoice.customerId, clock)).lt(ledger.overpaid)
+    ) {
+      throw refuse(
+        `Credit from invoice ${invoice.number} was already applied or refunded, so the billing can't be voided.`,
+      );
+    }
     const now = new Date();
     const pending = payments.filter((payment) => payment.status === "pending");
     if (pending.length > 0) {
