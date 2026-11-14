@@ -235,9 +235,10 @@ export class ContractsService {
         tx,
         before ? "Edited contract" : "Added contract",
         row,
-        before ? editable(before) : null,
-        // Each line's code and value, so a schedule change can be traced; costs stay out (rule 5).
-        { ...editable(row), lines: lines.map((line) => ({ code: line.code, scheduledValue: line.scheduledValue })) },
+        // Each line's code, description and value before and after, so a schedule change (a swap
+        // included) can be traced; costs stay out (rule 5; PR #23 reviews).
+        before ? { ...editable(before), lines: kept.map(traced) } : null,
+        { ...editable(row), lines: lines.map(traced) },
       );
     });
     return (await loadContracts(db, this.control.db, clock.zone, [savedId]))[0]!;
@@ -679,6 +680,11 @@ function linesToStore(lines: readonly ContractLineFields[], kept: readonly Contr
       seesCost && line.estimatedCost !== undefined ? line.estimatedCost : (keptCost.get(line.code.trim()) ?? "0"),
     ),
   }));
+}
+
+/** What the save audit keeps of a line: its code, description and value, never its cost. */
+function traced(line: { code: string; description: string; scheduledValue: string }) {
+  return { code: line.code, description: line.description, scheduledValue: line.scheduledValue };
 }
 
 /** A SHA-256 of the signed terms and schedule, as the signature record's hash (ADR 0044). */

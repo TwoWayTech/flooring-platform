@@ -720,7 +720,11 @@ describe("contracts register (contracts part 1)", () => {
     expect(toMaster.status).toBe(400);
     expect(toMaster.body.message).not.toContain("cost estimate");
     expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
-    expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
+    // Someone who sees costs may make it a master; its lines go.
+    await call("put", `/contracts/${id}`, "owner")
+      .send(customerForm({ kind: "master", lines: [] }))
+      .expect(200);
+    expect(await linesOf(id, "owner")).toEqual([]);
   });
 
   it("adds files and serves them through GET /files/:id only within the contract's scope", async () => {
@@ -851,5 +855,21 @@ describe("contracts register (contracts part 1)", () => {
     });
     expect(refused.status).toBe(400);
     expect(refused.body.message).toContain("above zero");
+  });
+
+  it("gives a change order's new line a code no live line uses", async () => {
+    const id = await activate(customerForm({ lines: [line({ code: "CO-1.1" })] }));
+    const order = await call("post", `/contracts/${id}/change-orders`, "owner")
+      .send({
+        reason: "Extra room",
+        lines: [{ contractLineId: null, description: "Hall", category: "labor", amountDelta: "75.00" }],
+      })
+      .expect(201);
+    await call("post", `/change-orders/${order.body.id}/decision`, "owner")
+      .send({ action: "approve", reason: "" })
+      .expect(201);
+    const codes = (await linesOf(id)).map((entry) => entry.code as string);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(codes).toContain("CO-1.1-2");
   });
 });

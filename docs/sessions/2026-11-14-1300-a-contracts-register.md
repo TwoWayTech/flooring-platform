@@ -39,7 +39,7 @@ The build was handed to a general-purpose subagent with a full brief (CLAUDE.md 
   - Should-fix items done: the web reads `/change-orders` as empty when billing is off (`seenOrOff`); a new change-order line at or below zero is refused on submit too; the save audit records each line's code and value (costs stay out).
 - **Third security review:** 1 blocking, fixed. Saving a draft as a master skipped the line checks and dropped every line, so a save back to a project reset all costs. Now the same checks run for a master, and the switch is refused for someone without view_sensitive (test).
   - Should-fix items done: without view_sensitive no stored line may lose its code, costed or not, and the refusal is neutral, so it reveals nothing; stored codes must be unique; a change order's new line takes a code no live line uses.
-- **Fourth security review:** see PR #23.
+- **Fourth security review:** PASS, no blocking findings. Should-fix items done: the save audit traces each line's code, description and value before and after (costs stay out), so a swap between kept codes can be seen; tests for the change-order code collision and a master switch by someone who sees costs. Notes kept: waivers and certificates don't check the contract's status (a spec question).
 
 ## Commands run and results
-- `contracts.int.test.ts`: 13 of 13 after the second review. Full `pnpm test` and `pnpm test:api` before it: all pass (API 244, db 32, shared 378). `pnpm typecheck` and lint pass.
+- `contracts.int.test.ts`: 14 of 14 after the fourth review. Full `pnpm test` and `pnpm test:api` before it: all pass (API 244, db 32, shared 378). `pnpm typecheck` and lint pass.
