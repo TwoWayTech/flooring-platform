@@ -24,3 +24,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #17 | fix(deploy): only demo deploys on Vercel; self-merge counts GitHub Actions; guard ignores PR comment text | @TwoWayTech | fix/deploy-vercel-demo-only | `9b6cbd0` |
 | 2026-11-14 | #19 | P12: accounting settings and bank accounts per payment method (ADR 0040) | @TwoWayTech | feat/ledger-accounting-settings | `157f8ae` |
 | 2026-11-14 | #20 | P12 part 2: expenses on the API with postings and recurring drafts (ADR 0041) | @TwoWayTech | feat/finance-expenses | `1ba1019` |
+| 2026-11-14 | #21 | P12 part 3: bills, supplier payments and stock postings (ADR 0042) | @TwoWayTech | feat/ledger-bills-supplier-payments | `881712f` |
