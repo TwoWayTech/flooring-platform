@@ -13,7 +13,8 @@
  *   push into a push to main), and any force, mirror, prune or delete push;
  * - `git config` writes that steer pushes (`remote.*.push`, `push.default`, `branch.*.merge`).
  * Words are found anywhere in a segment, so wrappers such as `pnpm exec`, `npx` or `node -e` are
- * caught. A command it cannot read is blocked (fail closed). It cannot see through deliberately
+ * caught. The quoted title and body of a PR or issue call are prose and are not read
+ * (`withoutProse`). A command it cannot read is blocked (fail closed). It cannot see through deliberately
  * split words; GitHub's own settings are the backstop (docs/STATUS.md). PR #10 security reviews.
  */
 import { readFileSync } from "node:fs";
@@ -31,6 +32,31 @@ const WORK_BRANCH = /^(feat|fix)\/[\w./-]+$/;
 
 /** `git config` writes that would change where a push goes. */
 const PUSH_CONFIG = /\bgit\b.*\bconfig\b.*\b(remote\.[^\s.]+\.push|push\.default|branch\.[^\s]+\.merge)\b/;
+
+/**
+ * A `gh pr|issue create|edit|comment|review` call at the very start of the command, up to one
+ * quoted `--title` or `--body`. The prefix holds no quote, `$`, backtick or backslash, so the
+ * quote really opens a string. A single-quoted string is literal in POSIX shells and PowerShell.
+ * A double-quoted one counts only without `$`, backtick or backslash, so nothing in it expands
+ * and it cannot end early.
+ */
+const PROSE_ARGUMENT =
+  /^(gh\s+(?:pr|issue)\s+(?:create|edit|comment|review)\b[^;&|\n'"`$\\]*?\s(?:--body|-b|--title|-t)(?:\s+|=))('(?:[^']|'')*'|"[^"`$\\\n]*")/;
+
+/**
+ * The command with the quoted title and body of a PR or issue call replaced by a placeholder, so
+ * a comment that quotes a merge or push command is not mistaken for one (owner, 2026-11-14). Only
+ * literal text at the start of the command is masked; anything after it is still checked.
+ */
+function withoutProse(command) {
+  let text = command;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(PROSE_ARGUMENT, "$1TEXT");
+  } while (text !== previous);
+  return text;
+}
 
 /** One part of a command line, at `;`, `&&`, `||`, `|` or a line break. */
 function segments(command) {
@@ -73,7 +99,7 @@ function pushRefusal(args) {
  * @returns {string | null}
  */
 export function refusal(command) {
-  const text = command.trim();
+  const text = withoutProse(command.trim());
   const merges = segments(text).some((part) => /\bgh\b.*\bpr\b.*\bmerge\b/.test(part));
   if ((merges || /gh\s+pr\s+merge/.test(text)) && !SQUASH_MERGE.test(text)) {
     return "Only `gh pr merge <n> --squash [--match-head-commit <sha>] [--delete-branch]`, run as its own command, is allowed (CLAUDE.md self-merge rule).";

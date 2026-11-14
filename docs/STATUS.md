@@ -7,18 +7,17 @@
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`) and PR #15 (`f8b0ef4`).
 - **Last session log:** docs/sessions/2026-11-14-1000-a-ledger-core.md
 
-## Queue stopped (2026-11-14): PR #16 is waiting on the Vercel check
-- **Where PR #16 stands:**
-  - It is ready.
-  - The schema review is clean, and the third security review found nothing blocking. The summary is posted on the PR.
-  - `verify` and `e2e` are green on `3af3405`.
-- **What blocks it:** the **Vercel** preview check failed with "Deployment rate limited — retry in 24 hours". That is the Vercel Free plan's build limit, not the code. Earlier PRs passed only because the Ignored Build Step skipped the build.
-- **Why I stopped:** the self-merge rule needs every check green, so Claude did not merge. P12 part 2 builds on this PR, and branches must start from main, so the queue stops here.
-- **Owner, choose one:**
-  1. **Wait out the limit**, then Redeploy the preview in Vercel (or push an empty commit). Claude then merges under the rule.
-  2. **Stop Vercel building branches other than `demo`.** In `vercel.json`, set `git.deploymentEnabled` so only `demo` deploys; previews of feature branches are skipped anyway. This also uses no build quota. It is a deploy-configuration change, so it waits for your approval.
-  3. **Move to a paid Vercel plan.** That is a paid-service decision.
-- **Then:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), and inventory part 2.
+## Owner decisions (2026-11-14)
+- **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
+- **Merge and push guard:** it does not read the quoted title or body of `gh pr|issue create|edit|comment|review`, so a PR comment can quote a guarded command.
+- **Accountant defaults until the accountant answers:**
+  - the default chart of accounts;
+  - average cost for stock;
+  - sales tax on the accrual basis, with cash basis as a setting;
+  - cash split by bank account.
+  Each one is a per-company setting.
+- **Third-party check failures** (a rate limit or an outage) are not a reason to stop. Note the failure and retry once after 30 minutes. If it still fails, move on to the next task that does not depend on that PR, and come back to it later.
+- **Queue:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), inventory part 2. Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -225,10 +224,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 
 ## Blockers and open questions
 - **Accountant questions (ledger, ADR 0039):**
-  - Is the default chart of accounts right, and which accounts should be added or renamed?
-  - Which costing method for stock and cost of goods (average is the safe default for part 3)?
-  - Should sales tax be reported on the accrual basis (posted when invoiced), as now, or the cash basis?
-  - Should one Cash and Bank account be split by bank account or payment method?
+  - Is the default chart of accounts right, and which accounts should be added or renamed? **Default chosen, awaiting accountant:** the default chart.
+  - Which costing method for stock and cost of goods? **Default chosen, awaiting accountant:** average cost, as a company setting.
+  - Should sales tax be reported on the accrual basis (posted when invoiced), as now, or the cash basis? **Default chosen, awaiting accountant:** accrual, with cash basis available as a company setting.
+  - Should one Cash and Bank account be split by bank account or payment method? **Default chosen, awaiting accountant:** split by bank account.
 - **Accountant questions (sales tax, ADR 0037):** which states is the client registered to collect sales tax in, and what are its states of operation? Are the seeded rates and per-category taxability (materials taxed; separately stated labor and delivery not) right for each state? Until answered, tax is collected only where a rule exists for the job site, or the company default in its states of operation.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).
