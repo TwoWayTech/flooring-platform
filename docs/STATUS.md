@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) in PR #21 (`881712f`); inventory part 2 (issue and cut, roll quick invoice, commission split, ADR 0043) in PR #22 (`069ccb3`); contracts part 1 (register, change orders, waivers, insurance, ADR 0044) in PR #23 (`59ce102`); contracts part 2 (billings and retainage, ADR 0045) in PR #24 (`2e0a846`); HR part 1 (people, timesheets, time off, ADR 0046) in PR #25 (`57664d9`); HR part 2 (pay periods, bonuses, contractor payments, ADR 0047) in PR #26 (`ba3902d`); commissions (ADR 0048) is `feat/hr-commissions`, the next PR.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) in PR #21 (`881712f`); inventory part 2 (issue and cut, roll quick invoice, commission split, ADR 0043) in PR #22 (`069ccb3`); contracts part 1 (register, change orders, waivers, insurance, ADR 0044) in PR #23 (`59ce102`); contracts part 2 (billings and retainage, ADR 0045) in PR #24 (`2e0a846`); HR part 1 (people, timesheets, time off, ADR 0046) in PR #25 (`57664d9`); HR part 2 (pay periods, bonuses, contractor payments, ADR 0047) in PR #26 (`ba3902d`); commissions (ADR 0048) in PR #27 (`b7c2163`). The employee portal is in progress (draft PR #28, `feat/hr-employee-portal`). The California pay rules switch (ADR 0050) is draft PR #29 (`fix/hr-california-pay-switch`).
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`), PR #20 (`1ba1019`), PR #21 (`881712f`), PR #22 (`069ccb3`), PR #23 (`59ce102`), PR #24 (`2e0a846`), PR #25 (`57664d9`) and PR #26 (`ba3902d`). The owner merged PR #17 (`9b6cbd0`).
-- **Last session log:** docs/sessions/2026-11-14-2200-a-commissions.md
+- **Last session log:** docs/sessions/2026-11-14-2345-a-california-switch.md
 
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
@@ -18,6 +18,8 @@
   Each one is a per-company setting.
 - **Third-party check failures** (a rate limit or an outage) are not a reason to stop. Note the failure and retry once after 30 minutes. If it still fails, move on to the next task that does not depend on that PR, and come back to it later.
 - **Queue:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), inventory part 2. Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
+- **New order (owner, 2026-11-14, later):** after the employee portal (in progress) and meetings, A continues with platform admin and manual billing. B works in parallel on reports, import and cross-module e2e tests. The P13 security review comes last, once both streams are done.
+- **California pay rules (owner, 2026-11-14):** they are not yet reviewed by a qualified person, so they sit behind `hr.payroll.california`, off by default for real companies, with a "pending payroll review, don't use for real pay" note wherever they are used. Federal weekly overtime stays on. The California refusal checks (exempt salary floor, monthly pay block, vacation carryover guard) stay on whatever the switch says (ADR 0050).
 
 ## Done
 - [x] HR part 2, merged to main in PR #26 (`ba3902d`, ADR 0047): pay periods (open on the schedule, review, exclusions, approve with frozen lines, accrual and the payroll entry, reopen by reversal, export), bonuses and contractor payments with Contract Labor (6050); separation of duties at approval read from the audit log on the database clock; the PR #25 fifth review's hardening first.
@@ -105,9 +107,11 @@
 
 ## Next three tasks
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Commissions** (ADR 0048), on `feat/hr-commissions`, the next PR to review: plans, assignments, statements, adjustments and reversal decisions on the API; approval accrues to Commissions (6060) against Accrued Payroll and pay runs pay the posted amount without expensing it twice. The API integration test file is written separately.
-2. **Employee portal:** My pay, My commission (with plan signing, `acknowledgePlan`), the clock and profile on the API, with employee-portal.md's visibility rules.
-3. **Meetings.**
+1. **Employee portal** (in progress, draft PR #28 on `feat/hr-employee-portal`): My pay, My commission (with plan signing, `acknowledgePlan`), the clock and profile on the API, with employee-portal.md's visibility rules.
+2. **Meetings.**
+3. **Platform admin and manual billing.**
+
+Then the P13 security review, last, once A's and B's streams are done. B works in parallel on reports, import and cross-module e2e tests (not A's). The California pay rules switch (draft PR #29, ADR 0050) goes in alongside.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
@@ -264,6 +268,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **California overtime and pay rules (ADR 0024)** need review by the client's accountant or payroll provider before the switch is turned on for a real company. Until then `hr.payroll.california` is off (ADR 0050): everyone is paid on the federal weekly rule, and screens tell HR to check California staff's pay with the payroll provider. To review: daily and seventh-day overtime and double time, the flat-sum bonus premium and the 40-hour California salary. The refusals (exempt salary floor, monthly pay, vacation carryover) also deserve a look.
 - **Accountant questions (ledger, ADR 0039):**
   - Is the default chart of accounts right, and which accounts should be added or renamed? **Default chosen, awaiting accountant:** the default chart.
   - Which costing method for stock and cost of goods? **Default chosen, awaiting accountant:** average cost, as a company setting.

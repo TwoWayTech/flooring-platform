@@ -166,7 +166,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
    addDays(date, -((weekday - startDay + 7) % 7))
    ```
 
-7. **Which overtime rule applies.** `overtimeRuleFor`, `packages/shared/src/us-pack/overtime.ts`. The company rule is `settings.localization.payroll.overtimeRule`.
+7. **Which overtime rule applies.** `overtimeRuleFor`, `packages/shared/src/us-pack/overtime.ts`. The company rule is `settings.localization.payroll.overtimeRule`. **Behind `hr.payroll.california` (ADR 0050):** the California rules (daily and seventh-day overtime, double time, the flat-sum premium in rule 17 and the 40-hour salary) apply only while that switch is on, and it is off until a qualified payroll person reviews them. Off, every worker is on the federal weekly rule, even with California as the company rule. Screens and pay-period review (`warnings`) carry "California pay rules are pending payroll review — don't use them for real pay." while it is on, and an off note when California staff are present while it is off. The California refusals (rules 13 and 16 and the exempt floor) stay on either way (owner, 2026-11-14).
 
    ```ts
    workState === "CA" ? "california" : companyRule
@@ -330,7 +330,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `externalId` | string, optional | Set by import |
 | `flsaStatus` | `non_exempt`, `exempt`, `not_applicable` | Forced to `not_applicable` for 1099 |
 | `exemptionBasis` | `executive`, `administrative`, `professional`, `outside_sales`, null | |
-| `salaryHoursPerWeek` | number | Forced to 40 in California |
+| `salaryHoursPerWeek` | number | Forced to 40 in California while `hr.payroll.california` is on (ADR 0050) |
 | `commissionVisible` | boolean or null | Null follows the company setting |
 | `homeLocationId` | string or null | Where this person's pay counts in location profit |
 | `birthDate` | date or null | Not on the form. HR Home reads it |
