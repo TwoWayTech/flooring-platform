@@ -18,3 +18,28 @@ No migration: `reservations`, `roll_cuts`, `rolls`, `stock_movements` and `invoi
 - **Stock adjustments with approval** (rule 23) stay hidden: the `inventory.adjustments` switch is off, and the Owner's Correct stock count replaces them (plan A-1). Nothing is built behind a switched-off feature.
 - **Override reason:** at least 3 characters on the API too (the demo store had no minimum).
 - **Cost of goods on a void:** an invoice whose stock was issued keeps its cost of goods; the goods come back only through a credit note marked as a return (a later task), so voiding such an invoice is refused.
+
+## What was built
+As planned (ADR 0043, PR #22). Files:
+- `apps/api/src/modules/inventory/stock-issue.{controller,service}.ts`;
+- `rollInvoice`, `setCommissionSplit` and the issued-stock check on void in `apps/api/src/modules/sales/invoices.service.ts`, with routes in `invoices.controller.ts`;
+- the four web client methods;
+- `tests/e2e-api/inventory.spec.ts`, which now opens Ready to cut.
+
+## Reviews
+- **Test-writer:** 9 tests, no product bugs. Two changes came from its notes:
+  - a missing override permission now answers 403;
+  - a roll invoice for a customer with no job site is refused, so tax is never silently nothing (a test checks it).
+- **Security review:** see PR #22.
+
+## Commands run and results
+- `stock-issue.int.test.ts`: 10 of 10.
+- `invoices`, `sales` and `inventory` integration tests: 23 of 23.
+- Full lint, typecheck, test and test:api: see PR #22.
+
+## What is left
+- Returns that put goods back must post the cost back.
+- Sales roles hold `inventory.roll.view`, so they can read the holds list; that is the spec's keys as they stand.
+
+## Next prompt
+"/resume. Continue the owner's queue of 2026-11-14: contracts (contracts.md, docs/real-build-plan.md week 10)."
