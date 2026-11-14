@@ -172,6 +172,8 @@ export interface PayPeriodReview {
   strandedCommission?: StrandedCommission[];
   contractors: ContractorPayment[];
   contractorNames: Record<string, string>;
+  /** Notes to read before trusting the figures, such as the California pay rules note (ADR 0050). */
+  warnings: string[];
 }
 
 /** A person's month of commission with its status (ADR 0025); defined in packages/shared (ADR 0048). */

@@ -10,7 +10,7 @@ import type {
   TimeOffPolicy,
   Timesheet,
 } from "../types";
-import { overtimeRuleFor, splitOvertime, type OvertimeRule } from "../us-pack/overtime";
+import { californiaPayOn, overtimeRuleFor, splitOvertime, type OvertimeRule } from "../us-pack/overtime";
 
 /** Pay runs a year per pay frequency. */
 export const PERIODS_PER_YEAR: Record<PayPeriod["frequency"], number> = {
@@ -70,6 +70,11 @@ export interface GrossPayInput {
   leave: readonly PtoRequest[];
   policies: readonly TimeOffPolicy[];
   companyRule: OvertimeRule;
+  /**
+   * Whether the California pay rules apply (`hr.payroll.california`, ADR 0050); the switch when
+   * left out. Off, everyone is paid on the federal weekly rule and no California flat-sum premium.
+   */
+  californiaOn?: boolean;
   /** Commission approved for payment in this period (the statements' payable). */
   commission: string;
   bonuses: readonly Bonus[];
@@ -109,7 +114,8 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
   if (employee.workerType === "1099") return null;
   const worked = hoursByDate(sheets);
   const { paid, unpaid } = leaveByDate(leave, policies);
-  const rule = overtimeRuleFor(employee.state, companyRule);
+  // The California rules, and with them the flat-sum premium, only behind their switch (ADR 0050).
+  const rule = overtimeRuleFor(employee.state, companyRule, input.californiaOn ?? californiaPayOn());
   const hourly = employee.payType === "hourly";
   const exempt = employee.flsaStatus === "exempt";
   const annual = hourly ? dec(0) : dec(employee.payRate);
@@ -226,6 +232,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
   };
 }
 
+// The rule is "california" only with the California switch on (overtimeRuleFor, ADR 0050).
 const isFlatSumCa = (b: Bonus, rule: OvertimeRule) => b.kind === "flat_sum" && rule === "california";
 
 const inBonusPeriod = (sheet: Timesheet, b: Bonus) =>

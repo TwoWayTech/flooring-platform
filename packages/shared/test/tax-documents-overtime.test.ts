@@ -171,12 +171,12 @@ describe("brand scale and pattern tones", () => {
 const week = (...days: number[]) => days.map(String);
 
 describe("overtime rule per worker", () => {
-  it("uses California's daily rule for California workers and the company rule elsewhere", () => {
-    expect(overtimeRuleFor("CA", "federal")).toBe("california");
-    expect(overtimeRuleFor("FL", "federal")).toBe("federal");
-    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("CA", "federal")).overtime).toBe("4");
-    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("FL", "federal")).overtime).toBe("4");
-    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("FL", "federal")).overtime).toBe("0");
-    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("CA", "federal")).overtime).toBe("4");
+  it("with the California switch on, uses California's daily rule for California workers and the company rule elsewhere", () => {
+    expect(overtimeRuleFor("CA", "federal", true)).toBe("california");
+    expect(overtimeRuleFor("FL", "federal", true)).toBe("federal");
+    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("CA", "federal", true)).overtime).toBe("4");
+    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("FL", "federal", true)).overtime).toBe("4");
+    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("FL", "federal", true)).overtime).toBe("0");
+    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("CA", "federal", true)).overtime).toBe("4");
   });
 });

@@ -1,4 +1,4 @@
-import { type FeatureKey, type PermissionKey, type ProductKey } from "@workspace/shared";
+import { californiaPayOn, type FeatureKey, type PermissionKey, type ProductKey } from "@workspace/shared";
 
 /** One step of the demo: the screen to open and what to show there (spec Tier 3 "Presenter guide"). */
 export interface GuideStep {
@@ -170,7 +170,8 @@ export const GUIDE_STEPS: Record<ProductKey, GuideStep[]> = {
     },
     {
       title: "Timesheets",
-      say: "California workers earn daily overtime after 8 hours. Approve many at once, or upload hours from the template.",
+      // California rules only behind their switch (ADR 0050).
+      say: `${californiaPayOn() ? "California workers earn daily overtime after 8 hours." : "Overtime follows the federal weekly rule."} Approve many at once, or upload hours from the template.`,
       href: "/hr/timesheets",
       anyOf: ["hr.timesheet.view"],
     },

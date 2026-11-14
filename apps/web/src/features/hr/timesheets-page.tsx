@@ -16,6 +16,9 @@ import {
 import { toast } from "sonner";
 import {
   addDays,
+  californiaPayNote,
+  californiaPayOn,
+  companyOvertimeRule,
   dec,
   OVERTIME_RULE_LABELS,
   sum,
@@ -55,6 +58,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CaliforniaPayNote } from "./california-pay-note";
 import { HrTabs } from "./hr-tabs";
 import { weekRows, weeksOf, type WeekRow } from "./hr-week";
 import { TimesheetUploadDialog } from "./timesheet-upload-dialog";
@@ -389,9 +393,13 @@ export function TimesheetsPage() {
             bodyClassName="flex flex-col gap-3 p-0"
           >
             <p className="text-muted-foreground px-4 pt-4 text-xs">
-              Company rule: {OVERTIME_RULE_LABELS[rule]}. The workweek starts on {WEEKDAY_LABELS[workweekStartDay]}.
-              Workers in California follow the California rule; days over 8 hours are highlighted.
+              Company rule: {OVERTIME_RULE_LABELS[companyOvertimeRule(rule)]}. The workweek starts on{" "}
+              {WEEKDAY_LABELS[workweekStartDay]}.
+              {californiaPayOn()
+                ? " Workers in California follow the California rule; days over 8 hours are highlighted."
+                : null}
             </p>
+            <CaliforniaPayNote note={californiaPayNote(employees, rule)} className="mx-4" />
             {rows.length === 0 ? (
               <p className="text-muted-foreground px-4 pb-4">No timesheets for this week.</p>
             ) : (

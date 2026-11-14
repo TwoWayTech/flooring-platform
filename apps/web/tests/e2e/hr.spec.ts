@@ -16,12 +16,15 @@ test.describe("HR Suite", { tag: HR_TAG }, () => {
     await expect(page.getByRole("button", { name: "Pay rate, column options" })).toBeVisible();
   });
 
-  test("flags overtime with the California rule for California workers", async ({ page }) => {
+  test("with the California pay rules switched off, everyone is on the federal rule and the screen says so", async ({
+    page,
+  }) => {
+    // hr.payroll.california is off until a payroll review (ADR 0050); Harbor has California staff.
     await signInAs(page, HARBOR_HR, "/hr/timesheets");
-    await expect(page.getByText("California rule").first()).toBeVisible();
-    await page.getByLabel("Week", { exact: true }).click();
-    await page.getByRole("option").nth(1).click();
-    await expect(page.locator("td[data-overtime]").first()).toBeVisible();
+    await expect(page.getByTestId("california-pay-note")).toContainText("California pay rules are off");
+    await expect(page.getByText("Federal rule").first()).toBeVisible();
+    await expect(page.getByText("California rule", { exact: true })).toHaveCount(0);
+    await expect(page.locator("td[data-overtime]")).toHaveCount(0);
   });
 
   test("approves a time-off request", async ({ page }) => {

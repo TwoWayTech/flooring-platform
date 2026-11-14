@@ -15,6 +15,7 @@ import {
   accrualFor,
   addDays,
   bonusesInRun,
+  californiaPayNote,
   commissionShortfalls,
   grossPay,
   payableEmployees,
@@ -89,6 +90,11 @@ export interface PayReview {
   strandedCommission: StrandedCommission[];
   contractors: ContractorPayment[];
   contractorNames: Record<string, string>;
+  /**
+   * Notes HR reads before trusting the figures: California pay rules pending payroll review while
+   * their switch is on, or switched off with California staff (ADR 0050).
+   */
+  warnings: string[];
 }
 
 /** Fixed namespace for the id of each approval's journal entry; changing it would orphan reversals. */
@@ -261,6 +267,7 @@ export class PayPeriodsService {
       strandedCommission: stranded,
       contractors,
       contractorNames: Object.fromEntries(people.filter((e) => e.workerType === "1099").map((e) => [e.id, e.name])),
+      warnings: [californiaPayNote(people, (await loadHrRules(db)).overtimeRule)].flatMap((note) => note ?? []),
     };
   }
 

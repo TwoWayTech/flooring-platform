@@ -11,6 +11,7 @@ import {
 } from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
+  californiaSalaryHours,
   dec,
   featureOn,
   isStateCode,
@@ -92,8 +93,9 @@ export class PeopleService {
 
   /**
    * Adds or edits a person (hr.md rule 2). A 1099 worker is outside overtime law; a W-2 worker is
-   * exempt or non-exempt; only an exempt person has an exemption basis; a California salary
-   * covers 40 hours (Labor Code 515). A new person gets the onboarding checklist.
+   * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
+   * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
+   * onboarding checklist.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -128,8 +130,10 @@ export class PeopleService {
         payType: keep ? before.payType : input.payType,
         workerType: input.workerType,
         flsaStatus: input.workerType === "1099" ? "not_applicable" : input.flsaStatus,
-        // A California salary covers 40 hours (Labor Code 515), whoever saves.
-        salaryHoursPerWeek: input.state === "CA" ? 40 : keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek,
+        // A California salary covers 40 hours (Labor Code 515), whoever saves, while the California
+        // pay rules are switched on (ADR 0050).
+        salaryHoursPerWeek:
+          californiaSalaryHours(input.state) ?? (keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek),
       };
       const values: EmployeeValues = {
         name,

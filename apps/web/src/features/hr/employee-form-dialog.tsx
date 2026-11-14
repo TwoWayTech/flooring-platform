@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { SENSITIVE, US_STATES, type Employee, type Location } from "@workspace/shared";
+import { californiaPayNote, SENSITIVE, US_STATES, type Employee, type Location } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import { Field } from "@/components/field";
 import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import type { EmployeeInput } from "@/lib/api/contract";
+import { CaliforniaPayNote } from "./california-pay-note";
 import { Pick } from "./pick";
 
 const WORKER = [
@@ -121,6 +122,7 @@ export function EmployeeFormDialog({
             <DialogTitle>{employee ? `Edit ${employee.name}` : "Add a person"}</DialogTitle>
             <DialogDescription>Pay rate and tax status are used for pay periods.</DialogDescription>
           </DialogHeader>
+          {draft.workerType === "w2" ? <CaliforniaPayNote note={californiaPayNote([draft], "federal")} /> : null}
           <div className="grid gap-3 sm:grid-cols-2">
             {text("name", "Full name")}
             {text("title", "Job title")}

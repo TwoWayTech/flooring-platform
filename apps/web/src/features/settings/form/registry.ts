@@ -1,3 +1,5 @@
+import { californiaPayOn } from "@workspace/shared";
+
 /**
  * Every setting a person can change, with the label and helper line its row shows and the page
  * it lives on (spec A4). Rows read their text from here, and the settings search searches here,
@@ -82,7 +84,10 @@ export const SETTINGS = {
   },
   "payroll.overtimeRule": {
     label: "Overtime rule",
-    helper: "Workers in California follow the California rule whatever is chosen here.",
+    // The California rules sit behind their switch until a payroll review (ADR 0050).
+    helper: californiaPayOn()
+      ? "Workers in California follow the California rule whatever is chosen here."
+      : "California pay rules are switched off until a payroll review: everyone is on the federal weekly rule.",
     href: PAYROLL,
   },
   "payroll.holidayState": {

@@ -46,6 +46,8 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
   it("example 2: the same week in California pays daily overtime and double time", () => {
     const line = grossPay({
       ...base,
+      // The California rules are behind hr.payroll.california (ADR 0050); this example turns it on.
+      californiaOn: true,
       employee: employee({ state: "CA" }),
       period: period("2026-11-02", "2026-11-08"),
       sheets: [sheet("2026-11-02", [10, 8, 8, 13, 7, 0, 0])],

@@ -41,7 +41,10 @@ export interface HrRules {
   workweekStartDay: number;
   /** Clock in and out in the portal (spec C2). */
   clockEnabled: boolean;
-  /** The company's overtime rule; a California work state overrides it (hr.md rule 7). */
+  /**
+   * The company's overtime rule; a California work state overrides it (hr.md rule 7) only while the
+   * California pay rules are switched on, and off everyone is on the federal rule (ADR 0050).
+   */
   overtimeRule: OvertimeRule;
 }
 
