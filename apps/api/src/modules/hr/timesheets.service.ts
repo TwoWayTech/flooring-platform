@@ -465,6 +465,9 @@ export class TimesheetsService {
   async clockOut(tenant: TenantContext, actor: Actor): Promise<ClockOutResult> {
     const db = await this.tenancy.db(tenant);
     const rules = await loadHrRules(db);
+    // The company's clock setting decides clock-out as it does clock-in (employee-portal.md known
+    // limits; ADR 0049). A punch left open while the clock is off closes once it is back on.
+    if (!rules.clockEnabled) throw refuse("This company does not use the clock.");
     const { id, note } = await db.transaction(async (tx) => {
       const employee = await this.ownEmployee(tx, actor.access);
       const open = await this.openPunch(tx, employee.id);

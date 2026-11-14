@@ -167,6 +167,8 @@ export class TimesheetsController {
     @CurrentSession() session: AuthSession,
     @Req() request: Request,
   ) {
+    // The clock lives in the portal, so it goes when the portal is switched off (CLAUDE.md rule 13).
+    requireFeature("hr.portal");
     requireFeature("hr.timesheets");
     requireFeature("hr.clock");
     return this.sheets.clockIn(tenant, actorOf(access, session, request));
@@ -182,6 +184,7 @@ export class TimesheetsController {
     @CurrentSession() session: AuthSession,
     @Req() request: Request,
   ) {
+    requireFeature("hr.portal");
     requireFeature("hr.timesheets");
     requireFeature("hr.clock");
     return this.sheets.clockOut(tenant, actorOf(access, session, request));

@@ -54,6 +54,7 @@ export * from "./hr/people";
 export * from "./hr/timesheets";
 export * from "./us-pack/holidays";
 export * from "./hr/time-off";
+export * from "./hr/portal";
 export * from "./hr/commission-plans";
 export * from "./hr/commission-statements";
 export * from "./suppliers";

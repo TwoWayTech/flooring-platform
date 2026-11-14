@@ -224,6 +224,12 @@ export interface CommissionPlan {
   overridePct: string;
   draw: { kind: "none" | "recoverable" | "non_recoverable"; monthlyAmount: string };
   clawbackDays: number;
+  /**
+   * When the API last changed the plan (ISO). A signature names it with the plan's id and version,
+   * because a plan edited in place keeps both (ADR 0049, second security review of PR #28). The
+   * demo leaves it out.
+   */
+  updatedAt?: string;
 }
 
 /** Who is on a plan, and the signed receipt (Labor Code 2751, ADR 0025). */

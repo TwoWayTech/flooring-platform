@@ -1268,8 +1268,8 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => assignPlan(ctx, input));
   }
 
-  async acknowledgePlan(assignmentId: string, signedName: string) {
-    return this.act((ctx) => acknowledgePlan(ctx, assignmentId, signedName));
+  async acknowledgePlan(assignmentId: string, signedName: string, plan: CommissionPlan) {
+    return this.act((ctx) => acknowledgePlan(ctx, assignmentId, signedName, plan));
   }
 
   async setCommissionSplit(invoiceId: string, split: { userId: string; pct: string }[]) {
