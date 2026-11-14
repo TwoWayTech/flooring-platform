@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { reservations, rollCuts, rolls, stockMovements } from "@workspace/db/company";
 import { costOfGoodsPosting, cutRoll, dec, mayIssue, moneyString, type Reservation } from "@workspace/shared";
@@ -121,7 +121,10 @@ export class StockIssueService {
           throw refuse(`Invoice ${invoice.number} has no confirmed payment yet. Record the deposit first.`);
         }
         if (!actor.access.permissions.has("inventory.reservation.override")) {
-          throw refuse("Only someone allowed to override may issue stock before payment.");
+          throw new ForbiddenException({
+            code: "forbidden",
+            message: "Only someone allowed to override may issue stock before payment.",
+          });
         }
       }
       const now = new Date();

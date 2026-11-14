@@ -13,6 +13,7 @@ import {
   adjustmentPosting,
   creditNotePosting,
   dec,
+  defaultAddress,
   invoiceFromQuote,
   invoiceFromRoll,
   invoicePosting,
@@ -269,6 +270,9 @@ export class InvoicesService {
     await db.transaction(async (tx) => {
       const [[customer], branches] = await Promise.all([loadCustomers(tx, [input.customerId]), loadBranches(tx)]);
       if (!customer || !seesCustomer(actor.access, customer, branches)) throw refuse("Choose a customer.");
+      // Tax is priced from the job site; without one it would quietly be nothing (PR #22 review).
+      if (!defaultAddress(customer, "job_site"))
+        throw refuse("Add the customer's job site address first, so tax can be priced.");
       const branchId = actor.access.branchId ?? branches.get(customer.salesRepId) ?? null;
       if (!branchId) throw refuse("This invoice needs a branch: set yours, or the customer's sales rep's.");
       const localization = await loadLocalization(tx);
