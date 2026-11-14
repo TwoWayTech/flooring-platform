@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   commissionAssignments,
@@ -11,6 +11,7 @@ import {
 } from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
+  californiaSalaryHours,
   dec,
   featureOn,
   isStateCode,
@@ -92,8 +93,9 @@ export class PeopleService {
 
   /**
    * Adds or edits a person (hr.md rule 2). A 1099 worker is outside overtime law; a W-2 worker is
-   * exempt or non-exempt; only an exempt person has an exemption basis; a California salary
-   * covers 40 hours (Labor Code 515). A new person gets the onboarding checklist.
+   * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
+   * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
+   * onboarding checklist.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -106,93 +108,97 @@ export class PeopleService {
     const employeeId = id ?? uuidv7();
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     const seesContact = actor.access.permissions.has("hr.employee.view");
-    await db.transaction(async (tx) => {
-      // The payroll lock first, as every pay and commission approval takes it: a manager or sign-in
-      // link changed here can't race a statement or pay-run approval reading them (third security
-      // review of PR #27). Lock order PAYROLL_LOCK → employee → user_profiles.
-      await tx.execute(PAYROLL_LOCK);
-      const before = id ? await lockEmployee(tx, id) : null;
-      const linkedBefore = before ? await linkedUsers(tx, before.id) : [];
-      const own = before !== null && (await selfCheck(tx, actor))(before.id);
-      // Without hr.employee.view the saver never saw the contact fields, so the stored ones stay
-      // (like the pay fields; second security review of PR #25). The birthday is not on the form.
-      const contact: ContactFields =
-        before && !seesContact
-          ? { email: before.email, phone: before.phone, emergencyContact: before.emergencyContact }
-          : { email: input.email.trim(), phone: input.phone.trim(), emergencyContact: input.emergencyContact };
-      // Without the key the stored rate, pay type and salaried hours stay, and a new person starts
-      // at a zero rate (hr.md "Who uses it"; CLAUDE.md rule 5; security review of PR #25).
-      const keep = !seesPay && before !== null;
-      const pay: PayFacts = {
-        payRate: seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00"),
-        payType: keep ? before.payType : input.payType,
-        workerType: input.workerType,
-        flsaStatus: input.workerType === "1099" ? "not_applicable" : input.flsaStatus,
-        // A California salary covers 40 hours (Labor Code 515), whoever saves.
-        salaryHoursPerWeek: input.state === "CA" ? 40 : keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek,
-      };
-      const values: EmployeeValues = {
-        name,
-        title: input.title.trim(),
-        department: input.department.trim(),
-        ...pay,
-        state: input.state,
-        ...contact,
-        hiredAt: input.hiredAt,
-        status: input.status,
-        managerId: input.managerId,
-        exemptionBasis: pay.flsaStatus === "exempt" ? input.exemptionBasis : null,
-        commissionVisible: input.commissionVisible,
-        homeLocationId: input.homeLocationId,
-      };
-      checkSelfEdit(actor, before, own, values);
-      // A sign-in linked to no employee is matched to its own record only by email, which may
-      // differ, so it could change its own work state, hire date or status unseen: only an Owner
-      // writes people from one (third and fourth security reviews of PR #25; ADR 0046).
-      await requireLinkedDecider(tx, actor.access);
-      await this.checkCommissionPeople(
-        tx,
-        actor,
-        linkedBefore,
-        values.managerId,
-        managerChanged(before, values),
-        input.userId,
-      );
-      await this.checkManager(tx, employeeId, input.managerId);
-      if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
-      let row: EmployeeRow;
-      if (before) {
-        [row] = (await tx
-          .update(employees)
-          .set({ ...values, updatedAt: new Date() })
-          .where(eq(employees.id, before.id))
-          .returning()) as [EmployeeRow];
-      } else {
-        [row] = (await tx
-          .insert(employees)
-          .values({ id: employeeId, ...values, createdBy: actor.access.userId })
-          .returning()) as [EmployeeRow];
-        await this.addChecklist(tx, row.id, "onboarding", ONBOARDING_STEPS, actor.access.userId);
-      }
-      if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
-      // The sign-in link before and after, on every entry: whose commission is paid to this person
-      // follows it, so statement and pay-run approvals read link changes from here (third security
-      // review of PR #27; ADR 0048).
-      const linkedAfter = await linkedUsers(tx, row.id);
-      await auditHr(this.auditLog, tenant, actor, tx, {
-        action: before ? "Edited employee" : "Added employee",
-        targetType: "employee",
-        targetId: row.id,
-        targetLabel: row.name,
-        before: before ? { ...editable(before), userId: linkedBefore[0] ?? null } : null,
-        // The rate itself never goes into the log, only whether it changed (CLAUDE.md rule 5).
-        after: {
-          ...editable(row),
-          userId: linkedAfter[0] ?? null,
-          ...(seesPay && before ? { payRateChanged: before.payRate !== row.payRate } : {}),
-        },
-      });
-    });
+    await linkedOnce(
+      db.transaction(async (tx) => {
+        // The payroll lock first, as every pay and commission approval takes it: a manager or sign-in
+        // link changed here can't race a statement or pay-run approval reading them (third security
+        // review of PR #27). Lock order PAYROLL_LOCK → employee → user_profiles.
+        await tx.execute(PAYROLL_LOCK);
+        const before = id ? await lockEmployee(tx, id) : null;
+        const linkedBefore = before ? await linkedUsers(tx, before.id) : [];
+        const own = before !== null && (await selfCheck(tx, actor))(before.id);
+        // Without hr.employee.view the saver never saw the contact fields, so the stored ones stay
+        // (like the pay fields; second security review of PR #25). The birthday is not on the form.
+        const contact: ContactFields =
+          before && !seesContact
+            ? { email: before.email, phone: before.phone, emergencyContact: before.emergencyContact }
+            : { email: input.email.trim(), phone: input.phone.trim(), emergencyContact: input.emergencyContact };
+        // Without the key the stored rate, pay type and salaried hours stay, and a new person starts
+        // at a zero rate (hr.md "Who uses it"; CLAUDE.md rule 5; security review of PR #25).
+        const keep = !seesPay && before !== null;
+        const pay: PayFacts = {
+          payRate: seesPay && input.payRate !== undefined ? input.payRate : (before?.payRate ?? "0.00"),
+          payType: keep ? before.payType : input.payType,
+          workerType: input.workerType,
+          flsaStatus: input.workerType === "1099" ? "not_applicable" : input.flsaStatus,
+          // A California salary covers 40 hours (Labor Code 515), whoever saves, while the California
+          // pay rules are switched on (ADR 0050).
+          salaryHoursPerWeek:
+            californiaSalaryHours(input.state) ?? (keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek),
+        };
+        const values: EmployeeValues = {
+          name,
+          title: input.title.trim(),
+          department: input.department.trim(),
+          ...pay,
+          state: input.state,
+          ...contact,
+          hiredAt: input.hiredAt,
+          status: input.status,
+          managerId: input.managerId,
+          exemptionBasis: pay.flsaStatus === "exempt" ? input.exemptionBasis : null,
+          commissionVisible: input.commissionVisible,
+          homeLocationId: input.homeLocationId,
+        };
+        checkSelfEdit(actor, before, own, values);
+        // A sign-in linked to no employee is matched to its own record only by email, which may
+        // differ, so it could change its own work state, hire date or status unseen: only an Owner
+        // writes people from one (third and fourth security reviews of PR #25; ADR 0046).
+        await requireLinkedDecider(tx, actor.access);
+        await this.checkCommissionPeople(
+          tx,
+          actor,
+          linkedBefore,
+          values.managerId,
+          managerChanged(before, values),
+          input.userId,
+        );
+        await this.checkManager(tx, employeeId, input.managerId);
+        if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
+        let row: EmployeeRow;
+        if (before) {
+          [row] = (await tx
+            .update(employees)
+            .set({ ...values, updatedAt: new Date() })
+            .where(eq(employees.id, before.id))
+            .returning()) as [EmployeeRow];
+        } else {
+          [row] = (await tx
+            .insert(employees)
+            .values({ id: employeeId, ...values, createdBy: actor.access.userId })
+            .returning()) as [EmployeeRow];
+          await this.addChecklist(tx, row.id, "onboarding", ONBOARDING_STEPS, actor.access.userId);
+        }
+        if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
+        // The sign-in link before and after, on every entry: whose commission is paid to this person
+        // follows it, so statement and pay-run approvals read link changes from here (third security
+        // review of PR #27; ADR 0048).
+        const linkedAfter = await linkedUsers(tx, row.id);
+        await auditHr(this.auditLog, tenant, actor, tx, {
+          action: before ? "Edited employee" : "Added employee",
+          targetType: "employee",
+          targetId: row.id,
+          targetLabel: row.name,
+          before: before ? { ...editable(before), userId: linkedBefore[0] ?? null } : null,
+          // The rate itself never goes into the log, only whether it changed (CLAUDE.md rule 5).
+          after: {
+            ...editable(row),
+            userId: linkedAfter[0] ?? null,
+            ...(seesPay && before ? { payRateChanged: before.payRate !== row.payRate } : {}),
+          },
+        });
+      }),
+    );
     return this.one(db, tenant, actor, employeeId);
   }
 
@@ -602,4 +608,36 @@ async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[]): 
     )
     .limit(1);
   return waiting !== undefined;
+}
+
+/** The partial unique index that allows one live sign-in per employee (migration 0004; ADR 0049). */
+const ONE_SIGN_IN_PER_EMPLOYEE = "user_profiles_employee_uidx";
+
+/**
+ * Runs a save that may link a sign-in, turning a second live link to the same employee into a 409.
+ * `link` already unlinks the others under the employee's lock, so this only answers a race that
+ * gets past it, or data written outside the app, with a clear refusal instead of a 500.
+ */
+export async function linkedOnce<T>(save: Promise<T>): Promise<T> {
+  try {
+    return await save;
+  } catch (error) {
+    if (violates(error, ONE_SIGN_IN_PER_EMPLOYEE)) {
+      throw new ConflictException({
+        code: "employee_already_linked",
+        message: "Another sign-in is already linked to this person. Reload and try again.",
+      });
+    }
+    throw error;
+  }
+}
+
+/** Whether a database error, or the error it wraps, is a unique violation (23505) of this index. */
+function violates(error: unknown, constraint: string): boolean {
+  for (let at: unknown = error; typeof at === "object" && at !== null;) {
+    const fields = at as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+    if (fields.code === "23505" && fields.constraint_name === constraint) return true;
+    at = fields.cause;
+  }
+  return false;
 }

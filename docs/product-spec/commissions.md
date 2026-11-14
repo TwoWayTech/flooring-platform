@@ -334,7 +334,7 @@ No real email is sent. `notify` writes an Outbox row.
 ## Edge cases and known limits
 
 - **The signature is simulated.** A typed name stands in for an e-signature. No signed copy is kept.
-- **A rep with hidden commission cannot sign.** The signing panel is inside My commission. When a person's commission is hidden, which is the company default, the page is absent and `acknowledgePlan` is not reachable. The comment in `visibilityFor` says a rep on a plan still signs, but the code does not do that.
+- **A rep with hidden commission cannot sign.** The signing panel is inside My commission. When a person's commission is hidden, which is the company default, the page is absent and `acknowledgePlan` is not reachable. The comment in `visibilityFor` says a rep on a plan still signs, but the code does not do that. The real API keeps it that way on purpose (ADR 0049): with commission hidden the plan terms stay on the server, so `POST /commission-assignments/:id/acknowledge` refuses; HR shows commission to that person first.
 - **An unsigned plan changes nothing.** Lines and statements run without a signature. HR sees a Not signed pill on People on plans. There is no alert on HR Home.
 - **"Approved means frozen" holds only in part.** Statement figures are derived on every read. Approval stops new adjustments, makes voids reverse, and blocks a second approval. A back-dated `assignPlan` can still change an approved month's derived figures, and the carry chain restarts at zero at the start of the 12-month window.
 - **Credit notes differ from ADR 0025.**

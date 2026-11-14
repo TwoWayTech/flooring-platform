@@ -66,6 +66,8 @@ Owner decision, 2026-11-13 (ADR 0029, part 2):
 | Role (`roles`) | Company | `roles`, `role_permissions` | `id`, `companyId`, `key`, `name`, `permissions`, `dataScope` (`own`, `branch`, `all`), `system`, `owner` | Linked to users through `User.roleIds` |
 | User, profile part (`users`) | Company | `user_profiles`, `user_roles` | `title`, `roleIds`, `branchId`, `employeeId`, `defaultLocationId` | `roleIds -> Role`, `branchId -> Branch`, `employeeId -> Employee`, `defaultLocationId -> Location`. A user id is the target of `salesRepId`, `recordedById`, `buyerId`, `ownerUserId` and similar fields |
 
+`user_profiles.employee_id` links a sign-in to the person's employee record: one live sign-in per employee, enforced by the partial unique index `user_profiles_employee_uidx` (where `employee_id` is not null and `deleted_at` is null; company migration 0004, owner decision 2026-11-14, ADR 0049). A user has one profile per company (`user_profiles_user_uidx`), so the link is one-to-one.
+
 The blueprint lists `user_profiles` twice with different columns: once with "branch, status, employee link" and once with "branch, data scope, status". The demo keeps data scope on the role and uses the widest of a user's roles (`dataScope` in `packages/shared/src/permissions/`).
 
 ### Catalog and inventory

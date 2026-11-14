@@ -172,6 +172,8 @@ export interface PayPeriodReview {
   strandedCommission?: StrandedCommission[];
   contractors: ContractorPayment[];
   contractorNames: Record<string, string>;
+  /** Notes to read before trusting the figures, such as the California pay rules note (ADR 0050). */
+  warnings: string[];
 }
 
 /** A person's month of commission with its status (ADR 0025); defined in packages/shared (ADR 0048). */
@@ -919,8 +921,11 @@ export interface ApiClient {
   saveCommissionPlan(plan: CommissionPlan): Promise<CommissionPlan>;
   /** Puts someone on a plan. */
   assignPlan(input: PlanAssignmentInput): Promise<CommissionAssignment>;
-  /** The rep signs their plan by typing their name. */
-  acknowledgePlan(assignmentId: string, signedName: string): Promise<void>;
+  /**
+   * The rep signs their plan by typing their name. `plan` is the plan the screen showed: the API
+   * refuses (409) when it has changed since, so nobody signs terms they did not read (ADR 0049).
+   */
+  acknowledgePlan(assignmentId: string, signedName: string, plan: CommissionPlan): Promise<void>;
   /** Shares an invoice between up to two reps. */
   setCommissionSplit(invoiceId: string, split: { userId: string; pct: string }[]): Promise<void>;
   /** Issues a credit note for part of an invoice. */

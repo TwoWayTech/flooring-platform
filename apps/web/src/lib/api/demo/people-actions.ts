@@ -1,4 +1,11 @@
-import { newChecklist, OFFBOARDING_STEPS, ONBOARDING_STEPS, SENSITIVE, type Employee } from "@workspace/shared";
+import {
+  californiaSalaryHours,
+  newChecklist,
+  OFFBOARDING_STEPS,
+  ONBOARDING_STEPS,
+  SENSITIVE,
+  type Employee,
+} from "@workspace/shared";
 import type { EmployeeInput, MyProfilePatch } from "../contract";
 import { DemoRuleError } from "./admin-rules";
 import { describeFiles, storeFiles, type ActionContext } from "./payment-actions";
@@ -11,8 +18,8 @@ function need(ctx: ActionContext, id: string): Employee {
 
 /**
  * Adds or edits a person (spec C1 People, ADR 0024). The pay rate changes only with
- * hr.employee.view_sensitive. A 1099 worker is outside overtime law, and a California salary always
- * covers 40 hours (Labor Code 515). Someone without a checklist gets one when they are added.
+ * hr.employee.view_sensitive. A 1099 worker is outside overtime law, and with the California pay
+ * rules on a California salary covers 40 hours (Labor Code 515; ADR 0050). Someone without a checklist gets one when they are added.
  */
 export async function saveEmployee(ctx: ActionContext, input: EmployeeInput): Promise<Employee> {
   await ctx.assertCan([input.id ? "hr.employee.edit" : "hr.employee.create"]);
@@ -38,7 +45,7 @@ export async function saveEmployee(ctx: ActionContext, input: EmployeeInput): Pr
     managerId: input.managerId,
     flsaStatus: input.workerType === "1099" ? "not_applicable" : input.flsaStatus,
     exemptionBasis: input.flsaStatus === "exempt" ? input.exemptionBasis : null,
-    salaryHoursPerWeek: input.state === "CA" ? 40 : input.salaryHoursPerWeek,
+    salaryHoursPerWeek: californiaSalaryHours(input.state) ?? input.salaryHoursPerWeek,
     commissionVisible: input.commissionVisible,
     homeLocationId: input.homeLocationId,
     birthDate: before?.birthDate ?? null,

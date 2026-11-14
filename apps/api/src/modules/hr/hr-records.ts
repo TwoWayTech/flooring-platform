@@ -41,7 +41,10 @@ export interface HrRules {
   workweekStartDay: number;
   /** Clock in and out in the portal (spec C2). */
   clockEnabled: boolean;
-  /** The company's overtime rule; a California work state overrides it (hr.md rule 7). */
+  /**
+   * The company's overtime rule; a California work state overrides it (hr.md rule 7) only while the
+   * California pay rules are switched on, and off everyone is on the federal rule (ADR 0050).
+   */
   overtimeRule: OvertimeRule;
 }
 
@@ -66,6 +69,19 @@ export async function loadHrRules(db: CompanyDb): Promise<HrRules> {
     });
   }
   return { workweekStartDay: day, clockEnabled: hr?.clockEnabled === true, overtimeRule: rule };
+}
+
+/**
+ * The stored company overtime rule, or federal when Settings → Localization → Payroll was never
+ * saved. For notes only (ADR 0050); pay reads `loadHrRules`, which refuses a missing rule.
+ */
+export async function storedOvertimeRule(db: CompanyDb): Promise<OvertimeRule> {
+  const [row] = await db
+    .select({ value: settings.value })
+    .from(settings)
+    .where(and(eq(settings.group, "localization"), isNull(settings.deletedAt)));
+  const rule = (row?.value as Partial<CompanySettings["localization"]> | undefined)?.payroll?.overtimeRule;
+  return rule === "california" ? "california" : "federal";
 }
 
 /** Hours as the screens read them: a decimal string without trailing zeros (`8.000` → `8`). */

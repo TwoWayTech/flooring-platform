@@ -48,6 +48,7 @@ import type {
   ContractInput,
   EmployeeInput,
   ItemOf,
+  MyPortal,
   PayPeriodReview,
   StockHold,
   TimesheetUploadResult,
@@ -396,7 +397,7 @@ export const API_METHODS: HttpRoutes = {
       additionalInsured: input.additionalInsured,
       coverages: input.coverages,
     }),
-  // HR part 1 (ADR 0046): people, timesheets and time off. Pay periods, the portal and the clock move later.
+  // HR part 1 (ADR 0046): people, timesheets and time off. Pay periods (ADR 0047) and the portal with the clock (ADR 0049) follow below.
   hrData: (http) => async () => {
     const [employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations] = await Promise.all([
       seenOrOff(http.request<Employee[]>("GET", "/employees")),
@@ -494,6 +495,44 @@ export const API_METHODS: HttpRoutes = {
   approvePayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/approve`),
   reopenPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/reopen`),
   exportPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/export`),
+  // The employee portal (ADR 0049): the signed-in person's own data only, from the session. My
+  // meetings stays on the demo client until Meetings moves (the next module).
+  myPortal: (http) => async () => {
+    const { ownPayRate, employee, ...portal } = await http.request<MyPortalWire>("GET", "/me/portal");
+    // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046). One's own
+    // rate travels apart from the record, so the API's sensitive-field strip leaves it (ADR 0049).
+    return {
+      ...portal,
+      employee: employee ? ({ ...employee, payRate: ownPayRate ?? "" } as Employee) : null,
+      timesheets: portal.timesheets.map(timesheetFromWire),
+    };
+  },
+  updateMyEmployeeProfile: (http) => (patch) =>
+    http.request<Employee>("PATCH", "/me/employee", { phone: patch.phone, emergencyContact: patch.emergencyContact }),
+  acknowledgePlan: (http) => async (assignmentId, signedName, plan) => {
+    await http.request<{ ok: true }>("POST", `/commission-assignments/${assignmentId}/acknowledge`, {
+      signedName,
+      planId: plan.id,
+      planVersion: plan.version,
+      planUpdatedAt: plan.updatedAt,
+    });
+  },
+  clockIn: (http) => async () => {
+    await http.request<unknown>("POST", "/clock/in");
+  },
+  clockOut: (http) => async () => {
+    await http.request<unknown>("POST", "/clock/out");
+  },
+};
+
+/**
+ * The portal as the API sends it: timesheet hours as decimal strings, and the record without the
+ * pay rate, which comes as `ownPayRate` when the company shows it (ADR 0049).
+ */
+type MyPortalWire = Omit<MyPortal, "timesheets" | "employee"> & {
+  timesheets: TimesheetWire[];
+  employee: Omit<Employee, "payRate"> | null;
+  ownPayRate: string | null;
 };
 
 /**

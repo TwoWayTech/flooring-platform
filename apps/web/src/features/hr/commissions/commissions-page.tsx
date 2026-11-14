@@ -180,6 +180,7 @@ export function CommissionsPage() {
   const nameOf = (userId: string) => data.data?.people.find((u) => u.id === userId)?.name ?? "Unknown";
   const planOf = (planId: string) => data.data?.plans.find((p) => p.id === planId);
   const current = (data.data?.assignments ?? []).filter((a) => !a.effectiveTo);
+  const anyUnsigned = current.some((a) => !a.acknowledgement);
   const assignmentColumns: ColumnSpec<CommissionAssignment>[] = [
     {
       id: "name",
@@ -308,6 +309,11 @@ export function CommissionsPage() {
                   Assign a plan
                 </Button>
               </div>
+            ) : null}
+            {anyUnsigned ? (
+              <p className="text-muted-foreground text-sm">
+                To collect an e-signature, show commission to this person first; otherwise sign on paper.
+              </p>
             ) : null}
             <DataTable
               id="hr-commission-people"

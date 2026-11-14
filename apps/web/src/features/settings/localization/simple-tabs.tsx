@@ -1,9 +1,18 @@
 "use client";
 
-import { OVERTIME_RULE_LABELS, US_STATES, type LocalizationSettings, type OvertimeRule } from "@workspace/shared";
+import {
+  CALIFORNIA_PENDING_NOTE,
+  californiaPayOn,
+  companyOvertimeRule,
+  OVERTIME_RULE_LABELS,
+  US_STATES,
+  type LocalizationSettings,
+  type OvertimeRule,
+} from "@workspace/shared";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
+import { CaliforniaPayNote } from "@/features/hr/california-pay-note";
 import { Choice } from "../form/choice";
 import { SettingRow } from "../form/setting-row";
 
@@ -175,14 +184,19 @@ export function CurrencyTab({ draft, setDraft, changed }: SectionProps<L["curren
 
 /** Payroll rules that follow the location: the overtime rule and the holiday calendar. Pay calendar is in Settings → HR. */
 export function PayrollTab({ draft, setDraft, changed }: SectionProps<L["payroll"]>) {
+  // The California rule is offered only while its switch is on (ADR 0050).
+  const options: Partial<Record<OvertimeRule, string>> = californiaPayOn()
+    ? OVERTIME_RULE_LABELS
+    : { federal: OVERTIME_RULE_LABELS.federal };
   return (
     <div className="grid gap-4 sm:grid-cols-2">
+      {californiaPayOn() ? <CaliforniaPayNote note={CALIFORNIA_PENDING_NOTE} className="sm:col-span-2" /> : null}
       <SettingRow setting="payroll.overtimeRule" changed={changed("overtimeRule")}>
         {(id) => (
           <Choice
             id={id}
-            value={draft.overtimeRule}
-            options={OVERTIME_RULE_LABELS}
+            value={companyOvertimeRule(draft.overtimeRule)}
+            options={options as Record<OvertimeRule, string>}
             onChange={(overtimeRule: OvertimeRule) => setDraft({ ...draft, overtimeRule })}
           />
         )}

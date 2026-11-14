@@ -19,6 +19,7 @@ import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { withCaliforniaRules } from "./california-switch";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -501,15 +502,26 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(loop, 400);
     expect(loop.body.message).toContain("loop");
     status(await call("put", `/employees/${uuidv7()}`, cookies.hr).send(form()), 404);
-    // A 1099 worker is outside overtime law, and a California salary covers 40 hours (hr.md rule 2).
-    const contractor = await addEmployee(cookies.hr, {
+    // A 1099 worker is outside overtime law. With the California pay rules on, a California salary
+    // covers 40 hours (hr.md rule 2); off (the default, ADR 0050), the form's hours stand.
+    const offContractor = await addEmployee(cookies.hr, {
       name: "Cal Contractor",
       workerType: "1099",
       flsaStatus: "exempt",
       state: "CA",
       salaryHoursPerWeek: 20,
     });
-    expect(contractor).toMatchObject({ workerType: "1099", flsaStatus: "not_applicable", salaryHoursPerWeek: 40 });
+    expect(offContractor).toMatchObject({ workerType: "1099", flsaStatus: "not_applicable", salaryHoursPerWeek: 20 });
+    await withCaliforniaRules(async () => {
+      const contractor = await addEmployee(cookies.hr, {
+        name: "Cal Contractor Two",
+        workerType: "1099",
+        flsaStatus: "exempt",
+        state: "CA",
+        salaryHoursPerWeek: 20,
+      });
+      expect(contractor).toMatchObject({ workerType: "1099", flsaStatus: "not_applicable", salaryHoursPerWeek: 40 });
+    });
   });
 
   it("refuses a Social Security or bank account field, and stores nothing", async () => {
@@ -735,15 +747,29 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(locked, 400);
     expect(locked.body.message).toContain("locked");
 
-    // A California work state overrides the company's rule: 13 hours is 8 regular, 4 overtime, 1 double time.
+    // The California pay rules are off by default (hr.payroll.california, ADR 0050): a California
+    // worker's 13-hour day is under the federal weekly rule, so no overtime.
     const carla = await saveWeek(cookies.hr, ids.carla, week(3), [13, 0, 0, 0, 0, 0, 0]);
     await submit(cookies.hr, carla.id);
     status(
       await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [carla.id] }),
       201,
     );
-    const [california] = await auditOf("Approved timesheet", carla.id);
-    expect(california!.after).toMatchObject({ regular: "8.00", overtime: "4.00", doubleTime: "1.00" });
+    const [federal] = await auditOf("Approved timesheet", carla.id);
+    expect(federal!.after).toMatchObject({ regular: "13.00", overtime: "0.00", doubleTime: "0.00" });
+
+    // Switched on, a California work state overrides the company's rule: 13 hours is 8 regular,
+    // 4 overtime, 1 double time.
+    await withCaliforniaRules(async () => {
+      const onWeek = await saveWeek(cookies.hr, ids.carla, week(14), [13, 0, 0, 0, 0, 0, 0]);
+      await submit(cookies.hr, onWeek.id);
+      status(
+        await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [onWeek.id] }),
+        201,
+      );
+      const [california] = await auditOf("Approved timesheet", onWeek.id);
+      expect(california!.after).toMatchObject({ regular: "8.00", overtime: "4.00", doubleTime: "1.00" });
+    });
 
     // Nobody decides their own sheet; someone else can.
     const mara = await saveWeek(cookies.mgr, ids.mara, week(4), [8, 8, 8, 8, 8, 0, 0]);
@@ -1145,8 +1171,9 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(file, 200);
     expect((file.body as Buffer).toString()).toBe(Buffer.from(PDF.data, "base64").toString());
     status(await fileBytes(cookies.mgr, docId), 200);
-    // Without hr.employee.view: Wes holds no key the route accepts; Sales passes the route but the service refuses.
-    status(await fileBytes(cookies.wes, docId), 403);
+    // Without hr.employee.view: Wes opens his own document in My documents (hr.portal.view, ADR 0049);
+    // Sales passes the route but the document is not theirs, so the service refuses.
+    status(await fileBytes(cookies.wes, docId), 200);
     status(await fileBytes(cookies.sales, docId), 404);
     status(await fileBytes(undefined, docId), 401);
     status(await fileBytes(cookies.hr, uuidv7()), 404);
@@ -1186,10 +1213,11 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       );
     for (const ownerType of ["expense", "payment", "refund", "bill", "supplier_payment", "contract"]) {
       const id = await proof(ownerType);
-      // HR passes the route (hr.employee.view) but holds none of the owner type's keys.
+      // HR passes the route (hr.employee.view), and Wes and Warehouse pass it with hr.portal.view
+      // (ADR 0049), but none holds the owner type's keys, so the service refuses.
       status(await fileBytes(cookies.hr, id), 404);
-      status(await fileBytes(cookies.wes, id), 403);
-      status(await fileBytes(cookies.warehouse, id), 403);
+      status(await fileBytes(cookies.wes, id), 404);
+      status(await fileBytes(cookies.warehouse, id), 404);
     }
     const expenseProof = await proof("expense");
     status(await fileBytes(cookies.sales, expenseProof), 404);

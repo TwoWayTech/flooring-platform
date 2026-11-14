@@ -38,6 +38,7 @@ import type { PayPeriodReview, PayReviewRow } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CaliforniaPayNote } from "./california-pay-note";
 import { HrTabs } from "./hr-tabs";
 import { Pick } from "./pick";
 
@@ -153,6 +154,9 @@ function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPe
       <p className="text-muted-foreground text-sm" data-testid="gross-pay-label">
         {GROSS_PAY_LABEL}
       </p>
+      {review.warnings.map((note) => (
+        <CaliforniaPayNote key={note} note={note} />
+      ))}
       {review.blockers.length > 0 ? (
         <Panel title={`${review.blockers.length} timesheets still need approval`}>
           <ul className="flex flex-col gap-1 text-sm">

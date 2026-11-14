@@ -597,7 +597,9 @@ describe("payables API (needs the local PostgreSQL)", () => {
     const paid = (await pay(cookies.purchasing, supplier, "50.00").expect(201)).body as PaymentBody;
     await call("get", `/files/${paid.files[0]!.id}`, cookies.accountant).expect(200);
     expect((await call("get", `/files/${fileId}`, cookies.sales)).status).toBe(404);
-    expect((await call("get", `/files/${fileId}`, cookies.warehouse)).status).toBe(403);
+    // Every role holds hr.portal.view (My documents, ADR 0049), so the route lets them in and the
+    // service refuses a file outside their keys with the same 404 as one out of scope.
+    expect((await call("get", `/files/${fileId}`, cookies.warehouse)).status).toBe(404);
     expect((await call("get", `/files/${uuidv7()}`, cookies.purchasing)).status).toBe(404);
   });
 
