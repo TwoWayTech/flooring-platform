@@ -715,6 +715,11 @@ describe("contracts register (contracts part 1)", () => {
     );
     expect(twice.status).toBe(400);
     expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
+    // Turning the draft into a master and back would drop every cost, so the switch is refused too.
+    const toMaster = await call("put", `/contracts/${id}`, "sales").send(customerForm({ kind: "master", lines: [] }));
+    expect(toMaster.status).toBe(400);
+    expect(toMaster.body.message).not.toContain("cost estimate");
+    expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
     expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
   });
 

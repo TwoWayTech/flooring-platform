@@ -321,7 +321,7 @@ export class ContractChangesService {
       await tx.insert(contractLines).values({
         id: uuidv7(),
         contractId: contract.id,
-        code: `${order.number}.${index + 1}`,
+        code: freeCode(`${order.number}.${index + 1}`, lines),
         description: change.description,
         category: change.category,
         billing: "percent",
@@ -361,4 +361,13 @@ export class ContractChangesService {
     }
     return false;
   }
+}
+
+/** A change order's new-line code, made unique among the contract's live lines (PR #23 review). */
+function freeCode(wanted: string, lines: readonly { code: string }[]): string {
+  const taken = new Set(lines.map((line) => line.code.trim()));
+  if (!taken.has(wanted)) return wanted;
+  let n = 2;
+  while (taken.has(`${wanted}-${n}`)) n += 1;
+  return `${wanted}-${n}`;
 }

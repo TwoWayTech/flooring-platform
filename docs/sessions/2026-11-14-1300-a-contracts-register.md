@@ -37,7 +37,9 @@ The build was handed to a general-purpose subagent with a full brief (CLAUDE.md 
   - Owner question, recorded in STATUS: the same person may submit and approve a change order (spec edge case 19).
 - **Second security review:** 1 blocking, fixed. Estimated cost was kept by line code, and codes were not unique, so someone without view_sensitive could rename a costed line to drop its cost, or reuse a code to move it. Now each line needs its own code, and without view_sensitive a costed line may not lose its code (tests).
   - Should-fix items done: the web reads `/change-orders` as empty when billing is off (`seenOrOff`); a new change-order line at or below zero is refused on submit too; the save audit records each line's code and value (costs stay out).
-- **Third security review:** see PR #23.
+- **Third security review:** 1 blocking, fixed. Saving a draft as a master skipped the line checks and dropped every line, so a save back to a project reset all costs. Now the same checks run for a master, and the switch is refused for someone without view_sensitive (test).
+  - Should-fix items done: without view_sensitive no stored line may lose its code, costed or not, and the refusal is neutral, so it reveals nothing; stored codes must be unique; a change order's new line takes a code no live line uses.
+- **Fourth security review:** see PR #23.
 
 ## Commands run and results
 - `contracts.int.test.ts`: 13 of 13 after the second review. Full `pnpm test` and `pnpm test:api` before it: all pass (API 244, db 32, shared 378). `pnpm typecheck` and lint pass.

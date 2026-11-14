@@ -11,7 +11,6 @@ import {
   daysBetween,
   draftProblem,
   MAX_PROOF_FILES,
-  dec,
   moneyString,
   nextNumber,
   sum,
@@ -170,7 +169,8 @@ export class ContractsService {
       const before = id ? await lockContract(tx, actor.access, id) : null;
       if (before && before.status !== "draft") throw refuse("Only a draft can be edited. Use a change order instead.");
       const kept = before ? await loadContractLines(tx, [before.id]) : [];
-      const lines = input.kind === "master" ? [] : linesToStore(input.lines, kept, actor.access);
+      // A master keeps no lines, but the same checks run, so turning a draft into a master can't drop costs.
+      const lines = linesToStore(input.kind === "master" ? [] : input.lines, kept, actor.access);
       const values = {
         direction: input.direction,
         kind: input.kind,
@@ -657,11 +657,14 @@ function linesToStore(lines: readonly ContractLineFields[], kept: readonly Contr
   const codes = lines.map((line) => line.code.trim());
   if (new Set(codes).size !== codes.length) throw refuse("Give each line its own code.");
   const keptCost = new Map(kept.map((line) => [line.code.trim(), line.estimatedCost]));
-  // Without view_sensitive, a costed line may not lose its code, so its cost is never dropped or moved.
+  // Without view_sensitive, no stored line may lose its code (costed or not, so the refusal reveals
+  // nothing), and stored codes must be unique, so a cost is never dropped or moved (PR #23 reviews).
   if (!seesCost) {
-    const lost = kept.find((line) => dec(line.estimatedCost).gt(0) && !codes.includes(line.code.trim()));
-    if (lost)
-      throw refuse(`Line ${lost.code} has a cost estimate, so keep its code; someone who sees costs can change it.`);
+    const stored = kept.map((line) => line.code.trim());
+    const lost = stored.some((code) => !codes.includes(code));
+    if (lost || new Set(stored).size !== stored.length) {
+      throw refuse("Keep each line's code; someone who sees costs can change the schedule.");
+    }
   }
   return lines.map((line) => ({
     code: line.code.trim(),
