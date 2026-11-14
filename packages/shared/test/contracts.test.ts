@@ -9,6 +9,7 @@ import {
   contractFigures,
   contractReminders,
   dec,
+  sum,
   draftProblem,
   form1099Threshold,
   heldByLine,
@@ -225,5 +226,50 @@ describe("contract rules (spec D2, ADR 0026)", () => {
     expect(form1099Threshold("2025")).toBe("600");
     expect(form1099Threshold("2026")).toBe("2000");
     expect(form1099Threshold("2030")).toBe("2000");
+  });
+
+  describe("release allocation never overdraws a line (PR #24 review)", () => {
+    it("keeps every share between zero and what its line holds, and adds up to the amount", () => {
+      const cases: [string, [string, string][]][] = [
+        [
+          "3000.03",
+          [
+            ["A", "1000.00"],
+            ["B", "1000.00"],
+            ["C", "1000.00"],
+            ["D", "0.05"],
+          ],
+        ],
+        [
+          "0.03",
+          [
+            ["A", "1.00"],
+            ["B", "1.00"],
+            ["C", "1.00"],
+            ["D", "1.00"],
+            ["E", "0.01"],
+          ],
+        ],
+        [
+          "4.01",
+          [
+            ["A", "1.00"],
+            ["B", "1.00"],
+            ["C", "1.00"],
+            ["D", "1.00"],
+            ["E", "0.01"],
+          ],
+        ],
+      ];
+      for (const [amount, entries] of cases) {
+        const held = new Map(entries.map(([id, value]) => [id, dec(value)] as const));
+        const parts = allocateRelease(amount, held);
+        expect(sum(parts.map((part) => part.amount)).toFixed(2)).toBe(dec(amount).toFixed(2));
+        for (const part of parts) {
+          expect(dec(part.amount).gte(0)).toBe(true);
+          expect(dec(part.amount).lte(held.get(part.lineId)!)).toBe(true);
+        }
+      }
+    });
   });
 });

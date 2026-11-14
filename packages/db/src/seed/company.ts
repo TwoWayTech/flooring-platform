@@ -18,6 +18,9 @@ import {
   billReceipts,
   changeOrderLines,
   changeOrders,
+  contractBillingLines,
+  contractBillingReleases,
+  contractBillings,
   contractLines,
   contracts,
   insuranceCertificates,
@@ -601,12 +604,27 @@ async function seedSales(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void
 
 /**
  * Invoices with their lines, commission splits, customer payments and the stock they hold (sales,
- * part 2; ADR 0038). Fixture invoice lines reuse their quote line's id, so a line's id is
- * `seedId("invoice:" + id)`. Contract billing invoices wait for the contracts module, whose rows
- * they point at. Seeded proof files have no bytes, so payments are seeded without them.
+ * part 2; ADR 0038). Contract billing invoices point at their billing, so seedContractBillings
+ * writes them once the billings exist (ADR 0045).
  */
 async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
-  const billed = fixtures.invoices.filter((invoice) => !invoice.contractId);
+  await insertInvoices(
+    tx,
+    fixtures,
+    fixtures.invoices.filter((invoice) => !invoice.contractId),
+  );
+}
+
+/**
+ * Writes some fixture invoices with their lines, commission splits, payments and holds. Fixture
+ * invoice lines reuse their quote line's id, so a line's id is `seedId("invoice:" + id)`. Seeded
+ * proof files have no bytes, so payments are seeded without them.
+ */
+async function insertInvoices(
+  tx: CompanyDb,
+  fixtures: DemoCompany["fixtures"],
+  billed: DemoCompany["fixtures"]["invoices"],
+): Promise<void> {
   if (billed.length === 0) return;
   const kept = new Set(billed.map((invoice) => invoice.id));
   const lineId = (id: string) => seedId(`invoice:${id}`);
@@ -645,6 +663,10 @@ async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
         tax: invoice.tax,
         total: invoice.total,
         cost: invoice.cost,
+        contractId: invoice.contractId ? seedId(invoice.contractId) : null,
+        billingId: invoice.billingId ? seedId(invoice.billingId) : null,
+        retainageWithheld: invoice.retainageWithheld ?? null,
+        retainageReleased: invoice.retainageReleased ?? null,
         createdAt: issuedAt,
         createdBy: by,
       })
@@ -838,15 +860,29 @@ async function seedExpenses(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
 /**
  * Supplier bills for received goods, with their receipts, and supplier payments with their
  * allocations (P12 part 3; ADR 0042). Bills a pay-later expense raised are seeded with expenses;
- * subcontract bills wait for the contracts module, and so does any payment that pays one. Seeded
- * history posts no journal entry (the ledger starts at go-live), and seeded files have no bytes.
+ * subcontract bills point at their billing, so seedContractBillings writes them, and any payment
+ * that pays one, once the billings exist (ADR 0045). Seeded history posts no journal entry (the
+ * ledger starts at go-live), and seeded files have no bytes.
  */
 async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
-  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
-  const owner = fixtures.users.find((user) => user.roleIds.some((role) => role.endsWith("-owner")));
   const expenseBills = new Set(fixtures.expenses.flatMap((expense) => (expense.billId ? [expense.billId] : [])));
   const bills = fixtures.bills.filter((bill) => !bill.contractId && !expenseBills.has(bill.id));
-  const seeded = new Set([...expenseBills, ...bills.map((bill) => bill.id)]);
+  await insertBills(tx, fixtures, bills);
+  await insertSupplierPayments(tx, fixtures, new Set([...expenseBills, ...bills.map((bill) => bill.id)]));
+}
+
+/** The user who enters seeded bills: the company's owner. */
+function billAuthor(fixtures: DemoCompany["fixtures"]): string | null {
+  return userOf(fixtures.users.find((user) => user.roleIds.some((role) => role.endsWith("-owner")))?.id);
+}
+
+/** Writes some fixture bills with their receipts and, on a subcontract bill, its billing's figures. */
+async function insertBills(
+  tx: CompanyDb,
+  fixtures: DemoCompany["fixtures"],
+  bills: DemoCompany["fixtures"]["bills"],
+): Promise<void> {
+  const author = billAuthor(fixtures);
   for (const bill of bills) {
     await tx
       .insert(supplierBills)
@@ -859,7 +895,13 @@ async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
         dueAt: bill.dueAt,
         total: bill.total,
         matchIssues: bill.matchIssues,
-        createdBy: userOf(owner?.id),
+        contractId: bill.contractId ? seedId(bill.contractId) : null,
+        billingId: bill.billingId ? seedId(bill.billingId) : null,
+        kind: bill.kind ?? null,
+        gross: bill.gross ?? null,
+        retainageWithheld: bill.retainageWithheld ?? null,
+        retainageReleased: bill.retainageReleased ?? null,
+        createdBy: author,
       })
       .onConflictDoNothing();
     for (const receiptId of bill.receiptIds) {
@@ -869,11 +911,20 @@ async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
           id: seedId(`${bill.id}:receipt:${receiptId}`),
           billId: seedId(bill.id),
           receiptId: seedId(receiptId),
-          createdBy: userOf(owner?.id),
+          createdBy: author,
         })
         .onConflictDoNothing();
     }
   }
+}
+
+/** Writes the fixture supplier payments whose every allocation pays a bill in `seeded`. */
+async function insertSupplierPayments(
+  tx: CompanyDb,
+  fixtures: DemoCompany["fixtures"],
+  seeded: ReadonlySet<string>,
+): Promise<void> {
+  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
   for (const payment of fixtures.supplierPayments) {
     if (!payment.allocations.every((entry) => seeded.has(entry.billId))) continue;
     await tx
@@ -918,15 +969,12 @@ async function seedPayables(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
 
 /**
  * Contracts, part 1 (ADR 0044): contracts with their schedule lines, change orders with their
- * rows, lien waivers and certificates of insurance with their coverages. Billings, contract
- * invoices and subcontract bills wait for part 2, and so does a waiver whose payment is not seeded
- * (one paying a contract invoice). Seeded signed PDFs have no bytes, so contract files are not seeded.
+ * rows and certificates of insurance with their coverages. Billings with their documents
+ * (seedContractBillings) and lien waivers (seedWaivers, after the payments they cite) follow.
+ * Seeded signed PDFs have no bytes, so contract files are not seeded.
  */
 async function seedContracts(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
-  const billed = new Set(fixtures.invoices.filter((invoice) => !invoice.contractId).map((invoice) => invoice.id));
-  const payments = new Set(fixtures.payments.filter((p) => billed.has(p.invoiceId)).map((p) => p.id));
-  const supplierPayments = new Set(fixtures.supplierPayments.map((payment) => payment.id));
   const ref = (id: string | null) => (id ? seedId(id) : null);
   const creatorOf = new Map(fixtures.contracts.map((contract) => [contract.id, seededUserId(contract.salesRepId)]));
   for (const contract of fixtures.contracts) {
@@ -1025,31 +1073,6 @@ async function seedContracts(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
         .onConflictDoNothing();
     }
   }
-  const waivers = fixtures.lienWaivers.filter(
-    (waiver) =>
-      (!waiver.paymentId || payments.has(waiver.paymentId)) &&
-      (!waiver.supplierPaymentId || supplierPayments.has(waiver.supplierPaymentId)),
-  );
-  for (const waiver of waivers) {
-    await tx
-      .insert(lienWaivers)
-      .values({
-        id: seedId(waiver.id),
-        contractId: seedId(waiver.contractId),
-        direction: waiver.direction,
-        type: waiver.type,
-        paymentId: ref(waiver.paymentId),
-        supplierPaymentId: ref(waiver.supplierPaymentId),
-        amount: waiver.amount,
-        throughDate: waiver.throughDate,
-        state: waiver.state,
-        statutoryForm: waiver.statutoryForm,
-        signedOn: waiver.signedOn,
-        status: waiver.status,
-        createdBy: creatorOf.get(waiver.contractId),
-      })
-      .onConflictDoNothing();
-  }
   for (const certificate of fixtures.insuranceCertificates) {
     await tx
       .insert(insuranceCertificates)
@@ -1078,11 +1101,131 @@ async function seedContracts(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
 }
 
 /**
+ * Contract billings, part 2 (ADR 0045): billings with their cumulative lines and release shares,
+ * then the invoices (with their payments) and subcontract bills (with any supplier payment that
+ * pays one) they raised, then each billing's link to its document. A billing and its document
+ * point at each other, so the billing goes in first without the link. Seeded history posts no
+ * journal entry: the ledger starts at go-live (STATUS, "Opening balances").
+ */
+async function seedContractBillings(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
+  for (const billing of fixtures.contractBillings) {
+    const by = userOf(byName.get(billing.postedBy)) ?? billAuthor(fixtures);
+    const postedAt = utc(billing.postedAt);
+    await tx
+      .insert(contractBillings)
+      .values({
+        id: seedId(billing.id),
+        contractId: seedId(billing.contractId),
+        number: billing.number,
+        kind: billing.kind,
+        periodEnd: billing.periodEnd,
+        status: billing.status,
+        gross: billing.gross,
+        withheld: billing.withheld,
+        released: billing.released,
+        postedAt,
+        postedById: by!,
+        createdAt: postedAt,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+    for (const [index, line] of billing.lines.entries()) {
+      await tx
+        .insert(contractBillingLines)
+        .values({
+          id: seedId(`${billing.id}:line:${index}`),
+          billingId: seedId(billing.id),
+          contractLineId: seedId(line.lineId),
+          completedToDate: line.completedToDate,
+          storedBalance: line.storedBalance,
+          retainagePct: line.retainagePct,
+          storedRetainagePct: line.storedRetainagePct,
+          createdAt: postedAt,
+          createdBy: by,
+        })
+        .onConflictDoNothing();
+    }
+    for (const [index, release] of billing.releases.entries()) {
+      await tx
+        .insert(contractBillingReleases)
+        .values({
+          id: seedId(`${billing.id}:release:${index}`),
+          billingId: seedId(billing.id),
+          contractLineId: seedId(release.lineId),
+          amount: release.amount,
+          createdAt: postedAt,
+          createdBy: by,
+        })
+        .onConflictDoNothing();
+    }
+  }
+  await insertInvoices(
+    tx,
+    fixtures,
+    fixtures.invoices.filter((invoice) => invoice.contractId),
+  );
+  await insertBills(
+    tx,
+    fixtures,
+    fixtures.bills.filter((bill) => bill.contractId),
+  );
+  // Every bill is seeded now, so a payment that pays a subcontract bill goes in too.
+  await insertSupplierPayments(tx, fixtures, new Set(fixtures.bills.map((bill) => bill.id)));
+  for (const billing of fixtures.contractBillings) {
+    if (!billing.invoiceId && !billing.billId) continue;
+    await tx
+      .update(contractBillings)
+      .set({
+        invoiceId: billing.invoiceId ? seedId(billing.invoiceId) : null,
+        billId: billing.billId ? seedId(billing.billId) : null,
+      })
+      .where(eq(contractBillings.id, seedId(billing.id)));
+  }
+}
+
+/**
+ * Lien waivers (ADR 0044), after every payment they may cite is seeded. A waiver whose payment is
+ * still missing from the seed is left out rather than pointing at nothing.
+ */
+async function seedWaivers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const payments = new Set(fixtures.payments.map((payment) => payment.id));
+  const supplierPayments = new Set(fixtures.supplierPayments.map((payment) => payment.id));
+  const ref = (id: string | null) => (id ? seedId(id) : null);
+  const creatorOf = new Map(fixtures.contracts.map((contract) => [contract.id, seededUserId(contract.salesRepId)]));
+  const waivers = fixtures.lienWaivers.filter(
+    (waiver) =>
+      (!waiver.paymentId || payments.has(waiver.paymentId)) &&
+      (!waiver.supplierPaymentId || supplierPayments.has(waiver.supplierPaymentId)),
+  );
+  for (const waiver of waivers) {
+    await tx
+      .insert(lienWaivers)
+      .values({
+        id: seedId(waiver.id),
+        contractId: seedId(waiver.contractId),
+        direction: waiver.direction,
+        type: waiver.type,
+        paymentId: ref(waiver.paymentId),
+        supplierPaymentId: ref(waiver.supplierPaymentId),
+        amount: waiver.amount,
+        throughDate: waiver.throughDate,
+        state: waiver.state,
+        statutoryForm: waiver.statutoryForm,
+        signedOn: waiver.signedOn,
+        status: waiver.status,
+        createdBy: creatorOf.get(waiver.contractId),
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
- * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and supplier payments (P12 part 3), and contracts (contracts part 1). Business records
- * arrive module by module
- * (docs/real-build-plan.md), each with its own seed.
+ * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and
+ * supplier payments (P12 part 3), and contracts with their billings (contracts parts 1 and 2).
+ * Business records arrive module by module (docs/real-build-plan.md), each with its own seed.
  */
 export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promise<void> {
   await company.transaction(async (tx) => {
@@ -1096,5 +1239,7 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedExpenses(tx, demo);
     await seedPayables(tx, demo);
     await seedContracts(tx, demo);
+    await seedContractBillings(tx, demo);
+    await seedWaivers(tx, demo);
   });
 }

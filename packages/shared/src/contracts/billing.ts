@@ -1,4 +1,4 @@
-import { dec, moneyString, pctOf, roundMoney, sum, type Dec } from "../money";
+import { D, dec, moneyString, pctOf, roundMoney, sum, type Dec } from "../money";
 import type { BillingLine, ChangeOrder, Contract, ContractBilling, ContractLine } from "../types";
 
 const posted = (billings: readonly ContractBilling[]) => billings.filter((b) => b.status === "posted");
@@ -33,6 +33,28 @@ export function billingLineDelta(input: BillingLine, before: { completed: Dec; s
     .plus(heldOn(input.storedRetainagePct, stored))
     .minus(heldOn(input.storedRetainagePct, before.stored));
   return { gross, withheld };
+}
+
+/**
+ * Why a billing would take a line's held retainage below zero, or null (contracts.md rule 9:
+ * held = withheld - released). After a release, lowering a line would otherwise hold back a
+ * negative amount and bill the customer again for retainage already paid out (PR #24 review).
+ */
+export function retainageProblem(
+  inputs: readonly BillingLine[],
+  lines: readonly ContractLine[],
+  billings: readonly ContractBilling[],
+): string | null {
+  const held = heldByLine(billings, lines);
+  for (const input of inputs) {
+    const { withheld } = billingLineDelta(input, lineToDate(input.lineId, billings));
+    // Only a line whose retainage goes down can go below zero; an unchanged line is never refused.
+    if (withheld.lt(0) && (held.get(input.lineId) ?? dec(0)).plus(withheld).lt(0)) {
+      const code = lines.find((line) => line.id === input.lineId)?.code ?? "A line";
+      return `${code}: this would take its held retainage below zero, because part of it was already released.`;
+    }
+  }
+  return null;
 }
 
 /** A billing's per-line amounts and totals. */
@@ -82,18 +104,29 @@ export function heldByLine(billings: readonly ContractBilling[], lines: readonly
 }
 
 /**
- * Shares a release over the lines by what each holds, the last line taking the remainder so the
- * parts add up exactly (ADR 0026: X_L = round2(X × H_L ÷ H)).
+ * Shares a release over the lines by what each holds (ADR 0026, ADR 0045): each share is
+ * X × H_L ÷ H rounded down, and the cents left over go one at a time to the lines with room,
+ * largest fraction first, so the parts add up exactly and none is negative or above H_L.
  */
 export function allocateRelease(amount: string, held: ReadonlyMap<string, Dec>): { lineId: string; amount: string }[] {
   const lines = [...held.entries()].filter(([, h]) => h.gt(0));
   const total = sum(lines.map(([, h]) => h));
-  let left = dec(amount);
-  return lines.map(([lineId, h], i) => {
-    const part = i === lines.length - 1 ? left : roundMoney(dec(amount).times(h).dividedBy(total));
-    left = left.minus(part);
-    return { lineId, amount: moneyString(part) };
-  });
+  // Each share rounds down, so none is negative or above what its line holds; the cents left over go
+  // one at a time to the lines with room, largest fraction first (PR #24 review).
+  const exact = lines.map(([, h]) => dec(amount).times(h).dividedBy(total));
+  const parts = exact.map((value) => value.toDecimalPlaces(2, D.ROUND_DOWN));
+  let cents = dec(amount).minus(sum(parts)).times(100).round().toNumber();
+  const order = lines
+    .map((_, i) => i)
+    .sort((a, b) => exact[b]!.minus(parts[b]!).comparedTo(exact[a]!.minus(parts[a]!)) || a - b);
+  for (const i of order) {
+    if (cents <= 0) break;
+    if (parts[i]!.plus("0.01").lte(lines[i]![1])) {
+      parts[i] = parts[i]!.plus("0.01");
+      cents -= 1;
+    }
+  }
+  return lines.map(([lineId], i) => ({ lineId, amount: moneyString(parts[i]!) }));
 }
 
 /** A contract's money, derived (ADR 0026). Invoiced is billed, Retained is held, Remaining is what is left to bill. */

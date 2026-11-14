@@ -101,7 +101,7 @@ const SENSITIVE_COST = "contracts.contract.view_sensitive";
  * The contract register on the API (contracts.md; ADR 0044): drafts with their schedule of values,
  * sending, a simulated signature, completion, closing, termination, renewal and files. Every write
  * locks the contract, checks its data scope (404 outside it) and writes audit_log in the same
- * transaction. Billings and their postings are part 2; here they are read only.
+ * transaction. Billings and their postings are in ContractBillingService (ADR 0045).
  */
 @Injectable()
 export class ContractsService {
@@ -134,7 +134,7 @@ export class ContractsService {
     return loadChangeOrders(db, this.control.db, { contractIds: await visibleContractIds(db, access) });
   }
 
-  /** The billings of the contracts in scope; read only until part 2. */
+  /** The billings of the contracts in scope; ContractBillingService posts and voids them (ADR 0045). */
   async listBillings(tenant: TenantContext, access: RequestAccess): Promise<ContractBilling[]> {
     const db = await this.tenancy.db(tenant);
     return loadBillings(db, this.control.db, await visibleContractIds(db, access));
