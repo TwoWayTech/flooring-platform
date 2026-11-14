@@ -28,3 +28,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #22 | Inventory part 2: issue and cut with cost of goods, roll quick invoice, commission split (ADR 0043) | @TwoWayTech | feat/inventory-issue-cut | `069ccb3` |
 | 2026-11-14 | #23 | Contracts part 1: register, change orders, waivers and insurance on the API (ADR 0044) | @TwoWayTech | feat/contracts-register | `59ce102` |
 | 2026-11-14 | #24 | Contracts part 2: progress billings and retainage with postings (ADR 0045) | @TwoWayTech | feat/contracts-billing | `2e0a846` |
+| 2026-11-14 | #25 | HR part 1: people, timesheets and time off on the API (ADR 0046) | @TwoWayTech | feat/hr-people | `57664d9` |
