@@ -5,8 +5,10 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/ledger-core` | A (Claude, work queue 2) | Task 6, part 1: the ledger and sales postings (ADR 0039) | Ready; reviews clean; verify and e2e green. Not merged: the Vercel preview check failed on the Free plan's build rate limit (STATUS, Queue stopped) | [#16](https://github.com/TwoWayTech/flooring-platform/pull/16) | the handoff commit |
+| `fix/deploy-vercel-demo-only` | A (Claude) | Only `demo` deploys on Vercel; self-merge counts only the GitHub Actions checks; the guard does not read PR comment text (owner, 2026-11-14). Named `fix/` because the guard only allows pushes to `feat/*` and `fix/*` | In review | see PR | this commit |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
+
+Merged on 2026-11-14: PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
 
 Merged on 2026-11-13, with their branches deleted from origin:
 - PR #3 (`feat/tooling-claude-agents`, `ab57891`): A did B's reviews and merges that day, because B's internet was down.

@@ -13,7 +13,8 @@
  *   push into a push to main), and any force, mirror, prune or delete push;
  * - `git config` writes that steer pushes (`remote.*.push`, `push.default`, `branch.*.merge`).
  * Words are found anywhere in a segment, so wrappers such as `pnpm exec`, `npx` or `node -e` are
- * caught. A command it cannot read is blocked (fail closed). It cannot see through deliberately
+ * caught. The quoted title and body of a PR or issue call are prose and are not read
+ * (`withoutProse`). A command it cannot read is blocked (fail closed). It cannot see through deliberately
  * split words; GitHub's own settings are the backstop (docs/STATUS.md). PR #10 security reviews.
  */
 import { readFileSync } from "node:fs";
@@ -31,6 +32,42 @@ const WORK_BRANCH = /^(feat|fix)\/[\w./-]+$/;
 
 /** `git config` writes that would change where a push goes. */
 const PUSH_CONFIG = /\bgit\b.*\bconfig\b.*\b(remote\.[^\s.]+\.push|push\.default|branch\.[^\s]+\.merge)\b/;
+
+/**
+ * A `gh pr|issue create|edit|comment|review` call at the very start of the command, up to one
+ * quoted `--title` or `--body`. Everything is allow-listed, so the quote really opens a string in
+ * bash and in PowerShell:
+ * - the prefix holds only words, single spaces and `.,:=+/-`, so no comment (`#`, `<#`), stop-parsing
+ *   `--%`, splat, redirection, tab, CR or other quote comes before it;
+ * - single-quoted text is literal in both shells; it may not hold a newline or PowerShell's
+ *   typographic single quotes (U+2018 to U+201B), which would end it early there;
+ * - double-quoted text may not hold `$`, backtick, backslash, a newline or a typographic double
+ *   quote (U+201C to U+201E), so nothing in it expands and it cannot end early;
+ * - a space or the end of the command must follow the closing quote;
+ * - neither form may hold `&`, and single-quoted text may not hold `"`, so even a `gh` run through a
+ *   cmd.exe shim (which re-reads the line) cannot see a live separator. Today `gh` is `gh.exe`.
+ * PR #17 security reviews.
+ */
+const PROSE_ARGUMENT =
+  /^(gh (?:pr|issue) (?:create|edit|comment|review)(?: [\w.,:=+/-]+)*? (?:--body|-b|--title|-t)(?: |=))('(?:[^'"&‘-‛\r\n]|'')*'|"[^"&“-„`$\\\r\n]*")(?= |$)/;
+
+/** At most this many titles and bodies are masked; any after that are read as shell (no slow regex loop). */
+const MAX_PROSE = 20;
+
+/**
+ * The command with the quoted title and body of a PR or issue call replaced by a placeholder, so
+ * a comment that quotes a merge or push command is not mistaken for one (owner, 2026-11-14). Only
+ * literal text at the start of the command is masked; anything after it is still checked.
+ */
+function withoutProse(command) {
+  let text = command;
+  for (let pass = 0; pass < MAX_PROSE; pass += 1) {
+    const next = text.replace(PROSE_ARGUMENT, "$1TEXT");
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
 
 /** One part of a command line, at `;`, `&&`, `||`, `|` or a line break. */
 function segments(command) {
@@ -73,7 +110,7 @@ function pushRefusal(args) {
  * @returns {string | null}
  */
 export function refusal(command) {
-  const text = command.trim();
+  const text = withoutProse(command.trim());
   const merges = segments(text).some((part) => /\bgh\b.*\bpr\b.*\bmerge\b/.test(part));
   if ((merges || /gh\s+pr\s+merge/.test(text)) && !SQUASH_MERGE.test(text)) {
     return "Only `gh pr merge <n> --squash [--match-head-commit <sha>] [--delete-branch]`, run as its own command, is allowed (CLAUDE.md self-merge rule).";

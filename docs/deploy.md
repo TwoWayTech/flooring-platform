@@ -43,3 +43,10 @@ Recommended with it: **Settings** → **Build and Deployment** → **Ignored Bui
 - Production Branch Tracking is set to `demo`.
 - The Ignored Build Step is set, so pushes to `main` and feature branches do not build the demo.
 - The first Git deploy from `demo` (commit `2026f30`, "chore: trigger first demo deploy from Git") is live and marked Current.
+
+**Only `demo` deploys (owner, 2026-11-14).**
+- `apps/web/vercel.json` sets `git.deploymentEnabled` to `{"**": false, "demo": true}`. Vercel reads `vercel.json` from the project's Root Directory, which is `apps/web`.
+- `**` (minimatch) also matches branch names with a slash, such as `feat/x`. A branch that matches several rules deploys when any of them is true, so `demo` still deploys.
+- Every branch made from `main` carries the file, so Vercel creates no deployment and spends no build quota on it. `demo` does not carry the file, and Vercel deploys a branch by default, so `demo` keeps deploying.
+- The Ignored Build Step stays as a second guard.
+- On pull requests into `main`, Vercel's status is ignored: the self-merge rule counts only the GitHub Actions checks (CLAUDE.md). This followed the Free plan's "Deployment rate limited" error on PR #16's preview.
