@@ -112,6 +112,7 @@ The owner's queue of 2026-11-14. Claude runs it in order without stopping, each 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
 ## Follow-ups (don't forget)
+- **Dated manager history for overrides:** overrides are worked out with today's manager, so an Owner reorg moves unapproved months' override lines to the new manager (ADR 0048, PR #27 second review). Store a dated manager history (or override lines at approval) when a schema change is approved by the owner.
 - **Commission carry-out column:** the carry is derived from each person's whole history (ADR 0048, PR #27 first review); store `carry_out` on `commission_statements` at approval when a migration is next allowed, so an approved month's carry is frozen like its payable.
 - **Required check on a paid GitHub plan:** when the repository moves to a paid GitHub plan, make `verify` (which runs the isolation suite) a required check on `main`. GitHub Free cannot enforce it on a private repository, so until then the CLAUDE.md self-merge rule is the guard (owner decision, 2026-11-13).
 - **Merge methods on GitHub (owner, settings):** the repository still allows rebase and merge commits. Switching both off under Settings → General → Pull Requests makes squash the only way, whatever a tool allows. Local rules (the permission rules and `.claude/hooks/merge-push-guard.mjs`) cannot see through a deliberately disguised command, so GitHub's settings are the real backstop (PR #10 security reviews).

@@ -293,6 +293,35 @@ describe("commission statements", () => {
     expect(hidden.every((l) => l.base === null)).toBe(true);
   });
 
+  it("hides every base on an invoice whose plan changed basis between payments, so revenue beside margin gives no cost away", () => {
+    const on = (id: string, planId: string, from: string, to: string | null) => ({
+      id,
+      userId: "dana",
+      planId,
+      effectiveFrom: from,
+      effectiveTo: to,
+      monthlyTargetOverride: null,
+      acknowledgement: null,
+    });
+    // Half of I1 is paid in August on a margin plan, the rest in September on a paid revenue plan.
+    const rows = rowsFor({
+      plans: [plan(), plan({ id: "m", basis: "gross_margin" })],
+      assignments: [on("a1", "m", "2026-01-01", "2026-08-31"), on("a2", "p", "2026-09-01", null)],
+      invoices: [invoice("i1"), invoice("i2")],
+      payments: [
+        { ...payment("pay-1", "i1", "2026-08-10"), amount: "500.00" },
+        { ...payment("pay-2", "i1", "2026-09-10"), amount: "500.00" },
+        payment("pay-3", "i2", "2026-09-12"),
+      ],
+    });
+    const onI1 = rows.flatMap((r) => r.lines).filter((l) => l.invoiceId === "i1");
+    expect(onI1.map((l) => l.basis).sort()).toEqual(["gross_margin", "paid_revenue"]);
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
+    expect(hidden.filter((l) => l.invoiceId === "i1").every((l) => l.base === null)).toBe(true);
+    // I2, paid only under the paid revenue plan, keeps its base.
+    expect(hidden.find((l) => l.invoiceId === "i2")!.base).toBe("1000.00");
+  });
+
   it("starts the window with the carry of the months before it, so a deficit leaving the window still carries", () => {
     // Paid in 2025-10 (approved), voided in 2025-11: a 50.00 clawback in a month no longer among the
     // last twelve on 2026-11-14. It carries until August's 50.00 recovers it.

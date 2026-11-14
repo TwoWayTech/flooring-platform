@@ -193,7 +193,7 @@ export class CommissionsController {
 
 /**
  * Sales → Team's commission column (commissions.md rule 17, `teamCommission`; ADR 0048): in the
- * `core` module, behind `sales.team`, for holders of `sales.commission.view`, narrowed by data scope.
+ * `core` module, behind `sales.team` and `hr.commissions`, for holders of `sales.commission.view`, narrowed by data scope.
  */
 @Controller()
 @RequireModule("core")
@@ -209,6 +209,8 @@ export class CommissionTotalsController {
     @Query() query: Record<string, unknown>,
   ) {
     requireFeature("sales.team");
+    // Commission is off everywhere when its switch is (CLAUDE.md rule 13; second security review of PR #27).
+    requireFeature("hr.commissions");
     return this.commissions.totals(tenant, access, parse(RANGE, query));
   }
 }

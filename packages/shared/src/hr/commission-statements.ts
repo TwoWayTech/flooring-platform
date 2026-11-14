@@ -170,11 +170,17 @@ export function reversalDecisionProblem(row: CommissionStatementRow | undefined,
  * HR", closed by ADR 0048): the base there is margin dollars, from the sensitive invoice cost. It
  * goes by the line's `basis`, the plan that set the invoice's base, not the line's own plan: on a
  * split sale a paid revenue co-rep's share, and every override or reversal of it, is margin too.
+ * Every line of an invoice with any margin line is hidden: when the plan changes basis between two
+ * payments, the paid revenue base of one line beside the margin base of another would give the
+ * cost away (second security review of PR #27).
  */
 export function hideMarginBase(rows: readonly CommissionStatementRow[]): CommissionStatementRow[] {
+  const marginInvoices = new Set(
+    rows.flatMap((row) => row.lines.filter((l) => l.basis === "gross_margin").map((l) => l.invoiceId)),
+  );
   return rows.map((row) => ({
     ...row,
-    lines: row.lines.map((l) => (l.basis === "gross_margin" ? { ...l, base: null } : l)),
+    lines: row.lines.map((l) => (marginInvoices.has(l.invoiceId) ? { ...l, base: null } : l)),
   }));
 }
 

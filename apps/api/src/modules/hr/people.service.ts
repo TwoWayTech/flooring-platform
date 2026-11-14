@@ -1,6 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { employeeChecklistItems, employees, locations, userProfiles } from "@workspace/db/company";
+import {
+  commissionAssignments,
+  commissionPlans,
+  employeeChecklistItems,
+  employees,
+  locations,
+  userProfiles,
+} from "@workspace/db/company";
 import type { StorageProvider } from "@workspace/providers";
 import {
   dec,
@@ -11,7 +18,7 @@ import {
   SENSITIVE,
   type Employee,
 } from "@workspace/shared";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, ne } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -137,6 +144,7 @@ export class PeopleService {
       // differ, so it could change its own work state, hire date or status unseen: only an Owner
       // writes people from one (third and fourth security reviews of PR #25; ADR 0046).
       await requireLinkedDecider(tx, actor.access);
+      await this.checkOverrideManager(tx, actor, employeeId, managerChanged(before, values), input.userId);
       await this.checkManager(tx, employeeId, input.managerId);
       if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
       let row: EmployeeRow;
@@ -285,6 +293,53 @@ export class PeopleService {
     return this.one(db, tenant, actor, employeeId);
   }
 
+  /**
+   * Only the Owner changes the manager of someone on a commission plan that pays their manager an
+   * override, or the sign-in linked to them (second security review of PR #27; ADR 0048): the
+   * manager of their linked employee is who is paid the override on their sales, so anyone else
+   * could make themselves, or someone of theirs, the one paid. Any assignment counts, past or
+   * future, because statements are worked out with today's manager.
+   */
+  private async checkOverrideManager(
+    tx: CompanyDb,
+    actor: Actor,
+    employeeId: string,
+    managerMoved: boolean,
+    linkTo: string | null | undefined,
+  ): Promise<void> {
+    if (actor.access.isOwner) return;
+    const current = (
+      await tx
+        .select({ userId: userProfiles.userId })
+        .from(userProfiles)
+        .where(and(eq(userProfiles.employeeId, employeeId), isNull(userProfiles.deletedAt)))
+    ).map((row) => row.userId);
+    const linkMoved =
+      linkTo !== undefined && (linkTo ? current.length !== 1 || current[0] !== linkTo : current.length > 0);
+    if (!managerMoved && !linkMoved) return;
+    const people = [...new Set([...current, ...(linkTo ? [linkTo] : [])])];
+    if (people.length === 0) return;
+    const [onOverride] = await tx
+      .select({ id: commissionAssignments.id })
+      .from(commissionAssignments)
+      .innerJoin(commissionPlans, eq(commissionPlans.id, commissionAssignments.planId))
+      .where(
+        and(
+          inArray(commissionAssignments.userId, people),
+          isNull(commissionAssignments.deletedAt),
+          isNull(commissionPlans.deletedAt),
+          gt(commissionPlans.overridePct, "0"),
+        ),
+      )
+      .limit(1);
+    if (!onOverride) return;
+    throw refuse(
+      managerMoved
+        ? "This person earns their manager an override, so only the Owner can change their manager."
+        : "This person earns their manager an override, so only the Owner can change their sign-in link.",
+    );
+  }
+
   /** A manager must be another live employee, and the chain may not loop back to this person. */
   private async checkManager(tx: CompanyDb, employeeId: string, managerId: string | null): Promise<void> {
     if (!managerId) return;
@@ -430,10 +485,14 @@ function checkSelfEdit(actor: Actor, before: EmployeeRow | null, own: boolean, v
   } else if (sessionEmail && emailKey(values.email) === sessionEmail) {
     throw refuse("Your own sign-in email can only be on your own record.");
   }
-  const managerChanged = before ? values.managerId !== before.managerId : values.managerId !== null;
-  if (managerChanged && actor.access.dataScope !== "all") {
+  if (managerChanged(before, values) && actor.access.dataScope !== "all") {
     throw refuse("Only someone who sees everyone's records can change a manager.");
   }
+}
+
+/** Whether a save sets or moves the person's manager: a new person with one, or a different one. */
+function managerChanged(before: EmployeeRow | null, values: EmployeeValues): boolean {
+  return before ? values.managerId !== before.managerId : values.managerId !== null;
 }
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
