@@ -192,10 +192,10 @@ export class RolesController {
 export class AuditLogController {
   constructor(private readonly audit: AuditLogService) {}
 
-  /** GET /audit: the newest entries. */
+  /** GET /audit: the newest entries; pay-sensitive ones without their details unless the viewer can see pay. */
   @Get()
   @RequirePermission("settings.audit.view")
   list(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
-    return this.audit.list(tenant, access.permissions);
+    return this.audit.list(tenant, access);
   }
 }

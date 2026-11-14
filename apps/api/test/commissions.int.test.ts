@@ -21,7 +21,18 @@ import {
 } from "@workspace/db/company";
 import { tenantModuleOverrides } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { addDays, dec, FEATURES, moneyString, monthEnd, PRODUCT_HEADER, sum, workweekStartOf } from "@workspace/shared";
+import {
+  addDays,
+  dec,
+  FEATURES,
+  HIDDEN_PAY_DETAILS,
+  moneyString,
+  monthEnd,
+  PAY_SENSITIVE_AUDIT_ACTIONS,
+  PRODUCT_HEADER,
+  sum,
+  workweekStartOf,
+} from "@workspace/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
@@ -1693,5 +1704,81 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, other.id));
     }
+  });
+
+  // Owner decision 2026-11-14 (ADR 0048 "Audit visibility"): plan terms and reasons only for pay viewers.
+  it("shows the details of plan-terms and reason audit entries only to the Owner and pay view_sensitive holders", async () => {
+    const probe = "Audit visibility probe";
+    const secret = "Probe reason: spiff on the Maple job";
+    await rows((db) =>
+      db.insert(auditLog).values([
+        ...[...PAY_SENSITIVE_AUDIT_ACTIONS].map((action) => ({
+          actorUserId: ids.hrA,
+          actorRole: "HR manager",
+          category: "data" as const,
+          action,
+          targetType: "audit_probe",
+          targetLabel: probe,
+          before: { baseRatePct: "3.3333", tiers: [{ fromPctOfTarget: "100", ratePct: "6" }] },
+          after: { baseRatePct: "7.7777", draw: { kind: "recoverable" }, reason: secret },
+        })),
+        {
+          actorUserId: ids.hrA,
+          actorRole: "HR manager",
+          category: "data" as const,
+          action: "Approved commission statement",
+          targetType: "audit_probe",
+          targetLabel: probe,
+          before: { status: "draft" },
+          after: { status: "approved" },
+        },
+      ]),
+    );
+    type Entry = { id: string; action: string; target: string; before: string | null; after: string | null };
+    const read = async (cookie: string) => {
+      const answer = await call("get", "/audit", cookie);
+      status(answer, 200);
+      return answer.body as Entry[];
+    };
+    const [owner, hr, accountant] = await Promise.all([
+      read(cookies.owner),
+      read(cookies.hrB),
+      read(cookies.accountant),
+    ]);
+    // Rows are kept for everyone, so the count, the order and the CSV export (built from this list) agree.
+    expect(accountant.map((e) => e.id)).toEqual(owner.map((e) => e.id));
+    expect(hr.map((e) => e.id)).toEqual(owner.map((e) => e.id));
+
+    const probes = (entries: Entry[]) => entries.filter((e) => e.target === probe);
+    expect(probes(owner)).toHaveLength(PAY_SENSITIVE_AUDIT_ACTIONS.size + 1);
+    for (const seen of [probes(owner), probes(hr)]) {
+      for (const entry of seen.filter((e) => PAY_SENSITIVE_AUDIT_ACTIONS.has(e.action))) {
+        expect(entry.after, entry.action).toContain(secret);
+        expect(entry.before, entry.action).toContain("3.3333");
+      }
+    }
+    // The Accountant reads the audit log but not pay: the row, who and when, never the terms or reason.
+    for (const entry of probes(accountant)) {
+      if (PAY_SENSITIVE_AUDIT_ACTIONS.has(entry.action)) {
+        expect(entry).toMatchObject({ before: HIDDEN_PAY_DETAILS, after: HIDDEN_PAY_DETAILS });
+      } else {
+        expect(entry.after).toContain("approved");
+      }
+    }
+    const accountantText = JSON.stringify(accountant);
+    expect(accountantText).not.toContain("Probe reason");
+    expect(accountantText).not.toContain("7.7777");
+    // The real entries written above: the adjustment reasons and the plan terms are hidden too.
+    expect(accountantText).not.toContain("Spiff for the Maple job");
+    expect(accountantText).not.toContain("Returned trim");
+    expect(accountantText).not.toMatch(/baseRatePct|monthlyTarget|clawbackDays/);
+    const realAdjustments = accountant.filter(
+      (e) => e.action === "Adjusted commission statement" && e.target !== probe,
+    );
+    expect(realAdjustments.length).toBeGreaterThan(1);
+    expect(realAdjustments.every((e) => e.before === null && e.after === HIDDEN_PAY_DETAILS)).toBe(true);
+    expect(JSON.stringify(owner)).toContain("Spiff for the Maple job");
+    expect(JSON.stringify(hr)).toContain("Returned trim");
+    expect(JSON.stringify(owner)).toMatch(/baseRatePct/);
   });
 });
