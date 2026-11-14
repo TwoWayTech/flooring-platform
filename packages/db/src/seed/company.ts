@@ -15,6 +15,9 @@ import {
   quoteLines,
   quotes,
   documentSequences,
+  expenses,
+  recurringExpenses,
+  supplierBills,
   goodsReceipts,
   locations,
   poLines,
@@ -738,9 +741,94 @@ async function seedInvoices(tx: CompanyDb, { fixtures }: DemoCompany): Promise<v
 }
 
 /**
+ * Expenses and recurring expenses (P12 part 2; ADR 0041), with the supplier bills that pay-later
+ * expenses link to; the other bills arrive with P12 part 3. Seeded history posts no journal entry:
+ * the ledger starts at go-live (STATUS, "Opening balances"). Seeded receipts have no bytes, so no
+ * attachment rows are written (ADR 0038). A raised recurring draft keeps no creator, so the list
+ * shows "Recurring expense" until a person saves it.
+ */
+async function seedExpenses(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
+  const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
+  const owner = fixtures.users.find((user) => user.roleIds.some((role) => role.endsWith("-owner")));
+  const linked = new Set(fixtures.expenses.flatMap((expense) => (expense.billId ? [expense.billId] : [])));
+  for (const bill of fixtures.bills.filter((row) => linked.has(row.id))) {
+    await tx
+      .insert(supplierBills)
+      .values({
+        id: seedId(bill.id),
+        number: bill.number,
+        supplierId: seedId(bill.supplierId),
+        poId: bill.poId ? seedId(bill.poId) : null,
+        issuedAt: bill.issuedAt,
+        dueAt: bill.dueAt,
+        total: bill.total,
+        matchIssues: bill.matchIssues,
+        createdBy: userOf(owner?.id),
+      })
+      .onConflictDoNothing();
+  }
+  for (const template of fixtures.recurringExpenses) {
+    await tx
+      .insert(recurringExpenses)
+      .values({
+        id: seedId(template.id),
+        supplierId: seedId(template.supplierId),
+        category: template.category,
+        locationId: template.locationId ? seedId(template.locationId) : null,
+        amount: template.amount,
+        tax: template.tax,
+        paymentMethod: template.paymentMethod,
+        frequency: template.frequency,
+        dayOfMonth: template.dayOfMonth,
+        startsOn: template.startsOn,
+        endsOn: template.endsOn,
+        active: template.active,
+        note: template.note,
+        createdBy: userOf(owner?.id),
+      })
+      .onConflictDoNothing();
+  }
+  for (const expense of fixtures.expenses) {
+    const raised = expense.recurringId !== null && expense.recordedBy === "Recurring expense";
+    await tx
+      .insert(expenses)
+      .values({
+        id: seedId(expense.id),
+        number: expense.number,
+        date: expense.date,
+        supplierId: expense.supplierId ? seedId(expense.supplierId) : null,
+        category: expense.category,
+        locationId: expense.locationId ? seedId(expense.locationId) : null,
+        amount: expense.amount,
+        tax: expense.tax,
+        paymentMethod: expense.paymentMethod,
+        reference: expense.reference,
+        note: expense.note,
+        status: expense.status,
+        settlement: expense.settlement,
+        dueAt: expense.dueAt,
+        billId: expense.billId ? seedId(expense.billId) : null,
+        recurringId: expense.recurringId ? seedId(expense.recurringId) : null,
+        period: expense.period,
+        recordedById: seededUserId(expense.recordedById),
+        recordedAt: utc(expense.recordedAt),
+        reviewedById: userOf(expense.reviewedBy ? byName.get(expense.reviewedBy) : null),
+        reviewedAt: expense.reviewedAt ? utc(expense.reviewedAt) : null,
+        rejectReason: expense.rejectReason,
+        voidedById: userOf(expense.voidedBy ? byName.get(expense.voidedBy) : null),
+        voidedAt: expense.voidedAt ? utc(expense.voidedAt) : null,
+        voidReason: expense.voidReason,
+        createdAt: utc(expense.recordedAt),
+        createdBy: raised ? null : seededUserId(expense.recordedById),
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/**
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
- * and purchase orders with their receipts (purchasing part 1). Business records
+ * purchase orders with their receipts (purchasing part 1), and expenses (P12 part 2). Business records
  * arrive module by module
  * (docs/real-build-plan.md), each with its own seed.
  */
@@ -753,5 +841,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedOrders(tx, demo);
     await seedSales(tx, demo);
     await seedInvoices(tx, demo);
+    await seedExpenses(tx, demo);
   });
 }
