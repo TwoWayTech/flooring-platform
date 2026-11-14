@@ -33,7 +33,7 @@ interface TrialBalance {
 }
 
 const PROOF = { name: "receipt.pdf", data: Buffer.from("%PDF-1.4\n% proof of payment\n").toString("base64") };
-const PERIOD_END = "2026-11-14";
+const PERIOD_END = companyDay();
 
 /** Today in the test company's time zone (America/Chicago), which is the day the API dates by. */
 function companyDay(): string {
@@ -311,7 +311,15 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
       const grants: Record<string, { scope: "all" | "own"; keys: string[] }> = {
         biller: {
           scope: "all",
-          keys: ["contracts.contract.view", "contracts.billing.view", "contracts.billing.create", "sales.invoice.view"],
+          // Product cost and invoice edits, but not contracts view_sensitive (PR #24 review).
+          keys: [
+            "contracts.contract.view",
+            "contracts.billing.view",
+            "contracts.billing.create",
+            "sales.invoice.view",
+            "sales.invoice.edit",
+            "inventory.product.view_sensitive",
+          ],
         },
         scoped: {
           scope: "own",
@@ -782,6 +790,11 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
     }
     expect(invoice).not.toHaveProperty("cost");
     for (const entry of invoice.lines as Json[]) expect(entry).not.toHaveProperty("unitCost");
+    // Marking it sent returns the invoice too, still without the cost share.
+    const sent = await call("post", `/invoices/${billing.body.invoiceId as string}/sent`, "biller");
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    expect(sent.body).not.toHaveProperty("cost");
+    for (const entry of sent.body.lines as Json[]) expect(entry).not.toHaveProperty("unitCost");
 
     // The owner sees the cost share: 600.00 x 400/1000 plus 300.00 x 200/500.
     expect((await invoiceOf(billing.body.invoiceId as string, "owner")).cost).toBe("360.00");

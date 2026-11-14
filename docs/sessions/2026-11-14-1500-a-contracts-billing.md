@@ -47,3 +47,10 @@ The build was handed to a general-purpose subagent with a full brief; tests and 
     - the bill a void deletes gets its own audit entry, with no money;
     - `updatedAt` is set on the billing's document link.
 - **Second security review:** see PR #24.
+- **Second security review:** 1 blocking, fixed. `POST /invoices/:id/sent` returned a contract invoice's cost to someone with product cost but without `contracts.contract.view_sensitive`. `contractCostShown` now applies there too, with a test. Should-fix items done:
+  - a billing needs the switch of the document it raises (`sales.invoices`, or `purchasing.orders` for a bill);
+  - the invoice link sets `updatedAt`;
+  - a period may not end in the future or before the last billing's;
+  - the test uses the company's day.
+  The spent-credit check on void is kept as a guard, with a comment that it can't trigger today.
+- **Third security review:** see PR #24.

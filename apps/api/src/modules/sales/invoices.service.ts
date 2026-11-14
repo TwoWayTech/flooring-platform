@@ -455,7 +455,8 @@ export class InvoicesService {
     });
     const [sent] = await loadInvoices(db, clock.zone, { ids: [invoiceId] });
     await this.emailInvoice(tenant, actor, sent!);
-    return sent!;
+    // A contract invoice's cost needs contracts view_sensitive here too (PR #24 review).
+    return contractCostShown(actor.access, sent!);
   }
 
   /**

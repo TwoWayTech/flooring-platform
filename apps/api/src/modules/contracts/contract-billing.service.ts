@@ -11,6 +11,7 @@ import {
   supplierBills,
 } from "@workspace/db/company";
 import {
+  featureOn,
   allocateRelease,
   billingFigures,
   billingProblem,
@@ -134,6 +135,15 @@ export class ContractBillingService {
           "This billing comes to less than zero. Void the last billing, or lower a line along with new work.",
         );
       }
+      // A period can't end in the future, nor before the last billing's (PR #24 review).
+      const lastPeriod = past
+        .filter((entry) => entry.status === "posted")
+        .reduce<string | null>(
+          (latest, entry) => (!latest || entry.periodEnd > latest ? entry.periodEnd : latest),
+          null,
+        );
+      if (input.periodEnd > clock.day) throw refuse("A billing period can't end in the future.");
+      if (lastPeriod && input.periodEnd < lastPeriod) throw refuse("This period ends before the last billing's.");
       const billing: NewBilling = {
         id,
         kind: "progress",
@@ -331,6 +341,14 @@ export class ContractBillingService {
     billing: NewBilling,
     amounts: readonly LineAmount[],
   ): Promise<{ document: string; notice: InvoiceNotice | null }> {
+    // A billing raises an invoice or a bill, so their own switches must be on too (CLAUDE.md rule 13).
+    if (!featureOn(row.direction === "customer" ? "sales.invoices" : "purchasing.orders")) {
+      throw refuse(
+        row.direction === "customer"
+          ? "Invoices are switched off for this company."
+          : "Bills are switched off for this company.",
+      );
+    }
     const by = actor.access.userId;
     await tx.insert(contractBillings).values({
       id: billing.id,
@@ -492,7 +510,10 @@ export class ContractBillingService {
     // Invoice lines get their own ids; nothing points at a contract line through them.
     const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
     await insertInvoice(tx, invoice, actor.access.userId, clock.now);
-    await tx.update(contractBillings).set({ invoiceId: invoice.id }).where(eq(contractBillings.id, billing.id));
+    await tx
+      .update(contractBillings)
+      .set({ invoiceId: invoice.id, updatedAt: new Date() })
+      .where(eq(contractBillings.id, billing.id));
     return invoice;
   }
 
@@ -528,6 +549,7 @@ export class ContractBillingService {
       .limit(1);
     if (liveNote) throw refuse(`Void credit note ${liveNote.number} first.`);
     // Credit this invoice gave the customer that was already spent can't be taken back (as voidInvoice).
+    // A guard: overpaid needs a confirmed payment, which the locked check above already refuses.
     if (
       dec(ledger.overpaid).gt(0) &&
       (await creditNow(tx, this.control.db, invoice.customerId, clock)).lt(ledger.overpaid)
