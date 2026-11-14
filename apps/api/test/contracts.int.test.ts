@@ -745,7 +745,9 @@ describe("contracts register (contracts part 1)", () => {
     expect((await call("get", `/files/${fileA}`, "sales")).status).toBe(404);
     expect((await call("get", `/files/${fileB}`, "owner")).status).toBe(200);
     expect((await call("get", `/files/${fileB}`, "manager")).status).toBe(404);
-    expect((await call("get", `/files/${fileA}`, "warehouse")).status).toBe(403);
+    // Every role holds hr.portal.view (My documents, ADR 0049), so the route lets them in and the
+    // service refuses a file outside their keys with the same 404 as one out of scope.
+    expect((await call("get", `/files/${fileA}`, "warehouse")).status).toBe(404);
     expect((await call("get", `/files/${fileA}`, "otherManager")).status).toBe(404);
   });
 

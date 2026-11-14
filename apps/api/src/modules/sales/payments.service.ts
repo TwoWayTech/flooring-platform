@@ -38,6 +38,7 @@ import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { loadAccountingForPosting } from "../../core/ledger/accounting-settings";
 import { loadExpenses, locationBranches, seesExpense, seesPayroll } from "../finance/expense-records";
+import { viewerEmployeeId } from "../hr/hr-records";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { STORAGE } from "../../core/storage/storage.module";
@@ -474,10 +475,16 @@ export class PaymentsService {
     const core = access.modules.includes("core");
     const payments = featureOn("sales.payments") && core;
     if (row.ownerType === "employee") {
-      // An employee document is HR's (hr.md "Who uses it": People needs hr.employee.view; no data scope).
-      if (!may("hr.employee.view") || !featureOn("hr.employees") || !access.modules.includes("hr")) {
-        throw notFound("file");
-      }
+      // An employee document is HR's (hr.md "Who uses it": People needs hr.employee.view; no data
+      // scope). The person it is about opens it in My documents with hr.portal.view: only a document
+      // on the employee linked to their own sign-in (employee-portal.md known limits; ADR 0049).
+      const hrReader = may("hr.employee.view") && featureOn("hr.employees");
+      const ownReader =
+        !hrReader &&
+        may("hr.portal.view") &&
+        featureOn("hr.portal") &&
+        (await viewerEmployeeId(db, access.userId)) === row.ownerId;
+      if ((!hrReader && !ownReader) || !access.modules.includes("hr")) throw notFound("file");
       const [person] = await db
         .select({ id: employees.id })
         .from(employees)

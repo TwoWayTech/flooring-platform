@@ -29,6 +29,13 @@
       "when": 1794637532066,
       "tag": "0003_ledger_live_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794681050049,
+      "tag": "0004_user_profiles_one_per_employee",
+      "breakpoints": true
     }
   ]
 }

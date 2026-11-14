@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "user_profiles_employee_uidx" ON "user_profiles" USING btree ("employee_id") WHERE "user_profiles"."employee_id" is not null and "user_profiles"."deleted_at" is null;

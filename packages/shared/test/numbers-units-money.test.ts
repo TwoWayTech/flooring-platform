@@ -10,6 +10,7 @@ import {
   moneyString,
   parseAreaEntry,
   quantityForArea,
+  quantityString,
   rollAreaSqFt,
   roundMoney,
   sqFtToSqYd,
@@ -101,6 +102,8 @@ describe("money", () => {
     expect(sum(["0.1", "0.2"]).toString()).toBe("0.3");
     expect(roundMoney("2.675").toString()).toBe("2.68");
     expect(moneyString(10)).toBe("10.00");
+    expect(quantityString("16")).toBe("16.000");
+    expect(quantityString("1.23456")).toBe("1.235");
   });
 
   it("computes margin percent and handles zero revenue", () => {

@@ -24,7 +24,7 @@ function SignPlan({ portal }: { portal: MyPortal }) {
   if (!assignment || !plan || assignment.acknowledgement) return null;
   async function sign() {
     try {
-      await api.acknowledgePlan(assignment!.id, name);
+      await api.acknowledgePlan(assignment!.id, name, plan!);
       toast.success("Plan signed");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign this plan.");

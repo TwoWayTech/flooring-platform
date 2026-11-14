@@ -1,4 +1,5 @@
 import type { DataScope, UserStatus } from "@workspace/shared";
+import { sql } from "drizzle-orm";
 import { boolean, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { at, business, userRef } from "../columns";
 import { employees } from "./hr";
@@ -38,7 +39,9 @@ export const rolePermissions = pgTable(
 
 /**
  * A person's profile in this company. The person (name, email, MFA) is a control-database user;
- * this row holds what only this company knows about them.
+ * this row holds what only this company knows about them. `employee_id` links the sign-in to the
+ * person's employee record: one live sign-in per employee (owner decision 2026-11-14, ADR 0049),
+ * so "own" records and the portal always name one person. Unlinked and deleted profiles don't count.
  */
 export const userProfiles = pgTable(
   "user_profiles",
@@ -52,7 +55,12 @@ export const userProfiles = pgTable(
     defaultLocationId: uuid().references(() => locations.id),
     lastLoginAt: at(),
   },
-  (table) => [uniqueIndex("user_profiles_user_uidx").on(table.userId)],
+  (table) => [
+    uniqueIndex("user_profiles_user_uidx").on(table.userId),
+    uniqueIndex("user_profiles_employee_uidx")
+      .on(table.employeeId)
+      .where(sql`${table.employeeId} is not null and ${table.deletedAt} is null`),
+  ],
 );
 
 /** A role given to a user; a user may hold several, capped by the ceiling (blueprint role rule 4). */
