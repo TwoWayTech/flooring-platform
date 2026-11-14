@@ -25,7 +25,18 @@ const PROFILE = z
   })
   .strict();
 
-const SIGNATURE = z.object({ signedName: z.string().max(120) }).strict();
+/**
+ * A signature and the terms it acknowledges: the plan id, version and last change the portal showed
+ * (ADR 0049). Strict, so nothing else is taken.
+ */
+const SIGNATURE = z
+  .object({
+    signedName: z.string().max(120),
+    planId: z.uuid(),
+    planVersion: z.number().int().positive(),
+    planUpdatedAt: z.iso.datetime(),
+  })
+  .strict();
 
 /**
  * The employee portal (employee-portal.md; ADR 0049), in the `hr` module, behind `hr.portal`, for
@@ -78,8 +89,7 @@ export class PortalController {
     requireFeature("hr.portal");
     requireFeature("hr.commissions");
     if (!access.modules.includes("core")) throw new NotFoundException();
-    const { signedName } = parse(SIGNATURE, body);
-    await this.portal.signPlan(tenant, actorOf(access, session, request), id, signedName);
+    await this.portal.signPlan(tenant, actorOf(access, session, request), id, parse(SIGNATURE, body));
     return { ok: true };
   }
 }

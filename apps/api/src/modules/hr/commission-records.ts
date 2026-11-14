@@ -76,6 +76,7 @@ export async function loadCommissionPlans(db: CompanyDb, ids?: readonly string[]
     overridePct: rateText(row.overridePct),
     draw: { kind: row.draw.kind, monthlyAmount: moneyString(row.draw.monthlyAmount) },
     clawbackDays: row.clawbackDays,
+    updatedAt: row.updatedAt.toISOString(),
   }));
 }
 

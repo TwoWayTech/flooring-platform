@@ -51,7 +51,11 @@ describe("employee portal rules (employee-portal.md, ADR 0049)", () => {
     const contractor = portalVisibility(person({ workerType: "1099", flsaStatus: "not_applicable" }), allOn, false);
     expect(contractor).toMatchObject({ pay: false, commission: false, clock: false, teamCalendar: false });
     expect(portalVisibility(person({ flsaStatus: "exempt" }), allOn, false).clock).toBe(false);
-    expect(portalVisibility(person({ status: "terminated" }), allOn, false).clock).toBe(false);
+    expect(portalVisibility(person({ status: "terminated" }), allOn, false)).toMatchObject({
+      clock: false,
+      teamCalendar: false,
+    });
+    expect(portalVisibility(person({ status: "on_leave" }), allOn, false).teamCalendar).toBe(true);
     expect(portalVisibility(null, allOn, false)).toMatchObject({
       pay: false,
       commission: false,

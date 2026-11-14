@@ -1,6 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { clockEntries, commissionAssignments, employees, settings } from "@workspace/db/company";
+import { clockEntries, commissionAssignments, commissionPlans, employees, settings } from "@workspace/db/company";
 import {
   addDays,
   earnedInYear,
@@ -11,7 +11,7 @@ import {
   ownStatements,
   pendingHours,
   portalVisibility,
-  SENSITIVE,
+  quantityString,
   teamOutView,
   timeOffBalance,
   workweekStartOf,
@@ -53,8 +53,16 @@ import { loadContractorPayments, loadPayPeriods } from "./pay-records";
 /** How far back the team calendar reaches: absences that ended within this many days, and later ones. */
 const TEAM_WINDOW_DAYS = 92;
 
-/** The signed-in person's own record as the portal sends it: the pay rate only when they may see it (ADR 0049). */
-export type OwnEmployee = Omit<Employee, "payRate"> & { payRate?: string };
+/** The signed-in person's own record as the portal sends it: never with the pay rate, which travels as `ownPayRate`. */
+export type OwnEmployee = Omit<Employee, "payRate">;
+
+/** The plan terms a signature acknowledges: the ones the portal showed the rep (ADR 0049). */
+export interface SignedTerms {
+  signedName: string;
+  planId: string;
+  planVersion: number;
+  planUpdatedAt: string;
+}
 
 /** One pay period on My pay: the period's dates and status, never anyone else's line or exclusion. */
 export interface PortalPayRow {
@@ -65,6 +73,15 @@ export interface PortalPayRow {
 /** Everything the portal shows, for the signed-in person only (employee-portal.md "MyPortal"; ADR 0049). */
 export interface PortalView {
   employee: OwnEmployee | null;
+  /**
+   * The signed-in person's own pay rate, or null. Owner decision 2026-11-14 (ADR 0049): the company
+   * setting alone shows a person their own rate. The global sensitive-field interceptor strips
+   * `payRate` by name from every response without `hr.employee.view_sensitive`, so the own rate
+   * travels under this name, which is not reserved, and only here: it is read from the employee
+   * linked to the verified session, never from input, and `employee` never carries `payRate`.
+   * Rates anywhere else in this response (a pay line's base rate) are still stripped.
+   */
+  ownPayRate: string | null;
   visible: PortalVisibility;
   weekStart: string;
   weekStartDay: number;
@@ -144,7 +161,8 @@ export class PortalService {
       visible.teamCalendar ? this.team(db, clock.day) : { teamOut: [], teamNames: [] },
     ]);
     return {
-      employee: employee ? ownEmployee(employee, visible) : null,
+      employee: employee ? ownEmployee(employee) : null,
+      ownPayRate: employee && visible.rates ? employee.payRate : null,
       visible,
       weekStart: workweekStartOf(clock.day, weekStartDay),
       weekStartDay,
@@ -194,7 +212,7 @@ export class PortalService {
     });
     const basis = await this.basis(db, tenant, actor.access);
     if (!basis.employee || basis.employee.id !== employeeId) throw notFound("employee");
-    return ownEmployee(basis.employee, basis.visible);
+    return ownEmployee(basis.employee);
   }
 
   /**
@@ -202,9 +220,11 @@ export class PortalService {
    * assignment must be the signed-in user's, running and unsigned, and My commission must be shown
    * to them, because a signature acknowledges terms the person has read. The name must be the
    * account's, ignoring case and surrounding spaces. Takes the payroll lock first, as a plan edit
-   * that clears signatures does, so a signature never lands on terms that just changed.
+   * that clears signatures does, and the request names the terms it read (plan id, version and
+   * when it last changed): unless they are the assignment's current plan as it stands, it is a 409,
+   * so a signature never lands on terms the rep did not see (second security review of PR #28).
    */
-  async signPlan(tenant: TenantContext, actor: Actor, assignmentId: string, signedName: string): Promise<void> {
+  async signPlan(tenant: TenantContext, actor: Actor, assignmentId: string, terms: SignedTerms): Promise<void> {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       await tx.execute(PAYROLL_LOCK);
@@ -221,7 +241,22 @@ export class PortalService {
         throw refuse("Commission is not shown here. Ask HR for a copy of your plan to sign.");
       }
       if (row.acknowledgedAt) throw refuse("You have already signed this plan.");
-      const typed = signedName.trim();
+      const [plan] = await tx
+        .select({ id: commissionPlans.id, version: commissionPlans.version, updatedAt: commissionPlans.updatedAt })
+        .from(commissionPlans)
+        .where(eq(commissionPlans.id, row.planId));
+      const same =
+        plan !== undefined &&
+        terms.planId === plan.id &&
+        terms.planVersion === plan.version &&
+        terms.planUpdatedAt === plan.updatedAt.toISOString();
+      if (!same) {
+        throw new ConflictException({
+          code: "plan_changed",
+          message: "Your plan has changed since you opened it. Read the new terms, then sign again.",
+        });
+      }
+      const typed = terms.signedName.trim();
       if (!typed || typed.toLowerCase() !== actor.session.user.name.trim().toLowerCase()) {
         throw refuse("Type your full name exactly as it appears on your account.");
       }
@@ -236,7 +271,7 @@ export class PortalService {
         targetId: row.id,
         targetLabel: actor.session.user.name,
         before: { signed: false },
-        after: { signed: true, planId: row.planId },
+        after: { signed: true, planId: row.planId, planVersion: plan!.version },
       });
     });
   }
@@ -244,9 +279,10 @@ export class PortalService {
   /**
    * Who the person is to the portal and what they may see (employee-portal.md rule 1), narrowed on
    * the server (ADR 0049): pay needs the pay-periods switch; commission needs the Flooring Suite
-   * (`core`) and the commissions switch; the rate needs `hr.employee.view_sensitive` as well as the
-   * company setting (CLAUDE.md rule 5); the team calendar needs a linked employee and the time-off
-   * switch; the clock needs both clock switches and a designated workweek.
+   * (`core`) and the commissions switch; one's own rate needs a linked employee and the company
+   * setting, nothing more (owner decision 2026-11-14; anyone else's rate still needs
+   * `hr.employee.view_sensitive`, CLAUDE.md rule 5); the team calendar needs a linked employee and
+   * the time-off switch; the clock needs both clock switches and a designated workweek.
    */
   private async basis(db: CompanyDb, tenant: TenantContext, access: RequestAccess): Promise<PortalBasis> {
     const commissionsOn = featureOn("hr.commissions") && access.modules.includes("core");
@@ -263,7 +299,7 @@ export class PortalService {
     const visible: PortalVisibility = {
       pay: own.pay && featureOn("hr.pay-periods"),
       commission: own.commission && commissionsOn,
-      rates: own.rates && !!employee && access.permissions.has(SENSITIVE.payRate),
+      rates: own.rates && !!employee,
       teamCalendar: own.teamCalendar && !!employee && featureOn("hr.time-off"),
       clock: own.clock && usesTimesheet && featureOn("hr.clock"),
     };
@@ -280,8 +316,8 @@ export class PortalService {
     return {
       balances: policies.map((policy) => ({
         policy,
-        hours: timeOffBalance(entries, employeeId, policy.id).toString(),
-        pending: pendingHours(requests, employeeId, policy.id).toString(),
+        hours: quantityString(timeOffBalance(entries, employeeId, policy.id)),
+        pending: quantityString(pendingHours(requests, employeeId, policy.id)),
       })),
       requests,
     };
@@ -335,10 +371,9 @@ export class PortalService {
   }
 }
 
-/** The person's own record without the pay rate unless they may see it (employee-portal.md rule 9; ADR 0049). */
-function ownEmployee(employee: Employee, visible: PortalVisibility): OwnEmployee {
-  if (visible.rates) return employee;
-  const own: OwnEmployee = { ...employee };
+/** The person's own record without the pay rate, which travels only as `ownPayRate` (employee-portal.md rule 9; ADR 0049). */
+function ownEmployee(employee: Employee): OwnEmployee {
+  const own: OwnEmployee & { payRate?: string } = { ...employee };
   delete own.payRate;
   return own;
 }

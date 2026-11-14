@@ -5,6 +5,7 @@ import {
   ownStatements,
   pendingHours,
   portalVisibility,
+  quantityString,
   teamOutView,
   timeOffBalance,
   workweekStartOf,
@@ -60,8 +61,8 @@ export async function myPortal(ctx: ActionContext): Promise<MyPortal> {
       employee?.workerType === "w2"
         ? policies.map((policy) => ({
             policy,
-            hours: timeOffBalance(entries, employee.id, policy.id).toString(),
-            pending: pendingHours(requests, employee.id, policy.id).toString(),
+            hours: quantityString(timeOffBalance(entries, employee.id, policy.id)),
+            pending: quantityString(pendingHours(requests, employee.id, policy.id)),
           }))
         : [],
     requests: requests.sort((a, b) => b.start.localeCompare(a.start)),

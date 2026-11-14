@@ -498,14 +498,24 @@ export const API_METHODS: HttpRoutes = {
   // The employee portal (ADR 0049): the signed-in person's own data only, from the session. My
   // meetings stays on the demo client until Meetings moves (the next module).
   myPortal: (http) => async () => {
-    const portal = await http.request<MyPortalWire>("GET", "/me/portal");
-    // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046).
-    return { ...portal, timesheets: portal.timesheets.map(timesheetFromWire) };
+    const { ownPayRate, employee, ...portal } = await http.request<MyPortalWire>("GET", "/me/portal");
+    // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046). One's own
+    // rate travels apart from the record, so the API's sensitive-field strip leaves it (ADR 0049).
+    return {
+      ...portal,
+      employee: employee ? ({ ...employee, payRate: ownPayRate ?? "" } as Employee) : null,
+      timesheets: portal.timesheets.map(timesheetFromWire),
+    };
   },
   updateMyEmployeeProfile: (http) => (patch) =>
     http.request<Employee>("PATCH", "/me/employee", { phone: patch.phone, emergencyContact: patch.emergencyContact }),
-  acknowledgePlan: (http) => async (assignmentId, signedName) => {
-    await http.request<{ ok: true }>("POST", `/commission-assignments/${assignmentId}/acknowledge`, { signedName });
+  acknowledgePlan: (http) => async (assignmentId, signedName, plan) => {
+    await http.request<{ ok: true }>("POST", `/commission-assignments/${assignmentId}/acknowledge`, {
+      signedName,
+      planId: plan.id,
+      planVersion: plan.version,
+      planUpdatedAt: plan.updatedAt,
+    });
   },
   clockIn: (http) => async () => {
     await http.request<unknown>("POST", "/clock/in");
@@ -515,8 +525,15 @@ export const API_METHODS: HttpRoutes = {
   },
 };
 
-/** The portal as the API sends it: timesheet hours as decimal strings. */
-type MyPortalWire = Omit<MyPortal, "timesheets"> & { timesheets: TimesheetWire[] };
+/**
+ * The portal as the API sends it: timesheet hours as decimal strings, and the record without the
+ * pay rate, which comes as `ownPayRate` when the company shows it (ADR 0049).
+ */
+type MyPortalWire = Omit<MyPortal, "timesheets" | "employee"> & {
+  timesheets: TimesheetWire[];
+  employee: Omit<Employee, "payRate"> | null;
+  ownPayRate: string | null;
+};
 
 /**
  * A person as the API takes it: only the form's fields, since an edit starts from the whole stored

@@ -37,6 +37,14 @@ export function moneyString(value: DecimalInput): string {
   return roundMoney(value).toFixed(2);
 }
 
+/**
+ * A quantity (hours, sq ft, ft, items) as a fixed three-place string, e.g. "16.000", the scale it is
+ * stored at (numeric(14,3), blueprint table rules), so the API sends the same text for the same amount.
+ */
+export function quantityString(value: DecimalInput): string {
+  return dec(value).toDecimalPlaces(3, D.ROUND_HALF_UP).toFixed(3);
+}
+
 /** Applies a percentage: `pct(200, "8.875")` is 17.75. Percentages are written as 8.875, not 0.08875. */
 export function pctOf(value: DecimalInput, percent: DecimalInput): Dec {
   return dec(value).times(percent).dividedBy(100);

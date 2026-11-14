@@ -26,20 +26,23 @@ export type PortalSwitches = Pick<
  * What a person may see in the portal (employee-portal.md rule 1): the company's switches plus the
  * per-employee commission override. `onPlan` means an assignment with no end. Pay and the team
  * calendar (shown on My time off) are for W-2 people only (rule 11), and the clock for people who
- * fill in timesheets. The API narrows this further by
- * feature switch, product and permission (ADR 0049); this is the rule both clients share.
+ * fill in timesheets. Someone who has left sees neither the team calendar nor the clock (second
+ * security review of PR #28). The rate needs only the company setting: it is the person's own
+ * (owner decision, 2026-11-14). The API narrows this further by feature switch and product
+ * (ADR 0049); this is the rule both clients share.
  */
 export function portalVisibility(
   employee: Pick<Employee, "workerType" | "flsaStatus" | "status" | "commissionVisible"> | null,
   hr: PortalSwitches,
   onPlan: boolean,
 ): PortalVisibility {
+  const working = !!employee && employee.status !== "terminated";
   return {
     pay: !!employee && employee.workerType === "w2" && hr.showPayToEmployees,
     commission: onPlan && (employee?.commissionVisible ?? hr.showCommissionToEmployees),
     rates: hr.showRatesToEmployees,
-    teamCalendar: hr.showTeamCalendarToEmployees && employee?.workerType === "w2",
-    clock: hr.clockEnabled && !!employee && needsTimesheet(employee),
+    teamCalendar: hr.showTeamCalendarToEmployees && working && employee.workerType === "w2",
+    clock: hr.clockEnabled && working && needsTimesheet(employee),
   };
 }
 

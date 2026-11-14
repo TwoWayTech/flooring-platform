@@ -49,6 +49,7 @@ function monthsAgo(back: number): string {
 
 interface PortalBody {
   employee: Record<string, unknown> | null;
+  ownPayRate: string | null;
   visible: { pay: boolean; commission: boolean; rates: boolean; teamCalendar: boolean; clock: boolean };
   weekStart: string;
   weekStartDay: number;
@@ -567,7 +568,11 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     expect(mine.timesheets[0]!.days).toEqual(["8", "8", "8", "8", "8", "0", "0"]);
     expect(mine.requests.map((r) => r.id)).toEqual([ids.anaPending]);
     expect(mine.balances).toEqual([
-      expect.objectContaining({ policy: expect.objectContaining({ id: ids.policy }), hours: "16", pending: "8" }),
+      expect.objectContaining({
+        policy: expect.objectContaining({ id: ids.policy }),
+        hours: "16.000",
+        pending: "8.000",
+      }),
     ]);
     expect(mine.pay.map((row) => row.line.employeeId)).toEqual([ids.ana]);
     expect(mine.contractorPayments).toEqual([]);
@@ -636,22 +641,63 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     });
   });
 
-  it("sends the pay rate only when the company shows rates and the person holds view_sensitive", async () => {
-    expect((await portal(cookies.owner)).visible.rates).toBe(false);
-    expect((await portal(cookies.owner)).employee).not.toHaveProperty("payRate");
+  it("sends one's own pay rate whenever the company shows rates, and nobody else's anywhere", async () => {
+    for (const cookie of [cookies.owner, cookies.ana]) {
+      const off = await portal(cookie);
+      expect(off.visible.rates).toBe(false);
+      expect(off.ownPayRate).toBeNull();
+      expect(off.employee).not.toHaveProperty("payRate");
+    }
     await setHr({ showRatesToEmployees: true });
     try {
-      const owner = await portal(cookies.owner);
-      expect(owner.visible.rates).toBe(true);
-      expect(owner.employee).toMatchObject({ id: ids.olga, payRate: "99.00" });
-      expect(owner.pay[0]!.line).toMatchObject({ baseRate: "99.00" });
-      // The Employee role has no view_sensitive, so the setting alone shows nothing (rule 5).
+      // Owner decision 2026-11-14 (ADR 0049): the setting alone shows a person their own rate, so
+      // the Employee role, without hr.employee.view_sensitive, sees Ana's.
       const ana = await portal(cookies.ana);
-      expect(ana.visible.rates).toBe(false);
+      expect(ana.visible.rates).toBe(true);
+      expect(ana.ownPayRate).toBe("24.50");
+      // The record never carries the rate, and a pay line's rate is still stripped (CLAUDE.md rule 5).
       expect(ana.employee).not.toHaveProperty("payRate");
+      expect(ana.pay[0]!.line).not.toHaveProperty("baseRate");
+      // Nobody else's rate is reachable through any portal route, whatever the request names.
+      const named = await call("get", `/me/portal?employeeId=${ids.ben}&userId=${ids.benUser}`, cookies.ana);
+      status(named, 200);
+      expect((named.body as PortalBody).ownPayRate).toBe("24.50");
+      const saved = await call("patch", "/me/employee", cookies.ana).send({
+        phone: "555-0101",
+        emergencyContact: { name: "Sam Alvarez", phone: "555-0102", relation: "Brother" },
+      });
+      status(saved, 200);
+      for (const body of [ana, named.body, saved.body]) {
+        const text = JSON.stringify(body);
+        for (const other of ["31.00", "60000.00", "99.00"]) expect(text, other).not.toContain(other);
+      }
+      expect(saved.body).not.toHaveProperty("payRate");
+      // Every other endpoint still strips rates without view_sensitive.
+      const people = await call("get", "/employees", cookies.ana);
+      if (people.status === 200) expect(JSON.stringify(people.body)).not.toContain("payRate");
+      else status(people, 403);
+      const owner = await portal(cookies.owner);
+      expect(owner.ownPayRate).toBe("99.00");
+      expect(owner.employee).not.toHaveProperty("payRate");
+      expect(owner.pay[0]!.line).toMatchObject({ baseRate: "99.00" });
+      // Someone with no employee record has no rate.
+      expect((await portal(cookies.free)).ownPayRate).toBeNull();
     } finally {
       await setHr();
     }
+  });
+
+  it("gives someone who has left no team calendar and no clock", async () => {
+    await rows((db) => db.update(employees).set({ status: "terminated" }).where(eq(employees.id, ids.ana)));
+    try {
+      const gone = await portal(cookies.ana);
+      expect(gone.visible).toMatchObject({ teamCalendar: false, clock: false });
+      expect(gone.teamOut).toEqual([]);
+      expect(gone.teamNames).toEqual([]);
+    } finally {
+      await rows((db) => db.update(employees).set({ status: "active" }).where(eq(employees.id, ids.ana)));
+    }
+    expect((await portal(cookies.ana)).visible).toMatchObject({ teamCalendar: true, clock: true });
   });
 
   it("shows colleagues' approved time off as out, never why, only while the company shows the calendar", async () => {
@@ -859,8 +905,16 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
   });
 
   it("lets a rep sign only their own running plan, shown to them, with their own name, once", async () => {
-    const sign = (cookie: string, assignmentId: string, signedName: string) =>
-      call("post", `/commission-assignments/${assignmentId}/acknowledge`, cookie).send({ signedName });
+    /** The plan's terms as they stand: what a portal read now would show. */
+    const terms = async () => {
+      const [plan] = await rows((db) => db.select().from(commissionPlans).where(eq(commissionPlans.id, ids.plan)));
+      return { planId: plan!.id, planVersion: plan!.version, planUpdatedAt: plan!.updatedAt.toISOString() };
+    };
+    const sign = async (cookie: string, assignmentId: string, signedName: string) =>
+      call("post", `/commission-assignments/${assignmentId}/acknowledge`, cookie).send({
+        signedName,
+        ...(await terms()),
+      });
     // Someone else's assignment, or none, reads as missing.
     status(await sign(cookies.dee, ids.benAssignment, "Test User"), 404);
     status(await sign(cookies.ana, ids.deeAssignment, "Test User"), 404);
@@ -868,7 +922,15 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     status(
       await call("post", `/commission-assignments/${ids.deeAssignment}/acknowledge`, cookies.dee).send({
         signedName: "Test User",
+        ...(await terms()),
         userId: ids.benUser,
+      }),
+      400,
+    );
+    // The terms the rep read are part of the signature: without them it is refused.
+    status(
+      await call("post", `/commission-assignments/${ids.deeAssignment}/acknowledge`, cookies.dee).send({
+        signedName: "Test User",
       }),
       400,
     );
@@ -885,6 +947,38 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
       status(await sign(cookies.dee, ids.deeAssignment, "Test User"), 404);
     });
 
+    // Terms that are not the plan as it stands are a 409: another plan, another version, or a plan
+    // edited in place between the rep's read and the signature (second security review of PR #28).
+    const read = await portal(cookies.dee);
+    const shown = {
+      planId: read.plan!.id as string,
+      planVersion: read.plan!.version as number,
+      planUpdatedAt: read.plan!.updatedAt as string,
+    };
+    expect(shown).toEqual(await terms());
+    const stale = async (over: Partial<typeof shown>) => {
+      const answer = await call("post", `/commission-assignments/${ids.deeAssignment}/acknowledge`, cookies.dee).send({
+        signedName: "Test User",
+        ...shown,
+        ...over,
+      });
+      status(answer, 409);
+      expect(answer.body).toEqual({
+        code: "plan_changed",
+        message: "Your plan has changed since you opened it. Read the new terms, then sign again.",
+      });
+    };
+    await stale({ planId: uuidv7() });
+    await stale({ planVersion: 2 });
+    await rows((db) =>
+      db
+        .update(commissionPlans)
+        .set({ clawbackDays: 60, updatedAt: new Date() })
+        .where(eq(commissionPlans.id, ids.plan)),
+    );
+    await stale({});
+    expect(await auditOf("Signed commission plan", ids.deeAssignment)).toHaveLength(0);
+
     const signed = await sign(cookies.dee, ids.deeAssignment, "  test user ");
     status(signed, 201);
     expect(signed.body).toEqual({ ok: true });
@@ -900,7 +994,7 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     expect(entries[0]).toMatchObject({
       actorUserId: ids.deeUser,
       targetType: "commission_assignment",
-      after: { signed: true, planId: ids.plan },
+      after: { signed: true, planId: ids.plan, planVersion: 1 },
     });
     const [benRow] = await rows((db) =>
       db.select().from(commissionAssignments).where(eq(commissionAssignments.id, ids.benAssignment)),

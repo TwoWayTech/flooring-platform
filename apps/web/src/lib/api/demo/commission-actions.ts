@@ -273,10 +273,23 @@ export async function assignPlan(ctx: ActionContext, input: PlanAssignmentInput)
   return saved;
 }
 
-/** The rep signs their plan; a typed name stands in for e-signature in the demo (Labor Code 2751, ADR 0025). */
-export async function acknowledgePlan(ctx: ActionContext, assignmentId: string, signedName: string) {
+/**
+ * The rep signs their plan; a typed name stands in for e-signature in the demo (Labor Code 2751,
+ * ADR 0025). `shown` is the plan the screen showed: a plan that has changed since is refused, as
+ * the API does (ADR 0049).
+ */
+export async function acknowledgePlan(
+  ctx: ActionContext,
+  assignmentId: string,
+  signedName: string,
+  shown: CommissionPlan,
+) {
   const assignment = ctx.db.get("commissionAssignments", assignmentId);
   if (!assignment || assignment.userId !== ctx.actor.id) throw new DemoRuleError("This plan is not assigned to you.");
+  const current = ctx.db.get("commissionPlans", assignment.planId);
+  if (!current || shown.id !== current.id || shown.version !== current.version) {
+    throw new DemoRuleError("Your plan has changed since you opened it. Read the new terms, then sign again.");
+  }
   if (signedName.trim().toLowerCase() !== ctx.actor.name.toLowerCase())
     throw new DemoRuleError("Type your full name exactly as shown to sign.");
   ctx.db.put("commissionAssignments", {
