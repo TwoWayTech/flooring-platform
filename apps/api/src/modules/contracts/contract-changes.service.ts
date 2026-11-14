@@ -86,6 +86,10 @@ export class ContractChangesService {
     input: ChangeOrderFields,
   ): Promise<ChangeOrder> {
     const reason = input.reason.trim();
+    // A new line starts at its amount, so it must be above zero; refused at once, not only at approval.
+    if (input.lines.some((change) => !change.contractLineId && dec(change.amountDelta).lte(0))) {
+      throw refuse("A new line on a change order needs an amount above zero.");
+    }
     if (!reason) throw refuse("Say what is changing and why.");
     if (input.lines.length === 0 || input.lines.some((line) => !line.description.trim())) {
       throw refuse("Each line needs a description and an amount.");

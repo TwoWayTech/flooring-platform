@@ -242,7 +242,7 @@ export const API_METHODS: HttpRoutes = {
     ] = await Promise.all([
       seen(http.request<Contract[]>("GET", "/contracts")),
       seen(http.request<ContractLine[]>("GET", "/contract-lines")),
-      seen(http.request<ChangeOrder[]>("GET", "/change-orders")),
+      seenOrOff(http.request<ChangeOrder[]>("GET", "/change-orders")),
       // Billings and compliance have their own switches; switched off they read as empty.
       seenOrOff(http.request<ContractBilling[]>("GET", "/contract-billings")),
       seenOrOff(http.request<LienWaiver[]>("GET", "/lien-waivers")),

@@ -704,6 +704,17 @@ describe("contracts register (contracts part 1)", () => {
     await call("put", `/contracts/${id}`, "sales")
       .send(customerForm({ lines: [line({ estimatedCost: "1.00" })] }))
       .expect(200);
+    // Renaming the costed line, or two lines with one code, can't drop or move its cost (PR #23 review).
+    const code = (await linesOf(id, "owner"))[0]!.code as string;
+    const renamed = await call("put", `/contracts/${id}`, "sales").send(
+      customerForm({ lines: [line({ code: `${code}-X` })] }),
+    );
+    expect(renamed.status).toBe(400);
+    const twice = await call("put", `/contracts/${id}`, "owner").send(
+      customerForm({ lines: [line({ scheduledValue: "500.00" }), line({ scheduledValue: "500.00" })] }),
+    );
+    expect(twice.status).toBe(400);
+    expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
     expect((await linesOf(id, "owner"))[0]!.estimatedCost).toBe("600.00");
   });
 
@@ -828,15 +839,10 @@ describe("contracts register (contracts part 1)", () => {
     const [after] = (await linesOf(id)).filter((candidate) => candidate.id === base!.id);
     expect(after!.scheduledValue).toBe(moneyString(dec(before).plus(200)));
 
-    const negative = await call("post", `/contracts/${id}/change-orders`, "owner")
-      .send({
-        reason: "A credit as a new line",
-        lines: [{ contractLineId: null, description: "Credit", category: "labor", amountDelta: "-50.00" }],
-      })
-      .expect(201);
-    const refused = await call("post", `/change-orders/${negative.body.id}/decision`, "owner").send({
-      action: "approve",
-      reason: "",
+    // A new line below zero is refused when it is submitted, not only at approval.
+    const refused = await call("post", `/contracts/${id}/change-orders`, "owner").send({
+      reason: "A credit as a new line",
+      lines: [{ contractLineId: null, description: "Credit", category: "labor", amountDelta: "-50.00" }],
     });
     expect(refused.status).toBe(400);
     expect(refused.body.message).toContain("above zero");

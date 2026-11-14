@@ -11,6 +11,7 @@ import {
   daysBetween,
   draftProblem,
   MAX_PROOF_FILES,
+  dec,
   moneyString,
   nextNumber,
   sum,
@@ -235,7 +236,8 @@ export class ContractsService {
         before ? "Edited contract" : "Added contract",
         row,
         before ? editable(before) : null,
-        { ...editable(row), lines: lines.length },
+        // Each line's code and value, so a schedule change can be traced; costs stay out (rule 5).
+        { ...editable(row), lines: lines.map((line) => ({ code: line.code, scheduledValue: line.scheduledValue })) },
       );
     });
     return (await loadContracts(db, this.control.db, clock.zone, [savedId]))[0]!;
@@ -651,7 +653,16 @@ export class ContractsService {
  */
 function linesToStore(lines: readonly ContractLineFields[], kept: readonly ContractLine[], access: RequestAccess) {
   const seesCost = access.permissions.has(SENSITIVE_COST);
+  // Codes name the lines, and the cost follows the code, so each code may appear once (PR #23 review).
+  const codes = lines.map((line) => line.code.trim());
+  if (new Set(codes).size !== codes.length) throw refuse("Give each line its own code.");
   const keptCost = new Map(kept.map((line) => [line.code.trim(), line.estimatedCost]));
+  // Without view_sensitive, a costed line may not lose its code, so its cost is never dropped or moved.
+  if (!seesCost) {
+    const lost = kept.find((line) => dec(line.estimatedCost).gt(0) && !codes.includes(line.code.trim()));
+    if (lost)
+      throw refuse(`Line ${lost.code} has a cost estimate, so keep its code; someone who sees costs can change it.`);
+  }
   return lines.map((line) => ({
     code: line.code.trim(),
     description: line.description.trim(),
