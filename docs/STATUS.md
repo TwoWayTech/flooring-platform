@@ -104,14 +104,14 @@
 ## Next three tasks
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
 1. **HR part 1:** people, timesheets and time off (ADR 0046), in review as PR #25.
-2. **HR part 2:** pay periods, bonuses and contractor payments with payroll postings; link the 54 seeded time-off lines to their pay periods. **First, from the PR #25 fifth review** (pay goes out in this part, so these come before it):
-   - refuse time-off approvals that overlap an approved or exported pay period;
-   - maker-checker: nobody decides a sheet or request they entered themselves, unless they are the Owner (store the user id in history);
-   - `pay.ts` and the HR week view add hours with decimal.js, not floats, before dividing money;
-   - a linked sign-in for "someone else" timesheet and time-off writes;
-   - `viewerEmployeeId` requires a live employee;
-   - audit the previous hours on save;
-   - give clock-outs into submitted or approved weeks a note and an audit reason.
+2. **HR part 2:** pay periods, bonuses and contractor payments with payroll postings (ADR 0047), on `feat/hr-payroll`; the 54 seeded time-off lines are linked to their pay periods. The payroll API integration test file is written separately. **First, from the PR #25 fifth review** (all done, with tests in `hr.int.test.ts`):
+   - [x] refuse time-off requests, approvals and cancellations that overlap an approved or exported pay period;
+   - [x] maker-checker: nobody decides a sheet or request they entered themselves, unless they are the Owner (the user id is in each history step);
+   - [x] `pay.ts` and the HR week view add hours with decimal.js, not floats, before dividing money;
+   - [x] a linked sign-in for "someone else" timesheet and time-off writes;
+   - [x] `viewerEmployeeId` requires a live employee;
+   - [x] audit the previous hours on save;
+   - [x] give clock-outs into submitted or approved weeks a note and an audit reason.
 3. **Commissions**, the **employee portal**, then **meetings**.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -220,6 +220,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
+- **HR part 2 follow-ups (ADR 0047, residual risks):**
+  - Commission joins pay runs with the commissions task; until then a run with an approved unpaid statement is refused and lines carry commission 0.00.
+  - Accountant: how Accrued Payroll is cleared when the provider pays (a payroll payment record, not an expense, which would debit Wages twice); whether an approved contractor payment should be a payable before it is paid; whether Contract Labor (6050) is the right account.
+  - `pay_period_lines.base_rate` is numeric(14,2) but hr.md wants four decimals; widening it needs an owner-approved migration.
+  - Screens for bonuses and contractor payments (routes exist).
 - **HR part 1 review follow-ups (PR #25, none blocking):**
   - `requireAnyFeature` on `GET /employees` does not tie the held permission to its switch: a holder of only `hr.timesheet.view` reads people while only `hr.time-off` is on. Check each key against its own switch.
   - A punch-correction screen and API for clock-outs whose hours were not added (closed pay period, over 24 hours).

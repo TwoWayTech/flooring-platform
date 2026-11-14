@@ -12,7 +12,7 @@ export interface DefaultAccount {
 /**
  * The default chart of accounts every company starts with (blueprint pages 24 and 25; ADR 0023;
  * ADR 0039; ADR 0042 adds Goods Received Not Billed and Inventory Adjustments; ADR 0045 adds
- * Retainage Receivable and Retainage Payable). Postings name accounts by key, so a company can
+ * Retainage Receivable and Retainage Payable; ADR 0047 adds Contract Labor for 1099 contractors). Postings name accounts by key, so a company can
  * rename an account without breaking them. The client's accountant may rename these and add more
  * (STATUS, accountant questions).
  */
@@ -33,6 +33,7 @@ export const DEFAULT_ACCOUNTS = [
   { key: "cost_of_goods_sold", code: "5000", name: "Cost of Goods Sold", type: "expense" },
   { key: "inventory_adjustments", code: "5100", name: "Inventory Adjustments", type: "expense" },
   { key: "wages", code: "6000", name: "Wages", type: "expense" },
+  { key: "contract_labor", code: "6050", name: "Contract Labor", type: "expense" },
   { key: "rent", code: "6100", name: "Rent", type: "expense" },
   { key: "utilities", code: "6200", name: "Utilities", type: "expense" },
   { key: "vehicles", code: "6300", name: "Vehicles", type: "expense" },

@@ -2,9 +2,14 @@ import { addDays, type Employee } from "@workspace/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import type { CompanyDb } from "../client";
 import {
+  bonuses,
   clockEntries,
+  contractorPayments,
   employeeChecklistItems,
   employees,
+  payPeriodExclusions,
+  payPeriodLines,
+  payPeriods,
   ptoRequests,
   timeEntries,
   timeOffEntries,
@@ -37,11 +42,12 @@ function managersFirst(list: readonly Employee[]): Employee[] {
 }
 
 /**
- * HR, part 1 (ADR 0046): employees with their checklists, the sign-in links on user profiles,
- * timesheets with a time entry per day, clock punches, time-off policies, requests and the
- * time-off ledger. Pay periods, bonuses and contractor payments arrive with HR part 2, so ledger
- * lines that an approved period posted are seeded without their period link. Seeded documents have
- * no bytes, so no attachment rows are written (ADR 0038).
+ * HR (ADR 0046 and 0047): employees with their checklists, the sign-in links on user profiles,
+ * timesheets with a time entry per day, clock punches, time-off policies, requests, pay periods
+ * with who was left out and their frozen lines, bonuses, contractor payments and the time-off
+ * ledger, whose accrual lines point at the period that posted them. Seeded history posts no journal
+ * entries: the ledger starts at go-live (STATUS, opening balances). Seeded documents have no bytes,
+ * so no attachment rows are written (ADR 0038).
  */
 export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {
   const byName = new Map(fixtures.users.map((user) => [user.name, user.id]));
@@ -185,6 +191,7 @@ export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
       })
       .onConflictDoNothing();
   }
+  await seedPay(tx, fixtures, by, decider);
   for (const entry of fixtures.timeOffEntries) {
     await tx
       .insert(timeOffEntries)
@@ -197,8 +204,117 @@ export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
         hours: entry.hours,
         note: entry.note,
         requestId: entry.requestId ? seedId(entry.requestId) : null,
-        // Pay periods are seeded with HR part 2; their accrual lines keep the hours meanwhile.
-        payPeriodId: null,
+        payPeriodId: entry.payPeriodId ? seedId(entry.payPeriodId) : null,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+    // A company seeded before pay periods existed gets the link now (HR part 2; ADR 0047).
+    if (entry.payPeriodId) {
+      await tx
+        .update(timeOffEntries)
+        .set({ payPeriodId: seedId(entry.payPeriodId) })
+        .where(and(eq(timeOffEntries.id, seedId(entry.id)), isNull(timeOffEntries.payPeriodId)));
+    }
+  }
+}
+
+/**
+ * Pay periods with who was left out and their frozen lines, bonuses and contractor payments (HR
+ * part 2; ADR 0047). Names in the fixtures (approvers) become user ids; a bonus whose approver is
+ * not a user is credited to the Owner, because the column is required.
+ */
+async function seedPay(
+  tx: CompanyDb,
+  fixtures: DemoCompany["fixtures"],
+  by: string | null,
+  decider: (name: string | null) => string | null,
+): Promise<void> {
+  for (const period of fixtures.payPeriods) {
+    await tx
+      .insert(payPeriods)
+      .values({
+        id: seedId(period.id),
+        frequency: period.frequency,
+        start: period.start,
+        end: period.end,
+        payDate: period.payDate,
+        status: period.status,
+        approvedById: decider(period.approvedBy),
+        approvedAt: period.approvedAt ? utc(period.approvedAt) : null,
+        exportedAt: period.exportedAt ? utc(period.exportedAt) : null,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+    for (const left of period.excluded) {
+      await tx
+        .insert(payPeriodExclusions)
+        .values({
+          id: seedId(`${period.id}:excluded:${left.employeeId}`),
+          payPeriodId: seedId(period.id),
+          employeeId: seedId(left.employeeId),
+          reason: left.reason,
+          createdBy: by,
+        })
+        .onConflictDoNothing();
+    }
+    for (const line of period.lines) {
+      await tx
+        .insert(payPeriodLines)
+        .values({
+          id: seedId(`${period.id}:line:${line.employeeId}`),
+          payPeriodId: seedId(period.id),
+          employeeId: seedId(line.employeeId),
+          hoursWorked: line.hoursWorked,
+          overtimeHours: line.overtimeHours,
+          doubleTimeHours: line.doubleTimeHours,
+          paidLeaveHours: line.paidLeaveHours,
+          unpaidLeaveHours: line.unpaidLeaveHours,
+          baseRate: line.baseRate,
+          straightTimePay: line.straightTimePay,
+          overtimePremium: line.overtimePremium,
+          paidLeavePay: line.paidLeavePay,
+          salaryAmount: line.salaryAmount,
+          salaryDeduction: line.salaryDeduction,
+          commissionPay: line.commissionPay,
+          nondiscretionaryBonus: line.nondiscretionaryBonus,
+          discretionaryBonus: line.discretionaryBonus,
+          overtimeTrueUp: line.overtimeTrueUp,
+          grossPay: line.grossPay,
+          straddleNote: line.straddleNote,
+          weeks: line.weeks,
+          createdBy: by,
+        })
+        .onConflictDoNothing();
+    }
+  }
+  for (const bonus of fixtures.bonuses) {
+    const approver = decider(bonus.approvedBy) ?? by;
+    if (!approver) continue;
+    await tx
+      .insert(bonuses)
+      .values({
+        id: seedId(bonus.id),
+        employeeId: seedId(bonus.employeeId),
+        amount: bonus.amount,
+        kind: bonus.kind,
+        periodStart: bonus.periodStart,
+        periodEnd: bonus.periodEnd,
+        approvedById: approver,
+        reason: bonus.reason,
+        createdBy: approver,
+      })
+      .onConflictDoNothing();
+  }
+  for (const payment of fixtures.contractorPayments) {
+    await tx
+      .insert(contractorPayments)
+      .values({
+        id: seedId(payment.id),
+        employeeId: seedId(payment.employeeId),
+        date: payment.date,
+        description: payment.description,
+        amount: payment.amount,
+        status: payment.status,
         createdBy: by,
       })
       .onConflictDoNothing();

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { clockEntries, employees, payPeriods, timeEntries, timesheets } from "@workspace/db/company";
+import { clockEntries, employees, timeEntries, timesheets } from "@workspace/db/company";
 import {
   addDays,
   clockedHoursText,
@@ -27,7 +27,7 @@ import {
   type TimesheetEvent,
   type TimesheetWire,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { AccessService, type RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -39,12 +39,16 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, notFound, refuse } from "../sales/sales-common";
 import {
   auditHr,
+  CLOSED_WEEK,
   holdersOf,
+  inClosedPayPeriod,
   linkedUser,
   lockEmployee,
   lockTimesheet,
   lockTimesheets,
+  refuseOwnEntry,
   requireLinkedDecider,
+  sheetMakers,
   type TimesheetRow,
 } from "./hr-common";
 import {
@@ -144,19 +148,27 @@ export class TimesheetsService {
       if (existing?.status === "approved") throw refuse("This week is approved, so it is locked.");
       if (existing?.status === "submitted")
         throw refuse("This week waits for approval. Ask for it to be sent back first.");
-      if (await inClosedPayPeriod(tx, input.weekStart)) throw refuse(CLOSED_WEEK);
-      const sheetId = await this.putSheet(tx, actor.access.userId, existing, {
-        employeeId: employee.id,
-        weekStart: input.weekStart,
-        days: input.days.map((h) => hoursText(h)),
-        source: existing?.source === "clock" ? "clock" : "form",
-      });
+      if (await weekClosed(tx, input.weekStart)) throw refuse(CLOSED_WEEK);
+      // The audit keeps the hours this save replaces (fifth security review of PR #25).
+      const previous = existing ? ((await this.daysOf(tx, [existing])).get(existing.id) ?? null) : null;
+      const sheetId = await this.putSheet(
+        tx,
+        actor.access.userId,
+        existing,
+        {
+          employeeId: employee.id,
+          weekStart: input.weekStart,
+          days: input.days.map((h) => hoursText(h)),
+          source: existing?.source === "clock" ? "clock" : "form",
+        },
+        event(actor, new Date(), "saved"),
+      );
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: "Saved timesheet hours",
         targetType: "timesheet",
         targetId: sheetId,
         targetLabel: label(employee.name, input.weekStart),
-        before: null,
+        before: previous ? { days: previous } : null,
         after: { days: input.days.map((h) => hoursText(h)) },
       });
       return sheetId;
@@ -174,7 +186,7 @@ export class TimesheetsService {
       if (sheet.status === "approved" || sheet.status === "submitted") {
         throw refuse("This timesheet has already been submitted.");
       }
-      if (await inClosedPayPeriod(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
+      if (await weekClosed(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
       const now = new Date();
       await tx
         .update(timesheets)
@@ -227,9 +239,10 @@ export class TimesheetsService {
       for (const sheet of await lockTimesheets(tx, ids, scope)) {
         const employee = await lockEmployee(tx, sheet.employeeId);
         if (isSelf(employee.id)) throw refuse("Someone else must decide your own timesheet.");
+        refuseOwnEntry(actor.access, sheetMakers(sheet), `${employee.name}'s hours`);
         if (sheet.status !== "submitted") throw refuse(`${employee.name}'s timesheet is not waiting for approval.`);
         // Paid weeks take no new decision (fourth security review of PR #25).
-        if (await inClosedPayPeriod(tx, sheet.weekStart)) {
+        if (await weekClosed(tx, sheet.weekStart)) {
           throw refuse(
             `${employee.name}'s week of ${sheet.weekStart} is in an approved pay period. Reopen the pay period first.`,
           );
@@ -299,7 +312,7 @@ export class TimesheetsService {
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must reopen your own timesheet.");
       await requireLinkedDecider(tx, actor.access);
       if (sheet.status !== "approved") throw refuse("Only an approved timesheet can be reopened.");
-      if (await inClosedPayPeriod(tx, sheet.weekStart)) {
+      if (await weekClosed(tx, sheet.weekStart)) {
         throw refuse("This week is in an approved pay period. Reopen the pay period first.");
       }
       const now = new Date();
@@ -365,6 +378,10 @@ export class TimesheetsService {
       if (ownRows && !actor.access.permissions.has("hr.timesheet.edit")) {
         throw refuse("You can't upload your own hours. Leave your rows out, or ask someone else to enter them.");
       }
+      // Hours for someone else come from a sign-in linked to its own employee (fifth security review of PR #25).
+      if (input.apply && result.changes.some((change) => (change.after as Timesheet).employeeId !== scope.employeeId)) {
+        await requireLinkedDecider(tx, actor.access);
+      }
       return { result, people: new Map(people.map((e) => [e.id, e])) };
     };
     if (!input.apply) {
@@ -387,13 +404,14 @@ export class TimesheetsService {
         const existing = await this.sheetById(tx, sheet.id);
         const days = hoursToWire(sheet.days);
         checkUploadedWeek(people.get(sheet.employeeId), existing, sheet, days, clock.day);
-        if (await inClosedPayPeriod(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
-        await this.putSheet(tx, actor.access.userId, existing, {
-          employeeId: sheet.employeeId,
-          weekStart: sheet.weekStart,
-          days,
-          source: "upload",
-        });
+        if (await weekClosed(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
+        await this.putSheet(
+          tx,
+          actor.access.userId,
+          existing,
+          { employeeId: sheet.employeeId, weekStart: sheet.weekStart, days, source: "upload" },
+          event(actor, new Date(), "uploaded", input.fileName),
+        );
       }
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: "Uploaded timesheet hours",
@@ -457,10 +475,17 @@ export class TimesheetsService {
       const weekStart = workweekStartOf(open.date, rules.workweekStartDay);
       const sheet = await this.sheetOf(tx, employee.id, weekStart);
       let skipped: { reason: string; note: string } | null = null;
-      if (sheet?.status !== "approved" && sheet?.status !== "submitted") {
+      if (sheet?.status === "approved" || sheet?.status === "submitted") {
+        // The approver decides the hours that were sent, so a punch never changes them (fifth security review of PR #25).
+        const state = sheet.status === "approved" ? "approved" : "waiting for approval";
+        skipped = {
+          reason: `week ${sheet.status}, hours not added; HR to correct`,
+          note: `Your timesheet for the week of ${weekStart} is ${state}, so these hours were not added. Ask HR to correct your timesheet.`,
+        };
+      } else {
         const days = sheet ? ((await this.daysOf(tx, [sheet])).get(sheet.id) ?? []) : EMPTY_WEEK;
         const next = withClockedHoursText(days, daysBetween(weekStart, open.date), hours);
-        if (await inClosedPayPeriod(tx, weekStart)) {
+        if (await weekClosed(tx, weekStart)) {
           skipped = {
             reason: "closed pay period, hours not added; HR to correct",
             note: `The week of ${weekStart} is in an approved pay period, so these hours were not added. Ask HR to correct your timesheet.`,
@@ -507,7 +532,10 @@ export class TimesheetsService {
     if ((linked || isSelf(employeeId)) && !access.permissions.has("hr.timesheet.edit")) throw notFound("employee");
     if (linked) return lockEmployee(tx, employeeId);
     if (!access.permissions.has("hr.timesheet.approve")) throw notFound("employee");
-    return lockEmployee(tx, employeeId, scope);
+    const employee = await lockEmployee(tx, employeeId, scope);
+    // Hours for someone else come from a sign-in linked to its own employee (fifth security review of PR #25).
+    await requireLinkedDecider(tx, access);
+    return employee;
   }
 
   private async ownEmployee(tx: CompanyDb, access: RequestAccess): Promise<EmployeeRow> {
@@ -574,11 +602,19 @@ export class TimesheetsService {
     by: string,
     existing: TimesheetRow | null,
     week: { employeeId: string; weekStart: string; days: readonly string[]; source: TimesheetRow["source"] },
+    step?: TimesheetEvent,
   ): Promise<string> {
     let id: string;
     if (existing) {
       id = existing.id;
-      await tx.update(timesheets).set({ source: week.source, updatedAt: new Date() }).where(eq(timesheets.id, id));
+      await tx
+        .update(timesheets)
+        .set({
+          source: week.source,
+          ...(step ? { history: [...existing.history, step] } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(timesheets.id, id));
     } else {
       const [row] = await tx
         .insert(timesheets)
@@ -587,6 +623,7 @@ export class TimesheetsService {
           weekStart: week.weekStart,
           status: "draft",
           source: week.source,
+          history: step ? [step] : [],
           createdBy: by,
         })
         .returning({ id: timesheets.id });
@@ -688,33 +725,23 @@ export class TimesheetsService {
   }
 }
 
-/** One step of a sheet's history, by the acting person's name (hr.md "Timesheet" `history`). */
+/**
+ * One step of a sheet's history, by the acting person's name and user id (hr.md "Timesheet"
+ * `history`); the id lets a decision refuse whoever entered the hours (`sheetMakers`).
+ */
 function event(actor: Actor, at: Date, action: TimesheetEvent["action"], reason: string | null = null): TimesheetEvent {
-  return { at: at.toISOString().slice(0, 16), by: actor.session.user.name, action, reason };
+  return {
+    at: at.toISOString().slice(0, 16),
+    by: actor.session.user.name,
+    byUserId: actor.access.userId,
+    action,
+    reason,
+  };
 }
 
-/** Why a week in a closed pay period takes no hours. */
-const CLOSED_WEEK = "This week is in an approved pay period, so it is locked. Reopen the pay period first.";
-
-/**
- * Whether an approved or exported pay period covers any day of the week from `weekStart`: its
- * hours are paid, so no save, upload, clock-out or reopen writes into it (hr.md "Timesheets";
- * third security review of PR #25).
- */
-async function inClosedPayPeriod(tx: CompanyDb, weekStart: string): Promise<boolean> {
-  const [locked] = await tx
-    .select({ id: payPeriods.id })
-    .from(payPeriods)
-    .where(
-      and(
-        isNull(payPeriods.deletedAt),
-        inArray(payPeriods.status, ["approved", "exported"]),
-        lte(payPeriods.start, addDays(weekStart, 6)),
-        gte(payPeriods.end, weekStart),
-      ),
-    )
-    .limit(1);
-  return locked !== undefined;
+/** Whether an approved or exported pay period covers any day of the week from `weekStart`. */
+function weekClosed(tx: CompanyDb, weekStart: string): Promise<boolean> {
+  return inClosedPayPeriod(tx, weekStart, addDays(weekStart, 6));
 }
 
 /** The import world for the timesheet kind, which reads only employees and timesheets. */

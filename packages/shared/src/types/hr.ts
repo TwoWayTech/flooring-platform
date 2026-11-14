@@ -48,7 +48,12 @@ export interface Employee {
 export interface TimesheetEvent {
   at: string;
   by: string;
-  action: "submitted" | "approved" | "rejected" | "reopened" | "uploaded";
+  /**
+   * The user who acted, so a decider can be checked against whoever entered or submitted the
+   * hours (maker-checker; fifth security review of PR #25). Absent on demo and seeded history.
+   */
+  byUserId?: string;
+  action: "saved" | "submitted" | "approved" | "rejected" | "reopened" | "uploaded";
   reason: string | null;
 }
 

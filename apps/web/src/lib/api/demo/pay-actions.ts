@@ -1,12 +1,14 @@
 import {
   accrualFor,
   addDays,
+  bonusesInRun,
   commissionAllocations,
   dec,
   grossPay,
   moneyString,
-  needsTimesheet,
+  payableEmployees,
   payFrequencyProblem,
+  payRunBlockers,
   periodFor,
   timeOffBalance,
   type Employee,
@@ -66,9 +68,7 @@ function lineFor(
     policies: db.list("timeOffPolicies"),
     companyRule: db.settings.localization.payroll.overtimeRule,
     commission: moneyString(own.reduce((t, s) => t.plus(s.payable), dec(0))),
-    bonuses: db
-      .list("bonuses")
-      .filter((b) => b.employeeId === employee.id && b.periodEnd >= period.start && b.periodEnd <= period.end),
+    bonuses: bonusesInRun(db.list("bonuses"), employee.id, period),
     allocations: commissionAllocations(
       own.flatMap((s) => s.lines),
       db.settings.hr.workweekStartDay,
@@ -76,33 +76,15 @@ function lineFor(
   });
 }
 
-/** Everyone W-2 who is paid in the period: employed by its end and not gone before it started. */
+/** Everyone W-2 who is paid in the period (hr.md rule 15). */
 function payable(ctx: ActionContext, period: PayPeriod): Employee[] {
-  return ctx.db
-    .list("employees")
-    .filter((e) => e.workerType === "w2" && e.status !== "terminated" && e.hiredAt <= period.end);
+  return payableEmployees(ctx.db.list("employees"), period);
 }
 
 /** Workweeks ending in the period whose hours are not approved; each stops approval (ADR 0024). */
 function blockersFor(ctx: ActionContext, period: PayPeriod, employees: readonly Employee[]): PayBlocker[] {
-  const sheets = ctx.db.list("timesheets");
   const excluded = new Set(period.excluded.map((x) => x.employeeId));
-  const weekEnds: string[] = [];
-  const startDay = ctx.db.settings.hr.workweekStartDay;
-  for (let d = period.start; d <= period.end; d = addDays(d, 1)) {
-    if (new Date(`${d}T00:00:00Z`).getUTCDay() === (startDay + 6) % 7) weekEnds.push(d);
-  }
-  return employees
-    .filter((e) => needsTimesheet(e) && !excluded.has(e.id))
-    .flatMap((e) =>
-      weekEnds.flatMap((end) => {
-        const weekStart = addDays(end, -6);
-        if (end < e.hiredAt) return [];
-        const sheet = sheets.find((s) => s.employeeId === e.id && s.weekStart === weekStart);
-        if (sheet?.status === "approved") return [];
-        return [{ employeeId: e.id, employeeName: e.name, weekStart, status: sheet?.status ?? ("missing" as const) }];
-      }),
-    );
+  return payRunBlockers(period, employees, ctx.db.list("timesheets"), excluded, ctx.db.settings.hr.workweekStartDay);
 }
 
 /** One pay period to review (spec C1): stored lines once approved, otherwise worked out live. */

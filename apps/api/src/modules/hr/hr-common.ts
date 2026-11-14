@@ -1,8 +1,16 @@
 import type { CompanyDb, ControlDb } from "@workspace/db";
-import { employees, ptoRequests, rolePermissions, timesheets, userProfiles, userRoles } from "@workspace/db/company";
+import {
+  employees,
+  payPeriods,
+  ptoRequests,
+  rolePermissions,
+  timesheets,
+  userProfiles,
+  userRoles,
+} from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import { seesPersonRecords, type AuditCategory, type Employee, type PermissionKey } from "@workspace/shared";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import type { AccessService, RequestAccess } from "../../core/access/access.service";
 import type { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -103,6 +111,60 @@ export async function requireLinkedDecider(db: CompanyDb, access: RequestAccess)
   );
 }
 
+/** Why a week in a closed pay period takes no change. */
+export const CLOSED_WEEK = "This week is in an approved pay period, so it is locked. Reopen the pay period first.";
+
+/**
+ * Whether an approved or exported pay period covers any day from `from` to `to`: those days are
+ * paid, so no hours are saved, uploaded, clocked, submitted, decided or reopened into them, and no
+ * time off is requested, approved or cancelled on them (hr.md "Timesheets"; third and fifth
+ * security reviews of PR #25). `exceptId` leaves one period out, so a run being approved can check
+ * that no other closed run covers its days (first security review of PR #26).
+ */
+export async function inClosedPayPeriod(tx: CompanyDb, from: string, to: string, exceptId?: string): Promise<boolean> {
+  const [locked] = await tx
+    .select({ id: payPeriods.id })
+    .from(payPeriods)
+    .where(
+      and(
+        isNull(payPeriods.deletedAt),
+        inArray(payPeriods.status, ["approved", "exported"]),
+        lte(payPeriods.start, to),
+        gte(payPeriods.end, from),
+        exceptId ? ne(payPeriods.id, exceptId) : undefined,
+      ),
+    )
+    .limit(1);
+  return locked !== undefined;
+}
+
+/**
+ * The users who entered or sent a timesheet's hours: whoever created the sheet and everyone a
+ * `saved`, `uploaded` or `submitted` step names by user id. None of them decides the sheet unless
+ * they are the Owner (maker-checker; fifth security review of PR #25).
+ */
+export function sheetMakers(sheet: Pick<TimesheetRow, "createdBy" | "history">): Set<string> {
+  const makers = new Set<string>();
+  if (sheet.createdBy) makers.add(sheet.createdBy);
+  for (const step of sheet.history) {
+    if (step.byUserId && (step.action === "saved" || step.action === "uploaded" || step.action === "submitted")) {
+      makers.add(step.byUserId);
+    }
+  }
+  return makers;
+}
+
+/**
+ * Maker-checker for hours and time off (fifth security review of PR #25): someone who entered,
+ * uploaded or submitted a record does not also decide it, unless they are the company Owner, who
+ * holds every key anyway (ADR 0046 "Residual risks").
+ */
+export function refuseOwnEntry(access: RequestAccess, makers: ReadonlySet<string>, what: string): void {
+  if (!access.isOwner && makers.has(access.userId)) {
+    throw refuse(`Someone else must decide ${what} you entered or sent yourself.`);
+  }
+}
+
 /** One HR audit entry in the caller's transaction (CLAUDE.md rule 10; hr.md "Events and audit entries"). */
 export function auditHr(
   auditLog: AuditService,
@@ -111,7 +173,15 @@ export function auditHr(
   tx: CompanyDb,
   entry: {
     action: string;
-    targetType: "employee" | "timesheet" | "pto_request" | "time_off_policy" | "clock_entry";
+    targetType:
+      | "employee"
+      | "timesheet"
+      | "pto_request"
+      | "time_off_policy"
+      | "clock_entry"
+      | "pay_period"
+      | "bonus"
+      | "contractor_payment";
     targetId: string | null;
     targetLabel: string;
     before: Record<string, unknown> | null;
@@ -195,3 +265,10 @@ async function people(control: ControlDb, ids: readonly string[]): Promise<Recip
     .from(user)
     .where(inArray(user.id, [...ids]));
 }
+
+/**
+ * The company-wide payroll lock (ADR 0047): pay-period approval and reopen take it first, and so does
+ * a time-off policy save, because a policy's paid flag changes gross pay. A policy edit then either
+ * commits before an approval reads the policies or is stamped after it (third review of PR #26).
+ */
+export const PAYROLL_LOCK = sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`;

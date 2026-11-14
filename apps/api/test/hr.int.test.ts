@@ -105,6 +105,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     warehouse: "",
     free: "",
     hrSuiteHr: "",
+    owner: "",
   };
 
   function call(method: "get" | "post" | "put", path: string, cookie?: string, product?: "hr") {
@@ -391,6 +392,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       await db.update(userProfiles).set({ employeeId: self!.id }).where(eq(userProfiles.userId, hrSuiteUser));
     }, hrSuite.id);
     cookies.hrSuiteHr = await enrolled(hrSuiteEmail);
+    // The Owner decides what HR entered, since nobody else decides hours they entered (maker-checker).
+    cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
   }, 180_000);
 
   afterAll(async () => {
@@ -735,7 +738,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     // A California work state overrides the company's rule: 13 hours is 8 regular, 4 overtime, 1 double time.
     const carla = await saveWeek(cookies.hr, ids.carla, week(3), [13, 0, 0, 0, 0, 0, 0]);
     await submit(cookies.hr, carla.id);
-    status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [carla.id] }), 201);
+    status(
+      await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [carla.id] }),
+      201,
+    );
     const [california] = await auditOf("Approved timesheet", carla.id);
     expect(california!.after).toMatchObject({ regular: "8.00", overtime: "4.00", doubleTime: "1.00" });
 
@@ -751,7 +757,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
   it("decides sheets in bulk all or none, within scope, and sends one back with a reason", async () => {
     const w = week(2);
     const wes = await saveWeek(cookies.wes, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
-    const olive = await saveWeek(cookies.hr, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
+    const olive = await saveWeek(cookies.owner, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
     await submit(cookies.wes, wes.id);
     const state = async (id: string) => (await sheetsOf(cookies.hr)).find((s) => s.id === id)!;
 
@@ -763,7 +769,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(mixed, 400);
     expect(mixed.body.message).toContain("not waiting for approval");
     expect((await state(wes.id)).status).toBe("submitted");
-    await submit(cookies.hr, olive.id);
+    await submit(cookies.owner, olive.id);
     // Olive is not the manager's report: 404 for the whole request.
     status(
       await call("post", "/timesheets/decisions", cookies.mgr).send({ action: "approve", ids: [wes.id, olive.id] }),
@@ -812,7 +818,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const sheet = await saveWeek(cookies.hr, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
     status(await call("post", `/timesheets/${sheet.id}/reopen`, cookies.hr).send({ reason: "Fixing hours" }), 400);
     await submit(cookies.hr, sheet.id);
-    status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [sheet.id] }), 201);
+    status(
+      await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [sheet.id] }),
+      201,
+    );
     status(await call("post", `/timesheets/${sheet.id}/reopen`, cookies.wes).send({ reason: "Fixing hours" }), 403);
     status(await call("post", `/timesheets/${sheet.id}/reopen`, cookies.hr).send({ reason: "x" }), 400);
     status(await call("post", `/timesheets/${sheet.id}/reopen`, cookies.hr).send({}), 400);
@@ -1373,7 +1382,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const decided = await call("post", "/timesheets/decisions", twin).send({ action: "approve", ids: [sheet.id] });
     status(decided, 400);
     expect(decided.body.message).toContain("Someone else must decide your own timesheet");
-    status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [sheet.id] }), 201);
+    status(
+      await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [sheet.id] }),
+      201,
+    );
     const reopened = await call("post", `/timesheets/${sheet.id}/reopen`, twin).send({ reason: "Fixing hours" });
     status(reopened, 400);
     expect(reopened.body.message).toContain("Someone else must reopen your own timesheet");
@@ -1505,10 +1517,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
 
   it("decides overlapping batches at once without a deadlock: one wins, the other is refused", async () => {
     const w = week(13);
-    const a = await saveWeek(cookies.hr, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
-    const b = await saveWeek(cookies.hr, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
-    await submit(cookies.hr, a.id);
-    await submit(cookies.hr, b.id);
+    const a = await saveWeek(cookies.owner, ids.wes, w, [8, 8, 8, 8, 8, 0, 0]);
+    const b = await saveWeek(cookies.owner, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.owner, a.id);
+    await submit(cookies.owner, b.id);
     const [first, second] = await Promise.all([
       call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [a.id, b.id] }),
       call("post", "/timesheets/decisions", cookies.hr).send({
@@ -1858,7 +1870,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       const submitted = await call("post", `/timesheets/${draft.id}/submit`, cookies.hr);
       status(submitted, 400);
       expect(submitted.body.message).toContain("approved pay period");
-      const approved = await call("post", "/timesheets/decisions", cookies.hr).send({
+      const approved = await call("post", "/timesheets/decisions", cookies.owner).send({
         action: "approve",
         ids: [sent.id],
       });
@@ -1933,5 +1945,205 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(await put(editor.cookie, { title: "Lead", userId: null }), 400);
     status(await put(cookies.hr, { title: "Lead", userId: null }), 200);
     expect(await linkedTo()).toBeNull();
+  });
+
+  // HR part 2, first steps (fifth security review of PR #25; ADR 0047).
+
+  it("refuses requesting, approving or cancelling time off on days of an approved pay period", async () => {
+    const policy = await addPolicy({ name: "Vacation Closed", allowNegative: true });
+    const start = addDays(companyDay(), 110);
+    const ask = (cookie: string, from: string) =>
+      call("post", "/pto-requests", cookie).send({
+        employeeId: ids.wes,
+        policyId: policy.id,
+        start: from,
+        end: addDays(from, 1),
+        hours: "16",
+        note: "",
+      });
+    const pending = await ask(cookies.wes, start);
+    status(pending, 201);
+    const approvedEarlier = await ask(cookies.wes, addDays(start, 20));
+    status(approvedEarlier, 201);
+    status(
+      await call("post", `/pto-requests/${approvedEarlier.body.id}/decision`, cookies.mgr).send({ action: "approve" }),
+      201,
+    );
+    // A pay period over both, approved (inserted directly: only a period that ended can be approved).
+    const [closed] = await rows((db) =>
+      db
+        .insert(payPeriods)
+        .values({
+          frequency: "monthly",
+          start: addDays(start, 1),
+          end: addDays(start, 25),
+          payDate: addDays(start, 30),
+          status: "approved",
+        })
+        .returning(),
+    );
+    try {
+      // The new request overlaps by its second day.
+      const refused = await ask(cookies.wes, start);
+      status(refused, 400);
+      expect(refused.body.message).toContain("approved pay period");
+      const decided = await call("post", `/pto-requests/${pending.body.id}/decision`, cookies.mgr).send({
+        action: "approve",
+      });
+      status(decided, 400);
+      expect(decided.body.message).toContain("approved pay period");
+      const cancelled = await call("post", `/pto-requests/${approvedEarlier.body.id}/cancel`, cookies.wes);
+      status(cancelled, 400);
+      expect(cancelled.body.message).toContain("approved pay period");
+      const stored = (await call("get", "/pto-requests", cookies.mgr)).body as RequestBody[];
+      expect(stored.find((r) => r.id === pending.body.id)?.status).toBe("pending");
+      expect(stored.find((r) => r.id === approvedEarlier.body.id)?.status).toBe("approved");
+    } finally {
+      await rows((db) => db.update(payPeriods).set({ deletedAt: new Date() }).where(eq(payPeriods.id, closed!.id)));
+    }
+    status(
+      await call("post", `/pto-requests/${pending.body.id}/decision`, cookies.mgr).send({ action: "approve" }),
+      201,
+    );
+  });
+
+  it("lets nobody but the Owner decide hours or time off they entered, uploaded or submitted", async () => {
+    // HR enters and sends Olive's week: HR may not approve it, the Owner may.
+    const entered = await saveWeek(cookies.hr, ids.olive, week(20), [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, entered.id);
+    const stored = (await sheetsOf(cookies.hr)).find((s) => s.id === entered.id)!;
+    expect(stored.history.map((step) => step.action)).toEqual(["saved", "submitted"]);
+    expect(stored.history.every((step) => (step as { byUserId?: string }).byUserId === users.hr)).toBe(true);
+    const own = await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [entered.id] });
+    status(own, 400);
+    expect(own.body.message).toContain("you entered or sent yourself");
+    const sentBack = await call("post", "/timesheets/decisions", cookies.hr).send({
+      action: "reject",
+      ids: [entered.id],
+      reason: "Check Friday",
+    });
+    status(sentBack, 400);
+    status(
+      await call("post", "/timesheets/decisions", cookies.owner).send({ action: "approve", ids: [entered.id] }),
+      201,
+    );
+
+    // Wes enters his own week and his manager sends it: the manager no longer decides it; HR does.
+    const wesWeek = await saveWeek(cookies.wes, ids.wes, week(21), [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.mgr, wesWeek.id);
+    const submitter = await call("post", "/timesheets/decisions", cookies.mgr).send({
+      action: "approve",
+      ids: [wesWeek.id],
+    });
+    status(submitter, 400);
+    expect(submitter.body.message).toContain("you entered or sent yourself");
+    status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [wesWeek.id] }), 201);
+
+    // An upload counts as entering the hours.
+    await rows((db) => db.update(employees).set({ email: "wes.walker@example.test" }).where(eq(employees.id, ids.wes)));
+    status(await upload(cookies.hr, [["wes.walker@example.test", addDays(week(22), 1), "6"]], true), 201);
+    const uploaded = (await sheetsOf(cookies.wes)).find((s) => s.weekStart === week(22))!;
+    expect(uploaded.history.at(-1)).toMatchObject({ action: "uploaded", byUserId: users.hr });
+    await submit(cookies.wes, uploaded.id);
+    status(
+      await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [uploaded.id] }),
+      400,
+    );
+    status(
+      await call("post", "/timesheets/decisions", cookies.mgr).send({ action: "approve", ids: [uploaded.id] }),
+      201,
+    );
+
+    // Time off asked for by HR on Olive's behalf: HR can't decide it, the Owner can.
+    const policy = await addPolicy({ name: "Vacation Maker", allowNegative: true });
+    const start = addDays(companyDay(), 150);
+    const asked = await call("post", "/pto-requests", cookies.hr).send({
+      employeeId: ids.olive,
+      policyId: policy.id,
+      start,
+      end: start,
+      hours: "8",
+      note: "",
+    });
+    status(asked, 201);
+    for (const decision of [{ action: "approve" }, { action: "deny", reason: "Too busy" }]) {
+      const refused = await call("post", `/pto-requests/${asked.body.id}/decision`, cookies.hr).send(decision);
+      status(refused, 400);
+      expect(refused.body.message).toContain("time off you entered or sent yourself");
+    }
+    status(
+      await call("post", `/pto-requests/${asked.body.id}/decision`, cookies.owner).send({ action: "approve" }),
+      201,
+    );
+  });
+
+  it("refuses hours and time off for someone else from a sign-in linked to no live employee", async () => {
+    const unlinked = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["hr"] }));
+    const policy = await addPolicy({ name: "Vacation Unlinked", allowNegative: true });
+    const start = addDays(companyDay(), 160);
+    const writes = [
+      call("put", "/timesheets", unlinked).send({
+        employeeId: ids.olive,
+        weekStart: week(23),
+        days: hours(8, 8, 8, 8, 8, 0, 0),
+      }),
+      call("post", "/pto-requests", unlinked).send({
+        employeeId: ids.olive,
+        policyId: policy.id,
+        start,
+        end: start,
+        hours: "8",
+        note: "",
+      }),
+      upload(unlinked, [["wes.walker@example.test", addDays(week(23), 1), "8"]], true),
+    ];
+    for (const refused of await Promise.all(writes)) {
+      status(refused, 400);
+      expect(refused.body.message).toContain("Link your sign-in to your employee record");
+    }
+    expect((await sheetsOf(cookies.hr)).some((s) => s.weekStart === week(23))).toBe(false);
+
+    // A link to a soft-deleted employee is no link: no direct reports, no writes for others.
+    const boss = await person({ name: "Bo Gone" });
+    const report = await person({ name: "Ray Report", managerId: boss.id });
+    const sheet = await saveWeek(cookies.owner, report.id, week(23), [8, 8, 8, 8, 8, 0, 0]);
+    const manager = await member("manager", boss.id);
+    expect((await sheetsOf(manager.cookie)).some((s) => s.id === sheet.id)).toBe(true);
+    await rows((db) => db.update(employees).set({ deletedAt: new Date() }).where(eq(employees.id, boss.id)));
+    expect((await sheetsOf(manager.cookie)).some((s) => s.id === sheet.id)).toBe(false);
+    const dead = await call("put", "/timesheets", manager.cookie).send({
+      employeeId: report.id,
+      weekStart: week(23),
+      days: hours(4, 4, 4, 4, 4, 0, 0),
+    });
+    expect(dead.status).toBe(404);
+  });
+
+  it("audits the hours a save replaces", async () => {
+    const first = await saveWeek(cookies.wes, ids.wes, week(24), [8, 8, 8, 8, 8, 0, 0]);
+    await saveWeek(cookies.wes, ids.wes, week(24), [7.5, 8, 8, 8, 8, 0, 0]);
+    const audits = (await auditOf("Saved timesheet hours", first.id)).sort((a, b) => a.id.localeCompare(b.id));
+    expect(audits).toHaveLength(2);
+    expect(audits[0]!.before).toBeNull();
+    expect(audits[1]!.before).toEqual({ days: hours(8, 8, 8, 8, 8, 0, 0) });
+    expect(audits[1]!.after).toEqual({ days: hours(7.5, 8, 8, 8, 8, 0, 0) });
+  });
+
+  it("closes a punch into a submitted week without adding its hours, with a note and an audit reason", async () => {
+    const pia = await person({ name: "Pia Punch" });
+    const pi = await member("employee", pia.id);
+    const sheet = await saveWeek(pi.cookie, pia.id, week(0), [0, 0, 0, 0, 0, 0, 0]);
+    await submit(pi.cookie, sheet.id);
+    status(await call("post", "/clock/in", pi.cookie), 201);
+    const out = await call("post", "/clock/out", pi.cookie);
+    status(out, 201);
+    expect(out.body.note).toContain("waiting for approval");
+    expect(out.body.outAt).not.toBeNull();
+    const after = (await sheetsOf(pi.cookie)).find((s) => s.id === sheet.id)!;
+    expect(after).toMatchObject({ status: "submitted", days: hours(0, 0, 0, 0, 0, 0, 0) });
+    const [audit] = await auditOf("Clocked out", out.body.id);
+    expect(audit!.after).toMatchObject({ hoursAdded: false, reason: "week submitted, hours not added; HR to correct" });
+    // The punch is closed, so the person can clock in again.
+    status(await call("post", "/clock/in", pi.cookie), 201);
   });
 });

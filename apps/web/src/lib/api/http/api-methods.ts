@@ -13,6 +13,7 @@ import type {
   InvoiceAdjustment,
   LienWaiver,
   Location,
+  PayPeriod,
   Payment,
   Refund,
   Reservation,
@@ -42,6 +43,7 @@ import type {
   ContractInput,
   EmployeeInput,
   ItemOf,
+  PayPeriodReview,
   StockHold,
   TimesheetUploadResult,
 } from "../contract";
@@ -61,6 +63,10 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   invoiceAdjustments: "/invoice-adjustments",
   refunds: "/refunds",
   reservations: "/reservations",
+  // HR part 2 (ADR 0047): payroll records, for holders of hr.payroll.view.
+  payPeriods: "/pay-periods",
+  bonuses: "/bonuses",
+  contractorPayments: "/contractor-payments",
 };
 
 /**
@@ -427,6 +433,22 @@ export const API_METHODS: HttpRoutes = {
       isSaved(id)
         ? http.request<TimeOffPolicy>("PUT", `/time-off-policies/${id}`, policy)
         : http.request<TimeOffPolicy>("POST", "/time-off-policies", policy),
+  // HR part 2 (ADR 0047): pay periods. Bonuses and contractor payments have API routes but no screen yet.
+  listPayPeriods: (http) => async () => {
+    // Listing opens the period holding today, as the demo does (hr.md "Pay periods", Create). A
+    // company that can't write (read-only, no pay schedule yet) still lists what it has.
+    await http.request<PayPeriod>("POST", "/pay-periods", {}).catch((failure: unknown) => {
+      if (!(failure instanceof HttpApiError) || failure.status < 400 || failure.status >= 500) throw failure;
+    });
+    return http.request<PayPeriod[]>("GET", "/pay-periods");
+  },
+  reviewPayPeriod: (http) => (id) => http.request<PayPeriodReview>("GET", `/pay-periods/${id}/review`),
+  setPayExclusion: (http) => async (id, employeeId, reason) => {
+    await http.request<PayPeriod>("POST", `/pay-periods/${id}/exclusions`, { employeeId, reason });
+  },
+  approvePayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/approve`),
+  reopenPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/reopen`),
+  exportPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/export`),
 };
 
 /**

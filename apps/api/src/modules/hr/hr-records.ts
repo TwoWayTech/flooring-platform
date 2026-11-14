@@ -78,11 +78,16 @@ function optionalHours(value: string | null): string {
   return value === null ? "" : hoursText(value);
 }
 
-/** The employee linked to the signed-in person in this company, or null (user_profiles.employee_id). */
+/**
+ * The live employee linked to the signed-in person in this company, or null (user_profiles.employee_id).
+ * A link to a soft-deleted employee counts as no link, so it neither widens data scope nor passes
+ * `requireLinkedDecider` (fifth security review of PR #25).
+ */
 export async function viewerEmployeeId(db: CompanyDb, userId: string): Promise<string | null> {
   const [row] = await db
     .select({ employeeId: userProfiles.employeeId })
     .from(userProfiles)
+    .innerJoin(employees, and(eq(employees.id, userProfiles.employeeId), isNull(employees.deletedAt)))
     .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
   return row?.employeeId ?? null;
 }

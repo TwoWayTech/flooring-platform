@@ -20,31 +20,38 @@ export const PERIODS_PER_YEAR: Record<PayPeriod["frequency"], number> = {
   monthly: 12,
 };
 
-/** Hours a person worked on each date, from their approved timesheets. */
-export function hoursByDate(sheets: readonly Timesheet[]): Map<string, number> {
-  const out = new Map<string, number>();
+/**
+ * Hours a person worked on each date, from their approved timesheets, as decimals: hours are added
+ * with decimal.js before they are multiplied into money (CLAUDE.md rule 6; fifth security review
+ * of PR #25).
+ */
+export function hoursByDate(sheets: readonly Timesheet[]): Map<string, Dec> {
+  const out = new Map<string, Dec>();
   for (const sheet of sheets) {
     if (sheet.status !== "approved") continue;
-    sheet.days.forEach((h, i) => out.set(addDays(sheet.weekStart, i), h));
+    sheet.days.forEach((h, i) => out.set(addDays(sheet.weekStart, i), dec(h)));
   }
   return out;
 }
 
-/** Hours of approved time off on each date, split into paid and unpaid by policy. */
+/**
+ * Hours of approved time off on each date, split into paid and unpaid by policy (hr.md rule 20).
+ * A request's hours are divided equally over its calendar days with decimal.js, not floats.
+ */
 function leaveByDate(
   requests: readonly PtoRequest[],
   policies: readonly TimeOffPolicy[],
-): { paid: Map<string, number>; unpaid: Map<string, number> } {
-  const paid = new Map<string, number>();
-  const unpaid = new Map<string, number>();
+): { paid: Map<string, Dec>; unpaid: Map<string, Dec> } {
+  const paid = new Map<string, Dec>();
+  const unpaid = new Map<string, Dec>();
   for (const r of requests) {
     if (r.status !== "approved") continue;
     const policy = policies.find((p) => p.id === r.policyId);
     const days = [];
     for (let d = r.start; d <= r.end; d = addDays(d, 1)) days.push(d);
-    const each = Number(r.hours) / Math.max(days.length, 1);
+    const each = dec(r.hours).dividedBy(Math.max(days.length, 1));
     const target = policy?.paid === false || r.kind === "unpaid" ? unpaid : paid;
-    for (const d of days) target.set(d, (target.get(d) ?? 0) + each);
+    for (const d of days) target.set(d, (target.get(d) ?? dec(0)).plus(each));
   }
   return { paid, unpaid };
 }
@@ -70,13 +77,20 @@ export interface GrossPayInput {
   allocations: readonly WeekAllocation[];
 }
 
-function sumHours(map: Map<string, number>, start: string, end: string): number {
-  let total = 0;
-  for (const [date, hours] of map) if (date >= start && date <= end) total += hours;
+function sumHours(map: Map<string, Dec>, start: string, end: string): Dec {
+  let total = dec(0);
+  for (const [date, hours] of map) if (date >= start && date <= end) total = total.plus(hours);
   return total;
 }
 
-const qty = (n: number | Dec | string) => dec(n).toDecimalPlaces(2).toString();
+/**
+ * Hours and the base rate on a pay line, as two-decimal strings ("45.00", "28.85"). The live line
+ * and the frozen one (stored to two places) read the same, so approving a run changes no figure on
+ * screen (hr.md "PayPeriodLine"; first security review of PR #26).
+ */
+export const payLineFigure = (n: number | Dec | string): string => dec(n).toDecimalPlaces(2).toFixed(2);
+
+const qty = payLineFigure;
 
 /** A demo sheet's numeric days as the decimal strings `splitOvertime` takes. */
 const daysText = (days: readonly number[]) => days.map((h) => String(h));
@@ -119,7 +133,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     const weekEnd = addDays(sheet.weekStart, 6);
     if (weekEnd < period.start || weekEnd > period.end) continue;
     const split = splitOvertime(daysText(sheet.days), rule);
-    const hours = sheet.days.reduce((a, b) => a + b, 0);
+    const hours = weekHours(sheet);
     const extra = allocated.get(sheet.weekStart) ?? dec(0);
     const multiplier = dec(split.overtime).times("0.5").plus(split.doubleTime);
     // A salaried non-exempt employee's straight pay is the salary, so overtime hours pay in full.
@@ -128,7 +142,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     premiumTotal = premiumTotal.plus(premium);
     otTotal = otTotal.plus(split.overtime);
     dtTotal = dtTotal.plus(split.doubleTime);
-    const regularRate = hours === 0 ? base : base.plus(extra.dividedBy(hours));
+    const regularRate = hours.isZero() ? base : base.plus(extra.dividedBy(hours));
     weeks.push({
       weekStart: sheet.weekStart,
       weekEnd,
@@ -147,8 +161,8 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
   for (const [weekStart, extra] of allocated) {
     const sheet = sheets.find((s) => s.status === "approved" && s.weekStart === weekStart);
     if (!sheet || exempt) continue;
-    const hours = sheet.days.reduce((a, b) => a + b, 0);
-    if (hours === 0) continue;
+    const hours = weekHours(sheet);
+    if (hours.isZero()) continue;
     const split = splitOvertime(daysText(sheet.days), rule);
     const multiplier = dec(split.overtime).times("0.5").plus(split.doubleTime);
     trueUpTotal = trueUpTotal.plus(roundMoney(multiplier.times(extra.dividedBy(hours))));
@@ -196,7 +210,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     doubleTimeHours: qty(dtTotal),
     paidLeaveHours: qty(paidHours),
     unpaidLeaveHours: qty(unpaidHours),
-    baseRate: base.toDecimalPlaces(4).toString(),
+    baseRate: payLineFigure(base),
     straightTimePay: moneyString(straight),
     overtimePremium: moneyString(premiumTotal),
     paidLeavePay: moneyString(paidLeavePay),
@@ -217,7 +231,8 @@ const isFlatSumCa = (b: Bonus, rule: OvertimeRule) => b.kind === "flat_sum" && r
 const inBonusPeriod = (sheet: Timesheet, b: Bonus) =>
   sheet.status === "approved" && addDays(sheet.weekStart, 6) >= b.periodStart && sheet.weekStart <= b.periodEnd;
 
-const weekHours = (sheet: Timesheet) => sheet.days.reduce((a, b) => a + b, 0);
+/** A week's hours added with decimal.js (CLAUDE.md rule 6). */
+const weekHours = (sheet: Timesheet): Dec => sum(sheet.days);
 
 /** Non-discretionary bonuses spread per hour over the weeks of their period (29 CFR 778.209). */
 function bonusAllocations(
@@ -229,8 +244,8 @@ function bonusAllocations(
     .filter((b) => b.kind !== "discretionary" && !isFlatSumCa(b, rule))
     .flatMap((b) => {
       const weeks = sheets.filter((s) => inBonusPeriod(s, b));
-      const total = weeks.reduce((all, s) => all + weekHours(s), 0);
-      if (total === 0) return [];
+      const total = sum(weeks.map(weekHours));
+      if (total.isZero()) return [];
       return weeks.map((s) => ({
         weekStart: s.weekStart,
         amount: dec(b.amount).times(weekHours(s)).dividedBy(total).toString(),
@@ -255,9 +270,9 @@ function flatSumPremium(bonuses: readonly Bonus[], sheets: readonly Timesheet[],
   return total;
 }
 
-function countFullDays(map: Map<string, number>, start: string, end: string): number {
+function countFullDays(map: Map<string, Dec>, start: string, end: string): number {
   let days = 0;
-  for (const [date, hours] of map) if (date >= start && date <= end && hours >= 8) days += 1;
+  for (const [date, hours] of map) if (date >= start && date <= end && hours.gte(8)) days += 1;
   return days;
 }
 

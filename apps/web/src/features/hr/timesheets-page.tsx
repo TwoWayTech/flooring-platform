@@ -155,7 +155,8 @@ function Row({
 interface QueueRow {
   sheet: Timesheet;
   name: string;
-  total: number;
+  /** Hours as a decimal string (CLAUDE.md rule 6). */
+  total: string;
   overtime: string;
   flags: string[];
 }
@@ -163,7 +164,8 @@ interface QueueRow {
 /** Confirms a bulk approval with the totals first; flagged sheets stay out of it (ADR 0024). */
 function BulkApproveDialog({ rows, onClose }: { rows: QueueRow[]; onClose: () => void }) {
   const clean = rows.filter((r) => r.flags.length === 0);
-  const hours = clean.reduce((s, r) => s + r.total, 0);
+  // Hours are added with decimal.js, never floats (fifth security review of PR #25).
+  const hours = sum(clean.map((r) => r.total)).toString();
   const overtime = sum(clean.map((r) => r.overtime));
   async function confirm() {
     await api.decideTimesheets(
@@ -325,7 +327,7 @@ export function TimesheetsPage() {
       return {
         sheet,
         name: nameOf(sheet),
-        total: row?.total ?? 0,
+        total: row?.total ?? "0",
         overtime: row?.extraHours ?? "0",
         flags: timesheetFlags(sheet, ptoRequests as PtoRequest[]),
       };

@@ -1,5 +1,6 @@
 import {
   dec,
+  sum,
   overtimeRuleFor,
   splitOvertime,
   type Employee,
@@ -12,7 +13,8 @@ export interface WeekRow {
   sheet: Timesheet;
   employee: Employee;
   rule: OvertimeRule;
-  total: number;
+  /** The week's hours, added with decimal.js, as a decimal string (CLAUDE.md rule 6). */
+  total: string;
   split: ReturnType<typeof splitOvertime>;
   /** Overtime plus double time, as a decimal string (CLAUDE.md rule 6). */
   extraHours: string;
@@ -39,7 +41,7 @@ export function weekRows(
       const employee = employees.find((e) => e.id === sheet.employeeId);
       if (!employee) return [];
       const rule = overtimeRuleFor(employee.state, companyRule);
-      const total = sheet.days.reduce((a, b) => a + b, 0);
+      const total = sum(sheet.days).toString();
       // The shared split takes decimal strings; the demo sheet keeps numbers.
       const split = splitOvertime(
         sheet.days.map((h) => String(h)),

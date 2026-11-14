@@ -133,7 +133,7 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
       policies,
     })!;
     expect(line.grossPay).toBe("640.00");
-    expect(line.unpaidLeaveHours).toBe("8");
+    expect(line.unpaidLeaveHours).toBe("8.00");
   });
 
   it("does not count paid leave as hours worked toward overtime", () => {
@@ -149,8 +149,21 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
       leave,
       policies,
     })!;
-    expect(line.overtimeHours).toBe("0");
+    expect(line.overtimeHours).toBe("0.00");
     expect(line.grossPay).toBe("960.00");
+  });
+
+  it("adds hours with decimal.js before multiplying them into money", () => {
+    // In floats 0.01 + 0.06 + 0.1 is 0.16999999999999998, and at $0.50 that rounds to 0.08, not 0.09.
+    const line = grossPay({
+      ...base,
+      employee: employee({ payRate: "0.50" }),
+      period: period("2026-11-02", "2026-11-08"),
+      sheets: [sheet("2026-11-02", [0.01, 0.06, 0.1, 0, 0, 0, 0])],
+    })!;
+    expect(line.hoursWorked).toBe("0.17");
+    expect(line.straightTimePay).toBe("0.09");
+    expect(line.weeks[0]!.hoursWorked).toBe("0.17");
   });
 
   it("ignores hours not yet approved", () => {

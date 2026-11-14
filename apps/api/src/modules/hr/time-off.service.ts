@@ -24,12 +24,19 @@ import { companyClock, notFound, refuse } from "../sales/sales-common";
 import {
   auditHr,
   holdersOf,
+  inClosedPayPeriod,
   linkedUser,
   lockEmployee,
   lockRequest,
+  refuseOwnEntry,
   requireLinkedDecider,
+  PAYROLL_LOCK,
   type RequestRow,
 } from "./hr-common";
+
+/** Why time off on paid days can't change (fifth security review of PR #25). */
+const CLOSED_DAYS =
+  "These days are in an approved pay period, so their time off can't change. Reopen the pay period first.";
 import {
   hoursText,
   loadPolicies,
@@ -134,6 +141,7 @@ export class TimeOffService {
         approvedThisYear: approvedHoursInYear(requests, employee.id, policy.id, input.start.slice(0, 4)),
       });
       if (problem) throw refuse(problem);
+      if (await inClosedPayPeriod(tx, input.start, input.end)) throw refuse(CLOSED_DAYS);
       const [row] = await tx
         .insert(ptoRequests)
         .values({
@@ -178,8 +186,11 @@ export class TimeOffService {
       const request = await lockRequest(tx, id, scope);
       const employee = await lockEmployee(tx, request.employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must decide your own time off.");
+      // Whoever asked for it on the employee's behalf doesn't also decide it (maker-checker).
+      refuseOwnEntry(actor.access, new Set(request.createdBy ? [request.createdBy] : []), "time off");
       await requireLinkedDecider(tx, actor.access);
       if (request.status !== "pending") throw refuse("This request has already been decided.");
+      if (await inClosedPayPeriod(tx, request.start, request.end)) throw refuse(CLOSED_DAYS);
       if (status === "approved") await this.checkStillFits(tx, employee, request);
       const now = new Date();
       await tx
@@ -228,6 +239,9 @@ export class TimeOffService {
       }
       if (request.status === "approved" && request.start < clock.day) {
         throw refuse("Time off that has started can't be cancelled.");
+      }
+      if (request.status === "approved" && (await inClosedPayPeriod(tx, request.start, request.end))) {
+        throw refuse(CLOSED_DAYS);
       }
       if (request.status === "approved") {
         await tx.insert(timeOffEntries).values({
@@ -314,6 +328,8 @@ export class TimeOffService {
     if (!name) throw refuse("Give the policy a name.");
     const db = await this.tenancy.db(tenant);
     const policyId = await db.transaction(async (tx) => {
+      // Paid or unpaid leave changes gross pay, so a policy save waits for any payroll approval.
+      await tx.execute(PAYROLL_LOCK);
       const [california] = await tx
         .select({ id: employees.id })
         .from(employees)
@@ -379,7 +395,10 @@ export class TimeOffService {
     if ((linked || isSelf(employeeId)) && !access.permissions.has("hr.pto.request")) throw notFound("employee");
     if (linked) return lockEmployee(tx, employeeId);
     if (!access.permissions.has("hr.pto.approve")) throw notFound("employee");
-    return lockEmployee(tx, employeeId, scope);
+    const employee = await lockEmployee(tx, employeeId, scope);
+    // Time off for someone else comes from a sign-in linked to its own employee (fifth security review of PR #25).
+    await requireLinkedDecider(tx, access);
+    return employee;
   }
 
   /**
