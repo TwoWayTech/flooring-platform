@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { NoopProvisioner } from "@workspace/providers";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
   addresses,
   changeOrderLines,
   changeOrders,
+  contractBillingLines,
+  contractBillingReleases,
   contractBillings,
   contractLines,
   contracts,
@@ -21,6 +23,7 @@ import {
   recurringExpenses,
   supplierBills,
   invoices,
+  journalEntries,
   paymentsReceived,
   reservations,
   quoteLines,
@@ -129,10 +132,8 @@ describe("test company seed", () => {
       expect(await company.db.select().from(goodsReceipts)).toHaveLength(fixtures.receipts.length);
       expect(await company.db.select().from(expenses)).toHaveLength(fixtures.expenses.length);
       expect(await company.db.select().from(recurringExpenses)).toHaveLength(fixtures.recurringExpenses.length);
-      // Subcontract bills wait for the contracts module (ADR 0042).
-      expect(await company.db.select().from(supplierBills)).toHaveLength(
-        fixtures.bills.filter((bill) => !bill.contractId).length,
-      );
+      // Subcontract bills are seeded with their contract billings (ADR 0045).
+      expect(await company.db.select().from(supplierBills)).toHaveLength(fixtures.bills.length);
       expect(await company.db.select().from(paymentsMade)).toHaveLength(fixtures.supplierPayments.length);
       const linked = (await company.db.select().from(products)).filter((product) => product.supplierId !== null);
       expect(linked).toHaveLength(fixtures.products.filter((product) => product.supplierId).length);
@@ -156,20 +157,17 @@ describe("test company seed", () => {
     }
   });
 
-  it("seeds invoices with their lines, payments and reservations (sales, part 2)", async () => {
+  it("seeds invoices with their lines, payments and reservations (sales, part 2; contracts, part 2)", async () => {
     const { fixtures } = loadDemoCompany("summit");
-    const billed = fixtures.invoices.filter((invoice) => !invoice.contractId);
-    const kept = new Set(billed.map((invoice) => invoice.id));
+    // Contract billing invoices are seeded too, with their billings (ADR 0045).
+    const billed = fixtures.invoices;
     const company = openCompanyDb(scratch[1].url, { max: 1 });
     try {
       expect(await company.db.select().from(invoices)).toHaveLength(billed.length);
       expect(await company.db.select().from(invoiceLines)).toHaveLength(billed.flatMap((i) => i.lines).length);
-      expect(await company.db.select().from(paymentsReceived)).toHaveLength(
-        fixtures.payments.filter((p) => kept.has(p.invoiceId)).length,
-      );
-      expect(await company.db.select().from(reservations)).toHaveLength(
-        fixtures.reservations.filter((r) => kept.has(r.invoiceId)).length,
-      );
+      expect(await company.db.select().from(paymentsReceived)).toHaveLength(fixtures.payments.length);
+      expect(await company.db.select().from(reservations)).toHaveLength(fixtures.reservations.length);
+      const kept = new Set(billed.map((invoice) => invoice.id));
       // Invoice lines reuse quote-line fixture ids, so their seed ids carry a prefix.
       const firstLine = billed[0]!.lines[0]!;
       const [line] = await company.db
@@ -196,10 +194,8 @@ describe("test company seed", () => {
     }
   });
 
-  it("seeds contracts with their lines, change orders, waivers and insurance, but no billings (contracts, part 1)", async () => {
+  it("seeds contracts with their lines, change orders, waivers and insurance (contracts, part 1)", async () => {
     const { fixtures } = loadDemoCompany("summit");
-    const billed = new Set(fixtures.invoices.filter((invoice) => !invoice.contractId).map((invoice) => invoice.id));
-    const payments = new Set(fixtures.payments.filter((p) => billed.has(p.invoiceId)).map((p) => p.id));
     const company = openCompanyDb(scratch[1].url, { max: 1 });
     try {
       expect(await company.db.select().from(contracts)).toHaveLength(fixtures.contracts.length);
@@ -208,20 +204,60 @@ describe("test company seed", () => {
       expect(await company.db.select().from(changeOrderLines)).toHaveLength(
         fixtures.changeOrders.flatMap((order) => order.lines).length,
       );
-      // A waiver for a payment on a contract invoice waits for part 2 with that invoice.
-      expect(await company.db.select().from(lienWaivers)).toHaveLength(
-        fixtures.lienWaivers.filter((w) => !w.paymentId || payments.has(w.paymentId)).length,
-      );
+      // Every payment a waiver cites is seeded now, so every waiver is (ADR 0045).
+      expect(await company.db.select().from(lienWaivers)).toHaveLength(fixtures.lienWaivers.length);
       expect(await company.db.select().from(insuranceCertificates)).toHaveLength(fixtures.insuranceCertificates.length);
       expect(await company.db.select().from(insuranceCoverages)).toHaveLength(
         fixtures.insuranceCertificates.flatMap((certificate) => certificate.coverages).length,
       );
-      expect(await company.db.select().from(contractBillings)).toHaveLength(0);
       const [first] = await company.db
         .select()
         .from(contracts)
         .where(eq(contracts.id, seedId(fixtures.contracts[0]!.id)));
       expect(first?.number).toBe(fixtures.contracts[0]!.number);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds contract billings with their lines, releases, invoices and subcontract bills (contracts, part 2)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(fixtures.contractBillings.length).toBeGreaterThan(0);
+      expect(await company.db.select().from(contractBillings)).toHaveLength(fixtures.contractBillings.length);
+      expect(await company.db.select().from(contractBillingLines)).toHaveLength(
+        fixtures.contractBillings.flatMap((billing) => billing.lines).length,
+      );
+      expect(await company.db.select().from(contractBillingReleases)).toHaveLength(
+        fixtures.contractBillings.flatMap((billing) => billing.releases).length,
+      );
+      // Each billing points at the invoice or bill it raised, and that document points back.
+      for (const billing of fixtures.contractBillings) {
+        const [row] = await company.db
+          .select()
+          .from(contractBillings)
+          .where(eq(contractBillings.id, seedId(billing.id)));
+        expect(row?.invoiceId).toBe(billing.invoiceId ? seedId(billing.invoiceId) : null);
+        expect(row?.billId).toBe(billing.billId ? seedId(billing.billId) : null);
+      }
+      const contractInvoices = await company.db.select().from(invoices).where(isNotNull(invoices.billingId));
+      expect(contractInvoices).toHaveLength(fixtures.invoices.filter((invoice) => invoice.billingId).length);
+      const fixture = fixtures.invoices.find((invoice) => invoice.billingId)!;
+      const [seeded] = await company.db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.id, seedId(fixture.id)));
+      expect(seeded).toMatchObject({
+        contractId: seedId(fixture.contractId!),
+        billingId: seedId(fixture.billingId!),
+        retainageWithheld: fixture.retainageWithheld,
+        total: fixture.total,
+      });
+      const subcontractBills = await company.db.select().from(supplierBills).where(isNotNull(supplierBills.billingId));
+      expect(subcontractBills).toHaveLength(fixtures.bills.filter((bill) => bill.billingId).length);
+      // Seeded history posts nothing: the ledger starts at go-live.
+      expect(await company.db.select().from(journalEntries)).toHaveLength(0);
     } finally {
       await company.close();
     }
