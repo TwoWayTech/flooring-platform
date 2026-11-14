@@ -105,8 +105,21 @@ function runSourceId(periodId: string, approvedAt: Date): string {
 
 const label = (period: Pick<PayPeriodRow, "start" | "end">) => `${period.start} to ${period.end}`;
 
-/** The employee fields an "Edited employee" entry carries that decide whether and how much a person is paid. */
-const PAY_FACTS = ["payType", "workerType", "flsaStatus", "salaryHoursPerWeek", "status", "hiredAt", "state"] as const;
+/**
+ * The employee fields an "Edited employee" entry carries that decide whether and how much a person is
+ * paid. The sign-in link (`userId`) counts too: whose approved commission a run pays the person
+ * follows it (third security review of PR #27; ADR 0048).
+ */
+const PAY_FACTS = [
+  "payType",
+  "workerType",
+  "flsaStatus",
+  "salaryHoursPerWeek",
+  "status",
+  "hiredAt",
+  "state",
+  "userId",
+] as const;
 
 /** Whether an "Edited employee" audit entry changed someone's pay facts or their rate. */
 function changedPayFacts(entry: { before: unknown; after: unknown }): boolean {

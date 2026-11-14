@@ -18,9 +18,10 @@ import {
   settings,
   userProfiles,
 } from "@workspace/db/company";
+import { tenantModuleOverrides } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { addDays, dec, FEATURES, moneyString, monthEnd, PRODUCT_HEADER, sum, workweekStartOf } from "@workspace/shared";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -1444,7 +1445,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     refused(await edit(cookies.hrB, { managerId: null }), onlyOwner);
     refused(
       await edit(cookies.hrA, { userId: null }),
-      "This person earns their manager an override, so only the Owner can change their sign-in link.",
+      "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.",
     );
     refused(
       await send("post", "/employees", cookies.hrA, form({ name: "Uma Again", managerId: ids.empHrA, userId: repU })),
@@ -1464,7 +1465,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(managers.lines.filter((l) => l.kind === "override").map((l) => l.subjectUserId)).toEqual([repU]);
     // hrB set that manager, so nobody approves hrB's statement, the Owner included.
     const selfMade =
-      "This statement's own person set the manager of someone whose override is on it. Ask the Owner to review that manager first.";
+      "This statement's own person set the manager of someone whose override is on it. Someone else must set that manager again first.";
     refused(await approve(cookies.owner, ids.hrB, M1), selfMade);
     refused(await approve(cookies.hrA, ids.hrB, M1), selfMade);
     // The Owner reviews the manager (clears it, sets it again): the latest change is now the Owner's.
@@ -1528,5 +1529,155 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       feature.enabled = true;
     }
     status(await call("get", `/commission-totals${query}`, cookies.owner), 200);
+  });
+
+  // Third security review of PR #27: the tests below cover its findings, on the state left above.
+  /** An employee form as People sends it, for a salaried exempt W-2 person hired long ago. */
+  const employeeForm = (name: string, over: Record<string, unknown> = {}) => ({
+    name,
+    title: "Sales",
+    department: "Sales",
+    workerType: "w2",
+    payType: "salary",
+    state: "TX",
+    email: "",
+    phone: "",
+    hiredAt: "2024-01-08",
+    status: "active",
+    managerId: null,
+    flsaStatus: "exempt",
+    exemptionBasis: "administrative",
+    salaryHoursPerWeek: 40,
+    commissionVisible: null,
+    homeLocationId: null,
+    emergencyContact: null,
+    ...over,
+  });
+
+  it("lets only the Owner re-link a sign-in with commission, and refuses an approver who changed the link", async () => {
+    const added = await send("post", "/commission-plans", cookies.owner, planBody({ name: "Relink plan" }));
+    status(added, 201);
+    const planId = added.body.id as string;
+    await rows((db) =>
+      db
+        .update(commissionPlans)
+        .set({ effectiveFrom: `${M3}-01` })
+        .where(eq(commissionPlans.id, planId)),
+    );
+    const assign = async (userId: string) =>
+      status(
+        await send("post", "/commission-assignments", cookies.owner, { userId, planId, effectiveFrom: `${M1}-01` }),
+        201,
+      );
+    const onlyOwner =
+      "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.";
+
+    // Rep R is on a plan with no override; Wes is an ally's W-2 record with no sign-in.
+    const repR = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const empR = await person({ name: "Ray Reyes", hiredAt: "2024-01-08" });
+    const wes = await person({ name: "Wes Ward", hiredAt: "2024-01-08" });
+    await rows((db) => db.update(userProfiles).set({ employeeId: empR.id }).where(eq(userProfiles.userId, repR)));
+    await assign(repR);
+    const saleR = await addInvoice("INV-R1", repR, "1000.00", "500.00", M1);
+    await addPayment("PAY-R1", saleR, "1000.00", M1);
+    // An HR manager can neither unlink Rep R nor put Rep R's sign-in on another record.
+    const save = (cookie: string, id: string | null, name: string, over: Record<string, unknown>) =>
+      id
+        ? send("put", `/employees/${id}`, cookie, employeeForm(name, over))
+        : send("post", "/employees", cookie, employeeForm(name, over));
+    refused(await save(cookies.hrA, empR.id, "Ray Reyes", { userId: null }), onlyOwner);
+    refused(await save(cookies.hrA, wes.id, "Wes Ward", { userId: repR }), onlyOwner);
+    refused(await save(cookies.hrA, null, "Ray Again", { userId: repR }), onlyOwner);
+    // The Owner may; the entries carry the old and the new link.
+    status(await save(cookies.owner, empR.id, "Ray Reyes", { userId: null }), 200);
+    status(await save(cookies.owner, wes.id, "Wes Ward", { userId: repR }), 200);
+    const links = (await auditOf("Edited employee"))
+      .filter((a) => a.targetId === empR.id || a.targetId === wes.id)
+      .map((a) => [a.targetId, (a.before as { userId?: unknown }).userId, (a.after as { userId?: unknown }).userId]);
+    expect(links).toEqual(
+      expect.arrayContaining([
+        [empR.id, repR, null],
+        [wes.id, null, repR],
+      ]),
+    );
+    // hrA changed nothing, so hrA approves; Rep R's commission is now paid to Wes's record.
+    status(await approve(cookies.hrA, repR, M1), 201);
+
+    // hrB links Rep Q's sign-in while Rep Q has no commission; Rep Q is put on a plan afterwards.
+    const repQ = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const empQ = await person({ name: "Quinn Quade", hiredAt: "2024-01-08" });
+    status(await save(cookies.hrB, empQ.id, "Quinn Quade", { userId: repQ }), 200);
+    await assign(repQ);
+    const saleQ = await addInvoice("INV-Q1", repQ, "1000.00", "500.00", M1);
+    await addPayment("PAY-Q1", saleQ, "1000.00", M1);
+    // The link decides who is paid, so hrB approves neither the statement nor a pay run paying Rep Q.
+    refused(
+      await approve(cookies.hrB, repQ, M1),
+      "Someone else must approve a statement whose person's sign-in link you changed.",
+    );
+    const run = await send("post", "/pay-periods", cookies.owner, { date: week(2) });
+    status(run, 201);
+    refused(
+      await send("post", `/pay-periods/${run.body.id as string}/approve`, cookies.hrB),
+      "Someone else must approve a pay run that pays a person whose pay you added or changed.",
+    );
+    status(await approve(cookies.hrA, repQ, M1), 201);
+  });
+
+  it("refuses everyone, the Owner too, making their own employee the manager of someone on an override plan", async () => {
+    const empOwner = await person({ name: "Olive Owens" });
+    const edit = (managerId: string) =>
+      send(
+        "put",
+        `/employees/${ids.empU}`,
+        cookies.owner,
+        employeeForm("Uma Underwood", { managerId, title: "Senior Sales" }),
+      );
+    await rows((db) =>
+      db.update(userProfiles).set({ employeeId: empOwner.id }).where(eq(userProfiles.userId, ids.owner)),
+    );
+    try {
+      refused(
+        await edit(empOwner.id),
+        "Nobody makes themselves the manager of someone whose sales pay them an override.",
+      );
+      // Someone else's employee is the Owner's to set.
+      status(await edit(ids.empHrA), 200);
+    } finally {
+      await rows((db) => db.update(userProfiles).set({ employeeId: null }).where(eq(userProfiles.userId, ids.owner)));
+    }
+  });
+
+  it("makes a People save wait for the payroll lock", async () => {
+    let pending: Promise<Response> | undefined;
+    await rows((db) =>
+      db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`);
+        let settled = false;
+        pending = send(
+          "put",
+          `/employees/${ids.empU}`,
+          cookies.owner,
+          employeeForm("Uma Underwood", { managerId: ids.empHrA, title: "Lead Sales" }),
+        ).then((response) => {
+          settled = true;
+          return response;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        expect(settled).toBe(false);
+      }),
+    );
+    status(await pending!, 200);
+  });
+
+  it("hides Sales, Team commission totals from a company without the HR module", async () => {
+    const query = `?from=${M3}-01&to=${companyDay()}`;
+    status(await call("get", `/commission-totals${query}`, cookies.otherOwner), 200);
+    await harness.control.db.insert(tenantModuleOverrides).values({ tenantId: other.id, module: "hr", enabled: false });
+    try {
+      status(await call("get", `/commission-totals${query}`, cookies.otherOwner), 404);
+    } finally {
+      await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, other.id));
+    }
   });
 });

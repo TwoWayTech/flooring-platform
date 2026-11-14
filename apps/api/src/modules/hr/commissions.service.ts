@@ -34,7 +34,7 @@ import {
   type CommissionStatementRow,
   type TeamCommission,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, max, ne, or } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -222,7 +222,7 @@ export class CommissionsService {
       const row = book.rows.find((r) => r.userId === userId && r.month === month)!;
       if (await this.selfMadeManager(tx, row)) {
         throw refuse(
-          "This statement's own person set the manager of someone whose override is on it. Ask the Owner to review that manager first.",
+          "This statement's own person set the manager of someone whose override is on it. Someone else must set that manager again first.",
         );
       }
       if (!actor.access.isOwner) await this.checkApprover(tx, actor.access.userId, row, book);
@@ -626,7 +626,8 @@ export class CommissionsService {
    * behind any of its months' figures (rows they created, or "Assigned", "Edited" and "Published"
    * audit entries, which are append-only), the commission split of a sale in it (a live split they
    * set, or a "Changed commission split" entry, so setting and clearing one still counts), or the
-   * manager of its person or of anyone whose override is on it (`setManagerOf`). The assignments
+   * manager or the sign-in link of its person or of anyone whose override is on it (`setManagerOf`,
+   * `changedLinkOf`). The assignments
    * checked are the person's and those of everyone whose override is on the statement.
    */
   private async checkApprover(
@@ -713,6 +714,58 @@ export class CommissionsService {
     if (await this.setManagerOf(tx, approverId, row)) {
       throw refuse("Someone else must approve a statement whose override you shaped by setting a manager.");
     }
+    if (await this.changedLinkOf(tx, approverId, row)) {
+      throw refuse("Someone else must approve a statement whose person's sign-in link you changed.");
+    }
+  }
+
+  /**
+   * Whether the approver changed the sign-in link of the statement's person or of anyone whose
+   * override is on it (third security review of PR #27; ADR 0048): commission is paid to the
+   * employee the sign-in is linked to, so a re-link moves it to another employee. Read from "Added
+   * employee" and "Edited employee" entries (append-only), which carry `userId` before and after
+   * (people.service.ts `save`): an entry on an employee now linked to one of them, or naming one of
+   * them as the old or new link. The window runs from the latest approval of another of the
+   * person's statements by someone else, who saw the link as it then was; with none it is open-ended.
+   */
+  private async changedLinkOf(tx: CompanyDb, approverId: string, row: CommissionStatementRow): Promise<boolean> {
+    const people = new Set([row.userId, ...subjectsOf(row)]);
+    const links = await employeesByUser(tx);
+    const employeeIds = new Set([...people].flatMap((userId) => links.get(userId) ?? []));
+    const [latest] = await tx
+      .select({ at: max(commissionStatements.approvedAt) })
+      .from(commissionStatements)
+      .where(
+        and(
+          eq(commissionStatements.userId, row.userId),
+          ne(commissionStatements.month, row.month),
+          inArray(commissionStatements.status, ["approved", "paid"]),
+          ne(commissionStatements.approvedById, approverId),
+          isNull(commissionStatements.deletedAt),
+        ),
+      );
+    const entries = await tx
+      .select({ targetId: auditLog.targetId, before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.actorUserId, approverId),
+          eq(auditLog.targetType, "employee"),
+          inArray(auditLog.action, ["Added employee", "Edited employee"]),
+          latest?.at ? gte(auditLog.at, latest.at) : undefined,
+        ),
+      );
+    const linkIn = (value: unknown) => ((value ?? {}) as { userId?: string | null }).userId ?? null;
+    return entries.some((entry) => {
+      const was = linkIn(entry.before);
+      const now = linkIn(entry.after);
+      if (was === now) return false;
+      return (
+        (entry.targetId !== null && employeeIds.has(entry.targetId)) ||
+        (was !== null && people.has(was)) ||
+        (now !== null && people.has(now))
+      );
+    });
   }
 
   /**
@@ -729,9 +782,10 @@ export class CommissionsService {
   /**
    * Whether the statement's own person was the last to set the manager of anyone whose override is
    * on it (second security review of PR #27; ADR 0048): they made themselves, or someone, the one
-   * paid. It binds every approver, the Owner too, until the Owner sets that manager again (the
-   * latest change is then the Owner's). People only the Owner may reorganise now
-   * (people.service.ts `checkOverrideManager`), so this catches changes made before that rule.
+   * paid. It binds every approver, the Owner too, until someone else sets that manager again (the
+   * latest change is then theirs). Only the Owner may reorganise such people now, and nobody makes
+   * themselves their manager (people.service.ts `checkCommissionPeople`), so this catches changes
+   * made before those rules.
    */
   private async selfMadeManager(tx: CompanyDb, row: CommissionStatementRow): Promise<boolean> {
     const subjects = subjectsOf(row);

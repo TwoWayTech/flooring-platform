@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
 import { ADJUSTMENT_AMOUNT, dec } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
@@ -193,7 +193,8 @@ export class CommissionsController {
 
 /**
  * Sales → Team's commission column (commissions.md rule 17, `teamCommission`; ADR 0048): in the
- * `core` module, behind `sales.team` and `hr.commissions`, for holders of `sales.commission.view`, narrowed by data scope.
+ * `core` module and only with `hr` on too, behind `sales.team` and `hr.commissions`, for holders of
+ * `sales.commission.view`, narrowed by data scope.
  */
 @Controller()
 @RequireModule("core")
@@ -211,6 +212,8 @@ export class CommissionTotalsController {
     requireFeature("sales.team");
     // Commission is off everywhere when its switch is (CLAUDE.md rule 13; second security review of PR #27).
     requireFeature("hr.commissions");
+    // Commission belongs to HR: a company without the HR module has none (third security review of PR #27).
+    if (!access.modules.includes("hr")) throw new NotFoundException();
     return this.commissions.totals(tenant, access, parse(RANGE, query));
   }
 }
