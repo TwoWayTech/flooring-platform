@@ -603,7 +603,7 @@ export class PurchasingService {
         })),
       );
       // Boxed goods keep a moving average cost (ADR 0040), worked out before the receipt counts.
-      await this.averageIn(tx, po, receipt);
+      const costs = await this.averageIn(tx, po, receipt);
       if (stock.movements.length > 0) {
         await tx.insert(stockMovements).values(
           stock.movements.map((movement) => ({
@@ -658,7 +658,13 @@ export class PurchasingService {
           targetType: "goods_receipt",
           targetId: receipt.id,
           targetLabel: `${receipt.number} for ${po.number}`,
-          after: { rolls: stock.rolls.length, stockLines: stock.movements.length, damaged: damaged.toString() },
+          after: {
+            rolls: stock.rolls.length,
+            stockLines: stock.movements.length,
+            damaged: damaged.toString(),
+            // Under `cost`, so the audit reader strips it for anyone without view_sensitive (rule 5).
+            cost: costs,
+          },
         },
         tx,
       );
@@ -672,7 +678,12 @@ export class PurchasingService {
    * Moves each boxed product's cost to the moving average of what is on hand and what this
    * receipt adds at the order's cost (ADR 0040). Rolls keep their own cost per sq ft.
    */
-  private async averageIn(tx: CompanyDb, po: PurchaseOrder, receipt: GoodsReceipt): Promise<void> {
+  private async averageIn(
+    tx: CompanyDb,
+    po: PurchaseOrder,
+    receipt: GoodsReceipt,
+  ): Promise<{ productId: string; before: string; after: string }[]> {
+    const changes: { productId: string; before: string; after: string }[] = [];
     const movements = await loadMovements(tx);
     const catalog = await loadProducts(tx);
     for (const line of receipt.lines) {
@@ -686,7 +697,8 @@ export class PurchasingService {
         line.received,
         ordered.unitCost,
       );
-      await tx.update(products).set({ cost }).where(eq(products.id, product.id));
+      await tx.update(products).set({ cost, updatedAt: new Date() }).where(eq(products.id, product.id));
+      changes.push({ productId: product.id, before: product.cost, after: cost });
       product.cost = cost;
       movements.push({
         id: "pending",
@@ -699,6 +711,7 @@ export class PurchasingService {
         byUserId: receipt.receivedById,
       });
     }
+    return changes;
   }
 
   /** The company's purchase order prefix from Settings → Documents, `PO-` when none is set. */

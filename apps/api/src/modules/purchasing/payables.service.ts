@@ -177,8 +177,9 @@ export class PayablesService {
             targetType: "bill",
             targetId: id,
             targetLabel: `${number} for ${po.number}`,
-            before: { receivedValue: moneyString(expected) },
-            after: { total, matchIssues: issues, receipts: open.length },
+            // No money here: the audit log is read by roles that may not see order costs (rule 5;
+            // PR #21 review), as the order's own audit leaves its total out.
+            after: { receipts: open.length, matched: issues.length === 0 },
           },
           tx,
         );

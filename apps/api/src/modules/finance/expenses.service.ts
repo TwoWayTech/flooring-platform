@@ -30,7 +30,7 @@ import {
   type PaymentMethod,
   type RecurringExpense,
 } from "@workspace/shared";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -273,7 +273,8 @@ export class ExpensesService {
               eq(paymentAllocations.billId, row.billId),
               isNull(paymentAllocations.deletedAt),
               isNull(paymentsMade.deletedAt),
-              ne(paymentsMade.status, "voided"),
+              // Only a live payment blocks the void: a rejected or voided one paid nothing.
+              inArray(paymentsMade.status, ["pending", "confirmed"]),
             ),
           )
           .limit(1);

@@ -615,6 +615,23 @@ describe("payables API (needs the local PostgreSQL)", () => {
         "Voided supplier payment",
       ]),
     );
+    // No money in a bill's audit entry: roles without the purchasing money keys read the log (rule 5).
+    const entered = await rows((db) => db.select().from(auditLog).where(eq(auditLog.action, "Entered bill")));
+    for (const entry of entered) {
+      expect(entry.before).toBeNull();
+      expect(Object.keys(entry.after as object).sort()).toEqual(["matched", "receipts"]);
+    }
+    await balances();
+  });
+
+  it("lets only one of two payments at once take the same balance (bill row locks)", async () => {
+    const supplier = await newSupplier();
+    await billedOrder(supplier, "100");
+    const results = await Promise.all([
+      pay(cookies.purchasing, supplier, "210.00"),
+      pay(cookies.accountant, supplier, "210.00"),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([201, 400]);
     await balances();
   });
 });
