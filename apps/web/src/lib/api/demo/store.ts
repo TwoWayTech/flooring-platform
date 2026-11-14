@@ -26,6 +26,8 @@ import {
   quoteState,
   quoteStateLabel,
   type AuditEntry,
+  canSeePayAudit,
+  redactPayAudit,
   type Company,
   type CompanyId,
   type CompanySettings,
@@ -445,6 +447,10 @@ export class DemoStore implements ApiClient {
     }
     if (collection === "contractLines" && !(await can("contracts.contract.view_sensitive"))) {
       return (items as ContractLine[]).map((l) => ({ ...l, estimatedCost: "0.00" })) as unknown as Collections[K];
+    }
+    // Plan terms and reasons only for the Owner and pay viewers, as the API does (ADR 0048 "Audit visibility").
+    if (collection === "audit" && !canSeePayAudit((await this.granter(db)).access)) {
+      return (items as AuditEntry[]).map((e) => redactPayAudit(e, false)) as unknown as Collections[K];
     }
     return items;
   }
