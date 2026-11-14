@@ -1,10 +1,12 @@
 import {
   addDays,
+  clockedHours,
   daysBetween,
   hoursProblem,
   IMPORT_HANDLERS,
   needsTimesheet,
   planImport,
+  withClockedHours,
   workweekStartOf,
   type CompanyId,
   type Employee,
@@ -284,8 +286,7 @@ export async function clockOut(ctx: ActionContext) {
   const open = ctx.db.list("clockEntries").find((c) => c.employeeId === employee.id && c.outAt === null);
   if (!open) throw new DemoRuleError("You are not clocked in.");
   ctx.db.put("clockEntries", { ...open, outAt: ctx.now });
-  const minutes = Math.max(0, (Date.parse(ctx.now) - Date.parse(open.inAt)) / 60_000);
-  const hours = Math.round((minutes / 60) * 100) / 100;
+  const hours = clockedHours(open.inAt, ctx.now);
   const weekStart = workweekStartOf(open.date, ctx.db.settings.hr.workweekStartDay);
   const sheet = ctx.db.list("timesheets").find((s) => s.employeeId === employee.id && s.weekStart === weekStart);
   const at = daysBetween(weekStart, open.date);
@@ -295,7 +296,7 @@ export async function clockOut(ctx: ActionContext) {
     id: sheet?.id ?? ctx.newId("ts"),
     employeeId: employee.id,
     weekStart,
-    days: days.map((h, i) => (i === at ? Math.round((h + hours) * 100) / 100 : h)),
+    days: withClockedHours(days, at, hours),
     status: sheet?.status ?? "draft",
     submittedAt: sheet?.submittedAt ?? null,
     decidedBy: sheet?.decidedBy ?? null,

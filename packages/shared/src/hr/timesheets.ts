@@ -62,3 +62,14 @@ export function timesheetTemplate(employees: readonly Employee[], weekStart: str
   );
   return [[...TIMESHEET_TEMPLATE_HEADERS], ...rows];
 }
+
+/** Hours between a clock-in and a clock-out, rounded to two decimals; never below zero (spec C2). */
+export function clockedHours(inAt: string, outAt: string): number {
+  const minutes = Math.max(0, (Date.parse(outAt) - Date.parse(inAt)) / 60_000);
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
+/** A week's days with clocked hours added to one day, kept to two decimals (ADR 0024). */
+export function withClockedHours(days: readonly number[], index: number, hours: number): number[] {
+  return days.map((h, i) => (i === index ? Math.round((h + hours) * 100) / 100 : h));
+}

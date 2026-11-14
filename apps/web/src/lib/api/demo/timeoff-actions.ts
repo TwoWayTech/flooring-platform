@@ -1,10 +1,10 @@
 import {
-  addDays,
+  approvedHoursInYear,
   californiaPolicyProblem,
   dec,
   pendingHours,
   timeOffBalance,
-  timeOffProblem,
+  timeOffRequestProblem,
   type PtoRequest,
   type TimeOffEntry,
   type TimeOffPolicy,
@@ -31,46 +31,19 @@ export async function requestTimeOff(ctx: ActionContext, input: TimeOffInput): P
   const employee = ctx.db.get("employees", input.employeeId);
   const policy = ctx.db.get("timeOffPolicies", input.policyId);
   if (!employee || !policy) throw new DemoRuleError("Choose a person and a type of time off.");
-  if (employee.workerType === "1099") throw new DemoRuleError("Contractors do not take time off through this system.");
   const entries = ctx.db.list("timeOffEntries");
   const requests = ctx.db.list("ptoRequests");
-  const problem = timeOffProblem({
+  const problem = timeOffRequestProblem({
+    employee,
+    policy,
     start: input.start,
     end: input.end,
     hours: input.hours,
-    policy,
     balance: timeOffBalance(entries, employee.id, policy.id),
     pending: pendingHours(requests, employee.id, policy.id),
+    approvedThisYear: approvedHoursInYear(requests, employee.id, policy.id, input.start.slice(0, 4)),
   });
   if (problem) throw new DemoRuleError(problem);
-  if (addDays(employee.hiredAt, policy.waitingPeriodDays) > input.start) {
-    throw new DemoRuleError(`${policy.name} can be used after ${policy.waitingPeriodDays} days of employment.`);
-  }
-  if (policy.annualUseLimitHours) {
-    const year = input.start.slice(0, 4);
-    const used = requests
-      .filter(
-        (r) =>
-          r.employeeId === employee.id &&
-          r.policyId === policy.id &&
-          r.status === "approved" &&
-          r.start.startsWith(year),
-      )
-      .reduce((total, r) => total.plus(r.hours), dec(0));
-    if (used.plus(input.hours).gt(policy.annualUseLimitHours)) {
-      throw new DemoRuleError(`${policy.name} is limited to ${policy.annualUseLimitHours} hours a year.`);
-    }
-  }
-  const days = Math.max(1, Math.round((Date.parse(input.end) - Date.parse(input.start)) / 86_400_000) + 1);
-  if (
-    employee.flsaStatus === "exempt" &&
-    !policy.paid &&
-    dec(input.hours)
-      .mod(8 * days)
-      .gt(0)
-  ) {
-    throw new DemoRuleError("Unpaid leave for an exempt employee must be in full days.");
-  }
   const request: PtoRequest = {
     id: ctx.newId("pto"),
     employeeId: employee.id,
