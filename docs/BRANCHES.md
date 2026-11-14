@@ -5,7 +5,7 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `fix/docs-handoff-2026-11-14` | A (Claude) | Handoff after PRs #28 to #30; queue paused by the owner; next-task order | Draft | to open | this commit |
+| `fix/docs-handoff-2026-11-14` | A (Claude) | Handoff after PRs #28 to #30; queue paused by the owner; next-task order | Draft | [#31](https://github.com/TwoWayTech/flooring-platform/pull/31) | this commit |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
 Merged on 2026-11-14: PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
