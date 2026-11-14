@@ -9,6 +9,7 @@ import {
   FEATURES,
   grossPay,
   overtimeRuleFor,
+  overtimeRuleProblem,
   payFrequencyProblem,
   californiaPolicyProblem,
   exemptSalaryWarning,
@@ -112,6 +113,14 @@ describe("California pay rules switch (hr.payroll.california, ADR 0050)", () => 
     const caOn = pay(true, [flatSum]);
     expect(caOn.overtimeTrueUp).toBe("110.00");
     expect(caOn.grossPay).toBe("1510.00");
+  });
+
+  it("refuses saving California as the company rule while the switch is off, and anything but the two rules", () => {
+    expect(overtimeRuleProblem("california")).toMatch(/switched off until a payroll review/);
+    expect(overtimeRuleProblem("california", true)).toBeNull();
+    expect(overtimeRuleProblem("federal")).toBeNull();
+    expect(overtimeRuleProblem("daily", true)).toMatch(/federal or the California/);
+    expect(overtimeRuleProblem(undefined)).toMatch(/federal or the California/);
   });
 
   it("gates the 40-hour California salary", () => {

@@ -83,6 +83,20 @@ export function californiaPayOn(register: FeatureRegister = FEATURES): boolean {
 }
 
 /**
+ * Why a company overtime rule cannot be saved, or null. California is refused while its switch is
+ * off, as the payroll rule picker hides it (ADR 0050); anything but the two rules is refused.
+ */
+export function overtimeRuleProblem(rule: unknown, californiaOn: boolean = californiaPayOn()): string | null {
+  if (rule === "federal") return null;
+  if (rule === "california") {
+    return californiaOn
+      ? null
+      : "California pay rules are switched off until a payroll review. Choose the federal rule.";
+  }
+  return "Choose the federal or the California overtime rule.";
+}
+
+/**
  * The company's overtime rule as it is applied: California only while the California switch is on,
  * otherwise federal (ADR 0050). Screens show this, not the stored choice.
  */

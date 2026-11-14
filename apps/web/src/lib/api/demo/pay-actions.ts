@@ -108,10 +108,13 @@ export async function reviewPayPeriod(ctx: ActionContext, id: string): Promise<P
     blockers: period.lines.length > 0 ? [] : blockersFor(ctx, period, inPeriod),
     contractors: ctx.db.list("contractorPayments"),
     contractorNames: Object.fromEntries(employees.filter((e) => e.workerType === "1099").map((e) => [e.id, e.name])),
-    // Only the run's W-2 people: overtime law does not reach contractors (ADR 0050).
-    warnings: [californiaPayNote(inPeriod, ctx.db.settings.localization.payroll.overtimeRule)].flatMap(
-      (note) => note ?? [],
-    ),
+    // The people on the run's lines (frozen once approved); contractors never count (ADR 0050).
+    warnings: [
+      californiaPayNote(
+        rows.map((r) => r.employee),
+        ctx.db.settings.localization.payroll.overtimeRule,
+      ),
+    ].flatMap((note) => note ?? []),
   };
 }
 

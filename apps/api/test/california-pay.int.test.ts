@@ -1,4 +1,4 @@
-import { auditLog, employees, settings, userProfiles } from "@workspace/db/company";
+import { auditLog, employees, payPeriodLines, payPeriods, settings, userProfiles } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { addDays, CALIFORNIA_OFF_NOTE, CALIFORNIA_PENDING_NOTE, FEATURES, workweekStartOf } from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
@@ -187,6 +187,54 @@ describe("California pay rules switch (needs the local PostgreSQL)", () => {
       expect(on.warnings).toEqual([CALIFORNIA_PENDING_NOTE]);
       // California: 6 overtime and 1 double-time hour, 920.00 straight + 80.00 premium.
       expect(lineOf(on)).toMatchObject({ overtimeHours: "6.00", doubleTimeHours: "1.00", grossPay: "1000.00" });
+    });
+  });
+
+  it("warns on a frozen run by the people on its lines, not by who would be paid today", async () => {
+    // Two exported runs whose lines were frozen earlier: one paid only Hana, one paid Carla. Carla is
+    // payable in both periods today, so only the frozen lines tell them apart (ADR 0050).
+    const frozenRun = async (weeksAgo: number, employeeId: string) =>
+      rows(async (db) => {
+        const [period] = await db
+          .insert(payPeriods)
+          .values({
+            frequency: "weekly",
+            start: week(weeksAgo),
+            end: addDays(week(weeksAgo), 6),
+            payDate: addDays(week(weeksAgo), 11),
+            status: "exported",
+          })
+          .returning();
+        const zero = "0.00";
+        await db.insert(payPeriodLines).values({
+          payPeriodId: period!.id,
+          employeeId,
+          hoursWorked: "40",
+          overtimeHours: "0",
+          doubleTimeHours: "0",
+          paidLeaveHours: "0",
+          unpaidLeaveHours: "0",
+          baseRate: "20.00",
+          straightTimePay: "800.00",
+          overtimePremium: zero,
+          paidLeavePay: zero,
+          salaryAmount: zero,
+          salaryDeduction: zero,
+          commissionPay: zero,
+          nondiscretionaryBonus: zero,
+          discretionaryBonus: zero,
+          overtimeTrueUp: zero,
+          grossPay: "800.00",
+        });
+        return period!.id;
+      });
+    const hanaOnly = await frozenRun(8, ids.hana);
+    const withCarla = await frozenRun(7, ids.carla);
+    expect((await review(hanaOnly)).warnings).toEqual([]);
+    expect((await review(withCarla)).warnings).toEqual([CALIFORNIA_OFF_NOTE]);
+    // The note follows the switch as it is now, not as it was at approval.
+    await withCaliforniaRules(async () => {
+      expect((await review(withCarla)).warnings).toEqual([CALIFORNIA_PENDING_NOTE]);
     });
   });
 

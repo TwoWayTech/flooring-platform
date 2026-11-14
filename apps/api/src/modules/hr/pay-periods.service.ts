@@ -262,6 +262,7 @@ export class PayPeriodsService {
       stranded = await strandedCommission(db, this.control.db);
     }
     const contractors = await loadContractorPayments(db);
+    const paidIn = (e: Employee) => lines.some((line) => line.employeeId === e.id);
     return {
       period,
       rows: lines.flatMap((line) => {
@@ -273,8 +274,12 @@ export class PayPeriodsService {
       strandedCommission: stranded,
       contractors,
       contractorNames: Object.fromEntries(people.filter((e) => e.workerType === "1099").map((e) => [e.id, e.name])),
-      // Only the run's W-2 people: overtime law does not reach contractors (ADR 0050).
-      warnings: [californiaPayNote(payable, rule)].flatMap((note) => note ?? []),
+      // The run's W-2 people only (overtime law does not reach contractors): those on its frozen
+      // lines once approved, else today's payable people. The note follows the switch as it is now
+      // (ADR 0050).
+      warnings: [californiaPayNote(frozen ? people.filter((e) => paidIn(e)) : payable, rule)].flatMap(
+        (note) => note ?? [],
+      ),
     };
   }
 

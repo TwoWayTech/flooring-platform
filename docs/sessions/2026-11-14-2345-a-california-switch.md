@@ -33,7 +33,7 @@ The owner's instruction of 2026-11-14 says the California overtime and pay rules
   - the API's `warnings` on pay-period review;
   - a frozen run's warning follows today's switch.
 - **Payroll CSV columns unchanged:** they are a contract with the payroll provider. The note is on the screen that exports them.
-- **Fixtures regenerated:** one Harbor frozen pay line changed to its federal figure.
+- **Fixtures regenerated:** four frozen Harbor pay lines in exported periods changed: hb-emp-0025 twice, hb-emp-0017 and hb-emp-0013. On each line the overtime factor went from 2.00 to 1.50, the premium fell by 25% and gross pay fell by the same amount (for example 775.20 to 770.64).
 
 ## Reviews
 - **security-reviewer (PR #29): PASS, nothing blocking.** No path applies the California daily overtime, double time, flat-sum premium or 40-hour salary with the switch off. The refusals are unchanged. Nothing outside the code can turn the switch on. The non-blocking findings, and what was done:
@@ -42,6 +42,10 @@ The owner's instruction of 2026-11-14 says the California overtime and pay rules
   3. With the switch on, the pending note is missing from the CSV exports, the approve response and the portal's My pay. **Recorded** as a must-do before the switch is turned on (ADR 0050, STATUS).
   4. With the switch off, a California salary can cover more than 40 hours. **Recorded** as an accepted risk in ADR 0050.
   5. The test helper was duplicated and reset the switch to false. **Fixed:** one helper, `apps/api/test/california-switch.ts`, which restores the switch's previous value.
+- **Second security review (fresh, 7ebd427): PASS, 0 blocking; should-fix 1 to 3 done.**
+  1. The fixture text was corrected: four frozen Harbor lines changed, not one.
+  2. A frozen run's warning now comes from the people on its frozen lines. A new integration test covers a run that paid only Hana, a run that paid Carla, and the switch turned on. ADR 0050 records that the note follows today's switch and that storing the rule used at approval is a follow-up.
+  3. `overtimeRuleProblem` refuses California as the company rule while the switch is off, and any value other than the two rules. It has a shared test and is enforced by the demo store's `updateSettings`. No API route saves Localization yet, so the API can't take the value; the future `PUT /settings/:section` must call the check (STATUS). On isolation: Vitest's default per-file isolation, with no concurrent tests, keeps the switch from leaking between tests, as documented in the helper.
 
 ## Commands run and results
 - `pnpm install --frozen-lockfile`: done.
@@ -52,6 +56,8 @@ The owner's instruction of 2026-11-14 says the California overtime and pay rules
 - `cd packages/db && pnpm -s vitest run test/seed.int.test.ts`: 13 passed.
 - After the review fixes, everything above was run again: typecheck, lint, `pnpm -s test` (shared 439, api 56, web 13, db 11, providers 11), the five integration files (118 passed) and the seed test (13 passed).
 - Playwright not run locally (low memory). `hr.spec.ts` was updated for the switch-off behaviour.
+
+- After the second review: typecheck and lint 6 of 6 tasks passed; `pnpm -s test` all passed (shared 440, api 56, web 13, db 11, providers 11); the five integration files hr, payroll, commissions, permissions and california-pay: 119 passed.
 
 ## Not done
 - The pending note on the CSV exports, the approve response and the portal's My pay. This is needed only before the switch is turned on.
