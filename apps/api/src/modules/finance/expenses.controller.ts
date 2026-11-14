@@ -10,13 +10,15 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { DAY, requireFeature } from "../sales/sales-common";
+import { requireCompanyWide } from "./company-wide";
 import { ExpensesService } from "./expenses.service";
 
 /** Money as typed: digits with at most two decimals (spec rule 3). Above zero is the rule's to say. */
 const MONEY = z
   .string()
   .trim()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter an amount such as 120.50.");
+  // 11 digits, so amount plus tax always fits numeric(14,2) (PR #20 review).
+  .regex(/^\d{1,11}(\.\d{1,2})?$/, "Enter an amount such as 120.50.");
 
 const CATEGORY = z.enum([
   "rent",
@@ -106,9 +108,9 @@ export class ExpensesController {
   /** GET /recurring-expenses: the recurring templates. */
   @Get("recurring-expenses")
   @RequirePermission("finance.expense.view")
-  listRecurring(@CurrentTenant() tenant: TenantContext) {
+  listRecurring(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
     requireFeature("finance.expenses");
-    return this.expenses.listRecurring(tenant);
+    return this.expenses.listRecurring(tenant, access);
   }
 
   /** POST /expenses: a new draft, or a recorded expense with its receipt. */
@@ -188,6 +190,8 @@ export class ExpensesController {
     @Body() body: unknown,
   ) {
     requireFeature("finance.expenses");
+    // Templates raise drafts in any branch, so only company-wide scope manages them (PR #20 review).
+    requireCompanyWide(access);
     return this.expenses.saveRecurring(tenant, actorOf(access, session, request), null, parse(RECURRING, body));
   }
 
@@ -204,6 +208,7 @@ export class ExpensesController {
     @Body() body: unknown,
   ) {
     requireFeature("finance.expenses");
+    requireCompanyWide(access);
     return this.expenses.saveRecurring(tenant, actorOf(access, session, request), id, parse(RECURRING, body));
   }
 }

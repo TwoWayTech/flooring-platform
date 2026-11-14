@@ -56,6 +56,24 @@ export class AuditService {
       userAgent: actor.userAgent ?? null,
     });
   }
+
+  /**
+   * Writes an entry for something the system did on no person's behalf, such as a job raising a
+   * recurring draft (CLAUDE.md rule 10). The actor is empty and the role names the job.
+   */
+  async recordSystem(tx: CompanyDb, actorRole: string, entry: AuditInput): Promise<void> {
+    await tx.insert(auditLog).values({
+      actorUserId: null,
+      actorRole,
+      category: entry.category,
+      action: entry.action,
+      targetType: entry.targetType,
+      targetId: entry.targetId ?? null,
+      targetLabel: entry.targetLabel ?? "",
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+    });
+  }
 }
 
 /** Methods that change data; reads are not audited. */

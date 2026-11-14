@@ -3,6 +3,7 @@ import type { ControlDb, DbHandle } from "@workspace/db";
 import { tenants } from "@workspace/db/control";
 import { featureOn } from "@workspace/shared";
 import { isNull } from "drizzle-orm";
+import { AuditService } from "../../core/access/audit";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { JobTenants } from "../../core/jobs/job-tenants";
 import { JobsService } from "../../core/jobs/jobs.service";
@@ -28,6 +29,7 @@ export class RecurringExpensesJob implements OnApplicationBootstrap {
     private readonly jobs: JobsService,
     private readonly jobTenants: JobTenants,
     private readonly tenancy: TenantConnectionService,
+    private readonly auditLog: AuditService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -50,7 +52,7 @@ export class RecurringExpensesJob implements OnApplicationBootstrap {
         const tenant = await this.jobTenants.contextFor(company.id);
         if (!tenant || tenant.readOnly) continue;
         const today = await companyToday(this.control.db, tenant);
-        await raiseRecurringDrafts(await this.tenancy.db(tenant), today);
+        await raiseRecurringDrafts(await this.tenancy.db(tenant), today, this.auditLog);
       } catch (error) {
         // The company id only: a message could quote a template's values.
         this.logger.error(`Recurring drafts failed for company ${company.id}: ${(error as Error).name}`);

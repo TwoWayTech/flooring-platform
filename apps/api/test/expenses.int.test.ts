@@ -373,7 +373,7 @@ describe("expenses API (needs the local PostgreSQL)", () => {
     const inBranch = await record(cookies.accountant, { locationId: locationA });
     const elsewhere = await record(cookies.accountant, { locationId: locationB });
     const companyWide = await record(cookies.accountant, { locationId: null });
-    const mine = await record(cookies.manager, { locationId: null, amount: "20.00" });
+    const mine = await record(cookies.manager, { locationId: locationA, amount: "20.00" });
     const seen = new Set((await listed(cookies.manager)).map((row) => row.id));
     expect(seen.has(inBranch.id)).toBe(true);
     expect(seen.has(mine.id)).toBe(true);
@@ -444,5 +444,75 @@ describe("expenses API (needs the local PostgreSQL)", () => {
       db.select({ id: expenseTable.id }).from(expenseTable).where(eq(expenseTable.recurringId, template.body.id)),
     );
     expect(stored).toHaveLength(4);
+    // Each raised draft is audited as the system's (CLAUDE.md rule 10).
+    const audited = await rows((db) =>
+      db.select().from(auditLog).where(eq(auditLog.action, "Raised recurring expense draft")),
+    );
+    expect(audited.filter((row) => stored.some((draft) => draft.id === row.targetId))).toHaveLength(4);
+    expect(audited.every((row) => row.actorUserId === null)).toBe(true);
+  });
+
+  it("refuses a branch-scoped writer outside their branch, company-wide, and on templates (PR #20 review)", async () => {
+    const other = await call("post", "/expenses", cookies.manager).send(form({ locationId: locationB }));
+    expect(other.status).toBe(403);
+    expect((await call("post", "/expenses", cookies.manager).send(form({ locationId: null }))).status).toBe(403);
+    const tax = form({ category: "sales_tax_payment", locationId: locationA });
+    expect((await call("post", "/expenses", cookies.manager).send(tax)).status).toBe(403);
+    const draft = await record(cookies.manager, { asDraft: true, files: [] });
+    expect(
+      (await call("put", `/expenses/${draft.id}`, cookies.manager).send(form({ asDraft: true, locationId: locationB })))
+        .status,
+    ).toBe(403);
+    const template = {
+      supplierId,
+      category: "rent",
+      locationId: locationA,
+      amount: "100.00",
+      tax: "",
+      paymentMethod: "ach",
+      frequency: "monthly",
+      dayOfMonth: 1,
+      startsOn: companyDay(),
+      endsOn: null,
+      active: true,
+      note: "",
+    };
+    expect((await call("post", "/recurring-expenses", cookies.manager).send(template)).status).toBe(403);
+  });
+
+  it("keeps payroll months from readers without hr.payroll.view", async () => {
+    const id = uuidv7();
+    await rows((db) =>
+      db.insert(expenseTable).values({
+        id,
+        number: `PAY-${id.slice(-6)}`,
+        date: companyDay(),
+        category: "payroll" as const,
+        locationId: locationA,
+        amount: "5000.00",
+        paymentMethod: "ach" as const,
+        status: "confirmed" as const,
+        settlement: "paid" as const,
+        recordedById: ownerId,
+        recordedAt: new Date(),
+      }),
+    );
+    expect((await listed(cookies.manager)).some((row) => row.id === id)).toBe(false);
+    expect((await call("post", `/expenses/${id}/review`, cookies.manager).send({ action: "approve" })).status).toBe(
+      404,
+    );
+  });
+
+  it("takes a receipt of about 1 MB on POST and PUT", async () => {
+    const big = {
+      name: "scan.pdf",
+      data: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(1_000_000, 32)]).toString("base64"),
+    };
+    const draft = await record(cookies.accountant, { asDraft: true, files: [big] });
+    expect(draft.files).toHaveLength(1);
+    const finished = await call("put", `/expenses/${draft.id}`, cookies.accountant)
+      .send(form({ files: [big] }))
+      .expect(200);
+    expect(finished.body.files).toHaveLength(2);
   });
 });

@@ -44,6 +44,11 @@ export function seesExpense(
   );
 }
 
+/** Payroll months are seeded or imported, and only payroll viewers see them (spec rule 9; rule 5). */
+export function seesPayroll(access: Pick<RequestAccess, "permissions">, expense: Pick<Expense, "category">): boolean {
+  return expense.category !== "payroll" || access.permissions.has("hr.payroll.view");
+}
+
 /** Expenses with their receipts and the names of who recorded, reviewed and voided them, newest first. */
 export async function loadExpenses(db: CompanyDb, control: ControlDb, ids?: readonly string[]): Promise<Expense[]> {
   const rows = await db

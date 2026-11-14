@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   attachments,
@@ -18,6 +18,7 @@ import {
   EXPENSE_CATEGORY_LABELS,
   expenseCost,
   expensePosting,
+  MAX_PROOF_FILES,
   expenseProblem,
   moneyString,
   needsExpenseApproval,
@@ -48,6 +49,7 @@ import {
   loadRecurringExpenses,
   locationBranches,
   seesExpense,
+  seesPayroll,
 } from "./expense-records";
 
 /** The fields of an expense as the form sends them (finance-expenses.md "Recording an expense"). */
@@ -95,16 +97,26 @@ export class ExpensesService {
     private readonly books: LedgerService,
   ) {}
 
-  /** Every expense the person's data scope covers (payroll months stay hidden, spec rule 9). */
+  /**
+   * Every expense the person's data scope covers. Payroll months show only to holders of
+   * `hr.payroll.view`, because at a small location they reveal pay (spec rule 9; CLAUDE.md rule 5).
+   */
   async list(tenant: TenantContext, access: RequestAccess): Promise<Expense[]> {
     const db = await this.tenancy.db(tenant);
     const [rows, branches] = await Promise.all([loadExpenses(db, this.control.db), locationBranches(db)]);
-    return rows.filter((row) => seesExpense(access, row, branches));
+    return rows.filter((row) => seesExpense(access, row, branches) && seesPayroll(access, row));
   }
 
-  /** The recurring templates. They hold no money that was spent, so they are company-wide. */
-  async listRecurring(tenant: TenantContext): Promise<RecurringExpense[]> {
-    return loadRecurringExpenses(await this.tenancy.db(tenant));
+  /**
+   * The recurring templates the person's scope covers: all of them with company-wide scope,
+   * otherwise those at a location in their own branch (PR #20 security review).
+   */
+  async listRecurring(tenant: TenantContext, access: RequestAccess): Promise<RecurringExpense[]> {
+    const db = await this.tenancy.db(tenant);
+    const [rows, branches] = await Promise.all([loadRecurringExpenses(db), locationBranches(db)]);
+    return access.dataScope === "all"
+      ? rows
+      : rows.filter((row) => row.locationId !== null && branches.get(row.locationId) === access.branchId);
   }
 
   /**
@@ -123,6 +135,7 @@ export class ExpensesService {
     const clock = await companyClock(this.control.db, tenant);
     const fields = normalise(input);
     await this.checkFields(db, fields, clock.day);
+    await requireWritableAt(db, actor.access, fields.locationId);
     const before = id ? await this.draftInScope(db, actor.access, id) : null;
     // A draft may have no receipt yet; `expenseProblem` decides when one is needed (spec rule 3).
     const proofs = files.length === 0 ? [] : checkProofs(files, before ? await this.fileCount(db, before.id) : 0);
@@ -160,20 +173,26 @@ export class ExpensesService {
             .returning()) as [ExpenseRow];
         }
         await attach(tx, "expense", row.id, actor.access.userId);
+        // Counted again under the row lock, so two saves at once can't pass the limit together.
+        const fileCount = await this.fileCount(tx, row.id);
+        if (fileCount > MAX_PROOF_FILES) throw refuse(`An expense keeps at most ${MAX_PROOF_FILES} files.`);
+        const previous = current
+          ? { amount: current.amount, supplierId: current.supplierId, locationId: current.locationId }
+          : null;
         if (input.asDraft) {
-          await this.audit(tenant, actor, tx, "Saved expense draft", row, null, { amount: row.amount });
+          await this.audit(tenant, actor, tx, "Saved expense draft", row, previous, { amount: row.amount });
           return;
         }
-        const problem = expenseProblem(row, await this.fileCount(tx, row.id));
+        const problem = expenseProblem(row, fileCount);
         if (problem) throw refuse(problem);
         const waits = needsExpenseApproval(settingsRule, row) || actor.access.dataScope === "own";
         if (waits) {
           await tx.update(expenses).set({ status: "pending" }).where(eq(expenses.id, row.id));
-          await this.audit(tenant, actor, tx, "Recorded expense for approval", row, null, { amount: row.amount });
+          await this.audit(tenant, actor, tx, "Recorded expense for approval", row, previous, { amount: row.amount });
           return;
         }
-        await this.confirm(tx, row, null, actor.access.userId);
-        await this.audit(tenant, actor, tx, "Recorded expense", row, null, { amount: row.amount });
+        const billId = await this.confirm(tx, row, null, actor.access.userId);
+        await this.audit(tenant, actor, tx, "Recorded expense", row, previous, { amount: row.amount, billId });
       }),
     );
     return (await loadExpenses(db, this.control.db, [expenseId]))[0]!;
@@ -190,8 +209,16 @@ export class ExpensesService {
       if (separateDuties(row.recordedById, actor.access.userId))
         throw refuse("Someone else must approve an expense you recorded.");
       if (decision.action === "approve") {
-        await this.confirm(tx, row, actor.access.userId, actor.access.userId);
-        await this.audit(tenant, actor, tx, "Approved expense", row, { status: "pending" }, { status: "confirmed" });
+        const billId = await this.confirm(tx, row, actor.access.userId, actor.access.userId);
+        await this.audit(
+          tenant,
+          actor,
+          tx,
+          "Approved expense",
+          row,
+          { status: "pending" },
+          { status: "confirmed", billId },
+        );
         return;
       }
       const reason = decision.reason.trim();
@@ -249,7 +276,15 @@ export class ExpensesService {
         .update(expenses)
         .set({ status: "voided", voidedById: actor.access.userId, voidedAt: new Date(), voidReason: why })
         .where(eq(expenses.id, id));
-      await this.audit(tenant, actor, tx, "Voided expense", row, { status: row.status }, { reason: why });
+      await this.audit(
+        tenant,
+        actor,
+        tx,
+        "Voided expense",
+        row,
+        { status: row.status, billId: row.billId },
+        { reason: why },
+      );
     });
     return (await loadExpenses(db, this.control.db, [id]))[0]!;
   }
@@ -308,12 +343,12 @@ export class ExpensesService {
         );
       }
     });
-    await raiseRecurringDrafts(db, clock.day);
+    await raiseRecurringDrafts(db, clock.day, this.auditLog);
     return (await loadRecurringExpenses(db, [savedId]))[0]!;
   }
 
   /** Confirms an expense in the caller's transaction: raises a pay-later bill, then posts (rules 6, 16). */
-  private async confirm(tx: CompanyDb, row: ExpenseRow, reviewerId: string | null, by: string): Promise<void> {
+  private async confirm(tx: CompanyDb, row: ExpenseRow, reviewerId: string | null, by: string): Promise<string | null> {
     let billId: string | null = null;
     let dueAt: string | null = null;
     if (row.settlement === "on_account") {
@@ -347,6 +382,7 @@ export class ExpensesService {
       .where(eq(expenses.id, row.id));
     const cash = cashAccountFor(await loadAccountingForPosting(tx), row.paymentMethod);
     await this.books.post(tx, expensePosting(row, cash), by);
+    return billId;
   }
 
   /** Refuses fields no expense may hold, whatever its status (spec rules 3, 9, 10; blueprint-delta). */
@@ -377,7 +413,9 @@ export class ExpensesService {
   /** An expense the person's data scope covers, or 404 (so its existence is not revealed). */
   private async inScope(db: CompanyDb, access: RequestAccess, id: string): Promise<Expense> {
     const [expense] = await loadExpenses(db, this.control.db, [id]);
-    if (!expense || !seesExpense(access, expense, await locationBranches(db))) throw notFound("expense");
+    if (!expense || !seesExpense(access, expense, await locationBranches(db)) || !seesPayroll(access, expense)) {
+      throw notFound("expense");
+    }
     return expense;
   }
 
@@ -449,6 +487,19 @@ export class ExpensesService {
   }
 }
 
+/**
+ * Refuses to write an expense where the person's scope can't see it (PR #20 security review):
+ * branch scope only at a location in their own branch; a company-wide expense, such as a sales
+ * tax payment, needs company-wide scope. Own scope always waits for a second person instead.
+ */
+async function requireWritableAt(db: CompanyDb, access: RequestAccess, locationId: string | null): Promise<void> {
+  if (access.dataScope !== "branch") return;
+  const branches = await locationBranches(db);
+  if (locationId === null || branches.get(locationId) !== access.branchId) {
+    throw new ForbiddenException({ code: "forbidden", message: "Choose a location in your own branch." });
+  }
+}
+
 /** The form's fields as stored: a sales tax payment is company-wide with no tax (spec rule 8). */
 function normalise(input: ExpenseFields) {
   const companyWide = input.category === "sales_tax_payment";
@@ -473,7 +524,7 @@ function normalise(input: ExpenseFields) {
  * to finish it with the actual amount and receipt. Raised drafts have no creator, so the list
  * shows "Recurring expense"; the template's creator holds the recorder column until then.
  */
-export async function raiseRecurringDrafts(db: CompanyDb, today: string): Promise<number> {
+export async function raiseRecurringDrafts(db: CompanyDb, today: string, auditLog: AuditService): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.execute(NUMBER_LOCK);
     const templates = await tx.select().from(recurringExpenses).where(isNull(recurringExpenses.deletedAt));
@@ -489,8 +540,9 @@ export async function raiseRecurringDrafts(db: CompanyDb, today: string): Promis
       if (!owner) continue;
       const number = nextNumber("EXP-", numbers, 1);
       numbers.push(number);
+      const id = uuidv7();
       await tx.insert(expenses).values({
-        id: uuidv7(),
+        id,
         number,
         date,
         supplierId: template.supplierId,
@@ -508,6 +560,15 @@ export async function raiseRecurringDrafts(db: CompanyDb, today: string): Promis
         recordedById: owner,
         recordedAt: new Date(),
         createdBy: null,
+      });
+      // The system raised it, on behalf of no person (CLAUDE.md rule 10).
+      await auditLog.recordSystem(tx, "Recurring expense", {
+        category: "data",
+        action: "Raised recurring expense draft",
+        targetType: "expense",
+        targetId: id,
+        targetLabel: `${number}, ${EXPENSE_CATEGORY_LABELS[template.category]}`,
+        after: { amount: template.amount, period },
       });
       raised += 1;
     }

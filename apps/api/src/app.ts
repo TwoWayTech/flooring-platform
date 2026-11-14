@@ -68,23 +68,26 @@ function mountAuth(app: NestExpressApplication, proxySecret: string | undefined)
 /** The largest proof-carrying body: three files of 5 MB in base64, with room for the form fields. */
 const PROOF_BODY_LIMIT = "21mb";
 
-/** POST /payments, /payments/:id/files and /refunds carry proof files. */
-const PROOF_ROUTES = /^\/(payments(\/[0-9a-fA-F-]{36}\/files)?|refunds)\/?$/;
+/** POST /payments, /payments/:id/files, /refunds and /expenses carry proof files. */
+const PROOF_ROUTES = /^\/(payments(\/[0-9a-fA-F-]{36}\/files)?|refunds|expenses)\/?$/;
+
+/** PUT /expenses/:id finishes a draft with its receipts (ADR 0041). */
+const PROOF_PUT_ROUTES = /^\/expenses\/[0-9a-fA-F-]{36}\/?$/;
 
 function isJson(request: IncomingMessage): boolean {
   return (request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json");
 }
 
 /**
- * A proof upload: POST to a proof route with a session cookie. Requests without one keep the
+ * A proof upload: POST (or PUT for an expense draft) to a proof route with a session cookie. Requests without one keep the
  * small limit. The cookie is not verified before parsing, so per-IP limits on these routes are a
  * follow-up (docs/STATUS.md).
  */
 function carriesProof(request: IncomingMessage): boolean {
-  if (request.method !== "POST") return false;
+  if (request.method !== "POST" && request.method !== "PUT") return false;
   if (!(request.headers.cookie ?? "").includes("better-auth.session_token=")) return false;
   const path = (request.url ?? "").split("?")[0] ?? "";
-  return PROOF_ROUTES.test(path);
+  return request.method === "POST" ? PROOF_ROUTES.test(path) : PROOF_PUT_ROUTES.test(path);
 }
 
 /**

@@ -29,6 +29,8 @@ test.describe("expenses (api mode)", () => {
   test("won't record without a receipt, saves a draft, then records one with its receipt", async ({ page }) => {
     await page.goto("/finance?view=expenses");
     await page.getByRole("button", { name: "New expense" }).click();
+    await page.getByRole("dialog").getByLabel("Location").click();
+    await page.getByRole("option", { name: "Denver Central" }).click();
     await page.getByLabel("Amount before tax").fill("42.50");
     await page.getByRole("button", { name: "Record expense" }).click();
     await expect(page.getByRole("dialog").getByRole("alert")).toHaveText("Attach the receipt, statement or lease.");
@@ -36,6 +38,9 @@ test.describe("expenses (api mode)", () => {
     await expect(page.getByText("Draft saved")).toBeVisible();
 
     await page.getByRole("button", { name: "New expense" }).click();
+    // A branch manager records at a location in their own branch (PR #20 security review).
+    await page.getByRole("dialog").getByLabel("Location").click();
+    await page.getByRole("option", { name: "Denver Central" }).click();
     await page.getByLabel("Amount before tax").fill("37.25");
     await page.locator('input[type="file"]').setInputFiles(pdf);
     await page.getByRole("button", { name: "Record expense" }).click();
