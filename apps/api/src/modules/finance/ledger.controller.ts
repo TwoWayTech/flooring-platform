@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import type { Request } from "express";
 import { z } from "zod";
@@ -14,18 +14,10 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { companyToday, DAY, refuse } from "../sales/sales-common";
+import { requireCompanyWide } from "./company-wide";
 
 const THROUGH = z.object({ through: DAY.optional() });
 
-/**
- * The books are company-wide totals and cannot be cut to one branch, so they are for people whose
- * data scope is the whole company (CLAUDE.md rule 3; PR #16 review). Anyone else gets 403.
- */
-function requireCompanyWide(access: RequestAccess): void {
-  if (access.dataScope !== "all") {
-    throw new ForbiddenException({ code: "forbidden", message: "The books cover the whole company." });
-  }
-}
 const CLOSE = z.object({ through: DAY, note: z.string().max(500) });
 
 /**

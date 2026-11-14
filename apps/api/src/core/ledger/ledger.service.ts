@@ -4,11 +4,12 @@ import { journalEntries, journalLines, ledgerAccounts, periodCloses } from "@wor
 import {
   dec,
   DEFAULT_ACCOUNTS,
+  isCashAccount,
   moneyString,
   postingProblem,
   reversedLines,
-  type AccountKey,
   type AccountType,
+  type LedgerKey,
   type PostingDraft,
   type PostingLine,
 } from "@workspace/shared";
@@ -143,7 +144,7 @@ export class LedgerService {
       .where(eq(journalLines.entryId, entry.id));
     const reversal = reversedLines(
       posted.map((line) => ({
-        account: line.key as AccountKey,
+        account: line.key as LedgerKey,
         debit: line.debit,
         credit: line.credit,
         locationId: line.locationId,
@@ -165,6 +166,35 @@ export class LedgerService {
       entry.id,
       posted.map((line) => line.accountId),
     );
+  }
+
+  /**
+   * The cash account (Cash and Bank or a bank account) that a source's entry for an event posted
+   * to, or null when it never posted; 409 when the entry has no cash line. A void credits the same bank the money went into, even when
+   * the method's bank account has changed since (ADR 0040).
+   */
+  async postedCashAccount(
+    tx: CompanyDb,
+    source: Pick<PostingDraft, "sourceType" | "sourceId" | "event">,
+  ): Promise<LedgerKey | null> {
+    const rows = await tx
+      .select({ key: ledgerAccounts.key })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
+      .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
+      .where(
+        and(
+          eq(journalEntries.sourceType, source.sourceType),
+          eq(journalEntries.sourceId, source.sourceId),
+          eq(journalEntries.event, source.event),
+        ),
+      );
+    if (rows.length === 0) return null;
+    const cash = rows.map((row) => row.key).find(isCashAccount);
+    // An entry that took money in always has a cash line; anything else is a broken entry, not a default.
+    if (!cash)
+      throw refused("ledger_entry_invalid", `The ${source.event} entry has no cash line, so it can't be reversed.`);
+    return cash;
   }
 
   /** Every account's debits, credits and balance through a day (or all time), and their totals. */
@@ -262,8 +292,12 @@ export class LedgerService {
   }
 }
 
-function accountOf(accounts: ReadonlyMap<string, string>, key: AccountKey): string {
+function accountOf(accounts: ReadonlyMap<string, string>, key: LedgerKey): string {
   const id = accounts.get(key);
-  if (!id) throw new Error(`The ledger has no ${key} account.`);
+  if (!id)
+    throw refused(
+      "ledger_account_missing",
+      "An account this posting needs is missing or retired. Check Settings → Accounting.",
+    );
   return id;
 }

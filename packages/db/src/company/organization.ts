@@ -27,8 +27,11 @@ export const locations = pgTable("locations", {
   floorAreaSqFt: quantity(),
 });
 
-/** A settings group of CompanySettings, except branding, which lives in the control database. */
-export type SettingsGroup = Exclude<keyof CompanySettings, "branding">;
+/**
+ * A settings group of CompanySettings, except branding, which lives in the control database, plus
+ * the real build's `accounting` group (ADR 0040), which the demo does not have.
+ */
+export type SettingsGroup = Exclude<keyof CompanySettings, "branding"> | "accounting";
 
 /**
  * One row per settings group, holding that group as JSON (packages/shared/src/types/settings.ts).

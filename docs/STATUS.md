@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) is `feat/ledger-core` (PR #16).
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) are `feat/ledger-accounting-settings` (PR #19). The owner's queue of 2026-11-14 follows (Owner decisions, Queue).
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`) and PR #15 (`f8b0ef4`).
-- **Last session log:** docs/sessions/2026-11-14-1000-a-ledger-core.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`) and PR #18 (`82535cd`). The owner merged PR #17 (`9b6cbd0`).
+- **Last session log:** docs/sessions/2026-11-14-0820-a-accounting-settings.md
 
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
@@ -96,10 +96,12 @@
   - Users, Roles and the audit log on the API in api mode, with forgot, reset and accept-invitation pages.
 
 ## Next three tasks
-The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 6, A:** P12 ledger part 1 (ADR 0039), in review. Then part 2: expenses with recurring drafts and postings. Then part 3: bills and supplier payments; receipt, stock and cost-of-goods postings.
-2. **Inventory part 2 (from task 5):** cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
-3. **Task 6, A:** P12 ledger with finance-expenses.
+The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
+1. **P12 part 2:** expenses on the API, with recurring drafts and their postings (finance-expenses.md).
+2. **P12 part 3:** supplier bills and payments; receipt, stock and cost-of-goods postings (average cost, ADR 0040).
+3. **Inventory part 2:** cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
+
+Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
@@ -144,6 +146,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
     - Invoice days come from `tenants.time_zone` at read time, but journal dates are stored, so changing a company's zone would move past invoice days. Any screen that changes the time zone must handle this, for example with a stored day column.
     - Add an integration test with the clock faked to an evening hour.
   - The demo's `issueCreditNote` does not settle its own invoice the way the API does; align it if the demo is updated.
+- **Accounting settings (ADR 0040, PR #19 reviews):**
+  - Every new poster (expenses, supplier payments, a refund void) reads the settings with `loadAccountingForPosting`, and voids credit back through `postedCashAccount`.
+  - The lock-then-read pattern relies on READ COMMITTED; never run these transactions at REPEATABLE READ.
+  - The Settings → Accounting screen comes with the Settings module.
+  - Watch MultiXact traffic from the trigger's FOR SHARE on busy accounts (AR, Sales) under load; map its SQLSTATE 23514 to 409 `ledger_account_missing` instead of a generic 500.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.

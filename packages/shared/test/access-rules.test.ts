@@ -133,6 +133,7 @@ describe("sensitiveKeyFor", () => {
  * SENSITIVE_FIELDS or here, so nothing is forgotten (PR #7 review).
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+  costingMethod: "the name of the stock costing method (ADR 0040), not a cost",
   ratePct: "commission and tax percentages",
   baseRatePct: "a commission plan's base rate, not a pay rate",
   taxRate: "sales tax",

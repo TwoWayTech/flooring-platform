@@ -1,10 +1,10 @@
 import { dec, minDec, moneyString, sum, type Dec } from "../money";
 import type { Invoice, InvoiceAdjustment, Payment, Refund } from "../types";
-import type { AccountKey } from "./accounts";
+import type { LedgerKey } from "./settings";
 
 /** One side of one account in a journal entry. Exactly one of debit and credit is above zero. */
 export interface PostingLine {
-  account: AccountKey;
+  account: LedgerKey;
   debit: string;
   credit: string;
   /** The location the figure belongs to (revenue by where it was sold); null for company-wide. */
@@ -36,11 +36,11 @@ export type PostingEvent =
 
 const ZERO = "0.00";
 
-function debit(account: AccountKey, amount: Dec, extra: Partial<PostingLine> = {}): PostingLine {
+function debit(account: LedgerKey, amount: Dec, extra: Partial<PostingLine> = {}): PostingLine {
   return { account, debit: moneyString(amount), credit: ZERO, locationId: null, customerId: null, ...extra };
 }
 
-function credit(account: AccountKey, amount: Dec, extra: Partial<PostingLine> = {}): PostingLine {
+function credit(account: LedgerKey, amount: Dec, extra: Partial<PostingLine> = {}): PostingLine {
   return { account, debit: ZERO, credit: moneyString(amount), locationId: null, customerId: null, ...extra };
 }
 
@@ -105,8 +105,14 @@ export function creditNotePosting(note: Invoice): PostingDraft {
  * A payment once it counts (spec rule 28): debit Cash for the whole amount; credit Accounts
  * Receivable up to the invoice's balance before it, and Customer Credit for any extra. A deposit is
  * a payment on an invoice that is already issued, so it reduces the receivable too (ADR 0039).
+ * Cash is the bank account for the payment's method (`cashAccountFor`, ADR 0040).
  */
-export function paymentPosting(payment: Payment, invoiceNumber: string, balanceBefore: string): PostingDraft {
+export function paymentPosting(
+  payment: Payment,
+  invoiceNumber: string,
+  balanceBefore: string,
+  cashAccount: LedgerKey,
+): PostingDraft {
   const amount = dec(payment.amount);
   const toInvoice = minDec(amount, dec(balanceBefore).lt(0) ? dec(0) : dec(balanceBefore));
   const customer = { customerId: payment.customerId };
@@ -118,7 +124,7 @@ export function paymentPosting(payment: Payment, invoiceNumber: string, balanceB
     date: payment.date,
     memo: `${payment.kind === "deposit" ? "Deposit" : "Payment"} ${payment.number} on ${invoiceNumber}`,
     lines: nonZero([
-      debit("cash", amount, customer),
+      debit(cashAccount, amount, customer),
       credit("accounts_receivable", toInvoice, customer),
       credit("customer_credit", amount.minus(toInvoice), customer),
     ]),
@@ -151,21 +157,22 @@ export function adjustmentPosting(adjustment: InvoiceAdjustment, invoiceNumber: 
  * Undoing a confirmed payment (spec rule 32): credit Cash for the whole amount; debit Customer
  * Credit for the credit it takes back (the invoice's overpayment that disappears) and Accounts
  * Receivable for the rest. The split follows the invoice now, not the order the payments came in,
- * so receivables and credit always match the documents (PR #16 review).
+ * so receivables and credit always match the documents (PR #16 review). Cash is the account the
+ * payment first posted to, even if the method's bank account changed since (ADR 0040).
  */
-export function paymentVoidLines(payment: Payment, creditTakenBack: string): PostingLine[] {
+export function paymentVoidLines(payment: Payment, creditTakenBack: string, cashAccount: LedgerKey): PostingLine[] {
   const amount = dec(payment.amount);
   const fromCredit = minDec(dec(creditTakenBack).lt(0) ? dec(0) : dec(creditTakenBack), amount);
   const customer = { customerId: payment.customerId };
   return nonZero([
     debit("customer_credit", fromCredit, customer),
     debit("accounts_receivable", amount.minus(fromCredit), customer),
-    credit("cash", amount, customer),
+    credit(cashAccount, amount, customer),
   ]);
 }
 
-/** A refund of customer credit (spec rule 37): debit Customer Credit, credit Cash. */
-export function refundPosting(refund: Refund): PostingDraft {
+/** A refund of customer credit (spec rule 37): debit Customer Credit, credit the bank account for its method. */
+export function refundPosting(refund: Refund, cashAccount: LedgerKey): PostingDraft {
   const amount = dec(refund.amount);
   const customer = { customerId: refund.customerId };
   return {
@@ -175,7 +182,7 @@ export function refundPosting(refund: Refund): PostingDraft {
     sourceNumber: refund.number,
     date: refund.date,
     memo: `Refund ${refund.number}`,
-    lines: nonZero([debit("customer_credit", amount, customer), credit("cash", amount, customer)]),
+    lines: nonZero([debit("customer_credit", amount, customer), credit(cashAccount, amount, customer)]),
   };
 }
 

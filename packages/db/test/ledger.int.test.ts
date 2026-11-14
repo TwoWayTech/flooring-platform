@@ -93,6 +93,47 @@ describe("ledger tables (needs the local PostgreSQL)", () => {
     await expect(sql`truncate journal_lines`).rejects.toThrow(/append-only/);
   });
 
+  it("refuses a line on a retired account (ADR 0040)", async () => {
+    const retired = uuidv7();
+    await sql`insert into ledger_accounts (id, key, code, name, type, deleted_at)
+      values (${retired}, ${`bank:${retired}`}, '1010', 'Old bank', 'asset', now())`;
+    await expect(
+      post("2026-11-02", [
+        [retired, "5.00", "0"],
+        [sales, "0", "5.00"],
+      ]),
+    ).rejects.toMatchObject({ code: "23514", message: expect.stringMatching(/retired/) });
+  });
+
+  it("makes a posting wait for a retire in flight, then refuses it", async () => {
+    const bank = uuidv7();
+    await sql`insert into ledger_accounts (id, key, code, name, type) values (${bank}, ${`bank:${bank}`}, '1011', 'Racing bank', 'asset')`;
+    const other = postgres(scratch[0].url, { max: 1, onnotice: () => undefined });
+    try {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let retired: () => void = () => undefined;
+      const updated = new Promise<void>((resolve) => (retired = resolve));
+      // The retire is uncommitted while the posting starts; it commits only after the posting waits.
+      const retire = other.begin(async (tx) => {
+        await tx`update ledger_accounts set deleted_at = now() where id = ${bank}`;
+        retired();
+        await held;
+      });
+      await updated;
+      const posting = post("2026-11-03", [
+        [bank, "5.00", "0"],
+        [sales, "0", "5.00"],
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      release();
+      await retire;
+      await expect(posting).rejects.toThrow(/retired/);
+    } finally {
+      await other.end();
+    }
+  });
+
   it("refuses entries dated on or before the last closed day", async () => {
     await sql`insert into period_closes (id, closed_through) values (${uuidv7()}, '2026-10-31')`;
     await expect(

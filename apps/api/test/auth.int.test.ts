@@ -1,6 +1,6 @@
 import { session, tenants, user } from "@workspace/db/control";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AuthHarness, isUuidV7, PASSWORD, sessionCookie, SUMMIT_ID } from "./auth-harness";
 
 /** A moment the given number of minutes ago. */
@@ -72,9 +72,16 @@ describe("sign-in with Better Auth (P8 part 1, needs the local PostgreSQL)", () 
       expect(refused.status).toBe(403);
       expect(refused.body.code).toBe("EMAIL_NOT_VERIFIED");
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      const sent = harness.outbox.sent.find((message) => message.to.includes(email));
-      expect(sent?.subject).toBe("Confirm your email address");
+      // The email is sent after the response; wait for it rather than a fixed delay (flaky under load).
+      const sent = await vi.waitFor(
+        () => {
+          const found = harness.outbox.sent.find((message) => message.to.includes(email));
+          if (!found) throw new Error("No verification email yet.");
+          return found;
+        },
+        { timeout: 5_000 },
+      );
+      expect(sent.subject).toBe("Confirm your email address");
       const link = sent?.text.match(/https?:\/\/\S+/)?.[0] ?? "";
       expect(new URL(link).host).toBe("localhost:3000");
 
