@@ -146,6 +146,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
     - Invoice days come from `tenants.time_zone` at read time, but journal dates are stored, so changing a company's zone would move past invoice days. Any screen that changes the time zone must handle this, for example with a stored day column.
     - Add an integration test with the clock faked to an evening hour.
   - The demo's `issueCreditNote` does not settle its own invoice the way the API does; align it if the demo is updated.
+- **Accounting settings (ADR 0040, PR #19 reviews):**
+  - Every new poster (expenses, supplier payments, a refund void) reads the settings with `loadAccountingForPosting`, and voids credit back through `postedCashAccount`.
+  - The lock-then-read pattern relies on READ COMMITTED; never run these transactions at REPEATABLE READ.
+  - The Settings → Accounting screen comes with the Settings module.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.

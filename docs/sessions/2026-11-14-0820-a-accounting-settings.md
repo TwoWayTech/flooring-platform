@@ -20,6 +20,7 @@ The branch was built in the previous session and not handed off (no log, no PR).
 - A bank account with entries can't be removed (409 `bank_account_in_use`).
 
 ## Files changed this session
+- Review fixes: `apps/api/src/core/ledger/accounting-settings.ts` (schemas, the settings lock), `ledger.service.ts`, `modules/finance/*` (`company-wide.ts`), `modules/sales/payments.service.ts`, `packages/shared/src/accounting/settings.ts`, company migration 0003 and its tests, ADR 0040, docs/data-model.md.
 - `packages/shared/test/access-rules.test.ts`: `costingMethod` is classified as not sensitive (the sensitive-field scan caught the new field name).
 - `packages/db/src/seed/company.ts`: Prettier.
 - docs/STATUS.md, docs/BRANCHES.md: PRs #16 to #18 merged, the queue of 2026-11-14, this branch.
@@ -31,7 +32,13 @@ The branch was built in the previous session and not handed off (no log, no PR).
 - Playwright: none, the branch has no screen.
 
 ## Reviews
-See PR #19.
+- **First security review:** 1 blocking, fixed. Retiring a bank account could race a payment in flight: the save's in-use check could not see the payment's uncommitted lines, so a line could land on a soft-deleted account, which hid the cash from the trial balance rows and made the payment impossible to void.
+  - Fix: postings read the settings with `loadAccountingForPosting`, under a shared advisory lock that the save takes exclusively.
+  - Company migration 0003 adds the `journal_lines_live_account` trigger as the database's check.
+  - Its should-fix items are done: stored settings are parsed with the Zod schema (409 `settings_invalid`, never the defaults); a missing ledger account and an entry with no cash line answer 409; tests for a refund to a bank, the MFA refusal and a bad stored row.
+- **Schema review:** no blocking findings. Done: the trigger locks the account row `FOR SHARE`, so it waits for a retire in flight; a two-connection race test; the error code is checked; the `accounting` settings group is in docs/data-model.md.
+- **Second security review:** no blocking findings. Done: GET and PUT `/settings/accounting` need company-wide data scope (`requireCompanyWide`, shared with the ledger routes), with a 403 test for a branch-scoped role that holds the key; `remove` locks the accounts `FOR UPDATE` before its in-use check; bank names with a run of 6 or more digits are refused (rule 14); the `ledger_account_missing` message no longer shows the internal key; a test that a payment confirmed on review posts to its bank.
+- **Third security review:** see PR #19.
 
 ## What is left
 - The Settings → Accounting screen comes with the Settings module (ADR 0040).
