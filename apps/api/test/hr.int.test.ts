@@ -13,7 +13,7 @@ import {
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { addDays, PRODUCT_HEADER, workweekStartOf } from "@workspace/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
@@ -188,6 +188,23 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       emergencyContact: null,
       ...over,
     };
+  }
+
+  /** Hana's record exactly as stored, so a re-save by her own sign-in changes nothing but `over`. */
+  function hanaForm(over: Record<string, unknown> = {}) {
+    return form({
+      name: "Hana Hartley",
+      title: "",
+      department: "",
+      payType: "salary",
+      payRate: "52.00",
+      email: "",
+      phone: "",
+      hiredAt: "2024-01-08",
+      flsaStatus: "exempt",
+      exemptionBasis: "administrative",
+      ...over,
+    });
   }
 
   async function addEmployee(cookie: string, over: Record<string, unknown> = {}): Promise<EmployeeBody> {
@@ -522,30 +539,11 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(audited.some((entry) => (entry.after as Record<string, unknown>).payRateChanged === true)).toBe(true);
 
     // Nobody changes their own pay; saving the same rate is fine.
-    const own = await call("put", `/employees/${ids.hana}`, cookies.hr).send(
-      form({
-        name: "Hana Hartley",
-        payType: "salary",
-        flsaStatus: "exempt",
-        exemptionBasis: "administrative",
-        payRate: "99.00",
-        email: "",
-      }),
-    );
+    const own = await call("put", `/employees/${ids.hana}`, cookies.hr).send(hanaForm({ payRate: "99.00" }));
     status(own, 400);
-    expect(own.body.message).toContain("Someone else must change your own pay rate");
+    expect(own.body.message).toContain("On your own record you can change only");
     expect(await storedPay(ids.hana)).toBe("52.00");
-    const same = await call("put", `/employees/${ids.hana}`, cookies.hr).send(
-      form({
-        name: "Hana Hartley",
-        payType: "salary",
-        flsaStatus: "exempt",
-        exemptionBasis: "administrative",
-        payRate: "52.00",
-        email: "",
-      }),
-    );
-    status(same, 200);
+    status(await call("put", `/employees/${ids.hana}`, cookies.hr).send(hanaForm({ payRate: "52.0" })), 200);
   });
 
   it("links a member's sign-in to a person, refusing non-members, taken links and one's own", async () => {
@@ -695,7 +693,12 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(await call("post", "/timesheets/decisions", cookies.mgr).send({ action: "approve", ids: [wes.id] }), 201);
     const [approval] = await auditOf("Approved timesheet", wes.id);
     // 42 hours under the company's federal rule: 40 regular, 2 overtime.
-    expect(approval!.after).toMatchObject({ status: "approved", regular: 40, overtime: 2, doubleTime: 0 });
+    expect(approval!.after).toMatchObject({
+      status: "approved",
+      regular: "40.00",
+      overtime: "2.00",
+      doubleTime: "0.00",
+    });
     const decided = (await sheetsOf(cookies.wes)).find((s) => s.id === wes.id)!;
     expect(decided.status).toBe("approved");
     expect(decided.decidedBy).not.toBeNull();
@@ -712,7 +715,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     await submit(cookies.hr, carla.id);
     status(await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [carla.id] }), 201);
     const [california] = await auditOf("Approved timesheet", carla.id);
-    expect(california!.after).toMatchObject({ regular: 8, overtime: 4, doubleTime: 1 });
+    expect(california!.after).toMatchObject({ regular: "8.00", overtime: "4.00", doubleTime: "1.00" });
 
     // Nobody decides their own sheet; someone else can.
     const mara = await saveWeek(cookies.mgr, ids.mara, week(4), [8, 8, 8, 8, 8, 0, 0]);
@@ -1307,7 +1310,16 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const uma = await person({ name: "Uma Unlinked", email: `  ${twinEmail.toUpperCase()} `, payRate: "30.00" });
     const twin = await enrolled(twinEmail);
     const umaForm = (over: Record<string, unknown>) =>
-      form({ name: "Uma Unlinked", email: twinEmail, payRate: "30.00", ...over });
+      form({
+        name: "Uma Unlinked",
+        title: "",
+        department: "",
+        email: twinEmail,
+        phone: "",
+        hiredAt: "2024-01-08",
+        payRate: "30.00",
+        ...over,
+      });
 
     // The pay rate and the other pay facts on one's own record.
     for (const over of [
@@ -1319,24 +1331,16 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     ]) {
       const refused = await call("put", `/employees/${uma.id}`, twin).send(umaForm(over));
       status(refused, 400);
-      expect(refused.body.message).toContain("Someone else must change your own pay rate");
+      expect(refused.body.message).toContain("On your own record you can change only");
     }
     expect(await storedPay(uma.id)).toBe("30.00");
-    status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ title: "Lead" })), 200);
+    // The title is not one's own to change either; the phone is (employee-portal.md rule 9).
+    status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ title: "Lead" })), 400);
+    status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ phone: "555-0123" })), 200);
     // A linked sign-in can't change its own salaried hours either.
-    const hana = await call("put", `/employees/${ids.hana}`, cookies.hr).send(
-      form({
-        name: "Hana Hartley",
-        payType: "salary",
-        flsaStatus: "exempt",
-        exemptionBasis: "administrative",
-        payRate: "52.00",
-        email: "",
-        salaryHoursPerWeek: 30,
-      }),
-    );
+    const hana = await call("put", `/employees/${ids.hana}`, cookies.hr).send(hanaForm({ salaryHoursPerWeek: 30 }));
     status(hana, 400);
-    expect(hana.body.message).toContain("Someone else must change your own pay rate");
+    expect(hana.body.message).toContain("On your own record you can change only");
 
     // Timesheets: neither decide nor reopen one's own.
     const sheet = await saveWeek(cookies.hr, uma.id, week(8), [8, 8, 8, 8, 8, 0, 0]);
@@ -1487,7 +1491,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     // Step 1 of the bypass, changing one's own email so the match is lost, is refused.
     const moved = await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: "ivy.other@example.test" }));
     status(moved, 400);
-    expect(moved.body.message).toContain("Someone else must change the email on your own record");
+    expect(moved.body.message).toContain("On your own record you can change only");
     // The same email in other letter case is no change.
     status(await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: twinEmail.toUpperCase() })), 200);
     const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, ivy.id)));
@@ -1521,7 +1525,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     for (const over of [{ status: "on_leave" }, { commissionVisible: true }]) {
       const refused = await call("put", `/employees/${rae.id}`, twin).send(raeForm(over));
       status(refused, 400);
-      expect(refused.body.message).toContain("Someone else must change your own status");
+      expect(refused.body.message).toContain("On your own record you can change only");
     }
     const step = rae.onboarding[0]!;
     const tick = await call("post", `/employees/${rae.id}/checklist/${step.id}`, twin).send({
@@ -1645,5 +1649,147 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       phone: "555-0199",
       emergencyContact: contact,
     });
+  });
+  it("allows only the phone and emergency contact on one's own record, at any data scope", async () => {
+    const free = await person({ name: "Fay Free" });
+    // HR has company-wide scope, yet its own work state, hire date, manager and name are someone else's.
+    for (const over of [{ state: "CO" }, { hiredAt: "2023-01-02" }, { managerId: free.id }, { name: "Hana H." }]) {
+      const refused = await call("put", `/employees/${ids.hana}`, cookies.hr).send(hanaForm(over));
+      status(refused, 400);
+      expect(refused.body.message, JSON.stringify(over)).toContain("On your own record you can change only");
+    }
+    const [kept] = await rows((db) => db.select().from(employees).where(eq(employees.id, ids.hana)));
+    expect(kept).toMatchObject({ state: "TX", hiredAt: "2024-01-08", managerId: null, name: "Hana Hartley" });
+    // A plain re-save with a new phone and emergency contact passes, with spaces around unchanged text.
+    const contact = { name: "Hal Hartley", phone: "555-0150", relation: "Spouse" };
+    const saved = await call("put", `/employees/${ids.hana}`, cookies.hr).send(
+      hanaForm({ name: " Hana Hartley ", phone: "555-0177", emergencyContact: contact }),
+    );
+    status(saved, 200);
+    expect(saved.body).toMatchObject({ phone: "555-0177", emergencyContact: contact, state: "TX" });
+  });
+
+  it("refuses adding documents to one's own file", async () => {
+    const own = await call("post", `/employees/${ids.hana}/documents`, cookies.hr).send({ files: [PDF] });
+    status(own, 400);
+    expect(own.body.message).toContain("Someone else must add documents to your own file");
+  });
+
+  it("refuses decisions and pay changes from an unlinked sign-in unless it is the Owner's", async () => {
+    const loose = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["hr"] }));
+    const owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const unlinked = "Link your sign-in to your employee record";
+    const w = week(15);
+    const sheet = await saveWeek(cookies.hr, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, sheet.id);
+    const decide = (cookie: string) =>
+      call("post", "/timesheets/decisions", cookie).send({ action: "approve", ids: [sheet.id] });
+    const refused = await decide(loose);
+    status(refused, 400);
+    expect(refused.body.message).toContain(unlinked);
+    status(await decide(owner), 201);
+    // The approval's overtime split is logged as decimal strings (CLAUDE.md rule 6).
+    const [approval] = await auditOf("Approved timesheet", sheet.id);
+    expect(approval!.after).toMatchObject({ regular: "40.00", overtime: "0.00", doubleTime: "0.00" });
+    const reopen = await call("post", `/timesheets/${sheet.id}/reopen`, loose).send({ reason: "Fixing hours" });
+    status(reopen, 400);
+    expect(reopen.body.message).toContain(unlinked);
+
+    const policy = await addPolicy({ name: "Vacation Linked", allowNegative: true });
+    const adjust = await call("post", "/time-off-adjustments", loose).send({
+      employeeId: ids.olive,
+      policyId: policy.id,
+      hours: "8",
+      note: "Starting balance",
+    });
+    status(adjust, 400);
+    expect(adjust.body.message).toContain(unlinked);
+    const start = addDays(companyDay(), 100);
+    const asked = await call("post", "/pto-requests", cookies.olive).send({
+      employeeId: ids.olive,
+      policyId: policy.id,
+      start,
+      end: start,
+      hours: "8",
+      note: "",
+    });
+    status(asked, 201);
+    const ptoDecision = (cookie: string) =>
+      call("post", `/pto-requests/${asked.body.id}/decision`, cookie).send({ action: "approve" });
+    const ptoRefused = await ptoDecision(loose);
+    status(ptoRefused, 400);
+    expect(ptoRefused.body.message).toContain(unlinked);
+    status(await ptoDecision(owner), 201);
+
+    const pay = await addEmployee(cookies.hr, { name: "Pay Target", email: "pay.target@example.test" });
+    const raise = (cookie: string, payRate: string) =>
+      call("put", `/employees/${pay.id}`, cookie).send(
+        form({ name: "Pay Target", email: "pay.target@example.test", payRate }),
+      );
+    const payRefused = await raise(loose, "40.00");
+    status(payRefused, 400);
+    expect(payRefused.body.message).toContain(unlinked);
+    expect(await storedPay(pay.id)).toBe("31.75");
+    // Other edits stay open to the unlinked sign-in, and the Owner may change the pay.
+    status(
+      await call("put", `/employees/${pay.id}`, loose).send(
+        form({ name: "Pay Target", email: "pay.target@example.test", title: "Lead" }),
+      ),
+      200,
+    );
+    status(await raise(owner, "40.00"), 200);
+    expect(await storedPay(pay.id)).toBe("40.00");
+  });
+
+  it("refuses saving, uploading and clocking hours into a week of an approved pay period", async () => {
+    const w = week(16);
+    const today = workweekStartOf(companyDay(), 1);
+    const [closed, current] = await rows((db) =>
+      db
+        .insert(payPeriods)
+        .values([
+          { frequency: "weekly", start: w, end: addDays(w, 6), payDate: addDays(w, 12), status: "approved" },
+          {
+            frequency: "weekly",
+            start: today,
+            end: addDays(today, 6),
+            payDate: addDays(today, 12),
+            status: "exported",
+          },
+        ])
+        .returning(),
+    );
+    const [open] = await rows((db) =>
+      db
+        .insert(clockEntries)
+        .values({ employeeId: ids.olive, date: companyDay(), inAt: new Date(Date.now() - 3_600_000) })
+        .returning(),
+    );
+    try {
+      const saved = await call("put", "/timesheets", cookies.hr).send({
+        employeeId: ids.wes,
+        weekStart: w,
+        days: hours(8, 8, 8, 8, 8, 0, 0),
+      });
+      status(saved, 400);
+      expect(saved.body.message).toContain("approved pay period");
+      const uploaded = await upload(cookies.hr, [["wes.walker@example.test", addDays(w, 1), "8"]], true);
+      status(uploaded, 400);
+      expect(uploaded.body.message).toContain("approved pay period");
+      expect((await sheetsOf(cookies.hr)).some((s) => s.employeeId === ids.wes && s.weekStart === w)).toBe(false);
+      const out = await call("post", "/clock/out", cookies.olive);
+      status(out, 400);
+      expect(out.body.message).toContain("Ask HR to correct your punch");
+      const [still] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
+      expect(still!.outAt).toBeNull();
+    } finally {
+      await rows(async (db) => {
+        await db.update(clockEntries).set({ deletedAt: new Date() }).where(eq(clockEntries.id, open!.id));
+        await db
+          .update(payPeriods)
+          .set({ deletedAt: new Date() })
+          .where(inArray(payPeriods.id, [closed!.id, current!.id]));
+      });
+    }
   });
 });

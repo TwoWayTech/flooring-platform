@@ -68,6 +68,7 @@ export class TimesheetsController {
   @Get("clock-entries")
   @RequirePermission("hr.timesheet.view")
   listClock(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireFeature("hr.timesheets");
     requireFeature("hr.clock");
     return this.sheets.listClock(tenant, access);
   }

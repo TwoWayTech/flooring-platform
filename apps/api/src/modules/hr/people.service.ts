@@ -22,7 +22,7 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
 import { notFound, refuse } from "../sales/sales-common";
-import { auditHr, lockEmployee } from "./hr-common";
+import { auditHr, lockEmployee, requireLinkedDecider } from "./hr-common";
 import { loadEmployees, personScope, selfCheck, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
@@ -107,7 +107,6 @@ export class PeopleService {
         before && !seesContact
           ? { email: before.email, phone: before.phone, emergencyContact: before.emergencyContact }
           : { email: input.email.trim(), phone: input.phone.trim(), emergencyContact: input.emergencyContact };
-      checkSelfEdit(actor, before, own, contact.email, input);
       // Without the key the stored rate, pay type and salaried hours stay, and a new person starts
       // at a zero rate (hr.md "Who uses it"; CLAUDE.md rule 5; security review of PR #25).
       const keep = !seesPay && before !== null;
@@ -119,34 +118,26 @@ export class PeopleService {
         // A California salary covers 40 hours (Labor Code 515), whoever saves.
         salaryHoursPerWeek: input.state === "CA" ? 40 : keep ? before.salaryHoursPerWeek : input.salaryHoursPerWeek,
       };
-      // Nobody sets their own pay or overtime status (separation of duties, blueprint "Security";
-      // blueprint-delta 2026-11-14), also when their sign-in is matched only by email (`selfCheck`).
-      if (before && own && payFactsChanged(before, pay)) {
-        throw refuse("Someone else must change your own pay rate, pay type, worker type or overtime status.");
-      }
-      await this.checkManager(tx, employeeId, input.managerId);
-      if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
-      const { flsaStatus } = pay;
-      const values = {
+      const values: EmployeeValues = {
         name,
         title: input.title.trim(),
         department: input.department.trim(),
-        workerType: pay.workerType,
-        payType: pay.payType,
-        payRate: pay.payRate,
+        ...pay,
         state: input.state,
-        email: contact.email,
-        phone: contact.phone,
+        ...contact,
         hiredAt: input.hiredAt,
         status: input.status,
         managerId: input.managerId,
-        flsaStatus,
-        exemptionBasis: flsaStatus === "exempt" ? input.exemptionBasis : null,
-        salaryHoursPerWeek: pay.salaryHoursPerWeek,
+        exemptionBasis: pay.flsaStatus === "exempt" ? input.exemptionBasis : null,
         commissionVisible: input.commissionVisible,
         homeLocationId: input.homeLocationId,
-        emergencyContact: contact.emergencyContact,
       };
+      checkSelfEdit(actor, before, own, values);
+      // A sign-in linked to no employee can't be checked for self-dealing by the link, so only an
+      // Owner changes pay facts from one (third security review of PR #25; ADR 0046).
+      if (before && payFactsChanged(before, pay)) await requireLinkedDecider(tx, actor.access);
+      await this.checkManager(tx, employeeId, input.managerId);
+      if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
       let row: EmployeeRow;
       if (before) {
         [row] = (await tx
@@ -273,6 +264,9 @@ export class PeopleService {
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
       db.transaction(async (tx) => {
         const employee = await lockEmployee(tx, employeeId);
+        // Nobody adds to their own personnel file (third security review of PR #25).
+        if ((await selfCheck(tx, actor))(employee.id))
+          throw refuse("Someone else must add documents to your own file.");
         await attach(tx, "employee", employee.id, actor.access.userId);
         await auditHr(this.auditLog, tenant, actor, tx, {
           action: "Added employee documents",
@@ -382,35 +376,51 @@ type ContactFields = Pick<EmployeeRow, "email" | "phone" | "emergencyContact">;
 /** An email compared the way `selfCheck` matches it: trimmed and case-insensitive. */
 const emailKey = (email: string) => email.trim().toLowerCase();
 
+/** The stored fields a save writes, normalised (trimmed, effective pay facts). */
+type EmployeeValues = Omit<
+  EmployeeRow,
+  "id" | "createdAt" | "updatedAt" | "createdBy" | "deletedAt" | "externalId" | "birthDate"
+>;
+
+/**
+ * What a person may change on their own record: only the phone and the emergency contact
+ * (employee-portal.md rule 9, `MyProfilePatch`). Everything else, the name and title included,
+ * is someone else's to change (third security review of PR #25).
+ */
+const OWN_EDITABLE: ReadonlySet<keyof EmployeeValues> = new Set(["phone", "emergencyContact"]);
+
+/** Whether a field differs from the stored value, compared so an unchanged re-save is no change. */
+function fieldChanged(key: keyof EmployeeValues, before: EmployeeRow, after: EmployeeValues): boolean {
+  if (key === "payRate") return dec(after.payRate).cmp(before.payRate) !== 0;
+  if (key === "email") return emailKey(after.email) !== emailKey(before.email);
+  const was = before[key];
+  const now = after[key];
+  if (typeof was === "string" && typeof now === "string") return was.trim() !== now.trim();
+  return JSON.stringify(was ?? null) !== JSON.stringify(now ?? null);
+}
+
 /**
  * Refuses the edits that would let someone act on their own record (separation of duties,
- * blueprint "Security"; second security review of PR #25):
- * - On their own record (`own`, by sign-in link or verified email) nobody changes the email, since
- *   the email match is what bars self-approval, nor the status or commission visibility.
+ * blueprint "Security"; second and third security reviews of PR #25):
+ * - On their own record (`own`, by sign-in link or verified email) only the fields in
+ *   `OWN_EDITABLE` may differ from the stored ones: an allowlist, so the pay facts, email, status,
+ *   work state, hire date, manager and any field added later are someone else's.
  * - Nobody puts their own verified email on a record that is not already theirs, so no second
  *   "self" record is made.
  * - Only a company-wide data scope changes a manager, because a manager decides `branch` scope
  *   (hr.md "Data scope", `ownOrReports`).
  */
-function checkSelfEdit(
-  actor: Actor,
-  before: EmployeeRow | null,
-  own: boolean,
-  email: string,
-  input: EmployeeFields,
-): void {
+function checkSelfEdit(actor: Actor, before: EmployeeRow | null, own: boolean, values: EmployeeValues): void {
   const sessionEmail = emailKey(actor.session.user.email);
   if (before && own) {
-    if (emailKey(email) !== emailKey(before.email)) {
-      throw refuse("Someone else must change the email on your own record.");
+    const keys = Object.keys(values) as (keyof EmployeeValues)[];
+    if (keys.some((key) => !OWN_EDITABLE.has(key) && fieldChanged(key, before, values))) {
+      throw refuse("On your own record you can change only your phone and emergency contact. Ask HR for the rest.");
     }
-    if (input.status !== before.status || input.commissionVisible !== before.commissionVisible) {
-      throw refuse("Someone else must change your own status or commission visibility.");
-    }
-  } else if (sessionEmail && emailKey(email) === sessionEmail) {
+  } else if (sessionEmail && emailKey(values.email) === sessionEmail) {
     throw refuse("Your own sign-in email can only be on your own record.");
   }
-  const managerChanged = before ? input.managerId !== before.managerId : input.managerId !== null;
+  const managerChanged = before ? values.managerId !== before.managerId : values.managerId !== null;
   if (managerChanged && actor.access.dataScope !== "all") {
     throw refuse("Only someone who sees everyone's records can change a manager.");
   }
@@ -419,7 +429,10 @@ function checkSelfEdit(
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
 type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
 
-/** Whether a save changes any pay fact, which nobody may do on their own record (security review of PR #25). */
+/**
+ * Whether a save changes any pay fact: refused on one's own record (`checkSelfEdit`) and, from a
+ * sign-in linked to no employee, to everyone but an Owner (`requireLinkedDecider`).
+ */
 function payFactsChanged(before: EmployeeRow, after: PayFacts): boolean {
   return (
     dec(after.payRate).cmp(before.payRate) !== 0 ||

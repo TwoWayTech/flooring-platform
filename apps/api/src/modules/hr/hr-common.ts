@@ -3,11 +3,11 @@ import { employees, ptoRequests, rolePermissions, timesheets, userProfiles, user
 import { user } from "@workspace/db/control";
 import { seesPersonRecords, type AuditCategory, type Employee, type PermissionKey } from "@workspace/shared";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import type { AccessService } from "../../core/access/access.service";
+import type { AccessService, RequestAccess } from "../../core/access/access.service";
 import type { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { notFound } from "../sales/sales-common";
+import { notFound, refuse } from "../sales/sales-common";
 import { viewerEmployeeId, type EmployeeRow, type PersonScope } from "./hr-records";
 
 /** A stored timesheet row. */
@@ -85,6 +85,18 @@ export async function lockRequest(tx: CompanyDb, id: string, scope: PersonScope)
   const [row] = await tx.select().from(ptoRequests).where(eq(ptoRequests.id, id)).for("update");
   if (!row || row.deletedAt) throw notFound("request");
   return row;
+}
+
+/**
+ * Refuses a decision on someone else's time or pay from a sign-in linked to no employee
+ * (user_profiles.employee_id null), unless the actor is the company Owner (third security review
+ * of PR #25; ADR 0046). An unlinked sign-in is matched to its own record only by email, which may
+ * differ, so it could otherwise approve its own hours, time off or pay. Covers timesheet decisions
+ * and reopens, time-off decisions, balance adjustments and pay-fact edits.
+ */
+export async function requireLinkedDecider(db: CompanyDb, access: RequestAccess): Promise<void> {
+  if (access.isOwner || (await viewerEmployeeId(db, access.userId))) return;
+  throw refuse("Link your sign-in to your employee record before approving or changing pay; an Owner can link it.");
 }
 
 /** One HR audit entry in the caller's transaction (CLAUDE.md rule 10; hr.md "Events and audit entries"). */

@@ -4,6 +4,7 @@ import { clockEntries, employees, payPeriods, timeEntries, timesheets } from "@w
 import {
   addDays,
   clockedHoursText,
+  dec,
   daysBetween,
   hoursTextProblem,
   hoursToWire,
@@ -43,6 +44,7 @@ import {
   lockEmployee,
   lockTimesheet,
   lockTimesheets,
+  requireLinkedDecider,
   type TimesheetRow,
 } from "./hr-common";
 import {
@@ -139,6 +141,7 @@ export class TimesheetsService {
       if (existing?.status === "approved") throw refuse("This week is approved, so it is locked.");
       if (existing?.status === "submitted")
         throw refuse("This week waits for approval. Ask for it to be sent back first.");
+      if (await inClosedPayPeriod(tx, input.weekStart)) throw refuse(CLOSED_WEEK);
       const sheetId = await this.putSheet(tx, actor.access.userId, existing, {
         employeeId: employee.id,
         weekStart: input.weekStart,
@@ -223,6 +226,7 @@ export class TimesheetsService {
         if (sheet.status !== "submitted") throw refuse(`${employee.name}'s timesheet is not waiting for approval.`);
         done.push({ sheet, employee });
       }
+      await requireLinkedDecider(tx, actor.access);
       const now = new Date();
       const days = await this.daysOf(
         tx,
@@ -251,7 +255,13 @@ export class TimesheetsService {
           before: { status: sheet.status },
           after:
             status === "approved"
-              ? { status, regular: split.regular, overtime: split.overtime, doubleTime: split.doubleTime }
+              ? {
+                  status,
+                  // Hours travel as decimal strings, in the log too (CLAUDE.md rule 6).
+                  regular: dec(split.regular).toFixed(2),
+                  overtime: dec(split.overtime).toFixed(2),
+                  doubleTime: dec(split.doubleTime).toFixed(2),
+                }
               : { status, reason },
         });
       }
@@ -275,21 +285,11 @@ export class TimesheetsService {
       const sheet = await lockTimesheet(tx, id, scope);
       const employee = await lockEmployee(tx, sheet.employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must reopen your own timesheet.");
+      await requireLinkedDecider(tx, actor.access);
       if (sheet.status !== "approved") throw refuse("Only an approved timesheet can be reopened.");
-      const end = addDays(sheet.weekStart, 6);
-      const [locked] = await tx
-        .select({ id: payPeriods.id })
-        .from(payPeriods)
-        .where(
-          and(
-            isNull(payPeriods.deletedAt),
-            inArray(payPeriods.status, ["approved", "exported"]),
-            lte(payPeriods.start, end),
-            gte(payPeriods.end, sheet.weekStart),
-          ),
-        )
-        .limit(1);
-      if (locked) throw refuse("This week is in an approved pay period. Reopen the pay period first.");
+      if (await inClosedPayPeriod(tx, sheet.weekStart)) {
+        throw refuse("This week is in an approved pay period. Reopen the pay period first.");
+      }
       const now = new Date();
       await tx
         .update(timesheets)
@@ -375,6 +375,7 @@ export class TimesheetsService {
         const existing = await this.sheetById(tx, sheet.id);
         const days = hoursToWire(sheet.days);
         checkUploadedWeek(people.get(sheet.employeeId), existing, sheet, days, clock.day);
+        if (await inClosedPayPeriod(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
         await this.putSheet(tx, actor.access.userId, existing, {
           employeeId: sheet.employeeId,
           weekStart: sheet.weekStart,
@@ -447,6 +448,12 @@ export class TimesheetsService {
         if (hoursTextProblem(next)) {
           throw refuse(
             `Clocking out now would put more than 24 hours on ${open.date}. Ask whoever approves timesheets to fix that week.`,
+          );
+        }
+        // Paid hours stay as paid: the punch stays open for HR to correct (third security review of PR #25).
+        if (await inClosedPayPeriod(tx, weekStart)) {
+          throw refuse(
+            `The week of ${weekStart} is in an approved pay period, so the clock can't add hours to it. Ask HR to correct your punch.`,
           );
         }
         await this.putSheet(tx, actor.access.userId, sheet, {
@@ -668,6 +675,30 @@ export class TimesheetsService {
 /** One step of a sheet's history, by the acting person's name (hr.md "Timesheet" `history`). */
 function event(actor: Actor, at: Date, action: TimesheetEvent["action"], reason: string | null = null): TimesheetEvent {
   return { at: at.toISOString().slice(0, 16), by: actor.session.user.name, action, reason };
+}
+
+/** Why a week in a closed pay period takes no hours. */
+const CLOSED_WEEK = "This week is in an approved pay period, so it is locked. Reopen the pay period first.";
+
+/**
+ * Whether an approved or exported pay period covers any day of the week from `weekStart`: its
+ * hours are paid, so no save, upload, clock-out or reopen writes into it (hr.md "Timesheets";
+ * third security review of PR #25).
+ */
+async function inClosedPayPeriod(tx: CompanyDb, weekStart: string): Promise<boolean> {
+  const [locked] = await tx
+    .select({ id: payPeriods.id })
+    .from(payPeriods)
+    .where(
+      and(
+        isNull(payPeriods.deletedAt),
+        inArray(payPeriods.status, ["approved", "exported"]),
+        lte(payPeriods.start, addDays(weekStart, 6)),
+        gte(payPeriods.end, weekStart),
+      ),
+    )
+    .limit(1);
+  return locked !== undefined;
 }
 
 /** The import world for the timesheet kind, which reads only employees and timesheets. */

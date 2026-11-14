@@ -21,7 +21,15 @@ import { NotificationService } from "../../core/notifications/notification.servi
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, notFound, refuse } from "../sales/sales-common";
-import { auditHr, holdersOf, linkedUser, lockEmployee, lockRequest, type RequestRow } from "./hr-common";
+import {
+  auditHr,
+  holdersOf,
+  linkedUser,
+  lockEmployee,
+  lockRequest,
+  requireLinkedDecider,
+  type RequestRow,
+} from "./hr-common";
 import {
   hoursText,
   loadPolicies,
@@ -170,6 +178,7 @@ export class TimeOffService {
       const request = await lockRequest(tx, id, scope);
       const employee = await lockEmployee(tx, request.employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must decide your own time off.");
+      await requireLinkedDecider(tx, actor.access);
       if (request.status !== "pending") throw refuse("This request has already been decided.");
       if (status === "approved") await this.checkStillFits(tx, employee, request);
       const now = new Date();
@@ -262,6 +271,7 @@ export class TimeOffService {
       const scope = await personScope(tx, actor.access);
       const employee = await lockEmployee(tx, input.employeeId, scope);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must adjust your own balance.");
+      await requireLinkedDecider(tx, actor.access);
       const policy = await this.policy(tx, input.policyId);
       const [row] = await tx
         .insert(timeOffEntries)
