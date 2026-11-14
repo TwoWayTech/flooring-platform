@@ -1,5 +1,6 @@
 import type {
   Customer,
+  Expense,
   GoodsReceipt,
   Invoice,
   InvoiceAdjustment,
@@ -10,6 +11,7 @@ import type {
   Product,
   PurchaseOrder,
   Quote,
+  RecurringExpense,
   Role,
   Roll,
   StockAdjustment,
@@ -126,8 +128,33 @@ export const API_METHODS: HttpRoutes = {
     http.request<Payment>("POST", `/payments/${paymentId}/files`, { files: await encodeFiles(files) }),
   refundCredit: (http) => async (input, files) =>
     http.request<Refund>("POST", "/refunds", { ...input, files: await encodeFiles(files) }),
-  // Files the API stored have UUIDs; expense, contract and employee files are still the demo's.
+  // Files the API stored have UUIDs (payments, refunds, expenses); contract and employee files are still the demo's.
   getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
+  expensesData: (http) => async () => {
+    const [expenses, recurring, suppliers, locations] = await Promise.all([
+      seen(http.request<Expense[]>("GET", "/expenses")),
+      seen(http.request<RecurringExpense[]>("GET", "/recurring-expenses")),
+      seen(http.request<Supplier[]>("GET", "/suppliers")),
+      seen(http.request<Location[]>("GET", "/locations")),
+    ]);
+    return { expenses, recurring, suppliers, locations };
+  },
+  saveExpense: (http) => async (input, files) => {
+    const { id, ...body } = input;
+    // The form sends an empty vendor while none is chosen; the API reads that as none.
+    const payload = { ...body, supplierId: body.supplierId || null, files: await encodeFiles(files) };
+    return id && isSaved(id)
+      ? http.request<Expense>("PUT", `/expenses/${id}`, payload)
+      : http.request<Expense>("POST", "/expenses", payload);
+  },
+  reviewExpense: (http) => (id, decision) => http.request<Expense>("POST", `/expenses/${id}/review`, decision),
+  voidExpense: (http) => (id, reason) => http.request<Expense>("POST", `/expenses/${id}/void`, { reason }),
+  saveRecurringExpense: (http) => (input) => {
+    const { id, ...body } = input;
+    return id && isSaved(id)
+      ? http.request<RecurringExpense>("PUT", `/recurring-expenses/${id}`, body)
+      : http.request<RecurringExpense>("POST", "/recurring-expenses", body);
+  },
   purchasingData: (http) => async () => {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations] = await Promise.all([
       seen(http.request<Supplier[]>("GET", "/suppliers")),
