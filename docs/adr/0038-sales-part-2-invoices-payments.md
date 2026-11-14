@@ -4,7 +4,7 @@
 - **Context:** the owner's second work queue, task 5, part 2 (docs/product-spec/sales.md "Conversion and invoices", "Payments", "Corrections"; ADR 0013). Part 1 (ADR 0037) moved customers and quotes. The schema for invoices, payments, adjustments, refunds, reservations and attachments already existed, so this part has no migration.
 
 ## Decision
-- **Money writes wait for the ledger:** every financial event posts a balanced journal entry (CLAUDE.md rule 10), and LedgerService arrives with P12, the next task. Until then, these answer 409 `ledger_pending` on the real API:
+- **Money writes wait for the ledger** (replaced by postings in ADR 0039): every financial event posts a balanced journal entry (CLAUDE.md rule 10), and LedgerService arrives with P12, the next task. Until then, these answer 409 `ledger_pending` on the real API:
   - converting a quote;
   - a credit note and voiding an invoice;
   - recording, confirming and voiding a payment;

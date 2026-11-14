@@ -712,7 +712,7 @@ Attachments are links. The app makes invoice and receipt PDFs on those pages. It
 
 - A credit note issued in the app has `lines: []`. Sales reports count it through `salesLines` in `packages/shared/src/sales-lines.ts`, as one line under Credit notes, so it lowers revenue and margin everywhere.
 
-- A credit note does not lower the original invoice's balance. The customer gets credit, and someone must apply it.
+- A credit note does not lower the original invoice's balance. The customer gets credit, and someone must apply it. The real API differs (ADR 0039): a new note settles its own invoice's open balance first, and only the rest becomes customer credit. A written-off invoice takes no note.
 - A credit note does not return stock or close a reservation.
 - `refundedAt` is never set on a credit note issued in the app. It always becomes customer credit.
 - `voidInvoice` accepts a credit note and an invoice that has credit notes. The menu offers no void on a credit note. Voiding an invoice leaves its credit notes live, so the credit stays. The real API refuses that void while a credit note is live, and refuses voiding a credit note whose credit was spent (ADR 0038).

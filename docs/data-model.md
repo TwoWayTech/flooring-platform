@@ -120,6 +120,15 @@ The blueprint lists `user_profiles` twice with different columns: once with "bra
 | LienWaiver (`lienWaivers`) | Company | New in this demo | `id`, `direction` (`given`, `received`), `type`, `amount`, `throughDate`, `state`, `statutoryForm`, `signedOn`, `files`, `status` (`requested`, `received`, `superseded`) | `contractId -> Contract`, `paymentId -> Payment`, `supplierPaymentId -> SupplierPayment` |
 | InsuranceCertificate (`insuranceCertificates`) | Company | New in this demo | `id`, `producer`, `holder`, `coverages` (each with its own `expiresOn`), `additionalInsured`, `files` | `supplierId -> Supplier`, `contractId -> Contract` |
 
+### Ledger (real build, ADR 0039)
+
+| Entity | Database | Blueprint table | Key fields | Relationships |
+| --- | --- | --- | --- | --- |
+| LedgerAccount | Company | `ledger_accounts` | `id`, `key` (stable, for postings; null on a company's own accounts), `code`, `name`, `type` (`asset`, `liability`, `equity`, `revenue`, `expense`), `active` | Referenced by `journal_lines.account_id` |
+| JournalEntry | Company | `journal_entries` (append-only) | `id`, `date`, `event`, `sourceType`, `sourceId`, `sourceNumber`, `memo`; unique by source and event | `reversesId -> JournalEntry`; parent of `journal_lines` |
+| JournalLine | Company | `journal_lines` (append-only) | `id`, `debit`, `credit` (one side above zero) | `entryId -> JournalEntry`, `accountId -> LedgerAccount`, `locationId -> Location`, `customerId -> Customer` |
+| PeriodClose | Company | `period_closes` (append-only) | `id`, `closedThrough`, `note`; the newest row decides | |
+
 ### Installation (switched off, data kept)
 
 `installation.calendar` has status `removed` in `packages/shared/src/features.ts`. These records are kept in the code and seed data, and no screen shows them.

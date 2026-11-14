@@ -1,11 +1,24 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) is `feat/sales-invoices`.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) is `feat/ledger-core` (PR #16).
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
-  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`) and PR #14 (`2dcb6e8`).
-- **Last session log:** docs/sessions/2026-11-14-0600-a-sales-part-2.md
+  - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`) and PR #15 (`f8b0ef4`).
+- **Last session log:** docs/sessions/2026-11-14-1000-a-ledger-core.md
+
+## Queue stopped (2026-11-14): PR #16 is waiting on the Vercel check
+- **Where PR #16 stands:**
+  - It is ready.
+  - The schema review is clean, and the third security review found nothing blocking. The summary is posted on the PR.
+  - `verify` and `e2e` are green on `3af3405`.
+- **What blocks it:** the **Vercel** preview check failed with "Deployment rate limited — retry in 24 hours". That is the Vercel Free plan's build limit, not the code. Earlier PRs passed only because the Ignored Build Step skipped the build.
+- **Why I stopped:** the self-merge rule needs every check green, so Claude did not merge. P12 part 2 builds on this PR, and branches must start from main, so the queue stops here.
+- **Owner, choose one:**
+  1. **Wait out the limit**, then Redeploy the preview in Vercel (or push an empty commit). Claude then merges under the rule.
+  2. **Stop Vercel building branches other than `demo`.** In `vercel.json`, set `git.deploymentEnabled` so only `demo` deploys; previews of feature branches are skipped anyway. This also uses no build quota. It is a deploy-configuration change, so it waits for your approval.
+  3. **Move to a paid Vercel plan.** That is a paid-service decision.
+- **Then:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), and inventory part 2.
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -85,7 +98,8 @@
 
 ## Next three tasks
 The owner's second work queue (2026-11-13). Claude runs it in order, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Task 5, A:** sales part 2 (ADR 0038): invoices, payments, credits and refunds, in review. Then inventory part 2: cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
+1. **Task 6, A:** P12 ledger part 1 (ADR 0039), in review. Then part 2: expenses with recurring drafts and postings. Then part 3: bills and supplier payments; receipt, stock and cost-of-goods postings.
+2. **Inventory part 2 (from task 5):** cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
 3. **Task 6, A:** P12 ledger with finance-expenses.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
@@ -109,9 +123,26 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - The free-text county picks the county rate; limit it to the company's county rates for the state, or check it against the ZIP.
   - Accountant: should an exemption certificate count only in its own state? `taxContextFor` checks only that it is valid on the date.
 - **Contract invoices and seeded proofs:** the three contract billing invoices (and their two payments) are seeded with the contracts module, because their foreign keys need contract rows. Seeded payments have no proof files, because the fixtures have no bytes (ADR 0038).
-- **Ledger gate (task 6):** until P12 posts their journal entries, the sales money writes answer 409 `ledger_pending` on the real API (`requireLedger` in `modules/sales/sales-common.ts`). P12 must replace each call with its posting and remove the gate (ADR 0038).
+- **Ledger, next parts (ADR 0039):**
+  - **Part 2:** expenses on the API with recurring drafts and postings.
+  - **Part 3:** bills and supplier payments; receipt, stock-correction and cost-of-goods postings, with the costing method as a company setting.
+  - **Later:** screens for the trial balance and the period close.
+- **PR #16 review, open items:**
+  - A pending payment dated in a closed period can't be confirmed (409 `period_closed`). Decide whether a late confirm should post on the review day.
+  - Consider adding `settings.company.manage` (period close) to `MFA_REQUIRED_KEYS`. Owners have MFA anyway.
+  - Once part 3 posts cost of goods, gate the trial balance's cost and margin rows on `sales.margin.view_sensitive`.
+  - A credit note's settlement is found by its reason text (`Credit note CR-…`). Add a `credit_note_id` column on `invoice_adjustments`; this alters an existing table, so it needs the owner's approval.
+  - Soft-deleting a default account would break the postings that use it. Handle this with the chart-of-accounts screen, which should refuse deleting a keyed account.
+  - Closes are ordered by UUID v7 from the API clock. With several API instances, order by a database sequence instead.
+  - Add a property test that reconciles the ledger's receivables and customer credit with the documents after random event sequences.
+  - Documents that never posted (seeded, imported, contract billings) make the ledger drift from the documents when anything acts on them. That covers a payment, credit note, write-off or applied credit on such an invoice, and voiding a seeded payment or note (its reversal finds no entry). The import must post its opening-balance entry first. Consider refusing money writes on an invoice with no `invoice.issued` entry until then.
+  - A refund may be dated any earlier day. Refuse dates before the customer's first credit, or before go-live.
+  - When a chart-of-accounts screen lets companies add accounts, create the default accounts at provisioning, or refuse their codes, so a code clash can't stop postings.
+  - The closed-period API test uses the UTC day; around midnight it can disagree with the company's day.
+  - The demo's `issueCreditNote` does not settle its own invoice the way the API does; align it if the demo is updated.
+- **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
-  - **Decide in P12, before opening the gate:** a credit note on an unpaid invoice becomes customer credit that one person can refund as cash. The safe default for P12 applies a note to its own invoice's open balance first, so only the rest becomes refundable credit, and makes refunds above the payment threshold wait for a second person. Record it in blueprint-delta.
+  - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.
   - Rate-limit the three proof routes per IP. The 21 MB body is parsed for any request that carries a session cookie, before the cookie is verified.
   - The `payment.to_verify` note goes to every holder of `sales.payment.approve`; leave out holders whose data scope doesn't cover the invoice.
 - **Settings at provisioning:** a new company has no settings rows, so it cannot price a quote (409 `settings_missing`) until Settings → Localization saves them. Seed country-pack defaults at provisioning with the Settings module.
@@ -193,6 +224,11 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Accountant questions (ledger, ADR 0039):**
+  - Is the default chart of accounts right, and which accounts should be added or renamed?
+  - Which costing method for stock and cost of goods (average is the safe default for part 3)?
+  - Should sales tax be reported on the accrual basis (posted when invoiced), as now, or the cash basis?
+  - Should one Cash and Bank account be split by bank account or payment method?
 - **Accountant questions (sales tax, ADR 0037):** which states is the client registered to collect sales tax in, and what are its states of operation? Are the seeded rates and per-category taxability (materials taxed; separately stated labor and delivery not) right for each state? Until answered, tax is collected only where a rule exists for the job site, or the company default in its states of operation.
 - **Open questions in docs/real-build-plan.md:** brand name and domain, legal entity, hours per week, the accountant's decisions. Plan prices stay open (owner, 2026-11-13): new companies stay on trial, and prices are data, not code.
 - **Before production:** set `AUTH_PROXY_SECRET` (api and web, the same value), `PASSKEY_RP_ID` and exact `AUTH_ALLOWED_HOSTS`. The API refuses to start in production without them (docs/environment.md).

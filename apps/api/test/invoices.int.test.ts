@@ -11,13 +11,13 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
+import { dec } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { openLedgerForTests } from "../src/modules/sales/sales-common";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Summit's localization settings, without the tax tables, as a company's settings row holds them. */
@@ -49,7 +49,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   let otherWarehouse = "";
   let otherTile = "";
   let tile = "";
-  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "" };
+  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "", manager: "" };
 
   function call(method: "get" | "post", path: string, cookie: string) {
     return request(harness.app.getHttpServer())
@@ -197,8 +197,6 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   }
 
   beforeAll(async () => {
-    // The money rules run here; in the app they wait for P12's journal entries (ADR 0038).
-    openLedgerForTests();
     await harness.start();
     company = await harness.provisionCompany("bill");
     other = await harness.provisionCompany("billother");
@@ -221,6 +219,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     }
     const emails = {
       dispatcher: await harness.addUser({ companyIds: [company.id], roles: ["dispatcher"] }),
+      manager: await harness.addUser({ companyIds: [company.id], roles: ["manager"] }),
       salesA: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       salesB: await harness.addUser({ companyIds: [company.id], roles: ["sales"] }),
       accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
@@ -234,6 +233,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     cookies.owner = await enrolled(emails.owner);
     cookies.otherSales = await harness.signIn(emails.otherSales);
     cookies.dispatcher = await harness.signIn(emails.dispatcher);
+    cookies.manager = await harness.signIn(emails.manager);
   }, 120_000);
 
   afterAll(async () => {
@@ -328,15 +328,29 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       .send({ reason: "Rounding" })
       .expect(201);
     expect(writeOff.body).toMatchObject({ kind: "write_off", amount: "0.05" });
-    // 100.00 before tax, with tax in proportion: 39.65 × 100 / 450 = 8.81.
-    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+    // A write-off was never paid, so a credit note on it would make refundable credit (PR #16 review).
+    expect(
+      (
+        await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+          subtotal: "100.00",
+          reason: "Returned two cartons",
+        })
+      ).status,
+    ).toBe(400);
+    // Paid in full, so the note becomes credit: 100.00 before tax, tax in proportion 39.65 × 100 / 450 = 8.81.
+    const paidInFull = await invoiced(cookies.salesA, customer.body.id);
+    const full = await call("post", "/payments", cookies.owner)
+      .send(payment(paidInFull.invoice.id, { amount: "489.65", method: "cash", checkNumber: "", reference: "" }))
+      .expect(201);
+    await call("post", `/payments/${full.body.id}/review`, cookies.accountant).send({ action: "confirm" }).expect(201);
+    const note = await call("post", `/invoices/${paidInFull.invoice.id}/credit-notes`, cookies.owner)
       .send({ subtotal: "100.00", reason: "Returned two cartons" })
       .expect(201);
     expect(note.body).toMatchObject({ isReturn: true, subtotal: "100.00", tax: "8.81", total: "108.81" });
     expect(note.body.number).toMatch(/^CR-\d+$/);
     expect(
       (
-        await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+        await call("post", `/invoices/${paidInFull.invoice.id}/credit-notes`, cookies.owner).send({
           subtotal: "400.00",
           reason: "Too much",
         })
@@ -362,6 +376,10 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(
       (await call("post", `/invoices/${note.body.id}/void`, cookies.owner).send({ reason: "Mistake" })).status,
     ).toBe(400);
+    // The note became credit because the payment counted, so the payment can't be voided now.
+    expect(
+      (await call("post", `/payments/${full.body.id}/void`, cookies.owner).send({ reason: "Bounced check" })).status,
+    ).toBe(400);
     const voided = await call("post", `/payments/${paid.body.id}/void`, cookies.owner)
       .send({ reason: "Bounced check" })
       .expect(201);
@@ -372,17 +390,6 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Tomas Berg" }).expect(201);
     const { invoice } = await invoiced(cookies.salesA, customer.body.id);
     const pending = await call("post", "/payments", cookies.salesA).send(payment(invoice.id)).expect(201);
-    // A live credit note would stay customer credit for a void invoice, so it goes first (PR #15 review).
-    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
-      .send({ subtotal: "450.00", reason: "Whole order returned" })
-      .expect(201);
-    expect(note.body.tax).toBe("39.65");
-    expect(
-      (await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "Cancelled" })).status,
-    ).toBe(400);
-    await call("post", `/invoices/${note.body.id}/void`, cookies.owner)
-      .send({ reason: "Issued by mistake" })
-      .expect(201);
     expect((await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "" })).status).toBe(400);
     const voided = await call("post", `/invoices/${invoice.id}/void`, cookies.owner)
       .send({ reason: "Customer cancelled" })
@@ -392,6 +399,105 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(payments.find((p) => p.id === pending.body.id)?.status).toBe("voided");
     const holds = (await call("get", "/reservations", cookies.owner)).body as { invoiceId: string; status: string }[];
     expect(holds.filter((r) => r.invoiceId === invoice.id).every((r) => r.status === "released")).toBe(true);
+  });
+
+  it("settles an unpaid invoice with its own credit note, which then cannot be refunded or voided", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Vera Holm" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner)
+      .send({ subtotal: "450.00", reason: "Whole order returned" })
+      .expect(201);
+    expect(note.body).toMatchObject({ tax: "39.65", total: "489.65" });
+    // The note paid the invoice off, so nothing is left as cash-refundable credit (ADR 0039).
+    const adjustments = (await call("get", "/invoice-adjustments", cookies.owner)).body as {
+      invoiceId: string;
+      kind: string;
+      amount: string;
+    }[];
+    expect(adjustments.find((a) => a.invoiceId === invoice.id)).toMatchObject({
+      kind: "credit_applied",
+      amount: "489.65",
+    });
+    const refund = {
+      customerId: customer.body.id,
+      amount: "10.00",
+      date: new Date().toISOString().slice(0, 10),
+      method: "cash",
+      reference: "",
+      note: "",
+      files: [PDF],
+    };
+    expect((await call("post", "/refunds", cookies.owner).send(refund)).status).toBe(400);
+    expect(
+      (await call("post", `/invoices/${invoice.id}/void`, cookies.owner).send({ reason: "Cancelled" })).status,
+    ).toBe(400);
+    expect(
+      (await call("post", `/invoices/${note.body.id}/void`, cookies.owner).send({ reason: "Mistake" })).status,
+    ).toBe(400);
+  });
+
+  it("posts every event to a ledger that stays in balance, and refuses a closed period", async () => {
+    const before = (await call("get", "/ledger/trial-balance", cookies.owner).expect(200)).body as {
+      balanced: boolean;
+      rows: { key: string; balance: string }[];
+    };
+    expect(before.balanced).toBe(true);
+    const receivable = (tb: typeof before) => tb.rows.find((r) => r.key === "accounts_receivable")!.balance;
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Lars Eide" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const paid = await call("post", "/payments", cookies.owner)
+      .send(payment(invoice.id, { amount: "89.65", method: "cash", checkNumber: "", reference: "" }))
+      .expect(201);
+    expect(paid.body.status).toBe("confirmed");
+    const after = (await call("get", "/ledger/trial-balance", cookies.owner).expect(200)).body as typeof before;
+    expect(after.balanced).toBe(true);
+    // 489.65 invoiced less 89.65 received leaves 400.00 more in receivables.
+    expect(dec(receivable(after)).minus(receivable(before)).toFixed(2)).toBe("400.00");
+    // Voiding the payment posts its reversal, and receivables go back up.
+    await call("post", `/payments/${paid.body.id}/void`, cookies.owner).send({ reason: "Counted twice" }).expect(201);
+    const reversed = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
+    expect(dec(receivable(reversed)).minus(receivable(before)).toFixed(2)).toBe("489.65");
+    expect(reversed.balanced).toBe(true);
+    // Two payments overpay an invoice; voiding the first takes back the credit the second made, so
+    // receivables and customer credit still match the documents (PR #16 review).
+    const credit = (tb: typeof before) => tb.rows.find((r) => r.key === "customer_credit")!.balance;
+    const overpaid = await invoiced(cookies.salesA, customer.body.id);
+    const confirmed = async (amount: string, extra: Record<string, unknown> = {}) => {
+      const recorded = await call("post", "/payments", cookies.owner)
+        .send(payment(overpaid.invoice.id, { amount, method: "cash", checkNumber: "", reference: "", ...extra }))
+        .expect(201);
+      await call("post", `/payments/${recorded.body.id}/review`, cookies.accountant)
+        .send({ action: "confirm" })
+        .expect(201);
+      return recorded.body as { id: string };
+    };
+    const first = await confirmed("300.00");
+    await confirmed("300.00", { extraAsCredit: true });
+    const both = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
+    await call("post", `/payments/${first.id}/void`, cookies.owner).send({ reason: "Duplicate" }).expect(201);
+    const one = (await call("get", "/ledger/trial-balance", cookies.owner)).body as typeof before;
+    // 489.65 less 300.00 is owed again (189.65), and the 110.35 of credit is gone.
+    expect(dec(receivable(one)).minus(receivable(both)).toFixed(2)).toBe("189.65");
+    expect(dec(credit(one)).minus(credit(both)).toFixed(2)).toBe("110.35");
+    expect(one.balanced).toBe(true);
+    // Closing the books through today refuses anything dated today; reopening lets it through again.
+    const today = new Date().toISOString().slice(0, 10);
+    expect(
+      (await call("post", "/ledger/period-close", cookies.accountant).send({ through: today, note: "" })).status,
+    ).toBe(403);
+    await call("post", "/ledger/period-close", cookies.owner).send({ through: today, note: "Month end" }).expect(201);
+    const closed = await call("post", "/payments", cookies.owner).send(
+      payment(invoice.id, { amount: "10.00", method: "cash", checkNumber: "", reference: "" }),
+    );
+    expect(closed.status).toBe(409);
+    expect(closed.body.code).toBe("period_closed");
+    await call("post", "/ledger/period-close", cookies.owner)
+      .send({ through: "2000-01-01", note: "Reopened" })
+      .expect(201);
+    expect((await call("get", "/ledger/trial-balance", cookies.salesA)).status).toBe(403);
+    // A branch-scoped role with the report key still may not see company-wide books.
+    expect((await call("get", "/ledger/trial-balance", cookies.manager)).status).toBe(403);
+    expect((await call("get", "/ledger/trial-balance?through=2026-02-30", cookies.owner)).status).toBe(400);
   });
 
   it("keeps payments, refunds and proof from someone who may see invoices but not money", async () => {
@@ -427,6 +533,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
           "Applied customer credit",
           "Voided payment",
           "Voided invoice",
+          "Closed books",
+          "Reopened books",
         ]),
       );
     } finally {

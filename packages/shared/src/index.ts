@@ -42,6 +42,7 @@ export * from "./calendar/ics";
 export * from "./cost-sharing";
 export * from "./expenses";
 export * from "./journal";
+export * from "./accounting";
 export * from "./contracts/billing";
 export * from "./contracts/documents";
 export * from "./contracts/rules";
