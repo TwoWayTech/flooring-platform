@@ -5,6 +5,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
   addresses,
+  clockEntries,
+  employeeChecklistItems,
+  employees,
+  ptoRequests,
+  timeEntries,
+  timeOffEntries,
+  timeOffPolicies,
+  timesheets,
   changeOrderLines,
   changeOrders,
   contractBillingLines,
@@ -258,6 +266,38 @@ describe("test company seed", () => {
       expect(subcontractBills).toHaveLength(fixtures.bills.filter((bill) => bill.billingId).length);
       // Seeded history posts nothing: the ledger starts at go-live.
       expect(await company.db.select().from(journalEntries)).toHaveLength(0);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds people, timesheets and time off once, and links sign-ins to employees (HR, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      expect(await company.db.select().from(employees)).toHaveLength(fixtures.employees.length);
+      expect(await company.db.select().from(employeeChecklistItems)).toHaveLength(
+        fixtures.employees.flatMap((e) => [...e.onboarding, ...e.offboarding]).length,
+      );
+      expect(await company.db.select().from(timesheets)).toHaveLength(fixtures.timesheets.length);
+      expect(await company.db.select().from(timeEntries)).toHaveLength(fixtures.timesheets.length * 7);
+      expect(await company.db.select().from(clockEntries)).toHaveLength(fixtures.clockEntries.length);
+      expect(await company.db.select().from(timeOffPolicies)).toHaveLength(fixtures.timeOffPolicies.length);
+      expect(await company.db.select().from(ptoRequests)).toHaveLength(fixtures.ptoRequests.length);
+      const ledger = await company.db.select().from(timeOffEntries);
+      expect(ledger).toHaveLength(fixtures.timeOffEntries.length);
+      // Pay periods arrive with HR part 2, so no ledger line points at one yet.
+      expect(ledger.filter((entry) => entry.payPeriodId !== null)).toHaveLength(0);
+      const linked = (await company.db.select().from(userProfiles)).filter((profile) => profile.employeeId);
+      expect(linked).toHaveLength(fixtures.users.filter((person) => person.employeeId).length);
+      const fixture = fixtures.employees.find((e) => e.managerId)!;
+      const [row] = await company.db
+        .select()
+        .from(employees)
+        .where(eq(employees.id, seedId(fixture.id)));
+      expect(row).toMatchObject({ managerId: seedId(fixture.managerId!), payRate: fixture.payRate });
+      // No Social Security or bank columns exist on the table (CLAUDE.md rule 14).
+      expect(Object.keys(row!).some((key) => /ssn|social|bank|routing|account/i.test(key))).toBe(false);
     } finally {
       await company.close();
     }
