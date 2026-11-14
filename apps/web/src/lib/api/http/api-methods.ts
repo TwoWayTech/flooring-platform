@@ -5,6 +5,7 @@ import type {
   ContractBilling,
   ContractLine,
   Customer,
+  Employee,
   Expense,
   GoodsReceipt,
   InsuranceCertificate,
@@ -16,6 +17,7 @@ import type {
   Refund,
   Reservation,
   Product,
+  PtoRequest,
   PurchaseOrder,
   Quote,
   RecurringExpense,
@@ -26,11 +28,22 @@ import type {
   Supplier,
   SupplierPayment,
   SupplierContact,
+  TimeOffEntry,
+  TimeOffPolicy,
+  Timesheet,
   Transfer,
   User,
 } from "@workspace/shared";
 import { HttpApiError } from "./transport";
-import type { CollectionName, Collections, ContractInput, ItemOf, StockHold } from "../contract";
+import type {
+  CollectionName,
+  Collections,
+  ContractInput,
+  EmployeeInput,
+  ItemOf,
+  StockHold,
+  TimesheetUploadResult,
+} from "../contract";
 import type { HttpRoutes } from "./router";
 
 /**
@@ -136,7 +149,7 @@ export const API_METHODS: HttpRoutes = {
     http.request<Payment>("POST", `/payments/${paymentId}/files`, { files: await encodeFiles(files) }),
   refundCredit: (http) => async (input, files) =>
     http.request<Refund>("POST", "/refunds", { ...input, files: await encodeFiles(files) }),
-  // Files the API stored have UUIDs (payments, refunds, expenses, bills, contracts); employee files are still the demo's.
+  // Files the API stored have UUIDs (payments, refunds, expenses, bills, contracts, employee documents).
   getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
   expensesData: (http) => async () => {
     const [expenses, recurring, suppliers, locations] = await Promise.all([
@@ -331,7 +344,105 @@ export const API_METHODS: HttpRoutes = {
       additionalInsured: input.additionalInsured,
       coverages: input.coverages,
     }),
+  // HR part 1 (ADR 0046): people, timesheets and time off. Pay periods, the portal and the clock move later.
+  hrData: (http) => async () => {
+    const [employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations] = await Promise.all([
+      seenOrOff(http.request<Employee[]>("GET", "/employees")),
+      // Each HR screen has its own switch; switched off, its records read as empty.
+      seenOrOff(http.request<Timesheet[]>("GET", "/timesheets")),
+      seenOrOff(http.request<PtoRequest[]>("GET", "/pto-requests")),
+      seenOrOff(http.request<TimeOffPolicy[]>("GET", "/time-off-policies")),
+      seenOrOff(http.request<TimeOffEntry[]>("GET", "/time-off-entries")),
+      // HR Suite companies have no warehouses module, so locations may answer 403 or 404.
+      seenOrOff(http.request<Location[]>("GET", "/locations")),
+    ]);
+    return { employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations };
+  },
+  saveEmployee: (http) => (input) => {
+    const body = employeeBody(input);
+    return input.id && isSaved(input.id)
+      ? http.request<Employee>("PUT", `/employees/${input.id}`, body)
+      : http.request<Employee>("POST", "/employees", body);
+  },
+  setChecklistItem: (http) => async (employeeId, list, itemId, done) => {
+    await http.request<Employee>("POST", `/employees/${employeeId}/checklist/${itemId}`, { list, done });
+  },
+  startOffboarding: (http) => (employeeId) => http.request<Employee>("POST", `/employees/${employeeId}/offboarding`),
+  addEmployeeDocuments: (http) => async (employeeId, files) => {
+    await http.request<Employee>("POST", `/employees/${employeeId}/documents`, { files: await encodeFiles(files) });
+  },
+  saveTimesheet: (http) => (input) =>
+    http.request<Timesheet>("PUT", "/timesheets", {
+      employeeId: input.employeeId,
+      weekStart: input.weekStart,
+      days: input.days,
+    }),
+  submitTimesheet: (http) => (id) => http.request<Timesheet>("POST", `/timesheets/${id}/submit`),
+  decideTimesheets: (http) => async (ids, decision) => {
+    await http.request<{ ok: true }>("POST", "/timesheets/decisions", { ...decision, ids });
+  },
+  reopenTimesheet: (http) => (id, reason) => http.request<Timesheet>("POST", `/timesheets/${id}/reopen`, { reason }),
+  uploadTimesheets: (http) => (input) =>
+    http.request<TimesheetUploadResult>("POST", "/timesheets/upload", {
+      table: input.table,
+      fileName: input.fileName,
+      apply: input.apply,
+      own: input.own,
+    }),
+  requestTimeOff: (http) => (input) =>
+    http.request<PtoRequest>("POST", "/pto-requests", {
+      employeeId: input.employeeId,
+      policyId: input.policyId,
+      start: input.start,
+      end: input.end,
+      hours: input.hours,
+      note: input.note,
+    }),
+  decideTimeOff: (http) => (id, decision) => http.request<PtoRequest>("POST", `/pto-requests/${id}/decision`, decision),
+  cancelTimeOff: (http) => (id) => http.request<PtoRequest>("POST", `/pto-requests/${id}/cancel`),
+  adjustTimeOff: (http) => async (input) => {
+    await http.request<TimeOffEntry>("POST", "/time-off-adjustments", {
+      employeeId: input.employeeId,
+      policyId: input.policyId,
+      hours: input.hours,
+      note: input.note,
+    });
+  },
+  saveTimeOffPolicy:
+    (http) =>
+    ({ id, ...policy }) =>
+      isSaved(id)
+        ? http.request<TimeOffPolicy>("PUT", `/time-off-policies/${id}`, policy)
+        : http.request<TimeOffPolicy>("POST", "/time-off-policies", policy),
 };
+
+/**
+ * A person as the API takes it: only the form's fields, since an edit starts from the whole stored
+ * record. A pay rate the person can't see never arrived, so it is left out and the stored one is
+ * kept (CLAUDE.md rule 5).
+ */
+function employeeBody(input: EmployeeInput) {
+  return {
+    name: input.name,
+    title: input.title,
+    department: input.department,
+    workerType: input.workerType,
+    payType: input.payType,
+    ...(typeof input.payRate === "string" ? { payRate: input.payRate } : {}),
+    state: input.state,
+    email: input.email,
+    phone: input.phone,
+    hiredAt: input.hiredAt,
+    status: input.status,
+    managerId: input.managerId,
+    flsaStatus: input.flsaStatus,
+    exemptionBasis: input.exemptionBasis,
+    salaryHoursPerWeek: input.salaryHoursPerWeek,
+    commissionVisible: input.commissionVisible,
+    homeLocationId: input.homeLocationId,
+    emergencyContact: input.emergencyContact,
+  };
+}
 
 /**
  * A contract as the API takes it: only the form's fields, since an edit starts from the whole

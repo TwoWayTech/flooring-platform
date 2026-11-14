@@ -159,13 +159,12 @@ export function HrSettingsPage() {
   const { settings } = useWorkspace();
   const [editing, setEditing] = useState<TimeOffPolicy | "new" | null>(null);
   const data = useApiQuery(async (client) => {
-    const [saved, defaults, policies, employees] = await Promise.all([
+    const [saved, defaults, hr] = await Promise.all([
       client.getSettings(),
       client.getDefaultSettings(),
-      client.list("timeOffPolicies"),
-      client.list("employees"),
+      client.hrData(),
     ]);
-    return { saved, defaults, policies, employees };
+    return { saved, defaults, policies: hr.timeOffPolicies, employees: hr.employees };
   }, []);
   if (!can("settings.hr.manage")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading HR settings" />;

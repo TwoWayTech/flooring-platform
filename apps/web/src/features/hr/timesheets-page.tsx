@@ -285,11 +285,7 @@ export function TimesheetsPage() {
   const [reopening, setReopening] = useState<Timesheet | null>(null);
   const [uploading, setUploading] = useState(false);
   const data = useApiQuery(async (client) => {
-    const [timesheets, employees, ptoRequests] = await Promise.all([
-      client.list("timesheets"),
-      client.list("employees"),
-      client.list("ptoRequests"),
-    ]);
+    const { timesheets, employees, ptoRequests } = await client.hrData();
     return { timesheets, employees, ptoRequests };
   }, []);
   if (!can("hr.timesheet.view")) return <NoAccess />;

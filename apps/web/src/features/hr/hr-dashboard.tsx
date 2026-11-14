@@ -62,10 +62,8 @@ export function HrDashboard() {
   const seesPay = can("hr.payroll.view") && featureOn("hr.pay-periods");
   const data = useApiQuery(
     async (client) => {
-      const [employees, timesheets, ptoRequests, statements, periods] = await Promise.all([
-        client.list("employees"),
-        client.list("timesheets"),
-        client.list("ptoRequests"),
+      const [{ employees, timesheets, ptoRequests }, statements, periods] = await Promise.all([
+        client.hrData(),
         seesCommission ? client.listCommissionStatements() : Promise.resolve([]),
         seesPay ? client.listPayPeriods() : Promise.resolve([]),
       ]);

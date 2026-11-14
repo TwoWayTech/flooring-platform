@@ -928,6 +928,18 @@ export class DemoStore implements ApiClient {
     };
   }
 
+  async hrData() {
+    const [employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations] = await Promise.all([
+      this.list("employees"),
+      this.list("timesheets"),
+      this.list("ptoRequests"),
+      this.list("timeOffPolicies"),
+      this.list("timeOffEntries"),
+      this.list("locations"),
+    ]);
+    return { employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations };
+  }
+
   async purchasingData() {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
       await Promise.all([
