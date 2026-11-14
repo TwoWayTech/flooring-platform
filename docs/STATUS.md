@@ -17,7 +17,7 @@
   - cash split by bank account.
   Each one is a per-company setting.
 - **Third-party check failures** (a rate limit or an outage) are not a reason to stop. Note the failure and retry once after 30 minutes. If it still fails, move on to the next task that does not depend on that PR, and come back to it later.
-- **Queue:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), inventory part 2. 3. **Contracts** (docs/real-build-plan.md), then HR with commissions and the employee portal, then meetings.
+- **Queue:** P12 part 2 (expenses), P12 part 3 (bills, supplier payments, stock and cost of goods), inventory part 2. Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
 
 ## Done
 - [x] Branch `demo` created from tag `demo-v3` and pushed. Vercel is connected to the repository and production deploys from `demo` (first Git deploy `2026f30`, 2026-11-12); details in docs/deploy.md, "Demo branch".
@@ -101,8 +101,7 @@
 The owner's queue of 2026-11-14. Claude runs it in order without stopping, each task on its own branch from an up-to-date main, and self-merges under the CLAUDE.md rule.
 1. **P12 part 3:** supplier bills and payments; receipt and stock postings; average cost (ADR 0042), in review as PR #21.
 2. **Inventory part 2:** cut or issue against a hold, Ready to cut, the roll quick invoice, stock adjustments with approval, and the commission split.
-
-Then, from docs/real-build-plan.md: contracts, HR with commissions and the employee portal, then meetings.
+3. **Contracts** (docs/real-build-plan.md), then HR with commissions and the employee portal, then meetings.
 
 Also open for B (week 2): the passkey screens and QR code. They must call `/verify-password` before registration (docs/api-contract.md).
 
