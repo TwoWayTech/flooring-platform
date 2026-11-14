@@ -1145,8 +1145,9 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(file, 200);
     expect((file.body as Buffer).toString()).toBe(Buffer.from(PDF.data, "base64").toString());
     status(await fileBytes(cookies.mgr, docId), 200);
-    // Without hr.employee.view: Wes holds no key the route accepts; Sales passes the route but the service refuses.
-    status(await fileBytes(cookies.wes, docId), 403);
+    // Without hr.employee.view: Wes opens his own document in My documents (hr.portal.view, ADR 0049);
+    // Sales passes the route but the document is not theirs, so the service refuses.
+    status(await fileBytes(cookies.wes, docId), 200);
     status(await fileBytes(cookies.sales, docId), 404);
     status(await fileBytes(undefined, docId), 401);
     status(await fileBytes(cookies.hr, uuidv7()), 404);
