@@ -3,6 +3,7 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   goodsReceipts,
   poLines,
+  products,
   purchaseOrders,
   receiptLines,
   rolls,
@@ -13,13 +14,20 @@ import {
 } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import {
+  averageCost,
+  boxedOnHand,
   contactProblem,
   dec,
+  moneyString,
   nextNumber,
   nextPaymentNumber,
   poTotal,
   receiptProblem,
+  receiptPosting,
   receiptStock,
+  roundMoney,
+  stockUnit,
+  type ValueAt,
   type GoodsReceipt,
   type LocalizationSettings,
   type PoLine,
@@ -33,10 +41,12 @@ import { v7 as uuidv7 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
+import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { loadLocations, loadProducts } from "../inventory/inventory-records";
+import { loadLocations, loadMovements, loadProducts } from "../inventory/inventory-records";
+import { companyClock } from "../sales/sales-common";
 import { lockStock } from "../inventory/stock-lock";
 import { loadContacts, loadOrders, loadReceipts, loadSuppliers } from "./purchasing-records";
 
@@ -92,6 +102,7 @@ export class PurchasingService {
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
+    private readonly books: LedgerService,
   ) {}
 
   async suppliers(tenant: TenantContext): Promise<Supplier[]> {
@@ -514,6 +525,7 @@ export class PurchasingService {
    */
   async recordReceipt(tenant: TenantContext, actor: Actor, poId: string, input: ReceiptInput): Promise<GoodsReceipt> {
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const receiptId = await db.transaction(async (tx) => {
       await lockStock(tx);
       const [po] = await loadOrders(tx, [poId]);
@@ -590,6 +602,8 @@ export class PurchasingService {
           createdBy: actor.access.userId,
         })),
       );
+      // Boxed goods keep a moving average cost (ADR 0040), worked out before the receipt counts.
+      const costs = await this.averageIn(tx, po, receipt);
       if (stock.movements.length > 0) {
         await tx.insert(stockMovements).values(
           stock.movements.map((movement) => ({
@@ -625,6 +639,15 @@ export class PurchasingService {
           })),
         );
       }
+      // What was received is owed to the supplier until the bill comes (ADR 0042).
+      await this.books.post(
+        tx,
+        receiptPosting(
+          { id: receipt.id, number: receipt.number, date: clock.day, orderNumber: po.number },
+          receivedByWarehouse(po, receipt),
+        ),
+        actor.access.userId,
+      );
       const damaged = receipt.lines.reduce((total, line) => total.plus(line.damaged), dec(0));
       await this.auditLog.record(
         tenant,
@@ -635,7 +658,13 @@ export class PurchasingService {
           targetType: "goods_receipt",
           targetId: receipt.id,
           targetLabel: `${receipt.number} for ${po.number}`,
-          after: { rolls: stock.rolls.length, stockLines: stock.movements.length, damaged: damaged.toString() },
+          after: {
+            rolls: stock.rolls.length,
+            stockLines: stock.movements.length,
+            damaged: damaged.toString(),
+            // Under `cost`, so the audit reader strips it for anyone without view_sensitive (rule 5).
+            cost: costs,
+          },
         },
         tx,
       );
@@ -643,6 +672,46 @@ export class PurchasingService {
     });
     const [receipt] = (await this.receipts(tenant)).filter((candidate) => candidate.id === receiptId);
     return receipt!;
+  }
+
+  /**
+   * Moves each boxed product's cost to the moving average of what is on hand and what this
+   * receipt adds at the order's cost (ADR 0040). Rolls keep their own cost per sq ft.
+   */
+  private async averageIn(
+    tx: CompanyDb,
+    po: PurchaseOrder,
+    receipt: GoodsReceipt,
+  ): Promise<{ productId: string; before: string; after: string }[]> {
+    const changes: { productId: string; before: string; after: string }[] = [];
+    const movements = await loadMovements(tx);
+    const catalog = await loadProducts(tx);
+    for (const line of receipt.lines) {
+      const product = catalog.find((candidate) => candidate.id === line.productId);
+      const ordered = po.lines.find((poLine) => poLine.id === line.poLineId);
+      if (!product || !ordered || stockUnit(product) === "ft" || !stockUnit(product) || dec(line.received).lte(0))
+        continue;
+      const cost = averageCost(
+        boxedOnHand(movements, product.id).toString(),
+        product.cost,
+        line.received,
+        ordered.unitCost,
+      );
+      await tx.update(products).set({ cost, updatedAt: new Date() }).where(eq(products.id, product.id));
+      changes.push({ productId: product.id, before: product.cost, after: cost });
+      product.cost = cost;
+      movements.push({
+        id: "pending",
+        at: receipt.receivedAt,
+        productId: product.id,
+        locationId: line.locationId ?? receipt.locationId,
+        quantity: line.received,
+        kind: "receipt",
+        source: { kind: "receipt", id: receipt.id, number: receipt.number },
+        byUserId: receipt.receivedById,
+      });
+    }
+    return changes;
   }
 
   /** The company's purchase order prefix from Settings → Documents, `PO-` when none is set. */
@@ -697,6 +766,21 @@ function auditedSupplier(supplier: Omit<Supplier, "id" | "status" | "categories"
     track1099: supplier.track1099,
     w9OnFile: supplier.taxForm?.w9OnFile ?? false,
   };
+}
+
+/**
+ * A receipt's received value at the order's cost, per warehouse it went into (purchasing rules 19
+ * and 21): each line rounds to cents, damaged units excluded.
+ */
+function receivedByWarehouse(po: PurchaseOrder, receipt: GoodsReceipt): ValueAt[] {
+  const byWarehouse = new Map<string, ReturnType<typeof dec>>();
+  for (const line of receipt.lines) {
+    const ordered = po.lines.find((poLine) => poLine.id === line.poLineId);
+    const value = roundMoney(dec(line.received).times(ordered?.unitCost ?? 0));
+    const at = line.locationId ?? receipt.locationId;
+    byWarehouse.set(at, (byWarehouse.get(at) ?? dec(0)).plus(value));
+  }
+  return [...byWarehouse].map(([locationId, value]) => ({ locationId, value: moneyString(value) }));
 }
 
 /** The rep as they are now, kept on the order so history survives them leaving (ADR 0022). */

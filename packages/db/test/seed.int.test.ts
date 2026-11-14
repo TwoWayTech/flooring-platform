@@ -9,7 +9,9 @@ import {
   goodsReceipts,
   invoiceLines,
   expenses,
+  paymentsMade,
   recurringExpenses,
+  supplierBills,
   invoices,
   paymentsReceived,
   reservations,
@@ -119,6 +121,11 @@ describe("test company seed", () => {
       expect(await company.db.select().from(goodsReceipts)).toHaveLength(fixtures.receipts.length);
       expect(await company.db.select().from(expenses)).toHaveLength(fixtures.expenses.length);
       expect(await company.db.select().from(recurringExpenses)).toHaveLength(fixtures.recurringExpenses.length);
+      // Subcontract bills wait for the contracts module (ADR 0042).
+      expect(await company.db.select().from(supplierBills)).toHaveLength(
+        fixtures.bills.filter((bill) => !bill.contractId).length,
+      );
+      expect(await company.db.select().from(paymentsMade)).toHaveLength(fixtures.supplierPayments.length);
       const linked = (await company.db.select().from(products)).filter((product) => product.supplierId !== null);
       expect(linked).toHaveLength(fixtures.products.filter((product) => product.supplierId).length);
     } finally {

@@ -30,7 +30,7 @@ import {
   type PaymentMethod,
   type RecurringExpense,
 } from "@workspace/shared";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -258,6 +258,12 @@ export class ExpensesService {
       if (!row || row.deletedAt) throw notFound("expense");
       if (row.status !== "confirmed" && row.status !== "pending") throw refuse("This expense can't be voided.");
       if (row.billId) {
+        // The same row lock a supplier payment takes, so the two can't pass each other (ADR 0042).
+        await tx
+          .select({ id: supplierBills.id })
+          .from(supplierBills)
+          .where(eq(supplierBills.id, row.billId))
+          .for("update");
         const [paid] = await tx
           .select({ id: paymentsMade.id })
           .from(paymentAllocations)
@@ -267,12 +273,16 @@ export class ExpensesService {
               eq(paymentAllocations.billId, row.billId),
               isNull(paymentAllocations.deletedAt),
               isNull(paymentsMade.deletedAt),
-              ne(paymentsMade.status, "voided"),
+              // Only a live payment blocks the void: a rejected or voided one paid nothing.
+              inArray(paymentsMade.status, ["pending", "confirmed"]),
             ),
           )
           .limit(1);
         if (paid) throw refuse("This expense has a payment to its supplier, so it can't be voided.");
-        await tx.update(supplierBills).set({ deletedAt: new Date() }).where(eq(supplierBills.id, row.billId));
+        await tx
+          .update(supplierBills)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(supplierBills.id, row.billId));
       }
       if (row.status === "confirmed") {
         await this.books.reverse(

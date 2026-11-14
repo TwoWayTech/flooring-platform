@@ -482,6 +482,12 @@ export class PaymentsService {
         locationBranches(db),
       ]);
       if (!expense || !seesExpense(access, expense, branches) || !seesPayroll(access, expense)) throw notFound("file");
+    } else if (
+      (row.ownerType === "bill" || row.ownerType === "supplier_payment") &&
+      featureOn("purchasing.orders") &&
+      may("purchasing.bill.view", "purchasing.payment.record", "purchasing.payment.approve")
+    ) {
+      // Purchasing has no data scope (purchasing.md "Who uses it"); the keys decide.
     } else {
       throw notFound("file");
     }

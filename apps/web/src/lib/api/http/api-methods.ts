@@ -1,4 +1,5 @@
 import type {
+  Bill,
   Customer,
   Expense,
   GoodsReceipt,
@@ -17,6 +18,7 @@ import type {
   StockAdjustment,
   StockMovement,
   Supplier,
+  SupplierPayment,
   SupplierContact,
   Transfer,
   User,
@@ -128,7 +130,7 @@ export const API_METHODS: HttpRoutes = {
     http.request<Payment>("POST", `/payments/${paymentId}/files`, { files: await encodeFiles(files) }),
   refundCredit: (http) => async (input, files) =>
     http.request<Refund>("POST", "/refunds", { ...input, files: await encodeFiles(files) }),
-  // Files the API stored have UUIDs (payments, refunds, expenses); contract and employee files are still the demo's.
+  // Files the API stored have UUIDs (payments, refunds, expenses, bills); contract and employee files are still the demo's.
   getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
   expensesData: (http) => async () => {
     const [expenses, recurring, suppliers, locations] = await Promise.all([
@@ -155,17 +157,29 @@ export const API_METHODS: HttpRoutes = {
       ? http.request<RecurringExpense>("PUT", `/recurring-expenses/${id}`, body)
       : http.request<RecurringExpense>("POST", "/recurring-expenses", body);
   },
+  enterBill: (http) => async (poId, input, files) =>
+    http.request<Bill>("POST", `/purchase-orders/${poId}/bills`, { ...input, files: await encodeFiles(files) }),
+  recordSupplierPayment: (http) => async (input, files) =>
+    http.request<SupplierPayment>("POST", "/supplier-payments", { ...input, files: await encodeFiles(files) }),
+  reviewSupplierPayment: (http) => (paymentId, decision) =>
+    http.request<SupplierPayment>("POST", `/supplier-payments/${paymentId}/review`, decision),
+  voidSupplierPayment: (http) => (paymentId, reason) =>
+    http.request<SupplierPayment>("POST", `/supplier-payments/${paymentId}/void`, { reason }),
   purchasingData: (http) => async () => {
-    const [suppliers, contacts, purchaseOrders, receipts, products, locations] = await Promise.all([
-      seen(http.request<Supplier[]>("GET", "/suppliers")),
-      seen(http.request<SupplierContact[]>("GET", "/supplier-contacts")),
-      seen(http.request<PurchaseOrder[]>("GET", "/purchase-orders")),
-      seen(http.request<GoodsReceipt[]>("GET", "/receipts")),
-      seen(http.request<Product[]>("GET", "/products")),
-      seen(http.request<Location[]>("GET", "/locations")),
-    ]);
-    // Bills and supplier payments post to the ledger, so they move with P12 (ADR 0036).
-    return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills: [], supplierPayments: [] };
+    const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
+      await Promise.all([
+        seen(http.request<Supplier[]>("GET", "/suppliers")),
+        seen(http.request<SupplierContact[]>("GET", "/supplier-contacts")),
+        seen(http.request<PurchaseOrder[]>("GET", "/purchase-orders")),
+        seen(http.request<GoodsReceipt[]>("GET", "/receipts")),
+        seen(http.request<Product[]>("GET", "/products")),
+        seen(http.request<Location[]>("GET", "/locations")),
+        // Bills and supplier payments post to the ledger, so they moved with P12 part 3 (ADR 0042).
+        // With `purchasing.orders` off these answer 404; the queue and other screens read them as empty.
+        seenOrOff(http.request<Bill[]>("GET", "/bills")),
+        seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+      ]);
+    return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments };
   },
   saveSupplier:
     (http) =>
@@ -204,6 +218,16 @@ async function seen<T>(list: Promise<T[]>): Promise<T[]> {
     return await list;
   } catch (failure) {
     if (failure instanceof HttpApiError && failure.status === 403) return [];
+    throw failure;
+  }
+}
+
+/** Like `seen`, and a switched-off feature's 404 is an empty list too (CLAUDE.md rule 13). */
+async function seenOrOff<T>(list: Promise<T[]>): Promise<T[]> {
+  try {
+    return await seen(list);
+  } catch (failure) {
+    if (failure instanceof HttpApiError && failure.status === 404) return [];
     throw failure;
   }
 }

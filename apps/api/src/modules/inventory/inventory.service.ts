@@ -1,7 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import type { CompanyDb } from "@workspace/db";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { rollCuts, rolls, stockAdjustments, stockMovements, transferLines, transfers } from "@workspace/db/company";
 import {
+  moneyString,
+  stockAdjustmentPosting,
   boxedOnHand,
   dec,
   nextNumber,
@@ -21,8 +23,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { CONTROL_DB } from "../../core/database/control-db";
+import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
+import { companyClock } from "../sales/sales-common";
 import { lockStock } from "./stock-lock";
 import { loadLocations, loadMovements, loadProducts, loadRolls, loadTransfers } from "./inventory-records";
 
@@ -55,8 +60,10 @@ const FIRST_TRANSFER = 1001;
 @Injectable()
 export class InventoryService {
   constructor(
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    private readonly books: LedgerService,
   ) {}
 
   /** The catalog; cost is stripped later for anyone without `inventory.product.view_sensitive`. */
@@ -250,6 +257,7 @@ export class InventoryService {
     // Quantities are numeric(14,3): more decimals would be rounded silently by the database.
     if (counted.decimalPlaces() > 3 || counted.gte("1e10")) throw refuse("Count to at most 3 decimals.");
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     return db.transaction(async (tx) => {
       await lockStock(tx);
       const product = (await loadProducts(tx)).find((candidate) => candidate.id === input.productId);
@@ -341,6 +349,22 @@ export class InventoryService {
           },
         ]);
       }
+      // The change at cost: a roll by its own cost per sq ft, boxed goods by the average cost (ADR 0042).
+      const value = roll ? change.times(roll.widthFt).times(roll.costPerSqFt) : change.times(product.cost);
+      await this.books.post(
+        tx,
+        stockAdjustmentPosting(
+          {
+            id: adjustment.id,
+            number: adjustment.number,
+            date: clock.day,
+            locationId: adjustment.locationId,
+            productName: product.name,
+          },
+          moneyString(value),
+        ),
+        actor.access.userId,
+      );
       await this.auditLog.record(
         tenant,
         actor.audit,
