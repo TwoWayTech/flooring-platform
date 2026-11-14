@@ -56,7 +56,8 @@ export function accountingSettingsProblem(value: AccountingSettings): string | n
     const name = bank.name.trim().toLowerCase();
     if (names.has(name)) return `Two bank accounts are named ${bank.name.trim()}.`;
     // Only a name is kept, never an account number (CLAUDE.md rule 14; PR #19 review).
-    if (/\d{6,}/.test(bank.name)) return "Name the bank account without its account number.";
+    // Separators are dropped first, so 1234-5678-90 or 1234 5678 is caught too.
+    if (/\d{6,}/.test(bank.name.replace(/[\s.-]/g, ""))) return "Name the bank account without its account number.";
     names.add(name);
     if (bank.key) {
       if (keys.has(bank.key)) return "A bank account is listed twice.";

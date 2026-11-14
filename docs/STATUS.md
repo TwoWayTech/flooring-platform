@@ -150,6 +150,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - Every new poster (expenses, supplier payments, a refund void) reads the settings with `loadAccountingForPosting`, and voids credit back through `postedCashAccount`.
   - The lock-then-read pattern relies on READ COMMITTED; never run these transactions at REPEATABLE READ.
   - The Settings → Accounting screen comes with the Settings module.
+  - Watch MultiXact traffic from the trigger's FOR SHARE on busy accounts (AR, Sales) under load; map its SQLSTATE 23514 to 409 `ledger_account_missing` instead of a generic 500.
 - **Opening balances:** the ledger starts empty at go-live. Seeded history and imported records have no journal entries, so the trial balance shows only what was recorded on the API. The import module should post one opening-balance entry (receivables, payables, stock, against owner's equity).
 - **PR #15 reviews, open items:**
   - Done in P12 part 1 (ADR 0039): a credit note settles its own invoice's open balance first. Still open: whether refunds above the payment threshold should wait for a second person, like payments.

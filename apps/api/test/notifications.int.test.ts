@@ -246,8 +246,13 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     ]);
     await harness.app.get(JobsService).send(CLEANUP_QUEUE, {});
     await eventually(async () => {
+      // The cleanup deletes attempts, then rate limits, then invitations; wait for the last one too.
       const left = await harness.control.db.select().from(authAttempts).where(eq(authAttempts.subject, subject));
-      return left.length === 0 ? true : undefined;
+      const closed = await harness.control.db
+        .select()
+        .from(userInvitations)
+        .where(eq(userInvitations.tokenHash, `old-${subject}`));
+      return left.length === 0 && closed.length === 0 ? true : undefined;
     }, "the cleanup");
     expect(
       await harness.control.db

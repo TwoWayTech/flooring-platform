@@ -70,6 +70,9 @@ describe("accounting settings (ADR 0040, owner decision 2026-11-14)", () => {
     expect(accountingSettingsProblem(withBanks([{ name: "Operating 123456789", methods: [] }]))).toMatch(
       /without its account number/,
     );
+    for (const name of ["Operating 1234-5678-90", "Chk 1234 5678 9012"]) {
+      expect(accountingSettingsProblem(withBanks([{ name, methods: [] }]))).toMatch(/without its account number/);
+    }
     expect(accountingSettingsProblem(withBanks([{ name: "Operating 2026", methods: [] }]))).toBeNull();
   });
 

@@ -38,7 +38,8 @@ The branch was built in the previous session and not handed off (no log, no PR).
   - Its should-fix items are done: stored settings are parsed with the Zod schema (409 `settings_invalid`, never the defaults); a missing ledger account and an entry with no cash line answer 409; tests for a refund to a bank, the MFA refusal and a bad stored row.
 - **Schema review:** no blocking findings. Done: the trigger locks the account row `FOR SHARE`, so it waits for a retire in flight; a two-connection race test; the error code is checked; the `accounting` settings group is in docs/data-model.md.
 - **Second security review:** no blocking findings. Done: GET and PUT `/settings/accounting` need company-wide data scope (`requireCompanyWide`, shared with the ledger routes), with a 403 test for a branch-scoped role that holds the key; `remove` locks the accounts `FOR UPDATE` before its in-use check; bank names with a run of 6 or more digits are refused (rule 14); the `ledger_account_missing` message no longer shows the internal key; a test that a payment confirmed on review posts to its bank.
-- **Third security review:** see PR #19.
+- **Third security review:** PASS, no blocking findings; lock order checked for deadlocks. Done: the account-number check drops spaces, dashes and dots before counting digits. Notes kept in STATUS: FOR SHARE on busy accounts adds MultiXact traffic; a trigger refusal surfaces as a generic 500.
+- Also fixed: `notifications.int.test.ts` waited only for the first of the cleanup's three deletes (failed once under load).
 
 ## What is left
 - The Settings → Accounting screen comes with the Settings module (ADR 0040).
