@@ -30,6 +30,7 @@ import {
   lockRequest,
   refuseOwnEntry,
   requireLinkedDecider,
+  PAYROLL_LOCK,
   type RequestRow,
 } from "./hr-common";
 
@@ -327,6 +328,8 @@ export class TimeOffService {
     if (!name) throw refuse("Give the policy a name.");
     const db = await this.tenancy.db(tenant);
     const policyId = await db.transaction(async (tx) => {
+      // Paid or unpaid leave changes gross pay, so a policy save waits for any payroll approval.
+      await tx.execute(PAYROLL_LOCK);
       const [california] = await tx
         .select({ id: employees.id })
         .from(employees)

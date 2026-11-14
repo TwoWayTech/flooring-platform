@@ -10,7 +10,7 @@ import {
 } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import { seesPersonRecords, type AuditCategory, type Employee, type PermissionKey } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import type { AccessService, RequestAccess } from "../../core/access/access.service";
 import type { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -265,3 +265,10 @@ async function people(control: ControlDb, ids: readonly string[]): Promise<Recip
     .from(user)
     .where(inArray(user.id, [...ids]));
 }
+
+/**
+ * The company-wide payroll lock (ADR 0047): pay-period approval and reopen take it first, and so does
+ * a time-off policy save, because a policy's paid flag changes gross pay. A policy edit then either
+ * commits before an approval reads the policies or is stamped after it (third review of PR #26).
+ */
+export const PAYROLL_LOCK = sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`;

@@ -45,7 +45,7 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, refuse } from "../sales/sales-common";
-import { auditHr, inClosedPayPeriod, lockEmployee, requireLinkedDecider } from "./hr-common";
+import { auditHr, inClosedPayPeriod, lockEmployee, requireLinkedDecider, PAYROLL_LOCK } from "./hr-common";
 import {
   loadEmployees,
   loadHrRules,
@@ -94,13 +94,6 @@ const RUN_NAMESPACE = "3a0b6e42-5c1d-4f7e-9b28-6d4c1e0f9a37";
 function runSourceId(periodId: string, approvedAt: Date): string {
   return uuidv5(`${periodId}:${approvedAt.toISOString()}`, RUN_NAMESPACE);
 }
-
-/**
- * Serialises approvals and reopens company-wide, taken first in their transactions (lock order:
- * this lock, then the period row, then employees in id order). Two runs over the same days then
- * can't both pass the overlap check (second security review of PR #26). Nothing else takes it.
- */
-const PAYROLL_LOCK = sql`select pg_advisory_xact_lock(hashtext('hr:payroll-approve'))`;
 
 /**
  * The database clock now, to the millisecond, read inside the transaction once its locks are held.
@@ -396,6 +389,9 @@ export class PayPeriodsService {
       if (period.status === "exported") throw refuse("An exported pay period can't be reopened.");
       if (period.status !== "approved") throw refuse("Only an approved pay period can be reopened.");
       await requireLinkedDecider(tx, actor.access);
+      // People whose accrual comes back are locked before the ledger's shared lock, as approve
+      // locks them (third security review of PR #26).
+      await this.lockAccrualPeople(tx, period.id);
       const reversed = period.approvedAt
         ? await this.books.reverse(
             tx,
@@ -747,6 +743,17 @@ export class PayPeriodsService {
    * person's net accrual for the period, per policy, is answered by a negative accrual line dated the
    * reopen day and linked to the period, and the balance returns to what it was.
    */
+  /** Locks, in id order, the people a period's accrual lines belong to. */
+  private async lockAccrualPeople(tx: CompanyDb, periodId: string): Promise<void> {
+    const rows = await tx
+      .selectDistinct({ employeeId: timeOffEntries.employeeId })
+      .from(timeOffEntries)
+      .where(and(eq(timeOffEntries.payPeriodId, periodId), eq(timeOffEntries.kind, "accrual")));
+    for (const employeeId of rows.map((row) => row.employeeId).sort()) {
+      await tx.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).for("update");
+    }
+  }
+
   private async takeBackAccrual(tx: CompanyDb, period: PayPeriodRow, day: string, by: string): Promise<void> {
     const rows = await tx
       .select()
