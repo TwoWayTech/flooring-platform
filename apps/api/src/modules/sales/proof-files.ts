@@ -5,8 +5,8 @@ import type { StorageProvider } from "@workspace/providers";
 import { detectProofType, MAX_PROOF_FILES, proofFilesProblem, type ProofType } from "@workspace/shared";
 import { v7 as uuidv7 } from "uuid";
 
-/** What a stored proof file belongs to: a payment, a refund, an expense receipt, a bill, a supplier payment or a contract. */
-export type ProofOwner = "payment" | "refund" | "expense" | "bill" | "supplier_payment" | "contract";
+/** What a stored proof file belongs to: a payment, a refund, an expense receipt, a bill, a supplier payment, a contract or an employee (hr.md "Employee" `documents`). */
+export type ProofOwner = "payment" | "refund" | "expense" | "bill" | "supplier_payment" | "contract" | "employee";
 
 /** A proof file as the screen sends it: its name and its bytes in base64 (ADR 0038). */
 export interface ProofUpload {

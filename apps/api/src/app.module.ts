@@ -8,6 +8,7 @@ import { StorageModule } from "./core/storage/storage.module";
 import { LedgerModule } from "./core/ledger/ledger.module";
 import { ContractsModule } from "./modules/contracts/contracts.module";
 import { FinanceModule } from "./modules/finance/finance.module";
+import { HrModule } from "./modules/hr/hr.module";
 import { HealthController } from "./core/health/health.controller";
 import { JobsModule } from "./core/jobs/jobs.module";
 import { NotificationsModule } from "./core/notifications/notifications.module";
@@ -52,6 +53,7 @@ export class AppModule {
         SalesModule,
         FinanceModule,
         ContractsModule,
+        HrModule,
         ...extraModules,
       ],
       controllers: [HealthController],
