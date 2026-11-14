@@ -146,6 +146,16 @@ test("still reads anything that is not a literal title or body", () => {
     "echo \"gh pr comment 1 -b '\" ; git push origin main ; echo \"'\"",
     "git push origin main; gh pr comment 1 --body 'x'",
     "bash -c 'gh pr comment 1 -b \"x\"; git push origin main'",
+    // A quote the shell does not see as one is not a body (PR #17 security review).
+    "gh pr comment 1 # -b '\ngit push origin main\n#'",
+    "gh pr comment 1 # -b '\ngh pr merge 16 --rebase\n#'",
+    "gh pr comment 1 <# -b '#> ; git push origin main ; <# '#>",
+    "gh pr comment 1 -b 'x’; git push origin main; ‘y'",
+    "gh pr comment 1 -b \"x”; git push origin main; “y\"",
+    "gh pr comment 1 --% -b 'x | git push origin main #'",
+    "gh pr comment 1 @a -b 'x' | git push origin main",
+    "gh pr comment 1\t-b 'x' ; git push origin main",
+    "gh pr comment 1 -b 'x'\"; git push origin main\"",
     // Other gh commands are not prose.
     "gh pr merge 16 --rebase --body 'x'",
     "gh api -X POST repos/x/y/pulls/1/reviews -f body='ok'",

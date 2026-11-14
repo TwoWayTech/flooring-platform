@@ -35,13 +35,19 @@ const PUSH_CONFIG = /\bgit\b.*\bconfig\b.*\b(remote\.[^\s.]+\.push|push\.default
 
 /**
  * A `gh pr|issue create|edit|comment|review` call at the very start of the command, up to one
- * quoted `--title` or `--body`. The prefix holds no quote, `$`, backtick or backslash, so the
- * quote really opens a string. A single-quoted string is literal in POSIX shells and PowerShell.
- * A double-quoted one counts only without `$`, backtick or backslash, so nothing in it expands
- * and it cannot end early.
+ * quoted `--title` or `--body`. Everything is allow-listed, so the quote really opens a string in
+ * bash and in PowerShell:
+ * - the prefix holds only words, single spaces and `.,:=+/-`, so no comment (`#`, `<#`), stop-parsing
+ *   `--%`, splat, redirection, tab, CR or other quote comes before it;
+ * - single-quoted text is literal in both shells; it may not hold a newline or PowerShell's
+ *   typographic single quotes (U+2018 to U+201B), which would end it early there;
+ * - double-quoted text may not hold `$`, backtick, backslash, a newline or a typographic double
+ *   quote (U+201C to U+201E), so nothing in it expands and it cannot end early;
+ * - a space or the end of the command must follow the closing quote.
+ * PR #17 security review.
  */
 const PROSE_ARGUMENT =
-  /^(gh\s+(?:pr|issue)\s+(?:create|edit|comment|review)\b[^;&|\n'"`$\\]*?\s(?:--body|-b|--title|-t)(?:\s+|=))('(?:[^']|'')*'|"[^"`$\\\n]*")/;
+  /^(gh (?:pr|issue) (?:create|edit|comment|review)(?: [\w.,:=+/-]+)*? (?:--body|-b|--title|-t)(?: |=))('(?:[^'‘-‛\r\n]|'')*'|"[^"“-„`$\\\r\n]*")(?= |$)/;
 
 /**
  * The command with the quoted title and body of a PR or issue call replaced by a placeholder, so
