@@ -124,7 +124,8 @@ export class ExpensesService {
     const fields = normalise(input);
     await this.checkFields(db, fields, clock.day);
     const before = id ? await this.draftInScope(db, actor.access, id) : null;
-    const proofs = checkProofs(files, before ? await this.fileCount(db, before.id) : 0);
+    // A draft may have no receipt yet; `expenseProblem` decides when one is needed (spec rule 3).
+    const proofs = files.length === 0 ? [] : checkProofs(files, before ? await this.fileCount(db, before.id) : 0);
     const settingsRule = await loadExpenseSettings(db);
     const expenseId = before?.id ?? uuidv7();
     await withStoredProofs(this.storage, tenant.companyId, proofs, (attach) =>
