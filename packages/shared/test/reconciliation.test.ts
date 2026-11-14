@@ -336,7 +336,7 @@ describe("spec section 4 volumes", () => {
     for (const f of [summit, keystone, harbor]) {
       const weeks = new Set(f.timesheets.map((t) => t.weekStart));
       expect(weeks.size).toBe(8);
-      expect(f.timesheets.some((t) => splitOvertime(t.days, "federal").overtime > 0)).toBe(true);
+      expect(f.timesheets.some((t) => dec(splitOvertime(t.days.map(String), "federal").overtime).gt(0))).toBe(true);
     }
     expect(harbor.employees.some((e) => e.workerType === "1099")).toBe(true);
     expect(harbor.employees.some((e) => e.state === "CA")).toBe(true);

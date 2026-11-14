@@ -70,6 +70,9 @@ export interface TimesheetFields {
 /** A decision on submitted sheets; a rejection needs a reason. */
 export type TimesheetDecision = { action: "approve" } | { action: "reject"; reason: string };
 
+/** A closed punch, with a note when its hours were not added to the week (`clockOut`). */
+export type ClockOutResult = ClockEntry & { note: string | null };
+
 /** A template upload: a dry run unless `apply`; `own` limits it to the person's own rows. */
 export interface UploadFields {
   table: ImportTable;
@@ -171,6 +174,7 @@ export class TimesheetsService {
       if (sheet.status === "approved" || sheet.status === "submitted") {
         throw refuse("This timesheet has already been submitted.");
       }
+      if (await inClosedPayPeriod(tx, sheet.weekStart)) throw refuse(CLOSED_WEEK);
       const now = new Date();
       await tx
         .update(timesheets)
@@ -224,6 +228,12 @@ export class TimesheetsService {
         const employee = await lockEmployee(tx, sheet.employeeId);
         if (isSelf(employee.id)) throw refuse("Someone else must decide your own timesheet.");
         if (sheet.status !== "submitted") throw refuse(`${employee.name}'s timesheet is not waiting for approval.`);
+        // Paid weeks take no new decision (fourth security review of PR #25).
+        if (await inClosedPayPeriod(tx, sheet.weekStart)) {
+          throw refuse(
+            `${employee.name}'s week of ${sheet.weekStart} is in an approved pay period. Reopen the pay period first.`,
+          );
+        }
         done.push({ sheet, employee });
       }
       await requireLinkedDecider(tx, actor.access);
@@ -244,9 +254,11 @@ export class TimesheetsService {
             updatedAt: now,
           })
           .where(eq(timesheets.id, sheet.id));
-        // The shared overtime rules read numbers; the stored hours have at most two decimals.
-        const week = (days.get(sheet.id) ?? []).map(Number);
-        const split = splitOvertime(week, overtimeRuleFor(employee.state, rules.overtimeRule));
+        // Hours stay decimal strings through the overtime split (CLAUDE.md rule 6).
+        const split = splitOvertime(
+          days.get(sheet.id) ?? EMPTY_WEEK,
+          overtimeRuleFor(employee.state, rules.overtimeRule),
+        );
         await auditHr(this.auditLog, tenant, actor, tx, {
           action: status === "approved" ? "Approved timesheet" : "Rejected timesheet",
           targetType: "timesheet",
@@ -426,14 +438,16 @@ export class TimesheetsService {
 
   /**
    * Clocks out and adds the hours to that week's sheet (spec C2, ADR 0024): a draft or sent-back
-   * sheet takes them; a submitted or approved one is left alone and the punch alone is kept. A
-   * shift that would put more than 24 hours on the day is refused, as `save` would refuse it
-   * (security review of PR #25).
+   * sheet takes them; a submitted or approved one is left alone and the punch alone is kept. The
+   * punch always closes, so the person can clock in again, but the hours are not added when the
+   * week is in an approved pay period (paid hours stay as paid) or when they would put more than 24
+   * hours on the day, as `save` would refuse; the audit entry and `note` say so, for HR to correct
+   * (security reviews of PR #25: a refused clock-out left the punch open and blocked clock-in).
    */
-  async clockOut(tenant: TenantContext, actor: Actor): Promise<ClockEntry> {
+  async clockOut(tenant: TenantContext, actor: Actor): Promise<ClockOutResult> {
     const db = await this.tenancy.db(tenant);
     const rules = await loadHrRules(db);
-    const id = await db.transaction(async (tx) => {
+    const { id, note } = await db.transaction(async (tx) => {
       const employee = await this.ownEmployee(tx, actor.access);
       const open = await this.openPunch(tx, employee.id);
       if (!open) throw refuse("You are not clocked in.");
@@ -442,26 +456,28 @@ export class TimesheetsService {
       const hours = clockedHoursText(open.inAt.toISOString(), now.toISOString());
       const weekStart = workweekStartOf(open.date, rules.workweekStartDay);
       const sheet = await this.sheetOf(tx, employee.id, weekStart);
+      let skipped: { reason: string; note: string } | null = null;
       if (sheet?.status !== "approved" && sheet?.status !== "submitted") {
         const days = sheet ? ((await this.daysOf(tx, [sheet])).get(sheet.id) ?? []) : EMPTY_WEEK;
         const next = withClockedHoursText(days, daysBetween(weekStart, open.date), hours);
-        if (hoursTextProblem(next)) {
-          throw refuse(
-            `Clocking out now would put more than 24 hours on ${open.date}. Ask whoever approves timesheets to fix that week.`,
-          );
-        }
-        // Paid hours stay as paid: the punch stays open for HR to correct (third security review of PR #25).
         if (await inClosedPayPeriod(tx, weekStart)) {
-          throw refuse(
-            `The week of ${weekStart} is in an approved pay period, so the clock can't add hours to it. Ask HR to correct your punch.`,
-          );
+          skipped = {
+            reason: "closed pay period, hours not added; HR to correct",
+            note: `The week of ${weekStart} is in an approved pay period, so these hours were not added. Ask HR to correct your timesheet.`,
+          };
+        } else if (hoursTextProblem(next)) {
+          skipped = {
+            reason: "punch over 24 hours, hours not added; HR to correct",
+            note: `This punch would put more than 24 hours on ${open.date}, so its hours were not added. Ask HR to correct your timesheet.`,
+          };
+        } else {
+          await this.putSheet(tx, actor.access.userId, sheet, {
+            employeeId: employee.id,
+            weekStart,
+            days: next,
+            source: "clock",
+          });
         }
-        await this.putSheet(tx, actor.access.userId, sheet, {
-          employeeId: employee.id,
-          weekStart,
-          days: next,
-          source: "clock",
-        });
       }
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: "Clocked out",
@@ -469,11 +485,11 @@ export class TimesheetsService {
         targetId: open.id,
         targetLabel: employee.name,
         before: null,
-        after: { date: open.date, hours },
+        after: { date: open.date, hours, ...(skipped ? { hoursAdded: false, reason: skipped.reason } : {}) },
       });
-      return open.id;
+      return { id: open.id, note: skipped?.note ?? null };
     });
-    return this.punch(db, id);
+    return { ...(await this.punch(db, id)), note };
   }
 
   /**

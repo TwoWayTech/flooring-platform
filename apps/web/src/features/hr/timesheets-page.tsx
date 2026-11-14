@@ -16,7 +16,9 @@ import {
 import { toast } from "sonner";
 import {
   addDays,
+  dec,
   OVERTIME_RULE_LABELS,
+  sum,
   timesheetFlags,
   timesheetTemplate,
   needsTimesheet,
@@ -81,7 +83,7 @@ function Row({
   onReject: (sheet: Timesheet) => void;
   onReopen: (sheet: Timesheet) => void;
 }) {
-  const flagged = row.split.overtime + row.split.doubleTime > 0;
+  const flagged = dec(row.extraHours).gt(0);
   return (
     <tr className="border-hairline border-t">
       <th scope="row" className="px-3 py-2 text-left font-normal">
@@ -113,7 +115,7 @@ function Row({
         {flagged ? (
           <span className="text-warning-ink inline-flex items-center gap-1 font-medium">
             <TriangleAlert aria-hidden="true" className="size-3.5" />
-            <Num kind="quantity" value={row.split.overtime + row.split.doubleTime} delta={-1} />
+            <Num kind="quantity" value={row.extraHours} delta={-1} />
           </span>
         ) : (
           <span className="text-muted-foreground">None</span>
@@ -154,7 +156,7 @@ interface QueueRow {
   sheet: Timesheet;
   name: string;
   total: number;
-  overtime: number;
+  overtime: string;
   flags: string[];
 }
 
@@ -162,7 +164,7 @@ interface QueueRow {
 function BulkApproveDialog({ rows, onClose }: { rows: QueueRow[]; onClose: () => void }) {
   const clean = rows.filter((r) => r.flags.length === 0);
   const hours = clean.reduce((s, r) => s + r.total, 0);
-  const overtime = clean.reduce((s, r) => s + r.overtime, 0);
+  const overtime = sum(clean.map((r) => r.overtime));
   async function confirm() {
     await api.decideTimesheets(
       clean.map((r) => r.sheet.id),
@@ -324,7 +326,7 @@ export function TimesheetsPage() {
         sheet,
         name: nameOf(sheet),
         total: row?.total ?? 0,
-        overtime: (row?.split.overtime ?? 0) + (row?.split.doubleTime ?? 0),
+        overtime: row?.extraHours ?? "0",
         flags: timesheetFlags(sheet, ptoRequests as PtoRequest[]),
       };
     });

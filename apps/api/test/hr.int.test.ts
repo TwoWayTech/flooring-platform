@@ -93,7 +93,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
   let company = { id: "", slug: "" };
   let hrSuite = { id: "", slug: "" };
   const ids = { hana: "", mara: "", wes: "", olive: "", carla: "" };
-  const users = { hr: "", mgr: "", wes: "", olive: "", free: "", free2: "" };
+  const users = { hr: "", mgr: "", wes: "", olive: "", clerk: "", free: "", free2: "" };
   const cookies = {
     hr: "",
     mgr: "",
@@ -334,7 +334,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       free: await harness.addUser({ companyIds: [company.id], roles: ["employee"] }),
       free2: await harness.addUser({ companyIds: [company.id], roles: ["employee"] }),
     };
-    for (const key of ["hr", "mgr", "wes", "olive", "free", "free2"] as const) {
+    for (const key of ["hr", "mgr", "wes", "olive", "clerk", "free", "free2"] as const) {
       users[key] = await harness.userIdOf(emails[key]);
     }
     const hana = await person({
@@ -348,6 +348,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const wes = await person({ name: "Wes Walker", payRate: "20.00", managerId: mara.id });
     const olive = await person({ name: "Olive Otis", payRate: "19.00", managerId: hana.id });
     const carla = await person({ name: "Carla Cruz", state: "CA", payRate: "25.00", managerId: hana.id });
+    // The HR clerk writes people, so their sign-in is linked to their own record (ADR 0046).
+    const cleo = await person({ name: "Cleo Clerk", payRate: "22.00", managerId: hana.id });
     Object.assign(ids, { hana: hana.id, mara: mara.id, wes: wes.id, olive: olive.id, carla: carla.id });
     await rows(async (db) => {
       for (const [userId, employeeId] of [
@@ -355,6 +357,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         [users.mgr, mara.id],
         [users.wes, wes.id],
         [users.olive, olive.id],
+        [users.clerk, cleo.id],
       ] as const) {
         await db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId));
       }
@@ -368,7 +371,26 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     cookies.sales = await harness.signIn(emails.sales);
     cookies.warehouse = await harness.signIn(emails.warehouse);
     cookies.free = await harness.signIn(emails.free);
-    cookies.hrSuiteHr = await enrolled(await harness.addUser({ companyIds: [hrSuite.id], roles: ["hr"] }));
+    const hrSuiteEmail = await harness.addUser({ companyIds: [hrSuite.id], roles: ["hr"] });
+    const hrSuiteUser = await harness.userIdOf(hrSuiteEmail);
+    // HR Suite's HR person writes people too, so their sign-in is linked to their own record.
+    await rows(async (db) => {
+      const [self] = await db
+        .insert(employees)
+        .values({
+          name: "Holly Harbor",
+          workerType: "w2",
+          payType: "hourly",
+          payRate: "24.00",
+          state: "TX",
+          hiredAt: "2024-01-08",
+          status: "active",
+          flsaStatus: "non_exempt",
+        })
+        .returning();
+      await db.update(userProfiles).set({ employeeId: self!.id }).where(eq(userProfiles.userId, hrSuiteUser));
+    }, hrSuite.id);
+    cookies.hrSuiteHr = await enrolled(hrSuiteEmail);
   }, 180_000);
 
   afterAll(async () => {
@@ -1336,7 +1358,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(await storedPay(uma.id)).toBe("30.00");
     // The title is not one's own to change either; the phone is (employee-portal.md rule 9).
     status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ title: "Lead" })), 400);
-    status(await call("put", `/employees/${uma.id}`, twin).send(umaForm({ phone: "555-0123" })), 200);
+    // Even the phone needs a linked sign-in: an unlinked one writes no employee record (fourth review).
+    const phone = await call("put", `/employees/${uma.id}`, twin).send(umaForm({ phone: "555-0123" }));
+    status(phone, 400);
+    expect(phone.body.message).toContain("Link your sign-in to your employee record");
     // A linked sign-in can't change its own salaried hours either.
     const hana = await call("put", `/employees/${ids.hana}`, cookies.hr).send(hanaForm({ salaryHoursPerWeek: 30 }));
     status(hana, 400);
@@ -1411,21 +1436,37 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(stored).toMatchObject({ title: "Office lead", payType: "salary", salaryHoursPerWeek: 35 });
   });
 
-  it("refuses a clock-out that would put more than 24 hours on one day, and keeps the punch open", async () => {
+  it("closes a punch of more than 24 hours without adding its hours, audits it, and lets the person clock in again", async () => {
+    const before = (await sheetsOf(cookies.olive)).find((s) => s.weekStart === week(0));
     const [open] = await rows((db) =>
       db
         .insert(clockEntries)
         .values({ employeeId: ids.olive, date: companyDay(), inAt: new Date(Date.now() - 25 * 3_600_000) })
         .returning(),
     );
+    const punches = [open!.id];
     try {
       const out = await call("post", "/clock/out", cookies.olive);
-      status(out, 400);
-      expect(out.body.message).toContain("more than 24 hours");
-      const [still] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
-      expect(still!.outAt).toBeNull();
+      status(out, 201);
+      expect(out.body.outAt).not.toBeNull();
+      expect(out.body.note).toContain("more than 24 hours");
+      const [closed] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
+      expect(closed!.outAt).not.toBeNull();
+      const after = (await sheetsOf(cookies.olive)).find((s) => s.weekStart === week(0));
+      expect(after?.days ?? null).toEqual(before?.days ?? null);
+      const [audit] = await auditOf("Clocked out", open!.id);
+      expect(audit!.after).toMatchObject({
+        hoursAdded: false,
+        reason: "punch over 24 hours, hours not added; HR to correct",
+      });
+      // The punch is closed, so the clock is not stuck.
+      const again = await call("post", "/clock/in", cookies.olive);
+      status(again, 201);
+      punches.push(again.body.id as string);
     } finally {
-      await rows((db) => db.update(clockEntries).set({ deletedAt: new Date() }).where(eq(clockEntries.id, open!.id)));
+      await rows((db) =>
+        db.update(clockEntries).set({ deletedAt: new Date() }).where(inArray(clockEntries.id, punches)),
+      );
     }
   });
 
@@ -1492,8 +1533,10 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const moved = await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: "ivy.other@example.test" }));
     status(moved, 400);
     expect(moved.body.message).toContain("On your own record you can change only");
-    // The same email in other letter case is no change.
-    status(await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: twinEmail.toUpperCase() })), 200);
+    // The same email in other letter case is no change, so only the missing sign-in link refuses it.
+    const recased = await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: twinEmail.toUpperCase() }));
+    status(recased, 400);
+    expect(recased.body.message).toContain("Link your sign-in to your employee record");
     const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, ivy.id)));
     expect(stored!.email.toLowerCase()).toBe(twinEmail.toLowerCase());
     // So step 2, raising one's own pay, is still refused.
@@ -1636,7 +1679,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       phone: "555-0199",
       emergencyContact: contact,
     });
-    const writer = await member("hrwriter", null);
+    const writer = await member("hrwriter", (await person({ name: "Wren Writer" })).id);
     const saved = await call("put", `/employees/${pia.id}`, writer.cookie).send(
       form({ name: "Pia Private", title: "Lead", email: "", phone: "", emergencyContact: null }),
     );
@@ -1730,13 +1773,12 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(payRefused, 400);
     expect(payRefused.body.message).toContain(unlinked);
     expect(await storedPay(pay.id)).toBe("31.75");
-    // Other edits stay open to the unlinked sign-in, and the Owner may change the pay.
-    status(
-      await call("put", `/employees/${pay.id}`, loose).send(
-        form({ name: "Pay Target", email: "pay.target@example.test", title: "Lead" }),
-      ),
-      200,
+    // Other edits are refused to the unlinked sign-in too (fourth review), and the Owner may change the pay.
+    const titled = await call("put", `/employees/${pay.id}`, loose).send(
+      form({ name: "Pay Target", email: "pay.target@example.test", title: "Lead" }),
     );
+    status(titled, 400);
+    expect(titled.body.message).toContain(unlinked);
     status(await raise(owner, "40.00"), 200);
     expect(await storedPay(pay.id)).toBe("40.00");
   });
@@ -1777,11 +1819,20 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       status(uploaded, 400);
       expect(uploaded.body.message).toContain("approved pay period");
       expect((await sheetsOf(cookies.hr)).some((s) => s.employeeId === ids.wes && s.weekStart === w)).toBe(false);
+      // Clock-out closes the punch but adds no hours to a paid week, and says so (fourth review).
+      const sheetBefore = (await sheetsOf(cookies.olive)).find((s) => s.weekStart === today);
       const out = await call("post", "/clock/out", cookies.olive);
-      status(out, 400);
-      expect(out.body.message).toContain("Ask HR to correct your punch");
-      const [still] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
-      expect(still!.outAt).toBeNull();
+      status(out, 201);
+      expect(out.body.note).toContain("approved pay period");
+      const [closedPunch] = await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.id, open!.id)));
+      expect(closedPunch!.outAt).not.toBeNull();
+      const sheetAfter = (await sheetsOf(cookies.olive)).find((s) => s.weekStart === today);
+      expect(sheetAfter?.days ?? null).toEqual(sheetBefore?.days ?? null);
+      const [audit] = await auditOf("Clocked out", open!.id);
+      expect(audit!.after).toMatchObject({
+        hoursAdded: false,
+        reason: "closed pay period, hours not added; HR to correct",
+      });
     } finally {
       await rows(async (db) => {
         await db.update(clockEntries).set({ deletedAt: new Date() }).where(eq(clockEntries.id, open!.id));
@@ -1791,5 +1842,96 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
           .where(inArray(payPeriods.id, [closed!.id, current!.id]));
       });
     }
+  });
+  it("refuses submitting or approving a week inside an approved pay period", async () => {
+    const w = week(17);
+    const draft = await saveWeek(cookies.hr, ids.carla, w, [8, 8, 8, 8, 8, 0, 0]);
+    const sent = await saveWeek(cookies.hr, ids.olive, w, [8, 8, 8, 8, 8, 0, 0]);
+    await submit(cookies.hr, sent.id);
+    const [closed] = await rows((db) =>
+      db
+        .insert(payPeriods)
+        .values({ frequency: "weekly", start: w, end: addDays(w, 6), payDate: addDays(w, 12), status: "approved" })
+        .returning(),
+    );
+    try {
+      const submitted = await call("post", `/timesheets/${draft.id}/submit`, cookies.hr);
+      status(submitted, 400);
+      expect(submitted.body.message).toContain("approved pay period");
+      const approved = await call("post", "/timesheets/decisions", cookies.hr).send({
+        action: "approve",
+        ids: [sent.id],
+      });
+      status(approved, 400);
+      expect(approved.body.message).toContain("approved pay period");
+      const sheets = await sheetsOf(cookies.hr);
+      expect(sheets.find((s) => s.id === draft.id)!.status).toBe("draft");
+      expect(sheets.find((s) => s.id === sent.id)!.status).toBe("submitted");
+    } finally {
+      await rows((db) => db.update(payPeriods).set({ deletedAt: new Date() }).where(eq(payPeriods.id, closed!.id)));
+    }
+  });
+
+  it("refuses every employee write from an unlinked non-Owner editor, even on their own record by another email", async () => {
+    const looseEmail = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const loose = await enrolled(looseEmail);
+    const owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const unlinked = "Link your sign-in to your employee record";
+    // Their own record under another email: selfCheck can not see it, so the link rule must refuse.
+    const self = await addEmployee(cookies.hr, { name: "Lou Loose", email: "lou.personal@example.test" });
+    const selfForm = (over: Record<string, unknown>) =>
+      form({ name: "Lou Loose", email: "lou.personal@example.test", ...over });
+    const refusedWith = (response: Response) => {
+      status(response, 400);
+      expect(response.body.message).toContain(unlinked);
+    };
+    // The work state picks the overtime rule; the hire date and status are someone else's too.
+    for (const over of [{ state: "CA" }, { hiredAt: "2020-01-06" }, { status: "on_leave" }]) {
+      refusedWith(await call("put", `/employees/${self.id}`, loose).send(selfForm(over)));
+    }
+    refusedWith(await call("post", "/employees", loose).send(form({ name: "Lou Two", email: "lou2@example.test" })));
+    const step = self.onboarding[0]!;
+    const tick = (cookie: string) =>
+      call("post", `/employees/${self.id}/checklist/${step.id}`, cookie).send({ list: "onboarding", done: true });
+    refusedWith(await tick(loose));
+    refusedWith(await call("post", `/employees/${self.id}/offboarding`, loose));
+    refusedWith(await call("post", `/employees/${self.id}/documents`, loose).send({ files: [PDF] }));
+    refusedWith(await call("put", `/employees/${self.id}`, loose).send(selfForm({ userId: users.free })));
+    const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, self.id)));
+    expect(stored).toMatchObject({ state: "TX", hiredAt: "2025-03-03", status: "active" });
+    expect(await auditOf("Started offboarding", self.id)).toEqual([]);
+
+    // A linked editor and the Owner still may.
+    status(await call("put", `/employees/${self.id}`, cookies.hr).send(selfForm({ state: "CO" })), 200);
+    status(await call("put", `/employees/${self.id}`, owner).send(selfForm({ state: "CA" })), 200);
+    status(await tick(owner), 201);
+    const [moved] = await rows((db) => db.select().from(employees).where(eq(employees.id, self.id)));
+    expect(moved!.state).toBe("CA");
+  });
+
+  it("lets only a company-wide data scope or the Owner change a sign-in link", async () => {
+    const bev = await person({ name: "Bev Branch" });
+    const editor = await member("hrbranch", bev.id);
+    const owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const spare = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["employee"] }));
+    const kit = await addEmployee(cookies.hr, { name: "Kit Link", email: "kit@example.test" });
+    const put = (cookie: string, over: Record<string, unknown>) =>
+      call("put", `/employees/${kit.id}`, cookie).send(form({ name: "Kit Link", email: "kit@example.test", ...over }));
+    const linkedTo = async () =>
+      (await rows((db) => db.select().from(userProfiles).where(eq(userProfiles.userId, spare))))[0]!.employeeId;
+
+    const refused = await put(editor.cookie, { userId: spare });
+    status(refused, 400);
+    expect(refused.body.message).toContain("change a sign-in link");
+    expect(await linkedTo()).toBeNull();
+    // Leaving the link out is no change, so the branch editor's other edits still pass.
+    status(await put(editor.cookie, { title: "Lead" }), 200);
+    status(await put(owner, { title: "Lead", userId: spare }), 200);
+    expect(await linkedTo()).toBe(kit.id);
+    // Re-sending the same link is no change either; removing it is.
+    status(await put(editor.cookie, { title: "Lead", userId: spare }), 200);
+    status(await put(editor.cookie, { title: "Lead", userId: null }), 400);
+    status(await put(cookies.hr, { title: "Lead", userId: null }), 200);
+    expect(await linkedTo()).toBeNull();
   });
 });

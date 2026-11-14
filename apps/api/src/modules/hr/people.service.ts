@@ -133,9 +133,10 @@ export class PeopleService {
         homeLocationId: input.homeLocationId,
       };
       checkSelfEdit(actor, before, own, values);
-      // A sign-in linked to no employee can't be checked for self-dealing by the link, so only an
-      // Owner changes pay facts from one (third security review of PR #25; ADR 0046).
-      if (before && payFactsChanged(before, pay)) await requireLinkedDecider(tx, actor.access);
+      // A sign-in linked to no employee is matched to its own record only by email, which may
+      // differ, so it could change its own work state, hire date or status unseen: only an Owner
+      // writes people from one (third and fourth security reviews of PR #25; ADR 0046).
+      await requireLinkedDecider(tx, actor.access);
       await this.checkManager(tx, employeeId, input.managerId);
       if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
       let row: EmployeeRow;
@@ -181,6 +182,7 @@ export class PeopleService {
     await db.transaction(async (tx) => {
       const employee = await lockEmployee(tx, employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must tick your own checklist.");
+      await requireLinkedDecider(tx, actor.access);
       const [item] = await tx
         .select()
         .from(employeeChecklistItems)
@@ -218,6 +220,7 @@ export class PeopleService {
     await db.transaction(async (tx) => {
       const employee = await lockEmployee(tx, employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must start your own offboarding.");
+      await requireLinkedDecider(tx, actor.access);
       const [existing] = await tx
         .select({ id: employeeChecklistItems.id })
         .from(employeeChecklistItems)
@@ -267,6 +270,7 @@ export class PeopleService {
         // Nobody adds to their own personnel file (third security review of PR #25).
         if ((await selfCheck(tx, actor))(employee.id))
           throw refuse("Someone else must add documents to your own file.");
+        await requireLinkedDecider(tx, actor.access);
         await attach(tx, "employee", employee.id, actor.access.userId);
         await auditHr(this.auditLog, tenant, actor, tx, {
           action: "Added employee documents",
@@ -310,7 +314,9 @@ export class PeopleService {
   /**
    * Links a member's sign-in to this person, or unlinks it (null). The member must belong to this
    * company and not be linked to someone else. Nobody changes the link of their own sign-in, since
-   * the link decides whose records are "own" and whose approvals are refused (hr.md rules).
+   * the link decides whose records are "own" and whose approvals are refused (hr.md rules). Like a
+   * manager, the link decides data scope, so only a company-wide scope or the Owner changes it
+   * (fourth security review of PR #25).
    */
   private async link(tx: CompanyDb, actor: Actor, employeeId: string, userId: string | null): Promise<string | null> {
     const current = await tx
@@ -319,6 +325,10 @@ export class PeopleService {
       .where(and(eq(userProfiles.employeeId, employeeId), isNull(userProfiles.deletedAt)));
     if (userId === actor.access.userId || current.some((row) => row.userId === actor.access.userId)) {
       throw refuse("Someone else must link or unlink your own sign-in.");
+    }
+    const unchanged = userId ? current.length === 1 && current[0]!.userId === userId : current.length === 0;
+    if (!unchanged && !actor.access.isOwner && actor.access.dataScope !== "all") {
+      throw refuse("Only someone who sees everyone's records can change a sign-in link.");
     }
     if (userId) {
       const [profile] = await tx
@@ -428,20 +438,6 @@ function checkSelfEdit(actor: Actor, before: EmployeeRow | null, own: boolean, v
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
 type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
-
-/**
- * Whether a save changes any pay fact: refused on one's own record (`checkSelfEdit`) and, from a
- * sign-in linked to no employee, to everyone but an Owner (`requireLinkedDecider`).
- */
-function payFactsChanged(before: EmployeeRow, after: PayFacts): boolean {
-  return (
-    dec(after.payRate).cmp(before.payRate) !== 0 ||
-    after.payType !== before.payType ||
-    after.workerType !== before.workerType ||
-    after.flsaStatus !== before.flsaStatus ||
-    after.salaryHoursPerWeek !== before.salaryHoursPerWeek
-  );
-}
 
 /** The fields a person edits, for audit entries: never the pay rate (CLAUDE.md rule 5). */
 function editable(row: EmployeeRow) {

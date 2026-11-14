@@ -91,12 +91,16 @@ export async function lockRequest(tx: CompanyDb, id: string, scope: PersonScope)
  * Refuses a decision on someone else's time or pay from a sign-in linked to no employee
  * (user_profiles.employee_id null), unless the actor is the company Owner (third security review
  * of PR #25; ADR 0046). An unlinked sign-in is matched to its own record only by email, which may
- * differ, so it could otherwise approve its own hours, time off or pay. Covers timesheet decisions
- * and reopens, time-off decisions, balance adjustments and pay-fact edits.
+ * differ, so it could otherwise approve its own hours, time off or pay, or change its own work
+ * state or hire date. Covers timesheet decisions and reopens, time-off decisions, balance
+ * adjustments and every employee write: add, edit, checklist, offboarding, documents and the
+ * sign-in link (fourth security review of PR #25).
  */
 export async function requireLinkedDecider(db: CompanyDb, access: RequestAccess): Promise<void> {
   if (access.isOwner || (await viewerEmployeeId(db, access.userId))) return;
-  throw refuse("Link your sign-in to your employee record before approving or changing pay; an Owner can link it.");
+  throw refuse(
+    "Link your sign-in to your employee record before changing people's records, time or pay; an Owner can link it.",
+  );
 }
 
 /** One HR audit entry in the caller's transaction (CLAUDE.md rule 10; hr.md "Events and audit entries"). */

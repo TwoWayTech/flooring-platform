@@ -1,3 +1,5 @@
+import { dec, maxDec, minDec, type Dec } from "../money";
+
 /**
  * Overtime rules from the US pack (spec section 1, ADR 0024). Federal: hours over 40 in a workweek
  * are overtime. California example: hours over 8 in a day are overtime and over 12 are double
@@ -12,48 +14,63 @@ export const OVERTIME_RULE_LABELS: Record<OvertimeRule, string> = {
   california: "California: daily over 8 h, double over 12 h, seventh day, plus weekly 40",
 };
 
-/** Hours split into pay buckets. */
+/** Hours split into pay buckets, as decimal strings (CLAUDE.md rule 6). */
 export interface OvertimeSplit {
-  regular: number;
-  overtime: number;
-  doubleTime: number;
+  regular: string;
+  overtime: string;
+  doubleTime: string;
   /** Indexes of days that crossed a daily threshold, for flagging in the grid. */
   flaggedDays: number[];
 }
 
-const WEEKLY_LIMIT = 40;
+/** One day's hours as `splitOvertime` takes them: a decimal string or a Decimal, never a float. */
+export type HoursInput = string | Dec;
 
-/** Splits a workweek of daily hours (first day = the company's workweek start) into regular, overtime and double time. */
-export function splitOvertime(days: readonly number[], rule: OvertimeRule): OvertimeSplit {
+const WEEKLY_LIMIT = dec(40);
+const DAILY_LIMIT = dec(8);
+const DOUBLE_FROM = dec(12);
+const ZERO = dec(0);
+
+/**
+ * Splits a workweek of daily hours (first day = the company's workweek start) into regular,
+ * overtime and double time, computed with decimal.js so quarter hours stay exact (CLAUDE.md
+ * rule 6; fourth security review of PR #25).
+ */
+export function splitOvertime(days: readonly HoursInput[], rule: OvertimeRule): OvertimeSplit {
+  const hours = days.map((h) => dec(h));
   if (rule === "federal") {
-    const total = days.reduce((a, b) => a + b, 0);
-    const overtime = Math.max(0, total - WEEKLY_LIMIT);
-    return { regular: total - overtime, overtime, doubleTime: 0, flaggedDays: [] };
+    const total = hours.reduce((a, b) => a.plus(b), ZERO);
+    const overtime = maxDec(total.minus(WEEKLY_LIMIT), 0);
+    return split(total.minus(overtime), overtime, ZERO, []);
   }
-  let regular = 0;
-  let overtime = 0;
-  let doubleTime = 0;
+  let regular = ZERO;
+  let overtime = ZERO;
+  let doubleTime = ZERO;
   const flaggedDays: number[] = [];
   // The seventh-day rule needs work on all seven days of the workweek (ADR 0024, DLSE reading).
-  const sevenDays = days.length === 7 && days.every((h) => h > 0);
-  days.forEach((h, i) => {
+  const sevenDays = hours.length === 7 && hours.every((h) => h.gt(0));
+  hours.forEach((h, i) => {
     if (sevenDays && i === 6) {
-      overtime += Math.min(h, 8);
-      doubleTime += Math.max(h - 8, 0);
+      overtime = overtime.plus(minDec(h, DAILY_LIMIT));
+      doubleTime = doubleTime.plus(maxDec(h.minus(DAILY_LIMIT), 0));
       flaggedDays.push(i);
       return;
     }
-    const dailyRegular = Math.min(h, 8);
-    const dailyOt = Math.min(Math.max(h - 8, 0), 4);
-    const dailyDouble = Math.max(h - 12, 0);
-    if (h > 8) flaggedDays.push(i);
+    const dailyRegular = minDec(h, DAILY_LIMIT);
+    const dailyOt = minDec(maxDec(h.minus(DAILY_LIMIT), 0), DOUBLE_FROM.minus(DAILY_LIMIT));
+    const dailyDouble = maxDec(h.minus(DOUBLE_FROM), 0);
+    if (h.gt(DAILY_LIMIT)) flaggedDays.push(i);
     // Regular hours past the weekly limit become overtime too.
-    const roomLeft = Math.max(WEEKLY_LIMIT - regular, 0);
-    regular += Math.min(dailyRegular, roomLeft);
-    overtime += dailyOt + Math.max(dailyRegular - roomLeft, 0);
-    doubleTime += dailyDouble;
+    const roomLeft = maxDec(WEEKLY_LIMIT.minus(regular), 0);
+    regular = regular.plus(minDec(dailyRegular, roomLeft));
+    overtime = overtime.plus(dailyOt).plus(maxDec(dailyRegular.minus(roomLeft), 0));
+    doubleTime = doubleTime.plus(dailyDouble);
   });
-  return { regular, overtime, doubleTime, flaggedDays };
+  return split(regular, overtime, doubleTime, flaggedDays);
+}
+
+function split(regular: Dec, overtime: Dec, doubleTime: Dec, flaggedDays: number[]): OvertimeSplit {
+  return { regular: regular.toString(), overtime: overtime.toString(), doubleTime: doubleTime.toString(), flaggedDays };
 }
 
 /**

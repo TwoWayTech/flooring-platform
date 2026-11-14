@@ -213,6 +213,9 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
 - **Rate limit on `GET /public/branding`:** 200 versus 404 lets anyone list company slugs and display names. Add a per-IP limit (PR #4 security review, finding 9).
 - **CREATE ROLE password in DDL logs:** `PostgresServerProvisioner` sends the role password in plain text, so a server with `log_statement=ddl` logs it. Send a SCRAM verifier made on the client instead (PR #6 review, finding 6).
 - **Orphaned role on a crash:** if provisioning dies between CREATE ROLE and the `tenant_databases` insert, retries fail on CREATE ROLE. This fails closed; clean it up by hand, or make the provisioner reuse or reset the role (PR #6 review).
+- **HR part 1 review follow-ups (PR #25, none blocking):**
+  - `requireAnyFeature` on `GET /employees` does not tie the held permission to its switch: a holder of only `hr.timesheet.view` reads people while only `hr.time-off` is on. Check each key against its own switch.
+  - A punch-correction screen and API for clock-outs whose hours were not added (closed pay period, over 24 hours).
 - **P10 review follow-ups (none blocking):**
   - Ban `@Res()` without passthrough and `@Next()` in modules. Give exports a shared stripping helper.
   - Widen the sensitive-field scan to the company schema and to totals (`totalCost`, `extendedCost`, `profit`, `markup`, `cogs`).
