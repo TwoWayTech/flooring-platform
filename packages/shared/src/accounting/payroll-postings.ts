@@ -1,4 +1,4 @@
-import { dec, moneyString, sum, type Dec } from "../money";
+import { dec, maxDec, moneyString, sum, type Dec } from "../money";
 import type { PayPeriod } from "../types";
 import type { PostingDraft, PostingLine } from "./postings";
 import type { LedgerKey } from "./settings";
@@ -20,6 +20,12 @@ export interface PayrollRunRef {
 export interface PayrollLineAmount {
   grossPay: string;
   locationId: string | null;
+  /**
+   * The commission in this gross pay (`PayPeriodLine.commissionPay`). It was accrued to Accrued
+   * Payroll when its statement was approved (`commissionStatementPosting`, ADR 0048), so the run
+   * leaves it out of Wages and out of its own credit.
+   */
+  commissionPay?: string;
 }
 
 function line(account: LedgerKey, debit: Dec, credit: Dec, locationId: string | null = null): PostingLine {
@@ -36,14 +42,16 @@ function line(account: LedgerKey, debit: Dec, credit: Dec, locationId: string | 
  * An approved pay run (hr.md "To approved"; ADR 0047): debit Wages for the gross pay of each
  * location, from each person's home location (hr.md "Employee", `homeLocationId`: where their pay
  * counts in location profit), and credit Accrued Payroll for the total, which the payroll provider's
- * run pays out. Bonuses and commission are part of each line's gross, so they are wages too. Dated
- * the period's last day, because the wages belong to that period; a run with no pay posts nothing.
- * One debit per location, never per person, so the ledger does not list each person's pay.
+ * run pays out. Bonuses are part of each line's gross, so they are wages too. Commission is in the
+ * gross as well, but it was already accrued when its statement was approved (ADR 0048), so only the
+ * rest of the gross is posted here (never below zero). Dated the period's last day, because the
+ * wages belong to that period; a run with no pay posts nothing. One debit per location, never per
+ * person, so the ledger does not list each person's pay.
  */
 export function payrollPosting(run: PayrollRunRef, lines: readonly PayrollLineAmount[]): PostingDraft {
   const byLocation = new Map<string | null, Dec>();
   for (const entry of lines) {
-    const gross = dec(entry.grossPay);
+    const gross = maxDec(dec(entry.grossPay).minus(entry.commissionPay ?? 0), 0);
     if (gross.lte(0)) continue;
     byLocation.set(entry.locationId, (byLocation.get(entry.locationId) ?? dec(0)).plus(gross));
   }

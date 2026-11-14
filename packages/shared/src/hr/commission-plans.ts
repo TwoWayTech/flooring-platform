@@ -398,7 +398,10 @@ export function commissionTotals(
 }
 
 /** Each line's commission against the workweek its payment was confirmed, for the overtime true-up (ADR 0024). */
-export function commissionAllocations(lines: readonly CommissionLine[], weekStartDay: number): WeekAllocation[] {
+export function commissionAllocations(
+  lines: readonly Pick<CommissionLine, "confirmedOn" | "commission">[],
+  weekStartDay: number,
+): WeekAllocation[] {
   const totals = new Map<string, Dec>();
   for (const line of lines) {
     const week = workweekStartOf(line.confirmedOn, weekStartDay);

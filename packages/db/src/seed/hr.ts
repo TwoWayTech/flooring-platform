@@ -4,6 +4,10 @@ import type { CompanyDb } from "../client";
 import {
   bonuses,
   clockEntries,
+  commissionAdjustments,
+  commissionAssignments,
+  commissionPlans,
+  commissionStatements,
   contractorPayments,
   employeeChecklistItems,
   employees,
@@ -42,10 +46,10 @@ function managersFirst(list: readonly Employee[]): Employee[] {
 }
 
 /**
- * HR (ADR 0046 and 0047): employees with their checklists, the sign-in links on user profiles,
+ * HR (ADR 0046, 0047 and 0048): employees with their checklists, the sign-in links on user profiles,
  * timesheets with a time entry per day, clock punches, time-off policies, requests, pay periods
  * with who was left out and their frozen lines, bonuses, contractor payments and the time-off
- * ledger, whose accrual lines point at the period that posted them. Seeded history posts no journal
+ * ledger, whose accrual lines point at the period that posted them, and commissions. Seeded history posts no journal
  * entries: the ledger starts at go-live (STATUS, opening balances). Seeded documents have no bytes,
  * so no attachment rows are written (ADR 0038).
  */
@@ -192,6 +196,7 @@ export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
       .onConflictDoNothing();
   }
   await seedPay(tx, fixtures, by, decider);
+  await seedCommissions(tx, fixtures, by, decider);
   for (const entry of fixtures.timeOffEntries) {
     await tx
       .insert(timeOffEntries)
@@ -316,6 +321,93 @@ async function seedPay(
         amount: payment.amount,
         status: payment.status,
         createdBy: by,
+      })
+      .onConflictDoNothing();
+  }
+}
+
+/**
+ * Commission plans, who is on them, approved and paid statements and adjustments (commissions.md;
+ * ADR 0048). Fixture users become control user ids and approvers' names become user ids. Statement
+ * figures are derived, never stored, and seeded history posts no journal entry: approval accrues
+ * only from go-live. An adjustment whose author is not a user is credited to the Owner, because the
+ * column is required.
+ */
+async function seedCommissions(
+  tx: CompanyDb,
+  fixtures: DemoCompany["fixtures"],
+  by: string | null,
+  decider: (name: string | null) => string | null,
+): Promise<void> {
+  for (const plan of fixtures.commissionPlans) {
+    await tx
+      .insert(commissionPlans)
+      .values({
+        id: seedId(plan.id),
+        name: plan.name,
+        version: plan.version,
+        status: plan.status,
+        effectiveFrom: plan.effectiveFrom,
+        effectiveTo: plan.effectiveTo,
+        basis: plan.basis,
+        baseRatePct: plan.baseRatePct,
+        monthlyTarget: plan.monthlyTarget,
+        tierMode: plan.tierMode,
+        tiers: plan.tiers,
+        overridePct: plan.overridePct,
+        draw: plan.draw,
+        clawbackDays: plan.clawbackDays,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+  }
+  for (const assignment of fixtures.commissionAssignments) {
+    await tx
+      .insert(commissionAssignments)
+      .values({
+        id: seedId(assignment.id),
+        userId: userOf(assignment.userId)!,
+        planId: seedId(assignment.planId),
+        effectiveFrom: assignment.effectiveFrom,
+        effectiveTo: assignment.effectiveTo,
+        monthlyTargetOverride: assignment.monthlyTargetOverride,
+        acknowledgedName: assignment.acknowledgement?.signedName ?? null,
+        acknowledgedAt: assignment.acknowledgement ? utc(assignment.acknowledgement.signedAt) : null,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+  }
+  for (const statement of fixtures.commissionStatements) {
+    await tx
+      .insert(commissionStatements)
+      .values({
+        id: seedId(statement.id),
+        userId: userOf(statement.userId)!,
+        month: statement.month,
+        status: statement.status,
+        approvedById: decider(statement.approvedBy),
+        approvedAt: statement.approvedAt ? utc(statement.approvedAt) : null,
+        payPeriodId: statement.payPeriodId ? seedId(statement.payPeriodId) : null,
+        createdBy: by,
+      })
+      .onConflictDoNothing();
+  }
+  for (const adjustment of fixtures.commissionAdjustments) {
+    const author = decider(adjustment.byName) ?? by;
+    if (!author) continue;
+    await tx
+      .insert(commissionAdjustments)
+      .values({
+        id: seedId(adjustment.id),
+        userId: userOf(adjustment.userId)!,
+        month: adjustment.month,
+        amount: adjustment.amount,
+        invoiceId: adjustment.invoiceId ? seedId(adjustment.invoiceId) : null,
+        reason: adjustment.reason,
+        byUserId: author,
+        at: utc(adjustment.at),
+        decides: adjustment.decides,
+        createdBy: author,
       })
       .onConflictDoNothing();
   }

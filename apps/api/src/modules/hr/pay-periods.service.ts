@@ -10,7 +10,6 @@ import {
   payPeriods,
   settings,
   timeOffEntries,
-  userProfiles,
 } from "@workspace/db/company";
 import {
   accrualFor,
@@ -36,7 +35,7 @@ import {
   type TimeOffPolicy,
   type Timesheet,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, lte, max, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, max, ne } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -44,8 +43,9 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { companyClock, refuse } from "../sales/sales-common";
-import { auditHr, inClosedPayPeriod, lockEmployee, requireLinkedDecider, PAYROLL_LOCK } from "./hr-common";
+import { companyClock, refuse, type CompanyClock } from "../sales/sales-common";
+import { commissionForRun, type RunCommission } from "./commission-records";
+import { auditHr, databaseNow, inClosedPayPeriod, lockEmployee, requireLinkedDecider, PAYROLL_LOCK } from "./hr-common";
 import {
   loadEmployees,
   loadHrRules,
@@ -95,20 +95,6 @@ function runSourceId(periodId: string, approvedAt: Date): string {
   return uuidv5(`${periodId}:${approvedAt.toISOString()}`, RUN_NAMESPACE);
 }
 
-/**
- * The database clock now, to the millisecond, read inside the transaction once its locks are held.
- * Approval times and audit times (`AuditService`, `clock_timestamp()`) come from this one clock,
- * so a pay change that waited on an approval's locks is stamped after the approval (ADR 0047;
- * second security review of PR #26). Milliseconds, so the value round-trips through a JS Date and
- * a reopen finds the same journal source id from the stored `approved_at`.
- */
-async function databaseNow(tx: CompanyDb): Promise<Date> {
-  const [row] = await tx.execute<{ ms: string }>(
-    sql`select (extract(epoch from date_trunc('milliseconds', clock_timestamp())) * 1000)::bigint::text as ms`,
-  );
-  return new Date(Number(row!.ms));
-}
-
 const label = (period: Pick<PayPeriodRow, "start" | "end">) => `${period.start} to ${period.end}`;
 
 /** The employee fields an "Edited employee" entry carries that decide whether and how much a person is paid. */
@@ -130,6 +116,8 @@ interface RunInputs {
   bonuses: Bonus[];
   overtimeRule: Awaited<ReturnType<typeof loadHrRules>>["overtimeRule"];
   workweekStartDay: number;
+  /** Approved, unpaid commission statements by employee (ADR 0048). */
+  commission: Map<string, RunCommission>;
 }
 
 /**
@@ -222,6 +210,7 @@ export class PayPeriodsService {
    */
   async review(tenant: TenantContext, id: string): Promise<PayReview> {
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const period = await loadPayPeriod(db, this.control.db, id);
     const people = await loadEmployees(db, this.control.db, tenant.companyId);
     const byId = new Map(people.map((e) => [e.id, e]));
@@ -233,7 +222,7 @@ export class PayPeriodsService {
       lines = period.lines;
     } else {
       const payable = payableEmployees(people, period);
-      const inputs = await this.inputs(db, payable);
+      const inputs = await this.inputs(db, clock, payable, period.id);
       lines = payable.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
       blockers = payRunBlockers(period, payable, inputs.sheets, new Set(excluded.keys()), inputs.workweekStartDay);
     }
@@ -334,14 +323,13 @@ export class PayPeriodsService {
         throw refuse("Another approved pay period covers some of these days.");
       }
       const excluded = await this.excludedIds(tx, period.id);
-      const inputs = await this.inputs(tx, payable);
+      const inputs = await this.inputs(tx, clock, payable, period.id);
       const blockers = payRunBlockers(period, payable, inputs.sheets, excluded, inputs.workweekStartDay);
       if (blockers.length > 0) {
         throw refuse(`${blockers.length} timesheets still need approval, or leave those people out.`);
       }
       const included = payable.filter((e) => !excluded.has(e.id));
       await this.checkApprover(tx, actor, period, included, inputs.bonuses);
-      await this.checkCommission(tx, included);
       const lines = included.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
       const now = await databaseNow(tx);
       await tx
@@ -352,12 +340,17 @@ export class PayPeriodsService {
         await tx.insert(payPeriodLines).values(lines.map((line) => lineRow(period.id, line, actor.access.userId)));
       }
       await this.postAccrual(tx, period, lines, actor.access.userId);
+      await this.payStatements(tenant, actor, tx, period, included, inputs.commission);
       const homes = new Map(included.map((e) => [e.id, e.homeLocationId]));
       await this.books.post(
         tx,
         payrollPosting(
           { sourceId: runSourceId(period.id, now), period },
-          lines.map((line) => ({ grossPay: line.grossPay, locationId: homes.get(line.employeeId) ?? null })),
+          lines.map((line) => ({
+            grossPay: line.grossPay,
+            commissionPay: line.commissionPay,
+            locationId: homes.get(line.employeeId) ?? null,
+          })),
         ),
         actor.access.userId,
       );
@@ -420,6 +413,7 @@ export class PayPeriodsService {
         .update(payPeriods)
         .set({ status: "in_review", approvedById: null, approvedAt: null, updatedAt: now })
         .where(eq(payPeriods.id, period.id));
+      await this.moveStatements(tenant, actor, tx, period, "released");
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: "Reopened pay period",
         targetType: "pay_period",
@@ -448,6 +442,7 @@ export class PayPeriodsService {
         .update(payPeriods)
         .set({ status: "exported", exportedAt: now, updatedAt: now })
         .where(eq(payPeriods.id, period.id));
+      await this.moveStatements(tenant, actor, tx, period, "paid");
       await auditHr(this.auditLog, tenant, actor, tx, {
         action: "Exported pay period",
         targetType: "pay_period",
@@ -460,7 +455,7 @@ export class PayPeriodsService {
     return loadPayPeriod(db, this.control.db, id);
   }
 
-  /** One person's gross pay in the run, by the shared rule; commission joins with the commissions task. */
+  /** One person's gross pay in the run, by the shared rule, with the commission their approved statements posted (ADR 0048). */
   private lineFor(employee: Employee, period: Pick<PayPeriod, "start" | "end" | "frequency">, inputs: RunInputs) {
     return grossPay({
       employee,
@@ -469,14 +464,22 @@ export class PayPeriodsService {
       leave: inputs.requests.filter((r) => r.employeeId === employee.id),
       policies: inputs.policies,
       companyRule: inputs.overtimeRule,
-      commission: "0.00",
+      commission: inputs.commission.get(employee.id)?.amount ?? "0.00",
       bonuses: bonusesInRun(inputs.bonuses, employee.id, period),
-      allocations: [],
+      allocations: inputs.commission.get(employee.id)?.allocations ?? [],
     });
   }
 
-  /** Approved sheets and requests, policies, bonuses and the company's rules for these people. */
-  private async inputs(db: CompanyDb, people: readonly Employee[]): Promise<RunInputs> {
+  /**
+   * Approved sheets and requests, policies, bonuses, the company's rules and the commission waiting
+   * for this run (approved, unpaid statements; ADR 0048) for these people.
+   */
+  private async inputs(
+    db: CompanyDb,
+    clock: CompanyClock,
+    people: readonly Employee[],
+    periodId: string,
+  ): Promise<RunInputs> {
     const ids = people.map((e) => e.id);
     const [rules, sheets, requests, policies, allBonuses] = await Promise.all([
       loadHrRules(db),
@@ -485,6 +488,7 @@ export class PayPeriodsService {
       loadPolicies(db),
       loadBonuses(db, this.control.db),
     ]);
+    const commission = await commissionForRun(db, this.control.db, clock, ids, periodId, rules.workweekStartDay);
     return {
       sheets: sheets.map(timesheetFromWire),
       requests,
@@ -492,7 +496,75 @@ export class PayPeriodsService {
       bonuses: allBonuses,
       overtimeRule: rules.overtimeRule,
       workweekStartDay: rules.workweekStartDay,
+      commission,
     };
+  }
+
+  /**
+   * Links the approved statements a run pays to it (commissions.md: `approvePayPeriod` sets
+   * `payPeriodId`), for the people paid in it only: someone left out keeps theirs waiting for the
+   * next run. Each link is audited without an amount (CLAUDE.md rule 10; ADR 0048).
+   */
+  private async payStatements(
+    tenant: TenantContext,
+    actor: Actor,
+    tx: CompanyDb,
+    period: PayPeriodRow,
+    included: readonly Employee[],
+    commission: ReadonlyMap<string, RunCommission>,
+  ): Promise<void> {
+    const ids = included.flatMap((e) => commission.get(e.id)?.statementIds ?? []);
+    if (ids.length === 0) return;
+    const rows = await tx
+      .update(commissionStatements)
+      .set({ payPeriodId: period.id, updatedAt: new Date() })
+      .where(and(inArray(commissionStatements.id, ids), eq(commissionStatements.status, "approved")))
+      .returning();
+    for (const row of rows) {
+      await auditHr(this.auditLog, tenant, actor, tx, {
+        action: "Added commission statement to pay period",
+        targetType: "commission_statement",
+        targetId: row.id,
+        targetLabel: `${row.month}, ${label(period)}`,
+        before: { payPeriodId: null },
+        after: { payPeriodId: period.id },
+      });
+    }
+  }
+
+  /**
+   * What reopening or exporting a run does to the statements it pays (commissions.md "To paid"):
+   * a reopen releases them to wait for the next approval (`reopenPayPeriod` clears `payPeriodId`;
+   * their accrual stays, since the statement is still approved), and an export marks them paid.
+   */
+  private async moveStatements(
+    tenant: TenantContext,
+    actor: Actor,
+    tx: CompanyDb,
+    period: PayPeriodRow,
+    move: "released" | "paid",
+  ): Promise<void> {
+    const rows = await tx
+      .update(commissionStatements)
+      .set(move === "paid" ? { status: "paid", updatedAt: new Date() } : { payPeriodId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(commissionStatements.payPeriodId, period.id),
+          eq(commissionStatements.status, "approved"),
+          isNull(commissionStatements.deletedAt),
+        ),
+      )
+      .returning();
+    for (const row of rows) {
+      await auditHr(this.auditLog, tenant, actor, tx, {
+        action: move === "paid" ? "Paid commission statement" : "Released commission statement from pay period",
+        targetType: "commission_statement",
+        targetId: row.id,
+        targetLabel: `${row.month}, ${label(period)}`,
+        before: move === "paid" ? { status: "approved" } : { payPeriodId: period.id },
+        after: move === "paid" ? { status: "paid" } : { payPeriodId: null },
+      });
+    }
   }
 
   /**
@@ -669,37 +741,6 @@ export class PayPeriodsService {
       .from(payPeriodLines)
       .where(and(eq(payPeriodLines.payPeriodId, periodId), isNull(payPeriodLines.deletedAt)));
     return sum(rows.map((row) => row.grossPay));
-  }
-
-  /**
-   * Commission is paid through a run (hr.md rule 19), but commission statements move to the API
-   * with the commissions task. Until then a run that would pay someone with an approved, unpaid
-   * statement is refused rather than approved without it (ADR 0047).
-   */
-  private async checkCommission(tx: CompanyDb, included: readonly Employee[]): Promise<void> {
-    if (included.length === 0) return;
-    const [waiting] = await tx
-      .select({ id: commissionStatements.id })
-      .from(commissionStatements)
-      .innerJoin(userProfiles, eq(userProfiles.userId, commissionStatements.userId))
-      .where(
-        and(
-          eq(commissionStatements.status, "approved"),
-          isNull(commissionStatements.payPeriodId),
-          isNull(commissionStatements.deletedAt),
-          isNull(userProfiles.deletedAt),
-          inArray(
-            userProfiles.employeeId,
-            included.map((e) => e.id),
-          ),
-        ),
-      )
-      .limit(1);
-    if (waiting) {
-      throw refuse(
-        "An approved commission statement waits for this run. Commission joins pay runs with the commissions update.",
-      );
-    }
   }
 
   /**

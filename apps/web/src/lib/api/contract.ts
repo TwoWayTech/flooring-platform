@@ -25,7 +25,7 @@ import type {
   PayPeriod,
   PayPeriodLine,
   PtoRequest,
-  StatementFigures,
+  CommissionStatementRow,
   TeamCommission,
   TimeOffEntry,
   TimeOffPolicy,
@@ -163,16 +163,27 @@ export interface PayPeriodReview {
   contractorNames: Record<string, string>;
 }
 
-/** A person's month of commission with its status (ADR 0025). */
-export interface CommissionStatementRow extends StatementFigures {
-  statementId: string | null;
+/** A person's month of commission with its status (ADR 0025); defined in packages/shared (ADR 0048). */
+export type { CommissionStatementRow };
+
+/** A person HR may put on a plan, by name (ApiClient `commissionData`). */
+export interface CommissionPerson {
+  id: string;
   name: string;
-  status: CommissionStatement["status"];
-  approvedBy: string | null;
-  approvedAt: string | null;
-  payPeriodId: string | null;
-  monthEnded: boolean;
-  planName: string | null;
+  /** False for a disabled sign-in, who is not offered for a new plan. */
+  active: boolean;
+}
+
+/** An invoice as Commissions names it: its number and rep, never its amounts or cost (ADR 0048). */
+export type CommissionInvoiceRef = Pick<Invoice, "id" | "number" | "salesRepId" | "isReturn" | "voidedAt">;
+
+/** The records HR → Commissions reads together (ApiClient `commissionData`; ADR 0048). */
+export interface CommissionData {
+  statements: CommissionStatementRow[];
+  plans: CommissionPlan[];
+  assignments: CommissionAssignment[];
+  people: CommissionPerson[];
+  invoices: CommissionInvoiceRef[];
 }
 
 /** A manual change to a statement. */
@@ -877,6 +888,8 @@ export interface ApiClient {
   saveTimeOffPolicy(policy: TimeOffPolicy): Promise<TimeOffPolicy>;
   /** Everyone's monthly commission statements, computed live. */
   listCommissionStatements(): Promise<CommissionStatementRow[]>;
+  /** What HR → Commissions reads: statements, plans, assignments, people and invoice numbers (ADR 0048). */
+  commissionData(): Promise<CommissionData>;
   /** Commission per person for a period, for Sales → Team. */
   teamCommission(range: { from: string; to: string }): Promise<[string, TeamCommission][]>;
   /** Approves a month's statement. */

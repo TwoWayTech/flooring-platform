@@ -1,14 +1,14 @@
 import {
   adjustmentProblem,
+  commissionDecisions,
   commissionLines,
+  commissionStatementRows,
   commissionTotals,
   dec,
-  last12Months,
+  monthEnded,
   moneyString,
   nextNumber,
-  planOn,
   roundMoney,
-  statementChain,
   statementKey,
   sum,
   type CommissionAssignment,
@@ -35,11 +35,7 @@ export function commissionInputs(ctx: ActionContext): CommissionInputs {
   const users = db.list("users");
   const employees = db.list("employees");
   const statements = db.list("commissionStatements");
-  const decisions = new Map(
-    db
-      .list("commissionAdjustments")
-      .flatMap((a) => (a.decides ? [[a.decides.lineId, a.decides.outcome] as const] : [])),
-  );
+  const decisions = commissionDecisions(db.list("commissionAdjustments"));
   return {
     plans: db.list("commissionPlans"),
     assignments: db.list("commissionAssignments"),
@@ -57,40 +53,16 @@ export function commissionInputs(ctx: ActionContext): CommissionInputs {
   };
 }
 
-const monthEnded = (month: string, today: string) => month < today.slice(0, 7);
-
 /** Every person's statements for the last twelve months, with the status of each (spec C1, ADR 0025). */
 export function statementRows(ctx: ActionContext): CommissionStatementRow[] {
   const inputs = commissionInputs(ctx);
-  const lines = commissionLines(inputs);
-  const months = last12Months(ctx.today);
-  const stored = ctx.db.list("commissionStatements");
-  const people = new Set([...inputs.assignments.map((a) => a.userId), ...lines.map((l) => l.userId)]);
   const users = ctx.db.list("users");
-  return [...people].flatMap((userId) => {
-    const user = users.find((u) => u.id === userId);
-    const chain = statementChain(
-      userId,
-      months,
-      lines,
-      ctx.db.list("commissionAdjustments"),
-      (month) => planOn(inputs, userId, `${month}-15`)?.plan ?? null,
-    );
-    return chain.map((figures) => {
-      const record = stored.find((s) => s.userId === userId && s.month === figures.month);
-      const plan = planOn(inputs, userId, `${figures.month}-15`);
-      return {
-        ...figures,
-        statementId: record?.id ?? null,
-        name: user?.name ?? "Former employee",
-        status: record?.status ?? "draft",
-        approvedBy: record?.approvedBy ?? null,
-        approvedAt: record?.approvedAt ?? null,
-        payPeriodId: record?.payPeriodId ?? null,
-        monthEnded: monthEnded(figures.month, ctx.today),
-        planName: plan?.plan.name ?? null,
-      };
-    });
+  return commissionStatementRows({
+    inputs,
+    lines: commissionLines(inputs),
+    statements: ctx.db.list("commissionStatements"),
+    adjustments: ctx.db.list("commissionAdjustments"),
+    nameOf: (userId) => users.find((u) => u.id === userId)?.name ?? "Former employee",
   });
 }
 
