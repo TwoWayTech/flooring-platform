@@ -166,6 +166,7 @@ export class TimesheetsController {
     @CurrentSession() session: AuthSession,
     @Req() request: Request,
   ) {
+    requireFeature("hr.timesheets");
     requireFeature("hr.clock");
     return this.sheets.clockIn(tenant, actorOf(access, session, request));
   }
@@ -180,6 +181,7 @@ export class TimesheetsController {
     @CurrentSession() session: AuthSession,
     @Req() request: Request,
   ) {
+    requireFeature("hr.timesheets");
     requireFeature("hr.clock");
     return this.sheets.clockOut(tenant, actorOf(access, session, request));
   }

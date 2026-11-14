@@ -402,6 +402,8 @@ export class TimesheetsService {
     if (!rules.clockEnabled) throw refuse("This company does not use the clock.");
     const id = await db.transaction(async (tx) => {
       const employee = await this.ownEmployee(tx, actor.access);
+      // Someone who has left no longer clocks in (second security review of PR #25).
+      if (employee.status === "terminated") throw refuse("Someone who has left can't clock in.");
       if (!needsTimesheet(employee)) throw refuse("This person does not use timesheets.");
       if (await this.openPunch(tx, employee.id)) throw refuse("You are already clocked in.");
       const [row] = await tx

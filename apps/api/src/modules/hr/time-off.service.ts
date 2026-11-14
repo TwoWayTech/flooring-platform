@@ -156,7 +156,8 @@ export class TimeOffService {
 
   /**
    * Approves or declines a pending request (hr.md "To approved", "To denied"): within the decider's
-   * scope (blueprint-delta 2026-11-14), never their own; a decline needs a reason. Approving posts
+   * scope (blueprint-delta 2026-11-14), never their own; a decline needs a reason. Approving re-checks
+   * the request rule against the balance now (`checkStillFits`) and posts
    * a `used` line of negative hours dated the first day.
    */
   async decide(tenant: TenantContext, actor: Actor, id: string, decision: TimeOffDecision): Promise<PtoRequest> {
@@ -170,6 +171,7 @@ export class TimeOffService {
       const employee = await lockEmployee(tx, request.employeeId);
       if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must decide your own time off.");
       if (request.status !== "pending") throw refuse("This request has already been decided.");
+      if (status === "approved") await this.checkStillFits(tx, employee, request);
       const now = new Date();
       await tx
         .update(ptoRequests)
@@ -368,6 +370,31 @@ export class TimeOffService {
     if (linked) return lockEmployee(tx, employeeId);
     if (!access.permissions.has("hr.pto.approve")) throw notFound("employee");
     return lockEmployee(tx, employeeId, scope);
+  }
+
+  /**
+   * Re-runs the request rule (hr.md rule 11, `timeOffRequestProblem`) at approval, under the
+   * employee lock, with this request left out of the pending hours: the balance may have dropped
+   * since it was asked for, for example by an adjustment (second security review of PR #25).
+   */
+  private async checkStillFits(tx: CompanyDb, employee: EmployeeRow, request: RequestRow): Promise<void> {
+    const policy = await this.policy(tx, request.policyId);
+    const [entries, requests] = await Promise.all([
+      loadTimeOffEntries(tx, [employee.id]),
+      loadPtoRequests(tx, this.control.db, { employeeIds: [employee.id] }),
+    ]);
+    const others = requests.filter((row) => row.id !== request.id);
+    const problem = timeOffRequestProblem({
+      employee,
+      policy,
+      start: request.start,
+      end: request.end,
+      hours: hoursText(request.hours),
+      balance: timeOffBalance(entries, employee.id, policy.id),
+      pending: pendingHours(others, employee.id, policy.id),
+      approvedThisYear: approvedHoursInYear(others, employee.id, policy.id, request.start.slice(0, 4)),
+    });
+    if (problem) throw refuse(problem);
   }
 
   private async policy(tx: CompanyDb, id: string): Promise<TimeOffPolicy> {

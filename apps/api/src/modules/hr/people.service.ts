@@ -97,8 +97,17 @@ export class PeopleService {
     const db = await this.tenancy.db(tenant);
     const employeeId = id ?? uuidv7();
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
+    const seesContact = actor.access.permissions.has("hr.employee.view");
     await db.transaction(async (tx) => {
       const before = id ? await lockEmployee(tx, id) : null;
+      const own = before !== null && (await selfCheck(tx, actor))(before.id);
+      // Without hr.employee.view the saver never saw the contact fields, so the stored ones stay
+      // (like the pay fields; second security review of PR #25). The birthday is not on the form.
+      const contact: ContactFields =
+        before && !seesContact
+          ? { email: before.email, phone: before.phone, emergencyContact: before.emergencyContact }
+          : { email: input.email.trim(), phone: input.phone.trim(), emergencyContact: input.emergencyContact };
+      checkSelfEdit(actor, before, own, contact.email, input);
       // Without the key the stored rate, pay type and salaried hours stay, and a new person starts
       // at a zero rate (hr.md "Who uses it"; CLAUDE.md rule 5; security review of PR #25).
       const keep = !seesPay && before !== null;
@@ -112,7 +121,7 @@ export class PeopleService {
       };
       // Nobody sets their own pay or overtime status (separation of duties, blueprint "Security";
       // blueprint-delta 2026-11-14), also when their sign-in is matched only by email (`selfCheck`).
-      if (before && payFactsChanged(before, pay) && (await selfCheck(tx, actor))(before.id)) {
+      if (before && own && payFactsChanged(before, pay)) {
         throw refuse("Someone else must change your own pay rate, pay type, worker type or overtime status.");
       }
       await this.checkManager(tx, employeeId, input.managerId);
@@ -126,8 +135,8 @@ export class PeopleService {
         payType: pay.payType,
         payRate: pay.payRate,
         state: input.state,
-        email: input.email.trim(),
-        phone: input.phone.trim(),
+        email: contact.email,
+        phone: contact.phone,
         hiredAt: input.hiredAt,
         status: input.status,
         managerId: input.managerId,
@@ -136,7 +145,7 @@ export class PeopleService {
         salaryHoursPerWeek: pay.salaryHoursPerWeek,
         commissionVisible: input.commissionVisible,
         homeLocationId: input.homeLocationId,
-        emergencyContact: input.emergencyContact,
+        emergencyContact: contact.emergencyContact,
       };
       let row: EmployeeRow;
       if (before) {
@@ -167,7 +176,7 @@ export class PeopleService {
         },
       });
     });
-    return this.one(db, tenant, employeeId);
+    return this.one(db, tenant, actor, employeeId);
   }
 
   /** Ticks or unticks one checklist step (hr.md "People"). */
@@ -180,6 +189,7 @@ export class PeopleService {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const employee = await lockEmployee(tx, employeeId);
+      if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must tick your own checklist.");
       const [item] = await tx
         .select()
         .from(employeeChecklistItems)
@@ -205,7 +215,7 @@ export class PeopleService {
         after: { list: input.list, step: item.label, done: input.done },
       });
     });
-    return this.one(db, tenant, employeeId);
+    return this.one(db, tenant, actor, employeeId);
   }
 
   /**
@@ -216,6 +226,7 @@ export class PeopleService {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const employee = await lockEmployee(tx, employeeId);
+      if ((await selfCheck(tx, actor))(employee.id)) throw refuse("Someone else must start your own offboarding.");
       const [existing] = await tx
         .select({ id: employeeChecklistItems.id })
         .from(employeeChecklistItems)
@@ -242,7 +253,7 @@ export class PeopleService {
         after: { status: "terminated" },
       });
     });
-    return this.one(db, tenant, employeeId);
+    return this.one(db, tenant, actor, employeeId);
   }
 
   /**
@@ -273,7 +284,7 @@ export class PeopleService {
         });
       }),
     );
-    return this.one(db, tenant, employeeId);
+    return this.one(db, tenant, actor, employeeId);
   }
 
   /** A manager must be another live employee, and the chain may not loop back to this person. */
@@ -357,10 +368,51 @@ export class PeopleService {
       .values(labels.map((label, i) => ({ employeeId, list, position: i + 1, label, createdBy: by })));
   }
 
-  private async one(db: CompanyDb, tenant: TenantContext, id: string): Promise<Employee> {
+  /** The saved person as the answer: work facts only for a writer without hr.employee.view, as `list` shows them. */
+  private async one(db: CompanyDb, tenant: TenantContext, actor: Actor, id: string): Promise<Employee> {
     const [employee] = await loadEmployees(db, this.control.db, tenant.companyId, [id]);
     if (!employee) throw notFound("employee");
-    return employee;
+    return actor.access.permissions.has("hr.employee.view") ? employee : workFactsOnly(employee);
+  }
+}
+
+/** A person's contact fields as a save stores them. */
+type ContactFields = Pick<EmployeeRow, "email" | "phone" | "emergencyContact">;
+
+/** An email compared the way `selfCheck` matches it: trimmed and case-insensitive. */
+const emailKey = (email: string) => email.trim().toLowerCase();
+
+/**
+ * Refuses the edits that would let someone act on their own record (separation of duties,
+ * blueprint "Security"; second security review of PR #25):
+ * - On their own record (`own`, by sign-in link or verified email) nobody changes the email, since
+ *   the email match is what bars self-approval, nor the status or commission visibility.
+ * - Nobody puts their own verified email on a record that is not already theirs, so no second
+ *   "self" record is made.
+ * - Only a company-wide data scope changes a manager, because a manager decides `branch` scope
+ *   (hr.md "Data scope", `ownOrReports`).
+ */
+function checkSelfEdit(
+  actor: Actor,
+  before: EmployeeRow | null,
+  own: boolean,
+  email: string,
+  input: EmployeeFields,
+): void {
+  const sessionEmail = emailKey(actor.session.user.email);
+  if (before && own) {
+    if (emailKey(email) !== emailKey(before.email)) {
+      throw refuse("Someone else must change the email on your own record.");
+    }
+    if (input.status !== before.status || input.commissionVisible !== before.commissionVisible) {
+      throw refuse("Someone else must change your own status or commission visibility.");
+    }
+  } else if (sessionEmail && emailKey(email) === sessionEmail) {
+    throw refuse("Your own sign-in email can only be on your own record.");
+  }
+  const managerChanged = before ? input.managerId !== before.managerId : input.managerId !== null;
+  if (managerChanged && actor.access.dataScope !== "all") {
+    throw refuse("Only someone who sees everyone's records can change a manager.");
   }
 }
 

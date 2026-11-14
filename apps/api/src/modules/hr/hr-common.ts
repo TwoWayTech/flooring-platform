@@ -118,7 +118,8 @@ export interface Recipient {
  * The active members who may act on an employee's record and should hear about it (hr.md
  * "Events"): their effective permissions (role ∩ company ceiling ∩ enabled modules, by the engine
  * the guards use; CLAUDE.md rule 4) hold `key`, and their HR data scope covers the employee
- * (`seesPersonRecords`). The employee is never told to approve their own record. Disabled or
+ * (`seesPersonRecords`). The employee is never told to approve their own record, whether their
+ * sign-in is linked or matches the employee's email (as `selfCheck` refuses both). Disabled or
  * invited people get nothing (security review of PR #25: role keys alone reached people out of scope).
  */
 export async function holdersOf(
@@ -127,7 +128,7 @@ export async function holdersOf(
   access: AccessService,
   tenant: TenantContext,
   key: PermissionKey,
-  employee: Pick<Employee, "id" | "managerId">,
+  employee: Pick<Employee, "id" | "managerId" | "email">,
 ): Promise<Recipient[]> {
   const rows = await db
     .selectDistinct({ userId: userRoles.userId })
@@ -154,7 +155,9 @@ export async function holdersOf(
     if (own === employee.id || !seesPersonRecords(member.dataScope, own, employee)) continue;
     allowed.push(member.userId);
   }
-  return people(control, allowed);
+  // A member whose sign-in email is the employee's counts as that person too (`selfCheck`).
+  const email = employee.email.trim().toLowerCase();
+  return (await people(control, allowed)).filter((person) => !email || person.email.trim().toLowerCase() !== email);
 }
 
 /** The active member linked to an employee, or null; a person with no sign-in gets no message. */

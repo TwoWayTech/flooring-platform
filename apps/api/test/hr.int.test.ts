@@ -289,13 +289,19 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
           { group: "localization", value: { payroll: { overtimeRule: "federal" } } },
         ])
         .onConflictDoNothing();
-      // Roles the defaults do not have: an HR clerk who may edit people but not see pay, and one with no HR keys.
-      const grants: Record<string, string[]> = {
-        hrclerk: ["hr.employee.view", "hr.employee.create", "hr.employee.edit", "hr.timesheet.view", "hr.pto.view"],
-        nohr: ["customers.customer.view"],
+      // Roles the defaults do not have: an HR clerk who may edit people but not see pay, one with no HR
+      // keys, a branch-scoped people editor, and a writer who may edit people without reading them.
+      const grants: Record<string, [string[], "all" | "branch"]> = {
+        hrclerk: [
+          ["hr.employee.view", "hr.employee.create", "hr.employee.edit", "hr.timesheet.view", "hr.pto.view"],
+          "all",
+        ],
+        nohr: [["customers.customer.view"], "all"],
+        hrbranch: [["hr.employee.view", "hr.employee.create", "hr.employee.edit"], "branch"],
+        hrwriter: [["hr.employee.edit", "hr.timesheet.view"], "all"],
       };
-      for (const [key, keys] of Object.entries(grants)) {
-        const [role] = await db.insert(roles).values({ key, name: key, dataScope: "all" }).returning();
+      for (const [key, [keys, dataScope]] of Object.entries(grants)) {
+        const [role] = await db.insert(roles).values({ key, name: key, dataScope }).returning();
         await db.insert(rolePermissions).values(keys.map((permissionKey) => ({ roleId: role!.id, permissionKey })));
       }
     });
@@ -523,6 +529,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         flsaStatus: "exempt",
         exemptionBasis: "administrative",
         payRate: "99.00",
+        email: "",
       }),
     );
     status(own, 400);
@@ -535,6 +542,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         flsaStatus: "exempt",
         exemptionBasis: "administrative",
         payRate: "52.00",
+        email: "",
       }),
     );
     status(same, 200);
@@ -1323,10 +1331,12 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         flsaStatus: "exempt",
         exemptionBasis: "administrative",
         payRate: "52.00",
+        email: "",
         salaryHoursPerWeek: 30,
       }),
     );
     status(hana, 400);
+    expect(hana.body.message).toContain("Someone else must change your own pay rate");
 
     // Timesheets: neither decide nor reopen one's own.
     const sheet = await saveWeek(cookies.hr, uma.id, week(8), [8, 8, 8, 8, 8, 0, 0]);
@@ -1466,5 +1476,174 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const sheets = await sheetsOf(cookies.hr);
     const states = new Set([a.id, b.id].map((id) => sheets.find((s) => s.id === id)!.status));
     expect(states.size).toBe(1);
+  });
+  it("locks the email on one's own record and refuses a second record with one's own sign-in email", async () => {
+    const twinEmail = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const twin = await enrolled(twinEmail);
+    const ivy = await addEmployee(cookies.hr, { name: "Ivy Ingram", email: twinEmail, payRate: "30.00" });
+    const ivyForm = (over: Record<string, unknown>) =>
+      form({ name: "Ivy Ingram", email: twinEmail, payRate: "30.00", ...over });
+
+    // Step 1 of the bypass, changing one's own email so the match is lost, is refused.
+    const moved = await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: "ivy.other@example.test" }));
+    status(moved, 400);
+    expect(moved.body.message).toContain("Someone else must change the email on your own record");
+    // The same email in other letter case is no change.
+    status(await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ email: twinEmail.toUpperCase() })), 200);
+    const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, ivy.id)));
+    expect(stored!.email.toLowerCase()).toBe(twinEmail.toLowerCase());
+    // So step 2, raising one's own pay, is still refused.
+    status(await call("put", `/employees/${ivy.id}`, twin).send(ivyForm({ payRate: "90.00" })), 400);
+    expect(await storedPay(ivy.id)).toBe("30.00");
+
+    // Nobody makes a second "self" record, by adding one or by editing someone else's email.
+    const second = await call("post", "/employees", twin).send(
+      form({ name: "Ivy Two", email: twinEmail.toUpperCase() }),
+    );
+    status(second, 400);
+    expect(second.body.message).toContain("Your own sign-in email");
+    const other = await addEmployee(cookies.hr, { name: "Otto Other", email: "otto@example.test" });
+    const taken = await call("put", `/employees/${other.id}`, twin).send(
+      form({ name: "Otto Other", email: twinEmail }),
+    );
+    status(taken, 400);
+    expect(taken.body.message).toContain("Your own sign-in email");
+    // Someone else may still change Ivy's email.
+    status(await call("put", `/employees/${ivy.id}`, cookies.hr).send(ivyForm({ email: "ivy@example.test" })), 200);
+  });
+
+  it("refuses status, commission, checklist and offboarding changes on one's own record", async () => {
+    const twinEmail = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const twin = await enrolled(twinEmail);
+    const rae = await addEmployee(cookies.hr, { name: "Rae Rowe", email: twinEmail, payRate: "30.00" });
+    const raeForm = (over: Record<string, unknown>) =>
+      form({ name: "Rae Rowe", email: twinEmail, payRate: "30.00", ...over });
+    for (const over of [{ status: "on_leave" }, { commissionVisible: true }]) {
+      const refused = await call("put", `/employees/${rae.id}`, twin).send(raeForm(over));
+      status(refused, 400);
+      expect(refused.body.message).toContain("Someone else must change your own status");
+    }
+    const step = rae.onboarding[0]!;
+    const tick = await call("post", `/employees/${rae.id}/checklist/${step.id}`, twin).send({
+      list: "onboarding",
+      done: true,
+    });
+    status(tick, 400);
+    expect(tick.body.message).toContain("Someone else must tick your own checklist");
+    const off = await call("post", `/employees/${rae.id}/offboarding`, twin);
+    status(off, 400);
+    expect(off.body.message).toContain("Someone else must start your own offboarding");
+    const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, rae.id)));
+    expect(stored).toMatchObject({ status: "active", commissionVisible: null });
+    // Someone else may.
+    status(await call("post", `/employees/${rae.id}/offboarding`, cookies.hr), 201);
+  });
+
+  it("lets only a company-wide data scope change a manager", async () => {
+    const bea = await person({ name: "Bea Branch" });
+    const editor = await member("hrbranch", bea.id);
+    const theo = await addEmployee(cookies.hr, { name: "Theo Team", email: "theo@example.test" });
+    const theoForm = (over: Record<string, unknown>) =>
+      form({ name: "Theo Team", email: "theo@example.test", ...over });
+    const pulled = await call("put", `/employees/${theo.id}`, editor.cookie).send(theoForm({ managerId: bea.id }));
+    status(pulled, 400);
+    expect(pulled.body.message).toContain("change a manager");
+    const added = await call("post", "/employees", editor.cookie).send(form({ name: "New Report", managerId: bea.id }));
+    status(added, 400);
+    // Other edits stay open to them, and someone with company-wide scope may set the manager.
+    status(await call("put", `/employees/${theo.id}`, editor.cookie).send(theoForm({ title: "Lead" })), 200);
+    status(await call("put", `/employees/${theo.id}`, cookies.hr).send(theoForm({ managerId: bea.id })), 200);
+  });
+
+  it("refuses clock-in for someone who has left", async () => {
+    const gone = await person({ name: "Gus Gone", status: "terminated" });
+    const left = await member("employee", gone.id);
+    const punched = await call("post", "/clock/in", left.cookie);
+    status(punched, 400);
+    expect(punched.body.message).toContain("has left");
+    expect(await rows((db) => db.select().from(clockEntries).where(eq(clockEntries.employeeId, gone.id)))).toEqual([]);
+  });
+
+  it("re-checks the balance when approving time off", async () => {
+    const policy = await addPolicy({ name: "Vacation Recheck" });
+    const adjust = (hours: string) =>
+      call("post", "/time-off-adjustments", cookies.hr).send({
+        employeeId: ids.olive,
+        policyId: policy.id,
+        hours,
+        note: "Balance change",
+      });
+    status(await adjust("16"), 201);
+    const start = addDays(companyDay(), 80);
+    const asked = await call("post", "/pto-requests", cookies.olive).send({
+      employeeId: ids.olive,
+      policyId: policy.id,
+      start,
+      end: start,
+      hours: "12",
+      note: "",
+    });
+    status(asked, 201);
+    status(await adjust("-8"), 201);
+    const approve = () =>
+      call("post", `/pto-requests/${asked.body.id}/decision`, cookies.hr).send({ action: "approve" });
+    const refused = await approve();
+    status(refused, 400);
+    expect(refused.body.message).toContain("8 hours left");
+    expect(balance(await entriesOf(cookies.hr, ids.olive, policy.id))).toBe(8);
+    status(await adjust("8"), 201);
+    status(await approve(), 201);
+    expect(balance(await entriesOf(cookies.hr, ids.olive, policy.id))).toBe(4);
+  });
+
+  it("does not ask an approver to decide a request from the employee their email matches", async () => {
+    const twinEmail = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const otherHr = await harness.addUser({ companyIds: [company.id], roles: ["hr"] });
+    const nell = await person({ name: "Nell Notified", email: twinEmail.toUpperCase() });
+    const policy = await addPolicy({ name: "Vacation Notify", allowNegative: true });
+    const start = addDays(companyDay(), 90);
+    status(
+      await call("post", "/pto-requests", cookies.hr).send({
+        employeeId: nell.id,
+        policyId: policy.id,
+        start,
+        end: start,
+        hours: "8",
+        note: "",
+      }),
+      201,
+    );
+    const told = new Set(
+      (
+        await rows((db) =>
+          db.select().from(notifications).where(eq(notifications.title, "Time off request from Nell Notified")),
+        )
+      ).map((row) => row.userId),
+    );
+    expect(told.has(await harness.userIdOf(otherHr))).toBe(true);
+    expect(told.has(await harness.userIdOf(twinEmail))).toBe(false);
+  });
+
+  it("keeps the stored contact fields when a writer without hr.employee.view saves", async () => {
+    const contact = { name: "Pat Parent", phone: "555-0142", relation: "Parent" };
+    const pia = await addEmployee(cookies.hr, {
+      name: "Pia Private",
+      email: "pia@example.test",
+      phone: "555-0199",
+      emergencyContact: contact,
+    });
+    const writer = await member("hrwriter", null);
+    const saved = await call("put", `/employees/${pia.id}`, writer.cookie).send(
+      form({ name: "Pia Private", title: "Lead", email: "", phone: "", emergencyContact: null }),
+    );
+    status(saved, 200);
+    expect(saved.body).toMatchObject({ title: "Lead", email: "", phone: "" });
+    const [stored] = await rows((db) => db.select().from(employees).where(eq(employees.id, pia.id)));
+    expect(stored).toMatchObject({
+      title: "Lead",
+      email: "pia@example.test",
+      phone: "555-0199",
+      emergencyContact: contact,
+    });
   });
 });
