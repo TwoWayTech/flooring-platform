@@ -167,7 +167,7 @@ describe("payables API (needs the local PostgreSQL)", () => {
     return { number: `INV-${uuidv7()}`, issuedAt: companyDay(), total: "210.00", files: [PDF], ...over };
   }
 
-  async function enterBill(po: Order, over: Record<string, unknown> = {}, cookie = cookies.purchasing) {
+  function enterBill(po: Order, over: Record<string, unknown> = {}, cookie = cookies.purchasing) {
     return call("post", `/purchase-orders/${po.id}/bills`, cookie).send(billForm(over));
   }
 
@@ -445,8 +445,8 @@ describe("payables API (needs the local PostgreSQL)", () => {
     const rejected = await review({ action: "reject", reason: "Wrong amount" }).expect(201);
     expect(rejected.body.status).toBe("rejected");
     expect(moved(before, await balances(), "accounts_payable")).toBe("600.00");
-    // A rejected payment no longer counts against what is unpaid: 660.00 still owed.
-    expect((await pay(cookies.purchasing, supplier, "660.00").expect(201)).body.status).toBe("confirmed");
+    // A rejected payment no longer counts against what is unpaid: 660.00 still owed, and it is above the threshold again.
+    expect((await pay(cookies.purchasing, supplier, "660.00").expect(201)).body.status).toBe("pending");
   });
 
   it("voids a confirmed payment with its reversal and restores the bill, and a pending one posts nothing", async () => {
