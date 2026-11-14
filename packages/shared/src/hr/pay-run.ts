@@ -1,5 +1,6 @@
 import { addDays } from "../dates";
-import type { Bonus, Employee, PayPeriod, Timesheet } from "../types";
+import { dec } from "../money";
+import type { Bonus, Employee, PayPeriod, PayPeriodLine, Timesheet } from "../types";
 import { needsTimesheet } from "./timesheets";
 
 /** A workweek that stops a run's approval: its hours are not approved, or no sheet exists (hr.md "Pay periods"). */
@@ -60,4 +61,16 @@ export function bonusesInRun(
   period: Pick<PayPeriod, "start" | "end">,
 ): Bonus[] {
   return bonuses.filter((b) => b.employeeId === employeeId && b.periodEnd >= period.start && b.periodEnd <= period.end);
+}
+
+/**
+ * The people in a run whose gross pay is below the commission it pays (ADR 0048, residual risk
+ * "gross clamp"): gross never goes below zero, so an exempt full-day deduction larger than the
+ * salary would swallow part of an approved statement and leave it in Accrued Payroll unpaid. The
+ * run is refused until HR fixes the leave or leaves the person out, so commission is never lost.
+ */
+export function commissionShortfalls(
+  lines: readonly Pick<PayPeriodLine, "employeeId" | "grossPay" | "commissionPay">[],
+): string[] {
+  return lines.filter((line) => dec(line.grossPay).lt(line.commissionPay)).map((line) => line.employeeId);
 }

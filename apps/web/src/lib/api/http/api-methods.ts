@@ -252,8 +252,9 @@ export const API_METHODS: HttpRoutes = {
   },
   // Commissions (ADR 0048): statements, plans and assignments; paid through pay runs.
   commissionData: (http) => () => http.request<CommissionData>("GET", "/commissions"),
-  listCommissionStatements: (http) => async () =>
-    (await http.request<CommissionData>("GET", "/commissions")).statements,
+  // HR Home reads it beside other panels: a 403 (say a branch-scope role) is no statements, not a failed page.
+  listCommissionStatements: (http) => () =>
+    seen(http.request<CommissionData>("GET", "/commissions").then((data) => data.statements)),
   teamCommission: (http) => (range) =>
     http.request<[string, TeamCommission][]>(
       "GET",

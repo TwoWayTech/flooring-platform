@@ -154,11 +154,22 @@ export interface PayReviewRow {
   excludedReason: string | null;
 }
 
+/** An approved commission statement no pay run can pay, and why (ADR 0048). */
+export interface StrandedCommission {
+  statementId: string;
+  userId: string;
+  name: string;
+  month: string;
+  reason: string;
+}
+
 /** One pay period to review (spec C1). */
 export interface PayPeriodReview {
   period: PayPeriod;
   rows: PayReviewRow[];
   blockers: PayBlocker[];
+  /** Approved commission no run can pay; the API lists it, the demo has none. */
+  strandedCommission?: StrandedCommission[];
   contractors: ContractorPayment[];
   contractorNames: Record<string, string>;
 }

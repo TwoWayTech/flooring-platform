@@ -1,4 +1,4 @@
-import { addDays, last12Months } from "../dates";
+import { addDays, last12Months, monthEnd } from "../dates";
 import { dec } from "../money";
 import type { CommissionAdjustment, CommissionAssignment, CommissionPlan, CommissionStatement } from "../types";
 import {
@@ -63,14 +63,11 @@ export function commissionStatementRows(input: StatementRowsInput): CommissionSt
   const { inputs, lines, statements, adjustments, nameOf } = input;
   const months = input.months ?? last12Months(inputs.today);
   const people = [...new Set([...inputs.assignments.map((a) => a.userId), ...lines.map((l) => l.userId)])];
-  return people.flatMap((userId) =>
-    statementChain(
-      userId,
-      months,
-      lines,
-      adjustments,
-      (month) => planOn(inputs, userId, `${month}-15`)?.plan ?? null,
-    ).map((figures) => {
+  return people.flatMap((userId) => {
+    const planFor = (month: string) => planOn(inputs, userId, `${month}-15`)?.plan ?? null;
+    const before = monthsBefore(months[0] ?? "", firstMonthOf(userId, inputs, lines, adjustments));
+    const carryIn = statementChain(userId, before, lines, adjustments, planFor).at(-1)?.carryOut ?? "0.00";
+    return statementChain(userId, months, lines, adjustments, planFor, carryIn).map((figures) => {
       const record = statements.find((s) => s.userId === userId && s.month === figures.month);
       return {
         ...figures,
@@ -83,9 +80,38 @@ export function commissionStatementRows(input: StatementRowsInput): CommissionSt
         monthEnded: monthEnded(figures.month, inputs.today),
         planName: planOn(inputs, userId, `${figures.month}-15`)?.plan.name ?? null,
       };
-    }),
-  );
+    });
+  });
 }
+
+/**
+ * The first month a person has anything that feeds a statement: a line, an adjustment or an
+ * assignment, or null. The chain before the window starts there (ADR 0048: carry never resets).
+ */
+function firstMonthOf(
+  userId: string,
+  inputs: Pick<CommissionInputs, "assignments">,
+  lines: readonly CommissionLine[],
+  adjustments: readonly CommissionAdjustment[],
+): string | null {
+  const months = [
+    ...lines.filter((l) => l.userId === userId).map((l) => l.month),
+    ...adjustments.filter((a) => a.userId === userId).map((a) => a.month),
+    ...inputs.assignments.filter((a) => a.userId === userId).map((a) => a.effectiveFrom.slice(0, 7)),
+  ].sort();
+  return months[0] ?? null;
+}
+
+/** Every month (YYYY-MM) from `from` up to, not including, `before`; empty when `from` is null or not earlier. */
+function monthsBefore(before: string, from: string | null): string[] {
+  const out: string[] = [];
+  if (!from) return out;
+  for (let month = from; month < before; month = nextMonth(month)) out.push(month);
+  return out;
+}
+
+/** The month after a YYYY-MM month. */
+const nextMonth = (month: string): string => addDays(monthEnd(month), 1).slice(0, 7);
 
 /**
  * Why a month's statement can't be approved (commissions.md "To approved"), or null. Months are
@@ -139,18 +165,16 @@ export function reversalDecisionProblem(row: CommissionStatementRow | undefined,
 }
 
 /**
- * Hides the base of lines on a gross margin plan from someone without `sales.margin.view_sensitive`
- * (CLAUDE.md rule 5; commissions.md edge case "Base is not masked for HR", closed by ADR 0048): the
- * base there is margin dollars, from the sensitive invoice cost. Paid revenue lines keep theirs.
+ * Hides the base of lines worked out on a gross margin basis from someone without
+ * `sales.margin.view_sensitive` (CLAUDE.md rule 5; commissions.md edge case "Base is not masked for
+ * HR", closed by ADR 0048): the base there is margin dollars, from the sensitive invoice cost. It
+ * goes by the line's `basis`, the plan that set the invoice's base, not the line's own plan: on a
+ * split sale a paid revenue co-rep's share, and every override or reversal of it, is margin too.
  */
-export function hideMarginBase(
-  rows: readonly CommissionStatementRow[],
-  plans: readonly Pick<CommissionPlan, "id" | "basis">[],
-): CommissionStatementRow[] {
-  const margin = new Set(plans.filter((p) => p.basis === "gross_margin").map((p) => p.id));
+export function hideMarginBase(rows: readonly CommissionStatementRow[]): CommissionStatementRow[] {
   return rows.map((row) => ({
     ...row,
-    lines: row.lines.map((l) => (margin.has(l.planId) ? { ...l, base: null } : l)),
+    lines: row.lines.map((l) => (l.basis === "gross_margin" ? { ...l, base: null } : l)),
   }));
 }
 

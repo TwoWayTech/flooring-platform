@@ -15,6 +15,7 @@ import {
   accrualFor,
   addDays,
   bonusesInRun,
+  commissionShortfalls,
   grossPay,
   payableEmployees,
   payFrequencyProblem,
@@ -44,7 +45,12 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { companyClock, refuse, type CompanyClock } from "../sales/sales-common";
-import { commissionForRun, type RunCommission } from "./commission-records";
+import {
+  commissionForRun,
+  strandedCommission,
+  type RunCommission,
+  type StrandedCommission,
+} from "./commission-records";
 import { auditHr, databaseNow, inClosedPayPeriod, lockEmployee, requireLinkedDecider, PAYROLL_LOCK } from "./hr-common";
 import {
   loadEmployees,
@@ -79,6 +85,8 @@ export interface PayReview {
   period: PayPeriod;
   rows: PayReviewRow[];
   blockers: PayRunBlocker[];
+  /** Approved commission no run can pay (ADR 0048): shown to HR, never marked paid silently. */
+  strandedCommission: StrandedCommission[];
   contractors: ContractorPayment[];
   contractorNames: Record<string, string>;
 }
@@ -218,6 +226,7 @@ export class PayPeriodsService {
     const frozen = period.status === "approved" || period.status === "exported";
     let lines: PayPeriodLine[];
     let blockers: PayRunBlocker[] = [];
+    let stranded: StrandedCommission[] = [];
     if (frozen) {
       lines = period.lines;
     } else {
@@ -225,6 +234,7 @@ export class PayPeriodsService {
       const inputs = await this.inputs(db, clock, payable, period.id);
       lines = payable.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
       blockers = payRunBlockers(period, payable, inputs.sheets, new Set(excluded.keys()), inputs.workweekStartDay);
+      stranded = await strandedCommission(db, this.control.db);
     }
     const contractors = await loadContractorPayments(db);
     return {
@@ -235,6 +245,7 @@ export class PayPeriodsService {
         return [{ line, employee: payrollPerson(employee), excludedReason: excluded.get(line.employeeId) ?? null }];
       }),
       blockers,
+      strandedCommission: stranded,
       contractors,
       contractorNames: Object.fromEntries(people.filter((e) => e.workerType === "1099").map((e) => [e.id, e.name])),
     };
@@ -331,6 +342,13 @@ export class PayPeriodsService {
       const included = payable.filter((e) => !excluded.has(e.id));
       await this.checkApprover(tx, actor, period, included, inputs.bonuses);
       const lines = included.flatMap((e) => this.lineFor(e, period, inputs) ?? []);
+      const short = commissionShortfalls(lines);
+      if (short.length > 0) {
+        const names = short.map((employeeId) => included.find((e) => e.id === employeeId)?.name ?? "Someone");
+        throw refuse(
+          `${names.join(", ")}: unpaid leave takes gross pay below the commission this run pays. Fix the leave, or leave them out so the commission waits for the next run.`,
+        );
+      }
       const now = await databaseNow(tx);
       await tx
         .update(payPeriods)

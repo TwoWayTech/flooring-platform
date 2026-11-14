@@ -50,6 +50,7 @@ import {
   loadCommissionAssignments,
   loadCommissionBook,
   loadCommissionPlans,
+  loadManagerOf,
   type CommissionBook,
 } from "./commission-records";
 import { auditHr, databaseNow, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
@@ -143,9 +144,7 @@ export class CommissionsService {
     const db = await this.tenancy.db(tenant);
     const clock = await companyClock(this.control.db, tenant);
     const book = await loadCommissionBook(db, this.control.db, clock.zone, clock.day);
-    const statements = access.permissions.has("sales.margin.view_sensitive")
-      ? book.rows
-      : hideMarginBase(book.rows, book.inputs.plans);
+    const statements = access.permissions.has("sales.margin.view_sensitive") ? book.rows : hideMarginBase(book.rows);
     return {
       statements,
       plans: [...book.inputs.plans],
@@ -163,8 +162,9 @@ export class CommissionsService {
 
   /**
    * Commission per person for a date range, for Sales → Team (commissions.md rule 17,
-   * `teamCommission`): everyone for data scope `all`; otherwise the viewer and the reps on the
-   * invoices their scope covers.
+   * `teamCommission`): everyone for data scope `all`; otherwise the viewer, whole, and the reps on
+   * the invoices their scope covers, counting only those invoices' lines, so a branch manager never
+   * sees what a rep earned in another branch.
    */
   async totals(
     tenant: TenantContext,
@@ -177,21 +177,20 @@ export class CommissionsService {
     const paid = new Set(
       book.statements.filter((s) => s.status === "paid").map((s) => statementKey(s.userId, s.month)),
     );
-    const totals = commissionTotals(book.lines, paid, range);
-    if (access.dataScope === "all") return [...totals.entries()];
-    const visible = new Set([
-      access.userId,
-      ...book.inputs.invoices
-        .filter((i) =>
-          scopeAllows(
-            access.dataScope,
-            { userId: access.userId, branchId: access.branchId },
-            { ownerUserId: i.salesRepId, branchId: i.branchId },
-          ),
-        )
-        .map((i) => i.salesRepId),
-    ]);
-    return [...totals.entries()].filter(([userId]) => visible.has(userId));
+    if (access.dataScope === "all") return [...commissionTotals(book.lines, paid, range).entries()];
+    const inScope = book.inputs.invoices.filter((i) =>
+      scopeAllows(
+        access.dataScope,
+        { userId: access.userId, branchId: access.branchId },
+        { ownerUserId: i.salesRepId, branchId: i.branchId },
+      ),
+    );
+    const invoiceIds = new Set(inScope.map((i) => i.id));
+    const reps = new Set(inScope.map((i) => i.salesRepId));
+    const lines = book.lines.filter(
+      (l) => l.userId === access.userId || (reps.has(l.userId) && invoiceIds.has(l.invoiceId)),
+    );
+    return [...commissionTotals(lines, paid, range).entries()];
   }
 
   /**
@@ -398,6 +397,19 @@ export class CommissionsService {
         .for("update");
       const isSelf = await this.selfUsers(tx, actor);
       if (onIt.some((a) => isSelf(a.userId))) throw refuse("Someone else must change a plan you are on.");
+      // A manager is paid an override on their people's sales under this plan: changing it, or
+      // starting an override on it, changes their own pay (ADR 0048, never one's own).
+      if (dec(before.overridePct).gt(0) || dec(values.overridePct).gt(0)) {
+        if (
+          await this.paysActorOverride(
+            tx,
+            isSelf,
+            onIt.map((a) => a.userId),
+          )
+        ) {
+          throw refuse("Someone else must change a plan that pays you an override.");
+        }
+      }
       const [used] = await tx
         .select({ id: commissionStatements.id })
         .from(commissionStatements)
@@ -436,11 +448,15 @@ export class CommissionsService {
     const id = await db.transaction(async (tx) => {
       await tx.execute(PAYROLL_LOCK);
       await requireLinkedDecider(tx, actor.access);
-      if ((await this.selfUsers(tx, actor))(input.userId)) throw refuse("Someone else must put you on a plan.");
+      const isSelf = await this.selfUsers(tx, actor);
+      if (isSelf(input.userId)) throw refuse("Someone else must put you on a plan.");
       await this.member(tx, input.userId);
       const [plan] = await tx.select().from(commissionPlans).where(eq(commissionPlans.id, input.planId));
       if (!plan || plan.deletedAt) throw refuse("Choose a plan.");
       if (plan.status !== "active" || plan.effectiveTo) throw refuse("Choose an active plan.");
+      if (dec(plan.overridePct).gt(0) && (await this.paysActorOverride(tx, isSelf, [input.userId]))) {
+        throw refuse("Someone else must put your own people on a plan that pays you an override.");
+      }
       if (input.effectiveFrom < plan.effectiveFrom) throw refuse(`This plan starts on ${plan.effectiveFrom}.`);
       const frozen = await this.frozenMonth(tx, input.userId);
       if (frozen && input.effectiveFrom <= monthEnd(frozen)) {
@@ -504,6 +520,15 @@ export class CommissionsService {
       const employeeId = links.get(userId);
       return employeeId !== undefined && isSelf(employeeId);
     };
+  }
+
+  /** Whether the acting person is the manager of any of these people, so paid an override on their sales. */
+  private async paysActorOverride(tx: CompanyDb, isSelf: IsSelfUser, userIds: readonly string[]): Promise<boolean> {
+    const managerOf = await loadManagerOf(tx);
+    return userIds.some((userId) => {
+      const manager = managerOf(userId);
+      return manager !== null && isSelf(manager);
+    });
   }
 
   /**
@@ -590,7 +615,9 @@ export class CommissionsService {
    * Separation of duties at approval (ADR 0048), waived for the Owner as in HR: nobody approves a
    * statement they shaped. That is an adjustment or reversal decision on it, the assignment or plan
    * behind any of its months' figures (rows they created, or "Assigned", "Edited" and "Published"
-   * audit entries, which are append-only), or the commission split of a sale in it.
+   * audit entries, which are append-only), the commission split of a sale in it (a live split they
+   * set, or a "Changed commission split" entry, so setting and clearing one still counts), or the
+   * manager of its person or of anyone whose override is on it (`setManagerOf`).
    */
   private async checkApprover(
     tx: CompanyDb,
@@ -652,7 +679,53 @@ export class CommissionsService {
           )
           .limit(1)
       : [];
-    if (split) throw refuse("Someone else must approve a statement on a sale whose commission split you set.");
+    // A split set and then cleared leaves no live row, but its audit entry stays (append-only).
+    const [splitChange] = invoiceIds.length
+      ? await tx
+          .select({ id: auditLog.id })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.targetType, "invoice"),
+              eq(auditLog.action, "Changed commission split"),
+              eq(auditLog.actorUserId, approverId),
+              inArray(auditLog.targetId, invoiceIds),
+            ),
+          )
+          .limit(1)
+      : [];
+    if (split || splitChange) {
+      throw refuse("Someone else must approve a statement on a sale whose commission split you set.");
+    }
+    if (await this.setManagerOf(tx, approverId, row)) {
+      throw refuse("Someone else must approve a statement whose override you shaped by setting a manager.");
+    }
+  }
+
+  /**
+   * Whether the approver set the manager of the statement's person or of anyone whose override is on
+   * it (ADR 0048): `managerId` decides who is paid an override, so moving someone under a manager
+   * shapes that manager's statement. Read from "Added employee" and "Edited employee" entries
+   * (append-only), which carry `managerId` before and after (people.service.ts `save`).
+   */
+  private async setManagerOf(tx: CompanyDb, approverId: string, row: CommissionStatementRow): Promise<boolean> {
+    const people = new Set([row.userId, ...row.lines.flatMap((l) => (l.subjectUserId ? [l.subjectUserId] : []))]);
+    const links = await employeesByUser(tx);
+    const employeeIds = [...people].flatMap((userId) => links.get(userId) ?? []);
+    if (employeeIds.length === 0) return false;
+    const entries = await tx
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.targetType, "employee"),
+          eq(auditLog.actorUserId, approverId),
+          inArray(auditLog.targetId, employeeIds),
+          inArray(auditLog.action, ["Added employee", "Edited employee"]),
+        ),
+      );
+    const managerIn = (value: unknown) => ((value ?? {}) as { managerId?: string | null }).managerId ?? null;
+    return entries.some((entry) => managerIn(entry.before) !== managerIn(entry.after));
   }
 
   /** Whether the approver has an audit entry on any of these plans or assignments (append-only). */
@@ -710,21 +783,41 @@ export class CommissionsService {
       .returning();
     for (const a of onIt) {
       const reset = { planId: next!.id, acknowledgedName: null, acknowledgedAt: null, updatedAt: now };
+      const label = await this.nameOf(a.userId);
       if (a.effectiveFrom >= today) {
         await tx.update(commissionAssignments).set(reset).where(eq(commissionAssignments.id, a.id));
+        await this.auditMove(tenant, actor, tx, a.id, label, { planId: before.id }, { planId: next!.id });
         continue;
       }
       await tx
         .update(commissionAssignments)
         .set({ effectiveTo: yesterday, updatedAt: now })
         .where(eq(commissionAssignments.id, a.id));
-      await tx.insert(commissionAssignments).values({
-        userId: a.userId,
+      await this.auditMove(
+        tenant,
+        actor,
+        tx,
+        a.id,
+        label,
+        { planId: before.id, effectiveTo: a.effectiveTo },
+        { planId: before.id, effectiveTo: yesterday },
+      );
+      const [moved] = await tx
+        .insert(commissionAssignments)
+        .values({
+          userId: a.userId,
+          planId: next!.id,
+          effectiveFrom: today,
+          effectiveTo: a.effectiveTo,
+          monthlyTargetOverride: a.monthlyTargetOverride,
+          createdBy: actor.access.userId,
+        })
+        .returning({ id: commissionAssignments.id });
+      await this.auditMove(tenant, actor, tx, moved!.id, label, null, {
         planId: next!.id,
         effectiveFrom: today,
         effectiveTo: a.effectiveTo,
-        monthlyTargetOverride: a.monthlyTargetOverride,
-        createdBy: actor.access.userId,
+        ownTarget: a.monthlyTargetOverride !== null,
       });
     }
     await auditHr(this.auditLog, tenant, actor, tx, {
@@ -736,6 +829,29 @@ export class CommissionsService {
       after: { version: before.version + 1, effectiveFrom: today, moved: onIt.length },
     });
     return next!.id;
+  }
+
+  /**
+   * Audits one assignment a new plan version moved, ended or created (CLAUDE.md rule 10), with no
+   * amount: the target only as whether the person has their own.
+   */
+  private auditMove(
+    tenant: TenantContext,
+    actor: Actor,
+    tx: CompanyDb,
+    assignmentId: string,
+    label: string,
+    before: Record<string, unknown> | null,
+    after: Record<string, unknown>,
+  ): Promise<void> {
+    return auditHr(this.auditLog, tenant, actor, tx, {
+      action: "Moved commission assignment to new plan version",
+      targetType: "commission_assignment",
+      targetId: assignmentId,
+      targetLabel: label,
+      before,
+      after,
+    });
   }
 
   /** A plan name and version not taken yet (`commission_plans_version_uidx`). */

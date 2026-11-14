@@ -237,11 +237,92 @@ describe("commission statements", () => {
     expect(lines.length).toBeGreaterThan(0);
     // 40% margin on 1000.00 collected.
     expect(lines[0]!.base).toBe("400.00");
-    const hidden = hideMarginBase(rows, [plan(), margin]).flatMap((r) => r.lines);
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
     expect(hidden.every((l) => l.base === null)).toBe(true);
     expect(hidden[0]!.commission).toBe(lines[0]!.commission);
-    const revenue = hideMarginBase(rowsFor(), [plan(), margin]).flatMap((r) => r.lines);
+    const revenue = hideMarginBase(rowsFor()).flatMap((r) => r.lines);
     expect(revenue.every((l) => l.base !== null)).toBe(true);
+  });
+
+  it("hides margin dollars on a split sale by the basis that set the base: the co-rep, the override and the reversal", () => {
+    const on = (id: string, userId: string, planId: string) => ({
+      id,
+      userId,
+      planId,
+      effectiveFrom: "2026-01-01",
+      effectiveTo: null,
+      monthlyTargetOverride: null,
+      acknowledgement: null,
+    });
+    // Dana (margin plan) sold it and shares half with Luis (paid revenue plan with an override for Mia).
+    const sale = invoice("i1", {
+      commissionSplit: [
+        { userId: "dana", pct: "50" },
+        { userId: "luis", pct: "50" },
+      ],
+    });
+    const credit = invoice("c1", {
+      creditForInvoiceId: "i1",
+      issuedAt: "2026-08-20",
+      subtotal: "100.00",
+      cost: "60.00",
+      total: "100.00",
+    });
+    const rows = rowsFor({
+      plans: [plan({ overridePct: "1" }), plan({ id: "m", basis: "gross_margin" })],
+      assignments: [on("a1", "dana", "m"), on("a2", "luis", "p")],
+      invoices: [sale, credit],
+      payments: [payment("pay-1", "i1", "2026-08-10")],
+      managerOf: (userId) => (userId === "luis" ? "mia" : null),
+    });
+    const lines = rows.flatMap((r) => r.lines);
+    // 400.00 of margin split in two: the co-rep's line is on a paid revenue plan, yet its base is margin.
+    const coRep = lines.filter((l) => l.userId === "luis" && l.kind === "earned");
+    expect(coRep).toHaveLength(1);
+    expect(coRep[0]).toMatchObject({ planId: "p", basis: "gross_margin", base: "200.00" });
+    expect(lines.find((l) => l.kind === "override")).toMatchObject({
+      userId: "mia",
+      planId: "p",
+      basis: "gross_margin",
+    });
+    const reversals = lines.filter((l) => l.kind === "reversal");
+    expect(reversals.length).toBeGreaterThan(0);
+    expect(reversals.every((l) => l.basis === "gross_margin")).toBe(true);
+    const hidden = hideMarginBase(rows).flatMap((r) => r.lines);
+    expect(hidden).toHaveLength(lines.length);
+    expect(hidden.every((l) => l.base === null)).toBe(true);
+  });
+
+  it("starts the window with the carry of the months before it, so a deficit leaving the window still carries", () => {
+    // Paid in 2025-10 (approved), voided in 2025-11: a 50.00 clawback in a month no longer among the
+    // last twelve on 2026-11-14. It carries until August's 50.00 recovers it.
+    const rows = rowsFor({
+      assignments: [
+        {
+          id: "a1",
+          userId: "dana",
+          planId: "p",
+          effectiveFrom: "2025-01-01",
+          effectiveTo: null,
+          monthlyTargetOverride: null,
+          acknowledgement: null,
+        },
+      ],
+      invoices: [invoice("i9"), invoice("i1"), invoice("i2")],
+      payments: [
+        { ...payment("pay-9", "i9", "2025-10-05"), status: "voided", voidedAt: "2025-11-20T10:00" } as Payment,
+        payment("pay-1", "i1", "2026-08-10"),
+        payment("pay-2", "i2", "2026-09-10"),
+      ],
+      frozen: new Set(["dana|2025-10"]),
+    });
+    expect(rows[0]).toMatchObject({ month: "2025-12", carryIn: "50.00", carryOut: "50.00", payable: "0.00" });
+    expect(rows.find((r) => r.month === "2026-08")).toMatchObject({
+      earned: "50.00",
+      carryIn: "50.00",
+      payable: "0.00",
+    });
+    expect(rows.find((r) => r.month === "2026-09")).toMatchObject({ carryIn: "0.00", payable: "50.00" });
   });
 
   it("checks a plan's terms", () => {

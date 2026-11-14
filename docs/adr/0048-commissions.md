@@ -49,7 +49,22 @@ Summit's three plans, four assignments with their signatures, 40 statements (all
 ### Web
 `commissionData` (one source for HR → Commissions), `listCommissionStatements`, `approveStatement`, `addCommissionAdjustment`, `decideReversal`, `saveCommissionPlan`, `assignPlan` and `teamCommission` go to the API in api mode. `acknowledgePlan`, `issueCreditNote` (already on the API) and My commission stay as they are; signing moves with the portal.
 
+### First security review of PR #27
+- **Margin base on split sales:** the first split member's plan sets an invoice's base for everyone in the split, so each line records the `basis` that produced its base, and override and reversal lines carry it on. `hideMarginBase` hides by that basis, not the line's own plan, so a paid revenue co-rep's share of a margin sale (and its override and reversals) shows no margin dollars. Credit-note reversals work out the fall in the base on that basis too.
+- **Shaping, widened:** a "Changed commission split" audit entry on an invoice in the statement counts as setting its split, so setting and then clearing one no longer slips past; so does setting the manager (`managerId`, read from "Added employee" and "Edited employee" entries) of the statement's person or of anyone whose override is on it.
+- **Managers paid overrides:** nobody changes a plan that pays (or would pay) an override while one of its people reports to them, nor puts their own people on such a plan (the Owner included: it is their own pay).
+- **Team totals:** below scope `all`, only lines on invoices the viewer's scope covers count for other reps; the viewer's own lines count whole.
+- **Carry:** each person's chain starts at their first line, adjustment or assignment, not at the window's edge, so a deficit or a recoverable draw leaving the twelve-month window still carries. No column stores the carry-out (no schema change in this task); it is derived from the lines and adjustments every time. A stored `carry_out` on `commission_statements`, frozen at approval, is a follow-up (STATUS).
+- **Adjustments:** dollars and cents, up to twelve digits, at most 1,000,000.00 either way (`MAX_ADJUSTMENT`).
+- **Stranded statements:** the pay-period review lists approved, unpaid statements with something to pay whose rep is no longer linked, is a 1099 contractor or has left (`strandedCommission`); they are never marked paid by themselves.
+- **Gross below commission:** a run is refused while someone's gross pay is below the commission it pays (an exempt full-day deduction larger than the salary), naming them and saying what to do (`commissionShortfalls`).
+- **MFA:** every `hr.commission.*` key makes MFA mandatory, as the `hr.payroll.*` keys do.
+- **Audit:** each assignment a new plan version ends, moves or creates gets its own "Moved commission assignment to new plan version" entry.
+- **HR Home:** a 403 from `GET /commissions` reads as no statements, so the dashboard still loads.
+
 ## Residual risks
+- **Gross clamp at zero:** gross pay never goes below zero, so in a run approved with gross below its commission part of the commission would stay in Accrued Payroll unpaid. Approval now refuses such a run (above); the remaining risk is a run settled outside the app.
+- **Derived carry:** until carry-out is stored, an approved month's carry is worked out again from live lines; drift after approval (below) could move a later month's carry-in.
 - **Margin is still derivable:** the base is hidden, but commission and the plan's rate are shown, so on a one-tier margin plan base = commission ÷ rate, and with `collected` the margin percent follows. Hiding commission from HR would break their job; a question for the owner.
 - **A statement's payable shows to ledger readers:** one Commissions line per statement at the rep's home location. Ledger readers (Owner, Accountant) hold `hr.payroll.view` and see the commission on pay lines anyway.
 - **Draws are expensed when approved:** a recoverable draw paid in a short month is booked as commission expense, not as an advance (asset) recovered later. The accountant may prefer an advance account.

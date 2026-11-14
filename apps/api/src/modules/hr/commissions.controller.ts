@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req } from "@nestjs/common";
-import { dec } from "@workspace/shared";
+import { ADJUSTMENT_AMOUNT, dec } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -19,10 +19,13 @@ const MONTH = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Choose a month.");
 const TEXT = z.string().max(500);
 const FIGURE = z.string().trim().max(20);
 
+/** An adjustment in dollars and cents, up to twelve digits; `adjustmentProblem` caps it at 1,000,000.00 (ADR 0048). */
+const ADJUSTMENT = z.string().trim().regex(ADJUSTMENT_AMOUNT, "Enter an amount, for example 150 or -75.");
+
 const APPROVE = z.object({ userId: z.uuid(), month: MONTH }).strict();
 
 const ADJUST = z
-  .object({ userId: z.uuid(), month: MONTH, amount: FIGURE, invoiceId: z.uuid().nullable(), reason: TEXT })
+  .object({ userId: z.uuid(), month: MONTH, amount: ADJUSTMENT, invoiceId: z.uuid().nullable(), reason: TEXT })
   .strict();
 
 const DECIDE = z

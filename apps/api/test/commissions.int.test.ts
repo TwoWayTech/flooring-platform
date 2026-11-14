@@ -63,6 +63,7 @@ interface LineView {
   invoiceId: string;
   sourceId: string;
   planId: string;
+  basis: string;
   base: string | null;
   collected: string;
   commission: string;
@@ -180,7 +181,12 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     repA: "",
     repB: "",
     repS: "",
+    repT: "",
     empA: "",
+    empHrA: "",
+    empT: "",
+    flatV2: "",
+    planO: "",
     branchMain: "",
     branchOther: "",
     locA: "",
@@ -317,7 +323,14 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     );
   }
 
-  async function addInvoice(number: string, salesRepId: string, subtotal: string, cost: string, month: string) {
+  async function addInvoice(
+    number: string,
+    salesRepId: string,
+    subtotal: string,
+    cost: string,
+    month: string,
+    branchId = ids.branchMain,
+  ) {
     return rows(
       async (db) =>
         (
@@ -327,7 +340,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
               number,
               customerId: ids.customer,
               salesRepId,
-              branchId: ids.branchMain,
+              branchId,
               issuedAt: at(month, "09"),
               locationId: ids.locA,
               jobSite: ADDRESS,
@@ -342,15 +355,16 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     );
   }
 
-  /** A customer payment on the 10th of a month; only a confirmed one earns commission. */
+  /** A customer payment on a day of a month (the 10th unless given); only a confirmed one earns commission. */
   async function addPayment(
     number: string,
     invoiceId: string,
     amount: string,
     month: string,
     state: "confirmed" | "pending" = "confirmed",
+    day = "10",
   ) {
-    const when = at(month, "10");
+    const when = at(month, day);
     return rows(
       async (db) =>
         (
@@ -362,7 +376,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
               customerId: ids.customer,
               kind: "payment",
               amount,
-              date: `${month}-10`,
+              date: `${month}-${day}`,
               method: "check",
               status: state,
               recordedById: ids.owner,
@@ -486,6 +500,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     const repBEmp = await person({ name: "Ben Brooks", homeLocationId: ids.locB });
     const repSEmp = await person({ name: "Sia Summers" });
     ids.empA = repAEmp.id;
+    ids.empHrA = hrAEmp.id;
     for (const [userId, employeeId] of [
       [ids.hrA, hrAEmp.id],
       [ids.hrB, hrBEmp.id],
@@ -1131,6 +1146,14 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(await statement(ids.repA, M2)).toMatchObject({ status: "paid", payable: "50.00", earned: "50.00" });
     const [published] = await auditOf("Published new version of commission plan");
     expect(published).toMatchObject({ targetId: saved.body.id, after: { version: 2, moved: 2 } });
+    // Each assignment the new version ended or created is audited on its own, with no amount.
+    const moves = await auditOf("Moved commission assignment to new plan version");
+    expect(moves).toHaveLength(4);
+    expect(moves.filter((m) => m.before === null).map((m) => (m.after as { planId: string }).planId)).toEqual([
+      saved.body.id,
+      saved.body.id,
+    ]);
+    ids.flatV2 = saved.body.id as string;
   });
 
   it("never shows or changes another company's commissions", async () => {
@@ -1180,6 +1203,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
         "Accepted commission reversal",
         "Waived commission reversal",
         "Assigned commission plan",
+        "Moved commission assignment to new plan version",
         "Added commission statement to pay period",
         "Released commission statement from pay period",
         "Paid commission statement",
@@ -1188,6 +1212,184 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     const plans = await rows((db) => db.select().from(auditLog).where(eq(auditLog.targetType, "commission_plan")));
     expect(new Set(plans.map((e) => e.action))).toEqual(
       new Set(["Added commission plan", "Edited commission plan", "Published new version of commission plan"]),
+    );
+  });
+
+  // First security review of PR #27: the tests below cover its findings, on the state left above.
+  it("hides margin dollars on a split sale from an HR reader, on the paid revenue co-rep's line too", async () => {
+    // Rep B (margin plan) sold it and shares half with Rep S (paid revenue plan, version 2 from today).
+    const sale = await addInvoice("INV-C7", ids.repB, "1000.00", "400.00", CURRENT);
+    status(
+      await send("put", `/invoices/${sale}/commission-split`, cookies.hrB, {
+        split: [
+          { userId: ids.repB, pct: "50" },
+          { userId: ids.repS, pct: "50" },
+        ],
+      }),
+      200,
+    );
+    await addPayment("PAY-C7", sale, "1000.00", CURRENT, "confirmed", companyDay().slice(8, 10));
+    const onSale = (body: CommissionData) =>
+      body.statements.flatMap((s) => s.lines).filter((l) => l.invoiceId === sale);
+    // The Owner sees the base: 600.00 of margin, 300.00 each, Rep S's line on his own paid revenue plan.
+    const owner = onSale(await data());
+    const coRep = owner.find((l) => l.kind === "earned" && l.planId === ids.flatV2)!;
+    expect(coRep).toMatchObject({ base: "300.00", basis: "gross_margin" });
+    // HR, without sales.margin.view_sensitive, sees no margin dollars on either share.
+    const hr = onSale(await data(cookies.hrA));
+    expect(hr).toHaveLength(owner.length);
+    for (const line of hr) expect(line.base, line.id).toBeNull();
+    expect(hr.find((l) => l.id === coRep.id)!.commission).toBe(coRep.commission);
+  });
+
+  it("totals only the lines on invoices the viewer's scope covers, and the viewer's own lines whole", async () => {
+    const query = `?from=${M3}-01&to=${companyDay()}`;
+    const totals = async (cookie: string) =>
+      new Map(
+        (await call("get", `/commission-totals${query}`, cookie).expect(200)).body as [string, { earned: string }][],
+      );
+    // Rep S also sold in the other branch.
+    const elsewhere = await addInvoice("INV-C8", ids.repS, "500.00", "200.00", CURRENT, ids.branchOther);
+    await addPayment("PAY-C8", elsewhere, "500.00", CURRENT, "confirmed", companyDay().slice(8, 10));
+    const lines = (await data()).statements.flatMap((s) => s.lines);
+    const there = sum(lines.filter((l) => l.invoiceId === elsewhere).map((l) => l.commission));
+    expect(there.gt(0)).toBe(true);
+    const all = dec((await totals(cookies.owner)).get(ids.repS)!.earned);
+    // The Main branch manager sees Rep S's Main sales only; the other branch's manager only the sale there.
+    expect((await totals(cookies.manager)).get(ids.repS)!.earned).toBe(moneyString(all.minus(there)));
+    const other = await totals(cookies.managerOther);
+    expect([...other.keys()]).toEqual([ids.repS]);
+    expect(other.get(ids.repS)!.earned).toBe(moneyString(there));
+    // Rep S (scope own) sees all of their own commission.
+    expect((await totals(cookies.repS)).get(ids.repS)!.earned).toBe(moneyString(all));
+  });
+
+  it("bounds an adjustment's amount", async () => {
+    const adjust = (amount: string) =>
+      send("post", "/commission-adjustments", cookies.hrB, {
+        userId: ids.repS,
+        month: CURRENT,
+        amount,
+        invoiceId: null,
+        reason: "Year-end spiff",
+      });
+    refused(await adjust("1000000.01"), "An adjustment can be at most 1,000,000.00 either way.");
+    refused(await adjust("1234567890123"), "Enter an amount, for example 150 or -75.");
+    refused(await adjust(`${"9".repeat(40)}.00`), "Enter an amount, for example 150 or -75.");
+  });
+
+  it("refuses a manager changing an override plan or assigning their own people to one, and an approver who set the manager or cleared a split", async () => {
+    // Rep T is new: a W-2 rep whose manager, set by hrB through People, is hrA.
+    ids.repT = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const repT = await person({ name: "Tia Torres", hiredAt: "2024-01-08", homeLocationId: ids.locA });
+    ids.empT = repT.id;
+    await rows((db) => db.update(userProfiles).set({ employeeId: repT.id }).where(eq(userProfiles.userId, ids.repT)));
+    status(
+      await send("put", `/employees/${repT.id}`, cookies.hrB, {
+        name: "Tia Torres",
+        title: "Sales",
+        department: "Sales",
+        workerType: "w2",
+        payType: "salary",
+        state: "TX",
+        email: "",
+        phone: "",
+        hiredAt: "2024-01-08",
+        status: "active",
+        managerId: ids.empHrA,
+        flsaStatus: "exempt",
+        exemptionBasis: "administrative",
+        salaryHoursPerWeek: 40,
+        commissionVisible: null,
+        homeLocationId: ids.locA,
+        emergencyContact: null,
+      }),
+      200,
+    );
+    // The Owner adds a plan that pays the manager a 2% override, in force since M3.
+    const added = await send(
+      "post",
+      "/commission-plans",
+      cookies.owner,
+      planBody({ name: "Override two", overridePct: "2" }),
+    );
+    status(added, 201);
+    ids.planO = added.body.id as string;
+    await rows((db) =>
+      db
+        .update(commissionPlans)
+        .set({ effectiveFrom: `${M3}-01` })
+        .where(eq(commissionPlans.id, ids.planO)),
+    );
+    const assignT = (cookie: string) =>
+      send("post", "/commission-assignments", cookie, {
+        userId: ids.repT,
+        planId: ids.planO,
+        effectiveFrom: `${M3}-01`,
+      });
+    refused(await assignT(cookies.hrA), "Someone else must put your own people on a plan that pays you an override.");
+    status(await assignT(cookies.owner), 201);
+    refused(
+      await send(
+        "put",
+        `/commission-plans/${ids.planO}`,
+        cookies.hrA,
+        planBody({ name: "Override two", overridePct: "3" }),
+      ),
+      "Someone else must change a plan that pays you an override.",
+    );
+
+    // hrA sets the split of the M2 sale and clears it again before any payment: no live split row is left.
+    const t3 = await addInvoice("INV-T3", ids.repT, "1000.00", "500.00", M3);
+    const t2 = await addInvoice("INV-T2", ids.repT, "800.00", "400.00", M2);
+    for (const split of [[{ userId: ids.repT, pct: "100" }], []]) {
+      status(await send("put", `/invoices/${t2}/commission-split`, cookies.hrA, { split }), 200);
+    }
+    await addPayment("PAY-T3", t3, "1000.00", M3);
+    await addPayment("PAY-T2", t2, "800.00", M2);
+    // hrA is paid the override on Rep T's sales.
+    expect((await statement(ids.hrA, M3)).override).toBe("20.00");
+
+    const managerSet = "Someone else must approve a statement whose override you shaped by setting a manager.";
+    expect((await approve(cookies.hrB, ids.repT, M3)).body.message).toBe(managerSet);
+    status(await approve(cookies.hrA, ids.repT, M3), 201);
+    expect((await approve(cookies.hrA, ids.repT, M2)).body.message).toBe(
+      "Someone else must approve a statement on a sale whose commission split you set.",
+    );
+    expect((await approve(cookies.hrB, ids.repT, M2)).body.message).toBe(managerSet);
+    // The manager's own statement carries the override, shaped by whoever set the manager.
+    expect((await approve(cookies.hrB, ids.hrA, M3)).body.message).toBe(managerSet);
+    status(await approve(cookies.owner, ids.repT, M2), 201);
+  });
+
+  it("lists approved commission no pay run can pay in the pay-period review, and never marks it paid", async () => {
+    const opened = await send("post", "/pay-periods", cookies.owner, { date: week(3) });
+    status(opened, 201);
+    const review = async () =>
+      (await call("get", `/pay-periods/${opened.body.id as string}/review`, cookies.owner).expect(200)).body as {
+        strandedCommission: { userId: string; month: string; reason: string; name: string }[];
+      };
+    // Rep T's two approved statements wait for a run that includes them; nothing is stranded yet.
+    expect((await review()).strandedCommission.filter((s) => s.userId === ids.repT)).toEqual([]);
+    await rows((db) => db.update(employees).set({ status: "terminated" }).where(eq(employees.id, ids.empT)));
+    const stranded = (await review()).strandedCommission;
+    expect(stranded.map((s) => [s.userId, s.month, s.reason]).sort()).toEqual(
+      [
+        [ids.repT, M2, "They have left, so no pay run includes them."],
+        [ids.repT, M3, "They have left, so no pay run includes them."],
+      ].sort(),
+    );
+    expect(JSON.stringify(stranded)).not.toMatch(/\d+\.\d{2}/);
+    expect(await statement(ids.repT, M2)).toMatchObject({ status: "approved", payPeriodId: null });
+    // A 1099 worker can't be paid through a run either.
+    await rows((db) =>
+      db
+        .update(employees)
+        .set({ status: "active", workerType: "1099", flsaStatus: "not_applicable", exemptionBasis: null })
+        .where(eq(employees.id, ids.empT)),
+    );
+    expect(new Set((await review()).strandedCommission.map((s) => s.reason))).toEqual(
+      new Set(["They are a 1099 contractor, and pay runs pay W-2 staff only."]),
     );
   });
 });

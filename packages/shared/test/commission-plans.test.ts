@@ -3,6 +3,7 @@ import {
   adjustmentProblem,
   commissionCurve,
   commissionLines,
+  commissionShortfalls,
   dec,
   statementChain,
   statementKey,
@@ -305,5 +306,22 @@ describe("statements and draws (spec C1, ADR 0025)", () => {
     expect(adjustmentProblem("-20", "Return", null)).toMatch(/invoice/);
     expect(adjustmentProblem("20", "ab", null)).toMatch(/reason/);
     expect(adjustmentProblem("20", "Spiff for October", null)).toBeNull();
+  });
+
+  it("bounds an adjustment to 1,000,000.00 either way and twelve digits", () => {
+    expect(adjustmentProblem("1000000.00", "Year-end spiff", null)).toBeNull();
+    expect(adjustmentProblem("1000000.01", "Year-end spiff", null)).toMatch(/at most 1,000,000.00/);
+    expect(adjustmentProblem("-1000000.01", "Returned job", "i1")).toMatch(/at most 1,000,000.00/);
+    expect(adjustmentProblem("1".repeat(13), "Year-end spiff", null)).toMatch(/Enter an amount/);
+  });
+
+  it("finds pay lines whose gross pay is below the commission they pay", () => {
+    expect(
+      commissionShortfalls([
+        { employeeId: "e1", grossPay: "0.00", commissionPay: "90.00" },
+        { employeeId: "e2", grossPay: "90.00", commissionPay: "90.00" },
+        { employeeId: "e3", grossPay: "1000.00", commissionPay: "0.00" },
+      ]),
+    ).toEqual(["e1"]);
   });
 });

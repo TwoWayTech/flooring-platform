@@ -157,6 +157,23 @@ export async function employeesByUser(db: CompanyDb): Promise<Map<string, string
 }
 
 /**
+ * Each person's manager by user id, for overrides (commissions.md): user → linked employee →
+ * `managerId` → that employee's user. Null when any link is missing.
+ */
+export async function loadManagerOf(db: CompanyDb): Promise<(userId: string) => string | null> {
+  const [links, managers] = await Promise.all([
+    employeesByUser(db),
+    db.select({ id: employees.id, managerId: employees.managerId }).from(employees).where(isNull(employees.deletedAt)),
+  ]);
+  const managerOfEmployee = new Map(managers.map((row) => [row.id, row.managerId]));
+  const userOfEmployee = new Map([...links.entries()].map(([userId, employeeId]) => [employeeId, userId]));
+  return (userId) => {
+    const managerId = managerOfEmployee.get(links.get(userId) ?? "");
+    return managerId ? (userOfEmployee.get(managerId) ?? null) : null;
+  };
+}
+
+/**
  * Everything the commission engine reads (`commissionLines`), from the company's records: plans,
  * assignments, invoices with their cost (never sent on; CLAUDE.md rule 5), payments, credit applied,
  * the manager chain for overrides (user, employee, `managerId`, that employee's user), the frozen
@@ -170,27 +187,21 @@ export async function loadCommissionInputs(
   statements: readonly CommissionStatement[],
   adjustments: readonly CommissionAdjustment[],
 ): Promise<CommissionInputs> {
-  const [plans, assignments, invoices, payments, credits, links, managers] = await Promise.all([
+  const [plans, assignments, invoices, payments, credits, managerOf] = await Promise.all([
     loadCommissionPlans(db),
     loadCommissionAssignments(db),
     loadInvoices(db, zone),
     loadPayments(db, control),
     loadAdjustments(db, control),
-    employeesByUser(db),
-    db.select({ id: employees.id, managerId: employees.managerId }).from(employees).where(isNull(employees.deletedAt)),
+    loadManagerOf(db),
   ]);
-  const managerOfEmployee = new Map(managers.map((row) => [row.id, row.managerId]));
-  const userOfEmployee = new Map([...links.entries()].map(([userId, employeeId]) => [employeeId, userId]));
   return {
     plans,
     assignments,
     invoices,
     payments,
     adjustments: credits,
-    managerOf: (userId) => {
-      const managerId = managerOfEmployee.get(links.get(userId) ?? "");
-      return managerId ? (userOfEmployee.get(managerId) ?? null) : null;
-    },
+    managerOf,
     frozen: new Set(statements.filter((s) => s.status !== "draft").map((s) => statementKey(s.userId, s.month))),
     decisions: commissionDecisions(adjustments),
     today,
@@ -337,4 +348,67 @@ export async function commissionForRun(
     });
   }
   return out;
+}
+
+/** An approved statement that no pay run can pay, and why (ADR 0048). */
+export interface StrandedCommission {
+  statementId: string;
+  userId: string;
+  name: string;
+  month: string;
+  reason: string;
+}
+
+/**
+ * Approved statements with something to pay that wait for a run no run will ever include
+ * (commissions.md "To paid"; ADR 0048): the rep's sign-in is no longer linked to an employee, the
+ * employee is a 1099 contractor, or they have left. The pay-period review lists them for HR, who
+ * pays or settles them outside the run; they are never marked paid silently.
+ */
+export async function strandedCommission(db: CompanyDb, control: ControlDb): Promise<StrandedCommission[]> {
+  const waiting = await db
+    .select({ id: commissionStatements.id, userId: commissionStatements.userId, month: commissionStatements.month })
+    .from(commissionStatements)
+    .where(
+      and(
+        isNull(commissionStatements.deletedAt),
+        eq(commissionStatements.status, "approved"),
+        isNull(commissionStatements.payPeriodId),
+      ),
+    )
+    .orderBy(asc(commissionStatements.month), asc(commissionStatements.id));
+  if (waiting.length === 0) return [];
+  const posted = await postedCommission(
+    db,
+    waiting.map((s) => s.id),
+  );
+  const owing = waiting.filter((s) => dec(posted.get(s.id) ?? 0).gt(0));
+  if (owing.length === 0) return [];
+  const links = await employeesByUser(db);
+  const linked = [...new Set(owing.flatMap((s) => links.get(s.userId) ?? []))];
+  const people = linked.length
+    ? await db
+        .select({ id: employees.id, workerType: employees.workerType, status: employees.status })
+        .from(employees)
+        .where(inArray(employees.id, linked))
+    : [];
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const names = await loadNames(
+    control,
+    owing.map((s) => s.userId),
+  );
+  return owing.flatMap((s) => {
+    const employee = byId.get(links.get(s.userId) ?? "");
+    const reason = !employee
+      ? "Their sign-in is not linked to an employee."
+      : employee.workerType !== "w2"
+        ? "They are a 1099 contractor, and pay runs pay W-2 staff only."
+        : employee.status === "terminated"
+          ? "They have left, so no pay run includes them."
+          : null;
+    if (!reason) return [];
+    return [
+      { statementId: s.id, userId: s.userId, name: names.get(s.userId) ?? "Former employee", month: s.month, reason },
+    ];
+  });
 }
