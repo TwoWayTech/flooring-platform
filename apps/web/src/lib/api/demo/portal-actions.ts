@@ -1,14 +1,15 @@
 import {
-  dec,
-  moneyString,
+  earnedInYear,
   needsTimesheet,
+  ownPayLine,
+  ownStatements,
   pendingHours,
-  sum,
+  portalVisibility,
+  teamOutView,
   timeOffBalance,
   workweekStartOf,
   type CompanySettings,
   type Employee,
-  type PayPeriodLine,
 } from "@workspace/shared";
 import type { MyPayRow, MyPortal, MyVisibility } from "../contract";
 import { statementRows } from "./commission-actions";
@@ -16,23 +17,9 @@ import { ensureCurrentPeriod } from "./pay-actions";
 import type { ActionContext } from "./payment-actions";
 import { myClock } from "./timesheet-actions";
 
-/** What this person may see (spec C1): the company's switches plus the per-employee commission override. */
+/** What this person may see (employee-portal.md rule 1): the shared rule the API applies too (ADR 0049). */
 export function visibilityFor(employee: Employee | null, hr: CompanySettings["hr"], onPlan: boolean): MyVisibility {
-  return {
-    pay: !!employee && employee.workerType === "w2" && hr.showPayToEmployees,
-    // ADR 0025 finding 7: the switch hides the page; a rep on a plan still signs the plan.
-    commission: onPlan && (employee?.commissionVisible ?? hr.showCommissionToEmployees),
-    rates: hr.showRatesToEmployees,
-    teamCalendar: hr.showTeamCalendarToEmployees,
-    clock: hr.clockEnabled && !!employee && needsTimesheet(employee),
-  };
-}
-
-/** A pay line as the employee sees it: with commission hidden, its line and true-up leave the total (ADR 0024). */
-function ownLine(line: PayPeriodLine, showCommission: boolean): PayPeriodLine {
-  if (showCommission) return line;
-  const gross = dec(line.grossPay).minus(line.commissionPay).minus(line.overtimeTrueUp);
-  return { ...line, commissionPay: "0.00", overtimeTrueUp: "0.00", grossPay: moneyString(gross) };
+  return portalVisibility(employee, hr, onPlan);
 }
 
 /** Everything the portal shows, for the signed-in person only (spec C2). Hidden areas come back empty. */
@@ -52,15 +39,11 @@ export async function myPortal(ctx: ActionContext): Promise<MyPortal> {
     ? periods
         .flatMap((period) => {
           const line = period.lines.find((l) => l.employeeId === id);
-          return line ? [{ period, line: ownLine(line, visible.commission) }] : [];
+          return line ? [{ period, line: ownPayLine(line, visible.commission) }] : [];
         })
         .sort((a, b) => b.period.start.localeCompare(a.period.start))
     : [];
-  const statements = visible.commission
-    ? statementRows(ctx)
-        .filter((s) => s.userId === ctx.actor.id && (s.lines.length > 0 || s.status !== "draft"))
-        .reverse()
-    : [];
+  const statements = visible.commission ? ownStatements(statementRows(ctx), ctx.actor.id) : [];
   const weekStart = workweekStartOf(ctx.today, db.settings.hr.workweekStartDay);
   return {
     employee,
@@ -83,7 +66,7 @@ export async function myPortal(ctx: ActionContext): Promise<MyPortal> {
         : [],
     requests: requests.sort((a, b) => b.start.localeCompare(a.start)),
     pay,
-    earnedThisYear: moneyString(sum(pay.filter((p) => p.period.payDate.startsWith(year)).map((p) => p.line.grossPay))),
+    earnedThisYear: earnedInYear(pay, year),
     statements,
     assignment,
     plan: assignment ? (db.get("commissionPlans", assignment.planId) ?? null) : null,
@@ -92,7 +75,7 @@ export async function myPortal(ctx: ActionContext): Promise<MyPortal> {
       ? db
           .list("ptoRequests")
           .filter((r) => r.status === "approved")
-          .map((r) => ({ ...r, kind: "vacation" as const, note: "", decisionReason: null }))
+          .map(teamOutView)
       : [],
     teamNames: visible.teamCalendar ? db.list("employees").map((e) => ({ id: e.id, name: e.name })) : [],
   };
