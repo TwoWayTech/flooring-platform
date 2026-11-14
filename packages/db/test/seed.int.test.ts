@@ -16,6 +16,7 @@ import {
   payPeriodLines,
   payPeriods,
   employeeChecklistItems,
+  employeeManagerHistory,
   employees,
   ptoRequests,
   timeEntries,
@@ -310,6 +311,11 @@ describe("test company seed", () => {
       expect(row).toMatchObject({ managerId: seedId(fixture.managerId!), payRate: fixture.payRate });
       // No Social Security or bank columns exist on the table (CLAUDE.md rule 14).
       expect(Object.keys(row!).some((key) => /ssn|social|bank|routing|account/i.test(key))).toBe(false);
+      // One since-records-began manager row per employee, as migration 0005 backfills (ADR 0048).
+      const history = await company.db.select().from(employeeManagerHistory);
+      expect(history).toHaveLength(fixtures.employees.length);
+      expect(history.every((h) => h.effectiveFrom === null)).toBe(true);
+      expect(history.find((h) => h.employeeId === seedId(fixture.id))?.managerId).toBe(seedId(fixture.managerId!));
     } finally {
       await company.close();
     }
@@ -356,6 +362,13 @@ describe("test company seed", () => {
       expect(statements.filter((s) => s.payPeriodId)).toHaveLength(
         fixtures.commissionStatements.filter((s) => s.payPeriodId).length,
       );
+      // Each stores the employee it paid: its rep's linked employee (ADR 0048 "Sign-in re-link").
+      const linkOf = new Map(fixtures.users.map((user) => [user.id, user.employeeId]));
+      for (const fixture of fixtures.commissionStatements) {
+        const employeeId = linkOf.get(fixture.userId);
+        expect(employeeId, fixture.id).toBeTruthy();
+        expect(statements.find((s) => s.id === seedId(fixture.id))?.employeeId).toBe(seedId(employeeId!));
+      }
       const margin = fixtures.commissionPlans.find((p) => p.basis === "gross_margin")!;
       const [row] = await company.db
         .select()

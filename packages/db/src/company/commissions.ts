@@ -1,7 +1,7 @@
 import type { CommissionPlan } from "@workspace/shared";
 import { integer, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { at, business, day, money, rate, userRef } from "../columns";
-import { payPeriods } from "./hr";
+import { employees, payPeriods } from "./hr";
 import { invoices } from "./sales";
 
 /**
@@ -55,6 +55,13 @@ export const commissionStatements = pgTable(
     status: text().$type<"draft" | "approved" | "paid">().notNull(),
     approvedById: userRef(),
     approvedAt: at(),
+    /**
+     * The employee this statement pays: the rep's linked live employee when the statement is
+     * approved, stored then so a later change of sign-in link never moves the pay (owner decision
+     * 2026-11-15; ADR 0048 "Sign-in re-link"). Null on a draft, and on a statement approved while its
+     * rep had no live link.
+     */
+    employeeId: uuid().references(() => employees.id),
     payPeriodId: uuid().references(() => payPeriods.id),
   },
   (table) => [uniqueIndex("commission_statements_uidx").on(table.userId, table.month)],

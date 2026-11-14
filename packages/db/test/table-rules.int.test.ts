@@ -13,6 +13,7 @@ const APPEND_ONLY = new Set([
   "journal_lines",
   "period_closes",
   "time_off_entries",
+  "employee_manager_history",
   "meeting_responses",
   "auth_attempts",
 ]);

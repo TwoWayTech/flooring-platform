@@ -1,5 +1,5 @@
 import { addDays, type Employee } from "@workspace/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { CompanyDb } from "../client";
 import {
   bonuses,
@@ -10,6 +10,7 @@ import {
   commissionStatements,
   contractorPayments,
   employeeChecklistItems,
+  employeeManagerHistory,
   employees,
   payPeriodExclusions,
   payPeriodLines,
@@ -43,6 +44,35 @@ function managersFirst(list: readonly Employee[]): Employee[] {
     left = left.filter((e) => !placed.has(e.id));
   }
   return ordered;
+}
+
+/**
+ * One since-records-began manager row (effective_from null) per seeded live employee, with the
+ * manager stored on the employee, as company migration 0005's backfill writes for companies that
+ * existed before the table (owner decision 2026-11-15; ADR 0048). An employee who already has a row,
+ * such as one backfilled before this seed ran again, is left alone, so a second run adds nothing.
+ */
+async function seedManagerHistory(tx: CompanyDb, list: readonly Employee[]): Promise<void> {
+  if (list.length === 0) return;
+  const ids = list.map((e) => seedId(e.id));
+  const [stored, recorded] = await Promise.all([
+    tx
+      .select({ id: employees.id, managerId: employees.managerId, createdBy: employees.createdBy })
+      .from(employees)
+      .where(and(inArray(employees.id, ids), isNull(employees.deletedAt))),
+    tx.select({ employeeId: employeeManagerHistory.employeeId }).from(employeeManagerHistory),
+  ]);
+  const has = new Set(recorded.map((row) => row.employeeId));
+  const rows = stored
+    .filter((e) => !has.has(e.id))
+    .map((e) => ({
+      id: seedId(`manager-history:${e.id}`),
+      employeeId: e.id,
+      managerId: e.managerId,
+      effectiveFrom: null,
+      createdBy: e.createdBy,
+    }));
+  if (rows.length > 0) await tx.insert(employeeManagerHistory).values(rows).onConflictDoNothing();
 }
 
 /**
@@ -113,6 +143,7 @@ export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<
       .set({ employeeId: seedId(user.employeeId!) })
       .where(and(eq(userProfiles.id, seedId(`profile:${user.id}`)), isNull(userProfiles.employeeId)));
   }
+  await seedManagerHistory(tx, fixtures.employees);
   for (const sheet of fixtures.timesheets) {
     await tx
       .insert(timesheets)
@@ -377,7 +408,12 @@ async function seedCommissions(
       })
       .onConflictDoNothing();
   }
+  // An approved or paid statement stores the employee it pays, the rep's linked employee (ADR 0048).
+  const linkOf = new Map(
+    fixtures.users.flatMap((user) => (user.employeeId ? [[user.id, user.employeeId] as const] : [])),
+  );
   for (const statement of fixtures.commissionStatements) {
+    const paid = statement.status === "draft" ? undefined : linkOf.get(statement.userId);
     await tx
       .insert(commissionStatements)
       .values({
@@ -385,6 +421,7 @@ async function seedCommissions(
         userId: userOf(statement.userId)!,
         month: statement.month,
         status: statement.status,
+        employeeId: paid ? seedId(paid) : null,
         approvedById: decider(statement.approvedBy),
         approvedAt: statement.approvedAt ? utc(statement.approvedAt) : null,
         payPeriodId: statement.payPeriodId ? seedId(statement.payPeriodId) : null,
