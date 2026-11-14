@@ -266,26 +266,26 @@ Module `contracts`, switches `contracts.register` and `contracts.billing` (404 w
 
 ## HR, part 1: people, timesheets and time off (real build, ADR 0046)
 
-Module `hr`, so the same routes serve Flooring Suite companies with HR and HR Suite companies. Switches: People `hr.employees`, Timesheets `hr.timesheets`, the clock `hr.clock`, Time off `hr.time-off`, policy writes `settings.hr` (404 when off). Data scope `ownOrReports`: own employee, plus direct reports at branch scope, everyone at `all`; a write outside it is 404. `payRate` is stripped without `hr.employee.view_sensitive`. Hours are decimal strings on requests and the ledger; a timesheet's `days` are seven numbers. Bodies are strict: unknown fields are refused.
+Module `hr`, so the same routes serve Flooring Suite companies with HR and HR Suite companies. Switches: People `hr.employees`, Timesheets `hr.timesheets`, the clock `hr.clock`, Time off `hr.time-off`, policy writes `settings.hr` (404 when off). Data scope `ownOrReports`: own employee, plus direct reports at branch scope, everyone at `all`; a write outside it is 404. `payRate` is stripped without `hr.employee.view_sensitive`. Hours are decimal strings everywhere, a timesheet's `days` too: seven strings such as `"7.5"`, at most two decimals (`TimesheetWire`; a JSON number is refused). "One's own" in the refusals below is the employee linked to the sign-in or any employee whose email is the session's verified email. Bodies are strict: unknown fields are refused.
 
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /employees` | any of `hr.employee.view`, `hr.timesheet.view`, `hr.pto.view`, `settings.hr.manage` | `Employee[]` with documents and checklists. Without `hr.employee.view`: only people in scope, with contact, birthday, documents and checklists blank except one's own |
-| `POST /employees`, `PUT /employees/:id` | `hr.employee.create`, `hr.employee.edit` | `{ name, title, department, workerType, payType, payRate?, state, email, phone, hiredAt, status, managerId, flsaStatus, exemptionBasis, salaryHoursPerWeek, commissionVisible, homeLocationId, emergencyContact, userId? }`: hr.md rule 2 applied; `payRate` taken only with view_sensitive, else the stored one stays; `userId` links a member's sign-in (null unlinks; never one's own). A new person gets the onboarding checklist. Audited |
+| `POST /employees`, `PUT /employees/:id` | `hr.employee.create`, `hr.employee.edit` | `{ name, title, department, workerType, payType, payRate?, state, email, phone, hiredAt, status, managerId, flsaStatus, exemptionBasis, salaryHoursPerWeek, commissionVisible, homeLocationId, emergencyContact, userId? }`: hr.md rule 2 applied; `payRate`, `payType` and `salaryHoursPerWeek` taken only with view_sensitive, else the stored ones stay; nobody changes the rate, pay type, worker type, FLSA status or salaried hours on their own record; `userId` links a member's sign-in (null unlinks; never one's own). A new person gets the onboarding checklist. Audited |
 | `POST /employees/:id/checklist/:itemId` | `hr.employee.edit` | `{ list, done }`. Audited |
 | `POST /employees/:id/offboarding` | `hr.employee.edit` | Status `terminated` and the offboarding checklist; nothing when it exists. Audited |
 | `POST /employees/:id/documents` | `hr.employee.edit` | `{ files }` base64, at most 3 per upload. Read through `GET /files/:id` with `hr.employee.view`. Audited |
-| `GET /timesheets` | `hr.timesheet.view` | `Timesheet[]` in scope |
+| `GET /timesheets` | `hr.timesheet.view` | `TimesheetWire[]` in scope (`days` as decimal strings) |
 | `GET /clock-entries` | `hr.timesheet.view` | `ClockEntry[]`: own below scope `all` |
 | `PUT /timesheets` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | `{ employeeId, weekStart, days }`: a workweek start not in the future, valid hours, someone who uses timesheets; refused when the week is submitted or approved. Audited |
-| `POST /timesheets/:id/submit` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | Draft or sent back to submitted; tells approvers in the app. Audited |
+| `POST /timesheets/:id/submit` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | Draft or sent back to submitted; tells the approvers whose access and scope cover the person, in the app. Audited |
 | `POST /timesheets/decisions` | `hr.timesheet.approve` | `{ action: "approve" \| "reject", ids, reason? }`: all or none, submitted only, never one's own; a rejection needs a reason. Emails the employee. Audited with the overtime split |
-| `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | `{ reason }`: approved to draft unless an approved or exported pay period overlaps. Audited |
-| `POST /timesheets/upload` | `hr.timesheet.edit` (`own: true`) or `hr.timesheet.approve` | `{ table, fileName, apply, own }`: `{ rows, counts }`; saves with `apply`. Audited |
-| `POST /clock/in`, `POST /clock/out` | `hr.portal.view` | The signed-in person's punch; clock-out adds the hours to that week's draft. Audited |
+| `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | `{ reason }`: approved to draft unless an approved or exported pay period overlaps; never one's own. Audited |
+| `POST /timesheets/upload` | `hr.timesheet.edit` (`own: true`) or `hr.timesheet.approve` | `{ table, fileName, apply, own }`: `{ rows, counts }`; saves with `apply`. Rows follow the `PUT` rules (refused for a submitted, approved or future week, someone who does not use timesheets, or bad hours); one's own rows need `hr.timesheet.edit` (400 otherwise). Audited |
+| `POST /clock/in`, `POST /clock/out` | `hr.portal.view` | The signed-in person's punch; clock-out adds the hours to that week's draft, and is refused when the day would pass 24 hours. Audited |
 | `GET /time-off-policies` | any of `hr.pto.view`, `hr.employee.view`, `settings.hr.manage` | `TimeOffPolicy[]` |
 | `GET /time-off-entries`, `GET /pto-requests` | `hr.pto.view` | `TimeOffEntry[]`, `PtoRequest[]` in scope |
-| `POST /pto-requests` | `hr.pto.request` (own) or `hr.pto.approve` | `{ employeeId, policyId, start, end, hours, note }`: `timeOffRequestProblem` must pass; pending; tells approvers. Audited |
+| `POST /pto-requests` | `hr.pto.request` (own) or `hr.pto.approve` | `{ employeeId, policyId, start, end, hours, note }`: `timeOffRequestProblem` must pass; pending; tells the approvers whose access and scope cover the person. Audited |
 | `POST /pto-requests/:id/decision` | `hr.pto.approve` | `{ action: "approve" \| "deny", reason? }`: pending only, never one's own; approval posts a `used` line. Emails the employee. Audited |
 | `POST /pto-requests/:id/cancel` | `hr.pto.request` (own) or `hr.pto.approve` | Pending or approved and not started; an approved one posts an `adjustment` back. Audited |
 | `POST /time-off-adjustments` | `hr.pto.approve` | `{ employeeId, policyId, hours, note }`: signed hours, a reason, never one's own balance. Audited |
