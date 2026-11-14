@@ -17,7 +17,17 @@ export interface PostingLine {
 /** What a business event posts (ADR 0039). `event` and the source make it unique, so nothing posts twice. */
 export interface PostingDraft {
   event: PostingEvent;
-  sourceType: "invoice" | "payment" | "adjustment" | "refund" | "expense";
+  sourceType:
+    | "invoice"
+    | "payment"
+    | "adjustment"
+    | "refund"
+    | "expense"
+    | "goods_receipt"
+    | "bill"
+    | "supplier_payment"
+    | "stock_adjustment"
+    | "stock_issue";
   sourceId: string;
   sourceNumber: string;
   /** The accounting date, `yyyy-MM-dd`. */
@@ -35,7 +45,18 @@ export type PostingEvent =
   | "credit.applied"
   | "refund"
   | "expense.confirmed"
-  | `${"invoice.issued" | "credit_note.issued" | "payment.confirmed" | "expense.confirmed"}.reversed`;
+  | "goods.received"
+  | "bill.entered"
+  | "supplier_payment.confirmed"
+  | "stock.adjusted"
+  | "goods.issued"
+  | `${
+      | "invoice.issued"
+      | "credit_note.issued"
+      | "payment.confirmed"
+      | "expense.confirmed"
+      | "supplier_payment.confirmed"
+      | "goods.issued"}.reversed`;
 
 const ZERO = "0.00";
 

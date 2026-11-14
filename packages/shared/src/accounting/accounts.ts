@@ -11,7 +11,7 @@ export interface DefaultAccount {
 
 /**
  * The default chart of accounts every company starts with (blueprint pages 24 and 25; ADR 0023;
- * ADR 0039). Postings name accounts by key, so a company can rename an account without breaking
+ * ADR 0039; ADR 0042 adds Goods Received Not Billed and Inventory Adjustments). Postings name accounts by key, so a company can rename an account without breaking
  * them. The client's accountant may rename these and add more (STATUS, accountant questions).
  */
 export const DEFAULT_ACCOUNTS = [
@@ -19,6 +19,7 @@ export const DEFAULT_ACCOUNTS = [
   { key: "accounts_receivable", code: "1100", name: "Accounts Receivable", type: "asset" },
   { key: "inventory", code: "1200", name: "Inventory", type: "asset" },
   { key: "accounts_payable", code: "2000", name: "Accounts Payable", type: "liability" },
+  { key: "received_not_billed", code: "2050", name: "Goods Received Not Billed", type: "liability" },
   { key: "sales_tax_payable", code: "2100", name: "Sales Tax Payable", type: "liability" },
   { key: "customer_credit", code: "2200", name: "Customer Credit", type: "liability" },
   { key: "accrued_payroll", code: "2300", name: "Accrued Payroll", type: "liability" },
@@ -26,6 +27,7 @@ export const DEFAULT_ACCOUNTS = [
   { key: "sales", code: "4000", name: "Sales", type: "revenue" },
   { key: "sales_returns", code: "4100", name: "Sales Returns and Allowances", type: "revenue" },
   { key: "cost_of_goods_sold", code: "5000", name: "Cost of Goods Sold", type: "expense" },
+  { key: "inventory_adjustments", code: "5100", name: "Inventory Adjustments", type: "expense" },
   { key: "wages", code: "6000", name: "Wages", type: "expense" },
   { key: "rent", code: "6100", name: "Rent", type: "expense" },
   { key: "utilities", code: "6200", name: "Utilities", type: "expense" },
