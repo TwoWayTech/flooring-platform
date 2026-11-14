@@ -156,6 +156,10 @@ test("still reads anything that is not a literal title or body", () => {
     "gh pr comment 1 @a -b 'x' | git push origin main",
     "gh pr comment 1\t-b 'x' ; git push origin main",
     "gh pr comment 1 -b 'x'\"; git push origin main\"",
+    // A cmd.exe shim would re-read `"` and `&` (PR #17 second review).
+    "gh pr comment 1 -b 'x \" & git push origin main & \"'",
+    // Only the first 20 bodies are masked; later ones are read as shell.
+    `gh pr comment 1${" -b 'x'".repeat(20)} -b 'git push origin main'`,
     // Other gh commands are not prose.
     "gh pr merge 16 --rebase --body 'x'",
     "gh api -X POST repos/x/y/pulls/1/reviews -f body='ok'",

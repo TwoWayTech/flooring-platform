@@ -43,11 +43,16 @@ const PUSH_CONFIG = /\bgit\b.*\bconfig\b.*\b(remote\.[^\s.]+\.push|push\.default
  *   typographic single quotes (U+2018 to U+201B), which would end it early there;
  * - double-quoted text may not hold `$`, backtick, backslash, a newline or a typographic double
  *   quote (U+201C to U+201E), so nothing in it expands and it cannot end early;
- * - a space or the end of the command must follow the closing quote.
- * PR #17 security review.
+ * - a space or the end of the command must follow the closing quote;
+ * - neither form may hold `&`, and single-quoted text may not hold `"`, so even a `gh` run through a
+ *   cmd.exe shim (which re-reads the line) cannot see a live separator. Today `gh` is `gh.exe`.
+ * PR #17 security reviews.
  */
 const PROSE_ARGUMENT =
-  /^(gh (?:pr|issue) (?:create|edit|comment|review)(?: [\w.,:=+/-]+)*? (?:--body|-b|--title|-t)(?: |=))('(?:[^'‘-‛\r\n]|'')*'|"[^"“-„`$\\\r\n]*")(?= |$)/;
+  /^(gh (?:pr|issue) (?:create|edit|comment|review)(?: [\w.,:=+/-]+)*? (?:--body|-b|--title|-t)(?: |=))('(?:[^'"&‘-‛\r\n]|'')*'|"[^"&“-„`$\\\r\n]*")(?= |$)/;
+
+/** At most this many titles and bodies are masked; any after that are read as shell (no slow regex loop). */
+const MAX_PROSE = 20;
 
 /**
  * The command with the quoted title and body of a PR or issue call replaced by a placeholder, so
@@ -56,11 +61,11 @@ const PROSE_ARGUMENT =
  */
 function withoutProse(command) {
   let text = command;
-  let previous;
-  do {
-    previous = text;
-    text = text.replace(PROSE_ARGUMENT, "$1TEXT");
-  } while (text !== previous);
+  for (let pass = 0; pass < MAX_PROSE; pass += 1) {
+    const next = text.replace(PROSE_ARGUMENT, "$1TEXT");
+    if (next === text) break;
+    text = next;
+  }
   return text;
 }
 
