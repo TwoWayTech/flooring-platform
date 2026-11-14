@@ -236,7 +236,7 @@ Module `contracts`. Every route needs `contracts.register`; billings also `contr
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /contracts`, `GET /contract-lines`, `GET /change-orders` | `contracts.contract.view` | `Contract[]` (with files and signature), `ContractLine[]`, `ChangeOrder[]` with their rows |
-| `GET /contract-billings` | `contracts.billing.view` | `ContractBilling[]` with lines and releases. Read only until part 2 |
+| `GET /contract-billings` | `contracts.billing.view` | `ContractBilling[]` with lines and releases. Writes are in part 2 below |
 | `GET /lien-waivers`, `GET /insurance-certificates` | `contracts.compliance.view` | `LienWaiver[]`, `InsuranceCertificate[]` with coverages |
 | `POST /contracts` | `contracts.contract.create` | `{ direction, kind, customerId, supplierId, title, scope, branchId?, locationId, jobSite, startsAt, endsAt, renewal, retainagePct, storedRetainagePct, bondInLieu, taxTreatment, notes, lines }`: a draft `CTR-`. Rep is the creator, branch the creator's (`branchId` only for someone with no branch and scope `all`). A master stores no value, retainage or lines. Audited |
 | `PUT /contracts/:id` | `contracts.contract.edit` | The same body: edits a draft and replaces its lines; rep and branch stay. A line's `estimatedCost` left out (or sent without view_sensitive) keeps the stored one by code. Audited |
@@ -251,6 +251,18 @@ Module `contracts`. Every route needs `contracts.register`; billings also `contr
 | `POST /change-orders/:id/decision` | `contracts.change_order.approve` | `{ action: "approve" \| "reject", reason }`: approval runs `changeOrderProblem` (rows on one line added together; a new line above zero) and changes line values or adds lines at once; rejection needs a reason. Change-order routes also need the `contracts.billing` switch. Audited |
 | `POST /contracts/:id/lien-waivers` | `contracts.compliance.manage` | `{ type, paymentId, supplierPaymentId, amount, throughDate, statutoryForm }` on a project; unconditional needs a confirmed payment of the contract's party. Audited |
 | `PUT /contracts/:id/insurance-certificate` | `contracts.compliance.manage` | `{ producer, holder, additionalInsured, coverages }` on a subcontract; replaces the one certificate. Audited |
+
+## Contracts, part 2: billings (real build, ADR 0045)
+
+Module `contracts`, switches `contracts.register` and `contracts.billing` (404 when off). The contract's data scope applies; outside it is 404. Each billing raises one invoice (customer contract) or one bill (subcontract) and posts `contract_billing.posted` through LedgerService in the same transaction. Responses are `ContractBilling`; estimated costs never appear.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `POST /contracts/:id/billings` | `contracts.billing.create` | `{ periodEnd, lines: [{ contractLineId, completedToDate, storedBalance }] }`: an active or completed project; rates come from the line or contract on the server; `billingProblem` must pass and the gross may not be below zero. Raises and posts the invoice (taxed for the job site; `milestone.invoiced` emailed) or the bill `<contract>-<n>`. Audited |
+| `POST /contracts/:id/retainage-releases` | `contracts.billing.create` | `{ amount }`: above zero, up to what is held; shared over the lines; its own invoice or bill. Audited |
+| `POST /contract-billings/:id/void` | `contracts.billing.void` | `{ reason }`: only the contract's latest posted billing, not on a closed contract; refused while its invoice has a confirmed payment, credit, a write-off or a live credit note, or a pending or confirmed supplier payment is allocated to its bill. Voids the invoice (and its pending payments) or soft-deletes the bill, and reverses the entry on the void day. Audited |
+
+`POST /invoices/:id/void` and `POST /invoices/:id/credit-notes` refuse a contract billing invoice.
 
 ## Issuing stock, the roll quick invoice and the commission split (real build, inventory part 2, ADR 0043)
 
