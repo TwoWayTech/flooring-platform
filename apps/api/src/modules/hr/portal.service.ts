@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { clockEntries, commissionAssignments, employees, settings } from "@workspace/db/company";
 import {
+  addDays,
   earnedInYear,
   featureOn,
   hideMarginBase,
@@ -28,7 +29,7 @@ import {
   type TimeOffPolicy,
   type TimesheetWire,
 } from "@workspace/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -48,6 +49,9 @@ import {
   viewerEmployeeId,
 } from "./hr-records";
 import { loadContractorPayments, loadPayPeriods } from "./pay-records";
+
+/** How far back the team calendar reaches: absences that ended within this many days, and later ones. */
+const TEAM_WINDOW_DAYS = 92;
 
 /** The signed-in person's own record as the portal sends it: the pay rate only when they may see it (ADR 0049). */
 export type OwnEmployee = Omit<Employee, "payRate"> & { payRate?: string };
@@ -137,7 +141,7 @@ export class PortalService {
       id && employee?.workerType === "1099" && featureOn("hr.pay-periods")
         ? loadContractorPayments(db).then((rows) => rows.filter((row) => row.employeeId === id))
         : [],
-      visible.teamCalendar ? this.team(db) : { teamOut: [], teamNames: [] },
+      visible.teamCalendar ? this.team(db, clock.day) : { teamOut: [], teamNames: [] },
     ]);
     return {
       employee: employee ? ownEmployee(employee, visible) : null,
@@ -314,15 +318,18 @@ export class PortalService {
     return ownStatements(rows, access.userId);
   }
 
-  /** Colleagues' approved time off as "out" (rule 10), with the names of only the people in it. */
-  private async team(db: CompanyDb): Promise<Pick<PortalView, "teamOut" | "teamNames">> {
+  /**
+   * Colleagues' approved time off as "out" (rule 10), with the names of only the people in it: people
+   * who have not left, and absences ending no more than `TEAM_WINDOW_DAYS` ago (PR #28 security review).
+   */
+  private async team(db: CompanyDb, today: string): Promise<Pick<PortalView, "teamOut" | "teamNames">> {
     const people = await db
       .select({ id: employees.id, name: employees.name })
       .from(employees)
-      .where(isNull(employees.deletedAt));
-    const live = new Map(people.map((person) => [person.id, person.name]));
-    const requests = await loadPtoRequests(db, this.control.db, { employeeIds: [...live.keys()] });
-    const teamOut = requests.filter((r) => r.status === "approved").map(teamOutView);
+      .where(and(isNull(employees.deletedAt), ne(employees.status, "terminated")));
+    const since = addDays(today, -TEAM_WINDOW_DAYS);
+    const requests = await loadPtoRequests(db, this.control.db, { employeeIds: people.map((person) => person.id) });
+    const teamOut = requests.filter((r) => r.status === "approved" && r.end >= since).map(teamOutView);
     const out = new Set(teamOut.map((r) => r.employeeId));
     return { teamOut, teamNames: people.filter((person) => out.has(person.id)) };
   }

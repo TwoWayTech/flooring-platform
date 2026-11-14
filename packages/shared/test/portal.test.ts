@@ -49,10 +49,15 @@ describe("employee portal rules (employee-portal.md, ADR 0049)", () => {
       clock: true,
     });
     const contractor = portalVisibility(person({ workerType: "1099", flsaStatus: "not_applicable" }), allOn, false);
-    expect(contractor).toMatchObject({ pay: false, commission: false, clock: false });
+    expect(contractor).toMatchObject({ pay: false, commission: false, clock: false, teamCalendar: false });
     expect(portalVisibility(person({ flsaStatus: "exempt" }), allOn, false).clock).toBe(false);
     expect(portalVisibility(person({ status: "terminated" }), allOn, false).clock).toBe(false);
-    expect(portalVisibility(null, allOn, false)).toMatchObject({ pay: false, commission: false, clock: false });
+    expect(portalVisibility(null, allOn, false)).toMatchObject({
+      pay: false,
+      commission: false,
+      clock: false,
+      teamCalendar: false,
+    });
     expect(portalVisibility(person(), allOff, true)).toEqual({
       pay: false,
       commission: false,
@@ -68,8 +73,12 @@ describe("employee portal rules (employee-portal.md, ADR 0049)", () => {
     expect(portalVisibility(person({ commissionVisible: true }), allOn, false).commission).toBe(false);
   });
 
-  it("rule 3: hidden commission and its true-up leave the line and the total, in decimals", () => {
-    expect(ownPayLine(line(), true)).toEqual(line());
+  it("rule 3: hidden commission and its true-up leave the line, the total and the weekly breakdown, in decimals", () => {
+    const weekly = line({
+      weeks: [{ allocatedEarnings: "230.00", regularRate: "25.75" } as PayPeriodLine["weeks"][number]],
+    });
+    expect(ownPayLine(weekly, true)).toEqual(weekly);
+    expect(ownPayLine(weekly, false).weeks).toEqual([]);
     expect(ownPayLine(line(), false)).toMatchObject({
       commissionPay: "0.00",
       overtimeTrueUp: "0.00",

@@ -24,8 +24,9 @@ export type PortalSwitches = Pick<
 
 /**
  * What a person may see in the portal (employee-portal.md rule 1): the company's switches plus the
- * per-employee commission override. `onPlan` means an assignment with no end. Pay is for W-2
- * people only, and the clock for people who fill in timesheets. The API narrows this further by
+ * per-employee commission override. `onPlan` means an assignment with no end. Pay and the team
+ * calendar (shown on My time off) are for W-2 people only (rule 11), and the clock for people who
+ * fill in timesheets. The API narrows this further by
  * feature switch, product and permission (ADR 0049); this is the rule both clients share.
  */
 export function portalVisibility(
@@ -37,19 +38,21 @@ export function portalVisibility(
     pay: !!employee && employee.workerType === "w2" && hr.showPayToEmployees,
     commission: onPlan && (employee?.commissionVisible ?? hr.showCommissionToEmployees),
     rates: hr.showRatesToEmployees,
-    teamCalendar: hr.showTeamCalendarToEmployees,
+    teamCalendar: hr.showTeamCalendarToEmployees && employee?.workerType === "w2",
     clock: hr.clockEnabled && !!employee && needsTimesheet(employee),
   };
 }
 
 /**
  * A pay line as the person sees it (employee-portal.md rule 3; ADR 0024): with commission hidden,
- * the commission line and its overtime true-up leave the total, so the page still adds up.
+ * the commission line and its overtime true-up leave the total, so the page still adds up, and the
+ * workweek breakdown goes too, because each week's allocated earnings and regular rate carry the
+ * commission (PR #28 security review).
  */
 export function ownPayLine(line: PayPeriodLine, showCommission: boolean): PayPeriodLine {
   if (showCommission) return line;
   const gross = dec(line.grossPay).minus(line.commissionPay).minus(line.overtimeTrueUp);
-  return { ...line, commissionPay: "0.00", overtimeTrueUp: "0.00", grossPay: moneyString(gross) };
+  return { ...line, commissionPay: "0.00", overtimeTrueUp: "0.00", grossPay: moneyString(gross), weeks: [] };
 }
 
 /** Gross pay of the rows paid in a calendar year (employee-portal.md rule 5), as a money string. */

@@ -309,6 +309,7 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     });
     const olga = await person({ name: "Olga Owner", payRate: "99.00" });
     const hana = await person({ name: "Hana Hollis" }, hrSuite.id);
+    const gone = await person({ name: "Gil Gone", status: "terminated" });
     Object.assign(ids, {
       ana: ana.id,
       ben: ben.id,
@@ -410,6 +411,27 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
         ])
         .returning();
       ids.benApproved = benApproved!.id;
+      // Neither an absence that ended long ago nor one of someone who has left is on the team calendar.
+      await db.insert(ptoRequests).values([
+        {
+          employeeId: ben.id,
+          policyId: policy!.id,
+          start: week(30),
+          end: week(30),
+          hours: "8",
+          kind: "vacation",
+          status: "approved",
+        },
+        {
+          employeeId: gone.id,
+          policyId: policy!.id,
+          start: addDays(week(0), 14),
+          end: addDays(week(0), 14),
+          hours: "8",
+          kind: "vacation",
+          status: "approved",
+        },
+      ]);
       ids.benPending = benPending!.id;
       ids.anaPending = anaPending!.id;
 
@@ -437,6 +459,20 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
           commissionPay: "300.00",
           overtimeTrueUp: "12.50",
           grossPay: "1552.50",
+          // The weekly breakdown carries the commission in its earnings and regular rate.
+          weeks: [
+            {
+              weekStart: week(3),
+              weekEnd: end,
+              hoursWorked: "40",
+              overtimeHours: "0",
+              doubleTimeHours: "0",
+              allocatedEarnings: "301.23",
+              regularRate: "38.53",
+              overtimePremium: "0.00",
+              straddlesPeriod: false,
+            },
+          ],
         }),
         payLine(approved!.id, olga.id, { baseRate: "99.00", straightTimePay: "3960.00", grossPay: "3960.00" }),
         // A stored line on an open run is never shown: only approved or exported runs are pay.
@@ -499,6 +535,9 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
       for (const route of routes) {
         status(await call(route.method, route.path, cookies.ana).send({}), 404);
       }
+      // The clock lives in the portal, so it goes with it.
+      status(await call("post", "/clock/in", cookies.ana), 404);
+      status(await call("post", "/clock/out", cookies.ana), 404);
     });
     await harness.control.db
       .insert(tenantModuleOverrides)
@@ -552,7 +591,10 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     }
     const bens = await portal(cookies.ben);
     expect(bens.employee).toMatchObject({ id: ids.ben });
-    expect(bens.requests.map((r) => r.id).sort()).toEqual([ids.benApproved, ids.benPending].sort());
+    // Ben's own three requests (one long past), all his, and his own notes on them.
+    expect(bens.requests).toHaveLength(3);
+    expect(bens.requests.every((r) => r.employeeId === ids.ben)).toBe(true);
+    expect(bens.requests.map((r) => r.id)).toEqual(expect.arrayContaining([ids.benApproved, ids.benPending]));
     expect(JSON.stringify(bens)).not.toContain("Ana pending");
   });
 
@@ -572,7 +614,13 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     // Ben's commission is hidden (company default off), so it and its true-up leave the line and the total.
     const ben = await portal(cookies.ben);
     expect(ben.visible.commission).toBe(false);
-    expect(ben.pay[0]!.line).toMatchObject({ commissionPay: "0.00", overtimeTrueUp: "0.00", grossPay: "1240.00" });
+    expect(ben.pay[0]!.line).toMatchObject({
+      commissionPay: "0.00",
+      overtimeTrueUp: "0.00",
+      grossPay: "1240.00",
+      weeks: [],
+    });
+    expect(JSON.stringify(ben)).not.toContain("301.23");
 
     await setHr({ showPayToEmployees: false });
     try {
@@ -683,6 +731,10 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     expect(cara.requests).toEqual([]);
     expect(cara.pay).toEqual([]);
     expect(cara.clock.clockedInAt).toBeNull();
+    // The team calendar is on My time off, which a 1099 worker does not have (rule 11).
+    expect(cara.visible.teamCalendar).toBe(false);
+    expect(cara.teamOut).toEqual([]);
+    expect(cara.teamNames).toEqual([]);
     expect(cara.contractorPayments.map((p) => p.id)).toEqual([ids.caraPay]);
     expect(JSON.stringify(cara)).not.toContain("Zed job");
   });
