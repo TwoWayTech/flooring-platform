@@ -161,6 +161,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - The same supplier bill number can be entered on two orders (the spec allows it); consider a warning.
   - Stock count corrections now post to Inventory Adjustments with no second person.
   - **Owner question (as built, per spec rules 21 and 28):** one Purchasing user can enter a bill above the received value and pay it in payments under the approval threshold with no second person. Options: send any payment on a bill with a match issue to approval, or check the threshold against the bill's running total.
+- **Owner question (contracts):** subcontract billing amounts (gross, withheld, released) are visible to anyone with `contracts.billing.view` (Sales included), while `GET /bills` needs `purchasing.bill.view`. Should they need a purchasing or contracts sensitive key?
 - **Accountant question (ADR 0045):** subcontracted work posts to Cost of Goods Sold; a separate subcontract cost account?
 - **Owner questions (as built, not blocking):**
   - Contract change orders: the same person may submit and approve one (contracts.md edge case 19; ADR 0044). Approval changes what gets billed.

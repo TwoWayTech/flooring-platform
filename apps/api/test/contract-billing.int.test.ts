@@ -876,4 +876,21 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
     expect(refused.body.message).toContain("more retainage");
     expectSame(before, await balances());
   });
+
+  it("refuses lowering a line below the retainage it still holds after a release", async () => {
+    const c = await customerContract();
+    await postBilling("owner", c.id, [[c.a, "1000.00"]]);
+    await release("owner", c.id, "100.00");
+    const before = await balances();
+    // A1 drops to 500 (its held 100 was released), so its retainage would go below zero.
+    const refused = await call("post", `/contracts/${c.id}/billings`, "owner").send(
+      billingBody([
+        [c.a, "500.00"],
+        [c.b, "500.00"],
+      ]),
+    );
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain("already released");
+    expectSame(before, await balances());
+  });
 });

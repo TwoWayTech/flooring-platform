@@ -1,3 +1,4 @@
+import { retainageProblem } from "../src";
 import { describe, expect, it } from "vitest";
 import {
   contractBillPosting,
@@ -147,5 +148,40 @@ describe("contract billing postings", () => {
         }
       }
     }
+  });
+});
+
+describe("retainage after a release", () => {
+  it("refuses lowering a line below the retainage it still holds", () => {
+    const line = { id: "A", code: "A", scheduledValue: "10000.00" } as never;
+    const progress = {
+      id: "b1",
+      number: 1,
+      kind: "progress",
+      status: "posted",
+      lines: [
+        {
+          lineId: "A",
+          completedToDate: "10000.00",
+          storedBalance: "0.00",
+          retainagePct: "10",
+          storedRetainagePct: "10",
+        },
+      ],
+      releases: [],
+    };
+    const release = {
+      id: "b2",
+      number: 2,
+      kind: "release",
+      status: "posted",
+      lines: [],
+      releases: [{ lineId: "A", amount: "1000.00" }],
+    };
+    const lower = [
+      { lineId: "A", completedToDate: "5000.00", storedBalance: "0.00", retainagePct: "10", storedRetainagePct: "10" },
+    ];
+    expect(retainageProblem(lower as never, [line], [progress, release] as never)).toMatch(/already released/);
+    expect(retainageProblem(lower as never, [line], [progress] as never)).toBeNull();
   });
 });

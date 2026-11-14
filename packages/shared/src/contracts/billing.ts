@@ -35,6 +35,27 @@ export function billingLineDelta(input: BillingLine, before: { completed: Dec; s
   return { gross, withheld };
 }
 
+/**
+ * Why a billing would take a line's held retainage below zero, or null (contracts.md rule 9:
+ * held = withheld - released). After a release, lowering a line would otherwise hold back a
+ * negative amount and bill the customer again for retainage already paid out (PR #24 review).
+ */
+export function retainageProblem(
+  inputs: readonly BillingLine[],
+  lines: readonly ContractLine[],
+  billings: readonly ContractBilling[],
+): string | null {
+  const held = heldByLine(billings, lines);
+  for (const input of inputs) {
+    const { withheld } = billingLineDelta(input, lineToDate(input.lineId, billings));
+    if ((held.get(input.lineId) ?? dec(0)).plus(withheld).lt(0)) {
+      const code = lines.find((line) => line.id === input.lineId)?.code ?? "A line";
+      return `${code}: its retainage was already released, so it can't be lowered this far.`;
+    }
+  }
+  return null;
+}
+
 /** A billing's per-line amounts and totals. */
 export function billingFigures(inputs: readonly BillingLine[], billings: readonly ContractBilling[]) {
   const lines = inputs.map((input) => ({

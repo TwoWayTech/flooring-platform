@@ -30,6 +30,7 @@ import {
   type ContractBilling,
   type ContractLine,
   type Invoice,
+  retainageProblem,
 } from "@workspace/shared";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
@@ -127,7 +128,7 @@ export class ContractBillingService {
       }
       const { contract, lines, past } = await this.contractState(tx, clock, contractId);
       const inputs = billingInputs(input, lines, contract);
-      const problem = billingProblem(inputs, lines, past);
+      const problem = billingProblem(inputs, lines, past) ?? retainageProblem(inputs, lines, past);
       if (problem) throw refuse(problem);
       const figures = billingFigures(inputs, past);
       if (figures.gross.lt(0)) {
@@ -136,8 +137,9 @@ export class ContractBillingService {
         );
       }
       // A period can't end in the future, nor before the last billing's (PR #24 review).
+      // Releases are dated the day they are made, so only progress billings set the period.
       const lastPeriod = past
-        .filter((entry) => entry.status === "posted")
+        .filter((entry) => entry.status === "posted" && entry.kind === "progress")
         .reduce<string | null>(
           (latest, entry) => (!latest || entry.periodEnd > latest ? entry.periodEnd : latest),
           null,
@@ -343,11 +345,8 @@ export class ContractBillingService {
   ): Promise<{ document: string; notice: InvoiceNotice | null }> {
     // A billing raises an invoice or a bill, so their own switches must be on too (CLAUDE.md rule 13).
     if (!featureOn(row.direction === "customer" ? "sales.invoices" : "purchasing.orders")) {
-      throw refuse(
-        row.direction === "customer"
-          ? "Invoices are switched off for this company."
-          : "Bills are switched off for this company.",
-      );
+      // As every switched-off feature answers (CLAUDE.md rule 13).
+      throw new NotFoundException();
     }
     const by = actor.access.userId;
     await tx.insert(contractBillings).values({

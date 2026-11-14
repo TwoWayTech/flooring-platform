@@ -54,3 +54,8 @@ The build was handed to a general-purpose subagent with a full brief; tests and 
   - the test uses the company's day.
   The spent-credit check on void is kept as a guard, with a comment that it can't trigger today.
 - **Third security review:** see PR #24.
+- **Third security review:** PASS, no blocking findings. Its should-fix item (money) is done: after a release, a billing that lowered a line could hold back negative retainage and bill the customer again for retainage already paid out. The shared `retainageProblem` now refuses taking any line's held retainage below zero, with unit and integration tests. Low items done:
+  - a switched-off invoice or bill feature answers 404;
+  - only progress billings set the last period.
+  Owner question recorded in STATUS: subcontract billing amounts are visible to `contracts.billing.view` holders (from part 1).
+- **Fourth security review:** see PR #24.
