@@ -1,5 +1,5 @@
 import { daysBetween } from "../../dates";
-import { workweekStartOf } from "../../hr/timesheets";
+import { hoursTextProblem, needsTimesheet, workweekStartOf } from "../../hr/timesheets";
 import type { Timesheet } from "../../types";
 import { fold } from "../fields";
 import { text } from "../lookup";
@@ -18,8 +18,9 @@ function findEmployee(row: ParsedRow, ctx: PlanContext) {
 }
 
 /**
- * One employee's hours on one day (ADR 0024). Refused: an unknown or inactive person, a 1099
- * worker, a locked week, or someone else's row in a portal upload. A blank leaves the day alone
+ * One employee's hours on one day (ADR 0024). Refused: an unknown or inactive person, anyone who
+ * does not use timesheets, a future week, a submitted or approved week, hours outside 0 to 24 or
+ * with more than two decimals, or someone else's row in a portal upload. A blank leaves the day alone
  * and a zero overwrites it. Paid leave never comes from this file.
  */
 function resolveTimesheet(row: ParsedRow, ctx: PlanContext): RowOutcome {
@@ -33,14 +34,21 @@ function resolveTimesheet(row: ParsedRow, ctx: PlanContext): RowOutcome {
   }
   if (employee.status === "terminated") return problem("employee_email", `${employee.name} is no longer active.`);
   if (employee.workerType === "1099") return problem("employee_email", "Contractors do not use timesheets.");
+  if (!needsTimesheet(employee)) return problem("employee_email", `${employee.name} does not use timesheets.`);
   const date = row.work_date as string;
   const label = `${employee.name}, ${date}`;
   if (row.hours_worked === null) return { action: "skip", label, writes: [], note: "Blank hours leave the day alone." };
-  const hours = Number(row.hours_worked);
-  if (hours < 0 || hours > 24) return problem("hours_worked", "Hours must be between 0 and 24.");
+  const hoursText = String(row.hours_worked);
+  const wrong = hoursTextProblem([hoursText]);
+  if (wrong) return problem("hours_worked", wrong);
+  const hours = Number(hoursText);
   const weekStart = workweekStartOf(date, ctx.workweekStartDay);
+  // The same rules as saving the week by hand (hr.md "Create or edit hours"; security review of PR #25).
+  if (weekStart > ctx.today) return problem("work_date", "Hours can't be entered for a future week.");
   const sheet = ctx.world.timesheets.find((s) => s.employeeId === employee.id && s.weekStart === weekStart);
   if (sheet?.status === "approved") return problem("work_date", "This week is already approved.");
+  // The approver must decide the hours that were sent (blueprint-delta 2026-11-14).
+  if (sheet?.status === "submitted") return problem("work_date", "This week waits for approval.");
   const at = daysBetween(weekStart, date);
   if (sheet && sheet.days[at] === hours) return { action: "skip", label, writes: [], note: "Already these hours." };
   const base: Timesheet = sheet ?? {

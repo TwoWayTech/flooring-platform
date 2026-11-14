@@ -1,5 +1,6 @@
+import { addDays, daysBetween } from "../dates";
 import { dec, maxDec, minDec, sum, type Dec } from "../money";
-import type { PtoRequest, TimeOffEntry, TimeOffPolicy } from "../types";
+import type { Employee, PtoRequest, TimeOffEntry, TimeOffPolicy } from "../types";
 
 /** A person's balance under a policy: the sum of its ledger lines (ADR 0024). */
 export function timeOffBalance(entries: readonly TimeOffEntry[], employeeId: string, policyId: string): Dec {
@@ -60,6 +61,63 @@ export function accrualFor(policy: TimeOffPolicy, balance: Dec, hoursWorked: str
 export function californiaPolicyProblem(policy: Pick<TimeOffPolicy, "kind" | "carryoverHours">): string | null {
   if ((policy.kind === "vacation" || policy.kind === "personal") && policy.carryoverHours !== "") {
     return "California does not allow a carryover limit on vacation; use a cap, which pauses accrual instead.";
+  }
+  return null;
+}
+
+/** Approved hours under one policy whose first day is in a calendar year, for the yearly use limit. */
+export function approvedHoursInYear(
+  requests: readonly PtoRequest[],
+  employeeId: string,
+  policyId: string,
+  year: string,
+): Dec {
+  return sum(
+    requests
+      .filter(
+        (r) =>
+          r.employeeId === employeeId && r.policyId === policyId && r.status === "approved" && r.start.startsWith(year),
+      )
+      .map((r) => r.hours),
+  );
+}
+
+/**
+ * Why a time-off request cannot be made, or null (hr.md rule 11, in its order): a 1099 worker takes
+ * no time off here; then `timeOffProblem`; the policy's waiting period from the hire date; the
+ * yearly use limit over approved hours; and an exempt person's unpaid leave in full days only,
+ * because a partial day could not lawfully reduce a salary (29 CFR 541.602, ADR 0024).
+ */
+export function timeOffRequestProblem(input: {
+  employee: Pick<Employee, "workerType" | "flsaStatus" | "hiredAt">;
+  policy: TimeOffPolicy;
+  start: string;
+  end: string;
+  hours: string;
+  balance: Dec;
+  pending: Dec;
+  /** Approved hours under the policy in the year of `start` (`approvedHoursInYear`). */
+  approvedThisYear: Dec;
+}): string | null {
+  const { employee, policy } = input;
+  if (employee.workerType === "1099") return "Contractors do not take time off through this system.";
+  const problem = timeOffProblem(input);
+  if (problem) return problem;
+  if (addDays(employee.hiredAt, policy.waitingPeriodDays) > input.start) {
+    return `${policy.name} can be used after ${policy.waitingPeriodDays} days of employment.`;
+  }
+  if (policy.annualUseLimitHours && input.approvedThisYear.plus(input.hours).gt(policy.annualUseLimitHours)) {
+    return `${policy.name} is limited to ${policy.annualUseLimitHours} hours a year.`;
+  }
+  const days = Math.max(1, daysBetween(input.start, input.end) + 1);
+  if (
+    employee.flsaStatus === "exempt" &&
+    !policy.paid &&
+    dec(input.hours)
+      .mod(8 * days)
+      .gt(0)
+  ) {
+    return "Unpaid leave for an exempt employee must be in full days.";
   }
   return null;
 }

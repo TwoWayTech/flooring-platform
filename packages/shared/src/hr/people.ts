@@ -1,6 +1,7 @@
 import { addDays, daysBetween } from "../dates";
 import { dec } from "../money";
 import type { ChecklistItem, Employee } from "../types";
+import type { DataScope } from "../permissions/roles";
 
 /** Exempt salary floors, per year, with the day each applies from (ADR 0024). */
 const EXEMPT_FLOORS: readonly { state: "US" | "CA"; from: string; annual: string }[] = [
@@ -88,4 +89,21 @@ export function tenure(hiredAt: string, today: string): string {
   const m = months % 12;
   if (y === 0) return `${m} month${m === 1 ? "" : "s"}`;
   return `${y} year${y === 1 ? "" : "s"}${m ? `, ${m} month${m === 1 ? "" : "s"}` : ""}`;
+}
+
+/**
+ * Whether a viewer sees one person's timesheets, time off and balances (hr.md "Data scope",
+ * `ownOrReports`): scope `all` sees everyone; `own` sees the viewer's own employee record; `branch`
+ * adds the viewer's direct reports (`Employee.managerId`). A viewer not linked to an employee sees
+ * nothing below `all`, so a missing link never widens access.
+ */
+export function seesPersonRecords(
+  scope: DataScope,
+  viewerEmployeeId: string | null,
+  person: Pick<Employee, "id" | "managerId">,
+): boolean {
+  if (scope === "all") return true;
+  if (!viewerEmployeeId) return false;
+  if (person.id === viewerEmployeeId) return true;
+  return scope === "branch" && person.managerId === viewerEmployeeId;
 }

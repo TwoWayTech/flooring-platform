@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { Cake, ChevronRight, PartyPopper } from "lucide-react";
-import { addDays, featureOn, upcomingPersonDates, type Employee } from "@workspace/shared";
+import { addDays, featureOn, sum, upcomingPersonDates, type Employee } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -62,10 +62,8 @@ export function HrDashboard() {
   const seesPay = can("hr.payroll.view") && featureOn("hr.pay-periods");
   const data = useApiQuery(
     async (client) => {
-      const [employees, timesheets, ptoRequests, statements, periods] = await Promise.all([
-        client.list("employees"),
-        client.list("timesheets"),
-        client.list("ptoRequests"),
+      const [{ employees, timesheets, ptoRequests }, statements, periods] = await Promise.all([
+        client.hrData(),
         seesCommission ? client.listCommissionStatements() : Promise.resolve([]),
         seesPay ? client.listPayPeriods() : Promise.resolve([]),
       ]);
@@ -139,7 +137,7 @@ export function HrDashboard() {
                 <Num kind="quantity" value={rows.reduce((s, r) => s + r.total, 0)} />
               </Figure>
               <Figure label="Overtime hours">
-                <Num kind="quantity" value={rows.reduce((s, r) => s + r.split.overtime + r.split.doubleTime, 0)} />
+                <Num kind="quantity" value={sum(rows.map((r) => r.extraHours))} />
               </Figure>
             </dl>
           </Panel>

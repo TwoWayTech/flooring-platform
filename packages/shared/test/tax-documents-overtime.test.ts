@@ -111,12 +111,16 @@ describe("computeTotals", () => {
 
 describe("overtime", () => {
   it("applies the federal 40-hour week", () => {
-    expect(splitOvertime([9, 9, 9, 9, 9, 0, 0], "federal")).toMatchObject({ regular: 40, overtime: 5, doubleTime: 0 });
+    expect(splitOvertime(["9", "9", "9", "9", "9", "0", "0"], "federal")).toMatchObject({
+      regular: "40",
+      overtime: "5",
+      doubleTime: "0",
+    });
   });
 
   it("applies California daily overtime and double time", () => {
-    const r = splitOvertime([13, 8, 8, 8, 8, 0, 0], "california");
-    expect(r).toMatchObject({ regular: 40, overtime: 4, doubleTime: 1 });
+    const r = splitOvertime(["13", "8", "8", "8", "8", "0", "0"], "california");
+    expect(r).toMatchObject({ regular: "40", overtime: "4", doubleTime: "1" });
     expect(r.flaggedDays).toEqual([0]);
   });
 });
@@ -163,13 +167,16 @@ describe("brand scale and pattern tones", () => {
   });
 });
 
+/** A week of hours as `splitOvertime` takes them: decimal strings. */
+const week = (...days: number[]) => days.map(String);
+
 describe("overtime rule per worker", () => {
   it("uses California's daily rule for California workers and the company rule elsewhere", () => {
     expect(overtimeRuleFor("CA", "federal")).toBe("california");
     expect(overtimeRuleFor("FL", "federal")).toBe("federal");
-    expect(splitOvertime([10, 10, 8, 8, 8, 0, 0], overtimeRuleFor("CA", "federal")).overtime).toBe(4);
-    expect(splitOvertime([10, 10, 8, 8, 8, 0, 0], overtimeRuleFor("FL", "federal")).overtime).toBe(4);
-    expect(splitOvertime([10, 10, 8, 8, 0, 0, 0], overtimeRuleFor("FL", "federal")).overtime).toBe(0);
-    expect(splitOvertime([10, 10, 8, 8, 0, 0, 0], overtimeRuleFor("CA", "federal")).overtime).toBe(4);
+    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("CA", "federal")).overtime).toBe("4");
+    expect(splitOvertime(week(10, 10, 8, 8, 8, 0, 0), overtimeRuleFor("FL", "federal")).overtime).toBe("4");
+    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("FL", "federal")).overtime).toBe("0");
+    expect(splitOvertime(week(10, 10, 8, 8, 0, 0, 0), overtimeRuleFor("CA", "federal")).overtime).toBe("4");
   });
 });

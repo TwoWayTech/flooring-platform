@@ -218,6 +218,11 @@ export function EmployeeSheet({
                 </>
               ) : null}
             </div>
+            {canEdit ? (
+              <p className="text-muted-foreground text-xs">
+                Black out Social Security and bank account numbers, such as on a W-4, before you upload.
+              </p>
+            ) : null}
             {employee.documents.length === 0 ? (
               <p className="text-muted-foreground text-sm">No documents yet.</p>
             ) : (

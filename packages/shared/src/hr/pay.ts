@@ -76,7 +76,10 @@ function sumHours(map: Map<string, number>, start: string, end: string): number 
   return total;
 }
 
-const qty = (n: number) => dec(n).toDecimalPlaces(2).toString();
+const qty = (n: number | Dec | string) => dec(n).toDecimalPlaces(2).toString();
+
+/** A demo sheet's numeric days as the decimal strings `splitOvertime` takes. */
+const daysText = (days: readonly number[]) => days.map((h) => String(h));
 
 /**
  * Gross pay for one employee and period (spec C1 as corrected by ADR 0024, plan N-3). Overtime is
@@ -104,8 +107,8 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
   // Workweeks that END in this period carry their premium here; a week that straddles is flagged.
   const weeks: PayWeek[] = [];
   let premiumTotal = dec(0);
-  let otTotal = 0;
-  let dtTotal = 0;
+  let otTotal = dec(0);
+  let dtTotal = dec(0);
   const bonusWeeks = bonusAllocations(bonuses, sheets, rule);
   const allocated = new Map<string, Dec>();
   for (const a of [...allocations, ...bonusWeeks]) {
@@ -115,7 +118,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     if (sheet.status !== "approved") continue;
     const weekEnd = addDays(sheet.weekStart, 6);
     if (weekEnd < period.start || weekEnd > period.end) continue;
-    const split = splitOvertime(sheet.days, rule);
+    const split = splitOvertime(daysText(sheet.days), rule);
     const hours = sheet.days.reduce((a, b) => a + b, 0);
     const extra = allocated.get(sheet.weekStart) ?? dec(0);
     const multiplier = dec(split.overtime).times("0.5").plus(split.doubleTime);
@@ -123,8 +126,8 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     const paidMultiplier = hourly ? multiplier : dec(split.overtime).times("1.5").plus(dec(split.doubleTime).times(2));
     const premium = exempt ? dec(0) : roundMoney(paidMultiplier.times(base));
     premiumTotal = premiumTotal.plus(premium);
-    otTotal += split.overtime;
-    dtTotal += split.doubleTime;
+    otTotal = otTotal.plus(split.overtime);
+    dtTotal = dtTotal.plus(split.doubleTime);
     const regularRate = hours === 0 ? base : base.plus(extra.dividedBy(hours));
     weeks.push({
       weekStart: sheet.weekStart,
@@ -146,7 +149,7 @@ export function grossPay(input: GrossPayInput): PayPeriodLine | null {
     if (!sheet || exempt) continue;
     const hours = sheet.days.reduce((a, b) => a + b, 0);
     if (hours === 0) continue;
-    const split = splitOvertime(sheet.days, rule);
+    const split = splitOvertime(daysText(sheet.days), rule);
     const multiplier = dec(split.overtime).times("0.5").plus(split.doubleTime);
     trueUpTotal = trueUpTotal.plus(roundMoney(multiplier.times(extra.dividedBy(hours))));
   }
@@ -243,7 +246,7 @@ function flatSumPremium(bonuses: readonly Bonus[], sheets: readonly Timesheet[],
     if (weeks.length === 0) continue;
     const perHour = dec(bonus.amount).dividedBy(weeks.length * 40);
     for (const week of weeks) {
-      const split = splitOvertime(week.days, rule);
+      const split = splitOvertime(daysText(week.days), rule);
       total = total.plus(
         roundMoney(dec(split.overtime).times("1.5").plus(dec(split.doubleTime).times(2)).times(perHour)),
       );

@@ -42,13 +42,13 @@ export function EmployeesPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const data = useApiQuery(async (client) => {
-    const [employees, locations, policies, entries] = await Promise.all([
-      client.list("employees"),
-      client.list("locations"),
-      client.list("timeOffPolicies"),
-      client.list("timeOffEntries"),
-    ]);
-    return { employees, locations, policies, entries };
+    const hr = await client.hrData();
+    return {
+      employees: hr.employees,
+      locations: hr.locations,
+      policies: hr.timeOffPolicies,
+      entries: hr.timeOffEntries,
+    };
   }, []);
   if (!can("hr.employee.view")) return <NoAccess />;
 

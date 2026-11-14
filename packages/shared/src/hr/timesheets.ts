@@ -1,4 +1,5 @@
 import { addDays } from "../dates";
+import { dec } from "../money";
 import type { Employee, PtoRequest, Timesheet } from "../types";
 
 /** Weekday names by number, 0 = Sunday, for the workweek setting. */
@@ -36,13 +37,24 @@ export function timesheetFlags(sheet: Timesheet, leave: readonly PtoRequest[]): 
   return flags;
 }
 
-/** Why hours cannot be saved, or null: 0 to 24 a day with at most two decimals (ADR 0024). */
-export function hoursProblem(days: readonly number[]): string | null {
+/**
+ * Why hours cannot be saved, or null: 0 to 24 a day with at most two decimals (ADR 0024). The API
+ * takes hours as decimal strings (CLAUDE.md rule 6; ADR 0046), so the check reads them with decimal.js.
+ */
+export function hoursTextProblem(days: readonly string[]): string | null {
   for (const h of days) {
-    if (!Number.isFinite(h) || h < 0 || h > 24) return "Hours must be between 0 and 24 a day.";
-    if (Math.abs(Math.round(h * 100) - h * 100) > 1e-6) return "Use at most two decimals.";
+    if (!/^-?\d+(\.\d+)?$/.test(h)) return "Enter hours as a number, such as 8 or 7.5.";
+    const hours = dec(h);
+    if (hours.isNegative() || hours.gt(24)) return "Hours must be between 0 and 24 a day.";
+    if (hours.decimalPlaces() > 2) return "Use at most two decimals.";
   }
   return null;
+}
+
+/** `hoursTextProblem` for the screens' numbers (the shared Timesheet type keeps `days` as numbers). */
+export function hoursProblem(days: readonly number[]): string | null {
+  if (days.some((h) => !Number.isFinite(h))) return "Hours must be between 0 and 24 a day.";
+  return hoursTextProblem(days.map((h) => dec(h).toFixed()));
 }
 
 /** The columns of the timesheet template (ADR 0024), in order. */
@@ -61,4 +73,43 @@ export function timesheetTemplate(employees: readonly Employee[], weekStart: str
     Array.from({ length: 7 }, (_, i) => [e.email, e.externalId ?? "", e.name, addDays(weekStart, i), "", ""]),
   );
   return [[...TIMESHEET_TEMPLATE_HEADERS], ...rows];
+}
+
+/** Hours between a clock-in and a clock-out as a decimal string, to two decimals; never below zero (spec C2). */
+export function clockedHoursText(inAt: string, outAt: string): string {
+  const millis = Math.max(0, Date.parse(outAt) - Date.parse(inAt));
+  return dec(millis).div(3_600_000).toDecimalPlaces(2).toString();
+}
+
+/** A week's days, as decimal strings, with clocked hours added to one day (ADR 0024). */
+export function withClockedHoursText(days: readonly string[], index: number, hours: string): string[] {
+  return days.map((h, i) => (i === index ? dec(h).plus(hours).toDecimalPlaces(2).toString() : h));
+}
+
+/** `clockedHoursText` as a number, for the screens' Timesheet type. */
+export function clockedHours(inAt: string, outAt: string): number {
+  return Number(clockedHoursText(inAt, outAt));
+}
+
+/** `withClockedHoursText` on the screens' numbers. */
+export function withClockedHours(days: readonly number[], index: number, hours: number): number[] {
+  const text = days.map((h) => dec(h).toFixed());
+  return withClockedHoursText(text, index, dec(hours).toFixed()).map(Number);
+}
+
+/**
+ * A timesheet as the API sends and takes it: each day's hours a decimal string such as "7.5"
+ * (CLAUDE.md rule 6). The shared Timesheet keeps numbers for the screens and the demo, so the web
+ * client converts at the boundary (ADR 0046, "Hours on the wire").
+ */
+export type TimesheetWire = Omit<Timesheet, "days"> & { days: string[] };
+
+/** The screens' Timesheet from the API's, at the ApiClient boundary (ADR 0046). */
+export function timesheetFromWire(sheet: TimesheetWire): Timesheet {
+  return { ...sheet, days: sheet.days.map(Number) };
+}
+
+/** A week's hours as the API takes them: decimal strings without exponent form (ADR 0046). */
+export function hoursToWire(days: readonly number[]): string[] {
+  return days.map((h) => (Number.isFinite(h) ? dec(h).toFixed() : String(h)));
 }

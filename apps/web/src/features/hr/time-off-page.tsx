@@ -37,13 +37,13 @@ export function TimeOffPage() {
   const [asking, setAsking] = useState(false);
   const [declining, setDeclining] = useState<PtoRequest | null>(null);
   const data = useApiQuery(async (client) => {
-    const [ptoRequests, employees, policies, entries] = await Promise.all([
-      client.list("ptoRequests"),
-      client.list("employees"),
-      client.list("timeOffPolicies"),
-      client.list("timeOffEntries"),
-    ]);
-    return { ptoRequests, employees, policies, entries };
+    const hr = await client.hrData();
+    return {
+      ptoRequests: hr.ptoRequests,
+      employees: hr.employees,
+      policies: hr.timeOffPolicies,
+      entries: hr.timeOffEntries,
+    };
   }, []);
   if (!can("hr.pto.view")) return <NoAccess />;
   const canDecide = can("hr.pto.approve");

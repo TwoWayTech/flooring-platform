@@ -3,6 +3,7 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   attachments,
   contracts,
+  employees,
   invoices,
   paymentsReceived,
   refunds,
@@ -469,8 +470,22 @@ export class PaymentsService {
       .where(and(eq(attachments.id, fileId), isNull(attachments.deletedAt)));
     if (!row) throw notFound("file");
     const may = (...keys: PermissionKey[]) => keys.some((key) => access.permissions.has(key));
-    const payments = featureOn("sales.payments");
-    if (row.ownerType === "payment" && payments && may("sales.payment.view", "sales.payment.approve")) {
+    // The route asks only for `platform` (HR Suite has no `core`), so each owner type checks its module.
+    const core = access.modules.includes("core");
+    const payments = featureOn("sales.payments") && core;
+    if (row.ownerType === "employee") {
+      // An employee document is HR's (hr.md "Who uses it": People needs hr.employee.view; no data scope).
+      if (!may("hr.employee.view") || !featureOn("hr.employees") || !access.modules.includes("hr")) {
+        throw notFound("file");
+      }
+      const [person] = await db
+        .select({ id: employees.id })
+        .from(employees)
+        .where(and(eq(employees.id, row.ownerId), isNull(employees.deletedAt)));
+      if (!person) throw notFound("file");
+    } else if (!core) {
+      throw notFound("file");
+    } else if (row.ownerType === "payment" && payments && may("sales.payment.view", "sales.payment.approve")) {
       await this.paymentInScope(db, access, row.ownerId, (await companyClock(this.control.db, tenant)).zone).catch(
         () => {
           throw notFound("file");

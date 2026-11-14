@@ -27,6 +27,7 @@ import type {
   PtoRequest,
   StatementFigures,
   TeamCommission,
+  TimeOffEntry,
   TimeOffPolicy,
   Timesheet,
   AuditEntry,
@@ -495,6 +496,16 @@ export interface ExpensesData {
   locations: Location[];
 }
 
+/** The records the HR screens read together (ApiClient `hrData`). */
+export interface HrData {
+  employees: Employee[];
+  timesheets: Timesheet[];
+  ptoRequests: PtoRequest[];
+  timeOffPolicies: TimeOffPolicy[];
+  timeOffEntries: TimeOffEntry[];
+  locations: Location[];
+}
+
 /** The records the contract screens and widget read together (ApiClient `contractsData`). */
 export interface ContractsData {
   contracts: Contract[];
@@ -949,6 +960,12 @@ export interface ApiClient {
    * match (contracts part 1; ADR 0044). A list the person may not see comes back empty.
    */
   contractsData(): Promise<ContractsData>;
+  /**
+   * What HR Home, People, Timesheets, Time off and Settings → HR read: people, timesheets and
+   * time off within the person's data scope, the policies and the warehouses, from one source so
+   * their ids match (HR part 1; ADR 0046). A list the person may not see comes back empty.
+   */
+  hrData(): Promise<HrData>;
   /**
    * What the Sales and quote pages read: quotes and customers within the person's data scope, and
    * warehouses. Invoices and what settles them are read through `list` (ADR 0038).

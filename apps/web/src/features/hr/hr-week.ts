@@ -1,4 +1,11 @@
-import { overtimeRuleFor, splitOvertime, type Employee, type OvertimeRule, type Timesheet } from "@workspace/shared";
+import {
+  dec,
+  overtimeRuleFor,
+  splitOvertime,
+  type Employee,
+  type OvertimeRule,
+  type Timesheet,
+} from "@workspace/shared";
 
 /** A timesheet with its worker and the overtime split under that worker's rule. */
 export interface WeekRow {
@@ -7,6 +14,8 @@ export interface WeekRow {
   rule: OvertimeRule;
   total: number;
   split: ReturnType<typeof splitOvertime>;
+  /** Overtime plus double time, as a decimal string (CLAUDE.md rule 6). */
+  extraHours: string;
 }
 
 /** Week starts that have timesheets, newest first. */
@@ -31,7 +40,13 @@ export function weekRows(
       if (!employee) return [];
       const rule = overtimeRuleFor(employee.state, companyRule);
       const total = sheet.days.reduce((a, b) => a + b, 0);
-      return [{ sheet, employee, rule, total, split: splitOvertime(sheet.days, rule) }];
+      // The shared split takes decimal strings; the demo sheet keeps numbers.
+      const split = splitOvertime(
+        sheet.days.map((h) => String(h)),
+        rule,
+      );
+      const extraHours = dec(split.overtime).plus(split.doubleTime).toString();
+      return [{ sheet, employee, rule, total, split, extraHours }];
     })
     .sort((a, b) => a.employee.name.localeCompare(b.employee.name));
 }

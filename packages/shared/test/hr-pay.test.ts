@@ -164,25 +164,47 @@ describe("gross pay (spec C1 as corrected by ADR 0024, plan N-3)", () => {
   });
 });
 
+/** A week of hours as `splitOvertime` takes them: decimal strings. */
+const h = (...days: number[]) => days.map(String);
+
 describe("overtime (spec C1, ADR 0024)", () => {
   it("example 7: the California seventh day", () => {
-    expect(splitOvertime([8, 8, 8, 8, 8, 8, 10], "california")).toMatchObject({
-      regular: 40,
-      overtime: 16,
-      doubleTime: 2,
+    expect(splitOvertime(h(8, 8, 8, 8, 8, 8, 10), "california")).toMatchObject({
+      regular: "40",
+      overtime: "16",
+      doubleTime: "2",
     });
   });
 
   it("the seventh-day rule needs all seven days worked", () => {
-    expect(splitOvertime([8, 8, 8, 8, 8, 0, 10], "california").doubleTime).toBe(0);
+    expect(splitOvertime(h(8, 8, 8, 8, 8, 0, 10), "california").doubleTime).toBe("0");
   });
 
   it("federal counts only the weekly total", () => {
-    expect(splitOvertime([10, 10, 10, 10, 8, 0, 0], "federal")).toMatchObject({
-      regular: 40,
-      overtime: 8,
-      doubleTime: 0,
+    expect(splitOvertime(h(10, 10, 10, 10, 8, 0, 0), "federal")).toMatchObject({
+      regular: "40",
+      overtime: "8",
+      doubleTime: "0",
     });
+  });
+
+  it("federal splits quarter hours exactly, with decimal.js", () => {
+    // 5 × 8.25 + 0.1 + 0.2 = 41.55: 40 regular, 1.55 overtime, with no float drift.
+    expect(splitOvertime(["8.25", "8.25", "8.25", "8.25", "8.25", "0.1", "0.2"], "federal")).toMatchObject({
+      regular: "40",
+      overtime: "1.55",
+      doubleTime: "0",
+    });
+  });
+
+  it("California splits decimal days exactly: daily, double time and the weekly 40", () => {
+    // 8.25 h days: 0.25 daily overtime each; 12.75 h: 4 overtime and 0.75 double time.
+    const r = splitOvertime(["8.25", "8.25", "8.25", "8.25", "12.75", "0", "0"], "california");
+    expect(r).toMatchObject({ regular: "40", overtime: "5", doubleTime: "0.75" });
+    expect(r.flaggedDays).toEqual([0, 1, 2, 3, 4]);
+    // Six 7.75 h days and 0.3 on the seventh: 0.3 seventh-day overtime, plus 6.5 past the weekly 40.
+    const seventh = splitOvertime(["7.75", "7.75", "7.75", "7.75", "7.75", "7.75", "0.3"], "california");
+    expect(seventh).toMatchObject({ regular: "40", overtime: "6.8", doubleTime: "0" });
   });
 });
 

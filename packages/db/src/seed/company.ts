@@ -56,6 +56,8 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { seededUserId } from "./control";
 import { seedId, type DemoCompany } from "./fixtures";
+import { seedHr } from "./hr";
+import { userOf, utc } from "./values";
 
 /** Settings groups as stored: branding lives in the control database, tax rules and county rates in their own tables. */
 function settingsRows(companyId: string, value: CompanySettings) {
@@ -151,7 +153,7 @@ async function seedAccess(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
   }
   for (const person of fixtures.users) {
     const userId = seededUserId(person.id);
-    // Employees arrive with the HR module, so the employee link stays empty for now.
+    // The employee link is set by seedHr, once the employees exist.
     await tx
       .insert(userProfiles)
       .values({
@@ -170,19 +172,6 @@ async function seedAccess(tx: CompanyDb, { fixtures }: DemoCompany): Promise<voi
       )
       .onConflictDoNothing();
   }
-}
-
-/**
- * A fixture timestamp as an instant. Fixture times such as `2026-04-16T14:15` carry no zone, which
- * JavaScript would read as the machine's local time; they are UTC, so every machine seeds the same.
- */
-function utc(value: string): Date {
-  return new Date(/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value) ? `${value}Z` : value);
-}
-
-/** A fixture user id as the control database's user id, or null when there is none. */
-function userOf(id: string | null | undefined): string | null {
-  return id ? seededUserId(id) : null;
 }
 
 /**
@@ -1224,7 +1213,8 @@ async function seedWaivers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
  * Seeds the foundation of one company database: branches, locations, settings, tax rules,
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
  * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and
- * supplier payments (P12 part 3), and contracts with their billings (contracts parts 1 and 2).
+ * supplier payments (P12 part 3), contracts with their billings (contracts parts 1 and 2), and HR
+ * people, timesheets and time off (HR part 1).
  * Business records arrive module by module (docs/real-build-plan.md), each with its own seed.
  */
 export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promise<void> {
@@ -1241,5 +1231,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedContracts(tx, demo);
     await seedContractBillings(tx, demo);
     await seedWaivers(tx, demo);
+    await seedHr(tx, demo);
   });
 }

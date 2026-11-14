@@ -376,8 +376,13 @@ export class InvoicesController {
     return { ok: true };
   }
 
-  /** GET /files/:id: a proof file or expense receipt, opened in place; only within the person's data scope. */
+  /**
+   * GET /files/:id: a proof file, expense receipt, contract or employee document, opened in place;
+   * only within the person's data scope. HR Suite companies have no `core` module, so the route
+   * itself asks only for `platform` and the service checks each owner type's own module (ADR 0046).
+   */
   @Get("files/:id")
+  @RequireModule("platform")
   @RequirePermission(
     "sales.payment.view",
     "sales.payment.approve",
@@ -387,6 +392,7 @@ export class InvoicesController {
     "purchasing.payment.record",
     "purchasing.payment.approve",
     "contracts.contract.view",
+    "hr.employee.view",
   )
   async file(
     @CurrentTenant() tenant: TenantContext,

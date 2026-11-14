@@ -62,10 +62,32 @@ export class AccessService {
   /** The access of the request's person in the request's company. */
   async resolve(tenant: TenantContext): Promise<RequestAccess> {
     const [held, ceiling, modules] = await Promise.all([
-      this.rolesOf(tenant),
+      this.rolesOf(tenant, tenant.userId),
       this.ceilingOf(tenant.companyId),
       this.modulesOf(tenant),
     ]);
+    return this.accessOf(tenant.userId, held, ceiling, modules);
+  }
+
+  /**
+   * The effective access of other members of the request's company, by the same engine, for
+   * choosing who is told about a record (HR notifications to approvers; security review of PR #25).
+   * It never authorises the request itself: that is `resolve` in PermissionGuard.
+   */
+  async membersAccess(tenant: TenantContext, userIds: readonly string[]): Promise<RequestAccess[]> {
+    if (userIds.length === 0) return [];
+    const [ceiling, modules] = await Promise.all([this.ceilingOf(tenant.companyId), this.modulesOf(tenant)]);
+    return Promise.all(
+      userIds.map(async (userId) => this.accessOf(userId, await this.rolesOf(tenant, userId), ceiling, modules)),
+    );
+  }
+
+  private accessOf(
+    userId: string,
+    held: Awaited<ReturnType<AccessService["rolesOf"]>>,
+    ceiling: PermissionKey[],
+    modules: ModuleKey[],
+  ): RequestAccess {
     const access = resolveAccess(held.roles, held.disabled ? [] : ceiling, modules);
     return {
       permissions: access.permissions,
@@ -73,7 +95,7 @@ export class AccessService {
       ceiling,
       dataScope: access.dataScope,
       isOwner: access.isOwner && !held.disabled,
-      userId: tenant.userId,
+      userId,
       branchId: held.branchId,
       roleNames: held.names,
       disabled: held.disabled,
@@ -81,17 +103,17 @@ export class AccessService {
     };
   }
 
-  private async rolesOf(tenant: TenantContext) {
+  private async rolesOf(tenant: TenantContext, userId: string) {
     const db = await this.tenancy.db(tenant);
     const [profile] = await db
       .select({ branchId: userProfiles.branchId, status: userProfiles.status })
       .from(userProfiles)
-      .where(and(eq(userProfiles.userId, tenant.userId), isNull(userProfiles.deletedAt)));
+      .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
     const roleRows = await db
       .select({ id: roles.id, name: roles.name, dataScope: roles.dataScope, owner: roles.owner })
       .from(userRoles)
       .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(and(eq(userRoles.userId, tenant.userId), isNull(userRoles.deletedAt), isNull(roles.deletedAt)));
+      .where(and(eq(userRoles.userId, userId), isNull(userRoles.deletedAt), isNull(roles.deletedAt)));
     const keys =
       roleRows.length === 0
         ? []
