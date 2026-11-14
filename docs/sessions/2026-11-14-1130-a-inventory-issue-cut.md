@@ -35,7 +35,13 @@ As planned (ADR 0043, PR #22). Files:
   - The commission split took any user id and could drop the rep. Now it takes only active people of the company, keeps the rep unless the caller holds `hr.commission.manage`, and refuses credit notes.
   - A cut that left a remnant stranded the parent roll's other holds, so the remnant could be sold twice. Those holds now move to the remnant.
   - Should-fix items done: in-transit rolls are refused on a roll invoice; the job-site state and ZIP are checked; cost of goods credits the roll's current warehouse; a boxed issue checks on-hand; `validateCut` replaces passing raw errors; the `sales.team`, `inventory.reservations` and `inventory.rolls` switches are checked; the audit says "active".
-- **Second security review:** see PR #22.
+- **Second security review:** 1 blocking, fixed. The rep could be left a 0.01% share. Now, without `hr.commission.manage`:
+  - the rep keeps at least half;
+  - nobody but the rep names themselves;
+  - a split a commission manager set can't be rewritten or cleared.
+  Tests cover all three.
+  - Should-fix items done: `convert` and `voidInvoice` take the stock lock before the ledger's shared locks, so the order is the same everywhere (a period close could otherwise deadlock them); a roll invoice needs `inventory.roll.view` too.
+- **Third security review:** see PR #22.
 
 ## Commands run and results
 - `stock-issue.int.test.ts`: 13 of 13 after the review fixes (one run failed in setup while enrolling two MFA users at once; three reruns passed).
