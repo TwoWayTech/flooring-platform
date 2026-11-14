@@ -1,8 +1,19 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { reservations, rollCuts, rolls, stockMovements } from "@workspace/db/company";
-import { costOfGoodsPosting, cutRoll, dec, mayIssue, moneyString, type Reservation } from "@workspace/shared";
-import { eq } from "drizzle-orm";
+import {
+  boxedOnHand,
+  costOfGoodsPosting,
+  cutRoll,
+  dec,
+  featureOn,
+  mayIssue,
+  moneyString,
+  validateCut,
+  type Reservation,
+} from "@workspace/shared";
+import { and, eq, ne } from "drizzle-orm";
+import type { RequestAccess } from "../../core/access/access.service";
 import { v7 as uuidv7 } from "uuid";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -12,9 +23,9 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { invoiceState, lockCustomer } from "../sales/invoice-ledger";
 import { loadInvoices, loadReservations } from "../sales/invoice-records";
-import { companyClock } from "../sales/sales-common";
+import { companyClock, seesDocument } from "../sales/sales-common";
 import { loadCustomers } from "../sales/sales-records";
-import { loadProducts, loadRolls } from "./inventory-records";
+import { loadMovements, loadProducts, loadRolls } from "./inventory-records";
 import { lockStock } from "./stock-lock";
 
 /** One open hold with just enough of its invoice to cut against it (inventory rule 14; audit U-03). */
@@ -52,9 +63,11 @@ export class StockIssueService {
 
   /**
    * Every active hold with its invoice number, customer name and whether it may leave (rule 14).
-   * Warehouse staff see these three facts of the invoice and nothing else of sales.
+   * Warehouse staff see these three facts of the invoice and nothing else of sales. Anyone else
+   * sees them only for invoices in their data scope; otherwise the hold shows the stock alone, as
+   * the reservations list does (PR #15 and PR #22 reviews).
    */
-  async holds(tenant: TenantContext): Promise<StockHold[]> {
+  async holds(tenant: TenantContext, access: RequestAccess): Promise<StockHold[]> {
     const db = await this.tenancy.db(tenant);
     const clock = await companyClock(this.control.db, tenant);
     const active = (await loadReservations(db)).filter((reservation) => reservation.status === "active");
@@ -69,6 +82,22 @@ export class StockIssueService {
     return active.flatMap((reservation) => {
       const invoice = invoiceRows.find((candidate) => candidate.id === reservation.invoiceId);
       if (!invoice || invoice.voidedAt) return [];
+      if (!access.permissions.has("inventory.roll.cut") && !seesDocument(access, invoice)) {
+        return [
+          {
+            reservationId: reservation.id,
+            invoiceId: "",
+            invoiceNumber: "",
+            customerName: "",
+            mayIssue: false,
+            productId: reservation.productId,
+            rollId: reservation.rollId,
+            locationId: reservation.locationId,
+            quantity: reservation.quantity,
+            shortBy: reservation.shortBy,
+          },
+        ];
+      }
       return [
         {
           reservationId: reservation.id,
@@ -131,25 +160,25 @@ export class StockIssueService {
       const source = { sourceType: "invoice" as const, sourceId: invoice.id, sourceNumber: invoice.number };
       let cost: ReturnType<typeof dec>;
       let summary: string;
+      let warehouseId = reservation.locationId;
+      let remnantHolds = 0;
       if (reservation.rollId) {
         const [roll] = await loadRolls(tx, [reservation.rollId]);
         if (!roll) throw refuse("This roll no longer exists.");
         if (roll.transferId) throw refuse(`Roll ${roll.rollNumber} is on a transfer; receive it first.`);
-        let result: ReturnType<typeof cutRoll>;
-        try {
-          result = cutRoll(
-            roll,
-            {
-              lengthFt: reservation.quantity,
-              at: now.toISOString(),
-              reference: invoice.number,
-              byUserId: actor.access.userId,
-            },
-            { cutId: uuidv7(), remnantId: uuidv7() },
-          );
-        } catch (error) {
-          throw refuse((error as Error).message);
-        }
+        if (!featureOn("inventory.rolls")) throw new NotFoundException();
+        const problem = validateCut(roll, reservation.quantity);
+        if (problem) throw refuse(problem);
+        const result = cutRoll(
+          roll,
+          {
+            lengthFt: reservation.quantity,
+            at: now.toISOString(),
+            reference: invoice.number,
+            byUserId: actor.access.userId,
+          },
+          { cutId: uuidv7(), remnantId: uuidv7() },
+        );
         await tx
           .update(rolls)
           .set({ remainingLengthFt: result.roll.remainingLengthFt, updatedAt: now })
@@ -181,12 +210,34 @@ export class StockIssueService {
             createdBy: actor.access.userId,
           });
         }
+        if (result.remnant) {
+          // The parent is used up; its other holds now sit on the remnant, so the leftover is never
+          // promised twice (inventory rules 17 and 18; PR #22 review).
+          const moved = await tx
+            .update(reservations)
+            .set({ rollId: result.remnant.id, updatedAt: now })
+            .where(
+              and(
+                eq(reservations.rollId, roll.id),
+                eq(reservations.status, "active"),
+                ne(reservations.id, reservationId),
+              ),
+            )
+            .returning({ id: reservations.id });
+          remnantHolds = moved.length;
+        }
+        warehouseId = roll.locationId;
         // What left the roll at its own cost: the cut, and a leftover under 12 ft that became a remnant stays stock.
         cost = dec(reservation.quantity).times(roll.widthFt).times(roll.costPerSqFt);
         summary = `cut ${reservation.quantity} ft from ${roll.rollNumber}${result.remnant ? `, remnant ${result.remnant.rollNumber}` : ""}`;
       } else {
         const product = (await loadProducts(tx)).find((candidate) => candidate.id === reservation.productId);
         if (!product) throw refuse("This product no longer exists.");
+        // A transfer or a count may have taken the held stock since; never issue below zero.
+        const onHand = boxedOnHand(await loadMovements(tx), product.id, reservation.locationId);
+        if (onHand.lt(reservation.quantity)) {
+          throw refuse(`Only ${onHand.toString()} of ${product.name} is on hand at this warehouse.`);
+        }
         await tx.insert(stockMovements).values({
           at: now,
           productId: reservation.productId,
@@ -211,7 +262,7 @@ export class StockIssueService {
             id: reservationId,
             number: invoice.number,
             date: clock.day,
-            warehouseId: reservation.locationId,
+            warehouseId,
             soldAtId: invoice.soldAtLocationId ?? invoice.locationId,
             memo: `Cost of goods for ${invoice.number}: ${summary}`,
           },
@@ -228,8 +279,8 @@ export class StockIssueService {
           targetType: "reservation",
           targetId: reservationId,
           targetLabel: invoice.number,
-          before: { status: "reserved" },
-          after: paidFor ? { issued: summary } : { issued: summary, override },
+          before: { status: "active" },
+          after: paidFor ? { issued: summary, remnantHolds } : { issued: summary, remnantHolds, override },
         },
         tx,
       );

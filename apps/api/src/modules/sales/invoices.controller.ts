@@ -337,6 +337,7 @@ export class InvoicesController {
   ) {
     requireFeature("sales.invoices");
     requireFeature("inventory.rolls");
+    requireFeature("inventory.reservations");
     const input = parse(ROLL_INVOICE, body);
     return this.invoices.rollInvoice(tenant, actorOf(access, session, request), { rollId, ...input });
   }
@@ -354,6 +355,7 @@ export class InvoicesController {
     @Body() body: unknown,
   ) {
     requireFeature("sales.invoices");
+    requireFeature("sales.team");
     await this.invoices.setCommissionSplit(tenant, actorOf(access, session, request), id, parse(SPLIT, body).split);
     return { ok: true };
   }

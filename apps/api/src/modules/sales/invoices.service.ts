@@ -8,6 +8,7 @@ import {
   paymentsReceived,
   quotes,
   reservations,
+  userProfiles,
 } from "@workspace/db/company";
 import {
   adjustmentPosting,
@@ -271,8 +272,10 @@ export class InvoicesService {
       const [[customer], branches] = await Promise.all([loadCustomers(tx, [input.customerId]), loadBranches(tx)]);
       if (!customer || !seesCustomer(actor.access, customer, branches)) throw refuse("Choose a customer.");
       // Tax is priced from the job site; without one it would quietly be nothing (PR #22 review).
-      if (!defaultAddress(customer, "job_site"))
-        throw refuse("Add the customer's job site address first, so tax can be priced.");
+      const site = defaultAddress(customer, "job_site");
+      if (!site || !/^[A-Z]{2}$/.test(site.state.trim()) || !/^\d{5}(-\d{4})?$/.test(site.zip.trim())) {
+        throw refuse("Add the customer's job site address with its state and ZIP first, so tax can be priced.");
+      }
       const branchId = actor.access.branchId ?? branches.get(customer.salesRepId) ?? null;
       if (!branchId) throw refuse("This invoice needs a branch: set yours, or the customer's sales rep's.");
       const localization = await loadLocalization(tx);
@@ -284,6 +287,7 @@ export class InvoicesService {
         loadReservations(tx),
       ]);
       if (!roll) throw refuse("This roll no longer exists.");
+      if (roll.transferId) throw refuse(`Roll ${roll.rollNumber} is on a transfer; receive it first.`);
       const product = products.find((candidate) => candidate.id === roll.productId);
       if (!product) throw refuse("This roll's product no longer exists.");
       const free = rollAvailable(
@@ -356,8 +360,31 @@ export class InvoicesService {
       await lockCustomer(tx, found.customerId);
       const { invoice, payments } = await invoiceState(tx, this.control.db, invoiceId, clock);
       if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is void.`);
+      if (invoice.isReturn) throw refuse("A credit note follows its invoice's split.");
       if (payments.some((payment) => payment.status === "confirmed")) {
         throw refuse("A confirmed payment has been recorded, so the split is locked.");
+      }
+      // Only active people of this company, and the rep keeps a share unless commissions are managed
+      // here (sales rule 39; ADR 0025; PR #22 review), so nobody moves a commission to themselves.
+      if (split.length > 0) {
+        const people = await tx
+          .select({ userId: userProfiles.userId })
+          .from(userProfiles)
+          .where(
+            and(
+              inArray(
+                userProfiles.userId,
+                split.map((share) => share.userId),
+              ),
+              eq(userProfiles.status, "active"),
+              isNull(userProfiles.deletedAt),
+            ),
+          );
+        if (people.length !== split.length) throw refuse("Choose active people of this company.");
+        const keepsRep = split.some((share) => share.userId === invoice.salesRepId);
+        if (!keepsRep && !actor.access.permissions.has("hr.commission.manage")) {
+          throw refuse("The invoice's sales rep keeps a share.");
+        }
       }
       const before = await tx
         .select({ userId: invoiceCommissionSplits.userId, pct: invoiceCommissionSplits.pct })

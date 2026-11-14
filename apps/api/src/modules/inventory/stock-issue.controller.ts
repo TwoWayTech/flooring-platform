@@ -28,9 +28,9 @@ export class StockIssueController {
   /** GET /stock-holds: active holds with the invoice number, customer and whether they may leave. */
   @Get("stock-holds")
   @RequirePermission("inventory.roll.view", "inventory.product.view")
-  holds(@CurrentTenant() tenant: TenantContext) {
+  holds(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
     requireFeature("inventory.reservations");
-    return this.issues.holds(tenant);
+    return this.issues.holds(tenant, access);
   }
 
   /** POST /reservations/:id/issue: cuts or issues one hold and posts its cost of goods. */

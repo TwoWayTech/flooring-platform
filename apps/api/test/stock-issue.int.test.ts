@@ -184,13 +184,13 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     return sessionCookie(confirmed.headers["set-cookie"]);
   }
 
-  async function newCustomer(name: string): Promise<string> {
-    return (await call("post", "/customers", cookies.sales).send({ name }).expect(201)).body.id as string;
+  async function newCustomer(name: string, cookie = cookies.sales): Promise<string> {
+    return (await call("post", "/customers", cookie).send({ name }).expect(201)).body.id as string;
   }
 
   /** A customer with a Denver job site, which a roll invoice takes its tax from. */
-  async function newSiteCustomer(name: string): Promise<string> {
-    const id = await newCustomer(name);
+  async function newSiteCustomer(name: string, cookie = cookies.sales): Promise<string> {
+    const id = await newCustomer(name, cookie);
     await call("put", `/customers/${id}`, cookies.owner)
       .send({
         type: "homeowner",
@@ -314,7 +314,18 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     cookies.warehouse = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["warehouse"] }));
     cookies.manager = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["manager"] }));
     cookies.accountant = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }));
-    cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    const ownerEmail = await harness.addUser({ companyIds: [company.id], roles: ["owner"] });
+    // The owner sells from the Denver branch too, so a roll invoice of theirs has a branch.
+    const placed = await harness.companyDb(company.id);
+    try {
+      await placed.db
+        .update(userProfiles)
+        .set({ branchId: mine.branch })
+        .where(eq(userProfiles.userId, await harness.userIdOf(ownerEmail)));
+    } finally {
+      await placed.close();
+    }
+    cookies.owner = await enrolled(ownerEmail);
   }, 120_000);
 
   afterAll(async () => {
@@ -586,5 +597,54 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     });
     expect(refused.status).toBe(400);
     expect(refused.body.message).toContain("job site");
+  });
+
+  it("moves a used-up roll's other holds to its remnant, so the leftover is never promised twice", async () => {
+    const customer = await newSiteCustomer("Remnant Co");
+    const rollId = await newRoll();
+    const first = await call("post", `/rolls/${rollId}/invoice`, cookies.sales)
+      .send({ customerId: customer, lengthFt: "90" })
+      .expect(201);
+    const second = await call("post", `/rolls/${rollId}/invoice`, cookies.sales)
+      .send({ customerId: customer, lengthFt: "5" })
+      .expect(201);
+    await pay(first.body.id);
+    await call("post", `/reservations/${(await holdOf(first.body.id)).reservationId}/issue`, cookies.warehouse)
+      .send({})
+      .expect(201);
+    // 10 ft were left, under 12: the remnant now carries the second hold.
+    const moved = await holdOf(second.body.id);
+    expect(moved.rollId).not.toBe(rollId);
+    await call("post", `/rolls/${moved.rollId}/invoice`, cookies.sales)
+      .send({ customerId: customer, lengthFt: "6" })
+      .expect(400);
+    await pay(second.body.id);
+    await call("post", `/reservations/${moved.reservationId}/issue`, cookies.warehouse).send({}).expect(201);
+  });
+
+  it("hides another rep's invoice and customer on a hold from an own-scope reader", async () => {
+    // A customer of the owner's, so its invoice is outside the Sales rep's own scope.
+    const other = await newSiteCustomer("Owner Account Co", cookies.owner);
+    const invoice = await call("post", `/rolls/${await newRoll()}/invoice`, cookies.owner).send({
+      customerId: other,
+      lengthFt: "4",
+    });
+    expect(invoice.status).toBe(201);
+    const seen = ((await call("get", "/stock-holds", cookies.sales).expect(200)).body as Hold[]).filter(
+      (hold) => hold.rollId !== null && hold.invoiceId === "",
+    );
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((hold) => hold.customerName === "" && hold.invoiceNumber === "" && !hold.mayIssue)).toBe(true);
+  });
+
+  it("names only active people of this company in a split, and keeps the rep without commission rights", async () => {
+    const invoice = await tileInvoice(await newCustomer("Split Rules Co"));
+    const url = `/invoices/${invoice.id}/commission-split`;
+    const stranger = await call("put", url, cookies.owner).send({ split: [{ userId: uuidv7(), pct: "100" }] });
+    expect(stranger.status).toBe(400);
+    // The Accountant holds sales.invoice.edit but not hr.commission.manage, so the rep stays in.
+    const withoutRep = await call("put", url, cookies.accountant).send({ split: [{ userId: hrUserId, pct: "100" }] });
+    expect(withoutRep.status).toBe(400);
+    expect(withoutRep.body.message).toContain("sales rep");
   });
 });
