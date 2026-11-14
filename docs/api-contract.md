@@ -214,6 +214,21 @@ Behind the `finance.expenses` switch. Money is decimal strings; receipts are bas
 
 A daily job raises recurring drafts for every company in its own day. Payroll months are hidden from anyone without `hr.payroll.view`.
 
+## Bills and supplier payments (real build, P12 part 3, ADR 0042)
+
+Behind the `purchasing.orders` switch. No data scope. Files are base64 in the body.
+
+| Route | Needs | Does |
+| --- | --- | --- |
+| `GET /bills` | `purchasing.bill.view` | `Bill[]`: order, pay-later and (later) subcontract bills |
+| `GET /supplier-payments` | `purchasing.bill.view` or a payment key | `SupplierPayment[]` with allocations |
+| `POST /purchase-orders/:id/bills` | `purchasing.bill.create` | `{ number, issuedAt, total, files }`: bills every unbilled receipt of the order, stores match issues, posts. Audited |
+| `POST /supplier-payments` | `purchasing.payment.record` | `{ supplierId, amount, date, method, reference, note, billIds?, files }`: oldest due first, never more than unpaid; waits above the payment approval rule; posts when confirmed. Audited |
+| `POST /supplier-payments/:id/review` | `purchasing.payment.approve` | `{ action: "confirm" }` or `{ action: "reject", reason }`; never the recorder. Audited |
+| `POST /supplier-payments/:id/void` | `purchasing.payment.void` | `{ reason }`: a confirmed one posts its reversal. Audited |
+
+Goods receipts post their received value (Inventory against Goods Received Not Billed) and move boxed goods to the moving average cost; stock count corrections post at cost.
+
 ## Notifications and Outbox (real build, ADR 0032)
 
 Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is off.
