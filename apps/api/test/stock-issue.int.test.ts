@@ -681,4 +681,18 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
       .expect(200);
     expect((await call("put", url, cookies.accountant).send({ split: [] })).status).toBe(400);
   });
+
+  it("lets only the rep or a commission manager share an invoice's commission", async () => {
+    const invoice = await tileInvoice(await newCustomer("Rep Only Co"));
+    const url = `/invoices/${invoice.id}/commission-split`;
+    const half = [
+      { userId: salesUserId, pct: "50" },
+      { userId: hrUserId, pct: "50" },
+    ];
+    // The Accountant edits invoices but is not the rep and doesn't manage commissions.
+    const refused = await call("put", url, cookies.accountant).send({ split: half });
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain("sales rep");
+    expect((await call("put", url, cookies.owner).send({ split: half })).status).toBe(200);
+  });
 });

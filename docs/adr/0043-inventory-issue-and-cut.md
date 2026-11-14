@@ -11,7 +11,7 @@
   - The cost of goods posts at once (`costOfGoodsPosting`): a roll by its own cost per sq ft, boxed goods by the product's average cost (ADR 0040), sold at the invoice's selling location.
 - **Voids:** an invoice whose stock was cut or issued can't be voided; the goods come back only through a return, which a later task adds.
 - **`POST /rolls/:id/invoice`** (`sales.invoice.create`): `invoiceFromRoll` priced and taxed like a converted quote, numbered under the invoice lock, posted, and the roll held for it, all under the stock lock so the free length can't be promised twice. The invoice's branch is the creator's, else the customer's rep's.
-- **`PUT /invoices/:id/commission-split`** (`hr.commission.manage` or `sales.invoice.edit`): at most two people, each once, each above 0%, 100% in all; locked at the first confirmed payment. Stored in `invoice_commission_splits`, the old rows soft-deleted. Audited.
+- **`PUT /invoices/:id/commission-split`** (`hr.commission.manage` or `sales.invoice.edit`): at most two active people of the company, each once, each above 0%, 100% in all; locked at the first confirmed payment; never on a credit note. Without `hr.commission.manage`, only the invoice's own rep may set it, the rep keeps at least half, and a split someone else created is left alone (commission is pay; PR #22 reviews). Stored in `invoice_commission_splits`, the old rows soft-deleted. Audited.
 - **Stock adjustments with approval** (rule 23) are not built: `inventory.adjustments` is off and the Owner's Correct stock count replaces them (plan A-1).
 - **Web:** `listStockHolds`, `issueReservation`, `createRollInvoice` and `setCommissionSplit` go to the API in api mode.
 

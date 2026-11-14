@@ -79,7 +79,10 @@ export class StockIssueService {
     for (const invoice of invoiceRows) {
       states.set(invoice.id, mayIssue((await invoiceState(db, this.control.db, invoice.id, clock)).ledger));
     }
+    // With rolls switched off, roll holds are hidden too (CLAUDE.md rule 13).
+    const rollsOn = featureOn("inventory.rolls");
     return active.flatMap((reservation) => {
+      if (reservation.rollId && !rollsOn) return [];
       const invoice = invoiceRows.find((candidate) => candidate.id === reservation.invoiceId);
       if (!invoice || invoice.voidedAt) return [];
       if (!access.permissions.has("inventory.roll.cut") && !seesDocument(access, invoice)) {

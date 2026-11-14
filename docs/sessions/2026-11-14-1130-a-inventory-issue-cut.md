@@ -41,7 +41,10 @@ As planned (ADR 0043, PR #22). Files:
   - a split a commission manager set can't be rewritten or cleared.
   Tests cover all three.
   - Should-fix items done: `convert` and `voidInvoice` take the stock lock before the ledger's shared locks, so the order is the same everywhere (a period close could otherwise deadlock them); a roll invoice needs `inventory.roll.view` too.
-- **Third security review:** see PR #22.
+- **Third security review:** PASS, no blocking findings. Its two should-fix items were done with the safest option:
+  - without `hr.commission.manage`, only the invoice's own rep may set its split, the rep keeps at least half, and a split anyone else created is left alone (checked by `created_by`);
+  - roll holds are hidden from `/stock-holds` when `inventory.rolls` is off.
+  A test covers the rep-only rule.
 
 ## Commands run and results
 - `stock-issue.int.test.ts`: 13 of 13 after the review fixes (one run failed in setup while enrolling two MFA users at once; three reruns passed).

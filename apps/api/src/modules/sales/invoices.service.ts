@@ -383,23 +383,22 @@ export class InvoicesService {
           );
         if (people.length !== split.length) throw refuse("Choose active people of this company.");
       }
-      // Without commission rights, the split stays the rep's to share: the rep keeps at least half,
-      // nobody but the rep names themselves, and a split a commission manager made is left alone
-      // (sales rule 39; CLAUDE.md rule 4; PR #22 reviews).
+      // Commission is pay, so without commission rights only the invoice's own rep shares it: the
+      // rep keeps at least half, and a split anyone else set is left alone (sales rule 39; CLAUDE.md
+      // rule 4; PR #22 reviews; blueprint-delta).
       if (!actor.access.permissions.has("hr.commission.manage")) {
+        if (actor.access.userId !== invoice.salesRepId) {
+          throw refuse("Only the invoice's sales rep or someone who manages commissions may change its split.");
+        }
         const rep = split.find((share) => share.userId === invoice.salesRepId);
         if (split.length > 0 && (!rep || dec(rep.pct).lt(50))) {
           throw refuse("The invoice's sales rep keeps at least half of the commission.");
         }
-        const me = actor.access.userId;
-        if (me !== invoice.salesRepId && split.some((share) => share.userId === me)) {
-          throw refuse("Only someone who manages commissions may give themselves a share.");
-        }
         const current = await tx
-          .select({ userId: invoiceCommissionSplits.userId })
+          .select({ createdBy: invoiceCommissionSplits.createdBy })
           .from(invoiceCommissionSplits)
           .where(and(eq(invoiceCommissionSplits.invoiceId, invoiceId), isNull(invoiceCommissionSplits.deletedAt)));
-        if (current.some((share) => share.userId !== invoice.salesRepId && share.userId !== me)) {
+        if (current.some((share) => share.createdBy !== actor.access.userId)) {
           throw refuse("Someone who manages commissions set this split; ask them to change it.");
         }
       }
