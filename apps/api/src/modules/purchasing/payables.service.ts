@@ -76,8 +76,10 @@ const BILL_LOCK = sql`select pg_advisory_xact_lock(hashtext('purchasing:bill'))`
 /**
  * Bills and supplier payments on the API (purchasing.md rules 20 to 34; P12 part 3; ADR 0042). A
  * bill for received goods posts the payable; a confirmed payment posts the money out of the bank
- * for its method; a void posts the reversal. Bills a pay-later expense raised (ADR 0041) are paid
- * the same way, but never post as bills, because the expense posted the payable.
+ * for its method; a void posts the reversal. Bills a pay-later expense raised (ADR 0041) or a
+ * contract billing raised (ADR 0045) are paid the same way, but never post as bills: only
+ * `enterBill` posts a bill, and only one it makes for an order's receipts, because the expense or
+ * the billing already posted the payable.
  */
 @Injectable()
 export class PayablesService {

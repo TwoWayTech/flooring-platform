@@ -3,7 +3,6 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   invoiceAdjustments,
   invoiceCommissionSplits,
-  invoiceLines,
   invoices,
   paymentsReceived,
   quotes,
@@ -46,6 +45,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { lockStock } from "../inventory/stock-lock";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
+import { insertInvoice, takeInvoiceNumber } from "./invoice-writes";
 import {
   loadAdjustments,
   loadInvoices,
@@ -58,8 +58,7 @@ import {
 import { companyClock, notFound, refuse, seesCustomer, seesDocument, type CompanyClock } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
-/** The first invoice number, as in the demo (`INV-1001`), and the credit note series (`CR-5001`, spec rule 22). */
-const FIRST_INVOICE = 1001;
+/** The credit note series (`CR-5001`, spec rule 22). */
 const CREDIT_PREFIX = "CR-";
 const FIRST_CREDIT = 5001;
 
@@ -171,22 +170,17 @@ export class InvoicesService {
       const [customer] = await loadCustomers(tx, [quote.customerId]);
       if (!customer) throw refuse("This quote's customer no longer exists.");
       const localization = await loadLocalization(tx);
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
-      const used = await tx.select({ number: invoices.number }).from(invoices);
+      const number = await takeInvoiceNumber(tx, localization.documents.invoicePrefix);
       const drafted = invoiceFromQuote(quote, customer, localization, {
         id,
-        number: nextNumber(
-          localization.documents.invoicePrefix,
-          used.map((row) => row.number),
-          FIRST_INVOICE,
-        ),
+        number,
         issuedAt: clock.day,
         createdBy: actor.access.userId,
         balanceDueDays: localization.documents.balanceDueDays,
       });
       // Invoice lines get their own ids; nothing points at a quote line (ADR 0037).
       const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
-      await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
+      await insertInvoice(tx, invoice, actor.access.userId, clock.now);
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
       // Stock before the ledger's shared locks, the order every path takes (PR #22 review).
       await lockStock(tx);
@@ -280,7 +274,7 @@ export class InvoicesService {
       const branchId = actor.access.branchId ?? branches.get(customer.salesRepId) ?? null;
       if (!branchId) throw refuse("This invoice needs a branch: set yours, or the customer's sales rep's.");
       const localization = await loadLocalization(tx);
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
+      const number = await takeInvoiceNumber(tx, localization.documents.invoicePrefix);
       await lockStock(tx);
       const [[roll], products, held] = await Promise.all([
         loadRolls(tx, [input.rollId]),
@@ -296,20 +290,15 @@ export class InvoicesService {
         held.filter((reservation) => reservation.status === "active"),
       );
       if (length.gt(free)) throw refuse(`Only ${free.toString()} ft of ${roll.rollNumber} is free.`);
-      const used = await tx.select({ number: invoices.number }).from(invoices);
       const invoice = invoiceFromRoll(roll, product, customer, length.toString(), localization, {
         id,
         lineId: uuidv7(),
-        number: nextNumber(
-          localization.documents.invoicePrefix,
-          used.map((row) => row.number),
-          FIRST_INVOICE,
-        ),
+        number,
         issuedAt: clock.day,
         createdBy: actor.access.userId,
         branchId,
       });
-      await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
+      await insertInvoice(tx, invoice, actor.access.userId, clock.now);
       await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       await tx.insert(reservations).values({
         invoiceId: id,
@@ -484,6 +473,10 @@ export class InvoicesService {
       await lockCustomer(tx, found.customerId);
       const { invoice, payments, ledger } = await invoiceState(tx, this.control.db, invoiceId, clock);
       if (invoice.voidedAt) throw refuse(`Invoice ${invoice.number} is already void.`);
+      // A contract billing posted it, with its retainage; the billing is voided as a whole (ADR 0045).
+      if (invoice.billingId) {
+        throw refuse(`Invoice ${invoice.number} belongs to a contract billing. Void the billing instead.`);
+      }
       if (ledger.locked) {
         throw refuse(`Invoice ${invoice.number} has confirmed payments. Void them first, or issue a credit note.`);
       }
@@ -606,6 +599,13 @@ export class InvoicesService {
       await lockCustomer(tx, found.customerId);
       const [invoice] = await loadInvoices(tx, clock.zone, { ids: [invoiceId] });
       if (!invoice || invoice.voidedAt || invoice.isReturn) throw refuse("A credit note needs a live invoice.");
+      // Its retainage sits outside the balance, so a note would turn held money into credit; a
+      // lower figure on the next billing, or voiding the billing, corrects it (ADR 0045).
+      if (invoice.billingId) {
+        throw refuse(
+          `Invoice ${invoice.number} belongs to a contract billing. Correct it on the next billing instead.`,
+        );
+      }
       // A written-off balance was never paid; a note on it would turn the write-off into refundable
       // credit (PR #16 review). With no write-off, notes become credit only up to money received.
       const { ledger: current } = await invoiceState(tx, this.control.db, invoiceId, clock);
@@ -650,7 +650,7 @@ export class InvoicesService {
         total: moneyString(amount.plus(tax)),
         lines: [],
       };
-      await this.insertInvoice(tx, note, actor.access.userId, clock.now);
+      await insertInvoice(tx, note, actor.access.userId, clock.now);
       await this.books.post(tx, creditNotePosting(note), actor.access.userId);
       // A note settles its own invoice's open balance first, so only money received can become
       // refundable credit (ADR 0039; PR #15 security review).
@@ -814,72 +814,6 @@ export class InvoicesService {
     });
     await this.books.post(tx, adjustmentPosting(adjustment, invoice.number, clock.day), by);
     return adjustment.amount;
-  }
-
-  /**
-   * Writes an invoice with its lines and commission split. `issuedAt` is the moment the company's
-   * day was read, so the stored invoice reads back on the day its entry posts, even when the
-   * conversion waited on a lock past midnight (PR #18 review).
-   */
-  private async insertInvoice(tx: CompanyDb, invoice: Invoice, by: string, issuedAt: Date): Promise<void> {
-    await tx.insert(invoices).values({
-      id: invoice.id,
-      number: invoice.number,
-      quoteId: invoice.quoteId,
-      customerId: invoice.customerId,
-      salesRepId: invoice.salesRepId,
-      branchId: invoice.branchId,
-      issuedAt,
-      dueAt: invoice.dueAt,
-      sentAt: invoice.sentAt ? issuedAt : null,
-      sentBy: invoice.sentAt ? invoice.sentBy : null,
-      depositPct: invoice.depositPct,
-      isReturn: invoice.isReturn,
-      creditForInvoiceId: invoice.creditForInvoiceId,
-      locationId: invoice.locationId,
-      soldAtLocationId: invoice.soldAtLocationId ?? null,
-      jobSite: invoice.jobSite,
-      taxRule: invoice.taxRule,
-      taxSource: invoice.taxSource,
-      taxOverride: invoice.taxOverride,
-      taxExempt: invoice.taxExempt,
-      subtotal: invoice.subtotal,
-      tax: invoice.tax,
-      total: invoice.total,
-      cost: invoice.cost,
-      createdBy: by,
-    });
-    if (invoice.lines.length > 0) {
-      await tx.insert(invoiceLines).values(
-        invoice.lines.map((line, position) => ({
-          id: line.id,
-          invoiceId: invoice.id,
-          position,
-          productId: line.productId ?? null,
-          description: line.description,
-          category: line.category,
-          unit: line.unit,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          unitCost: line.unitCost,
-          wastePct: line.wastePct ?? null,
-          rollId: line.rollId ?? null,
-          sqFtPerCarton: line.sqFtPerCarton ?? null,
-          locationId: line.locationId ?? null,
-          createdBy: by,
-        })),
-      );
-    }
-    if (invoice.commissionSplit?.length) {
-      await tx.insert(invoiceCommissionSplits).values(
-        invoice.commissionSplit.map((share) => ({
-          invoiceId: invoice.id,
-          userId: share.userId,
-          pct: share.pct,
-          createdBy: by,
-        })),
-      );
-    }
   }
 
   /** Ids of the invoices the person's data scope covers. */

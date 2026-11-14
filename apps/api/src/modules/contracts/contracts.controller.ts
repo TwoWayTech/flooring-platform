@@ -10,6 +10,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { DAY, requireFeature } from "../sales/sales-common";
+import { ContractBillingService } from "./contract-billing.service";
 import { ContractChangesService } from "./contract-changes.service";
 import { ContractsService } from "./contracts.service";
 
@@ -120,6 +121,28 @@ const CHANGE_ORDER = z
   })
   .strict();
 
+/** A progress billing: cumulative work and stored materials per line; rates are taken on the server (spec rule 4). */
+const BILLING = z
+  .object({
+    periodEnd: DAY,
+    lines: z
+      .array(
+        z
+          .object({
+            contractLineId: z.uuid(),
+            completedToDate: MONEY,
+            storedBalance: MONEY,
+          })
+          .strict(),
+      )
+      .min(1, "Enter the work to date on at least one line.")
+      .max(200),
+  })
+  .strict();
+
+/** A retainage release: an amount above zero, up to what is held (spec rule 10). */
+const RELEASE = z.object({ amount: MONEY }).strict();
+
 const DECISION = z.object({ action: z.enum(["approve", "reject"]), reason: z.string().max(500).default("") });
 
 const WAIVER = z
@@ -155,9 +178,9 @@ const CERTIFICATE = z
   .strict();
 
 /**
- * Contracts, part 1 (contracts.md; ADR 0044): the register, change orders, lien waivers and
- * insurance, in the `contracts` module behind `contracts.register` (and `contracts.compliance` or
- * `contracts.billing` for those). Billings are read only until part 2. Every write is audited.
+ * Contracts (contracts.md; ADR 0044 and 0045): the register, change orders, billings, lien waivers
+ * and insurance, in the `contracts` module behind `contracts.register` (and `contracts.compliance`
+ * or `contracts.billing` for those). Every write is audited.
  */
 @Controller()
 @RequireModule("contracts")
@@ -165,6 +188,7 @@ export class ContractsController {
   constructor(
     private readonly contracts: ContractsService,
     private readonly changes: ContractChangesService,
+    private readonly billings: ContractBillingService,
   ) {}
 
   /** GET /contracts: the contracts the person's data scope covers. */
@@ -192,7 +216,7 @@ export class ContractsController {
     return this.contracts.listChangeOrders(tenant, access);
   }
 
-  /** GET /contract-billings: the billings of those contracts (read only in part 1). */
+  /** GET /contract-billings: the billings of those contracts. */
   @Get("contract-billings")
   @RequirePermission("contracts.billing.view")
   listBillings(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
@@ -407,6 +431,58 @@ export class ContractsController {
     requireFeature("contracts.register");
     requireFeature("contracts.billing"); // change orders sit under billing (features.ts)
     return this.changes.decideChangeOrder(tenant, actorOf(access, session, request), id, parse(DECISION, body));
+  }
+
+  /** POST /contracts/:id/billings: posts a progress billing, raising its invoice or bill. */
+  @Post("contracts/:id/billings")
+  @RequirePermission("contracts.billing.create")
+  @Audited()
+  postBilling(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("contracts.register");
+    requireFeature("contracts.billing");
+    return this.billings.postBilling(tenant, actorOf(access, session, request), id, parse(BILLING, body));
+  }
+
+  /** POST /contracts/:id/retainage-releases: releases held retainage on its own invoice or bill. */
+  @Post("contracts/:id/retainage-releases")
+  @RequirePermission("contracts.billing.create")
+  @Audited()
+  releaseRetainage(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("contracts.register");
+    requireFeature("contracts.billing");
+    const { amount } = parse(RELEASE, body);
+    return this.billings.releaseRetainage(tenant, actorOf(access, session, request), id, amount);
+  }
+
+  /** POST /contract-billings/:id/void: voids the contract's latest posted billing. */
+  @Post("contract-billings/:id/void")
+  @RequirePermission("contracts.billing.void")
+  @Audited()
+  voidBilling(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("contracts.register");
+    requireFeature("contracts.billing");
+    return this.billings.voidBilling(tenant, actorOf(access, session, request), id, parse(REASON, body).reason);
   }
 
   /** POST /contracts/:id/lien-waivers: records a lien waiver. */

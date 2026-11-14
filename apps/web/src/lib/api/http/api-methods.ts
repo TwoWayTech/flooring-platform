@@ -225,7 +225,7 @@ export const API_METHODS: HttpRoutes = {
   setCommissionSplit: (http) => async (invoiceId, split) => {
     await http.request<{ ok: true }>("PUT", `/invoices/${invoiceId}/commission-split`, { split });
   },
-  // Contracts part 1 (ADR 0044): the register, change orders, waivers and insurance. Billing writes are part 2.
+  // Contracts (ADR 0044 and 0045): the register, change orders, billings, waivers and insurance.
   contractsData: (http) => async () => {
     const [
       contracts,
@@ -294,6 +294,22 @@ export const API_METHODS: HttpRoutes = {
         amountDelta: line.amountDelta,
       })),
     }),
+  // The server takes each line's retainage rates itself (spec rule 4), so only the figures go.
+  postBilling: (http) => (contractId, input) =>
+    http.request<ContractBilling>("POST", `/contracts/${contractId}/billings`, {
+      periodEnd: input.periodEnd,
+      lines: input.lines.map((line) => ({
+        contractLineId: line.lineId,
+        completedToDate: line.completedToDate || "0",
+        storedBalance: line.storedBalance || "0",
+      })),
+    }),
+  releaseRetainage: (http) => (contractId, input) =>
+    http.request<ContractBilling>("POST", `/contracts/${contractId}/retainage-releases`, {
+      amount: input.amount || "0",
+    }),
+  voidBilling: (http) => (billingId, reason) =>
+    http.request<ContractBilling>("POST", `/contract-billings/${billingId}/void`, { reason }),
   decideChangeOrder: (http) => (id, decision) =>
     http.request<ChangeOrder>("POST", `/change-orders/${id}/decision`, {
       action: decision.approve ? "approve" : "reject",
