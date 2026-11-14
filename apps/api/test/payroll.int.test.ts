@@ -71,6 +71,7 @@ interface ReviewBody {
     excludedReason: string | null;
   }[];
   blockers: { employeeName: string; status: string }[];
+  warnings: string[];
 }
 
 interface PaymentBody {
@@ -419,6 +420,8 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     const period = await open(9);
     const owner = await review(cookies.owner, period.id);
     expect(owner.blockers).toEqual([]);
+    // Nobody works in California here, so no California pay note (ADR 0050).
+    expect(owner.warnings).toEqual([]);
     const byName = new Map(owner.rows.map((r) => [r.employee.name, r]));
     // 45 hours at 20.00 with the federal rule: 40 regular and 5 overtime hours, 900.00 + 50.00 premium.
     expect(byName.get("Wes Walker")!.line).toMatchObject({
