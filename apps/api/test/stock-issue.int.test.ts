@@ -546,7 +546,8 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     // Roles holding sales.invoice.edit or hr.commission.manage may; the warehouse holds neither.
     expect((await call("put", url, cookies.warehouse).send({ split: two })).status).toBe(403);
     expect((await call("put", url, cookies.sales).send({ split: two })).status).toBe(403);
-    expect((await call("put", url, cookies.accountant).send({ split: two })).status).toBe(200);
+    // The owner manages commissions and set this split, so the Accountant may not rewrite it (PR #22 review).
+    expect((await call("put", url, cookies.accountant).send({ split: two })).status).toBe(400);
     const three = await call("put", url, cookies.owner).send({
       split: [...two, { userId: uuidv7(), pct: "10" }],
     });
@@ -646,5 +647,38 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     const withoutRep = await call("put", url, cookies.accountant).send({ split: [{ userId: hrUserId, pct: "100" }] });
     expect(withoutRep.status).toBe(400);
     expect(withoutRep.body.message).toContain("sales rep");
+  });
+
+  it("keeps the rep at half or more and the caller out of the split without commission rights", async () => {
+    const invoice = await tileInvoice(await newCustomer("Half Share Co"));
+    const url = `/invoices/${invoice.id}/commission-split`;
+    const accountantId = (await call("get", "/auth/context", cookies.accountant).expect(200)).body.user?.id as string;
+    const tiny = await call("put", url, cookies.accountant).send({
+      split: [
+        { userId: salesUserId, pct: "0.01" },
+        { userId: hrUserId, pct: "99.99" },
+      ],
+    });
+    expect(tiny.status).toBe(400);
+    expect(accountantId).toBeTruthy();
+    {
+      const self = await call("put", url, cookies.accountant).send({
+        split: [
+          { userId: salesUserId, pct: "60" },
+          { userId: accountantId, pct: "40" },
+        ],
+      });
+      expect(self.status).toBe(400);
+    }
+    // The owner manages commissions; the accountant may not then rewrite or clear that split.
+    await call("put", url, cookies.owner)
+      .send({
+        split: [
+          { userId: salesUserId, pct: "30" },
+          { userId: hrUserId, pct: "70" },
+        ],
+      })
+      .expect(200);
+    expect((await call("put", url, cookies.accountant).send({ split: [] })).status).toBe(400);
   });
 });

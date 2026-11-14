@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req, Res, StreamableFile } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Put,
+  Req,
+  Res,
+  StreamableFile,
+} from "@nestjs/common";
 import { MAX_PROOF_FILES } from "@workspace/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -338,6 +350,10 @@ export class InvoicesController {
     requireFeature("sales.invoices");
     requireFeature("inventory.rolls");
     requireFeature("inventory.reservations");
+    // A roll's number and free length are stock facts: the creator needs to see rolls too.
+    if (!access.permissions.has("inventory.roll.view")) {
+      throw new ForbiddenException({ code: "forbidden", message: "You can't see rolls." });
+    }
     const input = parse(ROLL_INVOICE, body);
     return this.invoices.rollInvoice(tenant, actorOf(access, session, request), { rollId, ...input });
   }

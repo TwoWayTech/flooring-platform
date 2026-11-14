@@ -188,8 +188,9 @@ export class InvoicesService {
       const invoice: Invoice = { ...drafted, lines: drafted.lines.map((line) => ({ ...line, id: uuidv7() })) };
       await this.insertInvoice(tx, invoice, actor.access.userId, clock.now);
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
-      await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
+      // Stock before the ledger's shared locks, the order every path takes (PR #22 review).
       await lockStock(tx);
+      await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       const [products, rolls, movements, held] = await Promise.all([
         loadProducts(tx),
         loadRolls(tx),
@@ -381,9 +382,25 @@ export class InvoicesService {
             ),
           );
         if (people.length !== split.length) throw refuse("Choose active people of this company.");
-        const keepsRep = split.some((share) => share.userId === invoice.salesRepId);
-        if (!keepsRep && !actor.access.permissions.has("hr.commission.manage")) {
-          throw refuse("The invoice's sales rep keeps a share.");
+      }
+      // Without commission rights, the split stays the rep's to share: the rep keeps at least half,
+      // nobody but the rep names themselves, and a split a commission manager made is left alone
+      // (sales rule 39; CLAUDE.md rule 4; PR #22 reviews).
+      if (!actor.access.permissions.has("hr.commission.manage")) {
+        const rep = split.find((share) => share.userId === invoice.salesRepId);
+        if (split.length > 0 && (!rep || dec(rep.pct).lt(50))) {
+          throw refuse("The invoice's sales rep keeps at least half of the commission.");
+        }
+        const me = actor.access.userId;
+        if (me !== invoice.salesRepId && split.some((share) => share.userId === me)) {
+          throw refuse("Only someone who manages commissions may give themselves a share.");
+        }
+        const current = await tx
+          .select({ userId: invoiceCommissionSplits.userId })
+          .from(invoiceCommissionSplits)
+          .where(and(eq(invoiceCommissionSplits.invoiceId, invoiceId), isNull(invoiceCommissionSplits.deletedAt)));
+        if (current.some((share) => share.userId !== invoice.salesRepId && share.userId !== me)) {
+          throw refuse("Someone who manages commissions set this split; ask them to change it.");
         }
       }
       const before = await tx
@@ -538,13 +555,13 @@ export class InvoicesService {
         .set({ voidedAt: now, voidReason: why, updatedAt: now })
         .where(eq(invoices.id, invoiceId));
       const event = invoice.isReturn ? "credit_note.issued" : "invoice.issued";
+      await lockStock(tx);
       await this.books.reverse(
         tx,
         { sourceType: "invoice", sourceId: invoiceId, event },
         clock.day,
         actor.access.userId,
       );
-      await lockStock(tx);
       const released = await tx
         .update(reservations)
         .set({ status: "released", closedAt: now, updatedAt: now })
