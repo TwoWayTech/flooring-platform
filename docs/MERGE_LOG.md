@@ -30,3 +30,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #24 | Contracts part 2: progress billings and retainage with postings (ADR 0045) | @TwoWayTech | feat/contracts-billing | `2e0a846` |
 | 2026-11-14 | #25 | HR part 1: people, timesheets and time off on the API (ADR 0046) | @TwoWayTech | feat/hr-people | `57664d9` |
 | 2026-11-14 | #26 | HR part 2: payroll (pay periods, bonuses, contractor payments) with postings (ADR 0047) | @TwoWayTech | feat/hr-payroll | `ba3902d` |
+| 2026-11-14 | #27 | Commissions on the API with postings and payroll hand-off (ADR 0048) | @TwoWayTech | feat/hr-commissions | `b7c2163` |
