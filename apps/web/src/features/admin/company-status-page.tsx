@@ -54,7 +54,8 @@ function ActionRow({ company, view, writer, onAct }: ActionRowProps) {
       <div className="sm:w-28 sm:shrink-0">
         {writer ? (
           <Button
-            className="w-full sm:w-28"
+            // The danger ink, not the button's own red, keeps Cancel at AA contrast on its tint in both themes.
+            className={view.action === "cancel" ? "text-danger-ink w-full sm:w-28" : "w-full sm:w-28"}
             variant={view.action === "cancel" ? "destructive" : "outline"}
             disabled={view.next === null}
             onClick={() => onAct(view)}

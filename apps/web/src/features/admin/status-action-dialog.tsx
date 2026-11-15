@@ -151,7 +151,13 @@ export function StatusActionDialog({
               <Button type="button" variant="outline" onClick={onClose}>
                 Go back
               </Button>
-              <Button type="submit" variant={destructive ? "destructive" : "default"} disabled={pending}>
+              <Button
+                type="submit"
+                variant={destructive ? "destructive" : "default"}
+                // As on the Status page: the danger ink keeps the text at AA contrast on the red tint.
+                className={destructive ? "text-danger-ink" : undefined}
+                disabled={pending}
+              >
                 Continue
               </Button>
             </DialogFooter>
