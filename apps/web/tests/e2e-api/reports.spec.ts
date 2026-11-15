@@ -107,6 +107,32 @@ test.describe("reports (api mode)", () => {
       expect(locationNet).toBe(summaryNow);
     });
 
+    await test.step("E2E-1 the exports wait while a new period loads, so they never print old figures", async () => {
+      // Hold the next answer, so the screen is caught between the old period's figures and the new one's.
+      const gate: { release: () => void } = { release: () => undefined };
+      const held = new Promise<void>((resolve) => {
+        gate.release = () => resolve();
+      });
+      const isBusiness = (url: URL) => url.pathname === "/api-proxy/reports/business";
+      await page.route(isBusiness, async (route) => {
+        await held;
+        await route.continue();
+      });
+      const answer = reportResponse(page, "business");
+      await page.getByRole("combobox", { name: "Period" }).click();
+      await page.getByRole("option", { name: "This month" }).click();
+      const figures = page.getByRole("group", { name: "Business report figures" });
+      await expect(figures).toHaveAttribute("aria-busy", "true");
+      await expect(page.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Export PDF" })).toBeDisabled();
+      gate.release();
+      expect((await answer).status()).toBe(200);
+      await expect(figures).not.toHaveAttribute("aria-busy", "true");
+      await expect(page.getByRole("button", { name: "Export CSV" })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Export PDF" })).toBeEnabled();
+      await page.unroute(isBusiness);
+    });
+
     await test.step("E2E-2 P&L, Sales by category and Payments received", async () => {
       for (const [report, route, label] of [
         ["pnl", "pnl", "Profit and loss"],

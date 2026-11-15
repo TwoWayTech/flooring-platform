@@ -34,6 +34,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
 import { presentReport } from "./present-report";
+import { shownAnswer, type KeyedAnswer } from "./report-answer";
 import { ReportFallback } from "./report-fallback";
 import { useDebouncedValue } from "./use-debounced-value";
 
@@ -191,13 +192,12 @@ export function HubReportView({
   };
   const request = JSON.stringify([reportKey, filters]);
   const query = useApiQuery(
-    async (client) => ({ reportKey, request, report: await spec.fetch(client, filters) }),
+    async (client): Promise<KeyedAnswer<Report>> => ({ reportKey, request, report: await spec.fetch(client, filters) }),
     [request],
   );
-  // While a new answer is on its way the last rows stay, dimmed and marked busy; another report's rows never show.
-  const answer = query.status === "ready" && query.data.reportKey === reportKey ? query.data : null;
-  const busy = answer !== null && answer.request !== request;
-  const report = answer ? presentReport(answer.report, formatDate) : null;
+  const shown = shownAnswer(query.data, reportKey, request);
+  const busy = shown.busy;
+  const report = shown.report ? presentReport(shown.report, formatDate) : null;
   const paymentFilters = spec.payments
     ? `${filters.method ? `, ${PAYMENT_METHOD_LABELS[filters.method]}` : ""}${filters.customer ? `, customers matching “${filters.customer}”` : ""}`
     : "";

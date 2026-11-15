@@ -9,6 +9,7 @@ import {
   dec,
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
+  type BusinessFilters,
   type BusinessReport,
   type BusinessRow,
   type BusinessSection,
@@ -21,6 +22,7 @@ import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { Segmented } from "@workspace/ui/components/segmented";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
+import { cn } from "@workspace/ui/lib/utils";
 import { downloadText } from "@/components/data-table/csv";
 import { ScrollRegion } from "@/components/scroll-region";
 import { useWorkspace } from "@/components/workspace/workspace-context";
@@ -29,6 +31,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { shownAnswer, type KeyedAnswer } from "./report-answer";
 import { ReportFallback } from "./report-fallback";
 
 const ALL = "all";
@@ -201,6 +204,8 @@ function toCsvText(report: BusinessReport): string {
  * matching exports. It covers the whole company, so the server opens it only for data scope `all`
  * (ADR 0055 S1). The location, salesperson and vendor choices come from `options`, so only ids the
  * server knows are sent, and sections the person may not see are not in the answer at all (S7).
+ * While a new answer loads the last sections stay dimmed and the exports wait, so a CSV or PDF
+ * always matches the dates it prints.
  */
 export function BusinessReportView({ options, onRefresh }: { options: ReportOptions; onRefresh: () => void }) {
   const { company, settings } = useWorkspace();
@@ -221,30 +226,42 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
   const locations = locationIds.filter((id) => listed(id, options.locations));
   const rep = listed(salesRepId, options.salespeople) ? salesRepId : null;
   const vendor = listed(supplierId, options.vendors) ? supplierId : null;
-  const report = useApiQuery(
-    (client) =>
-      client.businessReport({
-        ...range,
-        locationIds: locations,
-        productCategory: productCategory === ALL ? null : productCategory,
-        expenseCategory: expenseCategory === ALL ? null : expenseCategory,
-        salesRepId: rep,
-        supplierId: vendor,
-      }),
-    [range.from, range.to, locations.join(), productCategory, expenseCategory, rep, vendor],
+  const params: BusinessFilters = {
+    ...range,
+    locationIds: locations,
+    productCategory: productCategory === ALL ? null : productCategory,
+    expenseCategory: expenseCategory === ALL ? null : expenseCategory,
+    salesRepId: rep,
+    supplierId: vendor,
+  };
+  const request = JSON.stringify(params);
+  const query = useApiQuery(
+    async (client): Promise<KeyedAnswer<BusinessReport>> => ({
+      reportKey: "business",
+      request,
+      report: await client.businessReport(params),
+    }),
+    [request],
   );
+  // While a new answer loads the last sections stay, dimmed, and the exports wait (ADR 0055 "Also safer").
+  const { report, busy } = shownAnswer(query.data, "business", request);
   const filters = `${formatDate(range.from)} to ${formatDate(range.to)}, compared with the same length before`;
   const stem = `business-report-${today}`;
 
+  function exportCsv() {
+    if (!report || busy) return;
+    downloadText(`${stem}.csv`, toCsvText(report));
+  }
+
   async function exportPdf() {
-    if (!report.data) return;
+    if (!report || busy) return;
     const [{ pdf }, { BusinessReportPdf }] = await Promise.all([
       import("@react-pdf/renderer"),
       import("./business-report-pdf"),
     ]);
     saveBlob(
       await pdf(
-        <BusinessReportPdf report={report.data} company={company.name} filters={filters} settings={settings.numbers} />,
+        <BusinessReportPdf report={report} company={company.name} filters={filters} settings={settings.numbers} />,
       ).toBlob(),
       `${stem}.pdf`,
     );
@@ -258,16 +275,11 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
         actions={
           options.exports.includes("business") ? (
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!report.data}
-                onClick={() => report.data && downloadText(`${stem}.csv`, toCsvText(report.data))}
-              >
+              <Button variant="outline" size="sm" disabled={!report || busy} onClick={exportCsv}>
                 <Download />
                 Export CSV
               </Button>
-              <Button variant="outline" size="sm" disabled={!report.data} onClick={() => void exportPdf()}>
+              <Button variant="outline" size="sm" disabled={!report || busy} onClick={() => void exportPdf()}>
                 <FileDown />
                 Export PDF
               </Button>
@@ -332,16 +344,23 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
           <p className="text-muted-foreground text-sm">{filters}.</p>
         </div>
       </Panel>
-      {report.status !== "ready" ? (
-        <ReportFallback query={report} className="h-96" label="Loading the business report" onRefresh={onRefresh} />
+      {report ? (
+        <div
+          role="group"
+          aria-label="Business report figures"
+          aria-busy={busy || undefined}
+          className={cn("flex min-w-0 flex-col gap-6", busy && "opacity-60")}
+        >
+          {report.sections.map((section) => (
+            <ReportSection
+              key={section.key}
+              section={section}
+              onOpen={(row) => setDrill({ title: section.title, row })}
+            />
+          ))}
+        </div>
       ) : (
-        report.data.sections.map((section) => (
-          <ReportSection
-            key={section.key}
-            section={section}
-            onOpen={(row) => setDrill({ title: section.title, row })}
-          />
-        ))
+        <ReportFallback query={query} className="h-96" label="Loading the business report" onRefresh={onRefresh} />
       )}
       <Sheet open={!!drill} onOpenChange={(o) => !o && setDrill(null)}>
         <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md">
