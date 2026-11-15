@@ -442,9 +442,34 @@ Three findings, each confirmed by a skeptic. All are fixed, with tests.
 - `pnpm -s lint`: 6 of 6. Prettier `--check` on the touched code and tests: clean.
 - Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
 
+## Review round 2 of PR #35
+One finding, should fix, confirmed by a skeptic. Fixed, with a test.
+
+- **Should fix (correctness):** `MeetingsService.update` re-sent a series' surviving exceptions only after a start or length change. Each occurrence moved on its own sits in a guest's calendar as its own RECURRENCE-ID override, with the SUMMARY, LOCATION, DESCRIPTION and VALARM it was sent with. RFC 5545 has an override replace its occurrence whole. So after a "this event" move and then a place edit, the guest's calendar probably kept the old place for that week, and after a title edit the old title. A calendar that replaces the whole set on a series-only REQUEST would drop the override instead. Part 2 made this reachable, since "this event" moves now create exceptions on the API.
+- **Fix:** every PATCH of a series sends its surviving exceptions again (`resendExceptions: true`), since every field an edit can change (title, notes, place, start, length, reminder) is in the file. The JSDoc of `update`, `InviteOptions.resendExceptions` and the shared `exceptionResends` say why.
+
+### Decisions
+- **Re-send rather than only record the gap.** The copies go to the same guests with the same content as the series invite, so nothing new is exposed, and a guest no longer risks going to the old place. It extends safest option 5, which already deviated from meetings.md "Differences from ADR 0021"; the sends-table rows are unchanged. The cost is one email per guest per surviving exception, counted by the daily caps, so an edit of a big series may be refused rather than half sent (ADR 0051 "Residual risks").
+- **A reminder-only edit re-sends too,** because the VALARM is in the file and the guest gets the series "Updated" invite anyway.
+- **Undo of "this event" is left as it was:** it sends the series REQUEST and that occurrence, not the other exceptions, whose content has not changed. Recorded as a residual risk in ADR 0051, not changed, since the finding did not cover it and it would change that undo's sends.
+
+### Tests added
+- `apps/api/test/meetings-moves.int.test.ts`, now 25 cases: a weekly series, one occurrence moved with "this event", then a place, title, notes and reminder PATCH in turn. Each adds exactly one RECURRENCE-ID file per guest, carrying the new value, the occurrence's own time, SEQUENCE 2 and no weekly RRULE, and the stored exception is unchanged.
+
+### Docs
+- ADR 0051: "Series exceptions sent again" (when, and why), "Limits (part 2)", a "Review round 2 of PR #35" section, safest option 5, "For the owner (part 2)", "Residual risks (part 2)" and the test count.
+- The blueprint-delta part 2 row, meetings.md (edits and "Series exceptions"), api-contract.md (`PATCH /meetings/:id`) and notifications.md (`meeting.invite`).
+
+### Checks run (this round)
+- Integration `meetings` and `meetings-moves`: 57 of 57 (the new case failed once on its own assertion: the VTIMEZONE block has an RRULE, so it now checks for no `RRULE:FREQ=WEEKLY`).
+- packages/shared `meeting-sends` and `ics`: 42 of 42.
+- `pnpm -s typecheck`: 6 of 6. `pnpm -s lint`: 6 of 6. Prettier `--check` on the touched code and test: clean.
+- Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
+
 ## Outcome
 - Part 2 is built, tested and documented on `feat/meetings-api-moves` (draft PR #35): the reschedule, undo and proposal-decision routes, conflicts with "Busy", the series exceptions sent again (lifting part 1's refusal), and the PATCH change.
 - Every deviation from meetings.md is in the safer direction and is recorded in ADR 0051 "Part 2" and the blueprint-delta row. "Moves don't reset answers" and the sends table are kept.
 - Review round 1 of PR #35 is fixed (above): occurrences worked out from the window, the conflict query bounded to the moved day, typed starts bounded, the split guard tested and the answer reset written once.
+- Review round 2 of PR #35 is fixed (above): every edit of a series sends its surviving exceptions again.
 - **Next:** a fresh security-reviewer pass on the round 1 fixes (the start bound, the conflict query, the window rule); then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
 - **Open for the owner:** the questions under "For the owner" above, also in ADR 0051.
