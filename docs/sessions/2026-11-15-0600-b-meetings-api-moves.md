@@ -1,6 +1,6 @@
 # Session 2026-11-15 06:00, B (Claude): meetings on the API, part 2 (reschedule, undo, proposals, conflicts)
 
-Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meetings.md). Part 2 of 3. Branch `feat/meetings-api-moves`, from `origin/main` at `1de1e0c` (part 1, PR #33), in its own worktree (`../flooring-platform-meetings`), because another build runs in the main checkout on another branch.
+Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meetings.md). Part 2 of 3. Branch `feat/meetings-api-moves`, from `origin/main` at `1de1e0c` (part 1, PR #33), in its own worktree (`../flooring-platform-meetings`), because another build runs in the main checkout on another branch. Draft PR #35.
 
 ## Prompt
 - The queue restarted on 2026-11-15 with meetings first (STATUS, "Next three tasks"), and the owner is asleep. The rule for open points is part 1's: follow docs/product-spec/meetings.md as the approved behaviour. Deviate only in the safer direction (less data exposure, deny by default, refusing what can't be done correctly), and record each deviation in docs/blueprint-delta.md and ADR 0051. Make no other behaviour change: moves don't reset answers, and the spec's sends table stands.
