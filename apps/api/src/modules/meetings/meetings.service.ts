@@ -232,7 +232,9 @@ export class MeetingsService {
    * raises SEQUENCE and asks every guest again; every guest gets an "Updated" invite either way. A
    * series' occurrences moved on their own shift with a new start, and after any edit the ones that
    * have not ended are sent again, since each carries the title, place, notes, time and reminder it
-   * was sent with (ADR 0051 "Series exceptions sent again", ADR 0021).
+   * was sent with (ADR 0051 "Series exceptions sent again", ADR 0021). A start or length change that
+   * `editProblem` refuses by the database clock, such as one that would leave an occurrence that has
+   * taken place behind at a date still ahead, is 400 and writes nothing (review round 3 of PR #35).
    */
   async update(tenant: TenantContext, actor: Actor, id: string, sent: MeetingPatch): Promise<Meeting> {
     // Compared as stored, so a title or place sent with spaces around it is no change of its own.
@@ -242,10 +244,10 @@ export class MeetingsService {
     const { today, dayStart } = await companyDay(this.control.db, tenant);
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
-      refuseIf(editProblem(before.meeting, patch, today));
+      const now = await databaseNow(tx);
+      refuseIf(editProblem(before.meeting, patch, today, now));
       const edit = editedMeeting(before.meeting, patch);
       if (edit.changed.length === 0) return { saved: before, sight, planned: null };
-      const now = await databaseNow(tx);
       // The stored instant is kept unless the start changed, so a time the clock shows twice keeps its reading.
       const moved = edit.changed.includes("start");
       const start = (moved && zonedToInstant(edit.meeting.start, edit.meeting.timeZone).instant) || before.row.start;

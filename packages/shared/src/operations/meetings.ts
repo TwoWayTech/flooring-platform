@@ -55,6 +55,23 @@ export function nextPlannedStart(start: string, recurrence: Meeting["recurrence"
 }
 
 /**
+ * The planned start before one of a series' planned starts, or null for its first (meetings.md rule
+ * 2): a weekly or biweekly step back, or a monthly series' date in the month before, which is the
+ * series' own start in the month after it began. Worked out directly, like `onSeriesRule`.
+ */
+export function previousPlannedStart(meeting: Pick<Meeting, "start" | "recurrence">, planned: string): string | null {
+  if (planned <= meeting.start) return null;
+  const step = STEP_DAYS[meeting.recurrence];
+  if (step) {
+    const previous = addDays(planned, -step);
+    return previous < meeting.start ? meeting.start : previous;
+  }
+  if (meeting.recurrence !== "monthly") return null;
+  const month = monthsAfter(planned, -1);
+  return month <= meeting.start.slice(0, 7) ? meeting.start : monthlyPlannedIn(meeting.start, month);
+}
+
+/**
  * Whether a date-time is one the meeting's rule reaches from its start (meetings.md rule 2), before
  * its end date and its exceptions are looked at: the start itself, a weekly or biweekly step from it
  * at the same time of day, or a monthly series' date in a later month (`nextPlannedStart`). Text that

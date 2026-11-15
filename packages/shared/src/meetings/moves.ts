@@ -1,15 +1,19 @@
 import { recurrenceProblem } from "../calendar/ics";
+import { addDays } from "../dates";
 import {
   addMinutes,
   meetingOccurrences,
+  MOVED_EARLIER_REACH_DAYS,
   moveOccurrence,
   onSeriesRule,
+  previousPlannedStart,
   type Conflict,
   type MoveScope,
 } from "../operations/meetings";
 import type { Attendee, Meeting, MeetingException } from "../types";
 import { meetingForViewer, sameAttendee, seesMeeting, type MeetingViewer } from "./access";
 import { durationProblem, MEETING_LIMITS, startProblem, typedStartProblem } from "./input";
+import { hasEnded } from "./sends";
 
 /** A move as a person asks for it (meetings.md "Move or resize", `MeetingMove` without its id). */
 export interface MeetingMoveInput {
@@ -53,15 +57,75 @@ function allPlanned(
   );
 }
 
-/** Why a series as a move leaves it has an exception off its own rule, or null (ADR 0051 "Part 2"). */
-function strandedException(series: Meeting): string | null {
-  const plain = { ...series, exceptions: [] };
-  return allPlanned(
-    plain,
-    series.exceptions.map((e) => e.planned),
-  )
-    ? null
-    : "An occurrence changed on its own would no longer be part of the series after this move. Move it on its own first, or choose another time.";
+/**
+ * Whether an occurrence changed on its own starts more than `MOVED_EARLIER_REACH_DAYS` before the
+ * date the series plans for it. The calendar, the reminders and a conflict check look for it only
+ * that far ahead of the days they read (`meetingOccurrences`), so such an occurrence would vanish
+ * from all three (ADR 0051 "Part 2", review round 3 of PR #35).
+ */
+function beyondReach(exception: Pick<MeetingException, "planned" | "start">): boolean {
+  const day = (exception.start ?? exception.planned).slice(0, 10);
+  return exception.planned.slice(0, 10) > addDays(day, MOVED_EARLIER_REACH_DAYS);
+}
+
+const BEYOND_REACH = `An occurrence changed on its own would be more than ${MOVED_EARLIER_REACH_DAYS} days before its date in the series, where the calendar can't find it. Choose another time.`;
+
+/**
+ * Why a series whose time or rule changes would leave an occurrence changed on its own behind, or
+ * null (ADR 0051 "Part 2", review round 3 of PR #35, safer than the spec). A guest's calendar drops a
+ * series' overrides when its DTSTART, DTEND or RRULE changes, and one is sent again only while its
+ * own time has not ended (`exceptionResends`, `hasEnded`). So an occurrence that has taken place
+ * while the date the series plans for it is still ahead would leave that date in every guest's
+ * calendar as a plain occurrence, a meeting the app doesn't have. Such a change is refused until
+ * that date has passed. Check it on the series as the change saves it: after an "all" move, both
+ * series of a split, an edit of the start or length, and an undo of "all" or a split.
+ */
+export function leftBehindProblem(series: Meeting, now: Date): string | null {
+  if (series.recurrence === "none") return null;
+  const { timeZone, durationMin } = series;
+  const behind = series.exceptions.some(
+    (e) =>
+      !e.cancelled &&
+      hasEnded(e.start ?? e.planned, e.durationMin ?? durationMin, timeZone, now) &&
+      !hasEnded(e.planned, durationMin, timeZone, now),
+  );
+  return behind
+    ? "An occurrence changed on its own has already taken place, but its date in the series is still ahead, so guests' calendars would show the meeting again on that date. Change the series after that date, or move one occurrence at a time."
+    : null;
+}
+
+/**
+ * Why a series as a change leaves it has an occurrence changed on its own that can't be kept, or
+ * null (ADR 0051 "Part 2"): every exception's planned time must still be on the series' rule, its
+ * own start no more than `MOVED_EARLIER_REACH_DAYS` before it (`beyondReach`), and none left behind
+ * by the change (`leftBehindProblem`).
+ */
+function strandedException(series: Meeting, now: Date): string | null {
+  const keys = series.exceptions.map((e) => e.planned);
+  if (!allPlanned({ ...series, exceptions: [] }, keys))
+    return "An occurrence changed on its own would no longer be part of the series after this move. Move it on its own first, or choose another time.";
+  return series.exceptions.some(beyondReach) ? BEYOND_REACH : leftBehindProblem(series, now);
+}
+
+/**
+ * When the last occurrence a series keeps before `planned` ends, as a local date-time (meetings.md
+ * rule 4, "this and following"): the latest end among the occurrences changed on their own before
+ * it, and the nearest planned date before it that is not one of them. The walk back passes only
+ * planned dates that are exceptions, so it takes at most one step more than there are exceptions.
+ */
+function lastKeptEnd(meeting: Meeting, planned: string): string {
+  const own = new Set(meeting.exceptions.map((e) => e.planned));
+  let last = "";
+  for (const e of meeting.exceptions) {
+    const end = addMinutes(e.start ?? e.planned, e.durationMin ?? meeting.durationMin);
+    if (e.planned < planned && !e.cancelled && end > last) last = end;
+  }
+  for (let p = previousPlannedStart(meeting, planned); p; p = previousPlannedStart(meeting, p)) {
+    if (own.has(p)) continue;
+    const end = addMinutes(p, meeting.durationMin);
+    return end > last ? end : last;
+  }
+  return last;
 }
 
 /**
@@ -79,11 +143,13 @@ function seriesStartProblem(before: Meeting, after: Meeting): string | null {
  * its new start must exist on the clock and pass rule 3, and every occurrence changed on its own
  * must still be one of its occurrences once it moves with the start (`shiftedSeries`). A monthly
  * shift can change the week of the month, and a shift can push an occurrence past `until`; nothing
- * would be correct to send for such an occurrence, so the change is refused.
+ * would be correct to send for such an occurrence, so the change is refused. So is one that would
+ * put an occurrence out of the calendar's reach or leave one behind (`strandedException`, review
+ * round 3 of PR #35), checked against `now`, the database clock of the change.
  */
-export function shiftedSeriesProblem(before: Meeting, after: Meeting): string | null {
+export function shiftedSeriesProblem(before: Meeting, after: Meeting, now: Date): string | null {
   if (before.recurrence === "none") return null;
-  return seriesStartProblem(before, after) ?? strandedException(after);
+  return seriesStartProblem(before, after) ?? strandedException(after, now);
 }
 
 /**
@@ -100,19 +166,26 @@ const CHECK_ID = "split-check";
 
 /**
  * Why a move can't be made, or null (meetings.md rules 4 and 5, "Move or resize"; ADR 0051 "Part 2",
- * each refusal safer than the demo, which moves whatever it is given):
+ * each refusal safer than the demo, which moves whatever it is given). `today` is the company's day
+ * and `now` the database clock of the move:
  * - a cancelled meeting is refused;
  * - the new start must pass `typedStartProblem` (on the clock, and from a year before the company's
  *   `today` to three years after it), and the length is 15 to 1440 whole minutes;
  * - `planned` must be one of the meeting's occurrences (`isPlannedOccurrence`);
  * - "this and following" from the first occurrence is refused: the old series would keep a DTSTART
  *   that RFC 5545 counts as an occurrence, so guests would see the meeting twice;
+ * - "this and following" must start after the last occurrence the old series keeps has ended
+ *   (`lastKeptEnd`), or both series would hold the same weeks and every guest would get both
+ *   (review round 3 of PR #35; rule 4 only says the new series starts at the new time);
+ * - "this event" may not move an occurrence more than `MOVED_EARLIER_REACH_DAYS` earlier
+ *   (`beyondReach`), where the calendar would lose it;
  * - the series the move leaves must be right: a shifted series start must exist and pass rule 3, a
  *   new series' start must pass rule 3, the moved occurrence must still be one of the result's
- *   occurrences (not past `until`, not off a monthly week), every exception must stay on its series,
- *   and a series takes at most `MEETING_LIMITS.exceptionsMax` exceptions.
+ *   occurrences (not past `until`, not off a monthly week), every exception must stay on its series
+ *   within reach, none may be left behind on either series (`strandedException`,
+ *   `leftBehindProblem`), and a series takes at most `MEETING_LIMITS.exceptionsMax` exceptions.
  */
-export function moveProblem(meeting: Meeting, move: MeetingMoveInput, today: string): string | null {
+export function moveProblem(meeting: Meeting, move: MeetingMoveInput, today: string, now: Date): string | null {
   if (meeting.status === "cancelled") return "This meeting was cancelled.";
   const timing = typedStartProblem(move.start, { zone: meeting.timeZone, today }) ?? durationProblem(move.durationMin);
   if (timing) return timing;
@@ -123,22 +196,25 @@ export function moveProblem(meeting: Meeting, move: MeetingMoveInput, today: str
     return "This is the first occurrence of the series. Choose All events to move the whole series.";
   const [original, split] = moveOccurrence(meeting, move.planned, move, scope, CHECK_ID);
   if (!original) return "This meeting can't be moved.";
-  if (scope === "this")
-    return original.exceptions.length > MEETING_LIMITS.exceptionsMax
-      ? `A series can have at most ${MEETING_LIMITS.exceptionsMax} occurrences changed on their own.`
-      : null;
+  if (scope === "this") {
+    if (original.exceptions.length > MEETING_LIMITS.exceptionsMax)
+      return `A series can have at most ${MEETING_LIMITS.exceptionsMax} occurrences changed on their own.`;
+    return beyondReach({ planned: move.planned, start: move.start }) ? BEYOND_REACH : null;
+  }
   const result = split ?? original;
   const lost = "The moved occurrence would no longer be part of the series. Choose another time.";
   if (scope === "following") {
     const problem = recurrenceProblem(result.start, result.recurrence);
     if (problem) return problem;
+    if (move.start <= lastKeptEnd(meeting, move.planned))
+      return "The earlier occurrences stay where they are, so this and following must start after the last of them ends. Choose a later time, or choose This event or All events.";
     if (!isPlannedOccurrence(result, move.start)) return lost;
-    return strandedException(result);
+    return strandedException(result, now) ?? leftBehindProblem(original, now);
   }
   if (meeting.recurrence === "none") return null;
   const problem = seriesStartProblem(meeting, original);
   if (problem) return problem;
-  return isPlannedOccurrence(original, move.start) ? strandedException(original) : lost;
+  return isPlannedOccurrence(original, move.start) ? strandedException(original, now) : lost;
 }
 
 /** The meetings a move saves: the original, and the new series of a "this and following" split. */
@@ -363,6 +439,16 @@ export function undoProblem(current: Meeting, ctx: UndoContext): UndoRefusal | n
   if (current.sequence !== record.after.sequence || ctx.clientSequence !== record.before.sequence)
     return MEETING_CHANGED;
   return null;
+}
+
+/**
+ * Why an undo can't put the series back, or null (ADR 0051 "Part 2", review round 3 of PR #35, safer
+ * than the spec): undoing "all" or a split changes the restored series' time or rule again, so it is
+ * refused when that would leave an occurrence changed on its own behind (`leftBehindProblem`), as a
+ * move is. Undoing "this event" leaves the series' own time and rule as they are.
+ */
+export function undoneSeriesProblem(current: Meeting, record: MoveRecord, now: Date): string | null {
+  return record.after.scope === "this" ? null : leftBehindProblem(undoneMeeting(current, record), now);
 }
 
 /**

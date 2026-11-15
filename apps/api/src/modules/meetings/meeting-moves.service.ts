@@ -22,6 +22,7 @@ import {
   restoredOccurrence,
   sameAttendee,
   undoneMeeting,
+  undoneSeriesProblem,
   undoProblem,
   zonedToInstant,
   type Conflict,
@@ -103,7 +104,8 @@ export class MeetingMoves {
   /**
    * Moves or resizes a meeting, or one or more of a series' occurrences (meetings.md rule 4 and the
    * sends table; ADR 0051 "Part 2"). Only someone who may change it (`canChangeMeeting`; 404 when they
-   * can't see it, 403 otherwise), and only a move `moveProblem` allows. Answers are not reset.
+   * can't see it, 403 otherwise), and only a move `moveProblem` allows, by the company's day and the
+   * database clock. Answers are not reset.
    * "This and following" inserts the new series with the same organiser, created by the mover, and
    * copies the live guests with their answers; its email guests count against the mover's daily
    * outside-address limit. Conflicts are worked out in the same transaction, after the save.
@@ -119,9 +121,9 @@ export class MeetingMoves {
     const { today, dayStart } = await companyDay(this.control.db, tenant);
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
-      refuseIf(moveProblem(before.meeting, move, today));
-      const moved = movedMeetings(before.meeting, move, { newId: uuidv7(), newUid: randomUUID() });
       const now = await databaseNow(tx);
+      refuseIf(moveProblem(before.meeting, move, today, now));
+      const moved = movedMeetings(before.meeting, move, { newId: uuidv7(), newUid: randomUUID() });
       await this.saveOriginal(tx, before, moved.original, now);
       if (moved.split) await this.insertSplit(tx, userId, before, moved.split, now, dayStart);
       const saved = await loadedIn(tx, id);
@@ -181,9 +183,11 @@ export class MeetingMoves {
    * "Part 2", critic B3). The meeting is rebuilt from the server's own "Moved meeting" entry, never
    * from the client: only the SEQUENCE the client saw before the move is read, to refuse a mismatch.
    * `undoProblem` decides: the move must be the meeting's last change, by the caller, within five
-   * minutes. A series the move split off must still be exactly as the move left it, and is removed:
-   * soft-deleted with its guests, cancelled at SEQUENCE 1, and its guests get a CANCEL (closing the
-   * spec's "Undo removes a split-off series without sending its guests a cancellation").
+   * minutes. Undoing "all" or a split is refused with 400 when it would leave an occurrence changed
+   * on its own that has taken place behind at a date still ahead (`undoneSeriesProblem`, review
+   * round 3 of PR #35). A series the move split off must still be exactly as the move left it, and
+   * is removed: soft-deleted with its guests, cancelled at SEQUENCE 1, and its guests get a CANCEL
+   * (closing the spec's "Undo removes a split-off series without sending its guests a cancellation").
    */
   async undo(tenant: TenantContext, actor: Actor, id: string, clientSequence: number): Promise<Meeting> {
     const userId = actor.access.userId;
@@ -201,10 +205,11 @@ export class MeetingMoves {
         clientSequence,
       });
       if (problem || !record) throw problem ? refusal(problem) : changedSince();
+      const now = await databaseNow(tx);
+      refuseIf(undoneSeriesProblem(current.meeting, record, now));
       const splits: LoadedMeeting[] = [];
       for (const splitId of record.after.createdIds) splits.push(await this.lockSplit(tx, actor.access, id, splitId));
       const restored = undoneMeeting(current.meeting, record);
-      const now = await databaseNow(tx);
       await tx
         .update(meetings)
         .set({

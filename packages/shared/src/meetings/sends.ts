@@ -123,6 +123,16 @@ export function sendPlan(
 const MINUTE_MS = 60_000;
 
 /**
+ * Whether a meeting's time slot, a local start and a length in its zone, has ended by `now`. Text
+ * that names no instant counts as ended. It is the bound `exceptionResends` sends by, and the one a
+ * series change is checked against, so the two never disagree (`leftBehindProblem`).
+ */
+export function hasEnded(start: string, durationMin: number, zone: string, now: Date): boolean {
+  const startsAt = zonedToInstantLenient(start, zone);
+  return !startsAt || startsAt.getTime() + durationMin * MINUTE_MS <= now.getTime();
+}
+
+/**
  * The series' occurrences moved on their own, sent again after the series changed anything its file
  * carries (ADR 0021 and 0051 "Series exceptions sent again"; meetings.md "Differences from ADR 0021"
  * lists them as not sent, and this closes it). A calendar drops a series' overrides when its DTSTART,
@@ -131,8 +141,10 @@ const MINUTE_MS = 60_000;
  * edit it would keep the old ones (review round 2 of PR #35). Each surviving exception gets one copy of
  * every series REQUEST, at the series' SEQUENCE, with its own RECURRENCE-ID (the planned time as
  * the series now has it) and its own time and length. Only exceptions whose occurrence has not ended
- * by `now` are sent, which bounds what guests receive; one marked cancelled is skipped (nothing
- * writes one yet). A CANCEL has no copies. A colleague's in-app note comes once, with the series'
+ * by `now` are sent (`hasEnded`), which bounds what guests receive; a change of a series' time or
+ * rule that would leave an ended one at a planned time still ahead is refused before this runs
+ * (`leftBehindProblem`, review round 3 of PR #35). One marked cancelled is skipped (nothing writes
+ * one yet). A CANCEL has no copies. A colleague's in-app note comes once, with the series'
  * own invite, not once per copy.
  */
 export function exceptionResends(meeting: Meeting, seriesSends: readonly MeetingSend[], now: Date): MeetingSend[] {
@@ -142,8 +154,7 @@ export function exceptionResends(meeting: Meeting, seriesSends: readonly Meeting
     if (exception.cancelled) return [];
     const start = exception.start ?? exception.planned;
     const durationMin = exception.durationMin ?? meeting.durationMin;
-    const startsAt = zonedToInstantLenient(start, meeting.timeZone);
-    if (!startsAt || startsAt.getTime() + durationMin * MINUTE_MS <= now.getTime()) return [];
+    if (hasEnded(start, durationMin, meeting.timeZone, now)) return [];
     return requests.map((send) => ({ ...send, inApp: false, recurrenceId: exception.planned, start, durationMin }));
   });
 }

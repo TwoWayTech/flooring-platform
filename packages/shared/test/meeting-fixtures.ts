@@ -21,6 +21,8 @@ export const ORGANISER = "u-org";
 export const GUEST = "u-guest";
 /** The company's today in these tests, a few days before the test meetings (the start bound, ADR 0051 "Part 2"). */
 export const TODAY = "2026-11-15";
+/** The database clock in these tests: noon in Denver on TODAY, which a series change is checked against. */
+export const NOW = new Date("2026-11-15T19:00:00.000Z");
 
 /** A confirmed one-off meeting in Denver, organised by ORGANISER with GUEST, a customer and an email guest. */
 export function testMeeting(patch: Partial<Meeting> = {}): Meeting {

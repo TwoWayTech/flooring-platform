@@ -42,10 +42,12 @@ export function changedFields(before: Meeting, patch: MeetingPatch): (keyof Meet
  * refused. Only the changed fields are checked, so a new start must pass `typedStartProblem` in the
  * meeting's zone against the company's `today` and pass the monthly limit, while a title edit on a
  * day-30 monthly series still works. A series' occurrences moved on their own shift with a new start
- * and are sent again (ADR 0051 "Part 2", ADR 0021), so a new start that would take one off the series
- * (`shiftedSeriesProblem`) is refused.
+ * and are sent again (ADR 0051 "Part 2", ADR 0021), so a new start or length that would take one off
+ * the series, out of the calendar's reach, or leave one that has taken place behind at a date still
+ * ahead of `now` (the database clock of the edit) is refused (`shiftedSeriesProblem`, review round 3
+ * of PR #35).
  */
-export function editProblem(before: Meeting, patch: MeetingPatch, today: string): string | null {
+export function editProblem(before: Meeting, patch: MeetingPatch, today: string, now: Date): string | null {
   if (before.status === "cancelled") return "This meeting was cancelled.";
   const changed = changedFields(before, patch);
   const pick = <K extends keyof MeetingPatch>(key: K) => (changed.includes(key) ? patch[key] : undefined);
@@ -60,8 +62,8 @@ export function editProblem(before: Meeting, patch: MeetingPatch, today: string)
     },
     { zone: before.timeZone, today, recurrence: before.recurrence },
   );
-  if (fields || !changed.includes("start")) return fields;
-  return shiftedSeriesProblem(before, editedMeeting(before, patch).meeting);
+  if (fields || !(changed.includes("start") || changed.includes("durationMin"))) return fields;
+  return shiftedSeriesProblem(before, editedMeeting(before, patch).meeting, now);
 }
 
 /**
