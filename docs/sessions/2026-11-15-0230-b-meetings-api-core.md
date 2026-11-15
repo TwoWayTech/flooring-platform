@@ -306,3 +306,10 @@ Then lint, typecheck and tests through the lock, and the security-reviewer and s
   - hide Request when `colleagues` is empty;
   - move the demo onto the shared rules;
   - add the e2e-api spec.
+
+## Review round 1 (security and correctness reviewers; each finding confirmed by a skeptic)
+- **Blocking, fixed:** `POST /meeting-requests` read the asked colleague's access through the company pool inside its transaction, so three requests at once could hold all three connections and hang the company. The check now runs before the transaction. A test sends six at once; with the old code it timed out (checked by putting the call back).
+- **Blocking, fixed:** a changer became the Outbox actor of every invite and so read customers and suppliers they can't see in `GET /outbox`. `canChangeMeeting` now needs sight of every linked guest, the organiser included (seeded meetings often have an organiser who can't read their customer). 403 "Only someone who can see every guest on this meeting can change it.". Files also list only their recipient whenever any guest is not staff, even on seeded meetings stored with an open list.
+- **Fixed (verdict should_fix):** the daily cap counted new addresses only. Every send now counts: 200 outside and 500 meeting emails per person per company day, from the audit entries' `after.sends`, under the per-person lock, so it is exact for actions sent at once. Refusals write nothing; cancels and edits are refused too.
+- **Fixed (should_fix):** invites are planned in the transaction from the committed state (lookups included); after the commit only the per-guest writes and the reminder re-sync run, neither can fail the request, and the reply is the committed meeting. `sendPlan` sends no REQUEST for a cancelled meeting.
+- Docs: ADR 0051, api-contract, meetings.md and the blueprint-delta row. New owner question: should an organiser who lost sight of a customer still cancel?

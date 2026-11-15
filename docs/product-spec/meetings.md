@@ -509,13 +509,13 @@ Moves, Undo and proposal decisions come in part 2, and the screens move to the A
 
 The API follows this spec. Where it differs, it is in the safer direction, and each difference is a row in docs/blueprint-delta.md:
 
-- **Who may change a meeting.** Editing, cancelling and removing a guest need `meetings.meeting.edit`, sight of the meeting, and either being its organiser or holding a scope wider than own on a meeting that is not private (`canChangeMeeting`). That closes "anyone with `meetings.meeting.edit` who can see a meeting can change it" (Who uses it). Someone who sees the meeting but may not change it gets 403.
+- **Who may change a meeting.** Editing, cancelling and removing a guest need `meetings.meeting.edit`, sight of the meeting, sight of every customer, supplier and contact on it, and either being its organiser or holding a scope wider than own on a meeting that is not private (`canChangeMeeting`). That closes "anyone with `meetings.meeting.edit` who can see a meeting can change it" (Who uses it). The guest rule binds the organiser too: a change emails every guest with the changer as the Outbox actor, and the Outbox shows its actor the guest's name, address and file, so someone who reads a guest only as "Customer" can't change the meeting. Some of Summit's seeded meetings have an organiser who can't read their customer; on the API someone who can read every guest changes those. Someone who sees the meeting but may not change it gets 403.
 - **Private meetings** are hidden from everyone not on them, the Owner included: in the calendar, in the calendar file, and in the Outbox, where someone else's row of a private meeting is redacted whatever the reader holds. A removed guest no longer sees one.
 - **What a reader sees** (`meetingForViewer`):
   - Other guests' addresses, and a hidden guest list, are shown only to the organiser and to those who may change the meeting (the drawer rule above shows a hidden list to any edit holder).
   - Other guests' notes and proposals go to the organiser only.
   - A customer, supplier or contact the reader can't read is "Customer", "Supplier", "Customer contact" or "Supplier contact", with no address.
-- **Hidden guest list** is forced on with any guest who is not staff. Rule 9 forces it only for email guests.
+- **Hidden guest list** is forced on with any guest who is not staff. Rule 9 forces it only for email guests. A calendar file lists only its recipient whenever any guest is not staff, even on a seeded meeting stored with an open list.
 - **Owned by the server:**
   - the organiser, added as accepted;
   - every guest's name, address and answer: only who the guest is is read from the request;
@@ -528,6 +528,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
   - 15 to 1440 whole minutes on create, edit and proposals;
   - a reminder of 10, 15, 30 or 60;
   - at most 50 guests and 20 email guests a meeting, and 50 outside addresses per person a day;
+  - at most 200 emails to people outside the company and 500 meeting emails in all per person a day, every send counted, so the same guests can't be mailed again and again; an action over a limit is refused and changes nothing;
   - a stricter address check than rule 12;
   - "No reply yet" is refused as an answer.
 - **Switches:** with `meetings.invites` off, guests are refused; the guest picker, guest removal and answers are 404; and nothing is sent, reminders included. `meetings.requests` needs `meetings.invites`.
@@ -538,7 +539,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Cancelled meetings:**
   - cancel works once;
   - answers, guest removal and edits on a cancelled meeting are refused, which closes the "do not check for a cancelled meeting" limit;
-  - a cancelled meeting has no calendar file (404).
+  - a cancelled meeting has no calendar file (404), and no REQUEST is ever sent for one.
 - **Answers:**
   - only a staff guest who is not the organiser answers;
   - a proposal is a pending Maybe;

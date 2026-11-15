@@ -36,8 +36,9 @@
   - checks `:id` and `:attendeeId` as UUIDs.
 - **Every write:**
   - on an existing meeting, locks its row first (`lockMeeting`, `select … for update`), so two changes at once apply one after the other;
-  - applies the shared rules and writes its audit entry in the same transaction;
-  - sends invites and notices and re-syncs the reminder after the commit.
+  - applies the shared rules, works out what it will send from the state it commits (`MeetingSends.plan`: the guests, who is still an active member and the organiser the files name), checks the daily email limits and writes its audit entry, all in the same transaction. A failed lookup there undoes the whole change;
+  - writes the invites and notices and re-syncs the reminder after the commit. Neither can fail the request, the re-sync runs whatever happened to the invites, and the reply is the meeting as the transaction committed it, so nothing read after the commit can turn a saved change into a 500 (review of PR #33);
+  - never takes a second connection from the company's three-connection pool while its transaction holds one. `POST /meeting-requests` checks the asked colleague's access before its transaction opens, because that access is read through the pool (review of PR #33: a few requests at once could otherwise hold every connection and hang the company).
 - **Bodies:** strict Zod schemas. They are wider than the shared limits, so a long title is refused in the rule's own words. A rule's refusal is 400 `invalid_request` with that rule's message.
 
 ### Who sees and who changes a meeting (`packages/shared/src/meetings/access.ts`)
@@ -46,9 +47,10 @@
   - nobody else sees a private one, the Owner included (spec line 51);
   - own scope sees only meetings it is on, and branch or all scope sees every other one. Meetings have no branch, so branch scope does not narrow it (the spec's table).
   - The guest kind is checked, so a customer whose id equals a user id never counts as that user. A removed guest is no longer on the meeting.
-- **`canChangeMeeting`** (edit details, cancel, remove a guest) needs `meetings.meeting.edit` and sight of the meeting. Then the person must be its organiser, or hold a scope wider than own on a meeting that is not private.
-  - Someone who sees the meeting but may not change it gets 403 "Only the organiser can change this meeting."; someone who can't see it gets 404.
+- **`canChangeMeeting`** (edit details, cancel, remove a guest) needs `meetings.meeting.edit`, sight of the meeting and sight of every customer, supplier and contact on it (`seesEveryLinkedGuest`, the rules under "Reading a linked guest"). Then the person must be its organiser, or hold a scope wider than own on a meeting that is not private.
+  - Someone who sees the meeting but may not change it gets 403: "Only someone who can see every guest on this meeting can change it." when guest sight is all that is missing, "Only the organiser can change this meeting." otherwise. Someone who can't see it gets 404.
   - This is stricter than meetings.md line 53, where anyone with edit who sees a meeting can change it. The rule stops an own-scope Sales guest from changing a colleague's meeting. A private meeting is changed only by the person who set it up.
+  - **Guest sight binds the organiser too** (review of PR #33). A change emails every guest with the changer as the Outbox actor, and `GET /outbox` shows its actor each row whole: the guest's name, address and `.ics`. Without the rule an HR manager (all scope, `meetings.*`, no customers) or a Manager whose branch doesn't cover a customer could edit a meeting's notes and then read that customer in the Outbox. Several of Summit's seeded meetings have an organiser who can't read their customer (the fixtures ignore scope), so on the API they are changed by someone who reads every guest, such as the Owner.
 - **`meetingForViewer`** shapes every `Meeting` the API returns:
   - The organiser, and anyone who may change the meeting, get every guest with their address.
   - Anyone else gets no address but their own. An email guest whose name is an address reads "Email guest". With a hidden guest list they get only their own row. The spec shows a hidden list to any edit holder.
@@ -112,9 +114,10 @@
 ### Invites and calendar files (`meetings/sends.ts`, `calendar/ics.ts`)
 - **`sendPlan`** covers the part 1 rows of meetings.md "What each action sends": schedule, edit (significant or not), cancel and remove a guest.
   - The organiser never gets a row, and with `meetings.invites` off nothing is sent.
-  - With a hidden list each file names only its recipient, and a guest without a valid address gets no ATTENDEE line.
+  - With a hidden list, or with any guest who is not staff whatever the stored flag (Summit's seeded meetings keep the demo's open lists), each file names only its recipient. A guest without a valid address gets no ATTENDEE line.
+  - No REQUEST is sent for a meeting that is already cancelled, so a schedule or edit raced by a cancel or a declined request can't put it back in a calendar at the cancel's SEQUENCE (review of PR #33). The invites come from the state the action's own transaction committed, never from a read after it.
   - A REQUEST says STATUS:TENTATIVE while a request waits; the spec writes CONFIRMED.
-- **One `notify` per guest**, after the commit, each in its own try/catch, so a failed send never undoes the change or stops the other guests' invites.
+- **One `notify` per guest**, after the commit, each in its own try/catch, so a failed send never undoes the change, stops the other guests' invites or fails the request.
   - The row carries `{ kind: "ics", fileName, text }`, stored inline in `outbox_messages.attachments`. ADR 0032 left attachments for the StorageProvider, but an `.ics` is a few kilobytes of text, and the row is restricted when the meeting is private.
   - `restricted` is the meeting's `private`. Staff also get an in-app note. `meeting.sequence` stays in the values, for rule 7.
   - A failure is logged without names or addresses.
@@ -175,16 +178,19 @@
 - **Addresses:** the spec's `x@y.z` shape (rule 12), at most 254 characters, and no spaces, control characters or `"(),:;<>[\]`. An unusual but valid quoted address is refused rather than risk a broken invite.
 - **Volume:**
   - at most 50 guests besides the organiser, and at most 20 email guests, per meeting;
-  - at most 50 different outside addresses per person per company day, across all their meetings. The count comes from the email guests the person added since the start of the company's day, removed ones included, under a per-person advisory transaction lock, so two meetings saved at once count each other. An address counts once a day.
+  - at most 50 different outside addresses per person per company day, across all their meetings. The count comes from the email guests the person added since the start of the company's day, removed ones included, under the person's advisory transaction lock, so two meetings saved at once count each other. An address counts once a day;
+  - **every send counts** (review of PR #33): at most 200 emails to people outside the company (customers, suppliers, their people and email guests) and 500 meeting emails in all, per person per company day, repeats included. So scheduling the same 20 guests over and over, or flipping a title back and forth, can't mail them at volume. Each action's audit entry holds `after.sends` `{ outside, total }`, the emails it sends, written in its own transaction under the person's lock; the next action of that person waits for the lock and sums the day's entries. The count is exact for actions sent at once, and the audit log refuses updates and deletes, so nobody can lower it. An action over a limit (schedule, edit, cancel, guest removal, answer or request) is refused with 400 and writes nothing; one that sends nothing is never refused. Reminders have no actor and don't count;
+  - the company's day starts at midnight in `tenants.time_zone`; should that not be readable, the last 24 hours count.
 
 ### Audit
 - The actions are:
   - `Scheduled meeting`: after holds the start and the guest count;
   - `Edited meeting`: before and after hold the start and the names of the changed fields;
   - `Cancelled meeting`: the status;
-  - `Removed meeting guest`: before holds the guest;
+  - `Removed meeting guest`: before holds the guest, after only the sends;
   - `Answered meeting`: the old and new answer;
   - `Requested meeting`: after holds who was asked.
+- Each entry's after also holds `sends`, `{ outside, total }`: the emails the action sends, as the daily limits count them.
 - All are category `data` and target type `meeting`, written in the write's own transaction (CLAUDE.md rule 10).
 - The target label is the title, or "Private meeting".
 - Before and after hold no emails, notes or titles. An email guest is "Email guest". On a private meeting people are named only by kind ("Colleague", "Customer" and so on), so audit readers don't learn who is in a private HR meeting.
@@ -209,11 +215,11 @@
 - No responses, Outbox rows or reminders are seeded. The monthly safety talk that starts on the 30th is kept as the fixture has it.
 
 ## Safest options taken (also in docs/blueprint-delta.md)
-1. **Who may change a meeting:** the organiser, or someone with a scope wider than own on a meeting that is not private (`canChangeMeeting`). The spec lets any edit holder who sees it.
+1. **Who may change a meeting:** the organiser, or someone with a scope wider than own on a meeting that is not private, and in both cases only someone who can read every customer, supplier and contact on it (`canChangeMeeting`). The spec lets any edit holder who sees it, and the organiser always.
 2. **Private meetings** are hidden from everyone not on them, the Owner included, also in `GET /outbox`: subject, body and `.ics` are redacted whatever the reader holds.
 3. **What a reader sees:** addresses, a hidden guest list, other guests' notes and proposals, and customers or suppliers the reader can't read are blanked, as under "Who sees and who changes a meeting".
 4. **Hidden guest list** for any guest who is not staff. The spec forces it only for email guests.
-5. **Volume limits:** 50 guests and 20 email guests per meeting, and 50 outside addresses per person per company day.
+5. **Volume limits:** 50 guests and 20 email guests per meeting, 50 outside addresses per person per company day, and 200 outside emails and 500 meeting emails per person per company day with every send counted.
 6. **Input limits:** text lengths, one-line fields, 15 to 1440 minutes, the four reminder choices, the stricter address check, the year range, and "No reply yet" refused as an answer.
 7. **Switch dependencies:** with `meetings.invites` off, guests are refused (400), the guest routes are 404 and nothing is sent, reminders included. Requests need `meetings.invites`.
 8. **Owned by the server:** the organiser, the zone (409 outside the seven), `allowProposals` (the setting and the organiser's edit key, for requests too), a request's length and place, and every guest field.
@@ -235,6 +241,7 @@
 16. **Answers** come only from a staff guest who is not the organiser (400 otherwise). Every answer is its own notice.
 17. **Guest picker:** colleagues have no address and the person is left out. Customers follow the person's data scope.
 18. **Settings defaults** when none are stored: proposals off and the guest list hidden. New guests are never saved.
+19. **Files list only their recipient** whenever any guest is not staff, even on a seeded meeting stored with an open list, and no REQUEST goes out for a cancelled meeting.
 
 ## Kept as meetings.md says (not safety)
 - A move does not reset answers. Part 2 follows the sends table, which stands as written.
@@ -281,14 +288,15 @@
 - **The go-ahead:** the queue is paused per STATUS, and this run's go-ahead came through the workflow. PR #33 stays a draft until the owner confirms.
 - **Before real email** (ADR 0021): import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web before `EMAIL_PROVIDER=resend` sends meeting invites.
 - **Questions:**
-  - Are 20 email guests per meeting and 50 outside addresses per person a day right, and should inviting outside addresses need a key or a setting?
+  - Are 20 email guests per meeting, 50 outside addresses, 200 outside emails and 500 meeting emails per person a day right, and should inviting outside addresses need a key or a setting?
+  - Should an organiser who can no longer read a customer on their meeting still be able to cancel it? Part 1 refuses, because the cancel would show them that customer in the Outbox.
   - Should the Owner, as an Outbox admin, still see the recipient and status of a private meeting's rows?
   - Should RSVP be FALSE for guests outside the company until replies can be read?
   - Should `meeting.when` name the zone?
 
 ## Residual risks
 - **Who is on a private meeting shows in the Outbox:** a holder of `settings.outbox.view` (the Owner by default) still sees the recipient, status and dates of a private meeting's rows; only subject, body and `.ics` are hidden. The recipients say who was invited.
-- **Sends after the commit:** SEQUENCE can rise while one guest's row was not written (a failure is caught and logged). A row that was written and failed can be sent again with Retry, but a row never written has to wait for the next change.
+- **Sends after the commit:** SEQUENCE can rise while one guest's row was not written (a failure is caught and logged). A row that was written and failed can be sent again with Retry, but a row never written has to wait for the next change. A transaction that holds every invite for 50 guests was ruled out: a pg-boss outage would hold the meeting's lock and a company connection for up to ten seconds per guest.
 - **Reminders:**
   - a re-sync that fails leaves the meeting with no reminder (logged);
   - later occurrences and the seeded meetings have none until part 4 or a change;
@@ -299,7 +307,9 @@
 - **Branch scope sees every meeting that is not private**, from any branch, as in the spec. Narrowing it needs a branch on meetings and the owner.
 - **The calendar file sits inline** in the Outbox row, readable by anyone who may read that row unredacted.
 - **`meeting.when` has no zone**, so a guest in another zone can misread it.
-- **The daily cap is per person.** A company with many members can still send many outside invites in a day.
+- **The daily caps are per person.** A company with many members can still send many outside emails in a day, up to 200 per member. The caps count planned sends, so a send that later failed, or a colleague who left in between, still counts.
+- **The limits refuse cancels too:** a person over the outside cap can't cancel or edit a meeting with outside guests until the next company day; someone else who may change it can.
+- **Seeded meetings whose organiser can't read the customer** are changed on the API only by someone who reads every guest.
 - **A company outside the seven zones** can't book meetings on the API at all (409).
 - **Api mode before part 3:** Settings → Meetings, the bell, the Outbox and Simulate reply run on DemoStore, so they don't show what the API wrote.
 
@@ -309,7 +319,7 @@
 - **Tests:**
   - unit tests in packages/shared: `zones`, `ics`, `meeting-access`, `-input`, `-changes`, `-sends` and `-reminders`;
   - `apps/api/test/notification-rules.test.ts` covers the attachments and the private-meeting redaction;
-  - `apps/api/test/meetings.int.test.ts` has 21 cases: access and switches, tenancy, data scope, private meetings in `/outbox`, create, edit, cancel, remove, answers, requests, versions, reminders, expiry, caps, the HR Suite and the 409;
+  - `apps/api/test/meetings.int.test.ts` has 25 cases: access and switches, tenancy, data scope, private meetings in `/outbox`, create, edit, cancel, remove, answers, requests, versions, reminders, expiry, caps, the HR Suite and the 409, and from the review of PR #33: six requests at once all answered, nobody changing a meeting with a customer they can't read (the organiser included) and `/outbox` not showing it, the 200 outside emails cap on schedule, edit and cancel, and a committed change answered and re-synced when its invites fail while a failed plan writes nothing;
   - `packages/db/test/seed.int.test.ts` has a meetings case.
   - There are no Playwright tests, because no screen changed.
 - **Unchanged `settings.meetings` module:** the feature sits in module `platform` while its key `settings.meetings.manage` is in module `meetings` (`features.ts`, `catalog.ts`). It is unchanged here.
