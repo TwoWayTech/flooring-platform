@@ -76,6 +76,15 @@ export function reportPeriodProblem(from: string, to: string): string | null {
   return daysBetween(from, to) + 1 > MAX_REPORT_DAYS ? REPORT_QUERY_MESSAGES.tooLong : null;
 }
 
+/**
+ * Why a Business report's From and To are refused, or null (ADR 0055 S8): each day first, then the
+ * period. The demo refuses with it and the screen checks its Custom dates with it before sending,
+ * so a period the API would refuse is caught beside the dates instead of failing the whole page.
+ */
+export function businessPeriodProblem(from: string, to: string): string | null {
+  return reportDayProblem(from) ?? reportDayProblem(to) ?? reportPeriodProblem(from, to);
+}
+
 /** The dates a hub report reads (spec rule 24), so the API's readers and the shared builders agree. */
 export interface HubWindow {
   months: string[];

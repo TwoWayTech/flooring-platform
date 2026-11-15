@@ -150,4 +150,26 @@ test.describe("Business report (spec F2)", () => {
     await expect(page.getByText(/stops at gross profit/)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Profit by location" })).toHaveCount(0);
   });
+
+  test("custom dates the report can't take are explained beside them, and the figures stay (ADR 0055 S8)", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports");
+    await page.getByRole("combobox", { name: "Period" }).click();
+    await page.getByRole("option", { name: "Custom dates" }).click();
+    const exportCsv = page.getByRole("button", { name: "Export CSV" }).first();
+    await expect(exportCsv).toBeEnabled();
+    const from = page.getByLabel("From", { exact: true });
+    await from.fill("2020-01-01");
+    await expect(page.getByText(/^Choose a period of 366 days or less\./)).toBeVisible();
+    await expect(from).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
+    await expect(page.getByText("This page could not load its data.")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+    await expect(exportCsv).toBeEnabled();
+    await from.fill(await page.getByLabel("To", { exact: true }).inputValue());
+    await expect(page.getByText(/^Choose a period of 366 days or less\./)).toHaveCount(0);
+    await expect(from).not.toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
+  });
 });

@@ -1,4 +1,5 @@
 import {
+  businessPeriodProblem,
   businessReport,
   capDrillRecords,
   EMPTY_REPORT_OPTIONS,
@@ -10,8 +11,6 @@ import {
   REPORT_QUERY_MESSAGES as M,
   REPORT_WHOLE_COMPANY,
   reportAccess,
-  reportDayProblem,
-  reportPeriodProblem,
   reportVisibility,
   salesByCategoryReport,
   scopeAllows,
@@ -133,8 +132,7 @@ export function demoReportOptions(db: CompanyDb, viewer: ReportViewer): ReportOp
  */
 export function demoBusinessReport(db: CompanyDb, viewer: ReportViewer, filters: BusinessFilters): BusinessReport {
   assertOpens(viewer, "business");
-  const problem =
-    reportDayProblem(filters.from) ?? reportDayProblem(filters.to) ?? reportPeriodProblem(filters.from, filters.to);
+  const problem = businessPeriodProblem(filters.from, filters.to);
   if (problem) throw new DemoRuleError(problem);
   const live = new Set(db.list("locations").map((l) => l.id));
   if (filters.locationIds.some((id) => !live.has(id))) throw new DemoRuleError(M.locations);

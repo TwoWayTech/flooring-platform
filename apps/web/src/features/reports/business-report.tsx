@@ -17,7 +17,6 @@ import {
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
-import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { Segmented } from "@workspace/ui/components/segmented";
@@ -31,6 +30,8 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CustomDates } from "./custom-dates";
+import { customPeriod, editCustomPeriod } from "./custom-period";
 import { shownAnswer, type KeyedAnswer } from "./report-answer";
 import { ReportFallback } from "./report-fallback";
 
@@ -205,22 +206,24 @@ function toCsvText(report: BusinessReport): string {
  * (ADR 0055 S1). The location, salesperson and vendor choices come from `options`, so only ids the
  * server knows are sent, and sections the person may not see are not in the answer at all (S7).
  * While a new answer loads the last sections stay dimmed and the exports wait, so a CSV or PDF
- * always matches the dates it prints.
+ * always matches the dates it prints. Custom dates the server would refuse (S8) are explained
+ * beside the inputs and never sent, so the last figures stay.
  */
 export function BusinessReportView({ options, onRefresh }: { options: ReportOptions; onRefresh: () => void }) {
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
   const today = api.today();
   const [preset, setPreset] = useState<Preset>("last_month");
-  const [customFrom, setFrom] = useState(`${today.slice(0, 4)}-01-01`);
-  const [customTo, setTo] = useState(today);
+  const [custom, setCustom] = useState(() => customPeriod({ from: `${today.slice(0, 4)}-01-01`, to: today }));
   const [locationIds, setLocations] = useState<string[]>([]);
   const [productCategory, setCategory] = useState(ALL);
   const [expenseCategory, setExpenseCategory] = useState(ALL);
   const [salesRepId, setRep] = useState(ALL);
   const [supplierId, setSupplier] = useState(ALL);
   const [drill, setDrill] = useState<{ title: string; row: BusinessRow } | null>(null);
-  const range = preset === "custom" ? { from: customFrom, to: customTo } : rangeFor(preset, today);
+  // Custom dates the API would refuse (ADR 0055 S8) are explained beside the inputs and never sent:
+  // the report stays on the last pair that worked, so a typo never wipes the figures.
+  const range = preset === "custom" ? custom.applied : rangeFor(preset, today);
   // Only choices the server still lists are sent, so a stale pick reads as "all" instead of a refusal.
   const listed = (id: string, choices: readonly { id: string }[]) => choices.some((c) => c.id === id);
   const locations = locationIds.filter((id) => listed(id, options.locations));
@@ -291,10 +294,7 @@ export function BusinessReportView({ options, onRefresh }: { options: ReportOpti
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Pick label="Period" value={preset} onChange={setPreset} options={PRESETS} />
             {preset === "custom" ? (
-              <>
-                <Input type="date" aria-label="From" value={customFrom} onChange={(e) => setFrom(e.target.value)} />
-                <Input type="date" aria-label="To" value={customTo} onChange={(e) => setTo(e.target.value)} />
-              </>
+              <CustomDates period={custom} onChange={(change) => setCustom((c) => editCustomPeriod(c, change))} />
             ) : null}
             <Pick
               label="Product category"

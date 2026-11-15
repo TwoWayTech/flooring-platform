@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   REPORT_QUERY_MESSAGES as M,
   REPORT_RANGE_KEYS,
+  businessPeriodProblem,
   hubWindow,
   reportDayProblem,
   reportMonths,
@@ -27,6 +28,15 @@ describe("report days and periods (ADR 0055 S8, S-PER-1)", () => {
     }
     for (const day of ["1900-01-01", "2999-12-31", "2024-02-29"]) expect(reportDayProblem(day)).toBeNull();
     expect(reportDayProblem("2026-02-29")).toBe(M.realDate);
+  });
+
+  it("checks a Business report's From and To days first, then the period", () => {
+    expect(businessPeriodProblem("2026-01-01", "2026-11-15")).toBeNull();
+    expect(businessPeriodProblem("", "2026-11-15")).toBe(M.date);
+    expect(businessPeriodProblem("2026-01-01", "2026-02-30")).toBe(M.realDate);
+    expect(businessPeriodProblem("2026-11-16", "2026-11-15")).toBe(M.order);
+    expect(businessPeriodProblem("2025-01-01", "2026-11-15")).toBe(M.tooLong);
+    expect(businessPeriodProblem("0000-01-01", "2026-11-15")).toBe(M.realDate);
   });
 
   it("uses the same words as the sales routes for a missing or impossible day", () => {
