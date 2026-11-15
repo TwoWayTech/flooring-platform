@@ -466,10 +466,47 @@ One finding, should fix, confirmed by a skeptic. Fixed, with a test.
 - `pnpm -s typecheck`: 6 of 6. `pnpm -s lint`: 6 of 6. Prettier `--check` on the touched code and test: clean.
 - Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
 
+## Review round 3 of PR #35
+Three findings, each confirmed by a skeptic: one blocking and two should fix. All fixed, with tests (`8ac787d`, `fa192b5`).
+
+- **Blocking (correctness):** rule 4's shift moves each exception's planned time but keeps its own time, and `strandedException` only checked that the shifted planned time was still on the rule. A weekly Friday series whose last Friday was held an hour late, moved to Mondays with "all" (or by a PATCH of the start), tied that held occurrence to tomorrow's Monday. The app then had no meeting tomorrow and no reminder, `exceptionResends` skipped the held occurrence because it had ended, and the new series file gave every guest a plain Monday instance. A shift that put an exception's own time more than 31 days before its planned date also hid it from the calendar, the reminders and the conflict check. Part 1 refused any timing change on a series with exceptions, so part 2 made this reachable.
+- **Should fix (correctness):** "this and following" checked only rule 3 on the new start, so the new series could start before the old one's last kept occurrence. Both series then held the same weeks and every guest got both REQUESTs, for years with a far `planned`. The Reschedule form can reach it.
+- **Should fix (tests):** no route test split or undid a series with occurrences moved on their own, so the split's stored exceptions, the per-UID re-sends and the undo's restore through the audit entry had shared unit coverage only.
+
+### Fixes
+- `packages/shared/src/meetings/moves.ts`:
+  - `beyondReach` (an exception's own day more than `MOVED_EARLIER_REACH_DAYS` before its planned day) and `leftBehindProblem` (an exception whose own time has ended by `now` while its planned slot, as the change leaves it, has not), both used by `strandedException`. So they cover an "all" move, the shifted exceptions of a split and PATCH through `shiftedSeriesProblem`;
+  - `moveProblem` also runs `leftBehindProblem` on the old series of a split, refuses a "this event" move more than 31 days earlier, and refuses "this and following" at or before `lastKeptEnd` (the latest end among the kept exceptions and the nearest planned date before `planned` that is not one, found by walking back with the new `previousPlannedStart` in `operations/meetings.ts`);
+  - `undoneSeriesProblem` refuses an undo of "all" or a split that would leave one behind (400, in `MeetingMoves.undo` after `undoProblem`).
+- `hasEnded` in `sends.ts` is the one "has this slot ended" rule, used by `exceptionResends` and by `leftBehindProblem`, so the refusal and the re-sends never disagree.
+- `moveProblem`, `editProblem` and `shiftedSeriesProblem` take `now`, the database clock of the change. The routes read `databaseNow` before the check. `editProblem` now checks a length-only change of a series too.
+
+### Decisions (safer direction, in the blueprint-delta row and ADR 0051)
+- **Refuse rather than re-send.** The other fix the skeptic named, sending a past-dated override for an ended exception whose planned date is ahead, would change what guests receive; the decision rule keeps the sends. A refusal can hold a series' time, length or rule back until that date's slot ends; "this event" moves still work. Recorded as a residual risk and an owner question.
+- **The same check on every change of a series' time or rule,** not only on shifts: the old series of a split (its UNTIL changes), a length-only PATCH (its DTEND changes) and an undo of "all" or a split. Each sends the exceptions again under the same "not ended" bound, so the same held occurrence would be lost the same way. A place, title, notes or reminder edit leaves the time and rule alone and is not checked.
+- **The undo's refusal is 400 `invalid_request`,** like a refused move and the daily caps, not a new 409 code: the meeting has not changed since the move, the undo just can't be sent correctly.
+- **"This event" more than 31 days earlier is refused too:** the reach limit already hid such an occurrence (a residual risk of round 1), and no move or edit can now make one.
+- **The overlapping split is refused at or before the end** of the last kept occurrence, so back to back counts too: the meeting would run twice in a row. Rule 4 does not say, and the demo allows it.
+
+### Tests added
+- packages/shared `meeting-moves`: `previousPlannedStart` (weekly, biweekly, monthly, the first date); the overlapping split (the reviewer's earlier weekday, an overlap, back to back, a far `planned`, an exception kept later or earlier, monthly); the reach on "this event" and on "all"; left behind on "all", both series of a split and its undo, with "this event" and a past-keeping shift taken; `meeting-changes`: a PATCH start and a length-only PATCH refused, and the reach on a PATCH. A fixed `NOW` fixture is the database clock.
+- `apps/api/test/meetings-moves.int.test.ts`, now 27 cases: a split between an earlier and a later occurrence moved on their own, with the stored exceptions on both rows, one RECURRENCE-ID file per series under its own UID, and the undo restoring start, `until` and both exceptions and re-sending both at SEQUENCE 4; a PATCH start, a PATCH length, an "all" move and an undo refused with the row, the Outbox and the audit log unchanged, and a past-keeping PATCH taken; and two overlapping splits refused in the refusals case, with no series inserted.
+
+### Docs
+- ADR 0051: the move refusals, undo check 5, "Series exceptions sent again", a "Review round 3 of PR #35" section, safest options 4 and 5, "For the owner (part 2)", "Residual risks (part 2)" and the test count.
+- The blueprint-delta part 2 row, meetings.md ("Moves refused" and "Undo") and api-contract.md (`POST /meetings/:id/reschedule`, `PATCH /meetings/:id`, the undo row and "Undo answers").
+
+### Checks run (this round)
+- Integration `meetings-moves`: 27 of 27; `meetings`: 32 of 32. `apps/api` unit `meeting-undo`: 2 of 2.
+- packages/shared `vitest run`: 54 files, 619 tests passed.
+- `pnpm -s typecheck`: 6 of 6, and web forced past the cache: passed. `pnpm -s lint`: 6 of 6. Prettier `--check` on the touched code, tests and docs: clean.
+- Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
+
 ## Outcome
 - Part 2 is built, tested and documented on `feat/meetings-api-moves` (draft PR #35): the reschedule, undo and proposal-decision routes, conflicts with "Busy", the series exceptions sent again (lifting part 1's refusal), and the PATCH change.
 - Every deviation from meetings.md is in the safer direction and is recorded in ADR 0051 "Part 2" and the blueprint-delta row. "Moves don't reset answers" and the sends table are kept.
 - Review round 1 of PR #35 is fixed (above): occurrences worked out from the window, the conflict query bounded to the moved day, typed starts bounded, the split guard tested and the answer reset written once.
 - Review round 2 of PR #35 is fixed (above): every edit of a series sends its surviving exceptions again.
+- Review round 3 of PR #35 is fixed (above): an overlapping "this and following", an exception put out of the calendar's reach, and a series change that would leave an occurrence already held at a date still ahead are refused; a split and undo with exceptions is tested at route level.
 - **Next:** a fresh security-reviewer pass on the round 1 fixes (the start bound, the conflict query, the window rule); then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
 - **Open for the owner:** the questions under "For the owner" above, also in ADR 0051.
