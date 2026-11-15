@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { CompanyDb, ControlDb } from "@workspace/db";
 import {
+  auditLog,
   commissionAdjustments,
   commissionAssignments,
   commissionPlans,
@@ -20,6 +21,7 @@ import {
   dec,
   featureOn,
   managerOn,
+  managerSelfSetOn,
   moneyString,
   statementKey,
   sum,
@@ -36,6 +38,7 @@ import {
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { loadAdjustments, loadInvoices, loadNames, loadPayments, minuteOf } from "../sales/invoice-records";
+import { dayIn } from "../sales/sales-common";
 
 /** A stored commission statement row. */
 export type StatementRow = typeof commissionStatements.$inferSelect;
@@ -160,6 +163,12 @@ export async function employeesByUser(db: CompanyDb): Promise<Map<string, string
   return new Map(rows.flatMap((row) => (row.employeeId ? [[row.userId, row.employeeId] as const] : [])));
 }
 
+/** A history row as stored: when it was written and by whom, for the self-made manager guard. */
+interface StoredManagerRow extends ManagerHistoryRow {
+  createdBy: string | null;
+  createdAt: Date;
+}
+
 /**
  * Who managed whom, for overrides (commissions.md; owner decision 2026-11-15, ADR 0048): today's
  * sign-in links both ways, each live employee's manager today, and each employee's dated manager
@@ -173,7 +182,7 @@ interface ManagerChain {
   /** Each live employee's manager today (`employees.manager_id`), for an employee with no history. */
   current: Map<string, string | null>;
   /** Each employee's history rows. */
-  history: Map<string, ManagerHistoryRow[]>;
+  history: Map<string, StoredManagerRow[]>;
 }
 
 /** Reads the manager chain in one go: links, today's managers and every history row. */
@@ -187,10 +196,12 @@ async function loadManagerChain(db: CompanyDb): Promise<ManagerChain> {
         employeeId: employeeManagerHistory.employeeId,
         managerId: employeeManagerHistory.managerId,
         effectiveFrom: employeeManagerHistory.effectiveFrom,
+        createdBy: employeeManagerHistory.createdBy,
+        createdAt: employeeManagerHistory.createdAt,
       })
       .from(employeeManagerHistory),
   ]);
-  const history = new Map<string, ManagerHistoryRow[]>();
+  const history = new Map<string, StoredManagerRow[]>();
   for (const row of rows) {
     // The UUID v7 id sorts in the order rows were recorded, so it breaks a same-day tie (`managerOn`).
     const own = history.get(row.employeeId) ?? [];
@@ -199,6 +210,8 @@ async function loadManagerChain(db: CompanyDb): Promise<ManagerChain> {
       managerId: row.managerId,
       effectiveFrom: row.effectiveFrom,
       recordedOrder: row.id,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
     });
     history.set(row.employeeId, own);
   }
@@ -216,18 +229,124 @@ function managerEmployeeOn(chain: ManagerChain, employeeId: string, date: string
 }
 
 /**
- * Each person's manager by user id on a day, for overrides (commissions.md; owner decision
- * 2026-11-15, ADR 0048): user → today's linked employee → their manager on that day
- * (`managerOn` over employee_manager_history; an employee with no history reads today's
- * `managerId`) → that manager's user today. Null when any link is missing.
+ * The company's day of a confirmed moment (`lineConfirmedAt`: `YYYY-MM-DDTHH:mm` in UTC, or a bare
+ * day, read as it is). Manager changes are dated on the company's calendar (people.service.ts
+ * `recordManager`), so a payment confirmed on a company's evening, already the next day in UTC, is
+ * judged on the company's day it happened (first review of PR #32; ADR 0048).
  */
-export async function loadManagerOf(db: CompanyDb): Promise<(userId: string, date: string) => string | null> {
+function companyDayOf(at: string, zone: string): string {
+  if (at.length <= 10) return at;
+  return dayIn(new Date(`${at.slice(0, 16)}:00Z`), zone);
+}
+
+/**
+ * Each person's manager by user id when a line was confirmed, for overrides (commissions.md; owner
+ * decision 2026-11-15, ADR 0048): user → today's linked employee → their manager on the company's
+ * day of that moment (`companyDayOf`; `managerOn` over employee_manager_history; an employee with no
+ * history reads today's `managerId`) → that manager's user today. Null when any link is missing.
+ */
+export async function loadManagerOf(
+  db: CompanyDb,
+  zone: string,
+): Promise<(userId: string, at: string) => string | null> {
   const chain = await loadManagerChain(db);
-  return (userId, date) => {
+  return (userId, at) => {
     const employeeId = chain.links.get(userId);
     if (!employeeId) return null;
-    const managerId = managerEmployeeOn(chain, employeeId, date);
+    const managerId = managerEmployeeOn(chain, employeeId, companyDayOf(at, zone));
     return managerId ? (chain.userOfEmployee.get(managerId) ?? null) : null;
+  };
+}
+
+/** One change of a person's manager, as the audit log recorded it. */
+export interface ManagerChange {
+  employeeId: string;
+  actorUserId: string | null;
+  at: Date;
+}
+
+/**
+ * Every change of these people's manager, oldest first, read from "Added employee" and "Edited
+ * employee" entries (append-only), which carry `managerId` before and after (people.service.ts
+ * `save`). `managerId` decides who is paid an override (ADR 0048). People by user id, through
+ * their linked employee.
+ */
+export async function managerChanges(db: CompanyDb, userIds: readonly string[]): Promise<ManagerChange[]> {
+  const links = await employeesByUser(db);
+  const employeeIds = [...new Set(userIds.flatMap((userId) => links.get(userId) ?? []))];
+  if (employeeIds.length === 0) return [];
+  const entries = await db
+    .select({
+      targetId: auditLog.targetId,
+      actorUserId: auditLog.actorUserId,
+      at: auditLog.at,
+      before: auditLog.before,
+      after: auditLog.after,
+    })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.targetType, "employee"),
+        inArray(auditLog.targetId, employeeIds),
+        inArray(auditLog.action, ["Added employee", "Edited employee"]),
+      ),
+    )
+    .orderBy(asc(auditLog.at), asc(auditLog.id));
+  const managerIn = (value: unknown) => ((value ?? {}) as { managerId?: string | null }).managerId ?? null;
+  return entries.flatMap((entry) =>
+    entry.targetId && managerIn(entry.before) !== managerIn(entry.after)
+      ? [{ employeeId: entry.targetId, actorUserId: entry.actorUserId, at: entry.at }]
+      : [],
+  );
+}
+
+/**
+ * Who set each history row's manager (ADR 0048 "Self-made manager"): a dated row is set by whoever
+ * saved it (`created_by`, written by `recordManager`). A since-records-began row stands for the
+ * manager the person had before the history began, so it is set by whoever made the last manager
+ * change in the audit log before the person's first dated row was written (with no dated row, the
+ * last one of all); its own `created_by` is the backfill's or the first editor's, who did not set it.
+ */
+function withSetters(rows: readonly StoredManagerRow[], changes: readonly ManagerChange[]): ManagerHistoryRow[] {
+  const dated = rows.filter((row) => row.effectiveFrom !== null).map((row) => row.createdAt.getTime());
+  const began = dated.length ? Math.min(...dated) : Infinity;
+  const before = changes.filter((change) => change.at.getTime() < began).at(-1)?.actorUserId ?? null;
+  return rows.map((row) => ({ ...row, setBy: row.effectiveFrom === null ? before : row.createdBy }));
+}
+
+/**
+ * Whether the statement's own person set the manager who earns an override line (second security
+ * review of PR #27, first review of PR #32; ADR 0048 "Self-made manager"): `(subjectUserId, at,
+ * userId)` with the line's subject, its confirmed moment (`lineConfirmedAt`) and the statement's
+ * person. It reads the subject's history row in force on that company day, as `loadManagerOf` did
+ * (`managerSelfSetOn`), so a later move to another manager never clears the earlier days; someone
+ * else setting that same manager again does. A subject with no history rows falls back to the
+ * latest manager change in the audit log, as overrides then follow today's manager.
+ */
+export async function loadSelfSetManager(
+  db: CompanyDb,
+  zone: string,
+  subjectUserIds: readonly string[],
+): Promise<(subjectUserId: string, at: string, userId: string) => boolean> {
+  const [chain, changes] = await Promise.all([loadManagerChain(db), managerChanges(db, subjectUserIds)]);
+  const history = new Map(
+    [...new Set(subjectUserIds.flatMap((userId) => chain.links.get(userId) ?? []))].map((employeeId) => [
+      employeeId,
+      withSetters(
+        chain.history.get(employeeId) ?? [],
+        changes.filter((change) => change.employeeId === employeeId),
+      ),
+    ]),
+  );
+  return (subjectUserId, at, userId) => {
+    const employeeId = chain.links.get(subjectUserId);
+    if (!employeeId) return false;
+    const rows = history.get(employeeId) ?? [];
+    if (rows.length === 0) {
+      const latest = changes.filter((change) => change.employeeId === employeeId).at(-1);
+      return latest !== undefined && latest.actorUserId === userId;
+    }
+    return managerSelfSetOn(rows, employeeId, companyDayOf(at, zone), userId);
   };
 }
 
@@ -262,8 +381,9 @@ export async function loadManagersBetween(
 /**
  * Everything the commission engine reads (`commissionLines`), from the company's records: plans,
  * assignments, invoices with their cost (never sent on; CLAUDE.md rule 5), payments, credit applied,
- * the manager chain for overrides (user, employee, their manager on the line's day, that employee's
- * user; `loadManagerOf`), the frozen months and HR's reversal decisions. `today` is the company's day.
+ * the manager chain for overrides (user, employee, their manager on the company's day the line was
+ * confirmed, that employee's user; `loadManagerOf`), the frozen months and HR's reversal decisions.
+ * `today` is the company's day.
  */
 export async function loadCommissionInputs(
   db: CompanyDb,
@@ -279,7 +399,7 @@ export async function loadCommissionInputs(
     loadInvoices(db, zone),
     loadPayments(db, control),
     loadAdjustments(db, control),
-    loadManagerOf(db),
+    loadManagerOf(db, zone),
   ]);
   return {
     plans,

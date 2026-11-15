@@ -22,6 +22,7 @@ import {
   frozenThrough,
   hideMarginBase,
   last12Months,
+  lineConfirmedAt,
   moneyString,
   monthEnd,
   reversalDecisionProblem,
@@ -34,7 +35,7 @@ import {
   type CommissionStatementRow,
   type TeamCommission,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNotNull, isNull, max, ne, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, max, ne, or } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -51,6 +52,8 @@ import {
   loadCommissionBook,
   loadCommissionPlans,
   loadManagersBetween,
+  loadSelfSetManager,
+  managerChanges,
   type CommissionBook,
 } from "./commission-records";
 import { auditHr, databaseNow, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
@@ -197,8 +200,8 @@ export class CommissionsService {
    * Approves a month's statement (commissions.md "To approved"; ADR 0048). The month has ended, the
    * statement is open, no reversal waits for review and every earlier month with commission is
    * approved (`statementApprovalProblem`). Nobody approves their own statement, the Owner included;
-   * nobody approves one carrying an override on someone whose manager its own person set
-   * (`selfMadeManager`), the Owner included; nobody but the Owner approves one whose plan,
+   * nobody approves one carrying an override earned while its own person's choice of manager was in
+   * force (`selfMadeManager`), the Owner included; nobody but the Owner approves one whose plan,
    * assignment, adjustment, reversal decision or sale split they set (`checkApprover`), and the
    * approver's sign-in must be linked. The payable is
    * accrued (debit Commissions, credit Accrued Payroll) and is what the next pay run pays, to the
@@ -222,9 +225,9 @@ export class CommissionsService {
       const problem = statementApprovalProblem(book.rows, userId, month, clock.day);
       if (problem) throw refuse(problem);
       const row = book.rows.find((r) => r.userId === userId && r.month === month)!;
-      if (await this.selfMadeManager(tx, row)) {
+      if (await this.selfMadeManager(tx, row, book, clock.zone)) {
         throw refuse(
-          "This statement's own person set the manager of someone whose override is on it. Someone else must set that manager again first.",
+          "This statement's own person set the manager of someone whose override is on it, on the days those overrides were earned. Someone else must set that same manager again first.",
         );
       }
       if (!actor.access.isOwner) await this.checkApprover(tx, actor.access.userId, row, book);
@@ -799,19 +802,30 @@ export class CommissionsService {
   }
 
   /**
-   * Whether the statement's own person was the last to set the manager of anyone whose override is
-   * on it (second security review of PR #27; ADR 0048): they made themselves, or someone, the one
-   * paid. It binds every approver, the Owner too, until someone else sets that manager again (the
-   * latest change is then theirs). Only the Owner may reorganise such people now, and nobody makes
-   * themselves their manager (people.service.ts `checkCommissionPeople`), so this catches changes
-   * made before those rules.
+   * Whether an override line on the statement was earned while a manager its own person set was in
+   * force (second security review of PR #27, first review of PR #32; ADR 0048 "Self-made
+   * manager"): they made themselves, or someone, the one paid. Each line is judged by its subject's
+   * history row on the company day it was confirmed, the row that paid it (`loadSelfSetManager`),
+   * not by the latest change, because a later move to another manager leaves earlier lines where
+   * they are. It binds every approver, the Owner too, until someone else sets that same manager
+   * again. Only the Owner may reorganise people on override plans, and nobody makes themselves
+   * their manager (people.service.ts `checkCommissionPeople`), so this catches a manager set before
+   * the person joined such a plan, or before those rules.
    */
-  private async selfMadeManager(tx: CompanyDb, row: CommissionStatementRow): Promise<boolean> {
-    const subjects = subjectsOf(row);
-    if (subjects.length === 0) return false;
-    const latest = new Map<string, string | null>();
-    for (const change of await managerChanges(tx, subjects)) latest.set(change.employeeId, change.actorUserId);
-    return [...latest.values()].some((actorUserId) => actorUserId === row.userId);
+  private async selfMadeManager(
+    tx: CompanyDb,
+    row: CommissionStatementRow,
+    book: CommissionBook,
+    zone: string,
+  ): Promise<boolean> {
+    const overrides = row.lines.filter((l) => l.kind === "override" && l.subjectUserId !== null);
+    if (overrides.length === 0) return false;
+    const selfSet = await loadSelfSetManager(
+      tx,
+      zone,
+      overrides.map((l) => l.subjectUserId!),
+    );
+    return overrides.some((l) => selfSet(l.subjectUserId!, lineConfirmedAt(book.inputs, l), row.userId));
   }
 
   /** Whether the approver has an audit entry on any of these plans or assignments (append-only). */
@@ -1060,46 +1074,6 @@ export class CommissionsService {
 /** The people whose override is on a statement (`subjectUserId` of its override lines). */
 function subjectsOf(row: CommissionStatementRow): string[] {
   return [...new Set(row.lines.flatMap((l) => (l.subjectUserId ? [l.subjectUserId] : [])))];
-}
-
-/** One change of a person's manager, as the audit log recorded it. */
-interface ManagerChange {
-  employeeId: string;
-  actorUserId: string | null;
-}
-
-/**
- * Every change of these people's manager, oldest first, read from "Added employee" and "Edited
- * employee" entries (append-only), which carry `managerId` before and after (people.service.ts
- * `save`). `managerId` decides who is paid an override (ADR 0048). People by user id, through
- * their linked employee.
- */
-async function managerChanges(tx: CompanyDb, userIds: readonly string[]): Promise<ManagerChange[]> {
-  const links = await employeesByUser(tx);
-  const employeeIds = [...new Set(userIds.flatMap((userId) => links.get(userId) ?? []))];
-  if (employeeIds.length === 0) return [];
-  const entries = await tx
-    .select({
-      targetId: auditLog.targetId,
-      actorUserId: auditLog.actorUserId,
-      before: auditLog.before,
-      after: auditLog.after,
-    })
-    .from(auditLog)
-    .where(
-      and(
-        eq(auditLog.targetType, "employee"),
-        inArray(auditLog.targetId, employeeIds),
-        inArray(auditLog.action, ["Added employee", "Edited employee"]),
-      ),
-    )
-    .orderBy(asc(auditLog.at), asc(auditLog.id));
-  const managerIn = (value: unknown) => ((value ?? {}) as { managerId?: string | null }).managerId ?? null;
-  return entries.flatMap((entry) =>
-    entry.targetId && managerIn(entry.before) !== managerIn(entry.after)
-      ? [{ employeeId: entry.targetId, actorUserId: entry.actorUserId }]
-      : [],
-  );
 }
 
 /** A plan's saved fields, as the audit log and a new version take them. */
