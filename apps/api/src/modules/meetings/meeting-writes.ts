@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import type { CompanyDb } from "@workspace/db";
+import { meetingAttendees } from "@workspace/db/company";
 import {
+  ASKED_AGAIN,
   canChangeMeeting,
   meetingEmailCount,
   meetingForViewer,
@@ -10,6 +12,7 @@ import {
   type Meeting,
   type MeetingEmailCount,
 } from "@workspace/shared";
+import { and, eq, isNull } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { notFound } from "../sales/sales-common";
@@ -78,6 +81,18 @@ export async function checkSends(
   const sends = meetingEmailCount(emails.map((email) => email.recipient));
   refuseIf(await dailyEmailsProblem(tx, userId, dayStart, sends));
   return sends;
+}
+
+/**
+ * Asks every live guest of a meeting again (meetings.md rule 6 and "Accept a proposal" in the sends
+ * table): each row takes `ASKED_AGAIN`, the reset the shared `askedAgain` gives a guest, so an edit
+ * and an accepted proposal write it one way. The caller holds the meeting's lock.
+ */
+export async function resetAnswers(tx: CompanyDb, meetingId: string, now: Date): Promise<void> {
+  await tx
+    .update(meetingAttendees)
+    .set({ ...ASKED_AGAIN, updatedAt: now })
+    .where(and(eq(meetingAttendees.meetingId, meetingId), isNull(meetingAttendees.deletedAt)));
 }
 
 /** The committed meeting as this person may read it (`meetingForViewer`), with no read after the commit. */

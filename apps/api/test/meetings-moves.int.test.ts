@@ -23,6 +23,9 @@ import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 const YEAR = new Date().getUTCFullYear() + 1;
 const at = (monthDay: string, time = "09:00") => `${YEAR}-${monthDay}T${time}`;
 
+/** The company's today in America/Chicago, the day the start bound counts from (ADR 0051 "Part 2"). */
+const chicagoToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(new Date());
+
 /** The second Sunday of March of a year: the night US clocks go forward. */
 function springForward(year: number): string {
   const firstDay = new Date(Date.UTC(year, 2, 1)).getUTCDay();
@@ -122,21 +125,23 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
 
   const staff = (id: string) => ({ kind: "staff", id });
 
+  const meetingBody = (over: Record<string, unknown> = {}) => ({
+    title: "Site visit",
+    start: at("11-10"),
+    durationMin: 60,
+    location: "Showroom",
+    guests: [],
+    newGuests: [],
+    recurrence: "none",
+    reminderMin: 15,
+    notes: "",
+    private: false,
+    hideGuestList: false,
+    ...over,
+  });
+
   async function schedule(cookie: string, over: Record<string, unknown> = {}): Promise<Meeting> {
-    const made = await call("post", "/meetings", cookie).send({
-      title: "Site visit",
-      start: at("11-10"),
-      durationMin: 60,
-      location: "Showroom",
-      guests: [],
-      newGuests: [],
-      recurrence: "none",
-      reminderMin: 15,
-      notes: "",
-      private: false,
-      hideGuestList: false,
-      ...over,
-    });
+    const made = await call("post", "/meetings", cookie).send(meetingBody(over));
     status(made, 201);
     return made.body as Meeting;
   }
@@ -406,11 +411,11 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
   });
 
   it("sends a series' surviving exceptions again after an all move, but not one that has ended", async () => {
+    // A series that began before the start bound, so its first date is written directly.
     const start = `${YEAR - 2}-01-05T09:00`;
     const made = await schedule(cookies.manager, {
       title: "Long runner",
       recurrence: "weekly",
-      start,
       guests: [staff(ids.employee)],
     });
     const past = addDays(start, 7);
@@ -420,6 +425,7 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
       db
         .update(meetings)
         .set({
+          start: new Date(`${YEAR - 2}-01-05T15:00:00.000Z`),
           exceptions: [
             { planned: past, start: past.replace("09:00", "11:00") },
             { planned: future, start: future.replace("09:00", "12:00") },
@@ -902,7 +908,8 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
   });
 
   it("allows at most 100 occurrences of a series changed on their own", async () => {
-    const start = at("11-10");
+    // It began 300 days ago, so its 101st week stays inside the start bound whatever the month.
+    const start = `${addDays(chicagoToday(), -300)}T09:00`;
     const made = await schedule(cookies.manager, { title: "Many changes", recurrence: "weekly", start });
     await rows((db) =>
       db
@@ -926,6 +933,174 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     expect(response.body.message).toMatch(/at most 100 occurrences/);
     expect((await storedMeeting(made.id)).exceptions).toHaveLength(100);
     expect((await entriesOf(made.id)).some((row) => row.action === "Moved meeting")).toBe(false);
+  });
+
+  it("takes a start only from a year before the company's today to three years after it, and writes nothing otherwise", async () => {
+    const today = chicagoToday();
+    const message = "Choose a start from one year ago up to three years ahead.";
+    const tooLate = `${addDays(today, 1098)}T10:00`;
+    const tooEarly = `${addDays(today, -368)}T10:00`;
+    refused(await call("post", "/meetings", cookies.manager).send(meetingBody({ start: tooLate })), message);
+    refused(
+      await call("post", "/meetings", cookies.manager).send(
+        meetingBody({ start: "1900-01-01T07:00", recurrence: "weekly" }),
+      ),
+      message,
+    );
+    refused(
+      await call("post", "/meeting-requests", cookies.manager).send({
+        withUserId: ids.employee,
+        title: "Far request",
+        start: tooLate,
+        note: "",
+        private: false,
+      }),
+      message,
+    );
+    const edge = await schedule(cookies.manager, {
+      title: "Near the edges",
+      start: `${addDays(today, 1095)}T10:00`,
+      guests: [staff(ids.employee)],
+    });
+    await schedule(cookies.manager, {
+      title: "A year back",
+      start: `${addDays(today, -365)}T10:00`,
+      recurrence: "weekly",
+    });
+    refused(await call("patch", `/meetings/${edge.id}`, cookies.manager).send({ start: tooEarly }), message);
+    refused(
+      await answer(cookies.employee, edge.id, {
+        partStat: "tentative",
+        proposal: { start: tooLate, durationMin: 30, note: "" },
+      }),
+      message,
+    );
+    refused(
+      await call("post", `/meetings/${edge.id}/reschedule`, cookies.manager).send({
+        planned: edge.start,
+        start: "2999-12-01T10:00",
+        durationMin: 60,
+        scope: "all",
+      }),
+      message,
+    );
+    expect(await storedMeeting(edge.id)).toMatchObject({ sequence: 0 });
+    expect((await entriesOf(edge.id)).map((row) => row.action)).toEqual(["Scheduled meeting"]);
+  });
+
+  it("works out conflicts from the moved day, however long ago the guests' other series began", async () => {
+    const mover = await member(["manager"], "Fay Faraway");
+    const cookie = await harness.signIn(mover.email);
+    const guest = await member(["employee"], "Gus Guest");
+    const near = `${addDays(chicagoToday(), -365)}T10:00`;
+    await schedule(cookie, {
+      title: "Year-old huddle",
+      recurrence: "weekly",
+      start: near,
+      guests: [staff(guest.userId)],
+    });
+    // Six hundred series from 1900 with the same guest, written directly, at an hour that overlaps nothing.
+    await rows(async (db) => {
+      const old = await db
+        .insert(meetings)
+        .values(
+          Array.from({ length: 600 }, (_, i) => ({
+            title: `Old series ${i}`,
+            start: new Date("1900-01-01T13:00:00.000Z"),
+            durationMin: 30,
+            recurrence: i % 2 ? ("weekly" as const) : ("monthly" as const),
+            reminderMin: 15,
+            ownerUserId: mover.userId,
+            timeZone: "America/Chicago",
+            exceptions: [],
+            uid: randomUUID(),
+            sequence: 0,
+            rescheduleSequence: 0,
+            status: "confirmed" as const,
+            createdBy: mover.userId,
+          })),
+        )
+        .returning({ id: meetings.id });
+      await db.insert(meetingAttendees).values(
+        old.map((row) => ({
+          meetingId: row.id,
+          partyType: "staff" as const,
+          partyId: guest.userId,
+          name: "Gus Guest",
+          email: guest.email,
+          role: "required" as const,
+          partStat: "accepted" as const,
+          createdBy: mover.userId,
+        })),
+      );
+    });
+    // The huddle's last week inside the start bound, three years from today.
+    const far = addDays(near, 7 * Math.floor((365 + 1095) / 7));
+    const oneOff = await schedule(cookie, { title: "Far one-off", guests: [staff(guest.userId)] });
+    const began = Date.now();
+    const result = await moved(cookie, oneOff, {
+      planned: oneOff.start,
+      start: far.replace("10:00", "10:30"),
+      scope: "all",
+    });
+    // Walking each series from 1900 took seconds of the meeting's lock (review round 1 of PR #35).
+    expect(Date.now() - began).toBeLessThan(2500);
+    expect(result.conflicts).toEqual([
+      { name: "Fay Faraway", title: "Year-old huddle", start: far },
+      { name: "Gus Guest", title: "Year-old huddle", start: far },
+    ]);
+  });
+
+  it("refuses to undo a split once the split-off series changed: an answer, an edit or a cancel on it", async () => {
+    const splitOff = async (title: string) => {
+      const made = await schedule(cookies.manager, { title, recurrence: "weekly", guests: [staff(ids.employee)] });
+      const result = await moved(cookies.owner, made, {
+        planned: at("11-24"),
+        start: at("11-24", "10:00"),
+        scope: "following",
+      });
+      return { made, result, split: result.meetings[1]! };
+    };
+    const refusedUndo = async (
+      { made, result, split }: Awaited<ReturnType<typeof splitOff>>,
+      change: () => Promise<void>,
+      splitSequence: number,
+    ) => {
+      await change();
+      const sentBefore = { original: (await invitesOf(made.id)).length, split: (await invitesOf(split.id)).length };
+      conflicted(await undo(cookies.owner, made.id, result.undo.previous.sequence), "meeting_changed");
+      expect(await storedMeeting(made.id)).toMatchObject({ sequence: 1, until: `${YEAR}-11-23`, deletedAt: null });
+      expect(await storedMeeting(split.id)).toMatchObject({ sequence: splitSequence, deletedAt: null });
+      const liveCopies = await rows((db) =>
+        db.select().from(meetingAttendees).where(eq(meetingAttendees.meetingId, split.id)),
+      );
+      expect(liveCopies.every((row) => row.deletedAt === null)).toBe(true);
+      expect((await invitesOf(made.id)).length).toBe(sentBefore.original);
+      expect((await invitesOf(split.id)).length).toBe(sentBefore.split);
+      expect((await entriesOf(made.id)).map((row) => row.action)).not.toContain("Undid meeting move");
+      expect((await entriesOf(split.id)).map((row) => row.action)).not.toContain("Removed split meeting series");
+    };
+
+    const answered = await splitOff("Split answered");
+    await refusedUndo(
+      answered,
+      async () => status(await answer(cookies.employee, answered.split.id, { partStat: "declined" }), 201),
+      0,
+    );
+    // A title edit keeps SEQUENCE 0, so only the split's last audit entry shows the change.
+    const edited = await splitOff("Split edited");
+    await refusedUndo(
+      edited,
+      async () =>
+        status(await call("patch", `/meetings/${edited.split.id}`, cookies.manager).send({ title: "Renamed" }), 200),
+      0,
+    );
+    const cancelled = await splitOff("Split cancelled");
+    await refusedUndo(
+      cancelled,
+      async () => status(await call("post", `/meetings/${cancelled.split.id}/cancel`, cookies.manager), 201),
+      1,
+    );
   });
 
   it("answers every one of several moves and an undo sent at once: no second pool connection inside a transaction", async () => {

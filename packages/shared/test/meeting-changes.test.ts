@@ -15,7 +15,7 @@ import {
   type Attendee,
   type Meeting,
 } from "../src";
-import { GUEST, ORGANISER, guestRow, testMeeting } from "./meeting-fixtures";
+import { GUEST, ORGANISER, TODAY, guestRow, testMeeting } from "./meeting-fixtures";
 
 const answered = (patch: Partial<Meeting> = {}) =>
   testMeeting({
@@ -82,16 +82,23 @@ describe("editing a meeting (meetings.md rule 6, ADR 0051)", () => {
   });
 
   it("refuses an edit to a cancelled meeting, and a start that doesn't exist", () => {
-    expect(editProblem(testMeeting({ status: "cancelled" }), { title: "x" })).toMatch(/cancelled/);
-    expect(editProblem(testMeeting(), { start: "2027-03-14T02:30" })).toMatch(/doesn't exist/);
-    expect(editProblem(testMeeting(), { durationMin: 5 })).toMatch(/15 minutes/);
-    expect(editProblem(testMeeting(), { title: "Fine" })).toBeNull();
+    expect(editProblem(testMeeting({ status: "cancelled" }), { title: "x" }, TODAY)).toMatch(/cancelled/);
+    expect(editProblem(testMeeting(), { start: "2027-03-14T02:30" }, TODAY)).toMatch(/doesn't exist/);
+    expect(editProblem(testMeeting(), { durationMin: 5 }, TODAY)).toMatch(/15 minutes/);
+    expect(editProblem(testMeeting(), { title: "Fine" }, TODAY)).toBeNull();
+  });
+
+  it("refuses a new start too far from the company's today, but edits a meeting that began long ago", () => {
+    expect(editProblem(testMeeting(), { start: "2999-12-01T08:30" }, TODAY)).toMatch(/three years ahead/);
+    expect(editProblem(testMeeting(), { start: "1900-01-01T08:30" }, TODAY)).toMatch(/one year ago/);
+    const longAgo = testMeeting({ start: "2019-11-21T08:30", recurrence: "weekly" });
+    expect(editProblem(longAgo, { title: "Still running", durationMin: 45 }, TODAY)).toBeNull();
   });
 
   it("lets the seeded day-30 monthly series take a title edit, but not a move to day 29", () => {
     const safetyTalk = testMeeting({ start: "2026-09-30T13:00", recurrence: "monthly" });
-    expect(editProblem(safetyTalk, { title: "Safety talk", start: "2026-09-30T13:00" })).toBeNull();
-    expect(editProblem(safetyTalk, { start: "2026-10-29T13:00" })).toMatch(/fifth week/);
+    expect(editProblem(safetyTalk, { title: "Safety talk", start: "2026-09-30T13:00" }, TODAY)).toBeNull();
+    expect(editProblem(safetyTalk, { start: "2026-10-29T13:00" }, TODAY)).toMatch(/fifth week/);
   });
 
   it("shifts a series' occurrences changed on their own with its new start, keeping their own times (part 2)", () => {
@@ -99,8 +106,8 @@ describe("editing a meeting (meetings.md rule 6, ADR 0051)", () => {
       recurrence: "weekly",
       exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-27T08:30" }],
     });
-    expect(editProblem(series, { start: "2026-11-19T09:00" })).toBeNull();
-    expect(editProblem(series, { durationMin: 45 })).toBeNull();
+    expect(editProblem(series, { start: "2026-11-19T09:00" }, TODAY)).toBeNull();
+    expect(editProblem(series, { durationMin: 45 }, TODAY)).toBeNull();
     const edit = editedMeeting(series, { start: "2026-11-20T09:00", durationMin: 45 });
     expect(edit.meeting).toMatchObject({ start: "2026-11-20T09:00", durationMin: 45, sequence: 1 });
     expect(edit.meeting.exceptions).toEqual([{ planned: "2026-11-27T09:00", start: "2026-11-27T08:30" }]);
@@ -114,14 +121,14 @@ describe("editing a meeting (meetings.md rule 6, ADR 0051)", () => {
       recurrence: "monthly",
       exceptions: [{ planned: "2026-12-24T08:30", start: "2026-12-23T08:30" }],
     });
-    expect(editProblem(monthly, { start: "2026-12-03T08:30" })).toMatch(/no longer be part of the series/);
+    expect(editProblem(monthly, { start: "2026-12-03T08:30" }, TODAY)).toMatch(/no longer be part of the series/);
     const ending = testMeeting({
       recurrence: "weekly",
       until: "2026-12-03",
       exceptions: [{ planned: "2026-12-03T08:30", start: "2026-12-02T08:30" }],
     });
-    expect(editProblem(ending, { start: "2026-11-20T08:30" })).toMatch(/no longer be part of the series/);
-    expect(editProblem(ending, { start: "2026-11-19T07:30" })).toBeNull();
+    expect(editProblem(ending, { start: "2026-11-20T08:30" }, TODAY)).toMatch(/no longer be part of the series/);
+    expect(editProblem(ending, { start: "2026-11-19T07:30" }, TODAY)).toBeNull();
   });
 });
 

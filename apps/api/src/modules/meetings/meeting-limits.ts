@@ -22,9 +22,21 @@ export function dayStartOf(clock: CompanyClock): Date {
   return zonedToInstantLenient(`${clock.day}T00:00`, clock.zone) ?? new Date(clock.now.getTime() - 86_400_000);
 }
 
+/**
+ * The company's today ("YYYY-MM-DD"), which a start a person types is checked against
+ * (`typedStartProblem`), and when that day began (`dayStartOf`), from its clock in the control database.
+ */
+export async function companyDay(
+  control: ControlDb,
+  tenant: TenantContext,
+): Promise<{ today: string; dayStart: Date }> {
+  const clock = await companyClock(control, tenant);
+  return { today: clock.day, dayStart: dayStartOf(clock) };
+}
+
 /** When the company's day began, from its clock in the control database (`dayStartOf`). */
 export async function companyDayStart(control: ControlDb, tenant: TenantContext): Promise<Date> {
-  return dayStartOf(await companyClock(control, tenant));
+  return (await companyDay(control, tenant)).dayStart;
 }
 
 /**

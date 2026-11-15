@@ -42,7 +42,7 @@ import {
   type NewGuestInput,
   type ReplyAnswer,
 } from "@workspace/shared";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { AccessService, type RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
@@ -52,11 +52,19 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow, roleHolders } from "../hr/hr-common";
 import { notFound, refuse } from "../sales/sales-common";
 import { guestOptions, resolveGuests, type PickedGuest } from "./meeting-guests";
-import { companyDayStart, dayStartOf, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
+import { companyDay, companyDayStart, dayStartOf, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
 import { loadMeetings, partySight } from "./meeting-records";
 import { MeetingReminders } from "./meeting-reminders";
 import { MeetingSends } from "./meeting-sends";
-import { checkSends, loadedIn, lockChangeable, lockVisible, MeetingWrites, shaped } from "./meeting-writes";
+import {
+  checkSends,
+  loadedIn,
+  lockChangeable,
+  lockVisible,
+  MeetingWrites,
+  resetAnswers,
+  shaped,
+} from "./meeting-writes";
 import {
   activeMembers,
   auditMeeting,
@@ -162,7 +170,7 @@ export class MeetingsService {
    */
   async create(tenant: TenantContext, actor: Actor, input: MeetingCreateInput): Promise<Meeting> {
     const clock = await meetingClock(this.control.db, tenant);
-    refuseIf(meetingFieldsProblem(input, { zone: clock.zone, recurrence: input.recurrence }));
+    refuseIf(meetingFieldsProblem(input, { zone: clock.zone, today: clock.day, recurrence: input.recurrence }));
     for (const guest of input.newGuests) refuseIf(newGuestProblem(guest));
     const userId = actor.access.userId;
     const othersAsked =
@@ -230,10 +238,10 @@ export class MeetingsService {
     const patch: MeetingPatch = { ...sent, title: sent.title?.trim(), location: sent.location?.trim() };
     const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    const dayStart = await companyDayStart(this.control.db, tenant);
+    const { today, dayStart } = await companyDay(this.control.db, tenant);
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
-      refuseIf(editProblem(before.meeting, patch));
+      refuseIf(editProblem(before.meeting, patch, today));
       const edit = editedMeeting(before.meeting, patch);
       if (edit.changed.length === 0) return { saved: before, sight, planned: null };
       const now = await databaseNow(tx);
@@ -255,12 +263,7 @@ export class MeetingsService {
           updatedAt: now,
         })
         .where(eq(meetings.id, id));
-      if (edit.significant) {
-        await tx
-          .update(meetingAttendees)
-          .set({ partStat: "needs-action", respondedAt: null, proposal: null, updatedAt: now })
-          .where(and(eq(meetingAttendees.meetingId, id), isNull(meetingAttendees.deletedAt)));
-      }
+      if (edit.significant) await resetAnswers(tx, id, now);
       const saved = await loadedIn(tx, id);
       const timing = moved || edit.changed.includes("durationMin");
       const planned = await this.sends.plan(tx, "edit", saved.meeting, saved.row.updatedAt, {
@@ -355,7 +358,7 @@ export class MeetingsService {
   async respond(tenant: TenantContext, actor: Actor, id: string, reply: MeetingReplyInput): Promise<Meeting> {
     const db = await this.tenancy.db(tenant);
     const userId = actor.access.userId;
-    const dayStart = await companyDayStart(this.control.db, tenant);
+    const { today, dayStart } = await companyDay(this.control.db, tenant);
     const answered = await db.transaction(async (tx) => {
       const before = await lockVisible(tx, actor.access, id);
       const { meeting } = before;
@@ -363,7 +366,7 @@ export class MeetingsService {
       const row = before.rows.get(userId);
       if (!guest || !row || row.partyType !== "staff" || isOrganiser(meeting, userId))
         throw refuse("Only a guest on this meeting can answer it.");
-      refuseIf(replyProblem(meeting, reply));
+      refuseIf(replyProblem(meeting, reply, today));
       const now = await databaseNow(tx);
       const outcome = replyOutcome(meeting, guest, reply as ReplyAnswer, {
         sequence: meeting.sequence,
@@ -446,7 +449,7 @@ export class MeetingsService {
    */
   async request(tenant: TenantContext, actor: Actor, input: MeetingRequestCreate): Promise<Meeting> {
     const clock = await meetingClock(this.control.db, tenant);
-    refuseIf(meetingRequestProblem(input, clock.zone));
+    refuseIf(meetingRequestProblem(input, { zone: clock.zone, today: clock.day }));
     const userId = actor.access.userId;
     if (input.withUserId === userId) throw refuse("Choose who to meet with.");
     const db = await this.tenancy.db(tenant);

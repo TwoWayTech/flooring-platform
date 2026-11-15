@@ -1,5 +1,6 @@
-import { addDays } from "../dates";
-import type { Meeting } from "../types";
+import { isLocalDateTime } from "../calendar/zones";
+import { addDays, daysBetween } from "../dates";
+import type { Meeting, MeetingException } from "../types";
 
 /** One occurrence of a meeting: the meeting, when it happens and for how long. */
 export interface MeetingOccurrence {
@@ -19,17 +20,27 @@ export function monthlyWeekOf(iso: string): number {
   return Math.min(Math.ceil(Number(iso.slice(8, 10)) / 7), 4);
 }
 
+/** The days between a weekly or biweekly series' planned dates (meetings.md rule 2). */
+const STEP_DAYS: Partial<Record<Meeting["recurrence"], number>> = { weekly: 7, biweekly: 14 };
+
+/** The month ("YYYY-MM") a number of months after the month of an ISO date. */
+function monthsAfter(iso: string, months: number): string {
+  const date = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1 + months, 1));
+  return date.toISOString().slice(0, 7);
+}
+
 /**
- * The same weekday in the same week of the next month, the way offices book monthly meetings
+ * A monthly series' planned date-time in a month ("YYYY-MM") after the month of `start`, its first
+ * (meetings.md rule 2): the same weekday in the same week, the way offices book monthly meetings
  * ("the second Thursday"), so a series never lands on a weekend. A fifth-week date moves to the
- * fourth week, which every month has.
+ * fourth week, which every month has. The week and weekday stay the same from one month to the
+ * next, so the date in any month is worked out directly from the first, with no walk.
  */
-function nextMonthSameWeekday(iso: string): string {
-  const date = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  const week = monthlyWeekOf(iso);
-  const first = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
-  const firstMatch = (date.getUTCDay() - first.getUTCDay() + 7) % 7;
-  return addDays(first.toISOString().slice(0, 10), firstMatch + (week - 1) * 7) + iso.slice(10);
+function monthlyPlannedIn(start: string, month: string): string {
+  const weekday = new Date(`${start.slice(0, 10)}T00:00:00Z`).getUTCDay();
+  const firstOfMonth = new Date(`${month}-01T00:00:00Z`);
+  const firstMatch = (weekday - firstOfMonth.getUTCDay() + 7) % 7;
+  return addDays(`${month}-01`, firstMatch + (monthlyWeekOf(start) - 1) * 7) + start.slice(10);
 }
 
 /**
@@ -37,33 +48,96 @@ function nextMonthSameWeekday(iso: string): string {
  * calendar file uses it too, so its RRULE and the app's occurrences agree (ADR 0051).
  */
 export function nextPlannedStart(start: string, recurrence: Meeting["recurrence"]): string | null {
-  if (recurrence === "weekly") return addDays(start, 7);
-  if (recurrence === "biweekly") return addDays(start, 14);
-  if (recurrence === "monthly") return nextMonthSameWeekday(start);
+  const step = STEP_DAYS[recurrence];
+  if (step) return addDays(start, step);
+  if (recurrence === "monthly") return monthlyPlannedIn(start, monthsAfter(start, 1));
   return null;
+}
+
+/**
+ * Whether a date-time is one the meeting's rule reaches from its start (meetings.md rule 2), before
+ * its end date and its exceptions are looked at: the start itself, a weekly or biweekly step from it
+ * at the same time of day, or a monthly series' date in a later month (`nextPlannedStart`). Text that
+ * is not a real local date-time never is. It is worked out directly, so it costs the same for any
+ * date (ADR 0051 "Part 2", review round 1 of PR #35).
+ */
+export function onSeriesRule(meeting: Pick<Meeting, "start" | "recurrence">, key: string): boolean {
+  if (key === meeting.start) return true;
+  if (key < meeting.start || key.slice(10) !== meeting.start.slice(10) || !isLocalDateTime(key)) return false;
+  const step = STEP_DAYS[meeting.recurrence];
+  if (step) return daysBetween(meeting.start, key) % step === 0;
+  return (
+    meeting.recurrence === "monthly" &&
+    key.slice(0, 7) > meeting.start.slice(0, 7) &&
+    key === monthlyPlannedIn(meeting.start, key.slice(0, 7))
+  );
+}
+
+/**
+ * The planned start of each of a meeting's occurrences on a day from `from` to `to`, inclusive, in
+ * order, whatever its end date and exceptions say. The first is found by counting from the start, not
+ * by walking to it, so the work grows with the window, never with the age of the series.
+ */
+function plannedBetween(meeting: Meeting, from: string, to: string): string[] {
+  const startDay = meeting.start.slice(0, 10);
+  const inWindow = (planned: string) => planned.slice(0, 10) >= from && planned.slice(0, 10) <= to;
+  const out = inWindow(meeting.start) ? [meeting.start] : [];
+  const step = STEP_DAYS[meeting.recurrence];
+  if (step) {
+    let steps = Math.max(1, Math.ceil(daysBetween(startDay, from) / step));
+    for (let p = addDays(meeting.start, steps * step); p.slice(0, 10) <= to; p = addDays(meeting.start, ++steps * step))
+      out.push(p);
+  } else if (meeting.recurrence === "monthly") {
+    const first = from.slice(0, 7) > startDay.slice(0, 7) ? from.slice(0, 7) : monthsAfter(startDay, 1);
+    for (let month = first; month <= to.slice(0, 7); month = monthsAfter(`${month}-01`, 1)) {
+      const planned = monthlyPlannedIn(meeting.start, month);
+      if (inWindow(planned)) out.push(planned);
+    }
+  }
+  return out;
+}
+
+/**
+ * How many days before its planned date an occurrence moved on its own is still found
+ * (`meetingOccurrences`): it is looked for when its planned date is at most this many days after the
+ * window, as the calendar always has.
+ */
+export const MOVED_EARLIER_REACH_DAYS = 31;
+
+/** One meeting's occurrences between two days (`meetingOccurrences`), in the order the series plans them. */
+function occurrencesOf(meeting: Meeting, from: string, to: string): MeetingOccurrence[] {
+  const ends = (planned: string) => !meeting.until || planned.slice(0, 10) <= meeting.until;
+  const moved = new Map<string, MeetingException>();
+  for (const exception of meeting.exceptions ?? []) {
+    if (!moved.has(exception.planned)) moved.set(exception.planned, exception);
+  }
+  const out: MeetingOccurrence[] = [];
+  for (const planned of plannedBetween(meeting, from, meeting.until && meeting.until < to ? meeting.until : to)) {
+    if (!moved.has(planned)) out.push({ meeting, start: planned, durationMin: meeting.durationMin, planned });
+  }
+  const reach = addDays(to, MOVED_EARLIER_REACH_DAYS);
+  for (const [planned, exception] of moved) {
+    if (exception.cancelled || planned.slice(0, 10) > reach || !ends(planned) || !onSeriesRule(meeting, planned))
+      continue;
+    const start = exception.start ?? planned;
+    const day = start.slice(0, 10);
+    if (day >= from && day <= to)
+      out.push({ meeting, start, durationMin: exception.durationMin ?? meeting.durationMin, planned });
+  }
+  return out.sort((a, b) => a.planned.localeCompare(b.planned));
 }
 
 /**
  * Every occurrence of the meetings between two dates, inclusive (spec "Meetings", F): a recurring
  * meeting repeats from its first date until its end date; an occurrence moved on its own takes its
- * new time and length, and a cancelled one is left out. Sorted by start.
+ * new time and length, and a cancelled one is left out. Sorted by start. Each series' occurrences
+ * are worked out from the window, not walked from its first date, so a long-running or far-away
+ * series costs no more than a new one (ADR 0051 "Part 2", review round 1 of PR #35).
  */
 export function meetingOccurrences(meetings: readonly Meeting[], from: string, to: string): MeetingOccurrence[] {
   const out: MeetingOccurrence[] = [];
   for (const meeting of meetings) {
-    if (meeting.status === "cancelled") continue;
-    for (
-      let planned: string | null = meeting.start;
-      planned && planned.slice(0, 10) <= addDays(to, 31) && (!meeting.until || planned.slice(0, 10) <= meeting.until);
-      planned = nextPlannedStart(planned, meeting.recurrence)
-    ) {
-      const moved = meeting.exceptions?.find((e) => e.planned === planned);
-      if (moved?.cancelled) continue;
-      const start = moved?.start ?? planned;
-      const day = start.slice(0, 10);
-      if (day >= from && day <= to)
-        out.push({ meeting, start, durationMin: moved?.durationMin ?? meeting.durationMin, planned });
-    }
+    if (meeting.status !== "cancelled") out.push(...occurrencesOf(meeting, from, to));
   }
   return out.sort((a, b) => a.start.localeCompare(b.start));
 }

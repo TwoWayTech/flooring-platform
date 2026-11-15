@@ -19,6 +19,8 @@ export function guestRow(patch: Partial<Attendee> & Pick<Attendee, "kind" | "id"
 export const ORGANISER = "u-org";
 /** A staff guest on the test meetings. */
 export const GUEST = "u-guest";
+/** The company's today in these tests, a few days before the test meetings (the start bound, ADR 0051 "Part 2"). */
+export const TODAY = "2026-11-15";
 
 /** A confirmed one-off meeting in Denver, organised by ORGANISER with GUEST, a customer and an email guest. */
 export function testMeeting(patch: Partial<Meeting> = {}): Meeting {

@@ -43,11 +43,19 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow } from "../hr/hr-common";
 import { notFound, refuse } from "../sales/sales-common";
 import { moveConflicts } from "./meeting-conflicts";
-import { companyDayStart, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
+import { companyDay, companyDayStart, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
 import { attendeesOf, meetingOf, partySight, type LoadedMeeting } from "./meeting-records";
 import { MeetingSends, type PlannedInvites } from "./meeting-sends";
 import { lastMeetingEntry, parseMoveRecord } from "./meeting-undo";
-import { checkSends, loadedIn, lockChangeable, MeetingWrites, shaped, type PartySight } from "./meeting-writes";
+import {
+  checkSends,
+  loadedIn,
+  lockChangeable,
+  MeetingWrites,
+  resetAnswers,
+  shaped,
+  type PartySight,
+} from "./meeting-writes";
 import { auditMeeting, lockMeetingRow, meetingViewer, refuseIf } from "./meetings-common";
 
 /** What a move answers (`rescheduleMeeting` in the contract): the saved meetings, the conflicts and what Undo needs. */
@@ -108,10 +116,10 @@ export class MeetingMoves {
   ): Promise<MeetingMoveResult> {
     const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    const dayStart = await companyDayStart(this.control.db, tenant);
+    const { today, dayStart } = await companyDay(this.control.db, tenant);
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
-      refuseIf(moveProblem(before.meeting, move));
+      refuseIf(moveProblem(before.meeting, move, today));
       const moved = movedMeetings(before.meeting, move, { newId: uuidv7(), newUid: randomUUID() });
       const now = await databaseNow(tx);
       await this.saveOriginal(tx, before, moved.original, now);
@@ -248,7 +256,7 @@ export class MeetingMoves {
   async decide(tenant: TenantContext, actor: Actor, id: string, attendeeId: string, accept: boolean): Promise<Meeting> {
     const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    const dayStart = await companyDayStart(this.control.db, tenant);
+    const { today, dayStart } = await companyDay(this.control.db, tenant);
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
       if (!canDecideProposal(meetingViewer(actor.access), before.meeting, sight))
@@ -256,7 +264,7 @@ export class MeetingMoves {
       const row = before.rows.get(attendeeId);
       const guest = before.meeting.attendees.find((a) => a.id === attendeeId);
       if (!row || !guest) throw notFound("guest");
-      refuseIf(proposalDecisionProblem(before.meeting, guest, accept));
+      refuseIf(proposalDecisionProblem(before.meeting, guest, accept, today));
       const now = await databaseNow(tx);
       const after = accept ? acceptedProposal(before.meeting, guest) : declinedProposal(before.meeting, guest);
       const proposal = after.attendees.find((a) => sameAttendee(a, guest))?.proposal ?? null;
@@ -273,10 +281,7 @@ export class MeetingMoves {
             updatedAt: now,
           })
           .where(eq(meetings.id, id));
-        await tx
-          .update(meetingAttendees)
-          .set({ partStat: "needs-action", respondedAt: null, proposal: null, updatedAt: now })
-          .where(and(eq(meetingAttendees.meetingId, id), isNull(meetingAttendees.deletedAt)));
+        await resetAnswers(tx, id, now);
       } else {
         // The meeting's stamp moves too, so each decline is its own Outbox row and DTSTAMP follows commit order.
         await tx.update(meetings).set({ updatedAt: now }).where(eq(meetings.id, id));

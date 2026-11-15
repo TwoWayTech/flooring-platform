@@ -1,17 +1,15 @@
 import { recurrenceProblem } from "../calendar/ics";
-import { isLocalDateTime } from "../calendar/zones";
-import { daysBetween } from "../dates";
 import {
   addMinutes,
   meetingOccurrences,
   moveOccurrence,
-  nextPlannedStart,
+  onSeriesRule,
   type Conflict,
   type MoveScope,
 } from "../operations/meetings";
 import type { Attendee, Meeting, MeetingException } from "../types";
 import { meetingForViewer, sameAttendee, seesMeeting, type MeetingViewer } from "./access";
-import { durationProblem, MEETING_LIMITS, startProblem } from "./input";
+import { durationProblem, MEETING_LIMITS, startProblem, typedStartProblem } from "./input";
 
 /** A move as a person asks for it (meetings.md "Move or resize", `MeetingMove` without its id). */
 export interface MeetingMoveInput {
@@ -27,9 +25,6 @@ export function effectiveScope(meeting: Pick<Meeting, "recurrence">, scope: Move
   return meeting.recurrence === "none" ? "all" : scope;
 }
 
-/** The days between a weekly or biweekly series' planned dates (meetings.md rule 2). */
-const STEP_DAYS: Partial<Record<Meeting["recurrence"], number>> = { weekly: 7, biweekly: 14 };
-
 /**
  * Whether a date-time is one of the meeting's occurrences as the series plans them (meetings.md rules
  * 1 and 2): a one-off's own start, or a date-time its rule reaches from `start` up to `until`, that
@@ -44,31 +39,18 @@ export function isPlannedOccurrence(
 }
 
 /**
- * Whether every one of these date-times is a planned occurrence (`isPlannedOccurrence`). A weekly
- * step is counted rather than walked, and a monthly rule is walked once for all of them, so checking
- * a series' exceptions costs one walk however many there are and however far ahead they lie.
+ * Whether every one of these date-times is a planned occurrence (`isPlannedOccurrence`). Each is
+ * checked against the rule directly (`onSeriesRule`), never by walking the series, so checking a
+ * series' exceptions costs the same however many there are and however far ahead they lie.
  */
 function allPlanned(
   meeting: Pick<Meeting, "start" | "recurrence" | "until" | "exceptions">,
   keys: readonly string[],
 ): boolean {
   const cancelled = new Set(meeting.exceptions.filter((e) => e.cancelled).map((e) => e.planned));
-  const inRange = (key: string) =>
-    isLocalDateTime(key) &&
-    key >= meeting.start &&
-    !(meeting.until && key.slice(0, 10) > meeting.until) &&
-    !cancelled.has(key);
-  if (!keys.every(inRange)) return false;
-  const step = STEP_DAYS[meeting.recurrence];
-  if (step)
-    return keys.every(
-      (key) => key.slice(10) === meeting.start.slice(10) && daysBetween(meeting.start, key) % step === 0,
-    );
-  const wanted = new Set(keys);
-  const last = keys.reduce((latest, key) => (key > latest ? key : latest), meeting.start);
-  for (let p: string | null = meeting.start; p !== null && p <= last; p = nextPlannedStart(p, meeting.recurrence))
-    wanted.delete(p);
-  return wanted.size === 0;
+  return keys.every(
+    (key) => !cancelled.has(key) && !(meeting.until && key.slice(0, 10) > meeting.until) && onSeriesRule(meeting, key),
+  );
 }
 
 /** Why a series as a move leaves it has an exception off its own rule, or null (ADR 0051 "Part 2"). */
@@ -120,7 +102,8 @@ const CHECK_ID = "split-check";
  * Why a move can't be made, or null (meetings.md rules 4 and 5, "Move or resize"; ADR 0051 "Part 2",
  * each refusal safer than the demo, which moves whatever it is given):
  * - a cancelled meeting is refused;
- * - the new start must exist on the clock, and the length is 15 to 1440 whole minutes;
+ * - the new start must pass `typedStartProblem` (on the clock, and from a year before the company's
+ *   `today` to three years after it), and the length is 15 to 1440 whole minutes;
  * - `planned` must be one of the meeting's occurrences (`isPlannedOccurrence`);
  * - "this and following" from the first occurrence is refused: the old series would keep a DTSTART
  *   that RFC 5545 counts as an occurrence, so guests would see the meeting twice;
@@ -129,9 +112,9 @@ const CHECK_ID = "split-check";
  *   occurrences (not past `until`, not off a monthly week), every exception must stay on its series,
  *   and a series takes at most `MEETING_LIMITS.exceptionsMax` exceptions.
  */
-export function moveProblem(meeting: Meeting, move: MeetingMoveInput): string | null {
+export function moveProblem(meeting: Meeting, move: MeetingMoveInput, today: string): string | null {
   if (meeting.status === "cancelled") return "This meeting was cancelled.";
-  const timing = startProblem(move.start, meeting.timeZone) ?? durationProblem(move.durationMin);
+  const timing = typedStartProblem(move.start, { zone: meeting.timeZone, today }) ?? durationProblem(move.durationMin);
   if (timing) return timing;
   if (!isPlannedOccurrence(meeting, move.planned))
     return "That occurrence is not part of this meeting. Reload the calendar and try again.";

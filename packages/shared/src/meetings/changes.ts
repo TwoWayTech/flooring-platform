@@ -39,12 +39,13 @@ export function changedFields(before: Meeting, patch: MeetingPatch): (keyof Meet
 
 /**
  * Why an edit can't be saved, or null (meetings.md `updateMeeting`; ADR 0051). A cancelled meeting is
- * refused. Only the changed fields are checked, so a new start must exist in the meeting's zone and
- * pass the monthly limit, while a title edit on a day-30 monthly series still works. A series'
- * occurrences moved on their own shift with a new start and are sent again (ADR 0051 "Part 2", ADR
- * 0021), so a new start that would take one off the series (`shiftedSeriesProblem`) is refused.
+ * refused. Only the changed fields are checked, so a new start must pass `typedStartProblem` in the
+ * meeting's zone against the company's `today` and pass the monthly limit, while a title edit on a
+ * day-30 monthly series still works. A series' occurrences moved on their own shift with a new start
+ * and are sent again (ADR 0051 "Part 2", ADR 0021), so a new start that would take one off the series
+ * (`shiftedSeriesProblem`) is refused.
  */
-export function editProblem(before: Meeting, patch: MeetingPatch): string | null {
+export function editProblem(before: Meeting, patch: MeetingPatch, today: string): string | null {
   if (before.status === "cancelled") return "This meeting was cancelled.";
   const changed = changedFields(before, patch);
   const pick = <K extends keyof MeetingPatch>(key: K) => (changed.includes(key) ? patch[key] : undefined);
@@ -57,15 +58,27 @@ export function editProblem(before: Meeting, patch: MeetingPatch): string | null
       durationMin: pick("durationMin"),
       reminderMin: pick("reminderMin"),
     },
-    { zone: before.timeZone, recurrence: before.recurrence },
+    { zone: before.timeZone, today, recurrence: before.recurrence },
   );
   if (fields || !changed.includes("start")) return fields;
   return shiftedSeriesProblem(before, editedMeeting(before, patch).meeting);
 }
 
-/** A guest asked again after a significant change: no answer, no reply time, no proposal (meetings.md rule 6). */
-function askedAgain(attendee: Attendee): Attendee {
-  return { ...attendee, partStat: "needs-action", respondedAt: null, proposal: null };
+/**
+ * What a guest's answer becomes when they are asked again (meetings.md rule 6, and "Accept a
+ * proposal" in the sends table): no answer, no reply time, no proposal. The one copy of the reset:
+ * the shared rules spread it on a guest (`askedAgain`), and the API writes it to every live guest
+ * row (`resetAnswers` in meeting-writes.ts).
+ */
+export const ASKED_AGAIN = {
+  partStat: "needs-action",
+  respondedAt: null,
+  proposal: null,
+} as const satisfies Pick<Attendee, "partStat" | "respondedAt" | "proposal">;
+
+/** A guest asked again after a significant change or an accepted proposal (`ASKED_AGAIN`). */
+export function askedAgain(attendee: Attendee): Attendee {
+  return { ...attendee, ...ASKED_AGAIN };
 }
 
 /** An edit as it is saved: the meeting after it, the fields it changed and whether it was significant. */

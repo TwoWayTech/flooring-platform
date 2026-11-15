@@ -9,7 +9,7 @@ import {
   type Meeting,
   type MeetingProposal,
 } from "../src";
-import { GUEST, ORGANISER, guestRow, testMeeting, viewerAs } from "./meeting-fixtures";
+import { GUEST, ORGANISER, TODAY, guestRow, testMeeting, viewerAs } from "./meeting-fixtures";
 
 const OTHER = "u-other";
 const proposal = (patch: Partial<MeetingProposal> = {}): MeetingProposal => ({
@@ -53,22 +53,28 @@ const seesAll = () => true;
 describe("deciding a proposed time (meetings.md Propose a new time, ADR 0051 Part 2)", () => {
   it("decides only a pending proposal on a one-off that is not cancelled", () => {
     const meeting = proposed();
-    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), true)).toBeNull();
-    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), false)).toBeNull();
-    expect(proposalDecisionProblem(proposed({ status: "cancelled" }), guestOf(meeting, GUEST), true)).toMatch(
+    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), true, TODAY)).toBeNull();
+    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), false, TODAY)).toBeNull();
+    expect(proposalDecisionProblem(proposed({ status: "cancelled" }), guestOf(meeting, GUEST), true, TODAY)).toMatch(
       /cancelled/,
     );
-    expect(proposalDecisionProblem(meeting, guestOf(meeting, "c-1"), true)).toMatch(/no proposal waiting/);
+    expect(proposalDecisionProblem(meeting, guestOf(meeting, "c-1"), true, TODAY)).toMatch(/no proposal waiting/);
     const declined = proposed({}, { status: "declined" });
-    expect(proposalDecisionProblem(declined, guestOf(declined, GUEST), false)).toMatch(/no proposal waiting/);
+    expect(proposalDecisionProblem(declined, guestOf(declined, GUEST), false, TODAY)).toMatch(/no proposal waiting/);
     const series = proposed({ recurrence: "weekly" });
-    expect(proposalDecisionProblem(series, guestOf(series, GUEST), true)).toMatch(/one-off/);
+    expect(proposalDecisionProblem(series, guestOf(series, GUEST), true, TODAY)).toMatch(/one-off/);
   });
 
   it("accepts only a time the clock shows, but declines one whatever its time", () => {
     const gap = proposed({}, { start: "2027-03-14T02:30" });
-    expect(proposalDecisionProblem(gap, guestOf(gap, GUEST), true)).toMatch(/doesn't exist/);
-    expect(proposalDecisionProblem(gap, guestOf(gap, GUEST), false)).toBeNull();
+    expect(proposalDecisionProblem(gap, guestOf(gap, GUEST), true, TODAY)).toMatch(/doesn't exist/);
+    expect(proposalDecisionProblem(gap, guestOf(gap, GUEST), false, TODAY)).toBeNull();
+  });
+
+  it("accepts a proposed time only while it lies within the start bound of the company's today", () => {
+    const meeting = proposed();
+    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), true, "2028-01-01")).toMatch(/one year ago/);
+    expect(proposalDecisionProblem(meeting, guestOf(meeting, GUEST), false, "2028-01-01")).toBeNull();
   });
 
   it("accept: moves the meeting, SEQUENCE + 1 with rescheduleSequence, asks everyone again and clears the other proposals", () => {
