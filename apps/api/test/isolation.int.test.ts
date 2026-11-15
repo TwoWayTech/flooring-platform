@@ -306,6 +306,10 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
       ["PATCH /platform/plans/:id", 403],
       ["POST /platform/plans/:id/retire", 403],
       ["POST /platform/plans/:id/restore", 403],
+      ["GET /platform/companies/:id/status", 403],
+      ["POST /platform/companies/:id/suspend", 403],
+      ["POST /platform/companies/:id/reinstate", 403],
+      ["POST /platform/companies/:id/cancel", 403],
     ]);
     const noCompanyYet = await harness.signIn(await harness.addUser({ companyIds: [a.id, b.id] }));
     for (const route of checkedRoutes()) {

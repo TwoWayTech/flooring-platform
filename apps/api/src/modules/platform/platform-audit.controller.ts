@@ -3,6 +3,7 @@ import {
   PLATFORM_AUDIT_ACTIONS,
   PLATFORM_AUDIT_PAGE,
   PLATFORM_AUDIT_QUERY_MESSAGES as MESSAGES,
+  platformAuditActionOn,
   type PlatformAuditResult,
 } from "@workspace/shared";
 import { z } from "zod";
@@ -14,13 +15,18 @@ import { COMPANY_ID } from "./platform-params";
 
 /**
  * The audit log's query (spec "GET /platform/audit", Query), strict: an unknown parameter, or one
- * sent twice (it arrives as a list), is a 400. `limit` is digits only, 1 to 100; the cursor's
- * existence is checked by the service.
+ * sent twice (it arrives as a list), is a 400. `action` is one of the actions the filter offers:
+ * while `admin.billing` is off, the seven plan and status actions are refused with the same message
+ * (`platformAuditActionOn`, read on every request; spec "Audit (part 2)"), though their rows still
+ * list unfiltered. `limit` is digits only, 1 to 100; the cursor's existence is checked by the service.
  */
 const AUDIT_QUERY = z
   .object({
     companyId: COMPANY_ID.optional(),
-    action: z.enum(PLATFORM_AUDIT_ACTIONS, { error: MESSAGES.action }).optional(),
+    action: z
+      .enum(PLATFORM_AUDIT_ACTIONS, { error: MESSAGES.action })
+      .refine((action) => platformAuditActionOn(action), MESSAGES.action)
+      .optional(),
     before: z.string({ error: MESSAGES.before }).uuid(MESSAGES.before).optional(),
     limit: z
       .string({ error: MESSAGES.limit })
