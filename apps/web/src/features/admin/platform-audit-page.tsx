@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { History } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -8,7 +8,6 @@ import {
   isPlatformAuditAction,
   PLATFORM_AUDIT_ACTIONS,
   type PlatformAuditQuery,
-  type PlatformAuditView,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Label } from "@workspace/ui/components/label";
@@ -22,6 +21,7 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { auditColumns, type AuditColumnFormat } from "./audit-columns";
 import { AUDIT_ACTION_LABELS } from "./audit-labels";
+import { appendOlderAuditPage, auditRows, olderAuditCursor, type OlderAuditPages } from "./audit-paging";
 import { usePlatformRole } from "./platform-role";
 
 /** The Select value that stands for "no filter"; never a company id or an action. */
@@ -29,6 +29,9 @@ const ALL = "all";
 
 /** The server-side filters: one company and one action, or every one. */
 type AuditFilters = Pick<PlatformAuditQuery, "companyId" | "action">;
+
+/** The one toast a failed older page shows, so a new load or new filters can take it away. */
+const OLDER_FAILED_TOAST = "platform-audit-older-failed";
 
 /** The console's formats for counts and moments in the audit log. */
 function useAuditFormat(): AuditColumnFormat {
@@ -76,37 +79,43 @@ function FilterSelect({ id, label, value, allLabel, options, onChange }: FilterS
 }
 
 /**
- * The entries for one choice of filters: the newest page, then older pages on request. It is
- * keyed by the filters, so changing one starts again from the newest entries.
+ * The entries for one choice of filters: the newest page, then older pages on request, one load
+ * at a time. It is keyed by the filters, so changing one starts again from the newest entries.
  */
 function AuditEntries({ filters }: { filters: AuditFilters }) {
   const role = usePlatformRole();
   const format = useAuditFormat();
   const columns = useMemo(() => auditColumns(role, format), [role, format]);
   const first = useApiQuery((client) => client.listPlatformAudit(filters), [filters.companyId, filters.action]);
-  const [older, setOlder] = useState<{ entries: PlatformAuditView[]; nextCursor: string | null } | null>(null);
+  const [older, setOlder] = useState<OlderAuditPages | null>(null);
   const [loading, setLoading] = useState(false);
+  // The button and a failed load's Try again share this guard, so only one older page loads at a time.
+  const inFlight = useRef(false);
+  // A Try again belongs to these filters: it goes when they change or the page closes.
+  useEffect(() => () => void toast.dismiss(OLDER_FAILED_TOAST), []);
 
   if (first.status !== "ready") return <QueryFallback query={first} className="h-96" label="Loading audit log" />;
-  const seen = new Set(first.data.entries.map((entry) => entry.id));
-  const entries = [...first.data.entries, ...(older?.entries ?? []).filter((entry) => !seen.has(entry.id))];
-  const cursor = older ? older.nextCursor : first.data.nextCursor;
+  const newest = first.data;
+  const entries = auditRows(newest, older);
+  const cursor = olderAuditCursor(newest, older);
   const filtered = filters.companyId !== undefined || filters.action !== undefined;
 
-  async function loadOlder() {
-    if (!cursor) return;
+  async function loadOlder(before: string) {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
+    toast.dismiss(OLDER_FAILED_TOAST);
     try {
-      const page = await api.listPlatformAudit({ ...filters, before: cursor });
-      setOlder((previous) => ({
-        entries: [...(previous?.entries ?? []), ...page.entries],
-        nextCursor: page.nextCursor,
-      }));
+      const page = await api.listPlatformAudit({ ...filters, before });
+      // An answer for a cursor another load already moved past is dropped, never added twice.
+      setOlder((previous) => appendOlderAuditPage(newest, previous, before, page));
     } catch (failure) {
       toast.error(failure instanceof Error ? failure.message : "Older entries did not load.", {
-        action: { label: "Try again", onClick: () => void loadOlder() },
+        id: OLDER_FAILED_TOAST,
+        action: { label: "Try again", onClick: () => void loadOlder(before) },
       });
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }
@@ -124,7 +133,7 @@ function AuditEntries({ filters }: { filters: AuditFilters }) {
         empty={{ message: filtered ? "No entries for these filters." : "No platform changes recorded yet." }}
       />
       {cursor ? (
-        <Button variant="outline" className="self-start" onClick={() => void loadOlder()} disabled={loading}>
+        <Button variant="outline" className="self-start" onClick={() => void loadOlder(cursor)} disabled={loading}>
           <History />
           {loading ? "Loading older entries" : "Load older entries"}
         </Button>

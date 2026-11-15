@@ -11,6 +11,7 @@ import {
 import { ceilingLock } from "@/features/admin/access-draft";
 import { auditColumns } from "@/features/admin/audit-columns";
 import { auditActionLabel, auditActorText, auditDetailsText, type AuditFormat } from "@/features/admin/audit-labels";
+import { appendOlderAuditPage, auditRows, olderAuditCursor } from "@/features/admin/audit-paging";
 import { databaseErrorText, databaseText } from "@/features/admin/database-labels";
 import { PlatformRoleProvider, usePlatformRole } from "@/features/admin/platform-role";
 import type { ApiClient } from "@/lib/api/contract";
@@ -205,6 +206,55 @@ describe("demo platform audit log", () => {
     expect(entry?.actor).toEqual({ kind: "platform_admin", userId: "platform", name: "Platform admin" });
     expect(entry?.network).toEqual({ ip: null, userAgent: null });
     expect(entry?.company).toEqual({ id: "summit", name: "Summit Floor Co." });
+  });
+});
+
+describe("older audit pages on the screen", () => {
+  // Six entries, "a" oldest and "f" newest, read two at a time: f e | d c | b a.
+  const stored = ["a", "b", "c", "d", "e", "f"].map((id, i) => row(id, `2026-11-15T0${i}:00:00.000Z`));
+  const page = (before?: string) => demoAuditPage(stored, before === undefined ? { limit: 2 } : { limit: 2, before });
+  const ids = (entries: readonly PlatformAuditView[]) => entries.map((entry) => entry.id);
+
+  it("adds a page that two loads asked for with one cursor only once", () => {
+    const first = page();
+    const once = appendOlderAuditPage(first, null, "e", page("e"));
+    // The toast's Try again answers for the same cursor after the button's load already did.
+    const twice = appendOlderAuditPage(first, once, "e", page("e"));
+    expect(twice).toBe(once);
+    expect(ids(auditRows(first, twice))).toEqual(["f", "e", "d", "c"]);
+    expect(olderAuditCursor(first, twice)).toBe("c");
+  });
+
+  it("drops a late answer for a page already passed, so paging to the end shows each entry once", () => {
+    const first = page();
+    let older = appendOlderAuditPage(first, null, "e", page("e"));
+    older = appendOlderAuditPage(first, older, "c", page("c"));
+    expect(olderAuditCursor(first, older)).toBeNull();
+    const afterRetry = appendOlderAuditPage(first, older, "e", page("e"));
+    expect(afterRetry).toBe(older);
+    expect(ids(auditRows(first, afterRetry))).toEqual(["f", "e", "d", "c", "b", "a"]);
+    expect(olderAuditCursor(first, afterRetry)).toBeNull();
+  });
+
+  it("shows an entry that comes back on a later page once", () => {
+    const first = page();
+    const overlapping = { entries: [...first.entries, ...page("e").entries], nextCursor: "c" };
+    const older = appendOlderAuditPage(first, null, "e", overlapping);
+    expect(ids(auditRows(first, older))).toEqual(["f", "e", "d", "c"]);
+    expect(new Set(ids(auditRows(first, older))).size).toBe(4);
+  });
+
+  it("starts again below the newest page when a re-read moves its cursor, leaving no gap", () => {
+    const first = page();
+    const older = appendOlderAuditPage(first, null, "e", page("e"));
+    const grown = [...stored, row("g", "2026-11-15T07:00:00.000Z")];
+    const reread = demoAuditPage(grown, { limit: 2 });
+    expect(ids(auditRows(reread, older))).toEqual(["g", "f"]);
+    expect(olderAuditCursor(reread, older)).toBe("f");
+    expect(appendOlderAuditPage(reread, older, "e", page("e"))).toBe(older);
+    const next = appendOlderAuditPage(reread, older, "f", demoAuditPage(grown, { limit: 2, before: "f" }));
+    expect(ids(auditRows(reread, next))).toEqual(["g", "f", "e", "d"]);
+    expect(olderAuditCursor(reread, next)).toBe("d");
   });
 });
 

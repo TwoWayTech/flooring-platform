@@ -216,6 +216,22 @@ Docs: the spec (the CLI line when the alert fails, the edge case, the test mappi
 | `pnpm lint` (lock), whole repository | exit 0; web, api and db fresh, shared, providers and ui from turbo's cache; Prettier clean |
 | `pnpm -s typecheck --force` (lock) | 6 of 6 tasks passed |
 
+## Review round 2 (one finding, confirmed by a skeptic)
+1. **"Load older entries" could add the same page twice.** After a failed older page, the toast's Try again kept the failed render's cursor and ignored `loading`. Clicking it alongside the main button, or after the main button's load had already landed, appended the same page again. Duplicates were filtered against the newest page only, so the table got repeated rows and duplicate row ids.
+   - **Fix:** the new `apps/web/src/features/admin/audit-paging.ts` (`appendOlderAuditPage`, `auditRows`, `olderAuditCursor`). An answer for a cursor that is no longer the current one is dropped, and the rows are kept unique by id.
+   - **The page:** `platform-audit-page.tsx` loads one older page at a time, with a ref shared by the button and Try again. The failure toast has one id; a new load takes it away, and so does unmounting the entries when the filters change.
+   - **Safer extra (option 23):** when a re-read of the newest page moves its cursor because new entries arrived, the older pages are set aside and paging starts again below it. Before, the newest page and the older pages could leave a gap between them.
+   - **Tests:** 4 new unit cases in `tests/unit/platform-audit.test.tsx` page six demo entries two at a time: two loads of one cursor, a late Try again after the last page, an answer that overlaps the newest page, and a moved newest page.
+
+Docs: the spec ("Older entries", as built, and the test mapping), ADR 0053 (the /admin/audit screen, safest option 23 and the web test count) and the delta row (option 23).
+
+| Command | Result |
+| --- | --- |
+| web vitest on `platform-audit.test.tsx`, then the whole web unit suite (lock) | 22 passed; 58 passed in 7 files |
+| `pnpm --filter web typecheck` (lock) | exit 0 |
+| `eslint src/features/admin tests/unit/platform-audit.test.tsx` in apps/web (lock); Prettier on the touched files | clean |
+| demo build, then `tests/e2e/admin.spec.ts` on one worker (lock); ports 3000 and 4000 free before and after | 2 passed |
+
 ## Left
 - **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time; the full `pnpm lint` passed in review round 1); then mark ready and wait for `verify` and `e2e` on the head.
 - **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.
