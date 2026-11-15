@@ -1,10 +1,10 @@
 # Platform admin: companies and access on the API (draft spec)
 
-**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is specified in "Part 3: audit and support" below, under the same rule. It is being built on `feat/platform-audit-support` and is recorded in ADR 0053. Where the build settled a point this draft left open, the text below says what was built.
+**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and the top row of docs/blueprint-delta.md; see "Part 3: audit and support". Where the build settled a point this draft left open, the text below says what was built.
 
 Drafted by Claude on 2026-11-15 as P11 step 1 for module 17, "Platform admin and manual billing" (docs/real-build-plan.md). docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, the "Change company access" workflow, rules 18 and 24, and the edge cases. It has no server design and nothing on billing.
 
-The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052.
+The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052 (ADR 0053 for part 3).
 
 Sources:
 - blueprint p4 to p7: the layers of control, super-admin "Company access", and role rules 3, 6 and 8;
@@ -18,14 +18,14 @@ Sources:
 | --- | --- | --- | --- |
 | 1 | `feat/platform-access-api` | The platform guard, `/platform/me`, the companies list and detail, change company access, the restricted directory, and the support-access request behind the guard. The /admin console reads and writes the API in api mode | Built in PR #34; acceptance criteria 1 to 18 |
 | 2 | `feat/platform-manual-billing` | Plans as data; suspend, reinstate and cancel. Subscriptions and payments wait for the owner | Later, see "Parts 2 to 4" |
-| 3 | `feat/platform-audit-support` | The platform audit viewer, support requests in the console with limits, database and maintenance columns, migrate.ts hardening, and the read-only access page for the support role | In progress (draft PR). Specified in "Part 3: audit and support"; acceptance criteria 19 to 39 |
+| 3 | `feat/platform-audit-support` | The platform audit viewer, support requests in the console with limits, database and maintenance columns, migrate.ts hardening, and the read-only access page for the support role | Built in PR #36 (ADR 0053); acceptance criteria 19 to 39 |
 | 4 | `feat/billing-company-standing` | Company side: maintenance and suspended screens, the Owner's banner, a read-only billing page, the Owner's support-access panel | Later |
 
 ## Who uses it
 
 - **Platform admin:** a person with a row in `platform_admins` that is `active` and not deleted, whose `role` is `owner` or `support`. Any other role value counts as no admin.
-  - Both roles read every /platform page.
-  - Only the `owner` role changes a company's access.
+  - Both roles read every /platform page, with two limits from part 3: the support role doesn't see other admins' support requests or their reasons, and it gets no addresses or devices in the audit log ("Who may call what (part 3)").
+  - Only the `owner` role changes a company's access. The support role sees the access page read only (part 3).
   - Both roles may ask a company for support access.
   - MFA is always required (blueprint p27; `MfaPolicy`). Every /platform write also needs a step-up from the last 5 minutes.
 - **Company users:** nothing in part 1 is for them. A company user who calls /platform gets 403.
@@ -70,7 +70,7 @@ SessionGuard's own refusals come before all of these. For example, an admin with
 | `GET /platform/companies/:id` | Any platform admin | No | None | `PlatformCompany`. 404 for an unknown or deleted company |
 | `PATCH /platform/companies/:id/access` | Owner role | Yes | `company.access_changed` | Body `PlatformAccessPatch`. Answers with the company read again |
 | `GET /platform/companies/:id/directory` | Any platform admin | No | None | `PlatformDirectory` |
-| `POST /platform/support-grants` | Any platform admin | Yes | `support.requested` | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`. 201 `{ id }`; 404 for an unknown company |
+| `POST /platform/support-grants` | Any platform admin | Yes | `support.requested` | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`. 201 `{ id }`; 404 for an unknown company. Part 3 adds 403 under the lock, 409 `grant_open` and 429 `rate_limited` |
 
 A bad `:id` (not a UUID) answers 400 `invalid_request`. All of these routes answer 404 while `admin.access` is off, with Nest's default body `{ code: "not_found", message: "Not Found" }`, as `requireFeature` answers elsewhere. The support request's body is strict: an unknown field answers 400.
 
@@ -90,9 +90,9 @@ A bad `:id` (not a UUID) answers 400 `invalid_request`. All of these routes answ
 | `maintenance` | `{ on, reason }` | `tenants.maintenance_mode`, `maintenance_reason` | Reason `migration_failed`, `move` or null |
 | `plan` | string | `plans.name` of the subscription rows that are not deleted | "Trial, no plan" when there are none and the company is a trial; "No plan" when there are none and it is not (it then has no plan modules at all). A cancelled row reads "{name} (cancelled)"; several are joined with commas |
 | `modules` | `ModuleKey[]` | `AccessService.companyModules` | Exactly what the guards enforce |
-| `userLimit`, `branchLimit` | number or null | `core/access/plan-limits.ts` | Null means no limit (a trial with no plan). The branch limit is not enforced yet |
+| `userLimit`, `branchLimit` | number or null | `core/access/plan-limits.ts` | Null means no limit (a company with no subscription row that is not deleted). The branch limit is not enforced yet |
 | `members` | number | Count of control `member` rows | Sign-ins with a membership. This is not seats in use, which needs the company database |
-| `database` | `{ status, schemaVersion, hasError }` | `tenant_databases` | `status` and `schemaVersion` are null with no database row. Never the error text: it can quote company data (owner decision on maintenance, 2026-11-13; STATUS follow-up) |
+| `database` | `{ status, schemaVersion, hasError, errorCode }` | `tenant_databases`; `errorCode` from `platform_audit_log` | `status` and `schemaVersion` are null with no database row. `errorCode` (part 3) is the SQLSTATE of the newest recorded failure, only while `hasError`, else null. Never the error text: it can quote company data (owner decision on maintenance, 2026-11-13; STATUS follow-up) |
 
 ### PlatformCompany (detail)
 
@@ -132,7 +132,7 @@ No company database is read. The company's custom roles and its users need suppo
 | A key whose module is not offered and visible | 400 "{key} is outside this company's products." |
 | The `ceiling` list lacks one of `settings.users.view`, `settings.users.manage`, `settings.roles.view`, `settings.roles.manage` or `settings.audit.view` | 400 "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people." |
 | A limit that is not a whole number from 1 to 100,000 | 400 "Enter a whole number from 1 to 100,000." |
-| A limit when the company has no subscription row that is not deleted | 422 `rule_broken`, "This company is on a trial with no plan, so it has no limits to change." |
+| A limit when the company has no subscription row that is not deleted | 422 `rule_broken`, "This company has no plan, so it has no limits to change." (part 3; it said "is on a trial with no plan" before, which was wrong for a company that is not a trial) |
 | Unknown or deleted company | 404 `not_found`, "That company does not exist." |
 
 Duplicates in a list are ignored. The five protected keys must be in the result, not merely "not removed". The reason: the ceiling binds the Owner too (`effectivePermissions` has no Owner exemption). Without these keys, a company could not disable a person who left or change a role. Owner status and MFA come from the roles, not from keys, so a ceiling can't take them away.
@@ -204,23 +204,25 @@ Part 1 adds no feature key.
   A row opens the company's access page.
 - **Company access (/admin/companies/:id):**
   - **Modules and limits:** the modules come from the company's products. The Platform switch is disabled, and Installation stays hidden by rule 18.
-  - **Trial with no plan:** the limit inputs are disabled, with "On a trial with no plan there is no limit."
+  - **No plan:** the limit inputs are disabled, with "With no plan there is no limit." (part 3; it said "On a trial with no plan" before). A company with a plan never reads this hint, also on the support role's read-only page.
   - **Branch limit:** it reads "Stored, not enforced yet."
-  - **Account facts:** status and since when, phase, members ("People who can sign in, not seats in use."), and the database state and schema. With a failed migration it says "Error details are hidden: they can hold the company's data."
+  - **Account facts:** status and since when, phase, members ("People who can sign in, not seats in use."), and the database state and schema. With a failed migration it shows "Error code {code}" or "No error code recorded", then "The error text stays in the control database: it can hold the company's data." (part 3).
   - **Permission ceiling:** one matrix over every offered, visible module of the company's products. As built: the Flooring Suite's modules already include HR's, so a matrix per product would repeat modules. The preview lists pages for each product.
   - **Effective access preview (rule 24):** it works on the draft and the default roles.
   - **Roles, read only:** the default roles.
   - **Users:** "The company's users and custom roles need support access, which isn't available yet."
-  - **Save access:**
-    - The step-up dialog comes first.
+  - **Save access** (owner role only; the support role's page is read only, part 3):
+    - The shared `accessPatchProblem` runs first (part 3). A refusal shows as a toast and asks for no code.
+    - Then the step-up dialog.
     - Then the page sends only the changed parts, with modules and keys limited to the offered, visible ones.
     - The toast reads "Access saved for {name}. It applies at once." Then the page reads the company again.
     - A refusal shows the API's message.
-- **Tabs:** Access only. In api mode the Data import and Connect a database pages are not found, not merely hidden; import is a later item in the queue.
+- **Protected keys** (part 3): a ticked protected key can't be unticked ("Every company keeps this permission"); an unticked one can be ticked.
+- **Tabs:** Access and Support (part 3). In api mode the Data import and Connect a database pages are not found, not merely hidden; import is a later item in the queue.
 
 ### Demo mode
 
-Behaviour is unchanged, with one exception: the store now checks the same rules (`accessPatchProblem`, through `updatePlatformCompanyAccess`). This closes the edge case "`updateCompanyAccess` has no check in the store". The demo directory still lists the fixture's roles and users, and the demo still writes "Changed company access" to the company's log.
+Behaviour is unchanged, with one exception: the store now checks the same rules (`accessPatchProblem`, through `updatePlatformCompanyAccess`). This closes the edge case "`updateCompanyAccess` has no check in the store". The demo directory still lists the fixture's roles and users, and the demo still writes "Changed company access" to the company's log; from part 3 only when the save changes something, and also as a row of the console's own audit log.
 
 As built:
 - **No step-up in the demo.** Save applies at once, as before, so the demo admin spec's save flow does not change. That spec gained only one assertion, for the console's date format.
@@ -237,13 +239,13 @@ As built:
 - **A broken company database.** A company whose database failed a migration, or that is in maintenance, still shows and saves, because only the control database is used.
 - **The session the console runs on.** With no admin host, the console runs on a company host with the home company's session and timeouts. The step-up protects writes; reads are open to that session.
 - **The audit IP.** The API has no `trust proxy` setting, so in production the platform audit log records the web proxy's address, as the company audit log already does. Fixing it touches core/auth.
-- **A support admin sees the editor.** The screen does not know the admin's role, so a support admin can tick boxes and step up before the API's 403 shows in a toast.
+- **Fixed in part 3: a support admin saw the editor.** The console now knows the role from `GET /platform/me`, and the access page is read only for the support role.
 - **MFA reset.** A company can't reset a platform admin's MFA (existing, ADR 0034).
 - **Members.** The count is of sign-ins, not seats in use.
-- **Database errors.** The error text is never shown, only the status and a "has error" flag. The SQLSTATE code comes with part 3, which stores it.
-- **Support grants.** A grant still opens nothing.
+- **Database errors.** The error text is never shown, only the status, a "has error" flag and, from part 3, the SQLSTATE code of the newest recorded failure.
+- **Support grants.** A grant still opens nothing, in part 3 too.
 - **Products.** They are read-only.
-- **Limits on a trial with no plan.** It has none, and none can be set without a subscription row, which waits for the owner.
+- **Limits with no plan.** A company with no subscription row that is not deleted has none, and none can be set without a row, which waits for the owner.
 
 ## Acceptance criteria (part 1)
 
@@ -296,7 +298,7 @@ As built:
 
 ## Part 3: audit and support
 
-**Draft, under the same overnight rule.** Branch `feat/platform-audit-support`, from main at `bb3e81f`. It is recorded in ADR 0053, which takes a new number because this part also changes the `pnpm db:migrate` rollout in packages/db and how old audit rows are read. Where part 3 departs from part 1's text or from the part 3 outline, it is on the safer side. Each departure is listed in "Safer than the outline (part 3)" and recorded in docs/blueprint-delta.md and ADR 0053.
+**Built under the same overnight rule** on `feat/platform-audit-support` (PR #36), from main at `bb3e81f`; still a draft until the owner approves it. It is recorded in ADR 0053, which takes a new number because this part also changes the `pnpm db:migrate` rollout in packages/db and how old audit rows are read. Where part 3 departs from part 1's text or from the part 3 outline, it is on the safer side. Each departure is listed in "Safer than the outline (part 3)" and recorded in docs/blueprint-delta.md and ADR 0053. Points the build settled are in "As built (part 3)".
 
 Sources:
 - **Blueprint:**
@@ -420,7 +422,7 @@ The actor kind comes from the action, never from today's `platform_admins` rows.
 | `company.migration_failed` | `{ kind: "migration_failed", code }` | Every row, whatever its shape. Only `after.code` is read, and `code` is that string when it matches `^[A-Z0-9_]{1,32}$`, else null. `before` and every other field are never read. Rows written before part 3 hold `{ maintenanceMode, error }`, so they read `code: null` and their text is never shown |
 | `company.migration_recovered` | `{ kind: "migration_recovered", version }` | `version` is kept only when it is a string matching `^\d{4}_[a-z0-9_]{1,80}$` (a migration tag such as `0006_foreign_key_indexes`); otherwise it is null. Nothing else is read |
 | `company.access_changed` | `{ kind: "access_changed", modulesSwitchedOn, modulesSwitchedOff, keysAdded, keysRemoved, userLimit, branchLimit, overrideRows, limitRows }` | The allow-list below; otherwise hidden |
-| `support.requested` | `{ kind: "support_requested", reason, expiresAt }` | `before` is null or absent. `after` is exactly `{ reason, expiresAt }`, with `reason` a string of 1 to 500 characters and `expiresAt` a string that parses as a date. Otherwise hidden. Also hidden from the support role when another admin asked |
+| `support.requested` | `{ kind: "support_requested", reason, expiresAt }` | `before` is null or absent. `after` is exactly `{ reason, expiresAt }`, with `reason` a string of 1 to 500 characters and `expiresAt` an ISO moment (as built: stricter than "a string that parses as a date", which `Date.parse("1")` passes), given back in UTC. Otherwise hidden. Also hidden from the support role when another admin asked |
 | `support.approved`, `support.revoked` | `{ kind: "support_decided", decision }`, where `decision` is `"approved"` or `"revoked"` | `before` and `after` are both null; otherwise hidden |
 | Any other action | `{ kind: "hidden" }` | |
 
@@ -521,7 +523,7 @@ A refused request writes nothing and doesn't count toward the window.
   - **How it is read:** a subquery selects only `after->>'code'`. The value is narrowed by type and pattern in SQL, then again in TypeScript.
   - **The error text** is never selected. It shows nowhere in the console, for any role.
 - **Columns on the companies list (/admin):**
-  - **Database:** the status label. With an error it adds " · error {code}", or " · error, no code recorded". With no database row it reads "No database".
+  - **Database:** the status label. With an error it adds ", error {code}" (for example "Update failed, error 42P01"), or ", no error code recorded". With no database row it reads "No database". As built, a comma rather than " · ", and the code is not monospace (docs/design-brief.md).
   - **Maintenance:** "Off", or the reason's label.
   - **The companies CSV export** keeps working. It holds labels and codes only.
 - **The company facts:** with an error, "Error code {code}" or "No error code recorded", then "The error text stays in the control database: it can hold the company's data." No role sees an error text panel.
@@ -559,7 +561,7 @@ When a company's migration fails:
 
 **The command's line** (`packages/db/scripts/migrate.ts`):
 - **In maintenance:** "Company {id} is in maintenance mode; {n} platform admin(s) {emailed, or NOT emailed (EMAIL_PROVIDER is memory)}."
-- **Otherwise:** "Company {id} is NOT in maintenance mode{, and its read-only database still serves reads}: turn it on by hand (tenants.maintenance_mode, reason migration_failed); {n} platform admin(s) {…}." The bracketed clause appears only for a read-only database.
+- **Otherwise:** "Company {id} is NOT in maintenance mode{ and its read-only database still serves reads}: turn it on by hand (tenants.maintenance_mode, reason migration_failed); {n} platform admin(s) {…}." The bracketed clause appears only for a read-only database.
 
 ### ApiClient (part 3)
 - **`listPlatformAudit(query)`:** sends `GET /platform/audit` with only the fields that are set. A `companyId` or `before` that is not a UUID (a demo slug, for example) is never sent; the answer is then `{ entries: [], nextCursor: null }`.
@@ -575,7 +577,7 @@ When a company's migration fails:
   - "Companies" goes to /admin, and is current on /admin and /admin/companies/*.
   - "Audit log" goes to /admin/audit.
 
-  It looks like the company tabs and scrolls sideways at 375 px.
+  It looks like the company tabs and scrolls sideways at 375 px. As built, the exact page's link has `aria-current="page"`; Companies has `aria-current="true"` on a company's pages.
 - **Audit log (/admin/audit):**
   - **Title and description:** "Platform audit log". The description reads "Every change made in the console, every support request and every failed database update, newest first. Company data and error text are never shown."
   - **Filters:** Company (every company, plus "All companies") and Action (the six actions, by label). Changing a filter starts again from the newest entries. The filters stack at 375 px.
@@ -583,31 +585,35 @@ When a company's migration fails:
   - **Who:** the admin's name, "The company's Owner", "System (database update)" or "Unknown".
   - **What:** "Changed company access", "Asked for support access", "Support access approved", "Support access revoked", "Database update failed" or "Database updated after a failure". An unknown action shows its name.
   - **Details:**
-    - Access: "Switched on: …" and "Switched off: …" with module labels; "Added: …" and "Removed: …" with permission labels, or the key for one this build doesn't know; each limit as "from → to"; and "{n} override rows, {m} limit rows written".
+    - Access: "Switched on: …" and "Switched off: …" with module labels; "Added: …" and "Removed: …" with permission labels, or the key for one this build doesn't know; each limit as "from → to", with "No limit" for null; and "{n} override rows, {m} limit rows written", only when either count is above zero (as built; demo saves write no rows). An access entry with none of these reads "No change recorded".
     - A request: the reason in quotes, and "Ends {date}".
     - A decision: "Approved" or "Revoked".
     - A failed update: "Error code {code}" or "No error code recorded".
-    - A recovered update: "Now on schema {version}".
+    - A recovered update: "Now on schema {version}", or "Schema not recorded" (as built).
     - Anything hidden: "Details hidden".
-  - **Empty:** "No platform changes recorded yet."
+  - **Company column:** "No company" for an entry without one (as built).
+  - **Address and device** (owner role): the address, then the device under it; "No address" or "No device" when one of them is missing (as built).
+  - **Empty:** "No platform changes recorded yet.", or "No entries for these filters." with a filter set (as built).
+  - **Search** (as built): the table's search box filters the entries already loaded; the filters above it ask the server.
   - **Older entries:** a "Load older entries" button while there is a next page. A failure shows a toast with Try again.
   - **No "Export CSV"** (see "Safer than the outline (part 3)").
 - **Support tab (/admin/companies/:id/support).** The company tabs read Access, Support, then the demo-only Data import and Connect a database.
   - **Heading:** the company name, then "Support access".
   - **Panel:** "Ask this company's Owner for read-only access for a few hours. The Owner approves or revokes it in Settings. Approved access doesn't open the company's data yet." The support role also reads "You see your own requests."
   - **The button:** "Ask for support access". It is disabled while the admin's own request for this company is pending or approved, with the hint "You already have an open support request for this company."
-  - **Table:** Requested, By ("{name} (you)" for your own), Reason, Ends and Status. Each status has its own icon and tone: pending, approved, revoked and expired. There is no export.
+  - **Table:** Requested, By ("{name} (you)" for your own), Reason, Ends and Status. Each status has its own icon and tone: pending, approved, revoked and expired. There is no export. Empty: "No support requests for this company yet." A search box filters the rows loaded (as built).
   - **An unknown company:** "This company does not exist."
 - **Ask for support access (dialog):**
+  - **Description** (as built): "{name}'s Owner gets the request and approves or revokes it. Approved access is read only and ends after the hours you set."
   - **Fields:** Reason, a text area of 10 to 500 characters with a counter; and Hours, from 1 to 72, default 4.
   - **Hint:** "Don't paste the company's data here: the reason is kept in the platform audit log."
   - **Checked before sending** with `supportRequestInputProblem`. The field in error is marked invalid and gets focus.
   - **Continue** closes the form and opens the step-up dialog ("Asking {name} for support access"). Then the request is sent.
   - **Success:** "Support access requested. {name}'s Owner approves it in Settings." Then the list is read again.
-  - **A 409 or 429** shows the API's message.
+  - **A 409 or 429** shows the API's message. As built, the dialog then closes and the list is read again, because another tab or session asked meanwhile. Any other failure brings the form back with the typed text kept.
 - **Companies list:** the Database and Maintenance columns ("Database errors and maintenance").
 - **Company access (/admin/companies/:id) for the support role:** read only.
-  - **A note** (`role="note"`): "Read only: only the platform owner role can change a company's access."
+  - **A note** (`role="note"`): "Read only: only the platform owner role can change a company's access." As built, it sits under the company tabs, because it applies to the Access tab only.
   - **No step-up:** no "Save access" button and no step-up dialog.
   - **Everything disabled:** module switches, limit inputs and every ceiling box.
   - **The boxes' reason:** each ceiling box gives "Only the platform owner role can change this" in its accessible name, with no tooltip tab stop.
@@ -625,6 +631,7 @@ The same screens run on DemoStore, through the same shared rules:
 - **The demo admin** has the owner role. Its entries show "Platform admin", and "Not recorded" for address and device.
 - **A save that changes nothing writes nothing:** no company log entry and no platform row. This matches the API.
 - **Reset demo** clears both keys.
+- **No Owner approves in the demo,** so a demo request stays pending until it expires (as built).
 
 ### Validations and messages (part 3)
 
@@ -661,7 +668,7 @@ The same screens run on DemoStore, through the same shared rules:
 No new key. The switch's screens are already `/admin` and `/admin/*`.
 
 ### What part 3 changes in part 1's text
-The docs stage rewrites these as built:
+The docs stage rewrote these in part 1's sections above (done):
 - **"Who uses it":** "Both roles read every /platform page" is narrowed for the support role, as described in "Who may call what (part 3)".
 - **Fields:** `database` gains `errorCode`.
 - **Validations:** the 422 text no longer says "trial".
@@ -692,6 +699,29 @@ Each is recorded in docs/blueprint-delta.md and ADR 0053.
 14. **Every list is bounded:** audit pages at most 100 entries, and the support list at most 100 rows.
 15. **A no-op save writes nothing in the demo either.**
 16. **The e2e removes its test grants** in setup, teardown and global setup (a test-only hard delete), so the limits never block a later run on a shared local database. Its audit row stays.
+
+### As built (part 3)
+Settled while building, all in ADR 0053.
+
+**Safer still** (also in docs/blueprint-delta.md):
+- **Unreadable values deny.** An expiry that can't be read counts as expired and not open. A creation time that can't be read, or one later than now, counts toward the 24-hour window. A count that isn't a number gives the 429. An empty requester id never counts as the viewer.
+- **`support.requested` details need an ISO moment** for `expiresAt` (see "Redaction").
+- **A migration row's code** is read only from `after.code`, and only as the object's own property.
+- **The support list** passes every row through `seesSupportReason` again after the SQL filter.
+- **The web re-checks the error code** against the shared pattern before showing it.
+- **The ApiClient never sends an id that is not a UUID,** and rebuilds the POST body from its three fields.
+- **The console's role reads `support`** when no role is known.
+
+**Other choices:**
+- **One shared mapping:** `platformAuditView` in packages/shared turns a row into a `PlatformAuditView` for both the API and the demo, with `PLATFORM_AUDIT_PAGE` and `PLATFORM_AUDIT_QUERY_MESSAGES` beside it. The company id message is in the API (`apps/api/src/modules/platform/platform-params.ts`), because the web never sends an id that is not a UUID.
+- **A deleted company's grants still list** in `GET /platform/support-grants`, like its audit entries; only deleted grants are left out.
+- **`turnMaintenanceOn` always updates the tenant row,** keeping an existing reason, so `updated_at` moves even when maintenance was already on.
+- **`MigrationStoppedError`** exposes `code` and `recorded` and keeps the original error as `cause`.
+- **The fallback's log line** uses the write error's own message, which for a database error can include the failed query's values and so the migration text. That happens only when the failure couldn't be recorded, when the CLI prints the text anyway.
+- **The demo cursor** is looked up among all entries, whatever the filters, as the API does.
+- **The web's unit tests** compile JSX in `apps/web/vitest.config.ts` (`oxc`), because tsconfig's `jsx: "preserve"` kept vitest from importing `.tsx` files. No dependency was added.
+- **The companies list is wider:** at 1440 px it scrolls sideways inside its table because of the two new columns; the page doesn't.
+- **"Approves it in Settings":** the panel and the toast keep the spec's words, but the web has no Owner screen for support access yet (the API's `GET /support-grants`, approve and revoke exist). Part 4 builds it.
 
 ### Edge cases and known limits (part 3)
 - **Old rows still hold the text** in the control database: any SQL user, backup or dump sees it. Only the console is redacted (owner question 13).
@@ -768,6 +798,13 @@ Each is recorded in docs/blueprint-delta.md and ADR 0053.
     - a ticked protected key can't be unticked;
     - an unticked one can be ticked;
     - a refused change is caught before the step-up.
+
+**As built, the criteria are covered by:**
+- 19 and 20: `apps/api/test/platform.int.test.ts` (the 401, 403 and 404 loops and the metadata test pick up the new routes; at least 8 routes and 4 controllers) and `apps/api/test/isolation.int.test.ts`.
+- 21 to 27: `apps/api/test/platform-audit.int.test.ts` (8 tests), `packages/shared/test/platform-audit.test.ts` (43) and `apps/web/tests/unit/platform-audit.test.ts` (18).
+- 28 to 32: `apps/api/test/platform-support.int.test.ts` (10 tests; the race and the re-check wait on `pg_stat_activity` lock waiters) and `packages/shared/test/support-grants.test.ts` (25).
+- 33: `apps/api/test/platform.int.test.ts`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests) and `packages/db/test/platform-alerts.test.ts`.
+- 37: `apps/web/tests/e2e-api/platform-support.spec.ts`. 38: `apps/web/tests/e2e/admin.spec.ts`, with /admin/audit and the Support tab in `tests/e2e/screens.ts` (axe and console) and the 375 px loop in `tests/e2e/responsive.spec.ts`; the no-op save in `apps/web/tests/unit/demo-platform.test.ts`. 39: `apps/web/tests/unit/platform-audit.test.ts` (the locks) and `apps/web/tests/unit/platform-console.test.ts` (`saveProblem` before the step-up).
 
 ## Parts 2 to 4 (outline, not built here)
 

@@ -1,6 +1,6 @@
 # ADR 0052: Platform admin on the API, part 1 (platform guard, companies, change company access, support request)
 
-- **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15 with "platform admin and manual billing" after meetings, and was asleep during the build. The rule for that run: follow the spec as the approved behaviour, deviate only in the safer direction (less exposure, deny by default, refuse what can't be done correctly), record each deviation in docs/blueprint-delta.md and here, and defer what needs the owner. The safer deviations and the questions under "For the owner" are open for the owner's review. Later parts of this module add sections to this ADR rather than taking new numbers.
+- **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15 with "platform admin and manual billing" after meetings, and was asleep during the build. The rule for that run: follow the spec as the approved behaviour, deviate only in the safer direction (less exposure, deny by default, refuse what can't be done correctly), record each deviation in docs/blueprint-delta.md and here, and defer what needs the owner. The safer deviations and the questions under "For the owner" are open for the owner's review. Later parts of this module add sections to this ADR rather than taking new numbers, except part 3, which is recorded in ADR 0053 because it also changes the `pnpm db:migrate` rollout in packages/db and how old audit rows are read.
 - **Context:**
   - docs/real-build-plan.md module 17, "Platform admin and manual billing". docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, "Change company access", rules 18 and 24, and the edge cases. It has no server design and nothing on billing, so a draft spec was written for this run: docs/specs/platform-admin.md. The P11 "stop for my approval" step could not happen overnight; this follows the precedent of docs/specs/settings-users-access.md (docs/blueprint-delta.md, 2026-11-13), and here it is the overnight rule's choice.
   - Blueprint p4 to p7 (layers of control, super-admin "Company access", role rules 3, 6 and 8), p13 and p14 (control tables), p16 and p28 (an admin subdomain), p23 and p24 (billing and plans), p27 to p29 (MFA, super-admin, support access).
@@ -12,7 +12,7 @@
 ## Decision
 
 ### Routes
-All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`apps/api/src/modules/platform/platform.controller.ts`). docs/api-contract.md, "Platform admin (real build, ADR 0052)".
+All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`apps/api/src/modules/platform/platform.controller.ts`). docs/api-contract.md, "Platform admin (real build, ADR 0052 and ADR 0053)".
 
 | Route | Who | Step-up | Audit |
 | --- | --- | --- | --- |
@@ -89,7 +89,7 @@ All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`app
 5. **Audit in `platform_audit_log` only.** Company Owners no longer see ceiling changes in their own audit log in api mode (docs/api-contract.md said "written to the company's audit log as Platform admin"; the product spec has a "Changed company access" entry). The demo keeps its entry.
 6. **Reads are not audited.** Blueprint p28's "every action in the platform audit log" is read as every change, because part 1 reads no company data.
 7. **A restricted directory:** the default role templates and no users, which exposes less than blueprint p6's "read-only list of the company's roles and users". The real directory waits for grant use (blueprint p7 rule 6, p29).
-8. **No migration error text in the console, for every role:** only the status, the schema version and `hasError`. The text can quote a company's rows. The SQLSTATE code waits for part 3, because `last_error` stores no code today.
+8. **No migration error text in the console, for every role:** only the status, the schema version and `hasError`. The text can quote a company's rows. The SQLSTATE code waits for part 3, because `last_error` stores no code today (part 3 shows it: ADR 0053).
 9. **The resulting ceiling must contain the five Users, Security roles and Audit log keys,** not merely "not lose" them. A new company starts with an empty ceiling, and the ceiling binds the Owner too.
 10. **Limits go on every subscription row that is not deleted,** cancelled ones included, so a lowered limit takes effect. A company with none answers 422 and no row is created, because any row ends a fresh trial for good.
 11. **A module set back to what the plan gives soft-deletes its old override row.**
@@ -120,7 +120,7 @@ All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`app
 
 ## Later parts
 - **Part 2** (`feat/platform-manual-billing`): plans as data (list, create, edit, retire), and suspend, reinstate and cancel through a shared `statusAfter`, leaving subscription rows alone, behind a new switch `admin.billing`. Creating or changing a subscription, recording a payment and correcting a period wait for the owner: an `active` row counts as paid, so a subscription created before any payment would give a never-paid company the paid ladder, and a payment would exist only as an audit row and a moved date, with no record that can't be edited (CLAUDE.md rule 9).
-- **Part 3** (`feat/platform-audit-support`): `GET /platform/audit`, with migration rows as `{ code }` only, old rows included, and IP and user agent for the owner role only; support requests in the console with limits; database and maintenance columns with the SQLSTATE code; migrate.ts hardening.
+- **Part 3** (`feat/platform-audit-support`, PR #36), built in [ADR 0053](0053-platform-audit-support.md). It covers `GET /platform/audit`, with migration rows as `{ code }` only, old rows included, and IP and user agent for the owner role only; support requests in the console with limits; database and maintenance columns with the SQLSTATE code; migrate.ts hardening; the read-only access page for the support role.
 - **Part 4** (`feat/billing-company-standing`): `GET /company/standing` with its own membership check; the maintenance and suspended screens; the Owner's banner; a read-only billing page; the Owner's support-access panel, saying support can't see data yet.
 
 ## For the owner
@@ -146,11 +146,11 @@ All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`app
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be got round by disabling and re-enabling someone.
 - **The branch limit is not enforced.**
 - **The api-mode company shell** still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403.
-- **The support role sees the editor.** The screen does not know the admin's role, so a support admin can tick boxes and step up before the API's 403 shows in a toast.
+- **Closed by ADR 0053: the support role saw the editor.** The console now knows the admin's role from `GET /platform/me`, and the access page is read only for the support role (no Save, no step-up).
 - **Nothing links to /admin in api mode;** an admin types the address.
 - **The list costs about ten small control queries per company,** one company after another. Fine at today's count; a follow-up.
 - **The feature-off 404** has Nest's default body, `{ code: "not_found", message: "Not Found" }`, as `requireFeature` elsewhere.
-- **The error text stays in the control database** for the CLI, and old `company.migration_failed` audit rows hold it in `after`; part 3's viewer must redact every row.
+- **The error text stays in the control database** in `last_error`, and old `company.migration_failed` audit rows hold it in `after`. Part 3's viewer redacts every row to `{ code }` and new rows hold only the code (ADR 0053); the old rows' text is still readable with SQL access to the control database.
 - **Each local api-mode e2e run** adds one `company.access_changed` row to the local `platform_audit_log`, which is append-only by design.
 
 ## Consequences

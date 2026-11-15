@@ -71,7 +71,7 @@ After stage 5: `/review`, then a fresh security-reviewer and a fresh schema-revi
   - The demo runs the same shared rules.
 
 ## Decisions and why
-**Safe options.** Each one is recorded in docs/blueprint-delta.md and ADR 0053 when the docs stage lands.
+**Safe options.** Each one is recorded in docs/blueprint-delta.md and ADR 0053 (done in stage 5).
 
 1. **No migration error text in the console, for any role.** The console shows the status, the schema version, `hasError` and the SQLSTATE code. The text can quote a company's row values (the PR #10 sixth review; ADR 0052 "no error text").
 2. **Every `company.migration_failed` row is narrowed to `{ code }` twice.** The SQL nulls `before` and keeps `after.code` only when it is a string matching `^[A-Z0-9_]{1,32}$`. The shared allow-list then reads only that field. Old rows hold `{ maintenanceMode, error }` with the full text, so they read `code: null`, and their text never leaves the control database. The companies' `errorCode` subquery is narrowed the same way.
@@ -127,6 +127,85 @@ In docs/specs/platform-admin.md, "Waiting for the owner", questions 1 to 9 below
     - the admin host;
     - who adds platform admins.
 
-## Commands run (this stage)
-- `git fetch origin`: origin/main is still `bb3e81f`, and the branch has no commits of its own before this one.
-- No code changed in this stage, so no typecheck, lint or tests ran. Prettier ignores `*.md` in this repository (`.prettierignore`).
+## Outcome
+Draft PR #36 (`feat/platform-audit-support` into `main`). Every stage is committed with `[skip ci]` and pushed, so CI has not run on the branch yet.
+
+| Stage | Commit | What |
+| --- | --- | --- |
+| 0, plan | `997acaf` | The part 3 spec section, the owner questions, this log, the draft PR |
+| 1, shared | `9cd420b` | The write and visibility roles, the audit allow-list and `platformAuditView`, the support-grant rules and messages, the no-plan wording, the types, unit tests |
+| 2a, db | `16a5c4f` | migrate.ts: one transaction for `last_error`, maintenance and a code-only audit row, the maintenance-only fallback, the `onFailure` flags, the alert's three wordings, the CLI line; `removeSupportGrants` for tests |
+| 2b, API | `06c6ad8` | `GET /platform/audit`, `GET /platform/support-grants`, the request limits under the row lock, `database.errorCode`, integration tests |
+| 3, web | `645ba62` | The ApiClient methods and DemoStore, the role provider, the platform nav, /admin/audit, the Support tab, the Database and Maintenance columns, the read-only access page and the access editor fixes, unit tests |
+| 4, tests | `6641c35` | The api-mode `platform-support.spec.ts`, the demo admin test, /admin/audit and the Support tab in the axe and console lists, the 375 px loop over the admin screens |
+| 4, fixes | `9e5e791` | Two test locators (the dialog's fields, the audit rows' column order); no product code |
+| 5, docs | the commit that adds this section | ADR 0053, the delta row, api-contract, the spec as built, the product spec, the users spec, data-model, pointers in ADR 0052 and ADR 0033 |
+
+## Decisions taken during the build
+Each is in ADR 0053 ("Safest options taken" and "Smaller choices made while building") and the top row of docs/blueprint-delta.md. The planned ones are under "Decisions and why" above.
+
+**Safer than the plan:**
+- **Unreadable values deny** (shared): an expiry that can't be read counts as expired and not open; a creation time that can't be read, or one later than now, counts toward the 24-hour window; a count that isn't a number gives the 429; an empty requester id never counts as the viewer.
+- **`support.requested` details need an ISO moment** for `expiresAt`, because `Date.parse("1")` succeeds. It is returned in UTC.
+- **A migration row's code** is read only from `after.code`, and only as the object's own property.
+- **The support list** also passes every row through `seesSupportReason` after the SQL filter.
+- **The web re-checks the error code** against the shared pattern before showing it.
+- **The console's role reads `support`** without a provider, and the ApiClient never sends an id that is not a UUID.
+
+**Other choices:**
+- **One shared mapping,** `platformAuditView`, for the API and the demo, with `PLATFORM_AUDIT_PAGE` and `PLATFORM_AUDIT_QUERY_MESSAGES`; `supportRequestFacts` and `supportGrantExpiresAt` likewise. The API select aliases `companyId: supportAccessGrants.tenantId` for it.
+- **The company id message** lives in the API (`platform-params.ts`).
+- **`turnMaintenanceOn`** always updates the tenant row with a CASE that keeps an existing reason, so `updated_at` moves even when maintenance was already on (the old code skipped such a row).
+- **The fallback's log line** uses the write error's message, which for a database error can include the migration text; only in the not-recorded case, where the CLI prints the text anyway.
+- **`MigrationStoppedError`** exposes `recorded` as well as `code`.
+- **`apps/web/vitest.config.ts`** compiles JSX itself, because tsconfig's `jsx: "preserve"` made vitest fail on any `.tsx` import. No dependency.
+- **Wording:** "Update failed, error 42P01" (a comma, not " · ", and no monospace, per the design brief); "Schema not recorded"; "No entries for these filters."; "No company"; a description in the request dialog; the "rows written" line only above zero.
+- **Placement and flow:** the read-only note under the company tabs; after a 409 or 429 the dialog closes and the list is read again; the demo cursor is looked up among all entries; the nav uses `aria-current="true"` for Companies on company pages.
+- **docs/FEATURES.md is unchanged:** `admin.access` already screens `/admin` and `/admin/*`, and no switch changed, so its row stays as it is.
+
+**The plan and the code agreed.** No contradiction was found at any stage. One bug was found and fixed in the web stage: the demo's "older entries" cursor was reversed (caught by the new unit tests).
+
+## Commands run
+Heavy runs went through the scratchpad lock, one at a time; logs are in the scratchpad's `platform3` folder.
+
+| Stage | Command | Result |
+| --- | --- | --- |
+| 0 | `git fetch origin` | origin/main still `bb3e81f`; no own commits before stage 0 |
+| 1 | shared vitest on the three platform test files | 123 passed |
+| 1 | `pnpm --filter @workspace/shared exec vitest run` | 1 failure (`limitRows` not yet classified in `access-rules.test.ts`), then 691 passed in 55 files |
+| 1 | shared lint; Prettier on 3 files | clean |
+| 1 | API guard unit test; eslint on the guard | 6 passed; clean |
+| 1 | `pnpm -s typecheck`, then `pnpm -s typecheck --force` | exit 0 both; the first replayed web and db from turbo's cache (the `typecheck` task has no `dependsOn`), so later stages used `--force` (6 of 6 fresh) |
+| 2a | db integration `provision-tenant.int.test.ts`; db unit tests; db lint and Prettier | 17 passed; 14 passed; clean |
+| 2b | API integration files one at a time: `platform-audit.int`, `platform-support.int`, `platform.int`, `isolation.int`, `users.int` | 8, 10, 19, 15, 17 passed |
+| 2b | API unit tests; guard test alone; API lint | 70 passed; 6 passed; clean |
+| 2a, 2b | `pnpm -s typecheck --force` after each commit | 6 of 6 tasks passed |
+| 2b | web unit tests; shared tests | 33 passed; 691 passed |
+| 3 | `pnpm --filter web typecheck` | one test typing error, fixed, then passed |
+| 3 | `pnpm --filter web lint` | one React refs error, fixed, then clean |
+| 3 | `pnpm --filter web exec vitest run` | 54 passed in 7 files |
+| 3 | Prettier on apps/web and packages/shared | clean |
+| 3 | demo dev server on port 3000, checked by hand at 1440 and 390 px, light and dark | sign-in, Support tab, audit log and protected-key locks worked; no sideways page scroll; server stopped, ports free |
+| 4 | web `tsc --noEmit`, ESLint and Prettier on the e2e folders | clean |
+| 4 | db `provision-tenant.int` and `seed.int` | 17 and 14 passed |
+| 4 | API `platform.int`, `platform-audit.int`, `platform-support.int`, `isolation.int`, `users.int` | 19, 8, 10, 15, 17 passed |
+| 4 | `pnpm -s typecheck`; db unit tests | passed; 14 passed |
+| 4 | demo build, then the admin, a11y, console, responsive and roles specs, 1 worker | 240 passed, 1 failed (an ambiguous "Reason" locator) |
+| 4 | demo `admin.spec.ts` after the fix, same build | 2 passed |
+| 4 | api and web builds, then the api-mode login, users, platform-admin and platform-support specs; then platform-admin and platform-support again; the whole command a second time | 12 and 3 passed, then 12 and 3 passed again |
+| 4 | after the runs: listeners on 3000 and 4000; `platform_admins` and `support_access_grants` counts; Summit's `retail.sample.view` ceiling row | none; 0 and 0; allowed and not deleted |
+| 5 | shared vitest on `platform-audit`, `support-grants`, `platform-access` and `features` tests | 130 passed (43, 25, 55 and the feature register) |
+| 5 | web vitest on `platform-audit`, `demo-platform` and `platform-console` tests | 18, 2 and 18 passed |
+
+Prettier ignores `*.md` in this repository (`.prettierignore`), so the docs stage has no formatter run.
+
+## Left
+- **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm lint`, `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time); then mark ready and wait for `verify` and `e2e` on the head.
+- **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.
+- **Not checked by hand:** the support role's read-only access page and the api-mode request with the step-up. Both are covered by `platform-support.spec.ts`, which passed twice in a row.
+- **Doubtful or open:**
+  - the console's copy says the Owner approves "in Settings", but the web has no Owner screen for support access until part 4;
+  - at 1440 px the companies list scrolls sideways inside its table because of the two new columns;
+  - the optional STATUS:159 checks (the audit count rising by exactly 1; re-reading Summit after a refused key) were not added;
+  - the turbo `typecheck` task has no `dependsOn`, so a change in packages/shared doesn't recheck its users without `--force`.
+- **Next:** part 4 (`feat/billing-company-standing`), then a reduced part 2, as STATUS's queue says.
