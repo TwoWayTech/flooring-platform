@@ -169,8 +169,19 @@ The blueprint's `commissions` table has no stored equivalent. Commission lines a
 
 | Entity | Database | Blueprint table | Key fields | Relationships |
 | --- | --- | --- | --- | --- |
-| Meeting (`meetings`) | Company | `meetings`; `meeting_attendees` for `attendees`; `reminders` for `reminderMin` | `id`, `title`, `start`, `durationMin`, `location`, `recurrence` (`none`, `weekly`, `biweekly`, `monthly`), `reminderMin`, `timeZone`, `until`, `exceptions`, `uid`, `sequence`, `rescheduleSequence`, `status` (`tentative`, `confirmed`, `cancelled`), `kind` (`meeting`, `request`), `private`, `hideGuestList`, `allowProposals` | `ownerUserId -> User`. `attendees[].id` points at a `User`, `Customer`, `Supplier`, `CustomerContact` or `SupplierContact` depending on `attendees[].kind`; for `external` it is not a link |
-| MeetingResponse (`meetingResponses`) | Company | New in this demo | `id`, `method` (`reply`, `counter`), `partStat`, `proposedStart`, `note`, `sequence`, `at`, `stale` | `meetingId -> Meeting`, `attendeeId -> Attendee.id` |
+| Meeting (`meetings`) | Company | `meetings`; `meeting_attendees` for `attendees`. The blueprint's `reminders` table is not built: a reminder is a scheduled `outbox_messages` row (ADR 0032, 0051) | `id`, `title`, `start`, `durationMin`, `location`, `recurrence` (`none`, `weekly`, `biweekly`, `monthly`), `reminderMin`, `timeZone`, `until`, `exceptions`, `uid`, `sequence`, `rescheduleSequence`, `status` (`tentative`, `confirmed`, `cancelled`), `kind` (`meeting`, `request`), `private`, `hideGuestList`, `allowProposals` | `ownerUserId -> User`. `attendees[].id` points at a `User`, `Customer`, `Supplier`, `CustomerContact` or `SupplierContact` depending on `attendees[].kind`; for `external` it is not a link |
+| MeetingResponse (`meetingResponses`) | Company | New in this demo; `meeting_responses` in the real build | `id`, `method` (`reply`, `counter`), `partStat`, `proposedStart`, `note`, `sequence`, `at`, `stale` | `meetingId -> Meeting`, `attendeeId -> Attendee.id`; in the real build `meeting_responses.attendee_id -> meeting_attendees.id` (the guest's row, not the wire id) |
+
+Real build (ADR 0051):
+- **Times:** `meetings.start`, `meeting_attendees.responded_at` and `meeting_responses.proposed_start` are instants (timestamptz), read and written through `meetings.time_zone`. The API and the shared rules keep the demo's local `YYYY-MM-DDTHH:mm`, and `exceptions` and a proposal's `start` stay local, inside jsonb.
+- **Guests:** a guest is a `meeting_attendees` row with `party_type` (the attendee kind) and `party_id`:
+  - for staff, `party_id` is the control-database user id;
+  - for a customer, supplier or contact, it is that record's id;
+  - for an email guest it is null.
+
+  On the wire, `Attendee.id` is `party_id`, or the row's own id for an email guest.
+- **Removed guests:** a removed guest's row is soft-deleted.
+- **Changes:** `meetings.updated_at` is set from the database clock whenever the row is written, and becomes the invite's DTSTAMP.
 
 ### Notifications and email
 
@@ -210,7 +221,7 @@ The blueprint's `commissions` table has no stored equivalent. Commission lines a
 | `ChecklistItem` | `Employee.onboarding`, `Employee.offboarding` | New in this demo | |
 | `TimesheetEvent` | `Timesheet.history` | New in this demo | |
 | `PayPeriodLine`, `PayWeek` | `PayPeriod.lines` | New in this demo | Frozen when the period is approved. Computed live before that |
-| `Attendee` | `Meeting.attendees` | `meeting_attendees` | `kind`, `role`, `partStat`, response fields, `proposal` |
+| `Attendee` | `Meeting.attendees` | `meeting_attendees` | `kind` (`party_type`), `role`, `partStat`, response fields, `proposal`. The row's own id is the wire `Attendee.id` only for an email guest (ADR 0051) |
 | `MeetingProposal` | `Attendee.proposal` | New in this demo | |
 | `MeetingException` | `Meeting.exceptions` | New in this demo | One occurrence moved, resized or cancelled |
 | `OutboxRecipient`, `OutboxAttachment` | `OutboxMessage` | New in this demo | An `.ics` keeps its text inline |
@@ -312,7 +323,7 @@ Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to 
 - `member.role` holds a person's company role keys plus the marker `mfa` when any of their roles needs MFA by content (`MFA_REQUIRED_KEYS`, packages/shared); role assignment and role edits keep it in sync (ADR 0034).
 - `tenants.status_changed_at` (a trigger stamps every status change) and `tenants.maintenance_reason` (`migration_failed` or `move`) drive the company life cycle and maintenance mode (control migration 0003, ADR 0033). The life-cycle phase itself is derived on every request, never stored.
 - Users live in the control database, and company records point at them by id. Those links cross databases, so they cannot be foreign keys.
-- `Attendee.id`, `OutboxMessage.sourceId`, `OutboxRecipient.id`, `MovementSource.id` and `ImportChange.id` are polymorphic and need a type column or separate link tables.
+- `Attendee.id`, `OutboxMessage.sourceId`, `OutboxRecipient.id`, `MovementSource.id` and `ImportChange.id` are polymorphic and need a type column or separate link tables. `Attendee.id` is stored as `meeting_attendees.party_type` with `party_id` (ADR 0051).
 - Money and quantities are decimal strings. The blueprint's column types are `numeric(14,2)` for money, `numeric(14,4)` for unit costs and `numeric(14,3)` for quantities.
 - `nextNumber` takes the highest number in use plus one. It is not safe with concurrent writes, so the real build needs `document_sequences`.
 - Row-level narrowing per collection is in `apps/web/src/lib/api/demo/scope.ts`. The real API must apply the same filters.
