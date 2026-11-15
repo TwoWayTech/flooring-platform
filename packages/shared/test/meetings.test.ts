@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { attendeeConflicts, meetingOccurrences, moveOccurrence, type Meeting } from "../src";
+import {
+  addDays,
+  attendeeConflicts,
+  meetingOccurrences,
+  moveOccurrence,
+  nextPlannedStart,
+  onSeriesRule,
+  type Meeting,
+  type MeetingException,
+  type MeetingOccurrence,
+} from "../src";
 
 const base = {
   id: "m",
@@ -51,6 +61,111 @@ describe("meeting occurrences", () => {
     const starts = (m: Meeting) => meetingOccurrences([m], "2026-11-01", "2027-01-31").map((o) => o.start);
     expect(starts(thirdThursday)).toEqual(["2026-11-19T09:00", "2026-12-17T09:00", "2027-01-21T09:00"]);
     expect(starts(fifthThursday)).toEqual(["2026-11-26T09:00", "2026-12-24T09:00", "2027-01-28T09:00"]);
+  });
+});
+
+/**
+ * The walk `meetingOccurrences` made before review round 1 of PR #35: every planned date from the
+ * series' first one. It is kept only as the reference the windowed rule must match exactly.
+ */
+function walkedOccurrences(meetings: readonly Meeting[], from: string, to: string): MeetingOccurrence[] {
+  const out: MeetingOccurrence[] = [];
+  for (const meeting of meetings) {
+    if (meeting.status === "cancelled") continue;
+    for (
+      let planned: string | null = meeting.start;
+      planned && planned.slice(0, 10) <= addDays(to, 31) && (!meeting.until || planned.slice(0, 10) <= meeting.until);
+      planned = nextPlannedStart(planned, meeting.recurrence)
+    ) {
+      const moved = meeting.exceptions?.find((e) => e.planned === planned);
+      if (moved?.cancelled) continue;
+      const start = moved?.start ?? planned;
+      const day = start.slice(0, 10);
+      if (day >= from && day <= to)
+        out.push({ meeting, start, durationMin: moved?.durationMin ?? meeting.durationMin, planned });
+    }
+  }
+  return out.sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/** A repeatable sequence of whole numbers (mulberry32), so the comparison below covers many shapes the same way each run. */
+function numbers(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(state ^ (state >>> 15), state | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return (t ^ (t >>> 14)) >>> 0;
+  };
+}
+
+describe("occurrences worked out from the window (ADR 0051 Part 2, review round 1 of PR #35)", () => {
+  const recurrences: Meeting["recurrence"][] = ["none", "weekly", "biweekly", "monthly"];
+  const shape = (o: MeetingOccurrence) => `${o.meeting.id} ${o.planned} ${o.start} ${o.durationMin}`;
+
+  it("finds exactly what walking every series from its first date finds", () => {
+    const next = numbers(51);
+    const pick = <T>(list: readonly T[]) => list[next() % list.length]!;
+    const seen = { occurrences: 0, moved: 0 };
+    for (let round = 0; round < 400; round++) {
+      const meetings: Meeting[] = Array.from({ length: 6 }, (_, i) => {
+        const start = `${addDays("2026-01-01", next() % 400)}T${pick(["08:30", "13:00"])}`;
+        const meeting: Meeting = {
+          ...base,
+          id: `m${i}`,
+          start,
+          recurrence: pick(recurrences),
+          until: next() % 4 === 0 ? addDays(start, next() % 400) : null,
+          exceptions: [],
+        };
+        const planned: string[] = [start];
+        for (let p = nextPlannedStart(start, meeting.recurrence); p && planned.length < 40;) {
+          planned.push(p);
+          p = nextPlannedStart(p, meeting.recurrence);
+        }
+        const exceptions: MeetingException[] = Array.from({ length: next() % 6 }, () => {
+          const key = next() % 5 === 0 ? `${addDays(start, next() % 90)}T09:15` : pick(planned);
+          const kind = next() % 4;
+          if (kind === 0) return { planned: key, cancelled: true };
+          if (kind === 1) return { planned: key };
+          return { planned: key, start: `${addDays(key, (next() % 90) - 45)}T11:00`, durationMin: 45 };
+        });
+        return { ...meeting, exceptions, status: next() % 9 === 0 ? "cancelled" : "confirmed" };
+      });
+      const from = addDays("2026-01-01", next() % 500);
+      const to = addDays(from, pick([0, 6, 30, 120, 365]));
+      const walked = walkedOccurrences(meetings, from, to);
+      expect(meetingOccurrences(meetings, from, to).map(shape), `round ${round}`).toEqual(walked.map(shape));
+      seen.occurrences += walked.length;
+      seen.moved += walked.filter((o) => o.start !== o.planned).length;
+    }
+    // The comparison is not empty: many occurrences, moved ones among them.
+    expect(seen.occurrences).toBeGreaterThan(1000);
+    expect(seen.moved).toBeGreaterThan(50);
+  });
+
+  it("knows a monthly series' dates directly, the fifth week moved to the fourth", () => {
+    const fifthThursday: Meeting = { ...base, start: "2026-10-29T09:00", recurrence: "monthly" };
+    expect(onSeriesRule(fifthThursday, "2026-10-29T09:00")).toBe(true);
+    expect(onSeriesRule(fifthThursday, "2031-07-24T09:00")).toBe(true);
+    expect(onSeriesRule(fifthThursday, "2031-07-31T09:00")).toBe(false);
+    expect(onSeriesRule(fifthThursday, "2026-10-22T09:00")).toBe(false);
+    expect(onSeriesRule(fifthThursday, "2026-13-24T09:00")).toBe(false);
+  });
+
+  it("costs the same for a series that began centuries before the window", () => {
+    const old = Array.from({ length: 200 }, (_, i): Meeting => ({
+      ...base,
+      id: `old-${i}`,
+      start: "1900-01-01T07:00",
+      recurrence: i % 2 ? "weekly" : "monthly",
+    }));
+    const began = performance.now();
+    // 2 December 2999 is a Monday in the first week, so every one of them meets that day.
+    const found = meetingOccurrences(old, "2999-12-02", "2999-12-02");
+    // The walk from 1900 took about 16 seconds here (review round 1 of PR #35); the window takes milliseconds.
+    expect(performance.now() - began).toBeLessThan(250);
+    expect(found.map((o) => o.start)).toEqual(Array.from({ length: 200 }, () => "2999-12-02T07:00"));
   });
 });
 

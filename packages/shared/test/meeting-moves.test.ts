@@ -1,0 +1,596 @@
+import { describe, expect, it } from "vitest";
+import {
+  BUSY_TITLE,
+  addDays,
+  MEETING_CHANGED,
+  UNDO_WINDOW_MINUTES,
+  conflictForViewer,
+  effectiveScope,
+  isPlannedOccurrence,
+  meetingOccurrences,
+  moveAuditEntry,
+  moveProblem,
+  movedMeetings,
+  movedOccurrenceKey,
+  occurrenceConflicts,
+  previousPlannedStart,
+  restoredOccurrence,
+  undoProblem,
+  undoneMeeting,
+  undoneSeriesProblem,
+  type Attendee,
+  type Meeting,
+  type MeetingMoveInput,
+  type MoveScope,
+  type UndoContext,
+} from "../src";
+import { GUEST, NOW, ORGANISER, TODAY, guestRow, testMeeting, viewerAs } from "./meeting-fixtures";
+
+/** A weekly huddle on Thursdays at 08:30 in Denver, from 19 November 2026. */
+const huddle = (patch: Partial<Meeting> = {}) => testMeeting({ recurrence: "weekly", ...patch });
+const move = (patch: Partial<MeetingMoveInput> = {}): MeetingMoveInput => ({
+  planned: "2026-11-26T08:30",
+  start: "2026-11-26T10:00",
+  durationMin: 45,
+  scope: "this",
+  ...patch,
+});
+const ids = { newId: "m2", newUid: "8d1f3c52-1a8e-4c3b-9f0e-5b2d7c4a6e10" };
+const seesAll = () => true;
+const LOST = "The moved occurrence would no longer be part of the series. Choose another time.";
+const STRANDED =
+  "An occurrence changed on its own would no longer be part of the series after this move. Move it on its own first, or choose another time.";
+const KEPT =
+  "The earlier occurrences stay where they are, so this and following must start after the last of them ends. Choose a later time, or choose This event or All events.";
+const BEYOND_REACH = /more than 31 days before its date in the series/;
+const LEFT_BEHIND = /has already taken place, but its date in the series is still ahead/;
+const CHANGED_ON_ITS_OWN =
+  "This occurrence was changed on its own. Choose This event, or move another occurrence to move all events.";
+/** Fridays at 09:00 in Denver from 30 October; NOW is the Sunday after 13 November, at noon. */
+const fridays = (exceptions: Meeting["exceptions"]) =>
+  testMeeting({ start: "2026-10-30T09:00", recurrence: "weekly", exceptions });
+/** The 20 November occurrence, still ahead, held early on Saturday the 14th, which has passed. */
+const heldEarly = () => fridays([{ planned: "2026-11-20T09:00", start: "2026-11-14T09:00" }]);
+
+describe("which occurrence a move names (meetings.md rules 1 and 2)", () => {
+  it("knows a one-off by its start and a series by the dates its rule plans", () => {
+    expect(isPlannedOccurrence(testMeeting(), "2026-11-19T08:30")).toBe(true);
+    expect(isPlannedOccurrence(testMeeting(), "2026-11-26T08:30")).toBe(false);
+    expect(isPlannedOccurrence(huddle(), "2026-11-19T08:30")).toBe(true);
+    expect(isPlannedOccurrence(huddle(), "2026-12-31T08:30")).toBe(true);
+    for (const fake of ["2026-11-26T09:00", "2026-11-25T08:30", "2026-11-12T08:30", "2026-11-26", "2026-02-30T08:30"])
+      expect(isPlannedOccurrence(huddle(), fake), fake).toBe(false);
+  });
+
+  it("knows a monthly series' far dates without walking to them", () => {
+    const fourthThursday = testMeeting({ start: "2026-11-26T08:30", recurrence: "monthly" });
+    expect(isPlannedOccurrence(fourthThursday, "2999-12-26T08:30")).toBe(true);
+    expect(isPlannedOccurrence(fourthThursday, "2999-12-19T08:30")).toBe(false);
+  });
+
+  it("counts a weekly or biweekly step rather than walking it, however far ahead", () => {
+    const far = addDays("2026-11-19T08:30", 7 * 40_000);
+    expect(isPlannedOccurrence(huddle(), far)).toBe(true);
+    expect(isPlannedOccurrence(huddle(), addDays(far, 1))).toBe(false);
+    expect(isPlannedOccurrence(huddle({ recurrence: "biweekly" }), "2026-12-03T08:30")).toBe(true);
+    expect(isPlannedOccurrence(huddle({ recurrence: "biweekly" }), "2026-11-26T08:30")).toBe(false);
+  });
+
+  it("stops at until, skips a cancelled occurrence and keeps the monthly week cap", () => {
+    expect(isPlannedOccurrence(huddle({ until: "2026-12-03" }), "2026-12-03T08:30")).toBe(true);
+    expect(isPlannedOccurrence(huddle({ until: "2026-12-03" }), "2026-12-10T08:30")).toBe(false);
+    const skipped = huddle({ exceptions: [{ planned: "2026-11-26T08:30", cancelled: true }] });
+    expect(isPlannedOccurrence(skipped, "2026-11-26T08:30")).toBe(false);
+    const fourthThursday = testMeeting({ start: "2026-11-26T08:30", recurrence: "monthly" });
+    expect(isPlannedOccurrence(fourthThursday, "2026-12-24T08:30")).toBe(true);
+    expect(isPlannedOccurrence(fourthThursday, "2026-12-31T08:30")).toBe(false);
+  });
+
+  it("finds the planned date before one directly: weekly, biweekly and monthly, none before the first", () => {
+    expect(previousPlannedStart(huddle(), "2026-12-03T08:30")).toBe("2026-11-26T08:30");
+    expect(previousPlannedStart(huddle(), "2026-11-19T08:30")).toBeNull();
+    expect(previousPlannedStart(huddle({ recurrence: "biweekly" }), "2026-12-17T08:30")).toBe("2026-12-03T08:30");
+    // The seeded day-30 talk repeats in the fourth week; the month after it began goes back to its own start.
+    const safetyTalk = testMeeting({ start: "2026-09-30T13:00", recurrence: "monthly" });
+    expect(previousPlannedStart(safetyTalk, "2026-11-25T13:00")).toBe("2026-10-28T13:00");
+    expect(previousPlannedStart(safetyTalk, "2026-10-28T13:00")).toBe("2026-09-30T13:00");
+    expect(previousPlannedStart(testMeeting(), "2026-11-26T08:30")).toBeNull();
+  });
+
+  it("moves a one-off as all events, whatever scope is sent (rule 4)", () => {
+    expect(effectiveScope(testMeeting(), "this")).toBe("all");
+    expect(effectiveScope(huddle(), "this")).toBe("this");
+  });
+});
+
+describe("what a move refuses (ADR 0051 Part 2)", () => {
+  it("takes this, this and following, and all on a weekly series", () => {
+    expect(moveProblem(huddle(), move(), TODAY, NOW)).toBeNull();
+    expect(moveProblem(huddle(), move({ scope: "following" }), TODAY, NOW)).toBeNull();
+    expect(moveProblem(huddle(), move({ scope: "all" }), TODAY, NOW)).toBeNull();
+    expect(
+      moveProblem(testMeeting(), move({ planned: "2026-11-19T08:30", start: "2026-11-20T09:00" }), TODAY, NOW),
+    ).toBeNull();
+  });
+
+  it("refuses a cancelled meeting, a time the clocks skip, a bad length and an occurrence the meeting never had", () => {
+    expect(moveProblem(huddle({ status: "cancelled" }), move(), TODAY, NOW)).toBe("This meeting was cancelled.");
+    expect(moveProblem(huddle(), move({ start: "2027-03-14T02:30" }), TODAY, NOW)).toMatch(/doesn't exist/);
+    expect(moveProblem(huddle(), move({ durationMin: 10 }), TODAY, NOW)).toMatch(/15 minutes/);
+    expect(moveProblem(huddle(), move({ durationMin: 1441 }), TODAY, NOW)).toMatch(/15 minutes/);
+    expect(moveProblem(huddle(), move({ planned: "2026-11-26T09:00" }), TODAY, NOW)).toMatch(
+      /not part of this meeting/,
+    );
+    expect(moveProblem(huddle({ until: "2026-11-20" }), move(), TODAY, NOW)).toMatch(/not part of this meeting/);
+  });
+
+  it("refuses a new time too far from the company's today, but moves a series that began long ago", () => {
+    const oneOff = testMeeting();
+    const to = (start: string) => move({ planned: oneOff.start, start, scope: "all" });
+    expect(moveProblem(oneOff, to("2999-12-01T10:00"), TODAY, NOW)).toBe(
+      "Choose a start from one year ago up to three years ahead.",
+    );
+    expect(moveProblem(oneOff, to("1900-01-01T10:00"), TODAY, NOW)).toMatch(/one year ago/);
+    expect(moveProblem(oneOff, to("2029-11-15T10:00"), TODAY, NOW)).toBeNull();
+    // Only the time typed is bounded: an all move of an old series shifts its first date, which stays old.
+    const longAgo = huddle({ start: "2019-11-21T08:30" });
+    expect(moveProblem(longAgo, move({ scope: "all" }), TODAY, NOW)).toBeNull();
+    expect(moveProblem(longAgo, move({ planned: "2019-11-28T08:30", start: "2019-11-28T09:00" }), TODAY, NOW)).toMatch(
+      /one year ago/,
+    );
+  });
+
+  it("refuses this and following from the first occurrence, pointing to All events", () => {
+    expect(moveProblem(huddle(), move({ planned: "2026-11-19T08:30", scope: "following" }), TODAY, NOW)).toMatch(
+      /first occurrence of the series/,
+    );
+    // A one-off moves as all, so its scope never matters.
+    expect(
+      moveProblem(testMeeting(), move({ planned: "2026-11-19T08:30", scope: "following" }), TODAY, NOW),
+    ).toBeNull();
+  });
+
+  it("refuses a series start shifted into the spring gap, though the new time itself exists", () => {
+    const sundays = testMeeting({ start: "2027-03-07T02:30", recurrence: "weekly" });
+    expect(
+      moveProblem(sundays, move({ planned: "2027-03-21T02:30", start: "2027-03-28T02:30", scope: "all" }), TODAY, NOW),
+    ).toMatch(/doesn't exist/);
+    expect(
+      moveProblem(sundays, move({ planned: "2027-03-21T02:30", start: "2027-03-28T02:30" }), TODAY, NOW),
+    ).toBeNull();
+  });
+
+  it("refuses the seeded day-30 safety talk moved as all events, but moves it this event or resizes it", () => {
+    const safetyTalk = testMeeting({ start: "2026-09-30T13:00", recurrence: "monthly" });
+    const occurrence = { planned: "2026-11-25T13:00", start: "2026-11-25T14:00" };
+    expect(moveProblem(safetyTalk, move({ ...occurrence, scope: "all" }), TODAY, NOW)).toMatch(/fifth week/);
+    expect(moveProblem(safetyTalk, move({ ...occurrence, scope: "this" }), TODAY, NOW)).toBeNull();
+    expect(
+      moveProblem(
+        safetyTalk,
+        move({ planned: occurrence.planned, start: occurrence.planned, scope: "all" }),
+        TODAY,
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses a move that would take the moved occurrence off its series", () => {
+    // The fourth Tuesday moved a week later: the series would start in the first week, where 29 December is not.
+    const fourthTuesday = testMeeting({ start: "2026-11-24T10:00", recurrence: "monthly" });
+    expect(
+      moveProblem(
+        fourthTuesday,
+        move({ planned: "2026-12-22T10:00", start: "2026-12-29T10:00", scope: "all" }),
+        TODAY,
+        NOW,
+      ),
+    ).toBe(LOST);
+    expect(
+      moveProblem(
+        fourthTuesday,
+        move({ planned: "2026-12-22T10:00", start: "2026-12-29T10:00", scope: "following" }),
+        TODAY,
+        NOW,
+      ),
+    ).toMatch(/fifth week/);
+    const ending = huddle({ until: "2026-12-03" });
+    expect(
+      moveProblem(ending, move({ planned: "2026-12-03T08:30", start: "2026-12-04T08:30", scope: "all" }), TODAY, NOW),
+    ).toBe(LOST);
+    expect(moveProblem(ending, move({ start: "2026-12-10T08:30", scope: "following" }), TODAY, NOW)).toBe(LOST);
+  });
+
+  it("refuses a move that would take an occurrence changed on its own off its series", () => {
+    const series = huddle({
+      until: "2027-01-14",
+      exceptions: [{ planned: "2027-01-14T08:30", start: "2027-01-13T08:30" }],
+    });
+    expect(
+      moveProblem(
+        series,
+        move({ planned: "2026-12-03T08:30", start: "2026-12-04T08:30", scope: "following" }),
+        TODAY,
+        NOW,
+      ),
+    ).toBe(STRANDED);
+    expect(
+      moveProblem(series, move({ planned: "2026-12-03T08:30", start: "2026-12-04T08:30", scope: "all" }), TODAY, NOW),
+    ).toBe(STRANDED);
+    expect(
+      moveProblem(series, move({ planned: "2026-12-03T08:30", start: "2026-12-03T08:00", scope: "all" }), TODAY, NOW),
+    ).toBeNull();
+  });
+
+  it("refuses this and following that starts before the old series' last occurrence ends (review round 3 of PR #35)", () => {
+    const from = (start: string, meeting = huddle(), planned = "2026-12-10T08:30") =>
+      moveProblem(meeting, move({ planned, start, scope: "following" }), TODAY, NOW);
+    // The old series keeps 19 and 26 November and 3 December, 08:30 to 09:30: the weeks would hold both series.
+    expect(from("2026-11-24T08:30")).toBe(KEPT);
+    expect(from("2026-12-03T09:00")).toBe(KEPT);
+    // Back to back with the last one, the meeting would run twice in a row.
+    expect(from("2026-12-03T09:30")).toBe(KEPT);
+    expect(from("2026-12-03T09:45")).toBeNull();
+    // A planned date far ahead on an open-ended series can't leave the old one running beside the new.
+    expect(from("2026-12-17T08:30", huddle(), addDays("2026-11-19T08:30", 7 * 5000))).toBe(KEPT);
+    // An occurrence the old series keeps counts at its own time, and the date it left does not.
+    const movedLater = huddle({ exceptions: [{ planned: "2026-12-03T08:30", start: "2026-12-09T08:30" }] });
+    expect(from("2026-12-08T08:30", movedLater)).toBe(KEPT);
+    const movedEarlier = huddle({ exceptions: [{ planned: "2026-12-03T08:30", start: "2026-12-01T08:30" }] });
+    expect(from("2026-12-02T08:30", movedEarlier)).toBeNull();
+    expect(from("2026-11-26T09:00", movedEarlier)).toBe(KEPT);
+    // A monthly series looks back to its date in the month before (fourth Thursdays).
+    const monthly = testMeeting({ start: "2026-11-26T08:30", recurrence: "monthly" });
+    expect(from("2026-12-24T09:00", monthly, "2027-01-28T08:30")).toBe(KEPT);
+    expect(from("2026-12-24T09:45", monthly, "2027-01-28T08:30")).toBeNull();
+    expect(from("2026-11-26T09:00", monthly, "2026-12-24T08:30")).toBe(KEPT);
+  });
+
+  it("refuses an occurrence changed on its own more than 31 days before its date in the series (review round 3 of PR #35)", () => {
+    // This event: 21 January moved to 20 December is 32 days earlier; to 21 December, 31 days, it is still found.
+    const january = (start: string) => moveProblem(huddle(), move({ planned: "2027-01-21T08:30", start }), TODAY, NOW);
+    expect(january("2026-12-20T08:30")).toMatch(BEYOND_REACH);
+    expect(january("2026-12-21T08:30")).toBeNull();
+    // All events: an occurrence already moved 28 days earlier would be 35 days off after a week's shift.
+    const early = huddle({ exceptions: [{ planned: "2026-12-31T08:30", start: "2026-12-03T10:00" }] });
+    expect(moveProblem(early, move({ start: "2026-12-03T08:30", scope: "all" }), TODAY, NOW)).toMatch(BEYOND_REACH);
+    expect(moveProblem(early, move({ start: "2026-11-26T09:00", scope: "all" }), TODAY, NOW)).toBeNull();
+  });
+
+  it("refuses a series change that ties an occurrence that has taken place to a date still ahead (review round 3 of PR #35)", () => {
+    // Last Friday's, 13 November, was held an hour late. Moved to Mondays from the 23rd, it would name Monday the 16th.
+    const heldLate = fridays([{ planned: "2026-11-13T09:00", start: "2026-11-13T10:00" }]);
+    const toMondays = move({ planned: "2026-11-20T09:00", start: "2026-11-23T09:00", scope: "all" });
+    expect(moveProblem(heldLate, toMondays, TODAY, NOW)).toMatch(LEFT_BEHIND);
+    // Taken once that Monday's slot has ended, or when the shift keeps the date in the past; this event is never refused.
+    expect(moveProblem(heldLate, toMondays, TODAY, new Date("2026-11-16T17:00:00.000Z"))).toBeNull();
+    const toThursdays = move({ planned: "2026-11-20T09:00", start: "2026-11-19T09:00", scope: "all" });
+    expect(moveProblem(heldLate, toThursdays, TODAY, NOW)).toBeNull();
+    expect(
+      moveProblem(heldLate, move({ planned: "2026-11-20T09:00", start: "2026-11-20T10:00" }), TODAY, NOW),
+    ).toBeNull();
+    // Held early while its date is still ahead: a split keeps it on the old series, whose UNTIL changes, or carries
+    // it onto the new one; an all move that keeps its date ahead is refused too.
+    const later = { planned: "2026-11-27T09:00", start: "2026-11-27T10:00" };
+    expect(moveProblem(heldEarly(), move({ ...later, scope: "following" }), TODAY, NOW)).toMatch(LEFT_BEHIND);
+    expect(moveProblem(heldEarly(), move({ ...later, scope: "all" }), TODAY, NOW)).toMatch(LEFT_BEHIND);
+    const fromLastFriday = move({ planned: "2026-11-13T09:00", start: "2026-11-16T09:00", scope: "following" });
+    expect(moveProblem(heldEarly(), fromLastFriday, TODAY, NOW)).toMatch(LEFT_BEHIND);
+    expect(moveProblem(heldEarly(), move(later), TODAY, NOW)).toBeNull();
+  });
+
+  it("refuses all events from an occurrence changed on its own; this and following from it starts at the new time (final review of PR #35)", () => {
+    // 26 November was moved on its own to Friday the 27th at 10:00; that Friday occurrence is dragged to Saturday.
+    const series = huddle({
+      exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-27T10:00", durationMin: 60 }],
+    });
+    const drag = (scope: MoveScope) =>
+      move({ planned: "2026-11-26T08:30", start: "2026-11-28T10:00", durationMin: 60, scope });
+    // All events would shift its date to Saturday but leave it on Friday, while the conflict check looks at Saturday.
+    expect(moveProblem(series, drag("all"), TODAY, NOW)).toBe(CHANGED_ON_ITS_OWN);
+    // Resized only, it would keep its old length while the series and the conflict check take the new one.
+    const resized = huddle({ exceptions: [{ planned: "2026-11-26T08:30", durationMin: 30 }] });
+    const longer = move({ planned: "2026-11-26T08:30", start: "2026-11-26T08:30", durationMin: 45, scope: "all" });
+    expect(moveProblem(resized, longer, TODAY, NOW)).toBe(CHANGED_ON_ITS_OWN);
+    // All events from another occurrence still takes the one changed on its own along, at its own time.
+    expect(
+      moveProblem(series, move({ planned: "2026-12-03T08:30", start: "2026-12-05T10:00", scope: "all" }), TODAY, NOW),
+    ).toBeNull();
+    // This event moves it again; this and following drops it from both series, so it lands where it was dragged.
+    expect(moveProblem(series, drag("this"), TODAY, NOW)).toBeNull();
+    expect(moveProblem(series, drag("following"), TODAY, NOW)).toBeNull();
+    const split = movedMeetings(series, drag("following"), ids);
+    expect(split.original).toMatchObject({ until: "2026-11-25", exceptions: [] });
+    expect(split.split).toMatchObject({ start: "2026-11-28T10:00", durationMin: 60, exceptions: [] });
+    const held = meetingOccurrences([split.original, split.split!], "2026-11-26", "2026-11-28");
+    expect(held.map((o) => [o.meeting.id, o.start, o.planned])).toEqual([
+      ["m2", "2026-11-28T10:00", "2026-11-28T10:00"],
+    ]);
+    expect(movedOccurrenceKey(drag("following"), split)).toEqual({ meetingId: "m2", planned: "2026-11-28T10:00" });
+  });
+
+  it("takes at most 100 occurrences changed on their own", () => {
+    const planned = Array.from({ length: 100 }, (_, week) => {
+      const day = new Date(Date.UTC(2026, 10, 19 + 7 * (week + 2)));
+      return `${day.toISOString().slice(0, 10)}T08:30`;
+    });
+    const full = huddle({ exceptions: planned.map((p) => ({ planned: p, start: p.replace("08:30", "09:00") })) });
+    expect(moveProblem(full, move(), TODAY, NOW)).toMatch(/at most 100 occurrences/);
+    expect(
+      moveProblem(full, move({ planned: planned[0]!, start: planned[0]!.replace("08:30", "10:00") }), TODAY, NOW),
+    ).toBeNull();
+  });
+});
+
+describe("what a move saves (meetings.md rule 4 and the sends table)", () => {
+  const answered = (patch: Partial<Meeting> = {}) =>
+    huddle({
+      sequence: 2,
+      rescheduleSequence: 1,
+      attendees: huddle().attendees.map((a) =>
+        a.id === GUEST ? { ...a, partStat: "accepted", respondedAt: "2026-11-10T09:00", respondedSequence: 2 } : a,
+      ),
+      ...patch,
+    });
+
+  it("this event: an exception, SEQUENCE + 1, rescheduleSequence and answers kept", () => {
+    const moved = movedMeetings(answered(), move(), ids);
+    expect(moved.split).toBeNull();
+    expect(moved.original).toMatchObject({ start: "2026-11-19T08:30", sequence: 3, rescheduleSequence: 1 });
+    expect(moved.original.exceptions).toEqual([
+      { planned: "2026-11-26T08:30", start: "2026-11-26T10:00", durationMin: 45 },
+    ]);
+    expect(moved.original.attendees).toEqual(answered().attendees);
+  });
+
+  it("all events: the series shifts with its exceptions, rescheduleSequence set to the new SEQUENCE, answers kept", () => {
+    const meeting = answered({ exceptions: [{ planned: "2026-12-03T08:30", start: "2026-12-04T08:30" }] });
+    const moved = movedMeetings(meeting, move({ scope: "all" }), ids);
+    expect(moved.original).toMatchObject({
+      start: "2026-11-19T10:00",
+      durationMin: 45,
+      sequence: 3,
+      rescheduleSequence: 3,
+    });
+    expect(moved.original.exceptions).toEqual([{ planned: "2026-12-03T10:00", start: "2026-12-04T08:30" }]);
+    expect(moved.original.attendees).toEqual(meeting.attendees);
+    expect(movedMeetings(testMeeting(), move({ planned: "2026-11-19T08:30", scope: "this" }), ids).scope).toBe("all");
+  });
+
+  it("this and following: the old series ends the day before; the new one has its own UID, SEQUENCE 0 and the answers", () => {
+    const meeting = answered({
+      exceptions: [
+        { planned: "2026-11-19T08:30", start: "2026-11-19T07:30" },
+        { planned: "2026-12-10T08:30", start: "2026-12-11T08:30" },
+      ],
+    });
+    const moved = movedMeetings(meeting, move({ scope: "following" }), ids);
+    expect(moved.original).toMatchObject({ until: "2026-11-25", sequence: 3, rescheduleSequence: 3, uid: meeting.uid });
+    expect(moved.original.exceptions).toEqual([{ planned: "2026-11-19T08:30", start: "2026-11-19T07:30" }]);
+    expect(moved.split).toMatchObject({
+      id: "m2",
+      uid: ids.newUid,
+      start: "2026-11-26T10:00",
+      durationMin: 45,
+      until: null,
+      sequence: 0,
+      rescheduleSequence: 0,
+      ownerUserId: ORGANISER,
+    });
+    expect(moved.split?.exceptions).toEqual([{ planned: "2026-12-10T10:00", start: "2026-12-11T08:30" }]);
+    const copied = moved.split?.attendees.find((a) => a.id === GUEST);
+    expect(copied).toMatchObject({ partStat: "accepted", respondedAt: "2026-11-10T09:00", respondedSequence: 0 });
+    expect(moved.split?.attendees.find((a) => a.id === "c-1")?.respondedSequence).toBeNull();
+  });
+
+  it("names the occurrence the move produced, on the meeting that now holds it", () => {
+    const meeting = huddle();
+    const key = (m: MeetingMoveInput) => movedOccurrenceKey(m, movedMeetings(meeting, m, ids));
+    expect(key(move())).toEqual({ meetingId: "m1", planned: "2026-11-26T08:30" });
+    expect(key(move({ scope: "all" }))).toEqual({ meetingId: "m1", planned: "2026-11-26T10:00" });
+    expect(key(move({ scope: "following" }))).toEqual({ meetingId: "m2", planned: "2026-11-26T10:00" });
+  });
+});
+
+describe("conflicts on a move (meetings.md rule 13, ADR 0051 Part 2)", () => {
+  const MANAGER = "u-mgr";
+  const other = (patch: Partial<Meeting>) =>
+    testMeeting({
+      id: "m9",
+      title: "Supplier call",
+      start: "2026-11-26T10:30",
+      durationMin: 30,
+      attendees: [
+        guestRow({ kind: "staff", id: MANAGER, partStat: "accepted" }),
+        guestRow({ kind: "staff", id: GUEST }),
+      ],
+      ownerUserId: MANAGER,
+      ...patch,
+    });
+  const conflictsAfter = (meeting: Meeting, m: MeetingMoveInput, others: Meeting[]) => {
+    const moved = movedMeetings(meeting, m, ids);
+    const saved = [moved.original, ...(moved.split ? [moved.split] : []), ...others];
+    return occurrenceConflicts(
+      saved,
+      { ...movedOccurrenceKey(m, moved), start: m.start, durationMin: m.durationMin },
+      meeting.attendees,
+    );
+  };
+
+  it("finds a guest booked in an overlapping occurrence on the new day, matched by kind and id", () => {
+    const found = conflictsAfter(huddle(), move(), [other({})]);
+    expect(found.map((c) => [c.guest.id, c.meeting.id, c.start])).toEqual([[GUEST, "m9", "2026-11-26T10:30"]]);
+    // A customer whose id is the staff guest's, an email guest and a meeting that starts as this one ends don't count.
+    const twin = other({
+      attendees: [guestRow({ kind: "customer", id: GUEST }), guestRow({ kind: "external", id: "x-9" })],
+    });
+    expect(conflictsAfter(huddle(), move(), [twin, other({ id: "m8", start: "2026-11-26T10:45" })])).toEqual([]);
+  });
+
+  it("never warns about the moved occurrence itself after an all or a split move", () => {
+    expect(conflictsAfter(huddle(), move({ scope: "all" }), [])).toEqual([]);
+    expect(conflictsAfter(huddle(), move({ scope: "following" }), [])).toEqual([]);
+    expect(conflictsAfter(testMeeting(), move({ planned: "2026-11-19T08:30", start: "2026-11-19T09:00" }), [])).toEqual(
+      [],
+    );
+  });
+
+  it("counts another occurrence of the same series", () => {
+    const found = conflictsAfter(huddle(), move({ start: "2026-12-03T08:00" }), []);
+    expect(new Set(found.map((c) => `${c.meeting.id} ${c.start}`))).toEqual(new Set(["m1 2026-12-03T08:30"]));
+  });
+
+  it("costs the same however long ago the guests' other series began (review round 1 of PR #35)", () => {
+    const old = Array.from({ length: 200 }, (_, i) =>
+      other({ id: `old-${i}`, start: "1900-01-01T10:30", recurrence: i % 2 ? "weekly" : "biweekly" }),
+    );
+    const oneOff = testMeeting();
+    const began = performance.now();
+    // 9 December 2999 is a Monday an even number of weeks after 1 January 1900, so every one of them meets then.
+    const found = conflictsAfter(oneOff, move({ planned: oneOff.start, start: "2999-12-09T10:00", scope: "all" }), old);
+    // The walk from 1900 took about 16 seconds (review round 1 of PR #35); the window takes milliseconds.
+    expect(performance.now() - began).toBeLessThan(250);
+    expect(found).toHaveLength(200);
+  });
+
+  it("names the other meeting only to a mover who sees it and sees the guest on it; otherwise Busy", () => {
+    const [raw] = conflictsAfter(huddle(), move(), [other({})]);
+    const manager = viewerAs("manager", ORGANISER);
+    expect(conflictForViewer(raw!, manager, seesAll)).toEqual({
+      name: raw!.guest.name,
+      title: "Supplier call",
+      start: "2026-11-26T10:30",
+    });
+    const busy = (meeting: Meeting, viewer = manager, sight: (a: Attendee) => boolean = seesAll) => {
+      const [found] = conflictsAfter(huddle(), move(), [meeting]);
+      return conflictForViewer(found!, viewer, sight);
+    };
+    expect(busy(other({ private: true }))).toEqual({
+      name: raw!.guest.name,
+      title: BUSY_TITLE,
+      start: "2026-11-26T10:30",
+    });
+    // A hidden list the mover may not open: they can't read the customer, so they can't change it.
+    const hidden = other({
+      hideGuestList: true,
+      attendees: [...other({}).attendees, guestRow({ kind: "customer", id: "c-9" })],
+    });
+    expect(busy(hidden, manager, (a) => a.kind !== "customer").title).toBe(BUSY_TITLE);
+    // An own-scope mover doesn't see a colleague's meeting they are not on.
+    expect(busy(other({}), viewerAs("sales", ORGANISER)).title).toBe(BUSY_TITLE);
+    expect(Object.keys(busy(other({ private: true }))).sort()).toEqual(["name", "start", "title"]);
+  });
+});
+
+describe("undo, rebuilt from the move's own audit entry (critic B3)", () => {
+  const before = huddle({
+    sequence: 2,
+    until: "2027-06-30",
+    exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-26T07:30" }],
+  });
+  const m = move({ scope: "following", planned: "2026-12-03T08:30", start: "2026-12-03T09:00" });
+  const moved = movedMeetings(before, m, ids);
+  const record = moveAuditEntry(before, new Date("2026-11-19T15:30:00.000Z"), m, moved);
+  const ctx = (patch: Partial<UndoContext> = {}): UndoContext => ({
+    record,
+    moverUserId: ORGANISER,
+    callerUserId: ORGANISER,
+    ageMs: 60_000,
+    clientSequence: 2,
+    ...patch,
+  });
+
+  it("keeps times only: the series as it was, and what the move saved", () => {
+    expect(record).toEqual({
+      before: {
+        planned: "2026-12-03T08:30",
+        sequence: 2,
+        series: {
+          start: "2026-11-19T08:30",
+          startsAt: "2026-11-19T15:30:00.000Z",
+          durationMin: 60,
+          until: "2027-06-30",
+          exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-26T07:30" }],
+        },
+      },
+      after: { start: "2026-12-03T09:00", durationMin: 45, scope: "following", sequence: 3, createdIds: ["m2"] },
+    });
+    expect(JSON.stringify(record)).not.toMatch(/Design consultation|example\.com|note/i);
+  });
+
+  it("lets the mover undo the last move within the window, at the SEQUENCE they saw", () => {
+    expect(undoProblem(moved.original, ctx())).toBeNull();
+    expect(undoProblem(moved.original, ctx({ ageMs: UNDO_WINDOW_MINUTES * 60_000 }))).toBeNull();
+  });
+
+  it("refuses when the last entry is not this move, someone else asks, it is too old, or a SEQUENCE differs", () => {
+    expect(undoProblem(moved.original, ctx({ record: null }))).toBe(MEETING_CHANGED);
+    expect(undoProblem(moved.original, ctx({ callerUserId: GUEST }))).toMatchObject({ status: 403, code: "forbidden" });
+    expect(undoProblem(moved.original, ctx({ ageMs: UNDO_WINDOW_MINUTES * 60_000 + 1 }))).toMatchObject({
+      status: 409,
+      code: "undo_expired",
+    });
+    expect(undoProblem({ ...moved.original, sequence: 4 }, ctx())).toBe(MEETING_CHANGED);
+    expect(undoProblem(moved.original, ctx({ clientSequence: 1 }))).toBe(MEETING_CHANGED);
+    expect(undoProblem({ ...moved.original, status: "cancelled" }, ctx())).toBe(MEETING_CHANGED);
+  });
+
+  it("restores start, length, end and exceptions from the record, SEQUENCE + 1, guests untouched", () => {
+    const restored = undoneMeeting(moved.original, record);
+    expect(restored).toMatchObject({
+      start: "2026-11-19T08:30",
+      durationMin: 60,
+      until: "2027-06-30",
+      sequence: 4,
+      rescheduleSequence: 4,
+      uid: before.uid,
+    });
+    expect(restored.exceptions).toEqual(before.exceptions);
+    expect(restored.attendees).toEqual(moved.original.attendees);
+  });
+
+  it("refuses any undo that would leave an occurrence that has taken place behind (review round 3 and the final review of PR #35)", () => {
+    // Two weeks back puts the occurrence held early at a date that has passed, so the move is taken.
+    const back = move({ planned: "2026-12-04T09:00", start: "2026-11-20T09:00", scope: "all" });
+    expect(moveProblem(heldEarly(), back, TODAY, NOW)).toBeNull();
+    const allMoved = movedMeetings(heldEarly(), back, ids);
+    const allRecord = moveAuditEntry(heldEarly(), new Date(0), back, allMoved);
+    expect(undoneSeriesProblem(allMoved.original, allRecord, NOW)).toMatch(LEFT_BEHIND);
+    expect(undoneSeriesProblem(allMoved.original, allRecord, new Date("2026-11-20T17:00:00.000Z"))).toBeNull();
+    // Undoing this event sends a series REQUEST too, so it waits as well, and points to moving the occurrence back.
+    const one = move({ planned: "2026-11-27T09:00", start: "2026-11-27T10:00" });
+    const oneMoved = movedMeetings(heldEarly(), one, ids);
+    const oneRecord = moveAuditEntry(heldEarly(), new Date(0), one, oneMoved);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, NOW)).toMatch(LEFT_BEHIND);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, NOW)).toMatch(/Move the occurrence back with This event/);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, new Date("2026-11-20T17:00:00.000Z"))).toBeNull();
+    // With no occurrence held, undoing this event is taken.
+    const plain = movedMeetings(fridays([]), one, ids);
+    expect(undoneSeriesProblem(plain.original, moveAuditEntry(fridays([]), new Date(0), one, plain), NOW)).toBeNull();
+  });
+
+  it("puts an undone occurrence back at its earlier exception's time, or the series' own", () => {
+    const earlier = moveAuditEntry(
+      before,
+      new Date(0),
+      move({ planned: "2026-11-26T08:30" }),
+      movedMeetings(before, move({ planned: "2026-11-26T08:30" }), ids),
+    );
+    expect(restoredOccurrence(earlier)).toEqual({
+      recurrenceId: "2026-11-26T08:30",
+      start: "2026-11-26T07:30",
+      durationMin: 60,
+    });
+    const plain = moveAuditEntry(
+      before,
+      new Date(0),
+      move({ planned: "2026-12-10T08:30" }),
+      movedMeetings(before, move({ planned: "2026-12-10T08:30" }), ids),
+    );
+    expect(restoredOccurrence(plain)).toEqual({
+      recurrenceId: "2026-12-10T08:30",
+      start: "2026-12-10T08:30",
+      durationMin: 60,
+    });
+  });
+});

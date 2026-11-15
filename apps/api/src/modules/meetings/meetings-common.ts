@@ -37,8 +37,18 @@ export function meetingViewer(access: RequestAccess): MeetingViewer {
  * viewer may see it, and answers 404 too when they may not (CLAUDE.md rule 3).
  */
 export async function lockMeeting(tx: CompanyDb, id: string): Promise<MeetingRow> {
-  const [row] = await tx.select().from(meetings).where(eq(meetings.id, id)).for("update");
+  const row = await lockMeetingRow(tx, id);
   if (!row || row.deletedAt) throw notFound("meeting");
+  return row;
+}
+
+/**
+ * Locks a meeting row as `lockMeeting` does, but answers the row even when it was deleted, or
+ * undefined when there is none: for the reminder re-sync of a series an undo removed, and for an
+ * undo that must answer 409 rather than 404 when the series it split off is gone.
+ */
+export async function lockMeetingRow(tx: CompanyDb, id: string): Promise<MeetingRow | undefined> {
+  const [row] = await tx.select().from(meetings).where(eq(meetings.id, id)).for("update");
   return row;
 }
 

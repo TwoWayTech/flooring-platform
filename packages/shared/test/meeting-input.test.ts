@@ -11,13 +11,14 @@ import {
   normalizeGuestEmail,
   proposalProblem,
   replyProblem,
+  typedStartProblem,
   validGuestEmail,
   type Meeting,
   type MeetingFields,
 } from "../src";
-import { testMeeting } from "./meeting-fixtures";
+import { TODAY, testMeeting } from "./meeting-fixtures";
 
-const DENVER = { zone: "America/Denver", recurrence: "none" as const };
+const DENVER = { zone: "America/Denver", today: TODAY, recurrence: "none" as const };
 const fields: MeetingFields = {
   title: "Huddle",
   start: "2026-11-19T08:30",
@@ -50,6 +51,18 @@ describe("meeting fields (meetings.md, ADR 0051 Input limits)", () => {
     expect(meetingFieldsProblem({ start: "2026-10-29T10:00" }, { ...DENVER, recurrence: "monthly" })).toMatch(
       /fifth week/,
     );
+  });
+
+  it("takes a start from a year before the company's today to three years after it (review round 1 of PR #35)", () => {
+    const denver = { zone: "America/Denver", today: TODAY };
+    expect(MEETING_LIMITS).toMatchObject({ startDaysBack: 366, startDaysAhead: 1096 });
+    expect(typedStartProblem("2025-11-14T08:30", denver)).toBeNull();
+    expect(typedStartProblem("2029-11-15T08:30", denver)).toBeNull();
+    for (const start of ["2025-11-13T23:59", "2029-11-16T00:00", "1900-01-01T07:00", "2999-12-01T10:00"])
+      expect(typedStartProblem(start, denver), start).toBe("Choose a start from one year ago up to three years ahead.");
+    expect(typedStartProblem("2027-03-14T02:30", denver)).toMatch(/doesn't exist/);
+    expect(problem({ start: "1900-01-01T07:00", recurrence: "weekly" })).toMatch(/one year ago/);
+    expect(problem({ start: "2999-12-01T10:00" })).toMatch(/three years ahead/);
   });
 
   it("bounds the length, the reminder, the place and the notes", () => {
@@ -133,35 +146,58 @@ describe("answers and proposals (meetings.md rule 8, ADR 0051)", () => {
 
   it("takes Accept, Maybe or Decline with a short note", () => {
     for (const partStat of ["accepted", "tentative", "declined"])
-      expect(replyProblem(testMeeting(), reply({ partStat }))).toBeNull();
-    expect(replyProblem(testMeeting(), reply({ partStat: "needs-action" }))).toMatch(/Accept, Maybe or Decline/);
-    expect(replyProblem(testMeeting(), reply({ partStat: "maybe" }))).toMatch(/Accept, Maybe or Decline/);
-    expect(replyProblem(testMeeting(), reply({ note: "N".repeat(501) }))).toMatch(/500/);
-    expect(replyProblem(testMeeting({ status: "cancelled" }), reply())).toMatch(/cancelled/);
+      expect(replyProblem(testMeeting(), reply({ partStat }), TODAY)).toBeNull();
+    expect(replyProblem(testMeeting(), reply({ partStat: "needs-action" }), TODAY)).toMatch(/Accept, Maybe or Decline/);
+    expect(replyProblem(testMeeting(), reply({ partStat: "maybe" }), TODAY)).toMatch(/Accept, Maybe or Decline/);
+    expect(replyProblem(testMeeting(), reply({ note: "N".repeat(501) }), TODAY)).toMatch(/500/);
+    expect(replyProblem(testMeeting({ status: "cancelled" }), reply(), TODAY)).toMatch(/cancelled/);
   });
 
   it("takes a proposal only on a one-off meeting that allows them, at a time that exists", () => {
     const proposal = { start: "2026-11-20T09:00", durationMin: 60, note: "" };
-    expect(replyProblem(testMeeting(), reply({ partStat: "tentative", proposal }))).toBeNull();
-    expect(proposalProblem(testMeeting({ allowProposals: false }), proposal)).toMatch(/does not take/);
-    expect(proposalProblem(testMeeting({ recurrence: "weekly" }), proposal)).toMatch(/does not take/);
-    expect(proposalProblem(testMeeting(), { ...proposal, start: "2027-03-14T02:15" })).toMatch(/doesn't exist/);
-    expect(proposalProblem(testMeeting(), { ...proposal, durationMin: 10 })).toMatch(/15 minutes/);
-    expect(proposalProblem(testMeeting(), { ...proposal, note: "N".repeat(501) })).toMatch(/500/);
+    expect(replyProblem(testMeeting(), reply({ partStat: "tentative", proposal }), TODAY)).toBeNull();
+    expect(proposalProblem(testMeeting({ allowProposals: false }), proposal, TODAY)).toMatch(/does not take/);
+    expect(proposalProblem(testMeeting({ recurrence: "weekly" }), proposal, TODAY)).toMatch(/does not take/);
+    expect(proposalProblem(testMeeting(), { ...proposal, start: "2027-03-14T02:15" }, TODAY)).toMatch(/doesn't exist/);
+    expect(proposalProblem(testMeeting(), { ...proposal, durationMin: 10 }, TODAY)).toMatch(/15 minutes/);
+    expect(proposalProblem(testMeeting(), { ...proposal, note: "N".repeat(501) }, TODAY)).toMatch(/500/);
+    expect(proposalProblem(testMeeting(), { ...proposal, start: "2999-12-01T10:00" }, TODAY)).toMatch(/three years/);
+    expect(
+      replyProblem(
+        testMeeting(),
+        reply({ partStat: "tentative", proposal: { ...proposal, start: "1900-01-01T09:00" } }),
+        TODAY,
+      ),
+    ).toMatch(/one year ago/);
   });
 });
 
 describe("requests and defaults", () => {
   it("needs a subject, a start that exists and a short note", () => {
     expect(
-      meetingRequestProblem({ title: "Review my goals", start: "2026-11-20T14:00", note: "" }, "America/Denver"),
+      meetingRequestProblem(
+        { title: "Review my goals", start: "2026-11-20T14:00", note: "" },
+        { zone: "America/Denver", today: TODAY },
+      ),
     ).toBeNull();
-    expect(meetingRequestProblem({ title: " ", start: "2026-11-20T14:00", note: "" }, "America/Denver")).toMatch(
-      /about/,
-    );
-    expect(meetingRequestProblem({ title: "Goals", start: "2027-03-14T02:30", note: "" }, "America/Denver")).toMatch(
-      /doesn't exist/,
-    );
+    expect(
+      meetingRequestProblem(
+        { title: " ", start: "2026-11-20T14:00", note: "" },
+        { zone: "America/Denver", today: TODAY },
+      ),
+    ).toMatch(/about/);
+    expect(
+      meetingRequestProblem(
+        { title: "Goals", start: "2027-03-14T02:30", note: "" },
+        { zone: "America/Denver", today: TODAY },
+      ),
+    ).toMatch(/doesn't exist/);
+    expect(
+      meetingRequestProblem(
+        { title: "Goals", start: "2999-12-01T10:00", note: "" },
+        { zone: "America/Denver", today: TODAY },
+      ),
+    ).toMatch(/three years ahead/);
   });
 
   it("falls back to the safest meeting settings", () => {

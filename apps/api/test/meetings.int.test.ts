@@ -15,6 +15,8 @@ import { tenantModuleOverrides, tenants, user } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import {
   FEATURES,
+  addDays,
+  nextPlannedStart,
   type Attendee,
   type FeatureKey,
   type GuestOption,
@@ -799,21 +801,52 @@ describe("meetings (needs the local PostgreSQL)", () => {
     expect(await waitingReminders(made.id)).toEqual([]);
   });
 
-  it("refuses a start or length change on a series with moved occurrences, but takes a title edit", async () => {
-    const made = await schedule(cookies.manager, { title: "Weekly crew", recurrence: "weekly" });
+  it("shifts a series' moved occurrences with a new start and sends them again; refuses a shift that takes one off (part 2)", async () => {
+    const made = await schedule(cookies.manager, {
+      title: "Weekly crew",
+      recurrence: "weekly",
+      guests: [staff(ids.employee)],
+    });
+    const planned = at("11-17");
     await rows((db) =>
       db
         .update(meetings)
-        .set({ exceptions: [{ date: `${YEAR}-11-17`, action: "cancelled" }] as never })
+        .set({ exceptions: [{ planned, start: at("11-18", "10:00") }] })
         .where(eq(meetings.id, made.id)),
     );
-    const message = "Some occurrences of this series were changed on their own, so its time can't be edited yet.";
-    refused(
-      await call("patch", `/meetings/${made.id}`, cookies.manager).send({ start: at("11-10", "10:00") }),
-      message,
+    const edited = await call("patch", `/meetings/${made.id}`, cookies.manager).send({ start: at("11-10", "10:00") });
+    status(edited, 200);
+    expect((edited.body as Meeting).exceptions).toEqual([
+      { planned: at("11-17", "10:00"), start: at("11-18", "10:00") },
+    ]);
+    const files = (await outboxOf(made.id))
+      .filter((row) => row.eventKey === "meeting.invite")
+      .map((row) => (row.attachments[0]?.text ?? "").replace(/\r\n /g, ""))
+      .filter((text) => text.includes("SEQUENCE:1"));
+    expect(files).toHaveLength(2);
+    expect(files.filter((text) => text.includes(`RECURRENCE-ID;TZID=America/Chicago:${YEAR}1117T100000`))).toHaveLength(
+      1,
     );
-    refused(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ durationMin: 90 }), message);
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ durationMin: 90 }), 200);
     status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Weekly crew sync" }), 200);
+
+    // A monthly series whose fourth-week occurrence was moved can't shift into the first week.
+    const monthly = await schedule(cookies.manager, {
+      title: "Fourth week",
+      recurrence: "monthly",
+      start: at("11-22"),
+    });
+    const second = nextPlannedStart(monthly.start, "monthly")!;
+    await rows((db) =>
+      db
+        .update(meetings)
+        .set({ exceptions: [{ planned: second, start: second.replace("09:00", "11:00") }] })
+        .where(eq(meetings.id, monthly.id)),
+    );
+    refused(
+      await call("patch", `/meetings/${monthly.id}`, cookies.manager).send({ start: addDays(monthly.start, 14) }),
+      "An occurrence changed on its own would no longer be part of the series after this move. Move it on its own first, or choose another time.",
+    );
   });
 
   it("lets the organiser retitle Summit's seeded monthly meeting", async () => {

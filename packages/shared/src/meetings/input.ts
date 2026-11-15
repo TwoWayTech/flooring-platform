@@ -1,5 +1,6 @@
 import { recurrenceProblem } from "../calendar/ics";
 import { zonedToInstant, type LocalTimeProblem } from "../calendar/zones";
+import { addDays } from "../dates";
 import type { Attendee, Meeting, MeetingProposal, MeetingSettings } from "../types";
 import { GUEST_EMAIL_MAX, validGuestEmail } from "./email";
 import type { MeetingEmailCount } from "./sends";
@@ -33,6 +34,18 @@ export const MEETING_LIMITS = {
   outsideEmailsPerDay: 200,
   /** Meeting emails of every kind one person's actions may send in one company day, colleagues included. */
   emailsPerDay: 500,
+  /**
+   * Occurrences of one series moved on their own (ADR 0051 "Part 2"). It bounds the stored list, the
+   * "Moved meeting" audit entry that keeps a copy of it, and the invites a series move sends again.
+   */
+  exceptionsMax: 100,
+  /**
+   * How far before and after the company's today a start a person types may lie (ADR 0051 "Part 2",
+   * review round 1 of PR #35; meetings.md sets no bound): a year back, so a past occurrence can still
+   * be put right, and three years ahead. It keeps every date the rules work from near today.
+   */
+  startDaysBack: 366,
+  startDaysAhead: 1096,
 } as const;
 
 /** The reminder choices the New meeting form offers (meetings.md "Schedule a meeting", step 4). */
@@ -69,10 +82,35 @@ function timeProblemText(problem: LocalTimeProblem): string {
 /**
  * Why a start can't be used in the meeting's zone, or null (ADR 0051 "Time zones"): it must be a
  * real local date-time, and one the clock shows; a time skipped by the spring change is refused.
+ * Used alone for a start a rule derives, such as a series shifted as a whole; a start a person types
+ * goes through `typedStartProblem`.
  */
 export function startProblem(start: string, zone: string): string | null {
   const placed = zonedToInstant(start, zone);
   return placed.problem ? timeProblemText(placed.problem) : null;
+}
+
+/** Where and when a start a person types is checked: the meeting's zone and the company's today ("YYYY-MM-DD"). */
+export interface StartContext {
+  zone: string;
+  today: string;
+}
+
+/**
+ * Why a start a person types can't be used, or null (ADR 0051 "Time zones" and "Part 2"): it must
+ * pass `startProblem`, and its date must lie from `MEETING_LIMITS.startDaysBack` days before the
+ * company's today to `startDaysAhead` days after it. The bound is safer than meetings.md, which sets
+ * none: a start in 1900 or 2999 is refused, so no rule ever works across centuries of dates (review
+ * round 1 of PR #35). It applies on create, edit, request, proposal, decision and move.
+ */
+export function typedStartProblem(start: string, context: StartContext): string | null {
+  const problem = startProblem(start, context.zone);
+  if (problem) return problem;
+  const day = start.slice(0, 10);
+  return day < addDays(context.today, -MEETING_LIMITS.startDaysBack) ||
+    day > addDays(context.today, MEETING_LIMITS.startDaysAhead)
+    ? "Choose a start from one year ago up to three years ahead."
+    : null;
 }
 
 /** Why a length in minutes can't be used, or null. */
@@ -107,12 +145,13 @@ export type MeetingFields = Pick<
 /**
  * Why these meeting fields can't be saved, or null (meetings.md "Schedule a meeting" step 5 and
  * rule 3; ADR 0051 "Input limits" and "Time zones"). Only the fields given are checked, so an edit
- * passes the ones it changes; `recurrence` is the meeting's own on an edit. The monthly start
- * limit is checked only with a start, so a title edit on the seeded day-30 safety talk still works.
+ * passes the ones it changes; `recurrence` is the meeting's own on an edit. A start must pass
+ * `typedStartProblem`, and the monthly start limit is checked only with a start, so a title edit on
+ * the seeded day-30 safety talk still works.
  */
 export function meetingFieldsProblem(
   fields: Partial<MeetingFields>,
-  context: { zone: string; recurrence: Meeting["recurrence"] },
+  context: StartContext & { recurrence: Meeting["recurrence"] },
 ): string | null {
   if (fields.title !== undefined) {
     if (!fields.title.trim()) return "Give the meeting a title.";
@@ -123,7 +162,7 @@ export function meetingFieldsProblem(
     return "Choose how the meeting repeats.";
   if (fields.start !== undefined) {
     const problem =
-      startProblem(fields.start, context.zone) ??
+      typedStartProblem(fields.start, context) ??
       recurrenceProblem(fields.start, fields.recurrence ?? context.recurrence);
     if (problem) return problem;
   }
@@ -202,16 +241,17 @@ export interface MeetingReplyInput {
 
 /**
  * Why a proposed time can't be sent, or null (meetings.md rule 8; ADR 0051): the meeting must take
- * proposals and be a one-off, and the time must exist in its zone, last 15 minutes to 24 hours and
- * carry a short note.
+ * proposals and be a one-off, and the time must pass `typedStartProblem` in its zone against the
+ * company's `today`, last 15 minutes to 24 hours and carry a short note.
  */
 export function proposalProblem(
   meeting: Pick<Meeting, "allowProposals" | "recurrence" | "timeZone">,
   proposal: Omit<MeetingProposal, "status">,
+  today: string,
 ): string | null {
   if (!meeting.allowProposals || meeting.recurrence !== "none") return "This meeting does not take proposed times.";
   return (
-    startProblem(proposal.start, meeting.timeZone) ??
+    typedStartProblem(proposal.start, { zone: meeting.timeZone, today }) ??
     durationProblem(proposal.durationMin) ??
     noteProblem("A note", proposal.note, MEETING_LIMITS.replyNoteMax)
   );
@@ -220,14 +260,15 @@ export function proposalProblem(
 /**
  * Why a guest's answer can't be recorded, or null (meetings.md "Answer" and rule 8; ADR 0051). The
  * meeting must not be cancelled, the answer is Accept, Maybe or Decline, the note is short, and a
- * proposal follows `proposalProblem`. The caller has already found the guest's own row.
+ * proposal follows `proposalProblem` against the company's `today`. The caller has already found the
+ * guest's own row.
  */
-export function replyProblem(meeting: Meeting, reply: MeetingReplyInput): string | null {
+export function replyProblem(meeting: Meeting, reply: MeetingReplyInput, today: string): string | null {
   if (meeting.status === "cancelled") return "This meeting was cancelled.";
   if (!(REPLY_ANSWERS as readonly string[]).includes(reply.partStat)) return "Answer Accept, Maybe or Decline.";
   return (
     noteProblem("A note", reply.note, MEETING_LIMITS.replyNoteMax) ??
-    (reply.proposal ? proposalProblem(meeting, reply.proposal) : null)
+    (reply.proposal ? proposalProblem(meeting, reply.proposal, today) : null)
   );
 }
 
@@ -241,12 +282,15 @@ export interface MeetingRequestFields {
   note: string;
 }
 
-/** Why a request can't be sent, or null (meetings.md "Request a meeting"; ADR 0051 "Input limits"). */
-export function meetingRequestProblem(input: MeetingRequestFields, zone: string): string | null {
+/**
+ * Why a request can't be sent, or null (meetings.md "Request a meeting"; ADR 0051 "Input limits"):
+ * a title, a start that passes `typedStartProblem` and a short note.
+ */
+export function meetingRequestProblem(input: MeetingRequestFields, context: StartContext): string | null {
   if (!input.title.trim()) return "Say what the meeting is about.";
   return (
     lineProblem("A title", input.title, MEETING_LIMITS.titleMax) ??
-    startProblem(input.start, zone) ??
+    typedStartProblem(input.start, context) ??
     noteProblem("A note", input.note, MEETING_LIMITS.notesMax)
   );
 }

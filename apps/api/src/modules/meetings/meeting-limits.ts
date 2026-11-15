@@ -22,16 +22,30 @@ export function dayStartOf(clock: CompanyClock): Date {
   return zonedToInstantLenient(`${clock.day}T00:00`, clock.zone) ?? new Date(clock.now.getTime() - 86_400_000);
 }
 
+/**
+ * The company's today ("YYYY-MM-DD"), which a start a person types is checked against
+ * (`typedStartProblem`), and when that day began (`dayStartOf`), from its clock in the control database.
+ */
+export async function companyDay(
+  control: ControlDb,
+  tenant: TenantContext,
+): Promise<{ today: string; dayStart: Date }> {
+  const clock = await companyClock(control, tenant);
+  return { today: clock.day, dayStart: dayStartOf(clock) };
+}
+
 /** When the company's day began, from its clock in the control database (`dayStartOf`). */
 export async function companyDayStart(control: ControlDb, tenant: TenantContext): Promise<Date> {
-  return dayStartOf(await companyClock(control, tenant));
+  return (await companyDay(control, tenant)).dayStart;
 }
 
 /**
  * Takes one person's meeting-sends lock until the transaction ends, so two of their actions at once
  * count each other: the second waits until the first has committed its guests and its audit entry.
- * An action takes at most one meeting's row lock, always before this one, so actions never wait on
- * each other in a circle.
+ * Meeting row locks are always taken before this one. An action takes one meeting's row lock, or,
+ * for an undo that removes a split-off series, the original's and then the split's (ADR 0051 "Part
+ * 2"). Nothing locks a split before its original, and no action takes a second person's sends lock,
+ * so actions never wait on each other in a circle.
  */
 async function lockSendsOf(tx: CompanyDb, userId: string): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`meetings:sends:${userId}`}))`);
