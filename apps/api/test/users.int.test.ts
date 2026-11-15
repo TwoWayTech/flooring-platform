@@ -294,7 +294,7 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
   });
 
   it("lets a platform admin ask for support access and only the Owner approve it, with a step-up", async () => {
-    // Platform admins sign in through a company until the admin host exists (P17).
+    // Platform admins sign in through a company until the admin host exists (an owner question, ADR 0052).
     const home = await harness.provisionCompany("supporthome");
     const adminEmail = await harness.addUser({ companyIds: [home.id], roles: ["sales"] });
     await harness.control.db

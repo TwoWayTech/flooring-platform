@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { platformAuditLog, supportAccessGrants, user } from "@workspace/db/control";
+import { supportGrantStatus, type SupportGrantStatus } from "@workspace/shared";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { AuditService } from "../../core/access/audit";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -15,7 +16,8 @@ export interface SupportGrantView {
   reason: string;
   requestedAt: string;
   expiresAt: string;
-  status: "pending" | "approved" | "revoked" | "expired";
+  /** Derived by the shared `supportGrantStatus`, the same rule as the platform console's list. */
+  status: SupportGrantStatus;
 }
 
 /**
@@ -50,13 +52,7 @@ export class SupportGrantsService {
       reason: grant.reason,
       requestedAt: grant.createdAt.toISOString(),
       expiresAt: grant.expiresAt.toISOString(),
-      status: grant.revokedAt
-        ? "revoked"
-        : grant.expiresAt <= now
-          ? "expired"
-          : grant.approvedAt
-            ? "approved"
-            : "pending",
+      status: supportGrantStatus(grant, now),
     }));
   }
 

@@ -6,6 +6,7 @@ import {
   platformAdmins,
   rateLimit,
   session,
+  supportAccessGrants,
   tenantPermissionCeiling,
   tenants,
   twoFactor,
@@ -75,6 +76,21 @@ export async function removePlatformAdmin(controlUrl: string, email: string): Pr
   try {
     const [found] = await handle.db.select({ id: user.id }).from(user).where(eq(user.email, email));
     if (found) await handle.db.delete(platformAdmins).where(eq(platformAdmins.userId, found.id));
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Hard-deletes every support grant a user asked for as a platform admin. Tests only: it exists so
+ * the one-open-grant and 10-in-24-hours limits of `POST /platform/support-grants` never block a
+ * later run on a shared local database (ADR 0053). The `support.requested` audit rows stay.
+ */
+export async function removeSupportGrants(controlUrl: string, email: string): Promise<void> {
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const [found] = await handle.db.select({ id: user.id }).from(user).where(eq(user.email, email));
+    if (found) await handle.db.delete(supportAccessGrants).where(eq(supportAccessGrants.adminUserId, found.id));
   } finally {
     await handle.close();
   }

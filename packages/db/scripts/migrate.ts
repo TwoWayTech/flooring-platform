@@ -1,6 +1,7 @@
 import { emailFor, parseProviderEnv } from "@workspace/providers";
 import { alertMigrationFailure, migrateAllCompanies, migrateControl, openControlDb } from "../src";
 import { scriptEnv } from "./env";
+import { reportMigrationFailure } from "./migrate-report";
 
 /** Sender for the alert when EMAIL_FROM is not set, which only the memory adapter allows; nothing is sent. */
 const LOCAL_SENDER = "no-reply@localhost";
@@ -8,7 +9,10 @@ const LOCAL_SENDER = "no-reply@localhost";
 /**
  * Migrates the control database, then every company database, stopping at the first failure (blueprint p13).
  * A failed company goes into maintenance mode and every active platform admin gets an email (owner
- * decision, 2026-11-13); the script then exits with an error.
+ * decision, 2026-11-13); the script then exits with an error. It says whether the company is in
+ * maintenance mode, and what to do by hand when it is not, even when the alert itself fails, and
+ * prints the error text only when it could not be saved to tenant_databases.last_error
+ * (docs/specs/platform-admin.md, "pnpm db:migrate when a company fails (packages/db)"; ADR 0053).
  */
 async function main(): Promise<void> {
   const env = scriptEnv();
@@ -20,12 +24,11 @@ async function main(): Promise<void> {
   const control = openControlDb(env.controlUrl, { max: 1 });
   try {
     const results = await migrateAllCompanies(control.db, env.encryptionKey, {
-      onFailure: async (failure) => {
-        const alerted = await alertMigrationFailure(control.db, email, from, failure);
-        // The memory adapter delivers nothing, so say so rather than claim admins were told (PR #10 review).
-        const how = emailEnv.EMAIL_PROVIDER === "resend" ? "emailed" : "NOT emailed (EMAIL_PROVIDER is memory)";
-        console.error(`Company ${failure.tenantId} is in maintenance mode; ${alerted} platform admin(s) ${how}.`);
-      },
+      // Only Resend delivers; the memory adapter sends nothing.
+      onFailure: (failure) =>
+        reportMigrationFailure(failure, emailEnv.EMAIL_PROVIDER === "resend", () =>
+          alertMigrationFailure(control.db, email, from, failure),
+        ),
     });
     for (const result of results) console.log(`Company ${result.tenantId}: ${result.version}`);
     console.log(`${results.length} company database(s) up to date.`);

@@ -1,24 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { CompanyDatabaseState, CompanyMaintenanceReason, PlatformCompany } from "@workspace/shared";
+import type { PlatformCompany } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { useFormatDate } from "@/lib/use-format-date";
 import { CompanyPhasePill, CompanyStatusPill } from "./company-status";
-
-const DATABASE: Record<CompanyDatabaseState, string> = {
-  provisioning: "Being set up",
-  ready: "Ready",
-  migrating: "Updating",
-  failed: "Update failed",
-  read_only: "Read-only",
-};
-
-const MAINTENANCE: Record<CompanyMaintenanceReason, string> = {
-  migration_failed: "On, after a failed update",
-  move: "On, while the data moves",
-};
+import { DATABASE_LABELS, databaseErrorText, MAINTENANCE_LABELS } from "./database-labels";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -31,13 +19,15 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * Where a company stands, as the console may see it (docs/specs/platform-admin.md, "Fields"): its
- * status, life-cycle phase, members and database. The database shows its state and schema only:
- * the error text can quote the company's own rows, so the API never sends it and the console says
- * the details are hidden. A company with no database row (the demo) shows no database line.
+ * status, life-cycle phase, members and database. The database shows its state, its schema and,
+ * after a failed update, the error code (part 3, "Database errors and maintenance"). The error text
+ * can quote the company's own rows, so the API never sends it and no role sees it here. A company
+ * with no database row (the demo) shows no database line.
  */
 export function CompanyFacts({ company }: { company: PlatformCompany }) {
   const { database, maintenance } = company;
   const formatDate = useFormatDate();
+  const errorText = databaseErrorText(database);
   return (
     <Panel title="Account">
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -58,19 +48,22 @@ export function CompanyFacts({ company }: { company: PlatformCompany }) {
         </Fact>
         {database.status ? (
           <Fact label="Database">
-            <span className="font-medium">{DATABASE[database.status]}</span>
+            <span className="font-medium">{DATABASE_LABELS[database.status]}</span>
             {database.schemaVersion ? (
               <span className="text-muted-foreground block text-xs">Schema {database.schemaVersion}</span>
             ) : null}
-            {database.hasError ? (
-              <span className="text-muted-foreground block text-xs">
-                Error details are hidden: they can hold the company&apos;s data.
-              </span>
+            {errorText ? (
+              <>
+                <span className="text-danger-ink block text-xs font-medium tabular-nums">{errorText}</span>
+                <span className="text-muted-foreground block text-xs">
+                  The error text stays in the control database: it can hold the company&apos;s data.
+                </span>
+              </>
             ) : null}
           </Fact>
         ) : null}
         {maintenance.on ? (
-          <Fact label="Maintenance">{maintenance.reason ? MAINTENANCE[maintenance.reason] : "On"}</Fact>
+          <Fact label="Maintenance">{maintenance.reason ? MAINTENANCE_LABELS[maintenance.reason] : "On"}</Fact>
         ) : null}
       </dl>
     </Panel>

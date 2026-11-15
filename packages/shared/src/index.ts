@@ -74,3 +74,5 @@ export * from "./catalog-labels";
 export * from "./import";
 export * from "./platform/admin-roles";
 export * from "./platform/access-patch";
+export * from "./platform/audit-details";
+export * from "./platform/support-grants";

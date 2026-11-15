@@ -13,6 +13,8 @@ import {
 import {
   ALL_PERMISSION_KEYS,
   inModuleOrder,
+  MIGRATION_ERROR_CODE,
+  migrationErrorCode,
   PRODUCT_ROLES,
   roleTemplate,
   type PlatformCompany,
@@ -27,9 +29,13 @@ import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantDirectory } from "../../core/tenancy/tenant-directory";
 
 /**
- * The company columns the console reads, from `tenants` and `tenant_databases` only. The database's
- * `last_error` is read only as "is there one": it holds the driver's message, which can quote a
- * company's own rows, so its text never leaves the control database (spec "Fields"; review A1).
+ * The company columns the console reads, from `tenants` and `tenant_databases`, plus the code of the
+ * newest `company.migration_failed` audit row. The database's `last_error` is read only as "is
+ * there one": it holds the driver's message, which can quote a company's own rows, so its text
+ * never leaves the control database (spec "Fields"; review A1). The code is read by the subquery
+ * alone, narrowed in SQL to a string that fits `MIGRATION_ERROR_CODE`, and checked again by
+ * `migrationErrorCode` (spec "Database errors and maintenance"; ADR 0053). The subquery is served
+ * by `platform_audit_log_tenant_idx`; no other field of the row is read.
  */
 const COMPANY_COLUMNS = {
   id: tenants.id,
@@ -47,6 +53,14 @@ const COMPANY_COLUMNS = {
   databaseStatus: tenantDatabases.status,
   schemaVersion: tenantDatabases.schemaVersion,
   hasError: sql<boolean>`${tenantDatabases.lastError} is not null`,
+  newestFailureCode: sql<string | null>`(
+    select case when jsonb_typeof(pal.after -> 'code') = 'string' and pal.after ->> 'code' ~ ${MIGRATION_ERROR_CODE.source}
+      then pal.after ->> 'code' end
+    from platform_audit_log pal
+    where pal.tenant_id = ${tenants.id} and pal.action = 'company.migration_failed'
+    order by pal.at desc, pal.id desc
+    limit 1
+  )`,
 };
 
 /** One company row as COMPANY_COLUMNS reads it. */
@@ -179,7 +193,13 @@ export class PlatformCompaniesService {
       userLimit: limits.userLimit,
       branchLimit: limits.branchLimit,
       members: members?.n ?? 0,
-      database: { status: row.databaseStatus, schemaVersion: row.schemaVersion, hasError: row.hasError === true },
+      database: {
+        status: row.databaseStatus,
+        schemaVersion: row.schemaVersion,
+        hasError: row.hasError === true,
+        // Only while last_error is set: a recovered company shows no old code.
+        errorCode: row.hasError === true ? migrationErrorCode(row.newestFailureCode) : null,
+      },
     };
   }
 

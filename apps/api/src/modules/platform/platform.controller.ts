@@ -1,11 +1,16 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import {
   ALL_PERMISSION_KEYS,
   MODULES,
+  SUPPORT_HOURS,
+  SUPPORT_HOURS_MESSAGE,
+  SUPPORT_REASON,
+  SUPPORT_REASON_MESSAGE,
   type PlatformCompany,
   type PlatformCompanySummary,
   type PlatformDirectory,
   type PlatformMe,
+  type PlatformSupportGrant,
 } from "@workspace/shared";
 import { z } from "zod";
 import { parse } from "../../core/access/request-actor";
@@ -18,7 +23,8 @@ import {
   type PlatformActor,
 } from "./platform-admin.guard";
 import { PlatformCompaniesService } from "./platform-companies.service";
-import { MAX_SUPPORT_HOURS, SupportRequestsService } from "./support-requests.service";
+import { COMPANY_ID } from "./platform-params";
+import { SupportRequestsService } from "./support-requests.service";
 
 /** A module or permission name as sent; `accessPatchProblem` checks it is a real one. */
 const NAME = z.string().max(100);
@@ -37,13 +43,28 @@ const ACCESS_PATCH = z
   })
   .strict();
 
+/**
+ * A support-access request (spec "POST /platform/support-grants", Body), strict, with the bounds
+ * and messages the dialog and the demo share (`SUPPORT_REASON`, `SUPPORT_HOURS`).
+ */
 const SUPPORT_REQUEST = z
   .object({
-    companyId: z.string().uuid(),
-    reason: z.string().trim().min(10).max(500),
-    hours: z.number().int().min(1).max(MAX_SUPPORT_HOURS),
+    companyId: COMPANY_ID,
+    reason: z
+      .string({ error: SUPPORT_REASON_MESSAGE })
+      .trim()
+      .min(SUPPORT_REASON.min, SUPPORT_REASON_MESSAGE)
+      .max(SUPPORT_REASON.max, SUPPORT_REASON_MESSAGE),
+    hours: z
+      .number({ error: SUPPORT_HOURS_MESSAGE })
+      .int(SUPPORT_HOURS_MESSAGE)
+      .min(SUPPORT_HOURS.min, SUPPORT_HOURS_MESSAGE)
+      .max(SUPPORT_HOURS.max, SUPPORT_HOURS_MESSAGE),
   })
   .strict();
+
+/** The support list's query (spec "GET /platform/support-grants"), strict. */
+const GRANTS_QUERY = z.object({ companyId: COMPANY_ID.optional() }).strict();
 
 /*
  * Every /platform controller is session-only and carries PlatformAdminGuard at class level: the
@@ -104,18 +125,26 @@ export class PlatformCompaniesController {
   }
 }
 
-/** Support access, from the platform admin's side (blueprint role rule 6; ADR 0034). */
+/** Support access, from the platform admin's side (blueprint role rule 6; ADR 0034; ADR 0053). */
 @Controller("platform/support-grants")
 @SessionOnly()
 @UseGuards(PlatformAdminGuard)
 export class PlatformSupportGrantsController {
   constructor(private readonly requests: SupportRequestsService) {}
 
-  /** POST /platform/support-grants: any platform admin asks a company's Owner for access, after a step-up. */
+  /** GET /platform/support-grants: the owner role lists every admin's requests, the support role its own. */
+  @Get()
+  list(@CurrentPlatformAdmin() admin: PlatformActor, @Query() query: unknown): Promise<PlatformSupportGrant[]> {
+    return this.requests.list(admin, parse(GRANTS_QUERY, query).companyId);
+  }
+
+  /**
+   * POST /platform/support-grants: any platform admin asks a company's Owner for access, after a
+   * step-up; one open grant per admin and company (409) and 10 per admin in 24 hours (429).
+   */
   @Post()
   @PlatformWriteRoles("owner", "support")
   request(@CurrentPlatformAdmin() admin: PlatformActor, @Body() body: unknown): Promise<{ id: string }> {
-    const input = parse(SUPPORT_REQUEST, body);
-    return this.requests.request(admin, input.companyId, input.reason, input.hours);
+    return this.requests.request(admin, parse(SUPPORT_REQUEST, body));
   }
 }

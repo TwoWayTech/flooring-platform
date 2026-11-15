@@ -74,4 +74,6 @@ export const ADMIN_SCREENS = [
   "/admin/companies/summit",
   "/admin/companies/summit/import",
   "/admin/companies/harbor/database",
+  "/admin/audit",
+  "/admin/companies/summit/support",
 ];

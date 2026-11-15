@@ -5,17 +5,14 @@ import { auditLog, roles as roleTable } from "@workspace/db/company";
 import {
   planLimits,
   plans,
-  platformAdmins,
   platformAuditLog,
-  products,
   tenantDatabases,
   tenantModuleOverrides,
-  tenantProducts,
   tenantSubscriptions,
   tenants,
 } from "@workspace/db/control";
-import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import {
+  ACCESS_NO_PLAN_MESSAGE,
   FEATURES,
   offeredKeys,
   offeredModules,
@@ -24,24 +21,15 @@ import {
   type PlatformCompany,
   type PlatformCompanySummary,
   type PlatformDirectory,
-  type ProductKey,
 } from "@workspace/shared";
-import { and, count, desc, eq, sql } from "drizzle-orm";
-import request from "supertest";
+import { and, count, desc, eq } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { accessLevel } from "../src/core/tenancy/access";
 import { PLATFORM_REFUSALS, PlatformAdminGuard } from "../src/modules/platform/platform-admin.guard";
-import { AuthHarness, PASSWORD, sessionCookie, SUMMIT_ID, WEB_ORIGIN } from "./auth-harness";
-import { listRoutes, type HttpMethod } from "./support/routes";
-
-/** The browser the tests pretend to be, so the platform audit rows can be checked for it. */
-const AGENT = "platform-console-test";
-
-/** A TOTP code for the next 30-second step, so a code is never used twice in one step. */
-function freshCode(secret: string): string {
-  return totpCode(secret, new Date(Date.now() + 30_000));
-}
+import { AuthHarness, SUMMIT_ID } from "./auth-harness";
+import { AGENT, platformHelpers, type EnrolledAdmin } from "./support/platform-admins";
+import { listRoutes } from "./support/routes";
 
 /**
  * The platform console API, part 1 (docs/specs/platform-admin.md; ADR 0052): the platform guard,
@@ -50,61 +38,9 @@ function freshCode(secret: string): string {
  */
 describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
-  let owner = { email: "", cookie: "", secret: "", userId: "" };
-  let support = { email: "", cookie: "", secret: "", userId: "" };
-  let flooringProductId = "";
-  let hrProductId = "";
-
-  /** A request as the web app's proxy sends it, from the test browser. */
-  function call(method: HttpMethod, path: string, cookie?: string) {
-    const pending = request(harness.app.getHttpServer())
-      [method](path)
-      .set("Origin", WEB_ORIGIN)
-      .set("X-Forwarded-Host", "localhost:3000")
-      .set("User-Agent", AGENT);
-    return cookie ? pending.set("Cookie", cookie) : pending;
-  }
-
-  /** Signs in a user whose roles need MFA, enrols an authenticator app, and returns the session. */
-  async function enrolled(email: string) {
-    const first = await harness.signIn(email);
-    const enabled = await harness.post("/api/auth/two-factor/enable").set("Cookie", first).send({ password: PASSWORD });
-    const secret = totpSecretFromUri(enabled.body.totpURI as string);
-    const confirmed = await harness
-      .post("/api/auth/two-factor/verify-totp")
-      .set("Cookie", first)
-      .send({ code: totpCode(secret) });
-    expect(confirmed.status).toBe(200);
-    return {
-      email,
-      cookie: sessionCookie(confirmed.headers["set-cookie"]),
-      secret,
-      userId: await harness.userIdOf(email),
-    };
-  }
-
-  async function stepUp(who: { cookie: string; secret: string }) {
-    await harness
-      .post("/auth/step-up")
-      .set("Cookie", who.cookie)
-      .send({ code: freshCode(who.secret) })
-      .expect(204);
-  }
-
-  /** A Summit sales user with a platform_admins row; `role` may be one the console does not accept. */
-  async function adminEmail(role: string, row: { active?: boolean; deleted?: boolean } = {}): Promise<string> {
-    const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["sales"] });
-    const userId = await harness.userIdOf(email);
-    await harness.control.db.insert(platformAdmins).values({
-      userId,
-      role: "support",
-      active: row.active ?? true,
-      deletedAt: row.deleted ? new Date() : null,
-    });
-    // The column is free text with no CHECK (review A4), so a test can store any value.
-    await harness.control.db.execute(sql`update platform_admins set role = ${role} where user_id = ${userId}`);
-    return email;
-  }
+  const { call, enrolled, stepUp, adminEmail, productId, companyOn } = platformHelpers(harness);
+  let owner: EnrolledAdmin = { email: "", cookie: "", secret: "", userId: "" };
+  let support: EnrolledAdmin = { email: "", cookie: "", secret: "", userId: "" };
 
   /** Every /platform route on the app, with Summit's id for `:id`. */
   function platformRoutes() {
@@ -115,7 +51,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         name: `${route.method} ${route.path}`,
         url: route.path.replace(/:[^/]+/g, SUMMIT_ID),
       }));
-    expect(routes.length).toBeGreaterThanOrEqual(6);
+    expect(routes.length).toBeGreaterThanOrEqual(8);
     return routes;
   }
 
@@ -135,13 +71,6 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
       .orderBy(desc(platformAuditLog.at));
   }
 
-  /** A company with no database of its own, on one product (Flooring Suite by default), as provisioning leaves it. */
-  async function companyOn(slug: string, productId = flooringProductId): Promise<string> {
-    const id = await harness.addCompany(`${slug}${Date.now()}`);
-    await harness.control.db.insert(tenantProducts).values({ tenantId: id, productId });
-    return id;
-  }
-
   /** Summit's ceiling as the console may send it: only keys of offered, visible modules. */
   async function summitCeiling(): Promise<string[]> {
     const offered = new Set<string>(offeredKeys(["flooring"]));
@@ -150,10 +79,6 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
 
   beforeAll(async () => {
     await harness.start();
-    const productId = async (key: ProductKey) =>
-      (await harness.control.db.select({ id: products.id }).from(products).where(eq(products.key, key)))[0].id;
-    flooringProductId = await productId("flooring");
-    hrProductId = await productId("hr");
     owner = await enrolled(await adminEmail("owner"));
     support = await enrolled(await adminEmail("support"));
   }, 120_000);
@@ -171,7 +96,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         const paths: unknown = Reflect.getMetadata(PATH_METADATA, controller);
         return [paths].flat().some((path) => String(path).replace(/^\//, "").startsWith("platform"));
       });
-    expect(controllers.length).toBeGreaterThanOrEqual(3);
+    expect(controllers.length).toBeGreaterThanOrEqual(4);
     for (const controller of controllers) {
       expect({ controller: controller.name, guards: Reflect.getMetadata(GUARDS_METADATA, controller) }).toEqual({
         controller: controller.name,
@@ -322,7 +247,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
 
   it("refuses a module or key outside the company's products, and a key of a hidden module, writing nothing", async () => {
     await stepUp(owner);
-    const hrOnly = await companyOn("hronly", hrProductId);
+    const hrOnly = await companyOn("hronly", "hr");
     const cases: [string, object, string][] = [
       [hrOnly, { modules: ["platform", "hr", "core"] }, "The Core module isn't offered to this company."],
       [
@@ -345,17 +270,49 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
     expect((await auditRows("company.access_changed")).filter((row) => row.tenantId === hrOnly)).toEqual([]);
   });
 
-  it("refuses limits for a trial with no plan (422) and never creates a subscription row", async () => {
+  it("refuses limits for a company with no plan (422) and never creates a subscription row", async () => {
     const trial = await companyOn("trial");
     await stepUp(owner);
     const response = await patchAccess(trial, { userLimit: 5 });
-    expect([response.status, response.body.code]).toEqual([422, "rule_broken"]);
+    expect([response.status, response.body.code, response.body.message]).toEqual([
+      422,
+      "rule_broken",
+      ACCESS_NO_PLAN_MESSAGE,
+    ]);
     const rows = await harness.control.db
       .select({ n: count() })
       .from(tenantSubscriptions)
       .where(eq(tenantSubscriptions.tenantId, trial));
     expect(rows[0].n).toBe(0);
     expect((await company(trial)).modules).toEqual([...PRODUCT_MODULES.flooring]);
+  });
+
+  it("refuses limits the same way for an active company whose only subscription row is deleted (422)", async () => {
+    const lapsed = await companyOn("lapsed");
+    await harness.control.db.update(tenants).set({ status: "active" }).where(eq(tenants.id, lapsed));
+    const [plan] = await harness.control.db.select({ id: plans.id }).from(plans).limit(1);
+    const period = { currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 86_400_000) };
+    await harness.control.db.insert(tenantSubscriptions).values({
+      tenantId: lapsed,
+      planId: plan.id,
+      interval: "monthly",
+      price: "10",
+      status: "active",
+      deletedAt: new Date(),
+      ...period,
+    });
+    await stepUp(owner);
+    const response = await patchAccess(lapsed, { branchLimit: 2 });
+    expect([response.status, response.body.code, response.body.message]).toEqual([
+      422,
+      "rule_broken",
+      ACCESS_NO_PLAN_MESSAGE,
+    ]);
+    const [row] = await harness.control.db
+      .select({ override: tenantSubscriptions.branchLimitOverride })
+      .from(tenantSubscriptions)
+      .where(eq(tenantSubscriptions.tenantId, lapsed));
+    expect(row.override).toBeNull();
   });
 
   it("applies a ceiling change to Summit's next request, audits it with the address and device, and restores it", async () => {
@@ -461,7 +418,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         .values({
           key: `${key}-${id}`,
           name: key,
-          productId: flooringProductId,
+          productId: await productId("flooring"),
           monthlyPrice: "10",
           yearlyPrice: "100",
         })

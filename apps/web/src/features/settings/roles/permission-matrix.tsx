@@ -15,15 +15,27 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@workspace/ui/component
 import { cn } from "@workspace/ui/lib/utils";
 import { ScrollRegion } from "@/components/scroll-region";
 
-/** Why a permission cannot be ticked by this viewer, or null when it can. */
-export type CellLock = "plan" | "module" | "not_held" | "owner" | null;
+/**
+ * Why a permission cannot be changed by this viewer, or null when it can. The role editor uses the
+ * first four; the platform console's access page uses `protected` (a key every company keeps) and
+ * `read_only` (a platform role that may not change access; docs/specs/platform-admin.md, part 3).
+ */
+export type CellLock = "plan" | "module" | "not_held" | "owner" | "protected" | "read_only" | null;
 
 const LOCK_TEXT: Record<Exclude<CellLock, null>, string> = {
   plan: "Not included in your plan",
   module: "Module not switched on for this company",
   not_held: "You can only grant permissions you hold",
   owner: "The Owner role always holds everything in your plan",
+  protected: "Every company keeps this permission",
+  read_only: "Only the platform owner role can change this",
 };
+
+/**
+ * Locks that give their reason in the box's name only, with no tooltip: they cover the whole
+ * matrix, so a tooltip on each box would add a tab stop per permission.
+ */
+const PLAIN_LOCKS: ReadonlySet<CellLock> = new Set(["owner", "read_only"]);
 
 interface Row {
   resource: string;
@@ -109,7 +121,7 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
                         );
                         return (
                           <td key={action} className="px-2 text-center">
-                            {lock && lock !== "owner" ? (
+                            {lock && !PLAIN_LOCKS.has(lock) ? (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <span className="inline-flex items-center gap-0.5" tabIndex={0}>

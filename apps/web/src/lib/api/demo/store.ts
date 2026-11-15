@@ -58,7 +58,11 @@ import {
   type ImportKind,
   type ImportRequest,
   accessPatchProblem,
+  supportGrantExpiresAt,
+  supportRequestInputProblem,
   type PlatformAccessPatch,
+  type PlatformAuditQuery,
+  type SupportRequestInput,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -114,7 +118,9 @@ import type {
 } from "../contract";
 import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, permissionDiff } from "./admin-rules";
 import { demoAuditAsSeen } from "./audit-view";
-import { demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
+import { demoAuditPage, type DemoPlatformAuditRow } from "./platform-audit";
+import { demoAccessDiff, demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
+import { demoGrants, demoGrantViews, demoRequestRefusal, type DemoSupportGrant } from "./platform-support";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -246,6 +252,9 @@ import { attachPaymentFiles, readFile, recordPayment, reviewPayment, type Action
 import { clearStored, readLegacy, readStored, removeLegacy, writeStored } from "./storage";
 
 const PLATFORM_KEY = "platform";
+/** The demo's platform audit log and support requests (docs/specs/platform-admin.md, part 3, "Demo mode"). */
+const PLATFORM_AUDIT_KEY = "platform-audit";
+const PLATFORM_SUPPORT_KEY = "platform-support";
 const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
   branding: "Branding",
   localization: "Localization and tax",
@@ -357,8 +366,10 @@ export class DemoStore implements ApiClient {
 
   /**
    * The console's change of access (docs/specs/platform-admin.md, "Demo mode"): the same refusals as
-   * the API (`accessPatchProblem`), then the merged company is saved and the company's own log gets
-   * "Changed company access", as the demo always did. Every demo company has a plan.
+   * the API (`accessPatchProblem`). A save that changes nothing writes nothing, as on the API (part
+   * 3, "Demo mode"). Otherwise the merged company is saved, the company's own log gets "Changed
+   * company access", as the demo always did, and the platform audit log gets a
+   * `company.access_changed` row with the shared diff. Every demo company has a plan.
    */
   async updatePlatformCompanyAccess(companyId: string, patch: PlatformAccessPatch) {
     const before = await this.platformCompany(companyId);
@@ -366,6 +377,8 @@ export class DemoStore implements ApiClient {
     const problem = accessPatchProblem({ products: [before.product], hasSubscription: true }, patch);
     if (problem) throw new DemoRuleError(problem.message);
     const after = withAccess(before, patch);
+    const diff = demoAccessDiff(before, after);
+    if (!diff) return demoDetail(before, await this.consoleFacts(before.id), this.todayIso);
     writeStored(PLATFORM_KEY, { ...this.changedCompanies(), [before.id]: after });
     const db = await this.db(before.id);
     const { before: was, after: now } = diffSummary(before, after);
@@ -377,8 +390,66 @@ export class DemoStore implements ApiClient {
         actorRole: "Super-admin",
       },
     );
+    this.appendPlatformAudit({
+      tenantId: before.id,
+      companyName: before.name,
+      action: "company.access_changed",
+      targetType: "tenant",
+      targetId: before.id,
+      before: diff.before,
+      after: diff.after,
+    });
     this.emit();
     return demoDetail(after, await this.consoleFacts(before.id), this.todayIso);
+  }
+
+  async listPlatformAudit(query: PlatformAuditQuery) {
+    return demoAuditPage(this.storedList(PLATFORM_AUDIT_KEY), query);
+  }
+
+  async listPlatformSupportGrants(companyId: string) {
+    return demoGrantViews(this.storedList(PLATFORM_SUPPORT_KEY), companyId, new Date());
+  }
+
+  /**
+   * A support-access request in the demo (docs/specs/platform-admin.md, part 3, "Demo mode"): the
+   * shared field check, then the company must exist, then the shared limits, in the API's order
+   * ("Refusal order": the body's 400 before the 404, 409 and 429). The grant and its
+   * `support.requested` row are kept in this browser. No step-up, like the demo's access save, and
+   * no Owner screen approves it, so it stays pending until it expires.
+   */
+  async requestSupportAccess(input: SupportRequestInput) {
+    const problem = supportRequestInputProblem(input);
+    if (problem) throw new DemoRuleError(problem);
+    const company = await this.platformCompany(input.companyId);
+    if (!company) throw new DemoRuleError("That company does not exist.");
+    const stored = this.storedList(PLATFORM_SUPPORT_KEY);
+    const now = new Date();
+    const refusal = demoRequestRefusal(stored, company.id, now);
+    if (refusal) throw new DemoRuleError(refusal.message);
+    const reason = input.reason.trim();
+    const grant: DemoSupportGrant = {
+      id: newId(company.id, "sup"),
+      companyId: company.id,
+      companyName: company.name,
+      reason,
+      createdAt: now.toISOString(),
+      expiresAt: supportGrantExpiresAt(now, input.hours).toISOString(),
+      approvedAt: null,
+      revokedAt: null,
+    };
+    writeStored(PLATFORM_SUPPORT_KEY, [...demoGrants(stored), grant]);
+    this.appendPlatformAudit({
+      tenantId: company.id,
+      companyName: company.name,
+      action: "support.requested",
+      targetType: "support_access_grant",
+      targetId: grant.id,
+      before: null,
+      after: { reason, expiresAt: grant.expiresAt },
+    });
+    this.emit();
+    return { id: grant.id };
   }
 
   async getPlatformDirectory(companyId: string) {
@@ -1722,6 +1793,21 @@ export class DemoStore implements ApiClient {
       actorRole: self ? this.roleNames(db, self.roleIds) : "Super-admin",
     };
     db.put("audit", { id: newId(db.companyId, "aud"), at: nowStamp(), ...by, ...entry });
+  }
+
+  /** A list kept in local storage, or empty when nothing (or something that isn't a list) is stored. */
+  private storedList(key: string): unknown[] {
+    const stored = readStored<unknown>(key);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  /**
+   * Appends one row to the demo's platform audit log (part 3, "Demo mode"). Rows are only added,
+   * never changed, like `platform_audit_log`; every one is the demo admin's.
+   */
+  private appendPlatformAudit(entry: Omit<DemoPlatformAuditRow, "id" | "at">) {
+    const row: DemoPlatformAuditRow = { id: newId(entry.tenantId, "pal"), at: new Date().toISOString(), ...entry };
+    writeStored(PLATFORM_AUDIT_KEY, [...this.storedList(PLATFORM_AUDIT_KEY), row]);
   }
 
   private emit() {

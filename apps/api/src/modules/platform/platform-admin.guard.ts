@@ -9,7 +9,7 @@ import {
   type ExecutionContext,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { featureOn, type PlatformAdminRole } from "@workspace/shared";
+import { featureOn, PLATFORM_DEFAULT_WRITE_ROLES, type PlatformAdminRole } from "@workspace/shared";
 import type { Request } from "express";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -19,9 +19,6 @@ import { PlatformAdmins } from "./platform-admins";
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const WRITE_ROLES_KEY = "platform:write-roles";
-
-/** Who may make a write when the route names no roles (spec "The platform guard", step 4). */
-const DEFAULT_WRITE_ROLES: readonly PlatformAdminRole[] = ["owner"];
 
 /** What each platform refusal tells the person (docs/specs/platform-admin.md, "The platform guard"). */
 export const PLATFORM_REFUSALS = {
@@ -45,8 +42,9 @@ export interface PlatformActor {
 type PlatformRequest = Request & { authSession?: AuthSession; platformAdmin?: PlatformActor };
 
 /**
- * Lets these roles make the route's write. Without it only the `owner` role may (spec "The platform
- * guard", step 4); only `POST /platform/support-grants` also allows `support`.
+ * Lets these roles make the route's write. Without it only `PLATFORM_DEFAULT_WRITE_ROLES` (the
+ * `owner` role, packages/shared) may (spec "The platform guard", step 4); only
+ * `POST /platform/support-grants` also allows `support`.
  */
 export const PlatformWriteRoles = (...roles: PlatformAdminRole[]) => SetMetadata(WRITE_ROLES_KEY, roles);
 
@@ -83,7 +81,7 @@ export class PlatformAdminGuard implements CanActivate {
         this.reflector.getAllAndOverride<readonly PlatformAdminRole[]>(WRITE_ROLES_KEY, [
           context.getHandler(),
           context.getClass(),
-        ]) ?? DEFAULT_WRITE_ROLES;
+        ]) ?? PLATFORM_DEFAULT_WRITE_ROLES;
       if (!allowed.includes(role))
         throw new ForbiddenException({ code: "forbidden", message: PLATFORM_REFUSALS.owner_only });
       await this.stepUp.require(session);
