@@ -152,6 +152,8 @@ All functions below are in `packages/shared/src/hr/commission-plans.ts` unless a
 
    `managerOf` in `commission-actions.ts` follows user, employee, `managerId`, then that employee's user.
 
+   **Real build (owner decision 2026-11-15, ADR 0048):** `managerOf(userId, date)` takes the line's `confirmedOn`, and the override goes to the rep's manager on that day, read from the dated history `employee_manager_history` with `managerOn` (`packages/shared/src/hr/manager-history.ts`). A People save that sets or changes a manager records it from the company's day of the change, never back-dated, so a reorg leaves earlier lines with the old manager. A reversal keeps its line's manager. An employee with no history reads today's `managerId`. The demo keeps no history, so it reads today's manager for every day.
+
 8. **Clawback window.** `windowEndsOn = addDays(event.confirmedOn, onPlan.plan.clawbackDays)`. The seeded plans and the new-plan form use 90 days.
 
 9. **A voided payment.** `commissionLines` and `voidReversals`.
@@ -313,6 +315,8 @@ Stored only from approval onward. The figures are derived each time and are not 
 | `Signed commission plan` | data | `acknowledgePlan` |
 | `Changed commission split` | data | `setCommissionSplit` |
 | `Issued credit note` | data | `issueCreditNote` |
+
+**Who reads the details (owner decisions 2026-11-14 and 2026-11-15, ADR 0048 "Audit visibility"):** `Adjusted commission statement`, the two reversal decisions and the two plan entries are pay-sensitive (`PAY_SENSITIVE_AUDIT_ACTIONS`). Every audit viewer sees the row, but its before and after read "Hidden: pay details" unless the viewer is the Owner, or holds `hr.employee.view_sensitive` and the entry is about a person inside their data scope (`payAuditDetailsVisible`, the HR person rule `seesPersonRecords`). An adjustment or decision is about the employee that month's statement pays. The plan entries are about no single person, so they need scope `all`. The demo's entries name no person, so there a pay viewer below scope `all` who is not the Owner sees no details, which is stricter than the API.
 
 ## Emails
 
