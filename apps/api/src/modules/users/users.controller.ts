@@ -192,7 +192,10 @@ export class RolesController {
 export class AuditLogController {
   constructor(private readonly audit: AuditLogService) {}
 
-  /** GET /audit: the newest entries; pay-sensitive ones without their details unless the viewer can see pay. */
+  /**
+   * GET /audit: the newest entries. A pay-sensitive one shows its details only to the Owner, or to a
+   * holder of the pay key whose data scope covers the person it is about (ADR 0048 "Audit visibility").
+   */
   @Get()
   @RequirePermission("settings.audit.view")
   list(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {

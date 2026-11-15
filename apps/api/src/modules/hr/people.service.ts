@@ -5,6 +5,7 @@ import {
   commissionPlans,
   commissionStatements,
   employeeChecklistItems,
+  employeeManagerHistory,
   employees,
   locations,
   userProfiles,
@@ -30,8 +31,8 @@ import { STORAGE } from "../../core/storage/storage.module";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { checkProofs, withStoredProofs, type ProofUpload } from "../sales/proof-files";
-import { notFound, refuse } from "../sales/sales-common";
-import { auditHr, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
+import { companyClock, dayIn, notFound, refuse } from "../sales/sales-common";
+import { auditHr, databaseNow, lockEmployee, PAYROLL_LOCK, requireLinkedDecider } from "./hr-common";
 import { loadEmployees, personScope, selfCheck, workFactsOnly, type EmployeeRow } from "./hr-records";
 
 /** A person's HR record as the form sends it (hr.md "Employee"). No Social Security or bank fields exist. */
@@ -95,7 +96,8 @@ export class PeopleService {
    * Adds or edits a person (hr.md rule 2). A 1099 worker is outside overtime law; a W-2 worker is
    * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
    * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
-   * onboarding checklist.
+   * onboarding checklist. Setting or moving a manager adds to the dated manager history on the
+   * company's day (`recordManager`), so overrides follow the manager on each sale's day.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -105,6 +107,7 @@ export class PeopleService {
       throw refuse("Choose whether this W-2 worker is exempt or non-exempt.");
     }
     const db = await this.tenancy.db(tenant);
+    const clock = await companyClock(this.control.db, tenant);
     const employeeId = id ?? uuidv7();
     const seesPay = actor.access.permissions.has(SENSITIVE.payRate);
     const seesContact = actor.access.permissions.has("hr.employee.view");
@@ -158,6 +161,7 @@ export class PeopleService {
         await this.checkCommissionPeople(
           tx,
           actor,
+          employeeId,
           linkedBefore,
           values.managerId,
           managerChanged(before, values),
@@ -178,6 +182,11 @@ export class PeopleService {
             .values({ id: employeeId, ...values, createdBy: actor.access.userId })
             .returning()) as [EmployeeRow];
           await this.addChecklist(tx, row.id, "onboarding", ONBOARDING_STEPS, actor.access.userId);
+        }
+        if (managerChanged(before, values)) {
+          // The company's day by the database clock, read once the locks are held (ADR 0047).
+          const today = dayIn(await databaseNow(tx), clock.zone);
+          await recordManager(tx, row.id, before, values.managerId, today, actor.access.userId);
         }
         if (input.userId !== undefined) await this.link(tx, actor, row.id, input.userId);
         // The sign-in link before and after, on every entry: whose commission is paid to this person
@@ -321,17 +330,20 @@ export class PeopleService {
    * paid to the employee their sign-in is linked to, and their manager's user is paid an override on
    * their sales, so:
    * - only the Owner changes the manager of someone on a plan that pays their manager an override
-   *   (second security review of PR #27); any assignment counts, past or future, because statements
-   *   are worked out with today's manager;
+   *   (second security review of PR #27); any assignment counts, past or future, the safest reading,
+   *   kept when overrides moved to the manager on each line's day (owner decision 2026-11-15);
    * - only the Owner changes the sign-in link (link, unlink, or link another record to them) of
-   *   someone with any commission assignment or approved commission not yet paid, since a re-link
-   *   moves that pay to another employee (third security review of PR #27);
+   *   someone with any commission assignment or approved or paid statement, or of a record that
+   *   manages someone on an override plan, since a re-link moves override lines, those of approved
+   *   and paid months included, to another user (`hasCommissionHistory`; third security review of
+   *   PR #27, first review of PR #32);
    * - nobody, the Owner included, makes their own employee the manager of someone on an override
    *   plan: the override would pay the one who set it, and nobody could then approve it.
    */
   private async checkCommissionPeople(
     tx: CompanyDb,
     actor: Actor,
+    employeeId: string,
     linked: readonly string[],
     managerId: string | null,
     managerMoved: boolean,
@@ -347,9 +359,9 @@ export class PeopleService {
       if (onOverride) {
         throw refuse("This person earns their manager an override, so only the Owner can change their manager.");
       }
-      if (linkMoved && (await hasCommissionHistory(tx, people))) {
+      if (linkMoved && (await hasCommissionHistory(tx, people, employeeId))) {
         throw refuse(
-          "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.",
+          "This person has commission plans, statements or overrides, so only the Owner can change their sign-in link.",
         );
       }
     }
@@ -513,6 +525,41 @@ function managerChanged(before: EmployeeRow | null, values: EmployeeValues): boo
   return before ? values.managerId !== before.managerId : values.managerId !== null;
 }
 
+/**
+ * Appends a manager change to the person's dated history (owner decision 2026-11-15; ADR 0048):
+ * commission overrides go to the manager on each line's day (`managerOn` in packages/shared), so
+ * the history must say who managed whom when. Called in the save's transaction, under its locks
+ * (`PAYROLL_LOCK` → employee), so an approval never reads half a change.
+ * - A new person's first row applies since records began, as nothing about them is earlier.
+ * - A person with no row yet (added outside the app) first gets a since-records-began row with the
+ *   manager they had, so the days before this change keep that manager.
+ * - The change applies from `today`, the company's day. Several changes on one day each add a row;
+ *   the one recorded last wins (UUID v7 ids sort in recorded order).
+ */
+async function recordManager(
+  tx: CompanyDb,
+  employeeId: string,
+  before: EmployeeRow | null,
+  managerId: string | null,
+  today: string,
+  by: string,
+): Promise<void> {
+  if (!before) {
+    await tx.insert(employeeManagerHistory).values({ employeeId, managerId, effectiveFrom: null, createdBy: by });
+    return;
+  }
+  const [recorded] = await tx
+    .select({ id: employeeManagerHistory.id })
+    .from(employeeManagerHistory)
+    .where(eq(employeeManagerHistory.employeeId, employeeId))
+    .limit(1);
+  const rows = [
+    ...(recorded ? [] : [{ employeeId, managerId: before.managerId, effectiveFrom: null, createdBy: by }]),
+    { employeeId, managerId, effectiveFrom: today, createdBy: by },
+  ];
+  await tx.insert(employeeManagerHistory).values(rows);
+}
+
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
 type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
 
@@ -585,29 +632,58 @@ async function hasOverridePlan(tx: CompanyDb, userIds: readonly string[]): Promi
 }
 
 /**
- * Whether any of these people has commission a re-link would move to another employee (ADR 0048):
- * an assignment to any plan, past or future, or any approved statement. A statement already in an
- * approved run still counts, because a reopen hands it back to the next run (fourth review of PR #27).
+ * Whether a re-link of this employee's sign-in would move commission between people (ADR 0048
+ * "Sign-in re-link"): one of these people has an assignment to any plan, past or future, or any
+ * approved or paid statement, or the employee manages someone on an override plan. Override lines
+ * are worked out again on every read, through today's links, so a re-link moves them out of
+ * approved and paid months too, where they could be paid a second time (first review of PR #32);
+ * an approved statement already in a run still counts, as a reopen hands it back (fourth review of
+ * PR #27).
  */
-async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[]): Promise<boolean> {
+async function hasCommissionHistory(tx: CompanyDb, userIds: readonly string[], employeeId: string): Promise<boolean> {
   const [assigned] = await tx
     .select({ id: commissionAssignments.id })
     .from(commissionAssignments)
     .where(and(inArray(commissionAssignments.userId, [...userIds]), isNull(commissionAssignments.deletedAt)))
     .limit(1);
   if (assigned) return true;
-  const [waiting] = await tx
+  const [stored] = await tx
     .select({ id: commissionStatements.id })
     .from(commissionStatements)
     .where(
       and(
         inArray(commissionStatements.userId, [...userIds]),
-        eq(commissionStatements.status, "approved"),
+        inArray(commissionStatements.status, ["approved", "paid"]),
         isNull(commissionStatements.deletedAt),
       ),
     )
     .limit(1);
-  return waiting !== undefined;
+  return stored !== undefined || (await managesOverridePeople(tx, employeeId));
+}
+
+/**
+ * Whether this employee manages, or has managed by the dated history, anyone whose linked sign-in
+ * has an assignment to a plan that pays an override (ADR 0048): the employee's own user is paid
+ * those overrides, so its sign-in link decides who collects them.
+ */
+async function managesOverridePeople(tx: CompanyDb, employeeId: string): Promise<boolean> {
+  const [today, past] = await Promise.all([
+    tx
+      .select({ id: employees.id })
+      .from(employees)
+      .where(and(eq(employees.managerId, employeeId), isNull(employees.deletedAt))),
+    tx
+      .select({ id: employeeManagerHistory.employeeId })
+      .from(employeeManagerHistory)
+      .where(eq(employeeManagerHistory.managerId, employeeId)),
+  ]);
+  const reports = [...new Set([...today, ...past].map((row) => row.id))];
+  if (reports.length === 0) return false;
+  const users = await tx
+    .select({ userId: userProfiles.userId })
+    .from(userProfiles)
+    .where(and(inArray(userProfiles.employeeId, reports), isNull(userProfiles.deletedAt)));
+  return users.length > 0 && hasOverridePlan(tx, [...new Set(users.map((row) => row.userId))]);
 }
 
 /** The partial unique index that allows one live sign-in per employee (migration 0004; ADR 0049). */

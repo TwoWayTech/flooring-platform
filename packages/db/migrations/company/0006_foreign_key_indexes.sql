@@ -1,0 +1,2 @@
+CREATE INDEX "commission_statements_employee_idx" ON "commission_statements" USING btree ("employee_id");--> statement-breakpoint
+CREATE INDEX "employee_manager_history_manager_idx" ON "employee_manager_history" USING btree ("manager_id");

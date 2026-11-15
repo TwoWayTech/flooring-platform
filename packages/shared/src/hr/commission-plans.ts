@@ -62,8 +62,14 @@ export interface CommissionInputs {
   invoices: readonly Invoice[];
   payments: readonly Payment[];
   adjustments: readonly InvoiceAdjustment[];
-  /** Each person's manager user id, for overrides. */
-  managerOf: (userId: string) => string | null;
+  /**
+   * A person's manager user id when a line was confirmed, for overrides: the override on a line goes
+   * to the manager on that day, not today's (owner decision 2026-11-15; ADR 0048; `managerOn` reads
+   * the dated history). `at` is the moment the payment or applied credit was confirmed as the records
+   * carry it (`YYYY-MM-DDTHH:mm`, UTC; `lineConfirmedAt`) or a bare day, so the caller reads it on
+   * the company's calendar, the one manager changes are dated on. Null means no override.
+   */
+  managerOf: (userId: string, at: string) => string | null;
   /** Months whose statements are approved: a void there reverses instead of disappearing. */
   frozen: ReadonlySet<string>;
   /** HR's decisions on reversals that arrived outside their window, by reversal line id. */
@@ -89,13 +95,34 @@ interface CollectEvent {
   sourceId: string;
   amount: string;
   confirmedOn: string;
+  /** The moment behind `confirmedOn` (`confirmedMoment`), for the manager lookup. */
+  confirmedAt: string;
   order: string;
   /** A void taking back a payment that already earned: lowers what counts as collected. */
   isVoid?: boolean;
 }
 
+/** When a payment was confirmed: its review, else its recording (`YYYY-MM-DDTHH:mm`, UTC). */
+function confirmedMoment(p: Payment): string {
+  return p.reviewedAt ?? p.recordedAt;
+}
+
 function confirmedDate(p: Payment): string {
-  return (p.reviewedAt ?? p.recordedAt).slice(0, 10);
+  return confirmedMoment(p).slice(0, 10);
+}
+
+/**
+ * The moment a line's payment or applied credit was confirmed, as the engine passes it to
+ * `managerOf` (ADR 0048), so a check of a line's manager reads the same day the engine did. A line
+ * whose source is not among the inputs falls back to its confirmed day.
+ */
+export function lineConfirmedAt(
+  inputs: Pick<CommissionInputs, "payments" | "adjustments">,
+  line: Pick<CommissionLine, "sourceId" | "confirmedOn">,
+): string {
+  const payment = inputs.payments.find((p) => p.id === line.sourceId);
+  if (payment) return confirmedMoment(payment);
+  return inputs.adjustments.find((a) => a.id === line.sourceId)?.at ?? line.confirmedOn;
 }
 
 /** An invoice's subtotal, cost and total net of its credit notes (ADR 0025, step 2). */
@@ -131,7 +158,14 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
       const date = confirmedDate(p);
       const voidedAfterApproval = p.status === "voided" && p.voidedAt !== null && inputsFrozen(inputs, invoice, date);
       if (p.status !== "confirmed" && !voidedAfterApproval) continue;
-      events.push({ invoice, sourceId: p.id, amount: p.amount, confirmedOn: date, order: `${date}|${p.id}` });
+      events.push({
+        invoice,
+        sourceId: p.id,
+        amount: p.amount,
+        confirmedOn: date,
+        confirmedAt: confirmedMoment(p),
+        order: `${date}|${p.id}`,
+      });
       if (voidedAfterApproval) {
         const voidedOn = p.voidedAt!.slice(0, 10);
         events.push({
@@ -139,6 +173,7 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
           sourceId: p.id,
           amount: p.amount,
           confirmedOn: voidedOn,
+          confirmedAt: p.voidedAt!,
           order: `${voidedOn}|${p.id}|void`,
           isVoid: true,
         });
@@ -147,7 +182,14 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
     for (const a of adjustments) {
       if (a.invoiceId === invoice.id && a.kind === "credit_applied") {
         const date = a.at.slice(0, 10);
-        events.push({ invoice, sourceId: a.id, amount: a.amount, confirmedOn: date, order: `${date}|${a.id}` });
+        events.push({
+          invoice,
+          sourceId: a.id,
+          amount: a.amount,
+          confirmedOn: date,
+          confirmedAt: a.at,
+          order: `${date}|${a.id}`,
+        });
       }
     }
   }
@@ -212,7 +254,9 @@ export function commissionLines(inputs: CommissionInputs): CommissionLine[] {
         base: moneyString(share),
         commission: moneyString(commission),
       });
-      const manager = dec(onPlan.plan.overridePct).gt(0) ? inputs.managerOf(s.userId) : null;
+      // The manager when the payment was confirmed earns the override (ADR 0048); reversal lines
+      // copy this line's userId, so a later reorg never moves a reversal to the new manager.
+      const manager = dec(onPlan.plan.overridePct).gt(0) ? inputs.managerOf(s.userId, event.confirmedAt) : null;
       if (manager) {
         const override = roundMoney(pctOf(after, onPlan.plan.overridePct)).minus(
           roundMoney(pctOf(before, onPlan.plan.overridePct)),

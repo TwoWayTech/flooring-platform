@@ -36,6 +36,20 @@
       "when": 1794681050049,
       "tag": "0004_user_profiles_one_per_employee",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794698979561,
+      "tag": "0005_employee_manager_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794704165476,
+      "tag": "0006_foreign_key_indexes",
+      "breakpoints": true
     }
   ]
 }

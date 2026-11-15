@@ -1,11 +1,13 @@
 import {
   auditLog,
+  bonuses,
   branches,
   commissionAdjustments,
   commissionAssignments,
   commissionPlans,
   commissionStatements,
   customers,
+  employeeManagerHistory,
   employees,
   invoices,
   journalEntries,
@@ -40,14 +42,14 @@ import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
-/** Today in the test company's time zone (America/Chicago), the day the API dates by. */
-function companyDay(): string {
+/** The day of a moment (now unless given) in the test company's time zone (America/Chicago), the day the API dates by. */
+function companyDay(moment = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Chicago",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(moment);
 }
 
 /** The monday of the workweek `weeksAgo` weeks before today's (the seeded workweek starts on Monday). */
@@ -172,6 +174,10 @@ function planBody(over: Record<string, unknown> = {}) {
 }
 
 const ADDRESS = { street: "1 Main St", city: "Austin", state: "TX", zip: "78701" };
+
+/** The refusal of a statement carrying an override earned under a manager its own person set (ADR 0048). */
+const SELF_MADE =
+  "This statement's own person set the manager of someone whose override is on it, on the days those overrides were earned. Someone else must set that same manager again first.";
 
 /**
  * Commissions on the API (commissions.md; ADR 0048; api-contract.md "Commissions"): keys, scope and
@@ -341,6 +347,90 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     );
   }
 
+  /**
+   * Records that `by` made `managerId` the employee's manager on `day`, as a People save on that day
+   * would have. Overrides follow the manager on each line's day (owner decision 2026-11-15; ADR
+   * 0048), and these tests record sales in earlier months, so the history must reach back to them;
+   * `by` is who set it, which the self-made manager guard reads.
+   */
+  async function managedSince(employeeId: string, managerId: string | null, day: string, by: string) {
+    await rows((db) =>
+      db.insert(employeeManagerHistory).values({ employeeId, managerId, effectiveFrom: day, createdBy: by }),
+    );
+  }
+
+  /** An employee's manager history rows in the order they were recorded (UUID v7 ids). */
+  async function historyOf(employeeId: string) {
+    const recorded = await rows((db) =>
+      db.select().from(employeeManagerHistory).where(eq(employeeManagerHistory.employeeId, employeeId)),
+    );
+    return recorded
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map((row) => ({ managerId: row.managerId, effectiveFrom: row.effectiveFrom, createdBy: row.createdBy }));
+  }
+
+  /** A bonus for an employee, soft-deleted when `voided` (the audit resolves a voided bonus's employee too). */
+  async function bonusFor(employeeId: string, voided = false) {
+    return (
+      await rows((db) =>
+        db
+          .insert(bonuses)
+          .values({
+            employeeId,
+            amount: "100.00",
+            kind: "flat_sum",
+            periodStart: companyDay(),
+            periodEnd: companyDay(),
+            approvedById: ids.owner,
+            reason: "Probe",
+            deletedAt: voided ? new Date() : null,
+          })
+          .returning(),
+      )
+    )[0]!.id;
+  }
+
+  /** A commission adjustment row for a rep and month M1; its id is what adjustment audit entries target. */
+  async function adjustmentFor(userId: string) {
+    return (
+      await rows((db) =>
+        db
+          .insert(commissionAdjustments)
+          .values({ userId, month: M1, amount: "0.00", reason: "Probe", byUserId: ids.owner, at: new Date() })
+          .returning(),
+      )
+    )[0]!.id;
+  }
+
+  /** An audit_log row for a pay-sensitive action, labelled so a test can pick its own rows out of the list. */
+  function payAuditEntry(
+    label: string,
+    action: string,
+    targetType: string,
+    targetId: string,
+    after: Record<string, unknown>,
+  ) {
+    return {
+      actorUserId: ids.owner,
+      actorRole: "Owner",
+      category: "data" as const,
+      action,
+      targetType,
+      targetId,
+      targetLabel: label,
+      before: null,
+      after,
+    };
+  }
+
+  /** A new rep: a sign-in linked to a W-2 employee hired long ago, so a statement that pays something can be approved. */
+  async function newRep(name: string, over: Partial<typeof employees.$inferInsert> = {}) {
+    const userId = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const employee = await person({ name, hiredAt: "2024-01-08", ...over });
+    await rows((db) => db.update(userProfiles).set({ employeeId: employee.id }).where(eq(userProfiles.userId, userId)));
+    return { userId, employeeId: employee.id };
+  }
+
   async function addInvoice(
     number: string,
     salesRepId: string,
@@ -373,7 +463,10 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     );
   }
 
-  /** A customer payment on a day of a month (the 10th unless given); only a confirmed one earns commission. */
+  /**
+   * A customer payment on a day of a month (the 10th unless given), recorded and confirmed at midday
+   * UTC unless `when` says otherwise; only a confirmed one earns commission.
+   */
   async function addPayment(
     number: string,
     invoiceId: string,
@@ -381,8 +474,8 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     month: string,
     state: "confirmed" | "pending" = "confirmed",
     day = "10",
+    when = at(month, day),
   ) {
-    const when = at(month, day);
     return rows(
       async (db) =>
         (
@@ -1325,6 +1418,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       }),
       200,
     );
+    await managedSince(repT.id, ids.empHrA, "2024-01-08", ids.hrB);
     // The Owner adds a plan that pays the manager a 2% override, in force since M3.
     const added = await send(
       "post",
@@ -1441,6 +1535,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     const edit = (cookie: string, over: Record<string, unknown> = {}) =>
       send("put", `/employees/${empU.id}`, cookie, form(over));
     status(await edit(cookies.hrB), 200);
+    await managedSince(empU.id, ids.empHrB, "2024-01-08", ids.hrB);
     // hrA (not Rep U's manager) puts Rep U on the 2% override plan.
     status(
       await send("post", "/commission-assignments", cookies.hrA, {
@@ -1457,7 +1552,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     refused(await edit(cookies.hrB, { managerId: null }), onlyOwner);
     refused(
       await edit(cookies.hrA, { userId: null }),
-      "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.",
+      "This person has commission plans, statements or overrides, so only the Owner can change their sign-in link.",
     );
     refused(
       await send("post", "/employees", cookies.hrA, form({ name: "Uma Again", managerId: ids.empHrA, userId: repU })),
@@ -1476,11 +1571,10 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(dec(managers.override).gt(0)).toBe(true);
     expect(managers.lines.filter((l) => l.kind === "override").map((l) => l.subjectUserId)).toEqual([repU]);
     // hrB set that manager, so nobody approves hrB's statement, the Owner included.
-    const selfMade =
-      "This statement's own person set the manager of someone whose override is on it. Someone else must set that manager again first.";
-    refused(await approve(cookies.owner, ids.hrB, M1), selfMade);
-    refused(await approve(cookies.hrA, ids.hrB, M1), selfMade);
-    // The Owner reviews the manager (clears it, sets it again): the latest change is now the Owner's.
+    refused(await approve(cookies.owner, ids.hrB, M1), SELF_MADE);
+    refused(await approve(cookies.hrA, ids.hrB, M1), SELF_MADE);
+    // The Owner reviews the manager (clears it, sets it again): the Owner has now set that same
+    // manager, which confirms the earlier days too.
     status(await edit(cookies.owner, { managerId: null, title: "Senior Sales" }), 200);
     status(await edit(cookies.owner, { title: "Senior Sales" }), 200);
     // hrA put Rep U, whose override is on hrB's statement, on the plan: hrA may not approve it.
@@ -1582,7 +1676,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
         201,
       );
     const onlyOwner =
-      "This person has commission plans or unpaid commission, so only the Owner can change their sign-in link.";
+      "This person has commission plans, statements or overrides, so only the Owner can change their sign-in link.";
 
     // Rep R is on a plan with no override; Wes is an ally's W-2 record with no sign-in.
     const repR = await harness.userIdOf(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
@@ -1780,5 +1874,751 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     expect(JSON.stringify(owner)).toContain("Spiff for the Maple job");
     expect(JSON.stringify(hr)).toContain("Returned trim");
     expect(JSON.stringify(owner)).toMatch(/baseRatePct/);
+  });
+
+  // Owner decision 2026-11-15 (ADR 0048 "Audit visibility"): below company-wide scope, a pay viewer
+  // reads pay details only for people in their scope, and plan terms not at all.
+  it("shows a branch-scoped pay viewer the pay details of themselves and their reports only", async () => {
+    await rows(async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: "payaudit", name: "payaudit", dataScope: "branch" })
+        .returning();
+      await db.insert(rolePermissions).values(
+        ["settings.audit.view", "hr.employee.view_sensitive"].map((permissionKey) => ({
+          roleId: role!.id,
+          permissionKey,
+        })),
+      );
+    });
+    const leadEmail = await harness.addUser({ companyIds: [company.id], roles: ["payaudit"] });
+    const reportEmail = await harness.addUser({ companyIds: [company.id], roles: ["sales"] });
+    const lead = await person({ name: "Lena Lead" });
+    const report = await person({ name: "Rory Report", managerId: lead.id });
+    const outsider = await person({ name: "Otto Outside" });
+    const reportUser = await harness.userIdOf(reportEmail);
+    for (const [email, employeeId] of [
+      [leadEmail, lead.id],
+      [reportEmail, report.id],
+    ] as const) {
+      const userId = await harness.userIdOf(email);
+      await rows((db) => db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId)));
+    }
+    const cookie = await enrolled(leadEmail);
+    const probe = "Scoped audit probe";
+    const entry = (action: string, targetType: string, targetId: string, after: Record<string, unknown>) =>
+      payAuditEntry(probe, action, targetType, targetId, after);
+    const entries = [
+      entry("Added bonus", "bonus", await bonusFor(report.id), { reason: "Reason: Rory bonus" }),
+      entry("Voided bonus", "bonus", await bonusFor(outsider.id), { reason: "Reason: Otto bonus" }),
+      entry("Left out of pay period", "pay_period", uuidv7(), { employeeId: lead.id, reason: "Reason: Lena" }),
+      entry("Brought back into pay period", "pay_period", uuidv7(), { employeeId: outsider.id, reason: null }),
+      entry("Adjusted commission statement", "commission_statement", await adjustmentFor(reportUser), {
+        reason: "Reason: Rory adjustment",
+      }),
+      entry("Adjusted commission statement", "commission_statement", await adjustmentFor(ids.repA), {
+        reason: "Reason: Rae adjustment",
+      }),
+      entry("Edited commission plan", "commission_plan", uuidv7(), { baseRatePct: "9.9999" }),
+    ];
+    await rows((db) => db.insert(auditLog).values(entries));
+    type Entry = { target: string; after: string | null };
+    const read = async (as: string) =>
+      ((await call("get", "/audit", as).expect(200)).body as Entry[]).filter((e) => e.target === probe);
+    const details = (seen: Entry[]) => seen.map((e) => e.after ?? "").join("\n");
+
+    const seen = await read(cookie);
+    expect(seen).toHaveLength(entries.length);
+    const text = details(seen);
+    for (const own of ["Reason: Rory bonus", "Reason: Lena", "Reason: Rory adjustment"]) expect(text).toContain(own);
+    for (const other of ["Reason: Otto bonus", outsider.id, "Reason: Rae adjustment", "9.9999"]) {
+      expect(text).not.toContain(other);
+    }
+    expect(seen.filter((e) => e.after === HIDDEN_PAY_DETAILS)).toHaveLength(4);
+    // The Owner and a company-wide HR manager read every entry; the Accountant, without the key, none.
+    for (const as of [cookies.owner, cookies.hrB]) {
+      const all = details(await read(as));
+      for (const any of ["Reason: Otto bonus", "Reason: Rae adjustment", "9.9999"]) expect(all).toContain(any);
+    }
+    expect((await read(cookies.accountant)).every((e) => e.after === HIDDEN_PAY_DETAILS)).toBe(true);
+  });
+  // Owner decision 2026-11-15 (ADR 0048 "Manager history"): an override line goes to the manager on the
+  // line's confirmed day, so a reorg never moves a line that was already earned.
+  describe("overrides follow the manager on the line's day", () => {
+    /** A manager, with a sign-in the override statement is read under. */
+    const manager = (name: string) => newRep(name);
+    /** The override one manager's statement for a month holds; "0.00" when there is no statement. */
+    async function overrideOf(userId: string, month: string): Promise<string> {
+      const row = (await data()).statements.find((s) => s.userId === userId && s.month === month);
+      return row?.override ?? "0.00";
+    }
+    /** Puts the rep on the 2% override plan from M3 and records a paid 1000.00 sale on a day. */
+    async function sale(repUserId: string, number: string, month: string, day: string) {
+      const invoice = await addInvoice(number, repUserId, "1000.00", "500.00", month);
+      await addPayment(`PAY-${number}`, invoice, "1000.00", month, "confirmed", day);
+    }
+    const assignOverride = async (userId: string) =>
+      status(
+        await send("post", "/commission-assignments", cookies.owner, {
+          userId,
+          planId: ids.planO,
+          effectiveFrom: `${M3}-01`,
+        }),
+        201,
+      );
+
+    it("pays the override to the old manager for a payment confirmed before the change day, and to the new one from that day on", async () => {
+      const oldBoss = await manager("Olga Oldboss");
+      const newBoss = await manager("Nate Newboss");
+      const rep = await newRep("Rhea Reorg");
+      await managedSince(rep.employeeId, oldBoss.employeeId, "2024-01-08", ids.owner);
+      await managedSince(rep.employeeId, newBoss.employeeId, `${M1}-15`, ids.owner);
+      await rows((db) =>
+        db.update(employees).set({ managerId: newBoss.employeeId }).where(eq(employees.id, rep.employeeId)),
+      );
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-RG1", M1, "14");
+      await sale(rep.userId, "INV-RG2", M1, "15");
+      await sale(rep.userId, "INV-RG3", M1, "28");
+      // 2% of one 1000.00 payment is 20.00: the 14th is the old manager's, the 15th and later the new one's.
+      const oldLines = (await statement(oldBoss.userId, M1)).lines.filter((l) => l.kind === "override");
+      const newLines = (await statement(newBoss.userId, M1)).lines.filter((l) => l.kind === "override");
+      expect(oldLines.map((l) => [l.subjectUserId, l.commission])).toEqual([[rep.userId, "20.00"]]);
+      expect(newLines.map((l) => [l.subjectUserId, l.commission]).sort()).toEqual(
+        [
+          [rep.userId, "20.00"],
+          [rep.userId, "20.00"],
+        ].sort(),
+      );
+      expect(await overrideOf(oldBoss.userId, M1)).toBe("20.00");
+      expect(await overrideOf(newBoss.userId, M1)).toBe("40.00");
+    });
+
+    it("keeps an approved month's lines and amounts of the old manager when the Owner moves the rep to a new manager", async () => {
+      const oldBoss = await manager("Ora Prior");
+      const newBoss = await manager("Neil Fresh");
+      const rep = await newRep("Rudy Reassigned", { managerId: oldBoss.employeeId });
+      await managedSince(rep.employeeId, oldBoss.employeeId, "2024-01-08", ids.owner);
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-RA2", M2, "10");
+      await sale(rep.userId, "INV-RA1", M1, "10");
+      status(await approve(cookies.owner, oldBoss.userId, M2), 201);
+      const approvedBefore = await statement(oldBoss.userId, M2);
+      expect(approvedBefore).toMatchObject({ status: "approved", override: "20.00" });
+      expect(await overrideOf(oldBoss.userId, M1)).toBe("20.00");
+
+      // The Owner moves Rep Rudy under the new manager today.
+      status(
+        await send("put", `/employees/${rep.employeeId}`, cookies.owner, {
+          ...employeeForm("Rudy Reassigned", { managerId: newBoss.employeeId }),
+        }),
+        200,
+      );
+      const history = await rows((db) =>
+        db.select().from(employeeManagerHistory).where(eq(employeeManagerHistory.employeeId, rep.employeeId)),
+      );
+      expect(history.find((h) => h.effectiveFrom === companyDay())).toMatchObject({ managerId: newBoss.employeeId });
+
+      // Earlier months stay with the old manager, the approved one unchanged line for line.
+      expect(await statement(oldBoss.userId, M2)).toEqual(approvedBefore);
+      expect(await overrideOf(oldBoss.userId, M1)).toBe("20.00");
+      expect(await overrideOf(newBoss.userId, M2)).toBe("0.00");
+      expect(await overrideOf(newBoss.userId, M1)).toBe("0.00");
+
+      // A payment confirmed today is the new manager's.
+      const today = await addInvoice("INV-RA3", rep.userId, "1000.00", "500.00", CURRENT);
+      await addPayment("PAY-RA3", today, "1000.00", CURRENT, "confirmed", companyDay().slice(8));
+      expect(await overrideOf(newBoss.userId, CURRENT)).toBe("20.00");
+      expect(await overrideOf(oldBoss.userId, CURRENT)).toBe("0.00");
+    });
+
+    /** Moves an employee to a manager through People, as the Owner (only the Owner moves people on override plans). */
+    const moveTo = async (employeeId: string, name: string, managerId: string | null) =>
+      status(await send("put", `/employees/${employeeId}`, cookies.owner, employeeForm(name, { managerId })), 200);
+
+    // First review of PR #32: manager changes are dated on the company's calendar, so is the lookup.
+    it("pays the override of a payment confirmed on the company's evening before a reorg to the old manager", async () => {
+      const oldBoss = await manager("Eve Early");
+      const newBoss = await manager("Lou Late");
+      const rep = await newRep("Nia Night", { managerId: oldBoss.employeeId });
+      await managedSince(rep.employeeId, oldBoss.employeeId, "2024-01-08", ids.owner);
+      await assignOverride(rep.userId);
+      // 03:00 UTC on the company's today is 21:00 or 22:00 the evening before in Chicago.
+      const today = companyDay();
+      const evening = new Date(`${today}T03:00:00Z`);
+      expect(companyDay(evening)).toBe(addDays(today, -1));
+      const invoice = await addInvoice("INV-NE1", rep.userId, "1000.00", "500.00", M1);
+      await addPayment("PAY-NE1", invoice, "1000.00", CURRENT, "confirmed", today.slice(8), evening);
+      await moveTo(rep.employeeId, "Nia Night", newBoss.employeeId);
+      // The line's month is its UTC day's, today's month; the manager is the one of the company's day before.
+      const month = today.slice(0, 7);
+      expect(await overrideOf(oldBoss.userId, month)).toBe("20.00");
+      expect(await overrideOf(newBoss.userId, month)).toBe("0.00");
+    });
+
+    // First review of PR #32 (blocking): a later move no longer clears a self-made manager's earlier days.
+    it("keeps refusing the months a statement's own person set the manager after the Owner moves the rep elsewhere, until someone else sets that manager again", async () => {
+      const setter = await manager("Sid Selfset");
+      const other = await manager("Ola Other");
+      const rep = await newRep("Rex Report", { managerId: setter.employeeId });
+      // Sid made himself Rex's manager long ago, while Rex was on no override plan.
+      await managedSince(rep.employeeId, setter.employeeId, "2024-01-08", setter.userId);
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-SS1", M1, "10");
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // The Owner corrects the reporting line today: the M1 override stays Sid's, so it stays refused.
+      await moveTo(rep.employeeId, "Rex Report", other.employeeId);
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      expect(await overrideOf(other.userId, M1)).toBe("0.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+      refused(await approve(cookies.hrB, setter.userId, M1), SELF_MADE);
+
+      // The Owner sets Sid as Rex's manager again: someone else has now chosen him, the earlier days included.
+      await moveTo(rep.employeeId, "Rex Report", setter.employeeId);
+      status(await approve(cookies.owner, setter.userId, M1), 201);
+    });
+
+    /**
+     * An "Edited employee" entry from before the manager history began, as a People save writes it
+     * (people.service.ts `save`): `by` changed the manager `from` → `to` at `when`. Only these entries
+     * say who set the manager a since-records-began row holds (ADR 0048 "Self-made manager").
+     */
+    async function earlierManagerChange(
+      employeeId: string,
+      name: string,
+      by: string,
+      change: { from: string | null; to: string; when: Date },
+    ) {
+      await rows((db) =>
+        db.insert(auditLog).values({
+          at: change.when,
+          actorUserId: by,
+          actorRole: "HR manager",
+          category: "data",
+          action: "Edited employee",
+          targetType: "employee",
+          targetId: employeeId,
+          targetLabel: name,
+          before: { managerId: change.from },
+          after: { managerId: change.to },
+        }),
+      );
+    }
+
+    /**
+     * The row migration 0005 gave every live employee: since records began, the manager they had, and
+     * the employee row's own created_by, as no person recorded it.
+     */
+    async function backfilled(employeeId: string) {
+      await rows(async (db) => {
+        const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
+        await db.insert(employeeManagerHistory).values({
+          employeeId,
+          managerId: employee!.managerId,
+          effectiveFrom: null,
+          createdBy: employee!.createdBy,
+        });
+      });
+    }
+
+    // Third review of PR #32: the self-made guard on the rows migration 0005 wrote, which only the audit log
+    // can say who set (`withSetters` in commission-records.ts).
+    it("refuses the months of a backfilled manager the statement's own person set, read from the audit log, until someone else sets that manager again", async () => {
+      const setter = await manager("Sam Backfill");
+      const other = await manager("Opal Pick");
+      const rep = await newRep("Tia Migrated", { managerId: setter.employeeId, createdBy: ids.hrA });
+      // Before the history began the Owner made Opal Tia's manager, then Sam made himself her manager.
+      // Migration 0005 then wrote one since-records-began row naming Sam, created by hrA, who added Tia.
+      await earlierManagerChange(rep.employeeId, "Tia Migrated", ids.owner, {
+        from: null,
+        to: other.employeeId,
+        when: new Date("2024-02-01T15:00:00Z"),
+      });
+      await earlierManagerChange(rep.employeeId, "Tia Migrated", setter.userId, {
+        from: other.employeeId,
+        to: setter.employeeId,
+        when: new Date("2024-03-01T15:00:00Z"),
+      });
+      await backfilled(rep.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+      ]);
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-BF1", M1, "10");
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      // No dated row yet: the last manager change of all set the row, and that was Sam's own.
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // The Owner moves Tia to Opal today, her first dated row. That save's own audit entry comes after the
+      // row in the same transaction, so Sam's change stays the last one before the history began.
+      await moveTo(rep.employeeId, "Tia Migrated", other.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+        { managerId: other.employeeId, effectiveFrom: companyDay(), createdBy: ids.owner },
+      ]);
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+      refused(await approve(cookies.hrB, setter.userId, M1), SELF_MADE);
+
+      // The Owner sets Sam again: someone else has now chosen him, the backfilled days included.
+      await moveTo(rep.employeeId, "Tia Migrated", setter.employeeId);
+      status(await approve(cookies.owner, setter.userId, M1), 201);
+    });
+
+    // Third review of PR #32: a person with no history row gets their since-records-began row from the first
+    // People save, created by that editor, who did not set the manager it holds.
+    it("reads who set the manager a person had before their first People save from the audit log, not from that save or a later one", async () => {
+      const setter = await manager("Seb Unrecorded");
+      const other = await manager("Otis Other");
+      // Uma was added outside the app, so no history row records that Seb made himself her manager.
+      const rep = await newRep("Uma Unrecorded", { managerId: setter.employeeId, createdBy: ids.hrA });
+      await earlierManagerChange(rep.employeeId, "Uma Unrecorded", setter.userId, {
+        from: null,
+        to: setter.employeeId,
+        when: new Date("2024-03-01T15:00:00Z"),
+      });
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-FE1", M1, "10");
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // The Owner's save writes both rows, each created by the Owner, and its audit entry in one transaction.
+      await moveTo(rep.employeeId, "Uma Unrecorded", other.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.owner },
+        { managerId: other.employeeId, effectiveFrom: companyDay(), createdBy: ids.owner },
+      ]);
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // A later save, here clearing her manager, does not move where the history began: the first dated row.
+      await moveTo(rep.employeeId, "Uma Unrecorded", null);
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+    });
+
+    // First review of PR #32: `paysActorOverride` counts every manager in the window, not only today's.
+    it("refuses a past manager in the statements' window an override assignment or an override plan edit for that person", async () => {
+      const next = await manager("Ned Next");
+      const rep = await newRep("Pia Past", { managerId: next.employeeId });
+      // hrA managed Pia until the Owner moved her to Ned on the 15th of M2.
+      await managedSince(rep.employeeId, ids.empHrA, "2024-01-08", ids.owner);
+      await managedSince(rep.employeeId, next.employeeId, `${M2}-15`, ids.owner);
+      refused(
+        await send("post", "/commission-assignments", cookies.hrA, {
+          userId: rep.userId,
+          planId: ids.planO,
+          effectiveFrom: `${M1}-01`,
+        }),
+        "Someone else must put your own people on a plan that pays you an override.",
+      );
+      const added = await send(
+        "post",
+        "/commission-plans",
+        cookies.owner,
+        planBody({ name: "Past override", overridePct: "1" }),
+      );
+      status(added, 201);
+      const planId = added.body.id as string;
+      await rows((db) =>
+        db
+          .update(commissionPlans)
+          .set({ effectiveFrom: `${M3}-01` })
+          .where(eq(commissionPlans.id, planId)),
+      );
+      status(
+        await send("post", "/commission-assignments", cookies.owner, {
+          userId: rep.userId,
+          planId,
+          effectiveFrom: `${M1}-01`,
+        }),
+        201,
+      );
+      refused(
+        await send(
+          "put",
+          `/commission-plans/${planId}`,
+          cookies.hrA,
+          planBody({ name: "Past override", overridePct: "2" }),
+        ),
+        "Someone else must change a plan that pays you an override.",
+      );
+    });
+  });
+
+  // First review of PR #32: what People writes to the dated manager history (ADR 0048).
+  describe("People writes the manager history", () => {
+    const today = () => companyDay();
+
+    it("writes a since-records-began row for a person added with a manager, and none for one added without", async () => {
+      const boss = await newRep("Bea Boss");
+      const added = await send(
+        "post",
+        "/employees",
+        cookies.hrA,
+        employeeForm("Ann Added", { managerId: boss.employeeId }),
+      );
+      status(added, 201);
+      expect(await historyOf(added.body.id as string)).toEqual([
+        { managerId: boss.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+      ]);
+      const plain = await send("post", "/employees", cookies.hrA, employeeForm("Pat Plain"));
+      status(plain, 201);
+      expect(await historyOf(plain.body.id as string)).toEqual([]);
+    });
+
+    it("records a person's first change as their manager until then since records began, then the change from today, and a cleared manager as none", async () => {
+      const boss = await newRep("Cal Current");
+      const next = await newRep("Dee Next");
+      const fay = await person({ name: "Fay First", hiredAt: "2024-01-08", managerId: boss.employeeId });
+      status(
+        await send(
+          "put",
+          `/employees/${fay.id}`,
+          cookies.hrA,
+          employeeForm("Fay First", { managerId: next.employeeId }),
+        ),
+        200,
+      );
+      expect(await historyOf(fay.id)).toEqual([
+        { managerId: boss.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+        { managerId: next.employeeId, effectiveFrom: today(), createdBy: ids.hrA },
+      ]);
+      status(
+        await send("put", `/employees/${fay.id}`, cookies.hrA, employeeForm("Fay First", { managerId: null })),
+        200,
+      );
+      expect((await historyOf(fay.id)).at(-1)).toEqual({ managerId: null, effectiveFrom: today(), createdBy: ids.hrA });
+    });
+
+    it("lets the later of two changes on one day decide the override, and pays none once the manager is cleared", async () => {
+      const first = await newRep("Gil First");
+      const second = await newRep("Hal Second");
+      const third = await newRep("Ida Third");
+      const rep = await newRep("Ivy Same", { managerId: first.employeeId });
+      await managedSince(rep.employeeId, first.employeeId, "2024-01-08", ids.owner);
+      status(
+        await send("post", "/commission-assignments", cookies.owner, {
+          userId: rep.userId,
+          planId: ids.planO,
+          effectiveFrom: `${M3}-01`,
+        }),
+        201,
+      );
+      const form = (managerId: string | null) => employeeForm("Ivy Same", { managerId });
+      status(await send("put", `/employees/${rep.employeeId}`, cookies.owner, form(second.employeeId)), 200);
+      status(await send("put", `/employees/${rep.employeeId}`, cookies.owner, form(third.employeeId)), 200);
+      expect((await historyOf(rep.employeeId)).slice(-2)).toEqual([
+        { managerId: second.employeeId, effectiveFrom: today(), createdBy: ids.owner },
+        { managerId: third.employeeId, effectiveFrom: today(), createdBy: ids.owner },
+      ]);
+      const invoice = await addInvoice("INV-SD1", rep.userId, "1000.00", "500.00", CURRENT);
+      await addPayment("PAY-SD1", invoice, "1000.00", CURRENT, "confirmed", today().slice(8));
+      const overrideOf = async (userId: string) =>
+        (await data()).statements.find((s) => s.userId === userId && s.month === CURRENT)?.override ?? "0.00";
+      expect(await overrideOf(third.userId)).toBe("20.00");
+      expect(await overrideOf(second.userId)).toBe("0.00");
+      status(await send("put", `/employees/${rep.employeeId}`, cookies.owner, form(null)), 200);
+      expect((await historyOf(rep.employeeId)).at(-1)).toEqual({
+        managerId: null,
+        effectiveFrom: today(),
+        createdBy: ids.owner,
+      });
+      expect(await overrideOf(third.userId)).toBe("0.00");
+    });
+  });
+
+  // Owner decision 2026-11-15 (ADR 0048 "Sign-in re-link"): approval stores the employee the statement pays.
+  describe("the paid employee stored at approval", () => {
+    async function storedEmployee(userId: string, month: string): Promise<string | null> {
+      const [row] = await rows((db) =>
+        db
+          .select({ employeeId: commissionStatements.employeeId })
+          .from(commissionStatements)
+          .where(and(eq(commissionStatements.userId, userId), eq(commissionStatements.month, month))),
+      );
+      return row?.employeeId ?? null;
+    }
+    let planId = "";
+    /** A rep on a plain plan with one paid sale in M1, approved by the Owner. */
+    async function approvedRep(name: string, number: string) {
+      if (!planId) {
+        const added = await send("post", "/commission-plans", cookies.owner, planBody({ name: "Stored pay plan" }));
+        status(added, 201);
+        planId = added.body.id as string;
+        await rows((db) =>
+          db
+            .update(commissionPlans)
+            .set({ effectiveFrom: `${M3}-01` })
+            .where(eq(commissionPlans.id, planId)),
+        );
+      }
+      const rep = await newRep(name);
+      status(
+        await send("post", "/commission-assignments", cookies.owner, {
+          userId: rep.userId,
+          planId,
+          effectiveFrom: `${M1}-01`,
+        }),
+        201,
+      );
+      const invoice = await addInvoice(number, rep.userId, "1000.00", "500.00", M1);
+      await addPayment(`PAY-${number}`, invoice, "1000.00", M1);
+      expect(await storedEmployee(rep.userId, M1)).toBeNull();
+      const payable = (await statement(rep.userId, M1)).payable;
+      expect(dec(payable).gt(0)).toBe(true);
+      status(await approve(cookies.owner, rep.userId, M1), 201);
+      expect(await storedEmployee(rep.userId, M1)).toBe(rep.employeeId);
+      return { ...rep, payable };
+    }
+    const relink = async (name: string, from: string, to: string, userId: string) => {
+      status(await send("put", `/employees/${from}`, cookies.owner, employeeForm(name, { userId: null })), 200);
+      const target = await person({ name: `${name} Successor`, hiredAt: "2024-01-08" });
+      status(
+        await send("put", `/employees/${target.id}`, cookies.owner, employeeForm(`${name} Successor`, { userId })),
+        200,
+      );
+      return target.id;
+    };
+
+    it("stores the employee at approval, and a later re-link leaves the pay run paying the stored employee", async () => {
+      const rep = await approvedRep("Yara Yates", "INV-ST1");
+      const successor = await relink("Yara Yates", rep.employeeId, "", rep.userId);
+      expect(await storedEmployee(rep.userId, M1)).toBe(rep.employeeId);
+
+      const opened = await send("post", "/pay-periods", cookies.owner, { date: week(4) });
+      status(opened, 201);
+      const run = await send("post", `/pay-periods/${opened.body.id as string}/approve`, cookies.owner);
+      status(run, 201);
+      const lines = new Map((run.body as PeriodBody).lines.map((l) => [l.employeeId, l]));
+      expect(lines.get(rep.employeeId)?.commissionPay).toBe(rep.payable);
+      expect(lines.get(successor)?.commissionPay ?? "0.00").toBe("0.00");
+      expect(await statement(rep.userId, M1)).toMatchObject({
+        status: "approved",
+        payPeriodId: opened.body.id,
+        payable: rep.payable,
+      });
+    });
+
+    it("flags a stored employee who is terminated, a 1099 contractor or removed, whatever the rep's link is today", async () => {
+      const rep = await approvedRep("Zane Zimmer", "INV-ST2");
+      await relink("Zane Zimmer", rep.employeeId, "", rep.userId);
+      const opened = await send("post", "/pay-periods", cookies.owner, { date: week(5) });
+      status(opened, 201);
+      const stranded = async () =>
+        (
+          (await call("get", `/pay-periods/${opened.body.id as string}/review`, cookies.owner).expect(200)).body as {
+            strandedCommission: { userId: string; month: string; reason: string }[];
+          }
+        ).strandedCommission
+          .filter((s) => s.userId === rep.userId)
+          .map((s) => [s.month, s.reason]);
+      const set = (values: Partial<typeof employees.$inferInsert>) =>
+        rows((db) => db.update(employees).set(values).where(eq(employees.id, rep.employeeId)));
+
+      // The stored employee is an active W-2: nothing is stranded, though the rep's link points elsewhere.
+      expect(await stranded()).toEqual([]);
+      await set({ status: "terminated" });
+      expect(await stranded()).toEqual([[M1, "They have left, so no pay run includes them."]]);
+      await set({ status: "active", workerType: "1099", flsaStatus: "not_applicable", exemptionBasis: null });
+      expect(await stranded()).toEqual([[M1, "They are a 1099 contractor, and pay runs pay W-2 staff only."]]);
+      await set({
+        workerType: "w2",
+        flsaStatus: "exempt",
+        exemptionBasis: "administrative",
+        deletedAt: new Date(),
+      });
+      expect(await stranded()).toEqual([[M1, "Their employee record was removed, so no pay run includes them."]]);
+      await set({ deletedAt: null });
+      expect(await stranded()).toEqual([]);
+      // Never marked paid while stranded.
+      expect(await statement(rep.userId, M1)).toMatchObject({ status: "approved", payPeriodId: null });
+    });
+
+    // First review of PR #32: a statement stored before the column, with no employee, follows today's link.
+    it("pays and flags a statement stored with no employee by the rep's sign-in link today", async () => {
+      const rep = await approvedRep("Lee Legacy", "INV-ST3");
+      await rows((db) =>
+        db
+          .update(commissionStatements)
+          .set({ employeeId: null })
+          .where(and(eq(commissionStatements.userId, rep.userId), eq(commissionStatements.month, M1))),
+      );
+      const opened = await send("post", "/pay-periods", cookies.owner, { date: week(6) });
+      status(opened, 201);
+      const periodId = opened.body.id as string;
+      const stranded = async () =>
+        (
+          (await call("get", `/pay-periods/${periodId}/review`, cookies.owner).expect(200)).body as {
+            strandedCommission: { userId: string; month: string; reason: string }[];
+          }
+        ).strandedCommission
+          .filter((s) => s.userId === rep.userId)
+          .map((s) => [s.month, s.reason]);
+      const linkTo = async (userId: string | null) =>
+        status(
+          await send("put", `/employees/${rep.employeeId}`, cookies.owner, employeeForm("Lee Legacy", { userId })),
+          200,
+        );
+      expect(await stranded()).toEqual([]);
+      await linkTo(null);
+      expect(await stranded()).toEqual([[M1, "Their sign-in is not linked to an employee."]]);
+      await linkTo(rep.userId);
+      expect(await stranded()).toEqual([]);
+      const run = await send("post", `/pay-periods/${periodId}/approve`, cookies.owner);
+      status(run, 201);
+      const line = (run.body as PeriodBody).lines.find((l) => l.employeeId === rep.employeeId);
+      expect(line?.commissionPay).toBe(rep.payable);
+    });
+
+    // First review of PR #32: a re-link moves override lines, approved and paid months' too, so only the Owner re-links.
+    it("lets only the Owner re-link a manager whose people are on an override plan, or a rep whose statements are all paid", async () => {
+      const onlyOwner =
+        "This person has commission plans, statements or overrides, so only the Owner can change their sign-in link.";
+      const unlink = (cookie: string, employeeId: string, name: string) =>
+        send("put", `/employees/${employeeId}`, cookie, employeeForm(name, { userId: null }));
+      // Moe has no plan of his own; Rob reports to him and is on the override plan.
+      const boss = await newRep("Moe Manager");
+      const rep = await newRep("Rob Report", { managerId: boss.employeeId });
+      await managedSince(rep.employeeId, boss.employeeId, "2024-01-08", ids.owner);
+      status(
+        await send("post", "/commission-assignments", cookies.owner, {
+          userId: rep.userId,
+          planId: ids.planO,
+          effectiveFrom: `${M3}-01`,
+        }),
+        201,
+      );
+      refused(await unlink(cookies.hrA, boss.employeeId, "Moe Manager"), onlyOwner);
+      // Pam's only statement is paid and her plan is gone.
+      const paid = await approvedRep("Pam Paid", "INV-ST4");
+      await rows(async (db) => {
+        await db
+          .update(commissionStatements)
+          .set({ status: "paid" })
+          .where(eq(commissionStatements.userId, paid.userId));
+        await db
+          .update(commissionAssignments)
+          .set({ deletedAt: new Date() })
+          .where(eq(commissionAssignments.userId, paid.userId));
+      });
+      refused(await unlink(cookies.hrA, paid.employeeId, "Pam Paid"), onlyOwner);
+      status(await unlink(cookies.owner, boss.employeeId, "Moe Manager"), 200);
+      status(await unlink(cookies.owner, paid.employeeId, "Pam Paid"), 200);
+    });
+  });
+
+  // Owner decision 2026-11-15 (ADR 0048 "Audit visibility"): bonus and exclusion reasons are pay-sensitive,
+  // and a pay viewer below company-wide scope reads details only for people in their scope.
+  describe("GET /audit pay details by viewer", () => {
+    type Entry = { target: string; action: string; after: string | null };
+    const probe = "Pay reason probe";
+    const reasons = {
+      added: "Reason: added bonus",
+      voided: "Reason: voided bonus",
+      left: "Reason: left out",
+      back: "Reason: brought back",
+    };
+    let own = { cookie: "", employeeId: "", userId: "" };
+    let report = "";
+    let outsider = "";
+    let allCookie = "";
+
+    const read = async (cookie: string) =>
+      ((await call("get", "/audit", cookie).expect(200)).body as Entry[]).filter((e) => e.target === probe);
+    /** The probe entries a viewer reads with details, by the reason text their `after` carries. */
+    const visible = (seen: Entry[]) => seen.filter((e) => e.after !== HIDDEN_PAY_DETAILS && e.after !== null);
+    const text = (seen: Entry[]) =>
+      visible(seen)
+        .map((e) => e.after)
+        .join("\n");
+
+    beforeAll(async () => {
+      await rows(async (db) => {
+        for (const [key, dataScope] of [
+          ["payown", "own"],
+          ["payall", "all"],
+        ] as const) {
+          const [role] = await db.insert(roles).values({ key, name: key, dataScope }).returning();
+          await db.insert(rolePermissions).values(
+            ["settings.audit.view", "hr.employee.view_sensitive"].map((permissionKey) => ({
+              roleId: role!.id,
+              permissionKey,
+            })),
+          );
+        }
+      });
+      const ownEmail = await harness.addUser({ companyIds: [company.id], roles: ["payown"] });
+      const allEmail = await harness.addUser({ companyIds: [company.id], roles: ["payall"] });
+      const me = await person({ name: "Mona Mine" });
+      report = (await person({ name: "Ronan Reports", managerId: me.id })).id;
+      outsider = (await person({ name: "Otis Outer" })).id;
+      const ownUser = await harness.userIdOf(ownEmail);
+      await rows((db) => db.update(userProfiles).set({ employeeId: me.id }).where(eq(userProfiles.userId, ownUser)));
+      own = { cookie: await enrolled(ownEmail), employeeId: me.id, userId: ownUser };
+      allCookie = await enrolled(allEmail);
+      const entry = (action: string, targetType: string, targetId: string, after: Record<string, unknown>) =>
+        payAuditEntry(probe, action, targetType, targetId, after);
+      const mineAdded = await bonusFor(me.id);
+      const mineVoided = await bonusFor(me.id, true);
+      const reportBonus = await bonusFor(report);
+      const outsiderBonus = await bonusFor(outsider, true);
+      await rows((db) =>
+        db.insert(auditLog).values([
+          entry("Added bonus", "bonus", mineAdded, { reason: reasons.added }),
+          entry("Voided bonus", "bonus", mineVoided, { reason: reasons.voided }),
+          entry("Left out of pay period", "pay_period", uuidv7(), { employeeId: me.id, reason: reasons.left }),
+          entry("Brought back into pay period", "pay_period", uuidv7(), { employeeId: me.id, reason: reasons.back }),
+          entry("Added bonus", "bonus", reportBonus, { reason: "Reason: report bonus" }),
+          entry("Voided bonus", "bonus", outsiderBonus, { reason: "Reason: outsider voided" }),
+          entry("Left out of pay period", "pay_period", uuidv7(), {
+            employeeId: outsider,
+            reason: "Reason: outsider",
+          }),
+          entry("Edited commission plan", "commission_plan", uuidv7(), { baseRatePct: "8.8888" }),
+        ]),
+      );
+    });
+
+    it("hides the four bonus and exclusion actions from a viewer without the pay key, and keeps their rows", async () => {
+      const everyone = await read(cookies.owner);
+      const accountant = await read(cookies.accountant);
+      expect(accountant.map((e) => e.action)).toEqual(everyone.map((e) => e.action));
+      for (const action of ["Added bonus", "Voided bonus", "Left out of pay period", "Brought back into pay period"]) {
+        const rowsOf = accountant.filter((e) => e.action === action);
+        expect(rowsOf.length, action).toBeGreaterThan(0);
+        expect(
+          rowsOf.every((e) => e.after === HIDDEN_PAY_DETAILS),
+          action,
+        ).toBe(true);
+      }
+      expect(JSON.stringify(accountant)).not.toMatch(/Reason: |8\.8888/);
+      // An employee with no audit permission reads no audit at all.
+      status(await call("get", "/audit", cookies.employee), 403);
+    });
+
+    it("shows an own-scope pay viewer only their own employee's details, never their reports', and no plan terms", async () => {
+      const seen = await read(own.cookie);
+      expect(seen).toHaveLength(8);
+      const shown = text(seen);
+      for (const mine of Object.values(reasons)) expect(shown).toContain(mine);
+      for (const hidden of ["Reason: report bonus", "Reason: outsider", outsider, "8.8888"]) {
+        expect(shown).not.toContain(hidden);
+      }
+      expect(visible(seen)).toHaveLength(4);
+      expect(seen.filter((e) => e.after === HIDDEN_PAY_DETAILS)).toHaveLength(4);
+    });
+
+    it("shows an all-scope pay viewer and the Owner every entry, plan terms included", async () => {
+      for (const cookie of [allCookie, cookies.owner]) {
+        const seen = await read(cookie);
+        expect(seen).toHaveLength(8);
+        expect(visible(seen)).toHaveLength(8);
+        const shown = text(seen);
+        for (const any of [...Object.values(reasons), "Reason: report bonus", "Reason: outsider", "8.8888"]) {
+          expect(shown).toContain(any);
+        }
+      }
+    });
   });
 });

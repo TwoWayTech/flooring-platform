@@ -49,6 +49,36 @@ export const employees = pgTable("employees", {
   emergencyContact: jsonb().$type<{ name: string; phone: string; relation: string }>(),
 });
 
+/**
+ * Each employee's manager over time, append-only (owner decision 2026-11-15; ADR 0048): a commission
+ * override goes to the rep's manager on the line's confirmed day, not today's, read with `managerOn`
+ * in packages/shared. Setting or changing a manager adds a row; rows are never changed or hidden. An
+ * employee with no row reads `employees.manager_id`, which is what overrides used before this table.
+ */
+export const employeeManagerHistory = pgTable(
+  "employee_manager_history",
+  {
+    ...appendOnly(),
+    employeeId: uuid()
+      .notNull()
+      .references(() => employees.id),
+    /** The manager from `effective_from` on; null means no manager. */
+    managerId: uuid().references(() => employees.id),
+    /**
+     * The first day this manager applies, on the company's calendar. Null means since records began:
+     * only the backfill (company migration 0005) or a person's first recorded change writes it, for
+     * the manager they had before that change.
+     */
+    effectiveFrom: day(),
+  },
+  (table) => [
+    index("employee_manager_history_employee_idx").on(table.employeeId, table.effectiveFrom),
+    // The sign-in re-link guard reads who an employee has ever managed (people.service.ts
+    // managesOverridePeople), and every foreign key gets an index (company migration 0006).
+    index("employee_manager_history_manager_idx").on(table.managerId),
+  ],
+);
+
 /** One onboarding or offboarding step for an employee (spec C1). */
 export const employeeChecklistItems = pgTable("employee_checklist_items", {
   ...business(),
