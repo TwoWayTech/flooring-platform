@@ -15,7 +15,7 @@
 ## Decision
 
 ### Routes
-All eight /platform routes are `@SessionOnly()` with `PlatformAdminGuard` at class level, so 401, the switch-off 404 (before the admin row is read) and the non-admin 403 come first, as in ADR 0052. docs/api-contract.md, "Platform admin (real build, ADR 0052 and ADR 0053)".
+All eight /platform routes are `@SessionOnly()` with `PlatformAdminGuard` at class level, so 401, the switch-off 404 (before the admin row is read) and the non-admin 403 come first, as in ADR 0052. docs/api-contract.md, "Platform admin (real build, ADR 0052, ADR 0053 and ADR 0056)".
 
 | Route | Who | Step-up | Audit | Answer |
 | --- | --- | --- | --- | --- |

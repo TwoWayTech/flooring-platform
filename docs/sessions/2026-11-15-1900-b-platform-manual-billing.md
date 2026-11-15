@@ -101,5 +101,92 @@ These are numbers 34 to 47 in docs/specs/platform-admin.md, "Waiting for the own
 46. **Plan edits:** the last save wins under the plan's lock, and both are audited (taken). Should plan edits also carry what the admin saw, as status actions now do (and should the access PATCH, question 11)?
 47. **Audit history while `admin.billing` is off:** the seven actions' rows stay listed, and only the filter stops offering them (taken). Should their rows be hidden too?
 
-## Status of this log
-Written in stage 0. The outcome, the commands run with their results, the decisions taken while building and what is left are added at handoff.
+## Outcome
+Draft PR #40 (`feat/platform-manual-billing` into `main`). Every stage is committed and pushed. The stage commits carry `[skip ci]`; the head commit that marks the PR ready must not, so `verify` and `e2e` run on it.
+
+| Stage | Commit | What |
+| --- | --- | --- |
+| 0, plan | `fe00232` | The part 2 spec section with acceptance criteria 64 to 91, owner questions 34 to 47, this log, the draft PR |
+| 1, shared | `6d159f2` | `admin-reason.ts`, `company-status.ts` (`statusAfter`, `staleStatusRefusal`, `companyStatusView`, the input checks, the dialog copy), `plans.ts`, `mayManageBilling` and `seesAdminReason`, the `companyEverPaid` export, the seven audit actions with `BILLING_AUDIT_ACTIONS` and `platformAuditActionOn`, the types, `admin.billing` with its docs/FEATURES.md row and the `admin.access` retitle, the web audit labels; CS-0 to CS-12, PL-1 to PL-9, AU-1 to AU-5, W-8 |
+| 2, plans API | `692f031` | `@PlatformFeature` in the platform guard, `lockActingAdmin` (part 3's lock, moved), the plans controller and service, the moved lock helpers; G-7 to G-9, P-1 to P-13, the isolation map, 13 routes and 5 controllers |
+| 3, status API | `70bbb6b` | The status controller and service, the SQL reason narrowing, the audit filter while the switch is off; C-1 to C-18 and C-13b, A-9, the isolation map, 17 routes and 6 controllers |
+| 4, web | `b40690a` | The seven ApiClient methods, `apiErrorCode`, `DemoRefusal`, the demo plans and status modules, DemoStore, the Plans nav item and the Status tab, /admin/plans and its dialogs, the status page and its dialog, `ReasonField`, the audit filter; W-1 to W-7 |
+| 5, browser tests | `0f02a0c` | `readStatusFacts`, `clearTestStatus` and `removeTestPlans` in `packages/db/src/testing.ts` with H-1 to H-4; the demo `admin-billing.spec.ts`; both pages in `screens.ts`; the api-mode `platform-billing.spec.ts`; global setup; the docs/FEATURES.md Tests cell |
+| 5, fix | `927ea97` | AA contrast on the Status page's Cancel button and the cancel dialog's Continue (`text-danger-ink`), found by the demo axe run |
+| 6, docs | the commit that adds this section | ADR 0056; notes in ADRs 0030, 0033, 0052 and 0053; docs/api-contract.md; the spec as built; the delta row; the product spec; the data model |
+
+`git diff --stat origin/main -- apps/api/src/core packages/db/src/control packages/db/migrations` and `git diff origin/main -- '*package.json' pnpm-lock.yaml` stayed empty after every stage. No table, migration or dependency changed. origin/main stayed at `86c1689` throughout, and ADR 0056 was still free on every remote branch at the docs stage (0055 is `feat/reports-api`'s).
+
+## Decisions taken during the build
+Each is in ADR 0056 ("Safer still" and "Smaller choices made while building"), the spec's "As built (part 2)" and the top row of docs/blueprint-delta.md. The planned ones are under "Decisions and why" above.
+
+**Safer than the plan:**
+- **Unreadable values deny:** an unknown stored status previews as `locked` with no dates; `staleStatusRefusal` refuses a moment it can't read; `confirmNameProblem` refuses an empty name even when the company's name trims to empty.
+- **A tighter audit allow-list:** a status entry's new status must fit its action and differ from the old one; a retire or restore entry must flip `active` the way its action says.
+- **`planModulesAfter` keeps every stored module the console doesn't offer** for the plan's product (hidden or another product's), not only hidden ones.
+- **Plans:** the list leaves out a plan whose product is neither Flooring nor HR; creating needs a product row that isn't deleted; a plan with no limits row gets one only when both limits are sent (one alone is 400).
+- **The preview** reads in one read-only, repeatable-read transaction and refuses any query parameter.
+- **The stale check also runs in SQL** (`status_changed_at > now()`), to the microsecond; a mutation check (the check removed) fails C-13 and C-13b.
+- **The web never guesses:** no product preselected and no price placeholder on a new plan; limits take whole digits only; an edit that changes nothing sends nothing and asks for no code.
+- **AA contrast:** the demo axe run failed the Status page's Cancel button (4.18:1 light, 3.41:1 dark). The fix uses `text-danger-ink` on part 2's two destructive buttons only; the shared style in packages/ui is left for a follow-up, so the change stays inside this part.
+
+**Other choices:**
+- **Body check order:** `expectedStatus`, then the reason, then cancel's name (the spec's refusal order; plan 1.4 had the reason first).
+- **Signatures and helpers:** `companyStatusView(companyId, current, facts)`; `planModulesAfter(product, stored, requested, visible?)`; `companyStatusAuditBody`, `COMPANY_STATUS_AUDIT_ACTIONS`, `LIFECYCLE_STATUSES`, `isLifecycleStatus`, `newPlanValues` and `storedPlanPrice` (prices stored and audited with two decimals); `visibleModuleKeys` exported.
+- **A taken key** by `insert … on conflict do nothing`; the plan lock covers the plan row only; plan writes refuse in the order shape, admin, plan, fields, then 409 or 422, and retire and restore check the reason after the 404.
+- **"In use"** is the plan's company count, deleted subscription rows included; a no-op save answers with the plan read under the lock.
+- **`now()`** is read in the same select as the locked company row; reinstate refuses `confirmName` as an unknown field.
+- **Web:** key and product as facts on edit; a 409 on retire or restore closes and re-reads; restore's text "Restoring marks the plan as offered again. It changes no company."; re-reads by bumping a counter; focus on the Status heading after 250 ms; "Go back" as the status dialog's dismiss button; "1 company" or "{n} companies"; the audit filter's options from one helper. The look by eye fixed a Select controlled/uncontrolled warning and the key field taking first focus on edit.
+- **Demo:** an action outside the three is refused with "That action does not exist.".
+- **The e2e restore** sets Summit's status only (the plan's section 4.2), so its `status_changed_at` moved locally from 2026-11-14 22:43:37 UTC to 2026-11-15 21:24:12 UTC, with no effect on an `active` company.
+- **W-8** landed in stage 1 with the labels it tests.
+- **ADRs 0030 and 0053** gained pointer notes (route counts, the renamed api-contract section), beyond the plan's 0033 and 0052 notes.
+- **The docs commit carries `[skip ci]`,** following this run's git step over the plan's stage 6 note, because the full local run, the reviews and handoff still follow; the commit that marks the PR ready must not carry it.
+
+**The plan and the code agreed.** No contradiction was found at any stage, nothing needed an owner decision, and the only product bug the browser runs found was the contrast failure above.
+
+## Commands run
+Heavy runs went through the scratchpad lock, one at a time across both builds; logs are in the scratchpad's `platform2` folder. Ports 3000 and 4000 were free before and after every dev server and browser run.
+
+| Stage | Command | Result |
+| --- | --- | --- |
+| 0 | `git fetch origin`; Prettier on the two docs; the bounds check; `gh pr create --draft`; `gh pr view 40` | origin/main still `86c1689`; clean (Markdown is in `.prettierignore`); empty; PR #40, draft and open |
+| 1 | `pnpm -s vitest run` in packages/shared | 935 passed in 62 files |
+| 1 | `pnpm turbo run typecheck --force` | 6 of 6 tasks passed |
+| 1 | shared lint; web lint; web `platform-audit.test.tsx`; web `demo-platform` and `platform-console` tests | clean; clean; 27 passed; 20 passed |
+| 2 | API unit `platform-admin-guard.test.ts` | 9 passed |
+| 2 | API integration `platform-plans`, `platform`, `isolation`, `platform-support` | 57 passed in 4 files (`platform-plans` alone: 13) |
+| 2 | `pnpm --filter api typecheck` and `lint`; the lint probe in `modules/platform` | clean; 2 `no-restricted-imports` errors as expected, probe deleted |
+| 3 | API integration `platform-company-status`, `platform-audit`, `platform`, `isolation`, `company-standing`, `billing`, `permissions` | 128 passed in 7 files (`platform-company-status` alone: 19) |
+| 3 | `platform-plans` and `platform-support` integration again; the guard unit test | 23 passed in 2 files; 9 passed |
+| 3 | mutation check: the stale check removed | C-13 and C-13b fail; file restored, `cmp` equal |
+| 3 | `pnpm --filter api typecheck` and `lint` | clean (the first typecheck caught a bad value in the new test, fixed) |
+| 4 | `pnpm -s vitest run` in apps/web | 179 passed in 16 files |
+| 4 | `pnpm --filter web typecheck` and `lint` | clean |
+| 4 | demo dev server by hand, /admin/plans and /admin/companies/summit/status at 375 and 1440 px, light and dark | as specified; two fixes (above); no sideways scroll; server stopped |
+| 5 | db integration `status-test-helpers`, `standing-test-helpers` | 11 passed in 2 files |
+| 5 | db, web lint and typecheck; shared `features.test.ts` | clean; 7 passed |
+| 5, checks | API integration, the six part 2 files (`platform-plans`, `platform-company-status`, `platform-audit`, `platform`, `isolation`, `platform-support`) | 85 passed |
+| 5, checks | `pnpm -s typecheck --force` | 6 of 6 passed |
+| 5, checks | demo build, one worker: (a) `admin-billing`, `admin`, `billing`, `roles`; (b) `a11y`, `console`, `responsive`; (c) the whole HR project | 13 passed; 245 passed and 2 failed (the contrast); 67 passed |
+| 5, fix | eslint and web typecheck; demo rebuilt, `admin-billing` with chunk (b); web unit `platform-billing`, `demo-platform`, `platform-audit` | clean; 251 passed, 0 failed; 56 passed |
+| 5, checks | api-mode, both builds: the whole suite, then `platform-billing.spec.ts` alone | 23 passed; 1 passed. Summit `active` afterwards, no `e2e-` plan left, no platform admin row left |
+| 6 | `git ls-tree` of docs/adr on origin/main, `origin/feat/reports-api` and every remote branch | 0056 free; 0055 is `feat/reports-api`'s |
+| 6 | shared vitest `features`, `company-status`, `platform-plans`, `platform-audit`, `company-lifecycle` | 144 passed (7, 45, 28, 56, 8) |
+| 6 | web vitest `platform-billing`, `demo-platform`, `platform-audit` | 56 passed (21, 8, 27) |
+| 6 | `pnpm -s exec vitest run test/features.test.ts` in packages/shared, after the docs | 7 passed |
+| 6 | `pnpm exec prettier --check docs` | exit 0, "All matched files use Prettier code style!" (Markdown is in `.prettierignore`, so it checks nothing in docs) |
+| 6 | the bounds check | empty |
+
+## Left
+- **For the orchestrating session:** STATUS and BRANCHES (the PR #40 Done entry, the part 2 residual risks and owner questions 34 to 47 under Blockers, the follow-ups below, the branch row); the full local run (`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api`, `pnpm test:hooks`) with per-package counts for this log and the PR body; `/review`; a fresh security-reviewer and a fresh schema-reviewer (packages/db test helpers and the bounds), with both summaries posted on the PR; then ready, `verify` and `e2e` green on a head commit without `[skip ci]`, and the self-merge under the CLAUDE.md rule.
+- **The PR body:** bring it up to date before ready (checks with counts; the look by eye, with the screenshots in the scratchpad's `platform2/logs/look`, which are not committed).
+- **Follow-ups for STATUS:**
+  - the shared destructive button style in packages/ui fails AA contrast (`components/reason-dialog.tsx`, invoices, purchasing, contracts, `import-history.tsx`);
+  - the access PATCH has neither an actor re-check under a lock nor a stale-save check (question 11);
+  - the `freshTrial` rule and the fresh trial with no end (question 34);
+  - `featureForPath` attributes /admin/plans and the Status tab to `admin.access`;
+  - the SQL reason narrowing isn't tested on its own (the shared view hides the reason again);
+  - each local api-mode e2e run adds four `platform_audit_log` rows.
+- **Not run locally:** the whole Flooring demo project; CI's `e2e` job runs it before the merge.
+- **Merging with `feat/reports-api`:** both add a delta top row, STATUS and BRANCHES entries, and blocks in `contract.ts`, `api-methods.ts`, `store.ts`, `packages/shared/src/index.ts` and docs/api-contract.md. Whichever lands second keeps both, puts its own delta row on top, and re-runs the typecheck, the web unit tests and both e2e projects.
