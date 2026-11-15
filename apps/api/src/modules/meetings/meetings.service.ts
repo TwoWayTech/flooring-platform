@@ -31,6 +31,7 @@ import {
   requestFlags,
   scheduleFlags,
   seesEveryLinkedGuest,
+  seesGuestAddresses,
   seesMeeting,
   staffGuestOf,
   withoutGuest,
@@ -507,7 +508,9 @@ export class MeetingsService {
   /**
    * "Add to my calendar" (meetings.md sends table): a PUBLISH file with no guests and no STATUS, at
    * the current UID and SEQUENCE, for a meeting the person may see. A cancelled meeting has none
-   * (404, ADR 0051).
+   * (404, ADR 0051). The ORGANIZER address goes only to a reader who may read guests' addresses
+   * (`seesGuestAddresses`); anyone else's file has no ORGANIZER line, which the writer leaves out
+   * for an empty address.
    */
   async calendarFile(
     tenant: TenantContext,
@@ -515,15 +518,18 @@ export class MeetingsService {
     id: string,
   ): Promise<{ fileName: string; text: string }> {
     const db = await this.tenancy.db(tenant);
+    const viewer = meetingViewer(access);
     const [loaded] = await loadMeetings(db, { ids: [id] });
-    if (!loaded || !seesMeeting(meetingViewer(access), loaded.meeting)) throw notFound("meeting");
+    if (!loaded || !seesMeeting(viewer, loaded.meeting)) throw notFound("meeting");
     const { meeting, row } = loaded;
+    const organiser = await organiserOf(this.control.db, meeting.ownerUserId);
+    const showsAddress = seesGuestAddresses(viewer, meeting, await partySight(db, access, [meeting]));
     const text = meetingIcs({
       method: "PUBLISH",
       meeting,
       sequence: meeting.sequence,
       stamp: row.updatedAt,
-      organizer: await organiserOf(this.control.db, meeting.ownerUserId),
+      organizer: showsAddress ? organiser : { ...organiser, email: "" },
       attendees: [],
       prodId: MEETINGS_PRODID,
     });

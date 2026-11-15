@@ -585,8 +585,29 @@ describe("meetings (needs the local PostgreSQL)", () => {
     expect(text).toContain(`UID:${made.uid}`);
     expect(text).not.toMatch(/^ATTENDEE/m);
     expect(text).not.toContain("STATUS:");
+    // Warehouse reads no guest's address, so its file names no organiser address either.
+    expect(text).not.toContain("mailto:");
+    expect(text).not.toMatch(/^ORGANIZER/m);
     // An own-scope colleague who is not on it can't see it.
     status(await call("get", `/meetings/${made.id}/calendar.ics`, cookies.sales2), 404);
+  });
+
+  it("puts the organiser's address in the calendar file only for those who may read guests' addresses", async () => {
+    const made = await schedule(cookies.manager, { title: "Stock count", guests: [staff(ids.employee)] });
+    const fileOf = async (cookie: string) => {
+      const file = await call("get", `/meetings/${made.id}/calendar.ics`, cookie);
+      status(file, 200);
+      // Unfolded (RFC 5545 section 3.1), so a long address reads as one line.
+      return (file.body.text as string).replace(/\r\n[ \t]/g, "");
+    };
+    const organizer = `\r\nORGANIZER;CN="Mia Manager":mailto:${emails.manager}\r\n`;
+    // The organiser, and the Owner, who may change it.
+    expect(await fileOf(cookies.manager)).toContain(organizer);
+    expect(await fileOf(cookies.owner)).toContain(organizer);
+    // A staff guest who may not change it reads no colleague's address on the meeting either.
+    const asGuest = await fileOf(cookies.employee);
+    expect(asGuest).not.toContain("mailto:");
+    expect(asGuest).not.toMatch(/^ORGANIZER/m);
   });
 
   it("never sends a reminder after it expired: the send job cancels it", async () => {

@@ -78,6 +78,20 @@ export function canChangeMeeting(
   return viewer.dataScope !== "own" && !meeting.private;
 }
 
+/**
+ * Whether a viewer reads other guests' addresses, the organiser's included, and a hidden guest list:
+ * the organiser and anyone who may change the meeting (ADR 0051 "What a viewer sees", narrower than
+ * meetings.md line 55). The calendar file's ORGANIZER address follows the same rule, so the file
+ * never gives a reader an address the meeting itself hides from them.
+ */
+export function seesGuestAddresses(
+  viewer: MeetingViewer,
+  meeting: Meeting,
+  seesParty: (attendee: Attendee) => boolean,
+): boolean {
+  return isOrganiser(meeting, viewer.userId) || canChangeMeeting(viewer, meeting, seesParty);
+}
+
 /** What a guest linked to a record the viewer can't see is shown as (ADR 0051 "What a viewer sees"). */
 export const HIDDEN_PARTY_NAME: Readonly<Record<Exclude<Attendee["kind"], "staff" | "external">, string>> = {
   customer: "Customer",
@@ -114,7 +128,7 @@ export function meetingForViewer(
   seesParty: (attendee: Attendee) => boolean,
 ): Meeting {
   const organiser = isOrganiser(meeting, viewer.userId);
-  const manages = organiser || canChangeMeeting(viewer, meeting, seesParty);
+  const manages = seesGuestAddresses(viewer, meeting, seesParty);
   const own = (a: Attendee) => a.kind === "staff" && a.id === viewer.userId;
   const listed = manages || !meeting.hideGuestList ? meeting.attendees : meeting.attendees.filter(own);
   const attendees = listed.map((a): Attendee => {

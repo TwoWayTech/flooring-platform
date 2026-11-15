@@ -7,6 +7,7 @@ import {
   meetingAuditTarget,
   meetingForViewer,
   seesEveryLinkedGuest,
+  seesGuestAddresses,
   seesMeeting,
   staffGuestOf,
   type Attendee,
@@ -147,6 +148,15 @@ describe("a meeting as one viewer reads it (ADR 0051 What a viewer sees)", () =>
     expect(
       meetingForViewer(testMeeting({ hideGuestList: true }), viewerAs("hr", OUTSIDER), seesNoCustomer).attendees,
     ).toEqual([]);
+  });
+
+  it("lets only the organiser and those who may change the meeting read guests' addresses", () => {
+    expect(seesGuestAddresses(viewerAs("employee", ORGANISER), testMeeting(), seesAll)).toBe(true);
+    expect(seesGuestAddresses(viewerAs("manager", OUTSIDER), testMeeting(), seesAll)).toBe(true);
+    // A staff guest who may not change it, and a wide-scope reader without edit, do not.
+    expect(seesGuestAddresses(viewerAs("sales", GUEST), testMeeting(), seesAll)).toBe(false);
+    expect(seesGuestAddresses(viewerAs("warehouse", OUTSIDER), testMeeting(), seesAll)).toBe(false);
+    expect(seesGuestAddresses(viewerAs("hr", OUTSIDER), testMeeting(), (a) => a.kind !== "customer")).toBe(false);
   });
 
   it("shows a hidden guest list only to those who may change the meeting", () => {

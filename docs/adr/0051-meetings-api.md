@@ -53,7 +53,7 @@
   - **Guest sight binds the organiser too** (review of PR #33). A change emails every guest with the changer as the Outbox actor, and `GET /outbox` shows its actor each row whole: the guest's name, address and `.ics`. Without the rule an HR manager (all scope, `meetings.*`, no customers) or a Manager whose branch doesn't cover a customer could edit a meeting's notes and then read that customer in the Outbox. Several of Summit's seeded meetings have an organiser who can't read their customer (the fixtures ignore scope), so on the API they are changed by someone who reads every guest, such as the Owner.
 - **`meetingForViewer`** shapes every `Meeting` the API returns:
   - The organiser, and anyone who may change the meeting, get every guest with their address.
-  - Anyone else gets no address but their own. An email guest whose name is an address reads "Email guest". With a hidden guest list they get only their own row. The spec shows a hidden list to any edit holder.
+  - Anyone else gets no address but their own, in the calendar file's ORGANIZER line too. An email guest whose name is an address reads "Email guest". With a hidden guest list they get only their own row. The spec shows a hidden list to any edit holder.
   - Other guests' reply notes and proposals go to the organiser only, who decides proposals.
   - A guest linked to a customer, supplier or contact the reader can't read is shown to every reader, the organiser included, as "Customer", "Supplier", "Customer contact" or "Supplier contact", with no address.
 - **Reading a linked guest** (`partySight`):
@@ -136,7 +136,8 @@
   - a monthly BYDAY caps the week at 4, as the app does (`monthlyWeekOf`). A monthly series that starts after day 28 starts its RRULE at its second occurrence and lists the first as an RDATE (RFC 5545 section 3.8.5.3). One that ends before its second occurrence is a single event;
   - a zone without a VTIMEZONE block throws instead of borrowing New York's;
   - PRODID is `-//Platform//Meetings//EN` on the API, because the HR Suite sends invites too. The demo keeps `-//Flooring Suite//Demo//EN`.
-- **"Add to my calendar"** (`GET /meetings/:id/calendar.ics`) returns JSON `{ fileName, text }` at the contract's path: METHOD:PUBLISH, ORGANIZER and no ATTENDEE, no STATUS, the current UID and SEQUENCE. A cancelled meeting has no file (404).
+- **"Add to my calendar"** (`GET /meetings/:id/calendar.ics`) returns JSON `{ fileName, text }` at the contract's path: METHOD:PUBLISH, no ATTENDEE, no STATUS, the current UID and SEQUENCE. A cancelled meeting has no file (404).
+  - ORGANIZER, with the organiser's address, is written only for a reader who may read guests' addresses (`seesGuestAddresses`: the organiser and anyone who may change the meeting). Anyone else's file has no ORGANIZER line, as for an organiser with no valid address, so the file never gives a reader an address the meeting hides from them (review round 3). RFC 5546 lists ORGANIZER for a PUBLISH, so the owner gate tries a file without one too.
 
 ### The calendar file in the email (notifications core)
 - `emailAttachments` turns each `.ics` into UTF-8 bytes (`Uint8Array`), because the Resend adapter reads a string as base64 and would corrupt plain text.
@@ -217,7 +218,7 @@
 ## Safest options taken (also in docs/blueprint-delta.md)
 1. **Who may change a meeting:** the organiser, or someone with a scope wider than own on a meeting that is not private, and in both cases only someone who can read every customer, supplier and contact on it (`canChangeMeeting`). The spec lets any edit holder who sees it, and the organiser always.
 2. **Private meetings** are hidden from everyone not on them, the Owner included, also in `GET /outbox`: subject, body and `.ics` are redacted whatever the reader holds.
-3. **What a reader sees:** addresses, a hidden guest list, other guests' notes and proposals, and customers or suppliers the reader can't read are blanked, as under "Who sees and who changes a meeting".
+3. **What a reader sees:** addresses, a hidden guest list, other guests' notes and proposals, and customers or suppliers the reader can't read are blanked, as under "Who sees and who changes a meeting". The calendar file names the organiser's address only to those who may read guests' addresses.
 4. **Hidden guest list** for any guest who is not staff. The spec forces it only for email guests.
 5. **Volume limits:** 50 guests and 20 email guests per meeting, 50 outside addresses per person per company day, and 200 outside emails and 500 meeting emails per person per company day with every send counted.
 6. **Input limits:** text lengths, one-line fields, 15 to 1440 minutes, the four reminder choices, the stricter address check, the year range, and "No reply yet" refused as an answer.
@@ -286,8 +287,9 @@
 
 ## For the owner
 - **The go-ahead:** the queue is paused per STATUS, and this run's go-ahead came through the workflow. PR #33 stays a draft until the owner confirms.
-- **Before real email** (ADR 0021): import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web before `EMAIL_PROVIDER=resend` sends meeting invites.
+- **Before real email** (ADR 0021): import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web before `EMAIL_PROVIDER=resend` sends meeting invites. Also import a PUBLISH without ORGANIZER, the file a reader who may not read guests' addresses gets, on its own and over the REQUEST of the same meeting.
 - **Questions:**
+  - Should a staff guest's own "Add to my calendar" file name the organiser's address? Part 1 leaves it out unless they may change the meeting, as the meeting's guest list does, although their emailed invite carries it.
   - Are 20 email guests per meeting, 50 outside addresses, 200 outside emails and 500 meeting emails per person a day right, and should inviting outside addresses need a key or a setting?
   - Should an organiser who can no longer read a customer on their meeting still be able to cancel it? Part 1 refuses, because the cancel would show them that customer in the Outbox.
   - Should the Owner, as an Outbox admin, still see the recipient and status of a private meeting's rows?
