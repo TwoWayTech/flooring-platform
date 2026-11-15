@@ -1,4 +1,4 @@
-import { openControlDb, type ControlDb } from "@workspace/db";
+import type { ControlDb } from "@workspace/db";
 import { platformAdmins, platformAuditLog, supportAccessGrants, user } from "@workspace/db/control";
 import {
   FEATURES,
@@ -14,6 +14,7 @@ import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PLATFORM_REFUSALS } from "../src/modules/platform/platform-admin.guard";
 import { AuthHarness, SUMMIT_ID } from "./auth-harness";
+import { adminLocks } from "./support/admin-locks";
 import { platformHelpers, type EnrolledAdmin } from "./support/platform-admins";
 
 const HOUR = 3_600_000;
@@ -26,6 +27,7 @@ const HOUR = 3_600_000;
 describe("platform support requests API (P11 part 3, needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
   const { call, enrolled, stepUp, adminEmail, companyOn } = platformHelpers(harness);
+  const { waitForLockWaiters, holdAdminRow } = adminLocks(harness);
   let owner: EnrolledAdmin;
   let support: EnrolledAdmin;
 
@@ -82,58 +84,6 @@ describe("platform support requests API (P11 part 3, needs the local PostgreSQL)
       )
       .returning({ id: supportAccessGrants.id });
     return inserted.map((row) => row.id);
-  }
-
-  /** How many connections of the scratch control database are waiting for a lock. */
-  async function lockWaiters(): Promise<number> {
-    const rows = await harness.control.db.execute<{ n: number }>(
-      sql`select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
-    );
-    return rows[0]?.n ?? 0;
-  }
-
-  /** Waits until at least `n` connections wait for a lock, polling every 50 ms, for at most 10 s. */
-  async function waitForLockWaiters(n: number): Promise<void> {
-    const deadline = Date.now() + 10_000;
-    while ((await lockWaiters()) < n) {
-      if (Date.now() > deadline) throw new Error(`Fewer than ${n} requests ever waited for the lock.`);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
-
-  /**
-   * Holds a lock on an admin's `platform_admins` row from a connection of its own, as a parallel
-   * request would, until `release()`; `whileHeld` runs in the same transaction just before it commits.
-   */
-  async function holdAdminRow(userId: string, whileHeld?: (tx: ControlDb) => Promise<void>) {
-    const lock = openControlDb(harness.controlUrl, { max: 1 });
-    let release = () => {};
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let locked = () => {};
-    const isLocked = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    const done = lock.db.transaction(async (tx) => {
-      await tx.select().from(platformAdmins).where(eq(platformAdmins.userId, userId)).for("update");
-      locked();
-      await released;
-      await whileHeld?.(tx);
-    });
-    // A transaction that fails before it locks rejects here instead of hanging the test.
-    await Promise.race([isLocked, done]);
-    return {
-      release,
-      finish: async () => {
-        release();
-        try {
-          await done;
-        } finally {
-          await lock.close();
-        }
-      },
-    };
   }
 
   /** Starts a request at once and resolves to its status and body. */

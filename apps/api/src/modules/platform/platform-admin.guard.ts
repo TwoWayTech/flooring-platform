@@ -9,7 +9,7 @@ import {
   type ExecutionContext,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { featureOn, PLATFORM_DEFAULT_WRITE_ROLES, type PlatformAdminRole } from "@workspace/shared";
+import { featureOn, PLATFORM_DEFAULT_WRITE_ROLES, type FeatureKey, type PlatformAdminRole } from "@workspace/shared";
 import type { Request } from "express";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -19,6 +19,8 @@ import { PlatformAdmins } from "./platform-admins";
 const READ_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
 const WRITE_ROLES_KEY = "platform:write-roles";
+
+const FEATURE_KEY = "platform:feature";
 
 /** What each platform refusal tells the person (docs/specs/platform-admin.md, "The platform guard"). */
 export const PLATFORM_REFUSALS = {
@@ -49,12 +51,22 @@ type PlatformRequest = Request & { authSession?: AuthSession; platformAdmin?: Pl
 export const PlatformWriteRoles = (...roles: PlatformAdminRole[]) => SetMetadata(WRITE_ROLES_KEY, roles);
 
 /**
+ * Puts the route, or every route of the class, behind its own feature switch on top of
+ * `admin.access` (docs/specs/platform-admin.md, "The platform guard (part 2): a switch per route";
+ * ADR 0056). While the switch is off the guard answers 404 before it reads the admin row, so neither
+ * the role check nor the step-up reveals the route (CLAUDE.md rule 13). A handler's key wins over
+ * its class's; a route with no key behaves as before.
+ */
+export const PlatformFeature = (key: FeatureKey) => SetMetadata(FEATURE_KEY, key);
+
+/**
  * The only authorization layer of every /platform route (docs/specs/platform-admin.md, "The
  * platform guard"; ADR 0052). Platform routes are `@SessionOnly()`, so TenantGuard and
  * PermissionGuard let them through and this guard, set at class level, denies by default:
  * 1. no verified session: 401 (SessionGuard answers first; this is the backstop for a route that
  *    ever skips it);
- * 2. `admin.access` switched off: 404, hidden everywhere (CLAUDE.md rule 13);
+ * 2. `admin.access` switched off, or the route's own `@PlatformFeature` switch: 404, hidden
+ *    everywhere (CLAUDE.md rule 13). Both are read on every request, never once at load;
  * 3. not an active platform admin with role `owner` or `support`: 403 `forbidden`;
  * 4. a write: a role the route allows (`owner` unless `@PlatformWriteRoles` says more), then a
  *    step-up from the last 5 minutes (403 `step_up_required`). The console runs on a company host
@@ -73,7 +85,7 @@ export class PlatformAdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<PlatformRequest>();
     const session = request.authSession;
     if (!session) throw new UnauthorizedException({ code: "unauthenticated", message: "Sign in to continue." });
-    if (!featureOn("admin.access")) throw new NotFoundException();
+    if (!this.switchedOn(context)) throw new NotFoundException();
     const role = await this.admins.roleOf(session.user.id);
     if (!role) throw new ForbiddenException({ code: "forbidden", message: PLATFORM_REFUSALS.not_admin });
     if (!READ_METHODS.has(request.method)) {
@@ -96,6 +108,16 @@ export class PlatformAdminGuard implements CanActivate {
       userAgent: request.get("user-agent") ?? null,
     };
     return true;
+  }
+
+  /** Whether `admin.access` and the route's own switch, if it names one, are on (step 2). */
+  private switchedOn(context: ExecutionContext): boolean {
+    if (!featureOn("admin.access")) return false;
+    const key = this.reflector.getAllAndOverride<FeatureKey | undefined>(FEATURE_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return key === undefined || featureOn(key);
   }
 }
 
