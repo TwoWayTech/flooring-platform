@@ -33,6 +33,7 @@ import {
   type PermissionKey,
   SENSITIVE,
   businessReport,
+  reportVisibility,
   type BusinessFilters,
   type CommissionPlan,
   type Meeting,
@@ -1121,12 +1122,9 @@ export class DemoStore implements ApiClient {
   async businessReport(filters: BusinessFilters) {
     const db = this.open();
     await this.assertCan(db, ["reports.financial.view"]);
-    const can = this.actionContext(db).can;
-    const [margin, people, stock] = await Promise.all([
-      can("sales.margin.view_sensitive"),
-      can(SENSITIVE.payRate),
-      can(SENSITIVE.productCost),
-    ]);
+    // The same visibility rule as the API (ADR 0055): pay sight, the cost keys and the contracts fact.
+    const { access } = await this.granter(db);
+    const show = reportVisibility(access, { hasContractInvoices: db.list("invoices").some((i) => !!i.contractId) });
     return businessReport(
       {
         invoices: db.list("invoices"),
@@ -1142,6 +1140,7 @@ export class DemoStore implements ApiClient {
         users: db.list("users"),
         employees: db.list("employees"),
         locations: db.list("locations"),
+        productCategories: db.list("products"),
         products: db.list("products"),
         rolls: db.list("rolls"),
         stockMovements: db.list("stockMovements"),
@@ -1150,7 +1149,7 @@ export class DemoStore implements ApiClient {
         today: this.todayIso,
       },
       filters,
-      { margin, people, stock },
+      show,
     );
   }
 

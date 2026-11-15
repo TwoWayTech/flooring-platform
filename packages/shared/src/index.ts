@@ -38,6 +38,7 @@ export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
 export * from "./business-report";
+export * from "./reports";
 export * from "./sales-lines";
 export * from "./calendar/ics";
 export * from "./calendar/zones";

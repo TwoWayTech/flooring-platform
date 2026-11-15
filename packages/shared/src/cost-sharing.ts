@@ -26,13 +26,20 @@ export function shareByWeight(total: bigint, weights: readonly { id: string; wei
   return new Map(parts.map((p) => [p.id, p.base + (extra.has(p.id) ? 1n : 0n)]));
 }
 
+/**
+ * How company-wide costs are split when a company has no shared-cost settings row yet: by revenue
+ * share, the default of ADR 0023, so the reports never invent another rule.
+ */
+export const DEFAULT_SHARED_COSTS: Readonly<SharedCostSettings> = Object.freeze({ rule: "revenue", fixedPct: {} });
+
 /** The rule in force for a month, naming a fallback when the chosen one has nothing to go on (ADR 0023). */
 export function weightsFor(
-  locations: readonly Location[],
+  locations: readonly Pick<Location, "id" | "floorAreaSqFt">[],
   settings: SharedCostSettings,
   revenueCents: ReadonlyMap<string, bigint>,
 ): { rule: SharedCostSettings["rule"]; weights: { id: string; weight: bigint }[] } {
-  const by = (fn: (l: Location) => bigint) => locations.map((l) => ({ id: l.id, weight: fn(l) }));
+  const by = (fn: (l: Pick<Location, "id" | "floorAreaSqFt">) => bigint) =>
+    locations.map((l) => ({ id: l.id, weight: fn(l) }));
   const total = (w: { weight: bigint }[]) => w.reduce((s, x) => s + x.weight, 0n);
   const area = by((l) =>
     BigInt(

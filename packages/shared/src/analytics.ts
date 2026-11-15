@@ -1,5 +1,5 @@
 import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
-import { salesLines } from "./sales-lines";
+import { salesLines, type SalesLine } from "./sales-lines";
 import { daysBetween } from "./dates";
 import { countsAsCost } from "./expenses";
 import { lineAmount } from "./documents";
@@ -68,7 +68,7 @@ export function openBillAmounts(bills: readonly Bill[], ledgers: ReadonlyMap<str
 }
 
 /** Value of one roll on hand: remaining area × its own cost (blueprint "Costing": each roll carries its own cost). */
-export function rollValue(roll: Roll): Dec {
+export function rollValue(roll: Pick<Roll, "widthFt" | "remainingLengthFt" | "costPerSqFt">): Dec {
   return rollAreaSqFt(roll.widthFt, roll.remainingLengthFt).times(roll.costPerSqFt);
 }
 
@@ -81,8 +81,8 @@ export type BoxedStock = ReadonlyMap<string, Dec>;
  * from the stock ledger.
  */
 export function inventoryValuation(
-  rolls: readonly Roll[],
-  products: readonly Product[],
+  rolls: readonly Pick<Roll, "widthFt" | "remainingLengthFt" | "costPerSqFt">[],
+  products: readonly Pick<Product, "id" | "cost">[],
   boxed: BoxedStock,
 ): { rolls: string; boxed: string; total: string } {
   const rollTotal = sum(rolls.map(rollValue));
@@ -106,20 +106,20 @@ export interface PnlMonth {
 }
 
 /** Signed revenue of an invoice: returns count against revenue. */
-function signedSubtotal(inv: Invoice): Dec {
+function signedSubtotal(inv: Pick<Invoice, "isReturn" | "subtotal">): Dec {
   return inv.isReturn ? dec(inv.subtotal).negated() : dec(inv.subtotal);
 }
 
 /** Signed cost of an invoice. */
-function signedCost(inv: Invoice): Dec {
+function signedCost(inv: Pick<Invoice, "isReturn" | "cost">): Dec {
   return inv.isReturn ? dec(inv.cost).negated() : dec(inv.cost);
 }
 
 /** Monthly P&L for the given months (YYYY-MM), from invoices and expenses. */
 export function monthlyPnl(
   months: readonly string[],
-  invoices: readonly Invoice[],
-  expenses: readonly Expense[],
+  invoices: readonly Pick<Invoice, "voidedAt" | "issuedAt" | "subtotal" | "cost" | "isReturn">[],
+  expenses: readonly Pick<Expense, "status" | "category" | "date" | "amount">[],
 ): PnlMonth[] {
   return months.map((month) => {
     const inMonth = invoices.filter((i) => !i.voidedAt && i.issuedAt.startsWith(month));
@@ -338,7 +338,10 @@ export interface CategorySales {
  * Sales by category (spec "Reports hub"): line amounts and costs grouped by product category,
  * returns subtracted. Services group under their tax category (labor, freight, service).
  */
-export function salesByCategory(invoices: readonly Invoice[], products: readonly Product[]): CategorySales[] {
+export function salesByCategory(
+  invoices: readonly (Pick<Invoice, "voidedAt" | "isReturn" | "subtotal" | "cost"> & { lines: readonly SalesLine[] })[],
+  products: readonly Pick<Product, "id" | "category">[],
+): CategorySales[] {
   const groups = new Map<string, { revenue: Dec; cost: Dec }>();
   for (const inv of invoices) {
     if (inv.voidedAt) continue;
@@ -360,7 +363,7 @@ export function salesByCategory(invoices: readonly Invoice[], products: readonly
       cost: moneyString(g.cost),
       margin: moneyString(g.revenue.minus(g.cost)),
     }))
-    .sort((a, b) => Number(b.revenue) - Number(a.revenue));
+    .sort((a, b) => dec(b.revenue).comparedTo(a.revenue));
 }
 
 /** Sales tax collected in one jurisdiction, with taxable and exempt sales (blueprint "Sales tax reports"). */
