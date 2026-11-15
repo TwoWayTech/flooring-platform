@@ -24,6 +24,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { ChangeRolesDialog } from "./change-roles-dialog";
 import { InviteDialog } from "./invite-dialog";
+import { SupportAccessPanel } from "./support-access-panel";
 
 const STATUS = {
   active: { tone: "success", icon: CircleCheck, label: "Active" },
@@ -52,11 +53,12 @@ function SeatMeter({ used, limit }: { used: number; limit: number }) {
 
 /**
  * Settings: Users (spec Tier 1): status, roles, branch, MFA, last login and seats; invite,
- * disable or enable, reset MFA and change roles. Users are disabled, never deleted.
+ * disable or enable, reset MFA and change roles. Users are disabled, never deleted. The Owner also
+ * sees the support-access panel under the table (docs/specs/platform-admin.md, part 4).
  */
 export function UsersPage() {
   const can = useCan();
-  const { company } = useWorkspace();
+  const { company, access } = useWorkspace();
   const [inviting, setInviting] = useState(false);
   const [editingRoles, setEditingRoles] = useState<User | null>(null);
   const [resettingMfa, setResettingMfa] = useState<User | null>(null);
@@ -199,6 +201,7 @@ export function UsersPage() {
         initialSort={{ id: "name", desc: false }}
         empty={{ message: "No users yet." }}
       />
+      {access.isOwner ? <SupportAccessPanel /> : null}
       <InviteDialog open={inviting} onOpenChange={setInviting} roles={roles} branches={company.branches} />
       {editingRoles ? (
         <ChangeRolesDialog user={editingRoles} roles={roles} onClose={() => setEditingRoles(null)} />

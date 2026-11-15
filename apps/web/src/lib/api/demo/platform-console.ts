@@ -4,6 +4,7 @@ import {
   offeredModules,
   type AccessDiff,
   type Company,
+  type CompanyPhase,
   type PlatformAccessPatch,
   type PlatformCompany,
   type PlatformCompanySummary,
@@ -17,6 +18,12 @@ export interface DemoCompanyFacts {
   /** People with a sign-in to the company (its fixture users), the console's "Members". */
   members: number;
 }
+
+/**
+ * The phase of every demo company. The demo runs no life-cycle ladder, maintenance switch or company
+ * database, so every company is in full use (docs/specs/platform-admin.md, part 4, "Demo mode").
+ */
+export const DEMO_PHASE: CompanyPhase = "full";
 
 /** The first day of `today`'s month and of the next one, as ISO moments. */
 function monthOf(today: string): { start: string; end: string } {
@@ -63,7 +70,7 @@ export function demoSummary(company: Company, facts: DemoCompanyFacts): Platform
     products: [company.product],
     status: company.status,
     statusChangedAt: company.createdAt,
-    phase: "full",
+    phase: DEMO_PHASE,
     maintenance: { on: false, reason: null },
     plan: company.plan,
     modules: company.modules,

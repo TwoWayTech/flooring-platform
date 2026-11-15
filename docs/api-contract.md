@@ -58,7 +58,7 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 
 ## Tenancy (real build, P9, ADR 0030)
 
-Every Nest route needs a signed-in session with an open company, unless it is marked `@Public()` (`GET /health`, `GET /public/branding`) or `@SessionOnly()`. The session-only routes are `GET /auth/context` and `POST /auth/step-up` (ADR 0034), and the eight /platform routes (ADR 0052 and ADR 0053), which carry `PlatformAdminGuard` at class level as their only authorization layer. The guards run globally in this order: SessionGuard, then TenantGuard. So a new route is closed until it says otherwise.
+Every Nest route needs a signed-in session with an open company, unless it is marked `@Public()` (`GET /health`, `GET /public/branding`) or `@SessionOnly()`. The session-only routes are `GET /auth/context` and `POST /auth/step-up` (ADR 0034), the eight /platform routes (ADR 0052 and ADR 0053), which carry `PlatformAdminGuard` at class level as their only authorization layer, and `GET /company/standing` (ADR 0054), which carries `StandingMemberGuard` at class level. That guard repeats TenantGuard's membership checks on control rows only, with TenantGuard's codes and words in TenantGuard's order (`company_required`, `not_a_member`, `product_not_enabled`), takes the company from the verified session, and never builds a TenantContext or opens the company database (see "Company standing and billing"). The guards run globally in this order: SessionGuard, then TenantGuard. So a new route is closed until it says otherwise.
 
 The company always comes from the verified session. A `companyId` or `tenantId` in the path, query, body or headers is never read. Company data is reached only through `TenantConnectionService.db(tenant)`, where `tenant` is the `@CurrentTenant()` context that TenantGuard made.
 
@@ -106,9 +106,9 @@ Draft spec: docs/specs/settings-users-access.md.
 | `POST /auth/step-up` | A session (no company needed) | `{ code }`: a TOTP or backup code; valid 5 minutes for this session. 403 `step_up_invalid`, `step_up_mfa_required`; 429 `step_up_locked` after 5 wrong codes in 15 minutes |
 | `GET /public/invitations/:token` | Public, 10 a minute per IP | `{ email, companyName, needsPassword }`; 410 `invitation_invalid` |
 | `POST /public/invitations/accept` | Public, 10 a minute per IP | `{ token, password? }`: sets the password of a new account (12 to 128 characters), verifies the email, activates the profile. 400 `weak_password`; 410 `invitation_invalid` |
-| `GET /support-grants` | The Owner role | The company's support-access requests and their status |
-| `POST /support-grants/:id/approve` | The Owner role and a step-up | 409 `grant_closed` |
-| `POST /support-grants/:id/revoke` | The Owner role | 409 `grant_closed` |
+| `GET /support-grants` | The Owner role | The company's support-access requests and their status, newest first, at most 100: `CompanySupportGrant` `{ id, adminName, reason, requestedAt, expiresAt, status }`, never the approver. 403 `forbidden`, "Only an Owner can manage support access." for anyone else. The Owner's Support access panel in Settings → Users reads it (ADR 0054) |
+| `POST /support-grants/:id/approve` | The Owner role and a step-up | 204. 409 `grant_closed`, "This request is no longer waiting for approval."; 403 `company_read_only` while the company is read only (TenantGuard), so the panel hides the action then |
+| `POST /support-grants/:id/revoke` | The Owner role | 204. 409 `grant_closed`, "This access has already ended."; 403 `company_read_only` while the company is read only (TenantGuard), so the panel hides the action then |
 | `POST /platform/support-grants` | A platform admin (role `owner` or `support`) and a step-up | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`, strict. 201 `{ id }`; 403 if no longer an admin (checked again under a lock on the admin's row); 404 for an unknown company and while `admin.access` is off; 409 `grant_open` while the same admin has an open grant for the company; 429 `rate_limited` after 10 requests by the admin in 24 hours. Behind `PlatformAdminGuard` since ADR 0052; limits since ADR 0053. See "Platform admin (real build, ADR 0052 and ADR 0053)" |
 
 A route that needs a step-up answers 403 `step_up_required` without one from the last 5 minutes. Someone whose only factor is a passkey steps up by signing in again with it: a session under 5 minutes old counts. Password reset is Better Auth's `/api/auth/request-password-reset` and `/api/auth/reset-password` (one-hour links, every session ended; 3 emails an hour per address, shared with verification and invitation emails).
@@ -169,7 +169,52 @@ Migration text, other admins' reasons and company people's ids and names are nar
 
 **Support requests (ADR 0053).** The POST runs in one control transaction: it locks the admin's own `platform_admins` row (`FOR UPDATE`) and re-checks it (403 "Only platform admins can use this."), then checks the company (404), then refuses an open grant (pending or approved, unexpired) by the same admin for the same company with 409 `grant_open`, "You already have an open support request for this company.", then 10 requests by the admin in the last 24 hours, across companies and counting revoked, expired and deleted grants, with 429 `rate_limited`, "You can send at most 10 support requests in 24 hours. Try again later.". A refused request writes nothing and does not count. The body's messages are "Give a reason of 10 to 500 characters." and "Enter a whole number of hours from 1 to 72.". The status in both lists is derived, revoked first, then expired (`expiresAt` at or before now), approved and pending.
 
-**Not on the API yet:** using a support grant, the company's own roles and users, plans, billing and company status actions (parts 2 and 4, ADR 0052). The import and database calls below stay on DemoStore; their /admin pages are not found in api mode.
+**Not on the API yet:** using a support grant, the company's own roles and users, plans, company status actions (part 2) and billing writes (ADR 0052, "For the owner" 7). The company's own read-only side, standing and the Owner's billing, is in "Company standing and billing (real build, ADR 0054)". The import and database calls below stay on DemoStore; their /admin pages are not found in api mode.
+
+## Company standing and billing (real build, ADR 0054)
+
+Platform admin part 4, the company side. Spec: docs/specs/platform-admin.md, "Part 4: the company side" (draft). Neither route takes a company id: the company is always the verified session's, and a `companyId` or `tenantId` in the query or headers is ignored. Both live in `apps/api/src/modules/billing`, which lint keeps off the company schema and TenantConnectionService; the standing files may not import TenantContext either.
+
+| Route | Access | Who | Answer |
+| --- | --- | --- | --- |
+| `GET /company/standing` | `@SessionOnly()`, `StandingMemberGuard` at class level | Any member of the session's company, a disabled one included | `CompanyStanding` `{ state }`, `Cache-Control: no-store`. Not audited, no feature switch |
+| `GET /billing` | A company route: TenantGuard and PermissionGuard (`@AnyCompanyMember()`), then `settings.billing`, then the Owner | The Owner | `CompanyBilling`, `Cache-Control: no-store`. Not audited |
+
+**Refusals.** SessionGuard first on both: 401 `unauthenticated`, "Sign in to continue." (or `session_expired`), and 403 `mfa_enrolment_required`, "Set up two-step sign-in to continue.".
+
+| Status and code | `GET /company/standing` (`StandingMemberGuard`) | `GET /billing` |
+| --- | --- | --- |
+| 403 `company_required`, "Choose a company to continue." | No open company, or it is unknown or deleted | The same (TenantGuard), and a company deleted after the guard ran |
+| 403 `not_a_member`, "You are no longer a member of this company. Sign in again." | The membership was removed | The same (TenantGuard) |
+| 403 `product_not_enabled`, "Your company does not have this product." | The host's product header names a product the company lacks; no header skips the check | The same (TenantGuard) |
+| 503 `company_maintenance`, 503 `company_unavailable`, 403 `company_suspended` | Never: these are answered as a state | TenantGuard, before the handler. A read-only company may read |
+| 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role." | Never | A disabled person (PermissionGuard) |
+| 404 `not_found`, "Not Found" | Never | `settings.billing` off, for everyone, the Owner included, before the Owner check |
+| 403 `forbidden`, "Only an Owner can see billing." | Never | Anyone but the Owner (`BILLING_OWNER_ONLY_MESSAGE`) |
+
+Only the 200 answers carry `Cache-Control: no-store`; a refusal holds no company data.
+
+**`CompanyStanding`** is `{ state }`, one of five words, the same for every member: what TenantGuard does to the member's next company request, in TenantGuard's order (shared `companyStandingState`).
+
+| `state` | When (control rows only) | What TenantGuard does to a company route |
+| --- | --- | --- |
+| `maintenance` | Maintenance mode on, whatever else | 503 `company_maintenance` |
+| `unavailable` | The database is provisioning, migrating or failed, or there is no database row | 503 `company_unavailable` |
+| `locked` | Past the binding ladder's read-only window (ADR 0033) | 403 `company_suspended` |
+| `read_only` | In a read-only window (suspended, cancelled, a lapsed plan or an ended trial), or the database is `read_only` | Reads pass; a write gets 403 `company_read_only` |
+| `full` | Otherwise | Reads and writes pass |
+
+It never says why (no billing reason, date, plan, status word or maintenance reason) and has no Owner flag. A database row that is `ready` reads `full` even when the database can't be reached; company routes then fail with their own errors.
+
+**`CompanyBilling`** is `{ status, phase, subscriptions, limits, notice }`:
+- `status`: `tenants.status` as stored; `phase`: `full` or `read_only` (`companyPhase`, as TenantDirectory reads it; a locked company never reaches the route);
+- `subscriptions`: the live subscription rows, oldest first, each `{ planName, product, interval, currentPeriodStart, currentPeriodEnd, standing }`, with ISO moments and `standing` one of `current`, `overdue`, `past_due`, `trial`, `trial_ended`, `cancelled` or `unknown`. `[]` for a fresh trial and when every row is deleted;
+- `limits`: `{ userLimit, branchLimit }`, as `PlanLimits` works them out; null is no limit, and the branch limit is stored, not enforced;
+- `notice`: null, `{ kind: "payment_overdue", since, readOnlyFrom }` (from the first overdue day of the 14-day grace, or while past due), or `{ kind: "read_only", reason, since, lockedFrom }` with `reason` one of `suspended`, `cancelled`, `payment_lapsed`, `trial_ended`, `database` or `account`. Dates are ISO moments or null, found from `companyPhase` itself (`phaseDates`).
+
+**Never returned:** a price, a subscription id, a plan key, `userLimitOverride` or `branchLimitOverride`, a user id, seats in use or payment details. The row type the view is built from has no price.
+
+**Support access** stays on the routes in "Users, roles, step-up, invitations and support access", unchanged. The Owner's panel in Settings → Users lists, approves (step-up) and revokes; while standing is `read_only` it shows no actions, because TenantGuard refuses both writes then.
 
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
@@ -568,6 +613,8 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `updateSettings(section, value)` | `PUT /settings/:section` | Replaces one section; audited with a before/after summary. |
 | `getDefaultSettings()` | `GET /settings/defaults` | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. |
 | `resetSettings(section)` | `DELETE /settings/:section` | Restores one section to the company's original values; audited. |
+| `getCompanyStanding()` | `GET /company/standing` | `CompanyStanding` `{ state }`, read through `companyStandingFromWire`: an unknown or missing state reads `unavailable`, extra fields are dropped. The (app) layout also asks it on the server, with the host's product header. The demo always answers `{ state: "full" }` (ADR 0054). |
+| `getCompanyBilling()` | `GET /billing` | `CompanyBilling`, the Owner's only. The demo shows the stand-in plan with standing `current` and no notice, reads no clock, and refuses with "This feature is switched off." or "Only an Owner can see billing.". |
 
 ## Records
 
@@ -589,6 +636,9 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `resetRole(id)` | `POST /roles/:id/reset` | Default roles only, never Owner. Restores the shipped permissions (inside the product), scope, name and description, through the same no-escalation check as a save. Audited. |
 | `deleteRole(id)` | `DELETE /roles/:id` | Default roles cannot be deleted; roles still held cannot be deleted. |
 | `recordAudit(entry)` | `POST /audit` | Appends an entry as the signed-in user. |
+| `listSupportGrants()` | `GET /support-grants` | The Owner's list of the company's support requests (`CompanySupportGrant[]`). The demo lists the console's requests for the open company (local storage `platform-support`), with the API's Owner rule and message (ADR 0054). |
+| `approveSupportGrant(grantId)` | `POST /support-grants/:id/approve` | After a step-up in api mode. An id that isn't a UUID is never sent and rejects with "This request is no longer waiting for approval.". The demo runs `supportGrantDecisionRefusal` and writes "Approved support access" and the console's `support.approved` row. |
+| `revokeSupportGrant(grantId)` | `POST /support-grants/:id/revoke` | No step-up. An id that isn't a UUID is never sent and rejects with "This access has already ended.". The demo writes "Revoked support access" and `support.revoked`. |
 
 Rule failures throw `DemoRuleError`, a kind of `ApiError` (`lib/api/errors.ts`), with a message written for the presenter; the real client maps HTTP 403 and 409 responses to `ApiError` too.
 
@@ -729,4 +779,5 @@ Every call added by feature batch 3 (docs/specs/feature-batch-03.md), with what 
 ## Errors and the simulated network
 
 - Every failure a person should read is an `ApiError`. Reads surface it through `useApiQuery` (status `error`, with `retry`) and `QueryFallback`; a failed save that a screen does not catch is shown as a toast by `useApiErrorToasts`.
+- `withStandingWatch` (`lib/api/standing-watch.ts`, ADR 0054) wraps the client inside the simulated network. A call that fails with an `HttpApiError` coded `company_maintenance`, `company_unavailable`, `company_suspended` or `company_read_only` tells the shell's `StandingGate` to read `getCompanyStanding()` again (one read in flight plus one trailing), and the same error is rethrown, so the screen handles it as before. `getCompanyStanding` and `getCompanyBilling` are never watched, so a refusal can't start a loop; the demo's errors are plain `ApiError`s and never signal.
 - `withSimulatedNetwork` (`lib/api/network.ts`) wraps the client. The presenter guide's Network control sets normal, slow (each call waits 1.5 s) or offline (each call fails with an `ApiError` before it runs, so nothing is saved). It affects the next request only and resets on reload. `setViewer`, `subscribe`, `today` and `openCompany` are not simulated. A real client needs no change: the wrapper only delays or fails calls.

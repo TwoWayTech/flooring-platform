@@ -42,7 +42,12 @@ export const LIFECYCLE_DAYS = {
 } as const;
 
 const DAY_MS = 86_400_000;
-const RANK: Record<CompanyPhase, number> = { locked: 0, read_only: 1, full: 2 };
+/**
+ * How much access each phase gives, higher is more. `companyPhase` keeps the most generous row's
+ * phase and then the stricter of that and the status's; `lifecycle-dates.ts` and the Owner's
+ * billing notice compare phases with the same ranks (docs/specs/platform-admin.md, part 4).
+ */
+export const PHASE_RANK: Readonly<Record<CompanyPhase, number>> = { locked: 0, read_only: 1, full: 2 };
 
 function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
@@ -106,6 +111,17 @@ function statusPhase(facts: LifecycleFacts, everPaid: boolean, now: Date): Compa
 }
 
 /**
+ * The subscription rows whose ladders count: the live rows, or every row when none is live, so
+ * deleting a lapsed row never restores access (PR #10 review). `companyPhase` counts these, and the
+ * Owner's billing notice explains its phase from the same rows (docs/specs/platform-admin.md,
+ * "The Owner's notice").
+ */
+export function countedSubscriptions(facts: LifecycleFacts): readonly LifecycleSubscription[] {
+  const live = facts.subscriptions.filter((subscription) => !subscription.deleted);
+  return live.length > 0 ? live : facts.subscriptions;
+}
+
+/**
  * Where a company stands in its life cycle (owner decisions, 2026-11-13; blueprint p29, p40):
  * - A paid plan (`active`, `past_due`) keeps full access for 14 days after its period ends, is then
  *   read-only for 30 days, then locked.
@@ -123,14 +139,13 @@ function statusPhase(facts: LifecycleFacts, everPaid: boolean, now: Date): Compa
  */
 export function companyPhase(facts: LifecycleFacts, now: Date = new Date()): CompanyPhase {
   const everPaid = facts.subscriptions.some(wasPaid);
-  const live = facts.subscriptions.filter((subscription) => !subscription.deleted);
-  const counted = live.length > 0 ? live : facts.subscriptions;
+  const counted = countedSubscriptions(facts);
   const fromSubscriptions =
     counted.length === 0
       ? "full"
       : counted
           .map((subscription) => subscriptionPhase(subscription, now))
-          .reduce((best, phase) => (RANK[phase] > RANK[best] ? phase : best));
+          .reduce((best, phase) => (PHASE_RANK[phase] > PHASE_RANK[best] ? phase : best));
   const fromStatus = statusPhase(facts, everPaid, now);
-  return RANK[fromStatus] < RANK[fromSubscriptions] ? fromStatus : fromSubscriptions;
+  return PHASE_RANK[fromStatus] < PHASE_RANK[fromSubscriptions] ? fromStatus : fromSubscriptions;
 }

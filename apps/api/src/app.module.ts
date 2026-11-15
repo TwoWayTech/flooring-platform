@@ -6,6 +6,7 @@ import { ControlDbModule } from "./core/database/control-db";
 import { EmailModule } from "./core/email/email.module";
 import { StorageModule } from "./core/storage/storage.module";
 import { LedgerModule } from "./core/ledger/ledger.module";
+import { BillingModule } from "./modules/billing/billing.module";
 import { ContractsModule } from "./modules/contracts/contracts.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { HrModule } from "./modules/hr/hr.module";
@@ -52,6 +53,7 @@ export class AppModule {
         BrandingModule,
         UsersModule,
         PlatformModule,
+        BillingModule,
         InventoryModule,
         PurchasingModule,
         SalesModule,

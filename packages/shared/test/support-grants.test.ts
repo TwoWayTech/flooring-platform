@@ -9,14 +9,21 @@ import {
   SUPPORT_REASON,
   SUPPORT_REASON_MESSAGE,
   SUPPORT_REQUEST_LIMIT,
+  SUPPORT_CLOSED_MESSAGES,
+  SUPPORT_OWNER_ONLY_MESSAGE,
+  SUPPORT_READ_ONLY_MESSAGE,
+  supportActions,
+  supportGrantDecisionRefusal,
   supportGrantExpiresAt,
   supportGrantStatus,
   supportRequestFacts,
   supportRequestInputProblem,
   supportRequestRefusal,
   supportWindowStart,
+  type SupportGrantDates,
   type SupportGrantFactRow,
 } from "../src/platform/support-grants";
+import type { SupportGrantStatus } from "../src/types/platform";
 
 const NOW = new Date("2026-11-15T10:00:00.000Z");
 const HOUR = 3_600_000;
@@ -213,5 +220,71 @@ describe("supportRequestFacts (platform-admin spec, What a request does: step 4)
 
   it("gives no facts against a first request", () => {
     expect(supportRequestFacts([], COMPANY, NOW)).toEqual({ openForCompany: false, requestsInWindow: 0 });
+  });
+});
+
+describe("supportGrantDecisionRefusal (platform-admin spec part 4, The support-access routes)", () => {
+  const grants: Record<SupportGrantStatus, SupportGrantDates> = {
+    pending: { approvedAt: null, revokedAt: null, expiresAt: at(HOUR) },
+    approved: { approvedAt: at(-HOUR), revokedAt: null, expiresAt: at(HOUR) },
+    revoked: { approvedAt: at(-HOUR), revokedAt: at(-1), expiresAt: at(HOUR) },
+    expired: { approvedAt: null, revokedAt: null, expiresAt: at(-1) },
+  };
+
+  it("lets the Owner approve only a pending grant", () => {
+    expect(supportGrantDecisionRefusal(grants.pending, "approve", NOW)).toBeNull();
+    for (const status of ["approved", "revoked", "expired"] as const) {
+      expect(supportGrantDecisionRefusal(grants[status], "approve", NOW), status).toBe("grant_closed");
+    }
+  });
+
+  it("lets the Owner revoke a pending or approved grant", () => {
+    expect(supportGrantDecisionRefusal(grants.pending, "revoke", NOW)).toBeNull();
+    expect(supportGrantDecisionRefusal(grants.approved, "revoke", NOW)).toBeNull();
+    for (const status of ["revoked", "expired"] as const) {
+      expect(supportGrantDecisionRefusal(grants[status], "revoke", NOW), status).toBe("grant_closed");
+    }
+  });
+
+  it("refuses both at an expiry equal to now, and for an expiry that can't be read", () => {
+    for (const step of ["approve", "revoke"] as const) {
+      expect(supportGrantDecisionRefusal({ approvedAt: null, revokedAt: null, expiresAt: NOW }, step, NOW)).toBe(
+        "grant_closed",
+      );
+      expect(supportGrantDecisionRefusal({ approvedAt: null, revokedAt: null, expiresAt: iso(0) }, step, NOW)).toBe(
+        "grant_closed",
+      );
+      expect(
+        supportGrantDecisionRefusal({ approvedAt: null, revokedAt: null, expiresAt: "not a date" }, step, NOW),
+      ).toBe("grant_closed");
+    }
+  });
+});
+
+describe("supportActions (platform-admin spec part 4, the Owner's panel)", () => {
+  it("offers approve and revoke while pending, revoke while approved, nothing once ended", () => {
+    expect(supportActions("pending", false)).toEqual(["approve", "revoke"]);
+    expect(supportActions("approved", false)).toEqual(["revoke"]);
+    expect(supportActions("revoked", false)).toEqual([]);
+    expect(supportActions("expired", false)).toEqual([]);
+  });
+
+  it("offers nothing while the company is read only", () => {
+    for (const status of ["pending", "approved", "revoked", "expired"] as const) {
+      expect(supportActions(status, true), status).toEqual([]);
+    }
+  });
+});
+
+describe("the Owner's support messages", () => {
+  it("are the API's words", () => {
+    expect(SUPPORT_OWNER_ONLY_MESSAGE).toBe("Only an Owner can manage support access.");
+    expect(SUPPORT_CLOSED_MESSAGES).toEqual({
+      approve: "This request is no longer waiting for approval.",
+      revoke: "This access has already ended.",
+    });
+    expect(SUPPORT_READ_ONLY_MESSAGE).toBe(
+      "Support access can't be changed while your company's account is read only. Requests end on their own at the time shown.",
+    );
   });
 });

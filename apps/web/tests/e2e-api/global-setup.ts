@@ -1,4 +1,10 @@
-import { removePlatformAdmin, removeSupportGrants, resetAuthState } from "@workspace/db/testing";
+import {
+  clearTestStanding,
+  removePlatformAdmin,
+  removeSupportGrants,
+  removeTestSupportAgent,
+  resetAuthState,
+} from "@workspace/db/testing";
 import { OWNER_EMAIL, SEEDED_EMAILS } from "./accounts";
 
 /**
@@ -14,4 +20,9 @@ export default async function globalSetup(): Promise<void> {
   await removePlatformAdmin(url, OWNER_EMAIL);
   // ...and its support requests, which the open-grant and 24-hour limits would count (platform-support.spec.ts).
   await removeSupportGrants(url, OWNER_EMAIL);
+  // ...and the test-only support requester and its grants (company-standing.spec.ts).
+  await removeTestSupportAgent(url);
+  // A crashed run may have left Summit in maintenance or past its period; only toward full use, and logged.
+  const changed = await clearTestStanding(url, "summit");
+  if (changed.length > 0) console.info(`global-setup: Summit's standing was reset: ${changed.join("; ")}.`);
 }

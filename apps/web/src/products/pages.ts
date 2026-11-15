@@ -1,11 +1,13 @@
 import { featureOn, pagePatternScore, type Access, type PermissionKey, type ProductKey } from "@workspace/shared";
-import { inThisBuild, PRODUCTS } from "./index";
+import { inThisBuild, itemAllows, PRODUCTS } from "./index";
 
 /** A page or view and the permissions that open it; holding any one is enough. */
 interface PageRule {
   /** Same patterns as feature screens: "/path", "/path?view=x" or "/path/*". */
   pattern: string;
   anyOf: PermissionKey[];
+  /** Only the company's Owner opens the page, as its menu item says (ADR 0054). */
+  ownerOnly?: boolean;
 }
 
 /**
@@ -39,16 +41,20 @@ const SUB_PAGES: PageRule[] = [
 /** Every page rule of a product: its menus and settings pages, then the views and detail pages. */
 function rulesFor(product: ProductKey): PageRule[] {
   const config = PRODUCTS[product];
-  const menus = [...config.menu, ...config.settings].map((item) => ({ pattern: item.href, anyOf: item.anyOf }));
+  const menus = [...config.menu, ...config.settings].map((item) => ({
+    pattern: item.href,
+    anyOf: item.anyOf,
+    ownerOnly: item.ownerOnly,
+  }));
   return [...menus, ...SUB_PAGES];
 }
 
 /**
- * The permissions a page needs (spec A3: every page maps to a view permission), from the most
- * specific matching rule, or null for pages without a rule (sign-in, the settings home, "/",
- * which sends people to their own first page).
+ * The most specific rule matching a page (spec A3: every page maps to a view permission), or
+ * null for pages without one: sign-in, the settings home, /outbox and "/", which sends people to
+ * their own first page.
  */
-export function pagePermissions(product: ProductKey, href: string): PermissionKey[] | null {
+function bestRule(product: ProductKey, href: string): PageRule | null {
   const [pathname = "", query = ""] = href.split("?");
   if (pathname === "/") return null;
   const view = new URLSearchParams(query).get("view");
@@ -57,19 +63,24 @@ export function pagePermissions(product: ProductKey, href: string): PermissionKe
     const score = pagePatternScore(rule.pattern, pathname, view);
     if (score > (best?.score ?? 0)) best = { rule, score };
   }
-  return best?.rule.anyOf ?? null;
+  return best?.rule ?? null;
 }
 
-/** Whether the access may open a page: it holds one of the page's permissions, or the page has none. */
+/**
+ * Whether the access may open a page: the page's rule allows it (`itemAllows`: the Owner for an
+ * Owner-only page, else one of its permissions), or the page has no rule.
+ */
 export function canOpenPage(product: ProductKey, href: string, access: Access): boolean {
-  const needed = pagePermissions(product, href);
-  return !needed || needed.some((key) => access.permissions.has(key));
+  const rule = bestRule(product, href);
+  return !rule || itemAllows(rule, access);
 }
 
 /** The pages of a product whose feature is on and that exist in this build, for the effective access preview. */
-export function pageList(product: ProductKey): { label: string; href: string; anyOf: PermissionKey[] }[] {
+export function pageList(
+  product: ProductKey,
+): { label: string; href: string; anyOf: PermissionKey[]; ownerOnly?: boolean }[] {
   const config = PRODUCTS[product];
   return [...config.menu, ...config.settings]
     .filter((item) => inThisBuild(item) && item.features.some((key) => featureOn(key)))
-    .map(({ label, href, anyOf }) => ({ label, href, anyOf }));
+    .map(({ label, href, anyOf, ownerOnly }) => ({ label, href, anyOf, ownerOnly }));
 }

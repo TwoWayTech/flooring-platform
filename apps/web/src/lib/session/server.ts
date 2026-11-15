@@ -1,10 +1,11 @@
 import { cookies, headers } from "next/headers";
-import type { ProductKey } from "@workspace/shared";
+import type { CompanyStanding, ProductKey } from "@workspace/shared";
 import { isDemoMode } from "../data-source";
 import { PRODUCT_HEADER } from "../product";
 import { toCompanySession, type SessionContext } from "./api-context";
 import { AUTH_SESSION_COOKIES } from "./auth-cookie";
 import { platformGateOf, type PlatformGate } from "./platform-gate";
+import { serverStandingOf } from "./server-standing";
 import { SESSION_COOKIE, verifySession, type DemoSession } from "./session";
 
 /** The product this request's host serves, as resolved by the proxy. */
@@ -24,17 +25,34 @@ export async function getSessionContext(): Promise<SessionContext | null> {
 
 /**
  * Calls apps/api from the server with the browser's auth cookies and host, as the browser would;
- * null when no auth cookie was sent, so a signed-out request never reaches the API.
+ * null when no auth cookie was sent, so a signed-out request never reaches the API. `extraHeaders`
+ * go with the request too, such as the host's product for the standing read.
  */
-async function fetchWithSession(path: string): Promise<Response | null> {
+async function fetchWithSession(path: string, extraHeaders: Record<string, string> = {}): Promise<Response | null> {
   const jar = await cookies();
   const sent = AUTH_SESSION_COOKIES.filter((name) => jar.has(name)).map((name) => `${name}=${jar.get(name)?.value}`);
   if (sent.length === 0) return null;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
   return fetch(`${apiUrl}${path}`, {
-    headers: { cookie: sent.join("; "), "x-forwarded-host": (await headers()).get("host") ?? "" },
+    headers: { ...extraHeaders, cookie: sent.join("; "), "x-forwarded-host": (await headers()).get("host") ?? "" },
     cache: "no-store",
   });
+}
+
+/**
+ * Where the open company stands, asked on the server before the shell renders
+ * (docs/specs/platform-admin.md, part 4, "On a full page load"; ADR 0054). The host's product goes
+ * with it, so the API answers as it would answer the browser. Null in demo mode, with no session, or
+ * when the API can't answer. This only picks the screen: the API's guards decide every request, as
+ * with `getPlatformGate`.
+ */
+export async function getServerStanding(): Promise<CompanyStanding | null> {
+  if (isDemoMode()) return null;
+  const response = await fetchWithSession("/company/standing", { [PRODUCT_HEADER]: await requestProduct() }).catch(
+    () => undefined,
+  );
+  if (!response) return null;
+  return serverStandingOf(response.status, await response.json().catch(() => null));
 }
 
 /**

@@ -1,10 +1,10 @@
 # Platform admin: companies and access on the API (draft spec)
 
-**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and the top row of docs/blueprint-delta.md; see "Part 3: audit and support". Where the build settled a point this draft left open, the text below says what was built.
+**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and its row of docs/blueprint-delta.md; see "Part 3: audit and support". Part 4 is built on `feat/billing-company-standing` (PR #38) under the same rule, and recorded in ADR 0054 and the top row of docs/blueprint-delta.md; see "Part 4: the company side". Where the build settled a point this draft left open, the text below says what was built.
 
 Drafted by Claude on 2026-11-15 as P11 step 1 for module 17, "Platform admin and manual billing" (docs/real-build-plan.md). docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, the "Change company access" workflow, rules 18 and 24, and the edge cases. It has no server design and nothing on billing.
 
-The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052 (ADR 0053 for part 3).
+The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052 (ADR 0053 for part 3, ADR 0054 for part 4).
 
 Sources:
 - blueprint p4 to p7: the layers of control, super-admin "Company access", and role rules 3, 6 and 8;
@@ -19,7 +19,7 @@ Sources:
 | 1 | `feat/platform-access-api` | The platform guard, `/platform/me`, the companies list and detail, change company access, the restricted directory, and the support-access request behind the guard. The /admin console reads and writes the API in api mode | Built in PR #34; acceptance criteria 1 to 18 |
 | 2 | `feat/platform-manual-billing` | Plans as data; suspend, reinstate and cancel. Subscriptions and payments wait for the owner | Later, see "Parts 2 to 4" |
 | 3 | `feat/platform-audit-support` | The platform audit viewer, support requests in the console with limits, database and maintenance columns, migrate.ts hardening, and the read-only access page for the support role | Built in PR #36 (ADR 0053); acceptance criteria 19 to 39 |
-| 4 | `feat/billing-company-standing` | Company side: maintenance and suspended screens, the Owner's banner, a read-only billing page, the Owner's support-access panel | Later |
+| 4 | `feat/billing-company-standing` | The company side: `GET /company/standing` and `GET /billing`, the maintenance, unavailable and suspended screens, the Owner's banner, a read-only billing page (new key `settings.billing`), the Owner's support-access panel | Built in PR #38 (ADR 0054); acceptance criteria 40 to 63 |
 
 ## Who uses it
 
@@ -636,7 +636,7 @@ The same screens run on DemoStore, through the same shared rules:
 - **The demo admin** has the owner role. Its entries show "Platform admin", and "Not recorded" for address and device.
 - **A save that changes nothing writes nothing:** no company log entry and no platform row. This matches the API.
 - **Reset demo** clears both keys.
-- **No Owner approves in the demo,** so a demo request stays pending until it expires (as built).
+- **The Owner approves and revokes in the demo's Settings → Users** since part 4 (PR #38). Before it, a demo request stayed pending until it expired.
 
 ### Validations and messages (part 3)
 
@@ -726,7 +726,7 @@ Settled while building, all in ADR 0053.
 - **The demo cursor** is looked up among all entries, whatever the filters, as the API does.
 - **The web's unit tests** compile JSX in `apps/web/vitest.config.ts` (`oxc`), because tsconfig's `jsx: "preserve"` kept vitest from importing `.tsx` files. No dependency was added. They run `tests/unit/**/*.test.{ts,tsx}`, and tsconfig includes `tests/**/*.tsx`, so a test can write JSX.
 - **The companies list is wider:** at 1440 px it scrolls sideways inside its table because of the two new columns; the page doesn't.
-- **"Approves it in Settings":** the panel and the toast keep the spec's words, but the web has no Owner screen for support access yet (the API's `GET /support-grants`, approve and revoke exist). Part 4 builds it.
+- **"Approves it in Settings":** the panel and the toast keep the spec's words. When part 3 was built the web had no Owner screen for support access (only the API's `GET /support-grants`, approve and revoke). Part 4 built it (Settings → Users, Support access panel, PR #38), so the words hold while the company is in full use.
 
 ### Edge cases and known limits (part 3)
 - **Old rows still hold the text** in the control database: any SQL user, backup or dump sees it. Only the console is redacted (owner question 13).
@@ -811,6 +811,636 @@ Settled while building, all in ADR 0053.
 - 33: `apps/api/test/platform-audit.int.test.ts` (the newest failure code while `last_error` is set, never the text), with the labels in `apps/web/tests/unit/platform-audit.test.tsx`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests), `packages/db/test/platform-alerts.test.ts` and `packages/db/test/migrate-report.test.ts` (the CLI line, including a failed alert).
 - 37: `apps/web/tests/e2e-api/platform-support.spec.ts`. 38: `apps/web/tests/e2e/admin.spec.ts`, with /admin/audit and the Support tab in `tests/e2e/screens.ts` (axe and console) and the 375 px loop in `tests/e2e/responsive.spec.ts`; the no-op save in `apps/web/tests/unit/demo-platform.test.ts`. 39: `apps/web/tests/unit/platform-audit.test.tsx` (the locks) and `apps/web/tests/unit/platform-console.test.ts` (`saveProblem` before the step-up).
 
+## Part 4: the company side
+
+**Built under the same overnight rule** on `feat/billing-company-standing` (PR #38), from main at `c763938` (parts 1 and 3 merged); still a draft until the owner approves it. It is recorded in ADR 0054 and the top row of docs/blueprint-delta.md. It takes a new number because it adds a session-only route outside /auth and /platform, and a new feature key. Where part 4 departs from the outline or from the specs it builds on, it is on the safer side. Each departure is listed in "Safer than the outline (part 4)". Points the build settles go in "As built (part 4)".
+
+Sources:
+- **Blueprint:**
+  - p7, role rule 6 (support access, approved by the Owner);
+  - p12 (the maintenance banner, a full-page screen since the owner's decision of 2026-11-13);
+  - p23 steps 4 and 5 (past due and the Owner's banner) and p24 (plans and limits);
+  - p29 (support access; a company that paid and cancels is read only for 90 days) and p40 (suspended).
+- **ADRs:** 0030 (tenancy and the session-only routes), 0033 (the life cycle and maintenance), 0034 (support access), 0052 ("Later parts", part 4; "For the owner" 1, 2 and 7) and 0053 ("Deferred": the Owner's panel).
+- **STATUS:** the platform admin residual risks, among them "The console says the Owner approves 'in Settings', but the web has no Owner screen for support access until part 4."
+
+**Bounds:**
+- **No schema change.** No new or altered table, column, index or trigger, and no migration. Part 4 reads the control tables that TenantDirectory and `PlanLimits` already read, as they are. packages/db gains test-only helpers.
+- **No new dependency.** The overlay uses the existing Radix dialog through packages/ui.
+- **No change in `apps/api/src/core/auth` or `core/tenancy`,** not even a comment. Part 4 only imports their existing exports:
+  - `TENANCY_REFUSALS`;
+  - `TenantDirectory`, `isDatabaseUsable`, `isReadOnly` and the `CompanyAccess` type;
+  - `SessionOnly` and the `AuthSession` type;
+  - `companyMaintenance()` and `companyUnavailable()`, in tests only.
+
+  `git diff --stat origin/main -- apps/api/src/core/auth apps/api/src/core/tenancy` stays empty.
+- **Out of scope:**
+  - billing writes (ADR 0052, "For the owner" 7);
+  - using a support grant (question 2);
+  - the admin host (question 1);
+  - prices, invoices and payment details.
+
+### Stories (part 4)
+
+12. As anyone in a company that is under maintenance, whose data isn't available, or that is locked, I see one plain full-page screen that says so, with Try again and Sign out, instead of a page of errors.
+13. As the company's Owner, I see a banner when a payment is overdue or the account is read only, with the date it becomes read only or locks, and a link to Billing.
+14. As the company's Owner, I open Settings → Billing and read my plan, its current period, its standing and the limits. Nothing there can be changed.
+15. As the company's Owner, I see the support-access requests in Settings → Users, and I approve one with a step-up or revoke it. I'm told that support can't see my data yet.
+
+### Who may call what (part 4)
+
+| What | The Owner | Any other member | Step-up |
+| --- | --- | --- | --- |
+| Read the company's standing (`GET /company/standing`) | Yes | Yes, the same answer, a disabled member included | No |
+| Read billing (`GET /billing`) | Yes | No: 403 `forbidden`, "Only an Owner can see billing." | No |
+| List support requests (`GET /support-grants`, unchanged) | Yes | No: 403 `forbidden`, "Only an Owner can manage support access." | No |
+| Approve a request (`POST /support-grants/:id/approve`, unchanged) | Yes, while the company is in full use | No, as above | Yes |
+| Revoke a request (`POST /support-grants/:id/revoke`, unchanged) | Yes, while the company is in full use | No, as above | No |
+
+- **"The Owner"** means `access.isOwner`, read from the company database (`AccessService`). It is false for a disabled profile, and a disabled Owner gets PermissionGuard's 403 `forbidden` before any Owner check.
+- **Standing has no Owner flag** and no billing words, for two reasons:
+  - disabling a person writes only the company database's `user_profiles`, so a disabled former Owner keeps `owner` in the control `member` row;
+  - confirming an active Owner needs the company database, which the standing route must not open.
+- **Platform admins** get nothing new. Part 4 adds no /platform route.
+- **The web follows the API.** The Billing menu item, the page, the banner and the Support access panel show only for the Owner. The API decides again on every request.
+
+### Endpoints (part 4)
+
+| Method and path | Access | Who | Audit | Answer |
+| --- | --- | --- | --- | --- |
+| `GET /company/standing` | Session-only, behind `StandingMemberGuard` at class level | Any member of the session's company | None | `CompanyStanding`, with `Cache-Control: no-store` |
+| `GET /billing` | Company route: TenantGuard and PermissionGuard (`@AnyCompanyMember()`), then the switch and the Owner check | The Owner | None | `CompanyBilling`, with `Cache-Control: no-store` |
+| `GET /support-grants` (unchanged) | Company route | The Owner | None | `CompanySupportGrant[]`, newest first, at most 100 |
+| `POST /support-grants/:id/approve` (unchanged) | Company route | The Owner, after a step-up | `support.approved` and "Approved support access" | 204 |
+| `POST /support-grants/:id/revoke` (unchanged) | Company route | The Owner | `support.revoked` and "Revoked support access" | 204 |
+
+- **Where:** both new routes live in a new module, `apps/api/src/modules/billing`. `CompanyStandingController` owns `company/standing` and `BillingController` owns `billing`.
+- **No company id:** neither route takes one. The company is always the verified session's (`AuthSession.companyId`, Better Auth's `activeOrganizationId`). No path, query, body or header id is read.
+
+#### GET /company/standing
+
+**Why session-only.** TenantGuard refuses before any company handler runs:
+- 503 `company_maintenance` in maintenance;
+- 503 `company_unavailable` with an unusable database;
+- 403 `company_suspended` when locked.
+
+So a company route can't answer in the very states the screens need. Answering through TenantGuard would need a new access level or a bypass flag in core/tenancy, which part 4 doesn't make. Instead:
+- **The controller** is `@SessionOnly()` at class level and owns one path.
+- **`StandingMemberGuard`,** at class level, repeats TenantGuard's membership checks on control rows only. A handler added to the controller later inherits it (deny by default, the reasoning of ADR 0052).
+- **No company database:** the guard and the handler never build a TenantContext, never call TenantConnectionService and never open the company database. Lint forbids those imports in the module (see "Lint (part 4)").
+- **Nothing else changes:** no global guard or interceptor is added. TenantGuard and PermissionGuard step aside only for routes that aren't company routes, and only this controller adds one.
+
+It is the only session-only route outside /auth and /platform.
+
+**Refusal order.** SessionGuard runs first, unchanged. Then `StandingMemberGuard` runs in TenantGuard's order. Each of its refusals is `{ code, message }` with TenantGuard's own words (`TENANCY_REFUSALS`), so the route reveals nothing TenantGuard wouldn't.
+
+| Step | When | Answer |
+| --- | --- | --- |
+| 1 | No session | 401 `unauthenticated`, "Sign in to continue."; or 401 `session_expired` with the timeout's message |
+| 2 | A session that must enrol MFA (the route doesn't allow enrolment) | 403 `mfa_enrolment_required`, "Set up two-step sign-in to continue." |
+| 3 | The session has no open company | 403 `company_required`, "Choose a company to continue." |
+| 4 | The open company is unknown or deleted | 403 `company_required`, as above |
+| 5 | The person is not a member of it | 403 `not_a_member`, "You are no longer a member of this company. Sign in again." |
+| 6 | The host product header (`x-demo-product`) names a product the company lacks | 403 `product_not_enabled`, "Your company does not have this product." A request without the header skips this step, as in TenantGuard |
+| 7 | Otherwise | 200 with the state |
+
+Steps 4 and 5 read control rows only (`TenantDirectory.access` and `isMember`).
+
+**The answer.**
+- **Shape:** `CompanyStanding = { state }`. `state` is `full`, `read_only`, `locked`, `maintenance` or `unavailable`. There are no other fields.
+- **How it is computed:** the shared `companyStandingState` takes TenantDirectory's own facts and predicates (`maintenanceMode`, `isDatabaseUsable`, `isReadOnly` and the phase).
+- **Order:** TenantGuard's. Maintenance first, then unavailable, then locked, then read only, then full.
+
+| Company (control rows) | `state` | What TenantGuard does to a company route |
+| --- | --- | --- |
+| No subscription rows, status trial or active | `full` | Reads and writes pass |
+| A live row inside its ladder's full window: a trial before its end; `active` or `past_due` before its end plus 14 days; a cancelled row before its end | `full` | They pass |
+| Every counted row past its full window and still inside its read-only window | `read_only` | GET 200; a write gets 403 `company_read_only` |
+| `suspended`, never paid, for less than 30 days | `read_only` | As above |
+| `suspended` after paying | `read_only` until the counted rows' own ladder locks (the most generous paid row's end plus 44 days) | As above |
+| `cancelled` for less than 30 days (never paid) or 90 days (paid), unless a counted row's ladder locks sooner | `read_only` | As above |
+| Database status `read_only` | `read_only` | As above |
+| Past the binding ladder's read-only window | `locked` | 403 `company_suspended` |
+| Maintenance mode on (`move`, `migration_failed` or no reason), whatever else | `maintenance` | 503 `company_maintenance` |
+| Database `provisioning`, `migrating` or `failed`, or no database row | `unavailable` | 503 `company_unavailable` |
+
+"Counted rows" are the live (not deleted) subscription rows, or every row when none is live (`countedSubscriptions`, ADR 0033).
+
+**What it reveals.**
+- **To every member, the same:** one of five words about the session's own company. The Owner, a manager, a sales member and a disabled member get the same body.
+- **Nothing new:** the session learns each word from TenantGuard anyway, on any company route. A GET shows maintenance, unavailable and locked, and a write shows read only.
+- **Never:** anything about billing (no reason, date, plan or status word), and the maintenance reason.
+- **Non-members** get 403 `not_a_member`. Other companies can't be named.
+
+**No audit and no switch.**
+- It is a read, and session-only routes skip the AuditInterceptor.
+- It is how the shell shows TenantGuard's own refusals, like `GET /auth/context`, so turning `settings.billing` off doesn't touch it.
+
+#### GET /billing
+
+**Refusal order.**
+1. **SessionGuard, unchanged:** 401, or 403 `mfa_enrolment_required`, as above.
+2. **TenantGuard, unchanged:**
+   - 403 `company_required`, `not_a_member` or `product_not_enabled`;
+   - 503 `company_maintenance` in maintenance;
+   - 503 `company_unavailable` with an unusable database;
+   - 403 `company_suspended` when locked.
+
+   A read-only company is allowed, because this is a GET.
+3. **PermissionGuard:** the route is `@AnyCompanyMember()`. A disabled person gets 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role."
+4. **The switch:** while `settings.billing` is off, everyone gets 404 `{ code: "not_found", message: "Not Found" }` (`requireFeature`), the Owner included. This runs before the Owner check (CLAUDE.md rule 13).
+5. **The Owner check:** anyone else gets 403 `{ code: "forbidden", message: "Only an Owner can see billing." }` (`BILLING_OWNER_ONLY_MESSAGE` in packages/shared).
+6. **A company deleted since the guard ran:** 403 `company_required`, "Choose a company to continue."
+
+**What it reads.** Control tables only, as they are:
+- **`tenants`:** `status` and `status_changed_at` (not deleted).
+- **`tenant_databases`:** `status`, through a left join, for the read-only database case.
+- **`tenant_subscriptions`:** every row, deleted ones too, with `status`, `interval`, `current_period_start`, `current_period_end`, `price`, `deleted_at` and the plan. `price` is read only to tell a paid row from a trial, as the life-cycle rule does, and it never leaves the API.
+- **`plans` and `products`:** the plan name and the product key.
+- **The limits,** from `PlanLimits.limitsOf`: each live row's override, else its plan's limit, then the largest across rows.
+
+These are the columns TenantDirectory reads for the phase, so the page and the guards agree (B-12).
+
+**The answer, `CompanyBilling`:**
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `status` | `trial`, `active`, `past_due`, `suspended` or `cancelled` | `tenants.status` as stored |
+| `phase` | `full`, `read_only` or `locked` | `companyPhase(facts, now)`, the rule TenantDirectory uses. `locked` never reaches the route |
+| `subscriptions` | `CompanyBillingSubscription[]` | The live rows, oldest first (`created_at`, then `id`). `[]` for a fresh trial, and when every row is deleted |
+| `limits` | `{ userLimit, branchLimit }`, each a number or null | Null means no limit. The branch limit is stored, not enforced |
+| `notice` | `OwnerBillingNotice` or null | See "The Owner's notice" |
+
+**`CompanyBillingSubscription`:** `{ planName, product, interval, currentPeriodStart, currentPeriodEnd, standing }`.
+- `product` is a `ProductKey`.
+- `interval` is `monthly` or `yearly`.
+- The period dates are ISO moments.
+- `standing` comes from `subscriptionStanding`:
+
+  | Row status | Period end after now | Period end at or before now |
+  | --- | --- | --- |
+  | `trial` | `trial` | `trial_ended` |
+  | `active` | `current` | `overdue` |
+  | `past_due` | `past_due` | `overdue` |
+  | `cancelled` | `cancelled` | `cancelled` |
+  | Anything else, or an end that can't be read | `unknown` | `unknown` |
+
+**Never returned:**
+- a price, a subscription id or a plan key;
+- `userLimitOverride` or `branchLimitOverride`;
+- a user id;
+- seats in use, which live in the company database;
+- payment details, because there is no payment record (question 7).
+
+The view's row input type has no price, so the code can't leak one.
+
+**The Owner's notice** (`ownerBillingNotice`), from the phase, `phaseDates` and the counted rows:
+
+```ts
+type OwnerBillingNotice =
+  | { kind: "payment_overdue"; since: string | null; readOnlyFrom: string | null }
+  | { kind: "read_only"; reason: ReadOnlyReason; since: string | null; lockedFrom: string | null };
+type ReadOnlyReason = "suspended" | "cancelled" | "payment_lapsed" | "trial_ended" | "database" | "account";
+```
+
+- **In full use,** the first of these that holds:
+  1. The database is read only: `read_only` with reason `database`, both dates null. It explains a refusal happening now.
+  2. A counted `active` or `past_due` row has ended, and the company becomes read only within 14 days: `payment_overdue`. `since` is the latest ended paid row's end; `readOnlyFrom` is set.
+  3. The company's status is `past_due`, or a counted row is (blueprint p23 step 4; nothing writes `past_due` today): `payment_overdue`. `since` is the latest ended paid row's end, or null; `readOnlyFrom` is set when the company ever becomes read only.
+  4. Otherwise null. This includes a company where another row keeps it in full use past the grace.
+- **Read only:** `read_only` with `lockedFrom`, and the first reason that holds:
+  1. status `suspended`: `suspended`;
+  2. status `cancelled`: `cancelled`;
+  3. a counted row is `cancelled`: `cancelled`;
+  4. every counted row is a trial: `trial_ended`;
+  5. a counted row is `active` or `past_due`: `payment_lapsed`;
+  6. the database is read only: `database`;
+  7. otherwise: `account`.
+
+  `since` is the latest counted `active` or `past_due` row's end for `payment_lapsed`, so a trial that ended later is never named as the plan's period; the latest counted row's end for `trial_ended`, where every counted row is a trial; and null otherwise. In a read-only phase every paid row has ended, so `payment_lapsed` always has one; with none, `since` is null and the copy says the period has ended without a date.
+- **Locked:** null. The route is refused before it runs.
+
+**The dates** (`phaseDates` in `packages/shared/src/permissions/lifecycle-dates.ts`):
+- **What they are:** `readOnlyFrom` and `lockedFrom` are the first moments at which `companyPhase` gives that phase or a stricter one. Each is null when the company is already there, or never gets there.
+- **How they are found:** a binary search on whole milliseconds between now and a horizon. The horizon is the latest of now, the status change and every row's period end, plus the sum of every `LIFECYCLE_DAYS` value plus one day (165 days today).
+- **Why it is exact:**
+  - after the horizon every ladder is on its last step, so the phase no longer changes;
+  - for fixed facts the phase only ever steps down, so a binary search finds the boundary `companyPhase` itself uses;
+  - no period length is assumed, so a yearly row is covered;
+  - there is no second copy of the ladder.
+- **A consequence:** every counted row's ladder ends in `locked`, so `lockedFrom` is set whenever the phase is read only.
+
+**No audit,** and `Cache-Control: no-store`.
+
+#### The support-access routes (unchanged)
+The Owner's panel uses the existing routes (docs/specs/settings-users-access.md, "Support access"). Part 4 changes no behaviour there:
+- **Messages:** the service takes them from packages/shared (`SUPPORT_OWNER_ONLY_MESSAGE`, `SUPPORT_CLOSED_MESSAGES`), byte for byte.
+- **The view type** becomes the shared `CompanySupportGrant`: `{ id, adminName, reason, requestedAt, expiresAt, status }`. `status` comes from the shared `supportGrantStatus`: pending, approved, revoked or expired. There is no approver and no admin id.
+- **Approve** needs a pending, unexpired grant of this company and a step-up from the last 5 minutes.
+- **Revoke** needs a pending or approved, unexpired grant of this company, and no step-up.
+- **TenantGuard applies to all three,** as to every company route:
+  - 503 in maintenance or with an unusable database;
+  - 403 `company_suspended` when locked;
+  - 403 `company_read_only` on approve and revoke while the company is read only. The list still answers then.
+
+### Validations and messages (part 4)
+
+| Where | Rule | Answer |
+| --- | --- | --- |
+| Both new routes | No session | 401 `unauthenticated`, "Sign in to continue." |
+| | MFA still to set up | 403 `mfa_enrolment_required`, "Set up two-step sign-in to continue." |
+| | No open company, or it is unknown or deleted | 403 `company_required`, "Choose a company to continue." |
+| | Not a member | 403 `not_a_member`, "You are no longer a member of this company. Sign in again." |
+| | The host's product isn't the company's | 403 `product_not_enabled`, "Your company does not have this product." |
+| `GET /billing` (as on every company route) | Maintenance | 503 `company_maintenance`, "Your company's account is under maintenance. Please try again later; your data is safe." |
+| | No usable database | 503 `company_unavailable`, "Your company's data is not available right now. Please try again in a few minutes." |
+| | Locked | 403 `company_suspended`, "Your company's account is suspended, so its data cannot be opened. Your data is kept; contact us to restore access." |
+| | A disabled person | 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role." |
+| `GET /billing` | `settings.billing` off | 404 `not_found`, "Not Found" |
+| | Not the Owner | 403 `forbidden`, "Only an Owner can see billing." |
+| Support routes (unchanged) | Not the Owner | 403 `forbidden`, "Only an Owner can manage support access." |
+| | Approve without a step-up from the last 5 minutes | 403 `step_up_required`, "Confirm it's you with a code from your authenticator app, then try again."; or `step_up_mfa_required`, "Set up an authenticator app or a passkey before you can make this change.", for someone with no factor |
+| | Approve a grant that isn't pending, has expired, or belongs to another company | 409 `grant_closed`, "This request is no longer waiting for approval." |
+| | Revoke a grant that is revoked, has expired, or belongs to another company | 409 `grant_closed`, "This access has already ended." |
+| | A grant id that isn't a UUID | 400 `invalid_request`. The web never sends one: it refuses with the 409's words |
+| | Approve or revoke while the company is read only | 403 `company_read_only`, "Your company's account is read-only right now, so changes cannot be saved." |
+| The web's panel | The company is read only | No actions, and the note "Support access can't be changed while your company's account is read only. Requests end on their own at the time shown." (`SUPPORT_READ_ONLY_MESSAGE`) |
+| DemoStore | `settings.billing` off | "This feature is switched off." |
+
+### ApiClient (part 4)
+Five methods, in one commented block at the end of `ApiClient` (`apps/web/src/lib/api/contract.ts`), with their own `import type`:
+
+| Method | Sends | Notes |
+| --- | --- | --- |
+| `getCompanyStanding()` | `GET /company/standing` | The answer goes through `companyStandingFromWire`: an unknown or missing state reads `unavailable`, and extra fields are dropped |
+| `getCompanyBilling()` | `GET /billing` | |
+| `listSupportGrants()` | `GET /support-grants` | |
+| `approveSupportGrant(grantId)` | `POST /support-grants/:id/approve` | An id that isn't a UUID names no grant. Nothing is sent, and it rejects with "This request is no longer waiting for approval." |
+| `revokeSupportGrant(grantId)` | `POST /support-grants/:id/revoke` | The same, with "This access has already ended." |
+
+- **The standing watch** (`withStandingWatch`, a Proxy like `withSimulatedNetwork`):
+  - **When it signals:** an ApiClient call fails with an `HttpApiError` whose code is `company_maintenance`, `company_unavailable`, `company_suspended` or `company_read_only`. It signals `StandingGate` and rethrows the same error.
+  - **Never watched:** `getCompanyStanding`, because it is what a signal triggers, and `getCompanyBilling`, because a billing reader must never trigger one.
+  - **Untouched:** synchronous results (`subscribe`, `today`, `setViewer`) come back as they are. The demo's errors are plain `ApiError`s, so they never signal.
+- **DemoStore** implements all five (see "Demo mode").
+- **The factories** in `api-methods.ts` take `(http)` only.
+
+### Screens (part 4)
+
+#### Api mode
+
+**On a full page load** (`apps/web/src/app/(app)/layout.tsx`):
+- **The server asks.** After the session and the platform redirect, the layout asks `GET /company/standing` on the server (`getServerStanding`). It forwards the host's product header, so the server's answer equals the browser's.
+- **Blocked** (`maintenance`, `unavailable` or `locked`): the layout renders only the standing screen, with no shell, no menus and no workspace.
+- **Otherwise:** the shell renders inside `StandingGate`, which starts from that answer.
+- **Bad answers:**
+  - a 200 with an unknown state reads `unavailable` (deny by default);
+  - a non-200 or a network failure gives no answer. The shell renders, the API's guard still refuses each request, and the client re-checks on the first refusal.
+
+**The standing screens** (`STANDING_SCREENS` in packages/shared). There is one screen per state, the same for every member, the Owner included. It has no maintenance reason, no dates and no billing words (question 21).
+
+| State | Icon | Title | Text (the API's own) |
+| --- | --- | --- | --- |
+| `maintenance` | Wrench | "Under maintenance" | "Your company's account is under maintenance. Please try again later; your data is safe." |
+| `unavailable` | Cloud off | "Not available right now" | "Your company's data is not available right now. Please try again in a few minutes." |
+| `locked` | Lock | "Account suspended" | "Your company's account is suspended, so its data cannot be opened. Your data is kept; contact us to restore access." |
+
+- **Buttons:** "Try again" and "Sign out" (outline). They wrap at 375 px.
+- **Page mode** (on load): a card centred in `<main id="main">`.
+  - The title is the page's h1, and it takes focus.
+  - Try again asks the server again, and is disabled while it runs.
+- **Look:** warning tokens for maintenance and unavailable, danger tokens for locked. Icons are `aria-hidden`. Tokens only, in both themes, with no sideways scroll at 375 px.
+
+**While a page is open** (`StandingGate`, in `apps/web/src/features/standing/`):
+- **The re-check.** A refusal with one of the four standing codes makes `StandingGate` read standing again. At most one read is in flight, plus one trailing. A failed read keeps what was known.
+- **Blocked:** an alert dialog covers the whole viewport (`role="alertdialog"`, the packages/ui `Dialog`), with the same title, text and buttons.
+  - Escape and a click outside don't close it.
+  - It focuses Try again, traps focus, and hides the rest from assistive technology.
+  - It stacks above any dialog already open.
+  - The command palette closes, and its shortcut pauses.
+- **The open page is never remounted.** The overlay is a sibling of the shell, with no wrapper around the page, so typed input, open dialogs and scroll survive. When the overlay closes, focus goes back where it was.
+- **Try again** reads standing again:
+  - while still blocked, the dialog stays;
+  - once the company is usable, the dialog closes. If a page's read failed meanwhile, the page keeps its own error card, with its own Try again.
+- **No polling.** Re-checks are event-driven, so a company that leaves maintenance stays behind the overlay until Try again or the next refused request.
+- **Not blocking:** `full` and `read_only` show the shell. `not_a_member` and `company_required` keep today's behaviour, a toast or an error card.
+- **Motion:** only the dialog's own fade, which the global `prefers-reduced-motion` rule turns off.
+
+**The Owner's banner** (`OwnerBillingBanner`, inside `<main>`, above the View as banner):
+- **When it shows:** all of these hold:
+  - `settings.billing` is on;
+  - the viewer is the Owner (`access.isOwner`, which follows View as);
+  - the page is not /settings/billing, where the page shows the same notice;
+  - the company isn't blocked;
+  - `GET /billing` gives a notice.
+
+  While loading, on any error, or with a null notice, it shows nothing.
+- **When it re-reads:** only when standing moves into `full` or `read_only` from another known state. It never reacts to a raw refusal, so it can't loop behind the overlay.
+- **Markup:** `<section role="status" aria-label="Account notice">` with an icon, a bold title, the text, and an "Open billing" link to /settings/billing. The `database` reason has no link.
+- **Copy** (`billingNoticeText`):
+  - dates go through `useFormatDate()`, in the browser's time zone;
+  - `{lock}` is " It locks on {lockedFrom}." when `lockedFrom` is set, and nothing otherwise;
+  - the copy never promises the account stays read only.
+
+| Notice | Tone | Title | Text |
+| --- | --- | --- | --- |
+| `payment_overdue` | Warning | "Payment overdue" | "Your plan's period ended on {since}." (with no `since`: "A payment for your plan is overdue."), then " Your company's account becomes read only on {readOnlyFrom} unless it is renewed." when `readOnlyFrom` is set, then " Contact us to renew." |
+| `suspended` | Danger | "Account suspended: read only" | "You and your team can view and export, but not make changes.{lock} Contact us to restore access." |
+| `cancelled` | Danger | "Account cancelled: read only" | "You and your team can view and export, but not make changes.{lock} Contact us to reopen it." |
+| `payment_lapsed` | Danger | "Plan ended: read only" | "Your plan's period ended on {since}, so your company's account is read only." (with no `since`: "Your plan's period has ended, so your company's account is read only."), then {lock}, then " Contact us to renew." |
+| `trial_ended` | Danger | "Trial ended: read only" | "Your trial ended on {since}, so your company's account is read only." (with no `since`: "Your trial has ended, so your company's account is read only."), then {lock}, then " Contact us to choose a plan." |
+| `database` | Warning | "Read only for now" | "Your company's data is read only while we work on its database. Changes can't be saved yet." No link |
+| `account` | Danger | "Read only" | "Your company's account is read only right now, so changes can't be saved. Contact us if this is unexpected." |
+
+**Billing (/settings/billing)**, the Owner's only, read only:
+- **The menu item:** in Settings, Company group, after Company profile. Label "Billing", a credit-card icon, and the description "Your plan, its current period and its limits. Read only, for the Owner." It shows on both hosts, because the HR host has the Company group.
+- **Who sees it.** Menu items gain an `ownerOnly` flag. One rule, `itemAllows(item, access)`, decides:
+  - the settings nav and the settings home;
+  - the command palette;
+  - the page gate (`canOpenPage`);
+  - the access preview.
+
+  An `ownerOnly` item needs `access.isOwner`, and its `anyOf` is empty. A non-Owner who types the address sees "You don't have access to this page." With the switch off, the page shows "This feature is switched off in this demo."
+- **Loading:** "Loading billing". When the read is refused with a standing code, the page asks `StandingGate` to re-check, once, because billing reads aren't watched.
+- **The notice,** when there is one, comes first, without the "Open billing" link. The shell banner is hidden on this page.
+- **Panel "Account":**
+  - "Account status": the console's status pill (Active, Trial, Past due, Suspended or Cancelled);
+  - "Access": the console's phase pill (Full use, Read-only or Locked).
+- **Panel "Plan":** one block per subscription, with:
+  - the plan name, in the display font;
+  - the product's name;
+  - "Billed monthly" or "Billed yearly";
+  - "Current period: {start} to {end}";
+  - the standing text:
+
+    | Standing | Text |
+    | --- | --- |
+    | `current` | "Current period ends {end}" |
+    | `past_due` | "Payment overdue; period ends {end}" |
+    | `overdue` | "Period ended {end}" |
+    | `trial` | "Trial ends {end}" |
+    | `trial_ended` | "Trial ended {end}" |
+    | `cancelled` | "Cancelled" |
+    | `unknown` | "Status unknown" |
+
+  With no subscriptions, a trial reads "No plan yet. Your trial includes every module of your products." Any other company reads "No plan."
+- **Panel "Limits":**
+  - "Users" and "Branches", each a count (`<Num kind="count">`) or "No limit";
+  - "Stored, not enforced yet." under a branch number;
+  - a "See seats in use" link to /settings/users.
+- **Footer:** "This page is read only. To change your plan, renew or pay, contact us. Prices, invoices and payment details aren't shown here yet."
+- **No money is shown** anywhere on the page.
+- **At 375 px:** stacked panels and a one-column list. Tokens only.
+
+**Support access (Settings → Users)**, the Owner's only:
+- **Where:** a panel under the users table on /settings/users, rendered only for the Owner. It sits under that page's switch, `settings.users`.
+- **Title:** "Support access".
+- **Description:** "Our support team can ask to see your company's data, read only, for a few hours. Nothing opens unless you approve, and you can end an approval early. Approving doesn't open your data yet: support can't see your company's data in this version."
+- **While the company is read only** (standing `read_only`):
+  - the note "Support access can't be changed while your company's account is read only. Requests end on their own at the time shown." (`role="note"`) above the table;
+  - no Approve or Revoke buttons.
+- **Table** (`settings-support-access`). It has no CSV export, because reasons are free text.
+  - Columns: Requested (date and time), By (the admin's name), Reason, Ends (date and time), Status (the console's pill: Pending, Approved, Revoked or Expired) and Actions.
+  - Empty: "No support requests yet."
+- **Actions** (`supportActions`):
+  - pending: Approve and Revoke;
+  - approved: Revoke;
+  - revoked and expired: none;
+  - read only: none.
+- **Approve.** Its accessible name is "Approve support access for {adminName}". It opens the step-up dialog, "Approving support access for {adminName}". After the code:
+  - **success:** the toast "Support access approved. It ends {expiresAt, with the time}. Support can't see your data yet.";
+  - **a refusal from the approve call** (409, or 403 `company_read_only`): a toast with the API's message. A wrong code still shows inside the step-up dialog;
+  - **either way,** the list is read again and the dialog closes.
+- **Revoke.** Its accessible name is "Revoke support access for {adminName}". It opens a confirm dialog:
+  - title "Revoke support access?";
+  - text "{adminName} loses this access at once.";
+  - buttons "Keep" (outline) and "Revoke access".
+
+  There is no step-up, because the API asks for none. Success shows "Support access revoked."; a refusal shows a toast with the API's message. Either way, the list is read again and the dialog closes.
+- **Focus:** every button and the banner's link show a visible focus ring. Pills pair an icon with a word.
+
+#### Demo mode
+- **No life cycle,** as in the demo console. `getCompanyStanding()` always answers `{ state: "full" }`, so the demo never shows the standing screens, the overlay or a banner. Unit markup tests and the api-mode spec cover them.
+- **Billing:**
+  - the Owner's page shows the company's stand-in plan (`demoSubscription`) with standing `current`, phase `full`, the company's limits and no notice;
+  - it takes no clock, so the end of a month in UTC never shows a false "Payment overdue";
+  - the store refuses with "This feature is switched off." while the switch is off, and with "Only an Owner can see billing." for anyone else.
+- **Support access:**
+  - the panel lists the requests the demo console made for this company (local storage `platform-support`), newest first, at most 100, by "Platform admin";
+  - approve and revoke use the shared `supportGrantDecisionRefusal` and messages;
+  - each decision writes the company's audit entry ("Approved support access" or "Revoked support access", category security) and the console's platform row (`support.approved` or `support.revoked`, shown as "The company's Owner"), as the API does;
+  - the step-up dialog still asks for six digits, which the store doesn't check, like the demo console's save;
+  - Reset demo clears both keys.
+- **The same Owner rule and messages** as the API, so anyone else reads "Only an Owner can manage support access."
+
+### Audit (part 4)
+- **No new action.** Approve and revoke keep their two rows:
+  - `support.approved` or `support.revoked` in `platform_audit_log`, which the console shows as "The company's Owner";
+  - "Approved support access" or "Revoked support access" (category security) in the company's `audit_log`.
+- **Reads are not audited:** standing, billing and the support list.
+- **The demo** writes the same two entries.
+
+### Feature switch (part 4)
+- **New key `settings.billing`:**
+  - both products, the Platform module, status `demo`;
+  - screens `/settings/billing`;
+  - no permission key, because the page is the Owner's only;
+  - placed after `settings.audit` and before `admin.access`, in features.ts and docs/FEATURES.md.
+- **When it is off:**
+  - `GET /billing` answers 404 to everyone;
+  - the Billing menu item, its settings-home card and its palette entry are gone, and the page shows "This feature is switched off in this demo.";
+  - the Owner's banner is gone;
+  - the standing screens and the overlay stay, and `GET /company/standing` keeps answering, because they show the API's own refusals.
+- **The support panel** has no key of its own: it sits under `settings.users`. That switch hides the panel only; `/support-grants` has no switch, which is pre-existing, like the users routes.
+- **/feature-change:** its step 2 asks the owner to confirm, which can't happen overnight. The impact summary is in the PR body and ADR 0054, and the key is owner question 27.
+
+### Lint (part 4)
+In `apps/api/eslint.config.js`, not in core:
+- **`src/modules/billing/**`:** no `@workspace/db/company` and no TenantConnectionService ("Billing reads the control database only (ADR 0054).").
+- **`src/modules/billing/company-standing.*`:** also no TenantContext ("The standing route never sees a TenantContext (ADR 0054).").
+- **The check:** two temporary probe files, expected to give 2 and 3 errors, deleted after.
+
+In `apps/web/eslint.config.mjs` (final review): `src/**` may not import `@workspace/db/testing` or `@workspace/db/seed`, as `apps/api` already refuses `@workspace/db/testing`; `tests/**` may. The `src/**` block repeats the fixture pattern, because flat config replaces a rule's options, and `src/lib/api/demo/**` may load fixtures but not those two. Checked with temporary probes: one under `src/features` gave 3 errors (testing, seed and a fixture), one under `src/lib/api/demo` gave 1 (testing), one under `tests/` gave none. The probes were deleted.
+
+### Safer than the outline (part 4)
+Each is recorded in docs/blueprint-delta.md and ADR 0054.
+1. **Standing reveals only TenantGuard's view, the same for every member:** five words, nothing about billing, and no Owner flag.
+2. **Standing mirrors TenantGuard's refusals, codes, messages and order** in a class-level guard. It opens no company database, nothing changes in core, and an allow-list pins every session-only handler.
+3. **One locked, maintenance and unavailable screen for everyone,** with the API's text and no reason or dates (question 21).
+4. **No switch on standing.** `settings.billing` governs the page, its menu item and the banner.
+5. **`GET /billing` checks the switch before the Owner:** 404 for everyone while it is off.
+6. **No prices, ids, overrides or payment details.** The input type can't carry a price.
+7. **"Current period ends", never "paid through".**
+8. **No banner for anyone but the Owner** (question 24) **and no trial banner** (question 25). The Owner's overdue banner starts on the first overdue day, which is more notice than blueprint p23's "after the grace", with no extra exposure.
+9. **Dates come from `companyPhase` itself,** with an exact horizon. There is no second copy of the ladder, and the copy never promises the account won't lock.
+10. **Deny by default on the web.** An unknown answer shows "Not available right now". A failed read leaves the decision to the API's guard.
+11. **The overlay never remounts the open screen.** It sits above any open dialog, traps focus and gives it back, and the palette pauses.
+12. **No request loops.** Only `StandingGate` reacts to refusals, and only by reading standing, which never signals. Billing reads never signal. The banner re-reads only on a standing change.
+13. **The support panel adds no power:**
+    - approve needs a step-up, because the API does;
+    - revoke needs none;
+    - there is no CSV of reasons;
+    - the copy says support can't see data yet.
+14. **No Owner decision while the company is read only (the deviation).**
+    - docs/specs/settings-users-access.md says the Owner "revokes at any time".
+    - But approve and revoke are writes, and TenantGuard refuses writes with 403 `company_read_only` while the company is read only.
+    - So the panel hides both actions then and says why, instead of offering them only to fail (question 26). A locked company opens no screen at all.
+15. **No reads are audited,** and both new routes send `Cache-Control: no-store`.
+16. **The demo has no life cycle,** and uses the same messages and Owner rule as the API.
+17. **The api-mode e2e touches only Summit's maintenance flag and period dates.**
+    - It snapshots them, restores them, and checks them equal afterwards.
+    - Global setup moves a stale or crashed Summit toward full use only, logs what it changed, and refuses any other company.
+    - Every standing helper in `packages/db/src/testing.ts` that names a company (`readStandingFacts`, `setMaintenance`, `setPeriodEnd`, `insertSupportGrant`, `clearTestStanding`) refuses any slug but `summit`, and `restoreStandingFacts` refuses another company's snapshot (final review).
+    - The test requester is a user who can't sign in.
+
+### As built (part 4)
+Settled while building, all in ADR 0054.
+
+**Safer still** (also in docs/blueprint-delta.md):
+- **Unreadable values deny or say less.** `billingNoticeText` reads an unknown reason as the plain "Read only" notice. The date helpers skip a moment that can't be read instead of throwing. "Every counted row is a trial" needs at least one row. `companyBillingView` copies only `userLimit` and `branchLimit`, so no other limit field reaches the answer.
+- **DemoStore's `getCompanyBilling`** refuses with "That company does not exist." when the open company can't be found, instead of asserting it exists.
+- **The tests check more than the plan asked:** the guard's unit test shows it looks up only the session's company and lets a member through in every state (the handler answers with the state); S-16 also shows that a company route does open one pool, so "no new pool" means something; S-21 also checks that every /platform handler is session-only and that `BillingController` has no class guards.
+
+**Other choices:**
+- **The module** is `apps/api/src/modules/billing` (`BillingModule`, registered after `PlatformModule`), not `modules/platform`, which keeps only the platform guard's routes. `GET /billing` uses the existing `requireFeature`.
+- **The web's rules** are `overlayState` (the blocking state, or null for the shell; it replaces the outline's `gateView`), `bannerReread` and `createRecheck`, in `apps/web/src/features/standing/standing-rules.ts`. The server's standing read is the pure `serverStandingOf` (`lib/session/server-standing.ts`).
+- **`UnavailablePanel` takes an `onSignOut` prop,** so it stays pure and unit-testable; `CompanyUnavailable` (page mode) and `CompanyUnavailableOverlay` pass `signOut`. `BillingView` and `SupportAccessView` are pure in the same way.
+- **No effects with refs** (lint): the banner's re-read counter and StandingGate's new server answer after `router.refresh()` are adjusted during render, and the re-check queue is created once with `useState`. The behaviour is the planned one.
+- **The palette closes for good** when the company becomes blocked, so an open palette doesn't come back on its own when the overlay closes.
+- **The support panel re-reads by bumping a counter,** not with `query.retry()`, which blanks the table to a skeleton and drops focus. A decision can remove the button that opened its dialog, so focus then lands on the "Support access" heading. Approve's error is caught inside the step-up's `onConfirm` and shown as a toast; Revoke has its own confirm dialog.
+- **Layout:** the support table's Reason column is `min-w-48 max-w-sm`, so the Actions column fits at 900 px, with the two buttons stacked on a pending row; the standing screen's title is `text-xl sm:text-2xl`, so "Under maintenance" fits at 375 px.
+- **Two period texts:** the plan block reads "Current period: {start} to {end}", and its standing reads "Current period ends {end}".
+- **Types and messages:** `SUPPORT_CLOSED_MESSAGES` is a typed `Readonly<Record<…>>` with the API's strings; `BlockingStandingState` and `SupportGrantStep` type the screens and the decisions. Two JSDoc lines in `support-grants.service.ts` that said "revokes at any time" now say TenantGuard refuses both decisions while the company is read only.
+- **API tests:** shared helpers in `apps/api/test/support/company-facts.ts`, with an `afterEach` reset that also runs when a test fails. B-12 is checked inside the `billing()` helper on every Owner read, not as a test of its own, and B-5 is split into B-5a to B-5h. In B-13 a second, enrolled Owner revokes, because the first had to step up to approve; the read-only case sends no step-up, since TenantGuard refuses first.
+- **The api-mode e2e** reaches Audit log through the Settings nav link, and relies on `#main` and on `QueryFallback`'s `role="alert"` card. The seeded Summit is `active` with one active monthly row at price 0, so a period end 3, 20 and 50 days ago gives overdue, read only and locked. The restore helpers bump `updated_at` on Summit's `tenants` row and its subscription row, which is not a standing fact, so the snapshot leaves it out.
+- **PR #37:** the part 4 blocks in `contract.ts`, `api-methods.ts` and `store.ts` each have their own import, so #37's edits to the shared import lists merge cleanly. `pageList`'s signature in `products/pages.ts` will conflict on neighbouring lines, as expected.
+- **Checked by hand in the demo** (stage 3): /settings/billing and /settings/users at 375 and 1440 px, light and dark, with no sideways scroll at 375 px; approve with a step-up and revoke; the manager's NoAccess page; Harbor's "HR Standard"; ⌘K lists Billing for the Owner; no console warnings. The notices and the maintenance and suspended cards were checked by injecting their markup, because the demo never shows them.
+
+### What part 4 changes in earlier text
+Done in the build's docs stage:
+- **Parts:** row 4 reads "Built in PR #38 (ADR 0054); acceptance criteria 40 to 63".
+- **Part 3, "As built":** the last bullet ("the web has no Owner screen for support access yet") says the panel is built in part 4.
+- **Part 3, "Demo mode":** "No Owner approves in the demo" changes: the Owner approves and revokes in the demo's Settings → Users.
+- **docs/specs/settings-users-access.md, "Support access":** "or revokes at any time" becomes "or revokes while the company is in full use, in Settings → Users (Support access panel, ADR 0054). While the company is read only, TenantGuard refuses both; requests end on their own."
+- **ADR 0030:** `GET /company/standing` joins the session-only routes, behind its own class-level membership guard on control rows.
+
+### Edge cases and known limits (part 4)
+- **Guard drift.** `companyStandingState`'s order restates TenantGuard's. Only the integration tests (S-7 to S-14 and S-18) catch drift.
+- **Copy drift.** The three screens' texts repeat API strings in packages/shared. S-20 pins them equal.
+- **No MFA backstop on standing.** Session-only routes skip PermissionGuard's MFA check for roles that need MFA. The exposure is the five-word state.
+- **Disabled members can read standing.** This is exposure-neutral: on any company route, TenantGuard answers them before PermissionGuard's disabled check.
+- **The api-mode Owner flag comes from the demo fixture match,** because the shell still reads DemoStore for the workspace. The API decides either way: a mismatch gives a silent 403, so no banner and no panel. This is the existing "the shell reads DemoStore" follow-up.
+- **The watch only sees calls through the ApiClient** (CLAUDE.md rule 1). The billing page re-checks for itself.
+- **Request patterns:**
+  - one standing read per full page load for everyone, plus one `GET /billing` for the Owner;
+  - the banner re-reads only on standing changes, and on DemoStore emits, like every api-backed query;
+  - refusals coalesce to one standing read in flight and one trailing.
+- **A database that control says is `ready` but can't be used.** Standing reads `full`, so there is no overlay, and company routes fail with their own errors and the screens' error cards. As built (S-15), a stored connection string that can't be decrypted gives 500 `internal_error` (logged as "Unknown encrypted value format"), not 503 `company_unavailable`: existing TenantConnectionService behaviour, unchanged here. A 500 isn't a standing code, so there is no loop.
+- **Refusals carry no `Cache-Control: no-store`.** Only the 200 answers of both new routes send it. A refusal holds no company data.
+- **Read-only support decisions.** The Owner can't end an approval while the company is read only (question 26). Grants open nothing yet.
+- **Self-approval.** A person who is both a platform admin and the company's Owner can approve their own request (question 33).
+- **Dates use the browser's time zone,** as elsewhere. The demo's period ends at midnight UTC, so in US time zones its end shows as the day before.
+- **A local database seeded more than a month ago** shows Summit as overdue, and as locked after 44 days. The api-mode e2e's global setup refreshes it, for e2e only.
+- **A killed e2e run** can leave Summit in maintenance (`move`) or lapsed until the next global setup.
+- **Audit rows are append-only.** Each api-mode e2e run adds `support.approved` and `support.revoked` rows to `platform_audit_log` and to Summit's `audit_log`.
+- **The overlay has no polling** (see "While a page is open").
+- **The demo can't show the screens, the overlay or the banner.** The api-mode e2e asserts them (the overlay at 1440 px, the maintenance page at 375 px with no sideways scroll), but nobody has looked at them by eye at 375 and 1440 px in both themes.
+- **A member of several companies** gets only Try again and Sign out on a blocked screen. Api mode has no company chooser to send them to (follow-up).
+
+### Acceptance criteria (part 4)
+
+**Standing (API)**
+
+40. `GET /company/standing` answers (S-1 to S-6):
+    - 401 without a session;
+    - 403 `company_required` with no open company, or a deleted one;
+    - 403 `not_a_member` once the membership is removed;
+    - 403 `product_not_enabled` with the HR host's header on a Flooring-only company, and 200 with no header;
+    - 403 `mfa_enrolment_required` for an Owner without MFA.
+41. For every row of the states table, the body is exactly `{ state }` with the expected word, the same for the Owner and a sales member. The isolation probe's company route answers as TenantGuard should (S-7 to S-14):
+    - reads and writes pass in full use;
+    - a write gets `company_read_only` when read only;
+    - `company_suspended` when locked;
+    - 503 `company_maintenance` in maintenance, also while locked;
+    - 503 `company_unavailable` with a migrating, provisioning or failed database.
+42. A company with no database row reads `unavailable`. One whose database row is `ready` with an unreachable URL reads `full`, while the probe fails. Twenty standing calls for a company never opened before open no pool (S-15, S-16).
+43. A `companyId` query and an `X-Company-Id` header naming another company change nothing (S-19).
+44. Ten standing calls and ten billing reads add no `audit_log` or `platform_audit_log` row (S-17). Both routes send `Cache-Control: no-store`.
+45. Other routes are unchanged (S-18):
+    - in maintenance, `GET /users` and `GET /support-grants` answer 503 `company_maintenance`;
+    - when locked, they answer 403 `company_suspended`;
+    - while read only, `POST /support-grants/:id/revoke` answers 403 `company_read_only`.
+
+    The isolation, permissions, users and platform suites pass unchanged.
+46. The session-only handlers are exactly `GET /auth/context`, `POST /auth/step-up`, every `/platform*` route and `GET /company/standing`. The standing controller carries `StandingMemberGuard`, and `GET /billing` is a company route (S-21). The three screen texts equal the API's messages (S-20). `git diff --stat origin/main -- apps/api/src/core/auth apps/api/src/core/tenancy` is empty, and the lint probe gives the expected errors.
+
+**Billing (API)**
+
+47. The Owner of a fresh trial gets exactly `{ status: "trial", phase: "full", subscriptions: [], limits: { userLimit: null, branchLimit: null }, notice: null }` (B-2).
+48. A plan row shows its plan name, product, interval, ISO period and `standing: "current"`. The limits equal `PlanLimits.limitsOf`: a row's override wins over its plan's limit even when it is smaller, and the largest row wins (B-3).
+49. An `active` row that ended 3 days ago gives `standing: "overdue"` and `payment_overdue`, with `since` the end and `readOnlyFrom` the end plus 14 days, to the exact ISO moment. A `past_due` row ending in 10 days gives `standing: "past_due"` and `payment_overdue` with `since: null` (B-4).
+50. Each read-only case gives its reason and its exact `lockedFrom` (B-5):
+    - a lapsed paid row: `payment_lapsed`, the end plus 44 days;
+    - an ended trial: `trial_ended`, the end plus 30 days;
+    - suspended after paying, with a row ending in 20 days: `suspended`, the end plus 44 days;
+    - cancelled, where the row's ladder binds: `cancelled`, the end plus 44 days;
+    - cancelled, where the status's ladder binds: `cancelled`, the change plus 90 days;
+    - a read-only database: `database`, with no dates;
+    - deleted rows only: `subscriptions: []` and `payment_lapsed`;
+    - a counted cancelled paid row: `cancelled`, the end plus 90 days.
+
+    In every billing case, `phase` equals TenantDirectory's (B-12).
+51. With a price of `12345.67` planted on the row, the answer doesn't contain it, and no `id`, `planKey`, `price`, `userLimitOverride` or `branchLimitOverride` key appears at any depth (B-6).
+52. A sales member and a manager get 403 `forbidden`, "Only an Owner can see billing.". An Owner disabled in the company database gets 403 `forbidden` from PermissionGuard, and 200 again once enabled (B-7, B-8).
+53. With `settings.billing` off, the Owner, a manager and a sales member get 404 `not_found`, while standing still answers, in maintenance too (B-9, B-11).
+54. Without a session: 401. With no open company: 403 `company_required`. Locked: 403 `company_suspended`. Maintenance: 503 `company_maintenance`. Read only: 200 (B-1, B-10).
+55. The support routes behave as before (B-13):
+    - the Owner lists the grant;
+    - approve without a step-up answers 403 `step_up_required`; with one, 204; a second approve, 409 `grant_closed`, "This request is no longer waiting for approval.";
+    - revoke answers 204; a second revoke, 409, "This access has already ended.";
+    - a sales member gets 403, "Only an Owner can manage support access.";
+    - in a read-only company, the list answers 200, and approve and revoke answer 403 `company_read_only`.
+
+**Shared rules**
+
+56. `companyStandingState` follows TenantGuard's order over all 16 combinations, and an unknown, missing or malformed wire state reads `unavailable`. `phaseDates` gives the exact moment for every case in the dates table: one millisecond before it, the phase is still the earlier one. Over 500 seeded fact sets it agrees with `companyPhase`, the phase never steps up, and it is constant after the horizon. With a paid row that lapsed 20 days ago and a trial that ended 5 days ago, the notice is `payment_lapsed` with `since` the paid row's end and `lockedFrom` the trial's end plus 30 days, the moment `companyPhase` turns `locked`. No notice text contains "until we restore".
+
+**Web**
+
+57. Unit:
+    - the watch signals once for each of the four standing codes and rethrows the same error, never for other errors, and never for `getCompanyStanding` or `getCompanyBilling`;
+    - three re-checks during one read make exactly two reads;
+    - the banner re-reads only on a change into `full` or `read_only`;
+    - a server standing answer of 200 with an unknown state reads `unavailable`, and any other status gives no answer.
+58. In api mode, the Owner is on /settings/users. Maintenance starts, and a click on Settings → Audit log shows the "Under maintenance" alert dialog, with no Main navigation. Then:
+    - over the next 3 seconds there is at most one billing read, and no more standing reads than refused responses;
+    - Try again keeps the dialog while in maintenance;
+    - after maintenance ends, Try again closes it. The same `#main` element is still connected, the audit page's own error card is still there, focus is not on the body, and the card's Try again loads the log.
+
+    The same flow works for the manager (api e2e test 1 step 6, test 2 step 2).
+59. A full page load in maintenance shows the "Under maintenance" screen with no shell, and no sideways scroll at 375 px. A locked company shows "Account suspended" with the API's text, and Sign out goes to /login (test 2 steps 3 and 4).
+60. In api mode the Owner reads Billing: "Flooring Pro", "Billed monthly", "Current period ends" and no notice (test 1 steps 1 to 4).
+    - With the period ended 3 days ago, the page shows exactly one notice, "Payment overdue" with "becomes read only on", and the plan reads "Period ended". On /settings/users the shell banner says "Payment overdue", and "Open billing" goes to /settings/billing.
+    - With the period ended 20 days ago, the banner reads "Plan ended: read only" with "It locks on".
+61. The Owner's Support access panel lists a pending request by "Test Support Agent" (test 1 steps 4 and 5).
+    - While the company is read only, it shows no Approve or Revoke, and shows the read-only note.
+    - In full use, Approve with a step-up code shows Approved. Revoke, then "Revoke access", shows Revoked.
+62. A manager sees no Billing in the Settings nav, "You don't have access to this page." on /settings/billing, and no Support access panel, in api mode (test 2 step 1) and in the demo. `canOpenPage` for every other settings page is unchanged for the Owner and the manager (web unit).
+63. In the demo:
+    - Summit's Owner reads Billing: "Flooring Pro", "Billed monthly", "Current period ends" and a users limit of 16, with no `$` in the page's main area and no account notice. "See seats in use" goes to /settings/users;
+    - Harbor's Owner reads "HR Standard" on the HR host;
+    - the Owner approves and revokes a request made in the console. The console's Support tab then shows Revoked, and /admin/audit lists "Support access approved" and "Support access revoked" by "The company's Owner";
+    - billing stays `notice: null` and `standing: "current"` across the end of a month in UTC;
+    - /settings/billing passes axe and the console check, with no sideways scroll at 375 px, on both hosts.
+
+**As built, the criteria are covered by:**
+- 40 to 46: `apps/api/test/company-standing.int.test.ts` (21 tests: 40 is S-1 to S-6, 41 is S-7 to S-14, 42 is S-15 and S-16, 43 is S-19, 44 is S-17, 45 is S-18, 46 is S-20 and S-21), the unit `apps/api/test/company-standing-guard.test.ts` (7), the session-only map in `apps/api/test/isolation.int.test.ts`, and the lint probe (2 and 3 `no-restricted-imports` errors, then deleted). The helpers are in `apps/api/test/support/company-facts.ts`.
+- 47 to 55: `apps/api/test/billing.int.test.ts` (20 tests: 47 is B-2, 48 is B-3, 49 is B-4, 50 is B-5a to B-5h with B-12 checked in the helper on every Owner read, 51 is B-6, 52 is B-7 and B-8, 53 is B-9 and B-11, 54 is B-1 and B-10, 55 is the two B-13 tests). The isolation, permissions, users, platform and platform-support suites pass unchanged (15, 25, 17, 19 and 10).
+- 56: `packages/shared/test/company-standing.test.ts` (8), `lifecycle-dates.test.ts` (35), `company-billing.test.ts` (46) and `support-grants.test.ts` (31); `company-lifecycle.test.ts` passes unchanged (7).
+- 57, and the page rule in 62: `apps/web/tests/unit/company-standing.test.tsx` (41).
+- 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts` (2 tests), with its state helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/standing-test-helpers.int.test.ts` (5, one checking that every helper taking a slug refuses any company but Summit, as `restoreStandingFacts` does for another company's snapshot), and `tests/e2e-api/global-setup.ts`.
+- 62 in the demo, and 63: `apps/web/tests/e2e/billing.spec.ts` (3 Flooring tests and 1 `@hr`), `/settings/billing` in `tests/e2e/screens.ts` for both hosts (axe in both themes, the console check, 375 px), and `apps/web/tests/unit/demo-billing-support.test.ts` (7, the end of a month in UTC among them).
+
 ## Parts 2 to 4 (outline, not built here)
 
 **Part 2: plans and company status.**
@@ -828,12 +1458,7 @@ Settled while building, all in ADR 0053.
 
 **Part 3: audit and support.** Specified in full in "Part 3: audit and support" above.
 
-**Part 4: the company side.**
-- `GET /company/standing`: the company comes from the session, with its own membership check, and it answers for locked and maintenance companies too.
-- Full-page "under maintenance" and "account suspended" screens.
-- The Owner's banner when payment is overdue or the company is read-only.
-- A read-only /settings/billing page for the Owner (new key `settings.billing`).
-- The Owner's support-access panel on the existing endpoints, saying support can't see data yet.
+**Part 4: the company side.** Specified in full in "Part 4: the company side" above.
 
 ## Waiting for the owner (deferred, not invented)
 
@@ -871,3 +1496,25 @@ Added by part 3 (ADR 0053):
 18. **The limits.** Confirm 10 requests per admin in 24 hours, one open grant per admin and company, and that an approved, unexpired grant blocks a new request. Taken: the 24-hour limit is per admin across companies. Should it also be per company?
 19. **CSV export of the platform audit log.** Taken: not offered. If it is wanted, cells starting with `=`, `+`, `-`, `@` or a tab must be neutralised first, an app-wide `toCsv` fix. Also: how long to keep `platform_audit_log`.
 20. **Withdrawing a request.** Taken: no withdraw route. Should an admin be able to withdraw their own pending request?
+
+Added by part 4 (ADR 0054). Each records the option taken; questions 1, 2 and 7 stay open.
+
+21. **Why a company is locked or in maintenance.** Should its Owner see why, and until when? That needs an Owner check without the company database, or a TenantGuard change. Taken: no; one screen with the API's text for everyone.
+22. **Prices on the Billing page.** Taken: not shown while prices are open.
+23. **"Paid through" or "current period ends"** (depends on question 7). Taken: "Current period ends".
+24. **A read-only notice for every member.** Taken: the Owner only.
+25. **A trial-ending banner.** Taken: none.
+26. **Support decisions in a read-only or locked company.** Should the Owner still approve or revoke support access?
+    - TenantGuard refuses writes when the company is read only, and everything when it is locked.
+    - Allowing it needs a session-only route that writes control rows, or a TenantGuard change.
+    - Taken: read only means the list only, with no actions; locked means nothing. Grants open nothing yet.
+27. **The new key `settings.billing`.** Confirm it: status `demo`, the Owner only with no permission key, and the support panel under `settings.users`. The /feature-change step-2 impact summary is in the PR body and ADR 0054.
+28. **"Contact us".** A contact address or link, which needs the brand and domain.
+29. **A step-up on revoke.** Taken: no; the API is unchanged.
+30. **Seats in use on the Billing page.** They live in the company database. Taken: a link to Users.
+31. **Shortening an approved grant, or seeing who approved it.** Should an Owner be able to? Taken: no API change.
+32. **Requests to a company whose Owner can't answer** (read only or locked). May platform admins still ask? Taken: unchanged. Requests are allowed, open nothing and expire.
+33. **Self-approval.**
+    - A person who is both a platform admin and a company's Owner can approve their own request. The approve route doesn't compare the approver with the requester, and `platform-support.spec.ts` sets up exactly such a person for Summit.
+    - Taken: unchanged, because grants open nothing.
+    - It must be refused before grant use is built (question 2).

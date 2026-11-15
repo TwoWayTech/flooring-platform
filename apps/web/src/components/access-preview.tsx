@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { cn } from "@workspace/ui/lib/utils";
+import { itemAllows } from "@/products";
 import { pageList } from "@/products/pages";
 
 const SENSITIVE_LABELS: Record<keyof typeof SENSITIVE, string> = {
@@ -126,7 +127,7 @@ export function AccessPreview({ products, roles, users, ceiling, modules }: Acce
           </h3>
           <ul className="grid gap-1 sm:grid-cols-2">
             {pageList(product).map((page) => (
-              <Allowed key={page.href} ok={page.anyOf.some((k) => access.permissions.has(k))}>
+              <Allowed key={page.href} ok={itemAllows(page, access)}>
                 {page.label}
               </Allowed>
             ))}
