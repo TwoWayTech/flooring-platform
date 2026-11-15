@@ -53,7 +53,7 @@ Person A starts a module's backend one week before Person B moves its screens, s
 | 11 | HR: people, timesheets, overtime, time off, pay periods; the HR Suite host | hr.md | P11 | 4, 5 |
 | 12 | Commissions | commissions.md | P11 (+ P12) | 8, 11 |
 | 13 | Employee portal | employee-portal.md | P11 | 11, 12 |
-| 14 | Meetings, invites and .ics | meetings.md | P11 | 5 |
+| 14 | Meetings, invites and .ics (ADR 0051: parts 1 and 2 the API, part 3 the screens on it, PR #37; part 4 waits for the owner) | meetings.md | P11 | 5 |
 | 15 | Reports | reports.md | P11 | 8, 9, 11 |
 | 16 | Data import and opening balances | import.md | P11 | 6 to 11 |
 | 17 | Platform admin and manual billing | settings-and-permissions.md (platform) | P11 | 2, 3 |
