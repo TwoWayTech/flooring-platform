@@ -1,0 +1,77 @@
+import { Injectable, Logger } from "@nestjs/common";
+import { featureOn, meetingWhenText, nextReminder, reminderRecipients } from "@workspace/shared";
+import { v7 as uuidv7 } from "uuid";
+import { NotificationService } from "../../core/notifications/notification.service";
+import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
+import type { TenantContext } from "../../core/tenancy/tenant-context";
+import { databaseNow } from "../hr/hr-common";
+import { attendeesOf, meetingOf } from "./meeting-records";
+import { lockMeeting, MEETING_SOURCE } from "./meetings-common";
+
+/**
+ * A meeting's reminder as Outbox rows (meetings.md rule 10; ADR 0051 "Reminders"; ADR 0032: a
+ * scheduled row and a delayed job, no reminders table). After every change that can move, add,
+ * drop or end a reminder — schedule, edit, cancel, remove a guest, and an answer that confirms or
+ * cancels a request (critic B6) — the waiting rows are cancelled and the next one is raised again.
+ */
+@Injectable()
+export class MeetingReminders {
+  private readonly logger = new Logger("Meetings");
+
+  constructor(
+    private readonly tenancy: TenantConnectionService,
+    private readonly notifications: NotificationService,
+  ) {}
+
+  /**
+   * Re-syncs one meeting's reminder, after its change committed. First every waiting reminder row
+   * is cancelled on its own, so if anything after fails the meeting has no reminder rather than a
+   * wrong one. Then, under the meeting's row lock, the rows are cancelled again and the next
+   * reminder is raised from the meeting as it now stands, in the same transaction, so two re-syncs
+   * at once leave exactly one set of rows. Each set has a version of its own, so a re-sync is never
+   * swallowed by the row of a set it cancelled (critic B1).
+   *
+   * The reminder goes to the staff guests but the organiser, by email only (spec rule 10), held
+   * until `reminderMin` before the next occurrence and dropped if not sent by its start. None is
+   * raised for a cancelled meeting, a request still waiting, or while `meetings.invites` is off.
+   * There is no actor, so a re-sync by someone else drops nobody. Later occurrences of a series get
+   * theirs when a change re-syncs it; a sweeper for them is Part 4 (ADR 0051 "Deferred").
+   */
+  async sync(tenant: TenantContext, meetingId: string): Promise<void> {
+    const source = { type: MEETING_SOURCE, id: meetingId };
+    try {
+      await this.notifications.cancelScheduled(tenant, "meeting.reminder", source);
+      const db = await this.tenancy.db(tenant);
+      await db.transaction(async (tx) => {
+        const row = await lockMeeting(tx, meetingId);
+        await this.notifications.cancelScheduled(tenant, "meeting.reminder", source, tx);
+        if (!featureOn("meetings.invites")) return;
+        const { meeting } = meetingOf(row, await attendeesOf(tx, [row.id]));
+        const reminder = nextReminder(meeting, await databaseNow(tx));
+        const to = reminderRecipients(meeting);
+        if (!reminder || to.length === 0) return;
+        await this.notifications.notify(
+          tenant,
+          null,
+          {
+            event: "meeting.reminder",
+            source,
+            version: `${meeting.sequence}-reminder-${reminder.occurrence.planned}-${uuidv7()}`,
+            to: to.map((guest) => ({ kind: "user" as const, id: guest.id, name: guest.name, email: guest.email })),
+            values: {
+              "meeting.title": meeting.title,
+              "meeting.when": meetingWhenText(reminder.occurrence.start),
+              "meeting.location": meeting.location,
+            },
+            restricted: meeting.private,
+            scheduledFor: reminder.scheduledFor,
+            expiresAt: reminder.expiresAt,
+          },
+          tx,
+        );
+      });
+    } catch {
+      this.logger.warn("A meeting changed, but its reminder could not be updated.");
+    }
+  }
+}
