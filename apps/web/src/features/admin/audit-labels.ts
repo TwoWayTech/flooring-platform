@@ -4,6 +4,8 @@ import {
   migrationErrorCode,
   moduleInfo,
   permissionDef,
+  PLATFORM_AUDIT_ACTIONS,
+  platformAuditActionOn,
   PRODUCT_LABELS,
   type PlatformAuditAction,
   type PlatformAuditActor,
@@ -35,6 +37,18 @@ export const AUDIT_ACTION_LABELS: Record<PlatformAuditAction, string> = {
   "plan.retired": "Retired plan",
   "plan.restored": "Restored plan",
 };
+
+/**
+ * The audit log's Action filter, in the order of the thirteen actions (spec "Audit (part 2)"): the
+ * seven plan and status actions only while `admin.billing` is on, as the API and the demo accept
+ * them. Read on every render, so a switch flipped at run time counts; stored rows still list.
+ */
+export function auditActionOptions(): { value: PlatformAuditAction; label: string }[] {
+  return PLATFORM_AUDIT_ACTIONS.filter((action) => platformAuditActionOn(action)).map((action) => ({
+    value: action,
+    label: AUDIT_ACTION_LABELS[action],
+  }));
+}
 
 /** An action's label; an action this build doesn't know shows its stored name. */
 export function auditActionLabel(action: string): string {

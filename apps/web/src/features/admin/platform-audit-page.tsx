@@ -3,12 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { History } from "lucide-react";
 import { toast } from "sonner";
-import {
-  formatNumber,
-  isPlatformAuditAction,
-  PLATFORM_AUDIT_ACTIONS,
-  type PlatformAuditQuery,
-} from "@workspace/shared";
+import { formatNumber, isPlatformAuditAction, type PlatformAuditQuery } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Label } from "@workspace/ui/components/label";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
@@ -20,7 +15,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { auditColumns, type AuditColumnFormat } from "./audit-columns";
-import { AUDIT_ACTION_LABELS } from "./audit-labels";
+import { auditActionOptions } from "./audit-labels";
 import {
   appendOlderAuditPage,
   auditRows,
@@ -179,7 +174,8 @@ export function PlatformAuditPage() {
         : [],
     [companies],
   );
-  const actionOptions = PLATFORM_AUDIT_ACTIONS.map((action) => ({ value: action, label: AUDIT_ACTION_LABELS[action] }));
+  // The seven plan and status actions only while admin.billing is on (part 2); their rows still list.
+  const actionOptions = auditActionOptions();
 
   return (
     <>

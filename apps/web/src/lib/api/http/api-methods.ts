@@ -78,6 +78,15 @@ import {
   type CompanySupportGrant,
   type SupportGrantStep,
 } from "@workspace/shared";
+// Platform admin part 2 (ADR 0056) keeps its own imports, so the lists above stay as they are.
+import {
+  PLAN_MESSAGES,
+  type CompanyStatusInput,
+  type PlatformCompanyStatus,
+  type PlatformPlan,
+  type PlatformPlanInput,
+  type PlatformPlanPatch,
+} from "@workspace/shared";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
@@ -187,6 +196,31 @@ export const API_METHODS: HttpRoutes = {
   listSupportGrants: (http) => () => http.request<CompanySupportGrant[]>("GET", "/support-grants"),
   approveSupportGrant: (http) => (grantId) => supportGrantDecision(http, grantId, "approve"),
   revokeSupportGrant: (http) => (grantId) => supportGrantDecision(http, grantId, "revoke"),
+  // Platform admin part 2 (docs/specs/platform-admin.md, "ApiClient (part 2)"). An id that is not a
+  // UUID, such as a demo slug or a demo plan's key, names nothing on the API, so it is never sent.
+  listPlatformPlans: (http) => () => http.request<PlatformPlan[]>("GET", "/platform/plans"),
+  createPlatformPlan: (http) => (input) => http.request<PlatformPlan>("POST", "/platform/plans", planInputBody(input)),
+  updatePlatformPlan: (http) => (planId, patch) => planCall(http, planId, "PATCH", "", planPatchBody(patch)),
+  retirePlatformPlan: (http) => (planId, reason) => planCall(http, planId, "POST", "/retire", { reason }),
+  restorePlatformPlan: (http) => (planId, reason) => planCall(http, planId, "POST", "/restore", { reason }),
+  getPlatformCompanyStatus: (http) => async (companyId) => {
+    if (!isSaved(companyId)) return null;
+    try {
+      return await http.request<PlatformCompanyStatus>("GET", `/platform/companies/${companyId}/status`);
+    } catch (failure) {
+      // Any 404, as getPlatformCompany: the status page tells a missing company from a missing status.
+      if (failure instanceof HttpApiError && failure.status === 404) return null;
+      throw failure;
+    }
+  },
+  changePlatformCompanyStatus: (http) => async (companyId, input) => {
+    if (!isSaved(companyId)) throw new ApiError("That company does not exist.");
+    return http.request<PlatformCompany>(
+      "POST",
+      `/platform/companies/${companyId}/${input.action}`,
+      statusActionBody(input),
+    );
+  },
   inventoryData: (http) => async () => {
     const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
       seen(http.request<Product[]>("GET", "/products")),
@@ -918,4 +952,59 @@ function isSaved(id: string): boolean {
 async function supportGrantDecision(http: HttpTransport, grantId: string, step: SupportGrantStep): Promise<void> {
   if (!isSaved(grantId)) throw new ApiError(SUPPORT_CLOSED_MESSAGES[step]);
   await http.request<void>("POST", `/support-grants/${encodeURIComponent(grantId)}/${step}`);
+}
+
+/**
+ * A new plan as the API takes it (spec "POST /platform/plans", Body): the nine fields, rebuilt, so
+ * nothing else on the object travels. Prices go as the decimal strings typed (rule 6).
+ */
+function planInputBody(input: PlatformPlanInput): PlatformPlanInput {
+  return {
+    key: input.key,
+    name: input.name,
+    product: input.product,
+    monthlyPrice: input.monthlyPrice,
+    yearlyPrice: input.yearlyPrice,
+    modules: [...input.modules],
+    maxUsers: input.maxUsers,
+    maxBranches: input.maxBranches,
+    reason: input.reason,
+  };
+}
+
+/** A plan change as the API takes it (spec "PATCH /platform/plans/:id"): only the fields set, plus the reason. */
+function planPatchBody(patch: PlatformPlanPatch): PlatformPlanPatch {
+  const body: PlatformPlanPatch = { reason: patch.reason };
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.monthlyPrice !== undefined) body.monthlyPrice = patch.monthlyPrice;
+  if (patch.yearlyPrice !== undefined) body.yearlyPrice = patch.yearlyPrice;
+  if (patch.modules !== undefined) body.modules = [...patch.modules];
+  if (patch.maxUsers !== undefined) body.maxUsers = patch.maxUsers;
+  if (patch.maxBranches !== undefined) body.maxBranches = patch.maxBranches;
+  return body;
+}
+
+/**
+ * A status action's body (spec part 2, Bodies): the reason and the status the admin saw, plus the
+ * typed name for cancel only. The API's schema is strict, so suspend and reinstate never carry it.
+ */
+function statusActionBody(input: CompanyStatusInput): Omit<CompanyStatusInput, "action"> {
+  const body: Omit<CompanyStatusInput, "action"> = { reason: input.reason, expectedStatus: input.expectedStatus };
+  if (input.action === "cancel") body.confirmName = input.confirmName;
+  return body;
+}
+
+/**
+ * One write to a plan (spec "ApiClient (part 2)"). An id that isn't a UUID, such as a demo plan's
+ * key, names no plan on the API, so nothing is sent and the call fails with the API's own words.
+ */
+async function planCall(
+  http: HttpTransport,
+  planId: string,
+  method: "PATCH" | "POST",
+  suffix: "" | "/retire" | "/restore",
+  body: PlatformPlanPatch | { reason: string },
+): Promise<PlatformPlan> {
+  if (!isSaved(planId)) throw new ApiError(PLAN_MESSAGES.notFound);
+  return http.request<PlatformPlan>(method, `/platform/plans/${planId}${suffix}`, body);
 }

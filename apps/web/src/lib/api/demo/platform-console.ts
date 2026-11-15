@@ -10,6 +10,8 @@ import {
   type PlatformCompanySummary,
   type PlatformSubscription,
 } from "@workspace/shared";
+import { demoPlanKey } from "./platform-plans";
+import type { DemoConsoleStanding } from "./platform-status";
 
 /** What the demo knows about a company beyond its platform fixture: its profile and its people. */
 export interface DemoCompanyFacts {
@@ -42,7 +44,7 @@ export function demoSubscription(company: Company, today: string): PlatformSubsc
   const period = monthOf(today);
   return {
     id: `${company.id}-plan`,
-    planKey: company.plan.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    planKey: demoPlanKey(company.plan),
     planName: company.plan,
     product: company.product,
     interval: "monthly",
@@ -58,9 +60,14 @@ export function demoSubscription(company: Company, today: string): PlatformSubsc
 /**
  * A demo company as the console's list shows it (docs/specs/platform-admin.md, "Fields"). The demo
  * runs no life-cycle ladder and has no company database or maintenance switch, so every company is
- * in full use, with no database row to show.
+ * in full use, with no database row to show. Once the console changed its status (part 2, "Demo
+ * mode"), `standing` gives that status and the phase `companyPhase` reads from it.
  */
-export function demoSummary(company: Company, facts: DemoCompanyFacts): PlatformCompanySummary {
+export function demoSummary(
+  company: Company,
+  facts: DemoCompanyFacts,
+  standing?: DemoConsoleStanding,
+): PlatformCompanySummary {
   return {
     id: company.id,
     slug: company.id,
@@ -68,9 +75,9 @@ export function demoSummary(company: Company, facts: DemoCompanyFacts): Platform
     city: company.city,
     state: company.state,
     products: [company.product],
-    status: company.status,
-    statusChangedAt: company.createdAt,
-    phase: DEMO_PHASE,
+    status: standing?.status ?? company.status,
+    statusChangedAt: standing?.statusChangedAt ?? company.createdAt,
+    phase: standing?.phase ?? DEMO_PHASE,
     maintenance: { on: false, reason: null },
     plan: company.plan,
     modules: company.modules,
@@ -81,10 +88,15 @@ export function demoSummary(company: Company, facts: DemoCompanyFacts): Platform
   };
 }
 
-/** A demo company in full, as the console's access page reads it. */
-export function demoDetail(company: Company, facts: DemoCompanyFacts, today: string): PlatformCompany {
+/** A demo company in full, as the console's access page reads it, with the console's standing when given. */
+export function demoDetail(
+  company: Company,
+  facts: DemoCompanyFacts,
+  today: string,
+  standing?: DemoConsoleStanding,
+): PlatformCompany {
   return {
-    ...demoSummary(company, facts),
+    ...demoSummary(company, facts, standing),
     legalName: facts.legalName,
     timeZone: facts.timeZone,
     region: "us",

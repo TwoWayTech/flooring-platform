@@ -90,6 +90,13 @@ import type {
   SupportRequestInput,
 } from "@workspace/shared";
 import type { CompanyBilling, CompanyStanding, CompanySupportGrant } from "@workspace/shared";
+import type {
+  CompanyStatusInput,
+  PlatformCompanyStatus,
+  PlatformPlan,
+  PlatformPlanInput,
+  PlatformPlanPatch,
+} from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
 export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "settings">;
@@ -796,6 +803,22 @@ export interface ApiClient {
   approveSupportGrant(grantId: string): Promise<void>;
   /** The Owner ends a pending or approved request (POST /support-grants/:id/revoke). */
   revokeSupportGrant(grantId: string): Promise<void>;
+
+  // Platform admin part 2: plans and company status (docs/specs/platform-admin.md, "ApiClient (part 2)").
+  /** Every plan, retired ones included (GET /platform/plans). Any platform admin; 404 while admin.billing is off. */
+  listPlatformPlans(): Promise<PlatformPlan[]>;
+  /** Creates a plan (POST /platform/plans): the owner role, after a step-up in api mode; audited. */
+  createPlatformPlan(input: PlatformPlanInput): Promise<PlatformPlan>;
+  /** Changes a plan's name, prices, modules or limits (PATCH /platform/plans/:id); a plan in use keeps its modules and limits. */
+  updatePlatformPlan(planId: string, patch: PlatformPlanPatch): Promise<PlatformPlan>;
+  /** Retires a plan (POST /platform/plans/:id/retire); no company changes. */
+  retirePlatformPlan(planId: string, reason: string): Promise<PlatformPlan>;
+  /** Restores a retired plan (POST /platform/plans/:id/restore). */
+  restorePlatformPlan(planId: string, reason: string): Promise<PlatformPlan>;
+  /** A company's status, phase and what each action would do (GET /platform/companies/:id/status); null on a 404, as getPlatformCompany. */
+  getPlatformCompanyStatus(companyId: string): Promise<PlatformCompanyStatus | null>;
+  /** Suspends, reinstates or cancels a company with the status the admin saw (POST /platform/companies/:id/{action}). */
+  changePlatformCompanyStatus(companyId: string, input: CompanyStatusInput): Promise<PlatformCompany>;
 
   /**
    * Data import (spec G1) for a company: from Settings by a user with settings.import.manage in the
