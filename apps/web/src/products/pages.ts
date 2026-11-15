@@ -49,7 +49,11 @@ function rulesFor(product: ProductKey): PageRule[] {
   return [...menus, ...SUB_PAGES];
 }
 
-/** The most specific rule matching a page, or null for pages without one ("/" included). */
+/**
+ * The most specific rule matching a page (spec A3: every page maps to a view permission), or
+ * null for pages without one: sign-in, the settings home, /outbox and "/", which sends people to
+ * their own first page.
+ */
 function bestRule(product: ProductKey, href: string): PageRule | null {
   const [pathname = "", query = ""] = href.split("?");
   if (pathname === "/") return null;
@@ -60,15 +64,6 @@ function bestRule(product: ProductKey, href: string): PageRule | null {
     if (score > (best?.score ?? 0)) best = { rule, score };
   }
   return best?.rule ?? null;
-}
-
-/**
- * The permissions a page needs (spec A3: every page maps to a view permission), from the most
- * specific matching rule, or null for pages without a rule (sign-in, the settings home, "/",
- * which sends people to their own first page).
- */
-export function pagePermissions(product: ProductKey, href: string): PermissionKey[] | null {
-  return bestRule(product, href)?.anyOf ?? null;
 }
 
 /**

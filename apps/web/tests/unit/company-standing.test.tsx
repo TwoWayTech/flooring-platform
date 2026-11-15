@@ -431,6 +431,15 @@ describe("Billing in the menus and the page gate", () => {
     }
   });
 
+  it("leaves a page without a rule open to everyone, such as / and /outbox", () => {
+    const nobody = accessOf(false, []);
+    for (const product of ["flooring", "hr"] as const) {
+      expect(canOpenPage(product, "/", nobody)).toBe(true);
+      expect(canOpenPage(product, "/outbox", nobody)).toBe(true);
+      expect(canOpenPage(product, "/settings/outbox", nobody)).toBe(false);
+    }
+  });
+
   it("lets an Owner-only item ignore its permissions", () => {
     const item = { anyOf: ["settings.users.view"] as PermissionKey[], ownerOnly: true };
     expect(itemAllows(item, accessOf(false))).toBe(false);

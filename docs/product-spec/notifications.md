@@ -34,7 +34,7 @@ Code: `apps/web/src/lib/api/demo/notification-actions.ts` (actions), `packages/s
 | Switch an event on or off, set channels, edit its template | `settings.notifications.manage` | Owner | `saveNotificationRule` |
 | Reset an event to its defaults | `settings.notifications.manage` | Owner | `resetNotificationRule` |
 | Open the whole Outbox | `settings.outbox.view` | Owner | `PageGate` with the item in `apps/web/src/products/settings-menu.ts`; `OutboxPage`; `listOutbox` |
-| Open your own Outbox | None | Every signed-in user | `/outbox` has no page rule (`pagePermissions` in `apps/web/src/products/pages.ts` returns null); `listOutbox` limits the rows |
+| Open your own Outbox | None | Every signed-in user | `/outbox` has no page rule, so `canOpenPage` in `apps/web/src/products/pages.ts` lets everyone open it; `listOutbox` limits the rows |
 | Send again on a failed row | One's own row, or `settings.outbox.view` | Everyone, on their own rows | `retryOutbox` |
 | Cancel a scheduled row | One's own row, or `settings.outbox.view` | Everyone, on their own rows | `cancelOutbox` |
 | Simulate bounce | `settings.outbox.view` | Owner | `simulateBounce`; the button appears only in the whole-company view |

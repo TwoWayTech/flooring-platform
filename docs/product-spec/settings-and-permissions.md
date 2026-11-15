@@ -527,7 +527,7 @@ Formulas below are copied from the code.
 
     `featureForPath` picks the feature that owns a route. `pagePatternScore` scores a match: 3 for `/path/*`, 2 for a matching `?view=`, 1 for the path alone. A feature of the product itself outranks a `both` feature on a shared path. `FEATURES` has 69 keys and has no per-company switch. A unit test in `packages/shared/test/features.test.ts` compares `FEATURES` with `docs/FEATURES.md`.
 
-20. **Page access.** `pagePermissions` and `canOpenPage` in `apps/web/src/products/pages.ts`. Top-level pages take the permissions of their menu item. `SUB_PAGES` adds views and detail pages. The most specific match wins. `PageGate` in `apps/web/src/components/page-gate.tsx` checks the feature first, then the permission. A page without a rule, such as `/`, stays open.
+20. **Page access.** `canOpenPage` in `apps/web/src/products/pages.ts`. Top-level pages take the rule of their menu item. `SUB_PAGES` adds views and detail pages. The most specific match wins, and `itemAllows` in `apps/web/src/products/index.ts` decides it: the Owner for an `ownerOnly` page (Billing), otherwise any key in its `anyOf` (ADR 0054). `PageGate` in `apps/web/src/components/page-gate.tsx` checks the feature first, then `canOpenPage`. A page without a rule, such as `/` or `/outbox`, stays open.
 
 21. **Menu and home.** `visibleItems` and `homeFor` in `apps/web/src/products/index.ts`. An item shows when any of its features is on and any of its keys is held. A persona lands on the first item they may open.
 

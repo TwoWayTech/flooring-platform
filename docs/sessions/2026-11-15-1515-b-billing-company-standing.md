@@ -199,3 +199,10 @@ Prettier ignores `*.md` in this repository, so the docs stage has no formatter r
   - the refusals of both new routes carry no `Cache-Control: no-store` (only the 200s do);
   - merging with PR #37: `products/pages.ts` (`pageList`), and the top rows of docs/blueprint-delta.md, docs/api-contract.md, docs/FEATURES.md, STATUS and BRANCHES; whichever lands second keeps both and re-runs the web unit tests, the typecheck and both e2e projects.
 - **Next:** a reduced part 2 (`feat/platform-manual-billing`: plans as data, suspend, reinstate and cancel), as STATUS's queue says.
+
+## Review round 1
+One finding, should fix, confirmed by a skeptic: after stage 3, `canOpenPage` used the private `bestRule` and `itemAllows`, so the exported `pagePermissions` in `apps/web/src/products/pages.ts` had no caller left. It also gave the wrong rule for an Owner-only page: `[]` for /settings/billing, because it dropped `ownerOnly`.
+- **Fixed:** `pagePermissions` is removed, and its JSDoc on pages without a rule moved to `bestRule`. No behaviour changes, because nothing called it.
+- **Test:** a new web unit case in `company-standing.test.tsx` checks that `/` and `/outbox` open for someone with no permissions on both hosts, while `/settings/outbox` does not.
+- **Docs:** settings-and-permissions.md item 20 names `canOpenPage` and `itemAllows` (the Owner for an `ownerOnly` page, otherwise any key in `anyOf`). notifications.md says `/outbox` has no page rule, so `canOpenPage` lets everyone open it. ADR 0054's `ownerOnly` bullet records the removal. The delta row doesn't change, because behaviour doesn't.
+- **Run, through the lock:** `pnpm --filter web exec vitest run` passed 109 tests in 9 files. `pnpm --filter web typecheck` and `pnpm --filter web lint` were clean. Prettier on the two changed files was clean. `git grep pagePermissions` now finds only the ADR line that records the removal.
