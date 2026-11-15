@@ -10,7 +10,8 @@ const PLATFORM_DATE_FORMAT = "MMM d, yyyy";
 /**
  * Formats ISO dates in the company's date format (Settings: Localization, Region). With
  * `withTime`, date-times also show the time, e.g. "Nov 7, 2026, 10:15 AM". Outside a company
- * workspace (the platform console's tables and their filter chips) it uses "MMM d, yyyy".
+ * workspace (every platform console page: its tables, filter chips, company facts and data
+ * import) it uses "MMM d, yyyy", so the console has one date format.
  */
 export function useFormatDate() {
   const workspace = useContext(WorkspaceContext);

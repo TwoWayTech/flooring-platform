@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accessPatchProblem,
   offeredKeys,
   offeredModules,
   PROTECTED_CEILING_KEYS,
@@ -188,6 +189,9 @@ describe("access draft", () => {
     expect(limitProblem("", 3)).toBe("Enter a whole number from 1 to 100,000.");
     expect(limitProblem("", null)).toBeNull();
     expect(limitProblem("100000", null)).toBeNull();
+    // The field and the API's 400 say the same, since both use the shared check.
+    const refused = accessPatchProblem({ products: ["flooring"], hasSubscription: true }, { userLimit: 0 });
+    expect(limitProblem("0", 3)).toBe(refused?.message);
   });
 
   it("treats a company with no subscription row as a trial with no plan", () => {

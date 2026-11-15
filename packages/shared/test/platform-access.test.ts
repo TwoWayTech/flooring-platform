@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { enabledModules, type ModuleOverride, type PlanModules } from "../src/permissions/access-rules";
 import { ALL_PERMISSION_KEYS, isPermissionKey, permissionDef, type PermissionKey } from "../src/permissions/catalog";
 import {
+  ACCESS_LIMIT_MESSAGE,
   accessDiff,
   accessPatchProblem,
   ceilingRowsFor,
+  isAccessLimit,
   limitOverrideFor,
   moduleOverridesFor,
   offeredKeys,
@@ -15,7 +17,7 @@ import {
   type ModuleOverrideChange,
 } from "../src/platform/access-patch";
 import { isPlatformAdminRole, PLATFORM_ADMIN_ROLES } from "../src/platform/admin-roles";
-import { isModuleKey, PRODUCT_MODULES, type ModuleKey, type ProductKey } from "../src/products";
+import { inModuleOrder, isModuleKey, PRODUCT_MODULES, type ModuleKey, type ProductKey } from "../src/products";
 
 const FLOORING: ProductKey[] = ["flooring"];
 const HR: ProductKey[] = ["hr"];
@@ -204,6 +206,13 @@ describe("accessPatchProblem (platform-admin spec, Validations)", () => {
       expect(accessPatchProblem(PAID, { userLimit: limit })).toEqual(LIMIT_RANGE);
       expect(accessPatchProblem(PAID, { userLimit: 5, branchLimit: limit })).toEqual(LIMIT_RANGE);
     }
+  });
+
+  it("shares its limit check and message with the console's field (isAccessLimit)", () => {
+    expect(ACCESS_LIMIT_MESSAGE).toBe(LIMIT_RANGE.message);
+    for (const limit of [1, 16, 100_000]) expect(isAccessLimit(limit)).toBe(true);
+    for (const limit of [0, -1, 100_001, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(isAccessLimit(limit)).toBe(false);
   });
 
   it("refuses a null or text limit that slipped past the schema", () => {
@@ -460,6 +469,14 @@ describe("isPlatformAdminRole (platform-admin spec, Who uses it; review A4)", ()
   it("denies any other stored value", () => {
     for (const role of ["billing", "admin", "", "Owner", "owner ", "support\n"])
       expect(isPlatformAdminRole(role)).toBe(false);
+  });
+});
+
+describe("inModuleOrder", () => {
+  it("gives modules in display order without duplicates, from a list or a set", () => {
+    expect(inModuleOrder(["meetings", "platform", "retail", "platform"])).toEqual(["platform", "retail", "meetings"]);
+    expect(inModuleOrder(new Set<ModuleKey>(["hr", "core"]))).toEqual(["core", "hr"]);
+    expect(inModuleOrder([])).toEqual([]);
   });
 });
 

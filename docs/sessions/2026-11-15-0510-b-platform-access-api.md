@@ -278,6 +278,7 @@ Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #
 | `025daae` | e2e | `tests/e2e-api/platform-admin.spec.ts` and the control-database test helpers in `packages/db/src/testing.ts` |
 | `f6f1bb4` | Test fix | a deleted subscription row gets no limit override |
 | this commit | Docs | ADR 0052, the delta row, api-contract, ADR 0030 and 0034 notes, the product spec's "Real build (ADR 0052)", the users spec's "Support access", data-model, the `admin.access` note, the spec's as-built notes |
+| review round 1 | Refactor | No duplicated helpers (no behaviour change): `inModuleOrder` exported from `packages/shared/src/products.ts` and used by the shared diff, `offeredModules` and the companies service; `isAccessLimit` and `ACCESS_LIMIT_MESSAGE` exported from `access-patch.ts` and used by the console's `limitProblem`; the company facts and the data import pages use `useFormatDate` instead of their own "MMM d, yyyy" copies |
 
 ## Decisions taken during the build (all recorded in ADR 0052 and the delta row)
 - **Shared:** `accessPatchProblem` takes raw strings, so an unknown name gets the spec's own message; an unknown module name reads "The {name} module isn't offered to this company."; `moduleOverridesFor` takes the stored override rows and returns only real writes; `userLimitOverride` and `branchLimitOverride` are not sensitive fields (seat and branch counts).
@@ -306,6 +307,7 @@ Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #
 - Web: `pnpm --filter web typecheck` passed; `vitest run` 5 files and 33 tests passed; lint passed; Prettier fixed whitespace in two files. Later `platform-console.test.ts` 17 passed.
 - e2e: the api build, an api-mode web build, then Playwright on `platform-admin.spec.ts`, `users.spec.ts` and `login.spec.ts`: 10 passed, 0 failed, in 17.5 s. Afterwards ports 3000 and 4000 were free, `platform_admins` held 0 rows, and Summit's `retail.sample.view` ceiling row was back as it was.
 - Docs stage: `vitest run test/features.test.ts` in packages/shared (the register and `features.ts` in sync), 7 passed; `prettier --check` on the changed docs.
+- Review round 1 (duplicated helpers): shared `platform-access.test.ts` 48 passed and the shared suite 47 files, 516 tests; web `platform-console.test.ts` 17 passed and the web unit suite 5 files, 33 tests; api `platform.int.test.ts` 17 passed and `platform-admin-guard.test.ts` 6 passed; `pnpm -s typecheck` 6 of 6; `pnpm -s lint` 6 of 6 and Prettier clean; a demo-mode web build, then Playwright `admin.spec.ts` and `import.spec.ts` on the flooring project, 7 passed (the admin test now checks the "since" date reads "MMM d, yyyy").
 
 ## Left
 - **Rebase on main.** Meetings PR #33 merged as `1de1e0c` while this branch was built. It changes `apps/api/src/core/access/access.service.ts` (the same file as the refactor here, so expect a conflict), `apps/api/src/app.module.ts`, `docs/api-contract.md`, `docs/data-model.md`, docs/blueprint-delta.md (both add a row at the top: keep both, this one first) and the shared index. Rerun the api typecheck and the integration files after it.

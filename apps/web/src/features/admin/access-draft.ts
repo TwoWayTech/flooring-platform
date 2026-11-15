@@ -1,5 +1,6 @@
 import {
-  ACCESS_LIMIT_RANGE,
+  ACCESS_LIMIT_MESSAGE,
+  isAccessLimit,
   offeredKeys,
   offeredModules,
   type ModuleKey,
@@ -21,8 +22,6 @@ export interface AccessDraft {
 
 /** The limit fields of a draft. */
 export type LimitField = "userLimit" | "branchLimit";
-
-const LIMIT_RANGE = "Enter a whole number from 1 to 100,000.";
 
 /**
  * Whether the company has a plan to hold its limits. Limits live on its subscription rows, so a
@@ -52,13 +51,13 @@ function limitOf(text: string): number | null {
 
 /**
  * Why a typed limit can't be saved, or null (spec "Validations": a whole number from 1 to
- * 100,000). An empty field is fine while the company has no limit, since nothing is then sent.
+ * 100,000), with the shared check and message the API's 400 uses. An empty field is fine while
+ * the company has no limit, since nothing is then sent.
  */
 export function limitProblem(text: string, current: number | null): string | null {
   const value = limitOf(text);
-  if (value === null) return current === null ? null : LIMIT_RANGE;
-  const whole = Number.isInteger(value) && value >= ACCESS_LIMIT_RANGE.min && value <= ACCESS_LIMIT_RANGE.max;
-  return whole ? null : LIMIT_RANGE;
+  if (value === null) return current === null ? null : ACCESS_LIMIT_MESSAGE;
+  return isAccessLimit(value) ? null : ACCESS_LIMIT_MESSAGE;
 }
 
 function sameSet<T>(a: readonly T[], b: readonly T[]): boolean {

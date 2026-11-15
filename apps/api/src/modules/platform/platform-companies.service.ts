@@ -12,10 +12,9 @@ import {
 } from "@workspace/db/control";
 import {
   ALL_PERMISSION_KEYS,
-  MODULES,
+  inModuleOrder,
   PRODUCT_ROLES,
   roleTemplate,
-  type ModuleKey,
   type PlatformCompany,
   type PlatformCompanySummary,
   type PlatformDirectory,
@@ -70,11 +69,6 @@ function planLabel(status: TenantStatus, subscriptions: readonly PlatformSubscri
       subscription.status === "cancelled" ? `${subscription.planName} (cancelled)` : subscription.planName,
     )
     .join(", ");
-}
-
-/** Modules in display order, so the list reads the same however the rules built the set. */
-function inModuleOrder(modules: readonly ModuleKey[]): ModuleKey[] {
-  return MODULES.map((m) => m.key).filter((key) => modules.includes(key));
 }
 
 /**

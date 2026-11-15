@@ -1,7 +1,7 @@
 import { visibleModules } from "../features";
 import { isPermissionKey, permissionsForModules, type PermissionKey } from "../permissions/catalog";
 import type { ModuleOverride, PlanModules } from "../permissions/access-rules";
-import { isModuleKey, moduleInfo, MODULES, PRODUCT_MODULES, type ModuleKey, type ProductKey } from "../products";
+import { inModuleOrder, isModuleKey, moduleInfo, PRODUCT_MODULES, type ModuleKey, type ProductKey } from "../products";
 
 /**
  * Keys every company keeps in its ceiling (docs/specs/platform-admin.md, "Validations"; review A5).
@@ -19,6 +19,14 @@ export const PROTECTED_CEILING_KEYS = [
 
 /** The whole numbers a user or branch limit may take (spec "Validations"). */
 export const ACCESS_LIMIT_RANGE = { min: 1, max: 100_000 } as const;
+
+/** Why a limit is refused (spec "Validations"): the API's 400 and the console's field message say the same. */
+export const ACCESS_LIMIT_MESSAGE = "Enter a whole number from 1 to 100,000.";
+
+/** Whether a limit is a whole number in `ACCESS_LIMIT_RANGE` (spec "Validations"); the API and the console's field both check it. */
+export function isAccessLimit(value: number): boolean {
+  return Number.isInteger(value) && value >= ACCESS_LIMIT_RANGE.min && value <= ACCESS_LIMIT_RANGE.max;
+}
 
 /**
  * A change of company access as it arrives, before `accessPatchProblem` has checked its names. A
@@ -78,7 +86,6 @@ export interface AccessDiff {
 const PLATFORM_LOCKED = "The Platform module can't be switched off.";
 const PROTECTED_MISSING =
   "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people.";
-const LIMIT_RANGE = "Enter a whole number from 1 to 100,000.";
 const NO_PLAN = "This company is on a trial with no plan, so it has no limits to change.";
 
 /** The keys of the modules the feature switches leave visible (product spec rule 18). */
@@ -100,8 +107,7 @@ export function offeredModules(
   products: readonly ProductKey[],
   visible: readonly ModuleKey[] = visibleModuleKeys(),
 ): ModuleKey[] {
-  const fromProducts = new Set(products.flatMap((product) => PRODUCT_MODULES[product]));
-  return MODULES.map((m) => m.key).filter((key) => fromProducts.has(key) && visible.includes(key));
+  return inModuleOrder(products.flatMap((product) => PRODUCT_MODULES[product])).filter((key) => visible.includes(key));
 }
 
 /** The permission keys of `offeredModules`, in catalog order: the keys the console may tick or untick. */
@@ -147,11 +153,6 @@ function ceilingProblem(
   return PROTECTED_CEILING_KEYS.every((key) => held.has(key)) ? null : invalid(PROTECTED_MISSING);
 }
 
-/** Whether a limit is a whole number in `ACCESS_LIMIT_RANGE`. */
-function isAccessLimit(value: number): boolean {
-  return Number.isInteger(value) && value >= ACCESS_LIMIT_RANGE.min && value <= ACCESS_LIMIT_RANGE.max;
-}
-
 /**
  * Spec "Validations": limits are whole numbers from 1 to 100,000, and they need a subscription row
  * that is not deleted. Limits live on those rows, and creating one would end a fresh trial for good
@@ -160,7 +161,7 @@ function isAccessLimit(value: number): boolean {
 function limitsProblem(facts: AccessPatchFacts, patch: AccessPatchInput): AccessPatchProblem | null {
   const limits = [patch.userLimit, patch.branchLimit].filter((limit) => limit !== undefined);
   if (limits.length === 0) return null;
-  if (!limits.every(isAccessLimit)) return invalid(LIMIT_RANGE);
+  if (!limits.every(isAccessLimit)) return invalid(ACCESS_LIMIT_MESSAGE);
   return facts.hasSubscription ? null : { status: 422, message: NO_PLAN };
 }
 
@@ -253,11 +254,6 @@ function missingFrom<T>(list: readonly T[], other: readonly T[]): T[] {
   return [...new Set(list)].filter((item) => !present.has(item));
 }
 
-/** Modules in display order, so an audit row reads the same however the database returned them. */
-function byModuleOrder(modules: ModuleKey[]): ModuleKey[] {
-  return MODULES.map((m) => m.key).filter((key) => modules.includes(key));
-}
-
 /**
  * The `before` and `after` of a `company.access_changed` audit row (spec "Audit"), from the
  * company's effective access read before and after the save, or null when nothing changed, so a
@@ -265,8 +261,8 @@ function byModuleOrder(modules: ModuleKey[]): ModuleKey[] {
  */
 export function accessDiff(before: AccessState, after: AccessState): AccessDiff | null {
   const diff: AccessDiff = { before: {}, after: {} };
-  const switchedOn = byModuleOrder(missingFrom(after.modules, before.modules));
-  const switchedOff = byModuleOrder(missingFrom(before.modules, after.modules));
+  const switchedOn = inModuleOrder(missingFrom(after.modules, before.modules));
+  const switchedOff = inModuleOrder(missingFrom(before.modules, after.modules));
   const added = missingFrom(after.ceiling, before.ceiling).sort();
   const removed = missingFrom(before.ceiling, after.ceiling).sort();
   if (switchedOn.length > 0) diff.after.modulesSwitchedOn = switchedOn;

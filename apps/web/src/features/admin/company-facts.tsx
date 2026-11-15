@@ -1,8 +1,10 @@
+"use client";
+
 import type { ReactNode } from "react";
-import { format, parseISO } from "date-fns";
 import type { CompanyDatabaseState, CompanyMaintenanceReason, PlatformCompany } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
+import { useFormatDate } from "@/lib/use-format-date";
 import { CompanyPhasePill, CompanyStatusPill } from "./company-status";
 
 const DATABASE: Record<CompanyDatabaseState, string> = {
@@ -17,11 +19,6 @@ const MAINTENANCE: Record<CompanyMaintenanceReason, string> = {
   migration_failed: "On, after a failed update",
   move: "On, while the data moves",
 };
-
-/** Dates on platform pages, which belong to no company's date format. */
-function platformDate(iso: string): string {
-  return format(parseISO(iso), "MMM d, yyyy");
-}
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -40,13 +37,14 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
  */
 export function CompanyFacts({ company }: { company: PlatformCompany }) {
   const { database, maintenance } = company;
+  const formatDate = useFormatDate();
   return (
     <Panel title="Account">
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Fact label="Status">
           <span className="flex flex-wrap items-center gap-2">
             <CompanyStatusPill status={company.status} />
-            <span className="text-muted-foreground text-xs">since {platformDate(company.statusChangedAt)}</span>
+            <span className="text-muted-foreground text-xs">since {formatDate(company.statusChangedAt)}</span>
           </span>
         </Fact>
         <Fact label="Phase">
