@@ -116,3 +116,86 @@ These are numbers 21 to 33 in docs/specs/platform-admin.md, "Waiting for the own
 31. **Should an Owner shorten an approved grant, or see who approved it?** Taken: no API change.
 32. **May platform admins ask for access to a company whose Owner can't answer** (read only or locked)? Taken: unchanged. Requests are allowed, open nothing and expire.
 33. **Self-approval.** A person who is both a platform admin and a company's Owner can approve their own request: the approve route doesn't compare the approver with the requester, and `platform-support.spec.ts` sets up exactly such a person for Summit. Taken: unchanged, because grants open nothing. It must be refused before grant use is built (question 2).
+
+## Outcome
+Draft PR #38 (`feat/billing-company-standing` into `main`). Stages 0 to 4 are committed with `[skip ci]` and pushed. The docs commit carries no `[skip ci]`, so the draft gets its first `fast` run; `verify` and `e2e` run when the PR is marked ready, and they need a head commit without `[skip ci]`.
+
+| Stage | Commit | What |
+| --- | --- | --- |
+| 0, plan | `0e00ad5` | The part 4 spec section with acceptance criteria 40 to 63, owner questions 21 to 33, this log, the draft PR |
+| 1, shared | `66330ac` | The five standing states and the screens' copy, `lifecycle-dates.ts`, the two `company-lifecycle.ts` exports, the Owner's billing view and notice, the support decisions and messages, the types, `settings.billing` with its docs/FEATURES.md row, unit tests |
+| 2, API | `3b0b7a7` | `modules/billing`: `StandingMemberGuard`, `GET /company/standing`, `GET /billing`, `BillingFacts`; the lint blocks; the support-grant service on the shared messages; S-1 to S-21, B-1 to B-13 and the guard unit test |
+| 3, web | `9a9b1f9` | The server standing read, `StandingGate` and the overlay, the three screens, the standing watch, the Owner's banner, /settings/billing with `ownerOnly` and `itemAllows`, the Support access panel, the ApiClient blocks and DemoStore, web unit tests |
+| 4, tests | `8f22ac9` | The db test helpers and their test, the demo `billing.spec.ts`, /settings/billing in `screens.ts`, the api-mode `company-standing.spec.ts`, global setup |
+| 4, checks | none | Every integration, typecheck and browser run passed first time, so nothing changed |
+| 5, docs | the commit that adds this section | ADR 0054, the delta row, api-contract, the spec as built, docs/FEATURES.md (the `settings.users` note), the product spec, the users spec, notes in ADRs 0030, 0033, 0052 and 0053 |
+
+`git diff --stat origin/main -- apps/api/src/core/auth apps/api/src/core/tenancy` stayed empty after every stage. No table, migration or dependency changed.
+
+## Decisions taken during the build
+Each is in ADR 0054 ("Safest options taken" and "Smaller choices made while building"), the spec's "As built (part 4)" and the top row of docs/blueprint-delta.md. The planned ones are under "Decisions and why" above.
+
+**Safer than the plan:**
+- **Unreadable values deny or say less** (shared): an unknown notice reason reads as the plain "Read only" notice; the date helpers skip a moment that can't be read instead of throwing; "every counted row is a trial" needs at least one row; `companyBillingView` copies only `userLimit` and `branchLimit`.
+- **DemoStore's billing refuses** with "That company does not exist." when the open company can't be found, instead of asserting it exists.
+- **The tests check more:** the guard's unit test shows it looks up only the session's company and lets a member through in every state; S-16 shows a company route does open one pool; S-21 also checks every /platform handler is session-only and that `BillingController` has no class guards.
+- **Two JSDoc lines** in `support-grants.service.ts` that said "revokes at any time" now say TenantGuard refuses both decisions while the company is read only (no behaviour change).
+
+**Other choices:**
+- **Shared API test helpers** in `apps/api/test/support/company-facts.ts` (not named in the plan), so the two integration files don't repeat them; an `afterEach` reset instead of a per-case `finally`.
+- **B-12 is checked in the `billing()` helper** on every Owner read, and B-5 is split into B-5a to B-5h. In B-13 a second, enrolled Owner revokes, and the read-only case sends no step-up.
+- **`overlayState` replaces the plan's `gateView`;** `UnavailablePanel` takes `onSignOut`; no effects with refs (the banner's counter and StandingGate's new server answer are adjusted during render, the re-check is made once with `useState`).
+- **The palette closes for good** when the company becomes blocked.
+- **The support panel re-reads by bumping a counter,** not `query.retry()`, and focus lands on the "Support access" heading after a decision. Approve's error is caught inside `onConfirm`; Revoke has its own confirm dialog.
+- **Layout:** a narrower Reason column (`min-w-48 max-w-sm`), so Actions fits at 900 px; the standing title is `text-xl sm:text-2xl` at 375 px.
+- **Two period texts:** "Current period: {start} to {end}" on the plan line and "Current period ends {end}" as its standing.
+- **The PR #37 overlap:** the part 4 blocks in `contract.ts`, `api-methods.ts` and `store.ts` keep their own imports, checked against #37's diff from the git objects only. `pageList` in `products/pages.ts` will conflict on neighbouring lines, as the plan expects.
+- **The session log's time** is 1515, from the task, not the plan's 1345.
+- **This commit carries no `[skip ci]`,** following the plan's stage 5 ("the head; no `[skip ci]`") over the task's general git step, as every earlier stage report asked.
+
+**The plan and the code agreed.** No contradiction was found at any stage, and no product bug was found by the browser runs.
+
+## Commands run
+Heavy runs went through the scratchpad lock, one at a time; logs are in the scratchpad's `platform4/logs` folder. Ports 3000 and 4000 were free before and after every dev server and browser run.
+
+| Stage | Command | Result |
+| --- | --- | --- |
+| 0 | `git fetch origin`; `gh pr create --draft`; `gh pr view 38` | origin/main still `c763938`; PR #38, draft and open |
+| 1 | shared vitest on the six planned files and `access-rules.test.ts` | 148 passed |
+| 1 | `pnpm --filter @workspace/shared exec vitest run` | 838 passed in 60 files |
+| 1 | shared lint; Prettier on packages/shared | clean; 4 files formatted, then clean |
+| 1 | `pnpm -s typecheck --force` | 6 of 6 tasks passed |
+| 2 | API unit `company-standing-guard.test.ts`; `tsc --noEmit` in apps/api | 7 passed; clean |
+| 2 | API integration, one file at a time: `company-standing.int`, `billing.int`, `isolation.int`, `permissions.int`, `users.int`, `platform.int`, `platform-support.int` | 21, 20, 15, 25, 17, 19 and 10 passed |
+| 2 | `pnpm --filter api test`; `pnpm --filter api lint`; Prettier on apps/api | 79 passed in 14 files; clean; clean |
+| 2 | lint probe: `zz-probe.ts`, `company-standing.zz-probe.ts`, and a third probe for the inherited rules | 2, 3 and 2 `no-restricted-imports` errors, as expected; all deleted, tree clean |
+| 2 | `git diff --stat origin/main -- apps/api/src/core/auth apps/api/src/core/tenancy`; `pnpm -s typecheck --force` | empty; 6 of 6 passed |
+| 3 | `pnpm --filter web exec vitest run` | 108 passed in 9 files (company-standing 41, demo-billing-support 7) |
+| 3 | `pnpm --filter web lint`; `pnpm --filter web typecheck`; Prettier on apps/web; `pnpm -s typecheck --force` | clean; passed; clean; 6 of 6 passed |
+| 3 | demo dev server, driven by hand at 375 and 1440 px, light and dark | /settings/billing and the Support access panel as specified; approve and revoke with the right toasts and focus; the manager's NoAccess; Harbor's "HR Standard"; ⌘K lists Billing; no console warnings; server stopped |
+| 4 | db `standing-test-helpers.int`; db lint, typecheck and unit tests | 4 passed; clean; 18 passed in 5 files |
+| 4 | shared `features.test.ts`; web `tsc --noEmit` and ESLint on the e2e folders; Prettier | 7 passed; clean; clean |
+| 4 checks | API integration `company-standing.int`, `billing.int`, `isolation.int`, `users.int`, `platform-support.int`; db `standing-test-helpers.int` | 21, 20, 15, 17, 10 and 4 passed |
+| 4 checks | `pnpm -s typecheck --force` | 6 of 6 passed |
+| 4 checks | the plan's demo e2e: demo build, then three chunks on one worker | 74 passed (15 Flooring specs, 8 a11y, console and responsive for the two pages, 51 HR) |
+| 4 checks | the plan's api-mode e2e: both builds, then company-standing, login, platform-admin, platform-support and users | 14 passed (2, 6, 2, 1 and 3) |
+| 4 checks | `company-standing.spec.ts` again on the same builds | 2 passed; global setup printed no reset line |
+| 4 checks | Summit before and after, by psql: `tenants` status, maintenance and status change; the subscription row's period and status; open grants; the test agent | all equal except `updated_at` on both rows (the restore helpers bump it); 0 open grants; the agent removed |
+| 5 | shared vitest on `company-standing`, `lifecycle-dates`, `company-billing`, `support-grants`, `company-lifecycle` and `features` tests | 133 passed (8, 35, 45, 31, 7 and 7) |
+| 5 | web vitest on `company-standing.test.tsx` and `demo-billing-support.test.ts` | 48 passed |
+| 5 | `grep -n "settings.billing"` over docs/FEATURES.md and features.ts; `features.test.ts` after the `settings.users` note | one row and one key; 7 passed |
+| 5 | `git diff --stat origin/main -- apps/api/src/core/auth apps/api/src/core/tenancy` | empty |
+
+Prettier ignores `*.md` in this repository, so the docs stage has no formatter run.
+
+## Left
+- **Before ready (orchestrating session):** the full `pnpm lint`, `pnpm -s typecheck --force`, `pnpm test` (with `test:hooks`) and `pnpm test:api` on the head; `/review`; a fresh security-reviewer (the plan's focus list: the standing route's exposure, the empty core diff, the session-only allow-list and class guard, `GET /billing`'s switch-then-Owner order and what it never returns, the approve step-up and the read-only hiding, loop freedom, the e2e helpers being test-only), its summary posted with `gh pr review 38 --comment --body-file`; then ready, and `verify` and `e2e` green on a head without `[skip ci]` before the self-merge.
+- **STATUS and BRANCHES:** by the orchestrating session: "Next three tasks" 2 (part 4 done, a reduced part 2 next), a Done entry, the residual risks of ADR 0054 as follow-ups, owner questions 21 to 33 under Blockers, the PR #38 row. The STATUS note that the console says "in Settings" while the web has no Owner screen is closed by this part.
+- **The PR body:** its "Screenshots" section still says "To come with the web stage", and the stage 3 shots are only in the scratchpad.
+- **Not checked by eye:** the real overlay, the full-page maintenance and suspended screens and the banner in api mode, at 375 and 1440 px in both themes. The api-mode spec asserts them (the overlay at 1440 px, the maintenance page at 375 px with no sideways scroll); the demo can't show them.
+- **Doubtful or open:**
+  - `since` for `payment_lapsed` with a mixed set names a trial's end as "Your plan's period ended on"; accepted as the spec says, recorded as a residual risk;
+  - a `ready` database row whose connection string can't be decrypted gives company routes a 500 `internal_error`, not 503 `company_unavailable` (pre-existing, core/tenancy), while standing reads `full`;
+  - the refusals of both new routes carry no `Cache-Control: no-store` (only the 200s do);
+  - merging with PR #37: `products/pages.ts` (`pageList`), and the top rows of docs/blueprint-delta.md, docs/api-contract.md, docs/FEATURES.md, STATUS and BRANCHES; whichever lands second keeps both and re-runs the web unit tests, the typecheck and both e2e projects.
+- **Next:** a reduced part 2 (`feat/platform-manual-billing`: plans as data, suspend, reinstate and cancel), as STATUS's queue says.

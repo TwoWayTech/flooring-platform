@@ -135,7 +135,7 @@ Only the rollout changes (`migrateAllCompanies`). Provisioning (`migrateCompany`
 
 ## Deferred, not invented
 - **Using a support grant** to open a company read-only (ADR 0034, ADR 0052): a tenancy change. The console says approved access doesn't open the company's data yet.
-- **The Owner's support-access panel in the web.** The dialog and toast say the Owner approves "in Settings"; the API's `GET /support-grants`, approve and revoke exist, but the web screen comes with part 4.
+- **The Owner's support-access panel in the web.** The dialog and toast say the Owner approves "in Settings"; the API's `GET /support-grants`, approve and revoke exist, but the web screen comes with part 4. **Built: ADR 0054** (Settings → Users, Support access panel).
 - **Writing support requests or access changes to the company's `audit_log`:** a tenancy change.
 - **An index on `platform_audit_log (at, id)` and an append-only trigger:** migrations.
 - **Purging the text from old `company.migration_failed` rows:** that edits an append-only log.
@@ -173,7 +173,7 @@ Also in docs/specs/platform-admin.md, "Waiting for the owner", numbers 12 to 20.
 - **The demo's audit rows and grants live in one browser's local storage;** the demo has no step-up and no support role.
 - **The e2e hard-deletes its test grants,** leaving `support.requested` rows whose `target_id` names a deleted grant (local databases only; CI's is fresh).
 - **The companies list is wider:** at 1440 px it scrolls sideways inside its table because of the two new columns. The page itself doesn't.
-- **"Approves it in Settings"** points the admin at an Owner screen the web doesn't have yet (part 4).
+- **"Approves it in Settings"** points the admin at an Owner screen the web doesn't have yet (part 4). **Closed by ADR 0054:** the Owner approves and revokes in Settings → Users, while the company is in full use.
 
 ## Consequences
 - **No schema, dependency or core change:** no table, column, index, trigger or migration, and no dependency. No behaviour change in core/auth or core/tenancy, and none in provisioning. The guard's write roles come from packages/shared with no behaviour change; `users/support-grants.service.ts` uses the shared status, with no behaviour change.

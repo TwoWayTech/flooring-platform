@@ -1,6 +1,6 @@
 # Platform admin: companies and access on the API (draft spec)
 
-**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and the top row of docs/blueprint-delta.md; see "Part 3: audit and support". Part 4 is being built on `feat/billing-company-standing` under the same rule, and is recorded in ADR 0054 and a new top row of docs/blueprint-delta.md; see "Part 4: the company side". Where the build settled a point this draft left open, the text below says what was built.
+**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and its row of docs/blueprint-delta.md; see "Part 3: audit and support". Part 4 is built on `feat/billing-company-standing` (PR #38) under the same rule, and recorded in ADR 0054 and the top row of docs/blueprint-delta.md; see "Part 4: the company side". Where the build settled a point this draft left open, the text below says what was built.
 
 Drafted by Claude on 2026-11-15 as P11 step 1 for module 17, "Platform admin and manual billing" (docs/real-build-plan.md). docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, the "Change company access" workflow, rules 18 and 24, and the edge cases. It has no server design and nothing on billing.
 
@@ -19,7 +19,7 @@ Sources:
 | 1 | `feat/platform-access-api` | The platform guard, `/platform/me`, the companies list and detail, change company access, the restricted directory, and the support-access request behind the guard. The /admin console reads and writes the API in api mode | Built in PR #34; acceptance criteria 1 to 18 |
 | 2 | `feat/platform-manual-billing` | Plans as data; suspend, reinstate and cancel. Subscriptions and payments wait for the owner | Later, see "Parts 2 to 4" |
 | 3 | `feat/platform-audit-support` | The platform audit viewer, support requests in the console with limits, database and maintenance columns, migrate.ts hardening, and the read-only access page for the support role | Built in PR #36 (ADR 0053); acceptance criteria 19 to 39 |
-| 4 | `feat/billing-company-standing` | The company side: `GET /company/standing` and `GET /billing`, the maintenance, unavailable and suspended screens, the Owner's banner, a read-only billing page (new key `settings.billing`), the Owner's support-access panel | Being built (draft PR, ADR 0054); acceptance criteria 40 to 63 |
+| 4 | `feat/billing-company-standing` | The company side: `GET /company/standing` and `GET /billing`, the maintenance, unavailable and suspended screens, the Owner's banner, a read-only billing page (new key `settings.billing`), the Owner's support-access panel | Built in PR #38 (ADR 0054); acceptance criteria 40 to 63 |
 
 ## Who uses it
 
@@ -636,7 +636,7 @@ The same screens run on DemoStore, through the same shared rules:
 - **The demo admin** has the owner role. Its entries show "Platform admin", and "Not recorded" for address and device.
 - **A save that changes nothing writes nothing:** no company log entry and no platform row. This matches the API.
 - **Reset demo** clears both keys.
-- **No Owner approves in the demo,** so a demo request stays pending until it expires (as built).
+- **The Owner approves and revokes in the demo's Settings → Users** since part 4 (PR #38). Before it, a demo request stayed pending until it expired.
 
 ### Validations and messages (part 3)
 
@@ -726,7 +726,7 @@ Settled while building, all in ADR 0053.
 - **The demo cursor** is looked up among all entries, whatever the filters, as the API does.
 - **The web's unit tests** compile JSX in `apps/web/vitest.config.ts` (`oxc`), because tsconfig's `jsx: "preserve"` kept vitest from importing `.tsx` files. No dependency was added. They run `tests/unit/**/*.test.{ts,tsx}`, and tsconfig includes `tests/**/*.tsx`, so a test can write JSX.
 - **The companies list is wider:** at 1440 px it scrolls sideways inside its table because of the two new columns; the page doesn't.
-- **"Approves it in Settings":** the panel and the toast keep the spec's words, but the web has no Owner screen for support access yet (the API's `GET /support-grants`, approve and revoke exist). Part 4 builds it.
+- **"Approves it in Settings":** the panel and the toast keep the spec's words. When part 3 was built the web had no Owner screen for support access (only the API's `GET /support-grants`, approve and revoke). Part 4 built it (Settings → Users, Support access panel, PR #38), so the words hold while the company is in full use.
 
 ### Edge cases and known limits (part 3)
 - **Old rows still hold the text** in the control database: any SQL user, backup or dump sees it. Only the console is redacted (owner question 13).
@@ -813,7 +813,7 @@ Settled while building, all in ADR 0053.
 
 ## Part 4: the company side
 
-**Being built under the same overnight rule** on `feat/billing-company-standing`, from main at `c763938` (parts 1 and 3 merged); still a draft until the owner approves it. It is recorded in ADR 0054 and a new top row of docs/blueprint-delta.md, both written in the build's docs stage. It takes a new number because it adds a session-only route outside /auth and /platform, and a new feature key. Where part 4 departs from the outline or from the specs it builds on, it is on the safer side. Each departure is listed in "Safer than the outline (part 4)". Points the build settles go in "As built (part 4)".
+**Built under the same overnight rule** on `feat/billing-company-standing` (PR #38), from main at `c763938` (parts 1 and 3 merged); still a draft until the owner approves it. It is recorded in ADR 0054 and the top row of docs/blueprint-delta.md. It takes a new number because it adds a session-only route outside /auth and /platform, and a new feature key. Where part 4 departs from the outline or from the specs it builds on, it is on the safer side. Each departure is listed in "Safer than the outline (part 4)". Points the build settles go in "As built (part 4)".
 
 Sources:
 - **Blueprint:**
@@ -1291,11 +1291,31 @@ Each is recorded in docs/blueprint-delta.md and ADR 0054.
     - The test requester is a user who can't sign in.
 
 ### As built (part 4)
-Filled in as the build settles points (stages 1 to 5).
+Settled while building, all in ADR 0054.
+
+**Safer still** (also in docs/blueprint-delta.md):
+- **Unreadable values deny or say less.** `billingNoticeText` reads an unknown reason as the plain "Read only" notice. The date helpers skip a moment that can't be read instead of throwing. "Every counted row is a trial" needs at least one row. `companyBillingView` copies only `userLimit` and `branchLimit`, so no other limit field reaches the answer.
+- **DemoStore's `getCompanyBilling`** refuses with "That company does not exist." when the open company can't be found, instead of asserting it exists.
+- **The tests check more than the plan asked:** the guard's unit test shows it looks up only the session's company and lets a member through in every state (the handler answers with the state); S-16 also shows that a company route does open one pool, so "no new pool" means something; S-21 also checks that every /platform handler is session-only and that `BillingController` has no class guards.
+
+**Other choices:**
+- **The module** is `apps/api/src/modules/billing` (`BillingModule`, registered after `PlatformModule`), not `modules/platform`, which keeps only the platform guard's routes. `GET /billing` uses the existing `requireFeature`.
+- **The web's rules** are `overlayState` (the blocking state, or null for the shell; it replaces the outline's `gateView`), `bannerReread` and `createRecheck`, in `apps/web/src/features/standing/standing-rules.ts`. The server's standing read is the pure `serverStandingOf` (`lib/session/server-standing.ts`).
+- **`UnavailablePanel` takes an `onSignOut` prop,** so it stays pure and unit-testable; `CompanyUnavailable` (page mode) and `CompanyUnavailableOverlay` pass `signOut`. `BillingView` and `SupportAccessView` are pure in the same way.
+- **No effects with refs** (lint): the banner's re-read counter and StandingGate's new server answer after `router.refresh()` are adjusted during render, and the re-check queue is created once with `useState`. The behaviour is the planned one.
+- **The palette closes for good** when the company becomes blocked, so an open palette doesn't come back on its own when the overlay closes.
+- **The support panel re-reads by bumping a counter,** not with `query.retry()`, which blanks the table to a skeleton and drops focus. A decision can remove the button that opened its dialog, so focus then lands on the "Support access" heading. Approve's error is caught inside the step-up's `onConfirm` and shown as a toast; Revoke has its own confirm dialog.
+- **Layout:** the support table's Reason column is `min-w-48 max-w-sm`, so the Actions column fits at 900 px, with the two buttons stacked on a pending row; the standing screen's title is `text-xl sm:text-2xl`, so "Under maintenance" fits at 375 px.
+- **Two period texts:** the plan block reads "Current period: {start} to {end}", and its standing reads "Current period ends {end}".
+- **Types and messages:** `SUPPORT_CLOSED_MESSAGES` is a typed `Readonly<Record<…>>` with the API's strings; `BlockingStandingState` and `SupportGrantStep` type the screens and the decisions. Two JSDoc lines in `support-grants.service.ts` that said "revokes at any time" now say TenantGuard refuses both decisions while the company is read only.
+- **API tests:** shared helpers in `apps/api/test/support/company-facts.ts`, with an `afterEach` reset that also runs when a test fails. B-12 is checked inside the `billing()` helper on every Owner read, not as a test of its own, and B-5 is split into B-5a to B-5h. In B-13 a second, enrolled Owner revokes, because the first had to step up to approve; the read-only case sends no step-up, since TenantGuard refuses first.
+- **The api-mode e2e** reaches Audit log through the Settings nav link, and relies on `#main` and on `QueryFallback`'s `role="alert"` card. The seeded Summit is `active` with one active monthly row at price 0, so a period end 3, 20 and 50 days ago gives overdue, read only and locked. The restore helpers bump `updated_at` on Summit's `tenants` row and its subscription row, which is not a standing fact, so the snapshot leaves it out.
+- **PR #37:** the part 4 blocks in `contract.ts`, `api-methods.ts` and `store.ts` each have their own import, so #37's edits to the shared import lists merge cleanly. `pageList`'s signature in `products/pages.ts` will conflict on neighbouring lines, as expected.
+- **Checked by hand in the demo** (stage 3): /settings/billing and /settings/users at 375 and 1440 px, light and dark, with no sideways scroll at 375 px; approve with a step-up and revoke; the manager's NoAccess page; Harbor's "HR Standard"; ⌘K lists Billing for the Owner; no console warnings. The notices and the maintenance and suspended cards were checked by injecting their markup, because the demo never shows them.
 
 ### What part 4 changes in earlier text
-The docs stage rewrites these:
-- **Parts:** row 4 reads "Built in PR #n (ADR 0054); acceptance criteria 40 to 63".
+Done in the build's docs stage:
+- **Parts:** row 4 reads "Built in PR #38 (ADR 0054); acceptance criteria 40 to 63".
 - **Part 3, "As built":** the last bullet ("the web has no Owner screen for support access yet") says the panel is built in part 4.
 - **Part 3, "Demo mode":** "No Owner approves in the demo" changes: the Owner approves and revokes in the demo's Settings → Users.
 - **docs/specs/settings-users-access.md, "Support access":** "or revokes at any time" becomes "or revokes while the company is in full use, in Settings → Users (Support access panel, ADR 0054). While the company is read only, TenantGuard refuses both; requests end on their own."
@@ -1312,15 +1332,17 @@ The docs stage rewrites these:
   - one standing read per full page load for everyone, plus one `GET /billing` for the Owner;
   - the banner re-reads only on standing changes, and on DemoStore emits, like every api-backed query;
   - refusals coalesce to one standing read in flight and one trailing.
-- **A database that control says is `ready` but can't be reached.** Standing reads `full`, so screens show their own `company_unavailable` errors and no overlay. There is no loop.
+- **A database that control says is `ready` but can't be used.** Standing reads `full`, so there is no overlay, and company routes fail with their own errors and the screens' error cards. As built (S-15), a stored connection string that can't be decrypted gives 500 `internal_error` (logged as "Unknown encrypted value format"), not 503 `company_unavailable`: existing TenantConnectionService behaviour, unchanged here. A 500 isn't a standing code, so there is no loop.
+- **Refusals carry no `Cache-Control: no-store`.** Only the 200 answers of both new routes send it. A refusal holds no company data.
+- **`since` for `payment_lapsed`** is the latest counted row's end. With a mixed set (a paid row lapsed 20 days ago and a trial that ended 5 days ago), "Your plan's period ended on" names the trial's end. The lock date is exact either way.
 - **Read-only support decisions.** The Owner can't end an approval while the company is read only (question 26). Grants open nothing yet.
 - **Self-approval.** A person who is both a platform admin and the company's Owner can approve their own request (question 33).
-- **Dates use the browser's time zone,** as elsewhere.
+- **Dates use the browser's time zone,** as elsewhere. The demo's period ends at midnight UTC, so in US time zones its end shows as the day before.
 - **A local database seeded more than a month ago** shows Summit as overdue, and as locked after 44 days. The api-mode e2e's global setup refreshes it, for e2e only.
 - **A killed e2e run** can leave Summit in maintenance (`move`) or lapsed until the next global setup.
 - **Audit rows are append-only.** Each api-mode e2e run adds `support.approved` and `support.revoked` rows to `platform_audit_log` and to Summit's `audit_log`.
 - **The overlay has no polling** (see "While a page is open").
-- **The demo can't show the screens or the banner.**
+- **The demo can't show the screens, the overlay or the banner.** The api-mode e2e asserts them (the overlay at 1440 px, the maintenance page at 375 px with no sideways scroll), but nobody has looked at them by eye at 375 and 1440 px in both themes.
 - **A member of several companies** gets only Try again and Sign out on a blocked screen. Api mode has no company chooser to send them to (follow-up).
 
 ### Acceptance criteria (part 4)
@@ -1409,13 +1431,13 @@ The docs stage rewrites these:
     - billing stays `notice: null` and `standing: "current"` across the end of a month in UTC;
     - /settings/billing passes axe and the console check, with no sideways scroll at 375 px, on both hosts.
 
-**Planned test files** (the docs stage replaces this with the tests as built):
-- 40 to 46: `apps/api/test/company-standing.int.test.ts` (S-1 to S-21), `apps/api/test/company-standing-guard.test.ts` and the lint probe.
-- 47 to 55: `apps/api/test/billing.int.test.ts` (B-1 to B-13).
-- 56: `packages/shared/test/company-standing.test.ts`, `lifecycle-dates.test.ts`, `company-billing.test.ts` and `support-grants.test.ts`.
-- 57, and the page rule in 62: `apps/web/tests/unit/company-standing.test.tsx`.
-- 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts`.
-- 62 in the demo, and 63: `apps/web/tests/e2e/billing.spec.ts`, `tests/e2e/screens.ts` (axe, console, 375 px) and `apps/web/tests/unit/demo-billing-support.test.ts`.
+**As built, the criteria are covered by:**
+- 40 to 46: `apps/api/test/company-standing.int.test.ts` (21 tests: 40 is S-1 to S-6, 41 is S-7 to S-14, 42 is S-15 and S-16, 43 is S-19, 44 is S-17, 45 is S-18, 46 is S-20 and S-21), the unit `apps/api/test/company-standing-guard.test.ts` (7), the session-only map in `apps/api/test/isolation.int.test.ts`, and the lint probe (2 and 3 `no-restricted-imports` errors, then deleted). The helpers are in `apps/api/test/support/company-facts.ts`.
+- 47 to 55: `apps/api/test/billing.int.test.ts` (20 tests: 47 is B-2, 48 is B-3, 49 is B-4, 50 is B-5a to B-5h with B-12 checked in the helper on every Owner read, 51 is B-6, 52 is B-7 and B-8, 53 is B-9 and B-11, 54 is B-1 and B-10, 55 is the two B-13 tests). The isolation, permissions, users, platform and platform-support suites pass unchanged (15, 25, 17, 19 and 10).
+- 56: `packages/shared/test/company-standing.test.ts` (8), `lifecycle-dates.test.ts` (35), `company-billing.test.ts` (45) and `support-grants.test.ts` (31); `company-lifecycle.test.ts` passes unchanged (7).
+- 57, and the page rule in 62: `apps/web/tests/unit/company-standing.test.tsx` (41).
+- 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts` (2 tests), with its state helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/standing-test-helpers.int.test.ts` (4), and `tests/e2e-api/global-setup.ts`.
+- 62 in the demo, and 63: `apps/web/tests/e2e/billing.spec.ts` (3 Flooring tests and 1 `@hr`), `/settings/billing` in `tests/e2e/screens.ts` for both hosts (axe in both themes, the console check, 375 px), and `apps/web/tests/unit/demo-billing-support.test.ts` (7, the end of a month in UTC among them).
 
 ## Parts 2 to 4 (outline, not built here)
 

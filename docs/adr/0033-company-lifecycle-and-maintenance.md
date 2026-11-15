@@ -44,4 +44,4 @@
 ## Consequences
 - **Cost:** each request makes one extra control-database query for the subscription rows.
 - **Alert email:** it needs `EMAIL_PROVIDER=resend` and `EMAIL_FROM` wherever `pnpm db:migrate` runs. With the memory adapter the alert is only logged. The audit row is always written.
-- **Web:** the web app shows the API's message as it does for other refusals. A dedicated "under maintenance" and "suspended" screen comes with the platform-admin screens.
+- **Web:** the web app shows the API's message as it does for other refusals. A dedicated "under maintenance" and "suspended" screen comes with the platform-admin screens. **Built: ADR 0054.** `GET /company/standing` gives the web the company's state, and the shell shows one full-page maintenance, unavailable or suspended screen, or an overlay when a later request is refused, with the API's own text.

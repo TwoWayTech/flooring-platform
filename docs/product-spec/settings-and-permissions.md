@@ -40,6 +40,8 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings`; `apps/web/src/lib/api/demo/notification-actions.ts` |
 | See every Outbox row | `settings.outbox.view` | Owner | `listOutbox` in `notification-actions.ts` |
 | Read the audit log | `settings.audit.view` | Owner, Manager, Accountant, HR manager | `AuditLogPage` in `apps/web/src/features/settings/audit-log-page.tsx` |
+| Read the company's billing (plan, period, limits; read only) | None: the Owner only | Owner | `BillingPage` in `apps/web/src/features/settings/billing/billing-page.tsx`, opened through the `ownerOnly` menu rule (`itemAllows` in `apps/web/src/products/index.ts`). `DemoStore.getCompanyBilling`; on the API, `GET /billing` (ADR 0054) |
+| Approve or revoke support access | None: the Owner only | Owner | `SupportAccessPanel` in `apps/web/src/features/settings/users/support-access-panel.tsx`, on Settings → Users. `DemoStore.approveSupportGrant` and `revokeSupportGrant`; on the API, `POST /support-grants/:id/approve` (with a step-up) and `/revoke` (ADR 0034, ADR 0054) |
 | Data import, Connect a database | `settings.import.manage` | Owner | `DemoStore.importScope`. See `docs/product-spec/import.md` |
 | Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile` |
 | Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx` (`getPlatformGate`). `DemoStore.updatePlatformCompanyAccess` runs `accessPatchProblem`. On the API, `PlatformAdminGuard` with the platform `owner` role and a step-up (see Real build) |
@@ -245,11 +247,12 @@ Seeded companies, from `packages/shared/scripts/fixtures/companies.ts`:
 
 ### Settings pages
 
-Groups and pages are `SETTINGS_GROUPS` and `SETTINGS_MENU` in `apps/web/src/products/settings-menu.ts`. A page shows when its feature is on and the viewer holds any listed key.
+Groups and pages are `SETTINGS_GROUPS` and `SETTINGS_MENU` in `apps/web/src/products/settings-menu.ts`. A page shows when its feature is on and the viewer holds any listed key, or, for an `ownerOnly` page (Billing), is the company's Owner. One rule, `itemAllows` in `apps/web/src/products/index.ts`, decides the settings nav, the settings home, the command palette, the page gate and the access preview (ADR 0054).
 
 | Group | Page | Route | Keys, any of | Feature key | Stored in |
 | --- | --- | --- | --- | --- | --- |
 | Company | Company profile | `/settings/company` | `settings.company.manage` | `settings.company` | `settings.profile` |
+| Company | Billing | `/settings/billing` | None: the Owner only (`ownerOnly`) | `settings.billing` | Nothing: read from `GET /billing` (control rows); the demo shows `demoSubscription` |
 | Company | Branding | `/settings/branding` | `settings.branding.manage` | `settings.branding` | `settings.branding` |
 | Company | Number format | `/settings/number-format` | `settings.numbers.manage` | `settings.number-format` | `settings.numbers` |
 | People and access | Users | `/settings/users` | `settings.users.view`, `settings.users.manage` | `settings.users` | `users` |
@@ -865,7 +868,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Invited users have no accept step.** See User status.
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it. Lowering `userLimit` below the seats in use is allowed.
 - **`branchLimit` is not enforced.** Nothing reads it except the company access form.
-- **Company status has no effect beyond sign-in.** The sign-in list filters on it and the companies page shows it. Nothing else reads it.
+- **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", part 4.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
 - **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
 - **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_PERMISSIONS` accepts either key. Only the tabs separate them.
@@ -881,9 +884,9 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
-## Real build (ADR 0052 and ADR 0053)
+## Real build (ADR 0052, ADR 0053 and ADR 0054)
 
-Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052 and ADR 0053)", and the draft spec is docs/specs/platform-admin.md.
+Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052 and ADR 0053)", and the draft spec is docs/specs/platform-admin.md.
 
 The API follows this spec. Where it differs, it is in the safer direction, and each difference is in the 2026-11-15 rows of docs/blueprint-delta.md:
 
@@ -898,6 +901,13 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The data pages are not found in api mode.** Data import and Connect a database stay on the demo; their tabs show in demo mode only.
 - **One permission matrix** covers every module the company's products offer. A ticked protected key is locked, and the shared check runs before the step-up, so a refused change never costs an authenticator code (part 3).
 
+**Part 4 (ADR 0054), the company side:**
+- **Where the company stands.** On every full page load the app asks `GET /company/standing`, which answers one of `full`, `read_only`, `locked`, `maintenance` or `unavailable`, the same for every member. A company under maintenance, whose data isn't available, or that is locked shows one full-page screen instead of the app: "Under maintenance", "Not available right now" or "Account suspended", with the API's own text, Try again and Sign out, and no reason or dates, the Owner included. When a request is refused that way while a page is open, the same screen covers the page as an alert dialog, without reloading or remounting it; Try again closes it once the company is usable.
+- **The Owner's banner.** Only the Owner sees it, with `settings.billing` on: "Payment overdue" from the first overdue day of the 14-day grace (or while past due), with the day the account becomes read only, or a read-only notice with its reason and the day it locks, and "Open billing". Nobody else sees a billing notice, and there is no trial banner.
+- **Billing (/settings/billing).** The Owner's read-only page: account status and access, each plan with its product, "Billed monthly" or "Billed yearly", its current period and "Current period ends" (never "paid through"), and the user and branch limits with a "See seats in use" link. No prices, invoices or payment details. Anyone else who opens it sees "You don't have access to this page."; the menu item shows only for the Owner, on both hosts. The new switch `settings.billing` hides the page, its menu item and the banner, and the API answers 404 then; the standing screens stay.
+- **Support access (Settings → Users).** The Owner's panel lists the platform's requests (requested, by, reason, ends, status), approves one after a step-up, and revokes one with a confirm. It says that support can't see the company's data yet. While the company is read only it shows no actions and says why, because the API refuses both then; a locked company opens no screen at all.
+- **The demo** has no life cycle: standing is always full use and billing shows the stand-in plan with no notice. The Owner approves and revokes the console's requests, writing the company's and the platform's audit entries, as on the API.
+
 **Part 3 (ADR 0053):**
 - **Platform audit log (/admin/audit).** Every change made in the console, every support request, the Owner's approvals and revocations, and every failed or recovered database update, newest first, filtered by company and action. A failed update shows only its error code, for every entry, old ones included. An Owner shows as "The company's Owner", never by name. The platform `owner` role also sees each admin entry's address and device; the `support` role doesn't, and sees other admins' support requests as "Details hidden". There is no CSV export, and reading it is not audited.
 - **Support tab (/admin/companies/:id/support).** The company's support requests the admin may see (the `owner` role every admin's, the `support` role its own), with status pending, approved, revoked or expired, and "Ask for support access" with a reason of 10 to 500 characters and 1 to 72 hours, after a step-up. One open request per admin and company (409), and at most 10 per admin in 24 hours (429). Approved access still opens nothing.
@@ -910,4 +920,4 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.
-- **Support access opens nothing yet**, and company status, plans and billing are later parts. The Owner's support-access panel in Settings comes with part 4; until then the Owner approves through the API only.
+- **Support access opens nothing yet.** The Owner approves and revokes in Settings → Users (Support access panel, ADR 0054), only while the company is in full use. Company status actions and plans are part 2; billing writes wait for the owner.
