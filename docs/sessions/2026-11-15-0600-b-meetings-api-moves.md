@@ -546,3 +546,4 @@ Three should-fix findings on correctness, each confirmed by a skeptic. All three
 - packages/shared `vitest run`: 55 files, 669 tests passed.
 - `pnpm -s typecheck`: 6 of 6, and web forced past the cache: passed. `pnpm -s lint`: 6 of 6, with Prettier clean.
 - Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
+- **Re-review of the final fixes** (`07a9983`, `3cc3a86`; fresh security-reviewer and correctness reviewer, each non-note finding checked by a skeptic): round 1 PASS from both, one confirmed should-fix (STATUS didn't describe the new refusals), applied by the orchestrating session; round 2 PASS from both with no confirmed finding. The remaining notes are in STATUS ("PR #35 final review notes", "Meetings part 2 residual risks").
