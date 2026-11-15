@@ -410,6 +410,59 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     conflicted(await undo(cookies.owner, made.id, 0), "meeting_changed");
   });
 
+  it("splits a series with occurrences moved on their own: each stays on its series under its UID, and the undo puts them back", async () => {
+    // Review round 3 of PR #35: the split and its undo with stored exceptions, through the audit entry and back.
+    const made = await schedule(cookies.manager, {
+      title: "Split with changes",
+      recurrence: "weekly",
+      guests: [staff(ids.employee)],
+    });
+    const earlier = { planned: at("11-17"), start: at("11-18", "10:00"), durationMin: 30 };
+    const later = { planned: at("12-08"), start: at("12-09", "11:00"), durationMin: 45 };
+    await moved(cookies.manager, made, earlier);
+    await moved(cookies.manager, made, later);
+    const startsAt = (await storedMeeting(made.id)).start;
+    const result = await moved(cookies.manager, made, {
+      planned: at("11-24"),
+      start: at("11-25", "10:00"),
+      scope: "following",
+    });
+    const [original, split] = result.meetings;
+    expect(original).toMatchObject({ until: `${YEAR}-11-23`, sequence: 3 });
+    expect((await storedMeeting(made.id)).exceptions).toEqual([earlier]);
+    // The later one moves with its series, a day and an hour, and keeps its own time.
+    expect((await storedMeeting(split!.id)).exceptions).toEqual([{ ...later, planned: at("12-09", "10:00") }]);
+    const overrides = async (meetingId: string, sequence: number) =>
+      (await invitesOf(meetingId))
+        .map(fileOf)
+        .filter((file) => file.includes("RECURRENCE-ID") && file.includes(`SEQUENCE:${sequence}\r\n`));
+    const [oldCopy, ...moreOld] = await overrides(made.id, 3);
+    expect(moreOld).toEqual([]);
+    expect(oldCopy).toContain(`UID:${made.uid}`);
+    expect(oldCopy).toContain(`RECURRENCE-ID;TZID=America/Chicago:${YEAR}1117T090000`);
+    expect(oldCopy).toContain(`DTSTART;TZID=America/Chicago:${YEAR}1118T100000`);
+    const [newCopy, ...moreNew] = await overrides(split!.id, 0);
+    expect(moreNew).toEqual([]);
+    expect(newCopy).toContain(`UID:${split!.uid}`);
+    expect(newCopy).toContain(`RECURRENCE-ID;TZID=America/Chicago:${YEAR}1209T100000`);
+    expect(newCopy).toContain(`DTSTART;TZID=America/Chicago:${YEAR}1209T110000`);
+
+    const undone = await undo(cookies.manager, made.id, result.undo.previous.sequence);
+    status(undone, 201);
+    expect(undone.body).toMatchObject({ start: made.start, until: null, sequence: 4, exceptions: [earlier, later] });
+    const stored = await storedMeeting(made.id);
+    expect(stored).toMatchObject({ until: null, exceptions: [earlier, later], sequence: 4 });
+    expect(stored.start).toEqual(startsAt);
+    const restored = await overrides(made.id, 4);
+    expect(restored.every((file) => file.includes(`UID:${made.uid}`))).toBe(true);
+    const recurrenceIds = restored.map((file) => /RECURRENCE-ID;TZID=America\/Chicago:(\d{8}T\d{6})/.exec(file)?.[1]);
+    expect(recurrenceIds.sort()).toEqual([`${YEAR}1117T090000`, `${YEAR}1208T090000`]);
+    expect(restored.find((file) => file.includes(`${YEAR}1208T090000`))).toContain(
+      `DTSTART;TZID=America/Chicago:${YEAR}1209T110000`,
+    );
+    expect(await storedMeeting(split!.id)).toMatchObject({ status: "cancelled" });
+  });
+
   it("sends a series' surviving exceptions again after an all move, but not one that has ended", async () => {
     // A series that began before the start bound, so its first date is written directly.
     const start = `${YEAR - 2}-01-05T09:00`;
@@ -493,6 +546,11 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
           expect(response.body.message).toMatch(message);
         });
     await refuse({ planned: series.start, start: at("11-10", "10:00"), scope: "following" }, /first occurrence/);
+    // Review round 3 of PR #35: the old series keeps 10 and 17 November, so the new one must start after them.
+    const keptEarlier =
+      /earlier occurrences stay where they are, so this and following must start after the last of them ends/;
+    await refuse({ planned: at("11-24"), start: at("11-11"), scope: "following" }, keptEarlier);
+    await refuse({ planned: at("11-24"), start: at("11-17", "09:30"), scope: "following" }, keptEarlier);
     await refuse({ planned: at("11-17", "09:30"), start: at("11-17", "10:00") }, /not part of this meeting/);
     await refuse({ planned: at("11-17"), start: `${springForward(YEAR)}T02:30` }, /doesn't exist/);
     await refuse({ planned: at("11-17"), start: at("11-17", "10:00"), durationMin: 5 }, /15 minutes/);
@@ -507,8 +565,9 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     refused(fifthWeek, "A monthly meeting can't start in the fifth week of a month.");
     status(await call("post", `/meetings/${series.id}/cancel`, cookies.manager), 201);
     await refuse({ planned: at("11-17"), start: at("11-17", "10:00") }, /cancelled/);
-    expect(await storedMeeting(series.id)).toMatchObject({ exceptions: [], sequence: 1 });
+    expect(await storedMeeting(series.id)).toMatchObject({ exceptions: [], sequence: 1, until: null });
     expect((await entriesOf(series.id)).some((row) => row.action === "Moved meeting")).toBe(false);
+    expect(await rows((db) => db.select().from(meetings).where(eq(meetings.title, "Refusals")))).toHaveLength(1);
   });
 
   it("refuses a move over the daily email limit and writes nothing; a private meeting's rows are restricted", async () => {
@@ -968,6 +1027,58 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     expect(response.body.message).toMatch(/at most 100 occurrences/);
     expect((await storedMeeting(made.id)).exceptions).toHaveLength(100);
     expect((await entriesOf(made.id)).some((row) => row.action === "Moved meeting")).toBe(false);
+  });
+
+  it("refuses a series change that ties an occurrence already held to a date still ahead, and writes nothing", async () => {
+    // Review round 3 of PR #35: such an occurrence is not sent again, so guests' calendars would show that date.
+    const today = chicagoToday();
+    const day = (offset: number, time = "09:00") => `${addDays(today, offset)}T${time}`;
+    const refusedUnchanged = async (meetingId: string, send: () => Promise<Response>) => {
+      const before = {
+        row: await storedMeeting(meetingId),
+        sent: (await invitesOf(meetingId)).length,
+        entries: (await entriesOf(meetingId)).length,
+      };
+      const response = await send();
+      status(response, 400);
+      expect(response.body.message).toMatch(/has already taken place, but its date in the series is still ahead/);
+      expect(await storedMeeting(meetingId)).toEqual(before.row);
+      expect((await invitesOf(meetingId)).length).toBe(before.sent);
+      expect((await entriesOf(meetingId)).length).toBe(before.entries);
+    };
+    const series = (title: string) =>
+      schedule(cookies.manager, { title, recurrence: "weekly", start: day(-21), guests: [staff(ids.employee)] });
+
+    // A week ago's was held an hour late; two weeks later its date in the series would be a week ahead.
+    const late = await series("Held late");
+    await moved(cookies.manager, late, { planned: day(-7), start: day(-7, "10:00") });
+    await refusedUnchanged(late.id, () =>
+      call("patch", `/meetings/${late.id}`, cookies.manager).send({ start: day(-7) }),
+    );
+    await refusedUnchanged(late.id, () =>
+      call("post", `/meetings/${late.id}/reschedule`, cookies.manager).send({
+        planned: day(7),
+        start: day(21),
+        durationMin: 60,
+        scope: "all",
+      }),
+    );
+    // A day earlier keeps its date in the past, and is taken.
+    status(await call("patch", `/meetings/${late.id}`, cookies.manager).send({ start: day(-22) }), 200);
+
+    // Next week's was held early, yesterday: a length edit changes the series' DTEND, so it waits for that date.
+    const early = await series("Held early");
+    await moved(cookies.manager, early, { planned: day(7), start: day(-1, "10:00") });
+    await refusedUnchanged(early.id, () =>
+      call("patch", `/meetings/${early.id}`, cookies.manager).send({ durationMin: 45 }),
+    );
+    // Two weeks back puts its date in the past, so the move is taken; undoing it would bring the date back.
+    const back = await moved(cookies.manager, early, { planned: day(21), start: day(7), scope: "all" });
+    expect((await storedMeeting(early.id)).exceptions).toEqual([
+      { planned: day(-7), start: day(-1, "10:00"), durationMin: 60 },
+    ]);
+    await refusedUnchanged(early.id, () => undo(cookies.manager, early.id, back.undo.previous.sequence));
+    expect((await entriesOf(early.id)).map((row) => row.action)).not.toContain("Undid meeting move");
   });
 
   it("takes a start only from a year before the company's today to three years after it, and writes nothing otherwise", async () => {
