@@ -17,6 +17,7 @@ import {
   isOrganiser,
   MEETING_REQUEST_DEFAULTS,
   meetingFieldsProblem,
+  meetingEmailCount,
   meetingForViewer,
   meetingIcs,
   meetingRequestProblem,
@@ -29,14 +30,15 @@ import {
   replyProblem,
   requestFlags,
   scheduleFlags,
+  seesEveryLinkedGuest,
   seesMeeting,
   staffGuestOf,
   withoutGuest,
   zonedToInstant,
-  zonedToInstantLenient,
   type Attendee,
   type GuestOption,
   type Meeting,
+  type MeetingEmailCount,
   type MeetingPatch,
   type MeetingReplyInput,
   type MyMeetings,
@@ -52,13 +54,15 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow } from "../hr/hr-common";
 import { notFound, refuse } from "../sales/sales-common";
-import { guestOptions, outsideInviteProblem, resolveGuests, type PickedGuest } from "./meeting-guests";
+import { guestOptions, resolveGuests, type PickedGuest } from "./meeting-guests";
+import { companyDayStart, dailyEmailsProblem, dayStartOf, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
 import { attendeesOf, loadMeetings, meetingOf, partySight, type LoadedMeeting } from "./meeting-records";
 import { MeetingReminders } from "./meeting-reminders";
-import { MeetingSends } from "./meeting-sends";
+import { MeetingSends, type PlannedInvites } from "./meeting-sends";
 import {
   activeMembers,
   auditMeeting,
+  cantSeeEveryGuest,
   loadMeetingSettings,
   lockMeeting,
   meetingClock,
@@ -93,12 +97,23 @@ export interface MeetingRequestCreate {
   private: boolean;
 }
 
+/** Whether the person reading a meeting may read a guest linked to a record (`partySight`). */
+type PartySight = (attendee: Attendee) => boolean;
+
+/** A meeting as a write's transaction commits it, with the reader's sight of its linked guests. */
+interface Committed {
+  saved: LoadedMeeting;
+  sight: PartySight;
+}
+
 /**
  * Meetings on the API, part 1 (meetings.md; ADR 0051): the calendar within the viewer's sight,
  * scheduling with guests resolved on the server, edits, cancelling, removing a guest, answers,
- * requests and the calendar file. Every write locks the meeting, applies the shared rules,
- * writes its audit entry in the same transaction, and after the commit sends the invites and
- * re-syncs the reminder. Moves, undo and proposal decisions are part 2.
+ * requests and the calendar file. Every write locks the meeting, applies the shared rules, works
+ * out what it will send from the state it commits, checks the daily email limits and writes its
+ * audit entry, all in one transaction. After the commit it sends the invites and re-syncs the
+ * reminder, neither of which can fail the request, and answers with the meeting it committed.
+ * Moves, undo and proposal decisions are part 2.
  */
 @Injectable()
 export class MeetingsService {
@@ -169,10 +184,11 @@ export class MeetingsService {
       throw refuse("Guests can't be invited while meeting invites are switched off.");
     const db = await this.tenancy.db(tenant);
     const meetingSettings = await loadMeetingSettings(db);
-    const id = await db.transaction(async (tx) => {
+    const dayStart = dayStartOf(clock);
+    const organiser = await this.person(userId);
+    const done = await db.transaction(async (tx) => {
       const { guests, outside } = await resolveGuests(tx, this.control.db, actor.access, input.guests, input.newGuests);
       refuseIf(guestLimitProblem({ guests: guests.length, emailGuests: outside.length }));
-      const dayStart = zonedToInstantLenient(`${clock.day}T00:00`, clock.zone) ?? clock.now;
       refuseIf(await outsideInviteProblem(tx, userId, outside, dayStart));
       const flags = scheduleFlags(
         { private: input.private, hideGuestList: input.hideGuestList },
@@ -180,9 +196,10 @@ export class MeetingsService {
         meetingSettings,
         actor.access.permissions.has("meetings.meeting.edit"),
       );
-      const organiser = await this.person(userId);
-      return this.insert(tx, actor, {
-        fields: {
+      const id = await this.insert(
+        tx,
+        userId,
+        {
           title: input.title.trim(),
           start: input.start,
           durationMin: input.durationMin,
@@ -196,15 +213,21 @@ export class MeetingsService {
           private: input.private,
           ...flags,
         },
-        attendees: [newAttendee({ kind: "staff", ...organiser }, true), ...guests],
-        audit: { action: "Scheduled meeting", after: { start: input.start, guests: guests.length } },
-        tenant,
+        [newAttendee({ kind: "staff", ...organiser }, true), ...guests],
+      );
+      const saved = await this.loadedIn(tx, id);
+      const planned = await this.sends.plan(tx, "schedule", saved.meeting, saved.row.updatedAt);
+      const sends = await this.checkSends(tx, userId, dayStart, planned.sends);
+      await auditMeeting(this.auditLog, tenant, actor, tx, {
+        action: "Scheduled meeting",
+        meeting: saved.meeting,
+        before: null,
+        after: { start: input.start, guests: guests.length, [SENDS_ENTRY]: sends },
       });
+      return { saved, planned, sight: await partySight(tx, actor.access, [saved.meeting]) };
     });
-    const saved = await this.loaded(db, id);
-    await this.sends.invites(tenant, userId, "schedule", saved.meeting, saved.row.updatedAt);
-    await this.reminders.sync(tenant, id);
-    return this.view(db, actor.access, saved.meeting);
+    await this.afterCommit(tenant, userId, done.planned);
+    return this.shaped(actor.access, done);
   }
 
   /**
@@ -216,12 +239,14 @@ export class MeetingsService {
   async update(tenant: TenantContext, actor: Actor, id: string, sent: MeetingPatch): Promise<Meeting> {
     // Compared as stored, so a title or place sent with spaces around it is no change of its own.
     const patch: MeetingPatch = { ...sent, title: sent.title?.trim(), location: sent.location?.trim() };
+    const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    const result = await db.transaction(async (tx) => {
-      const before = await this.lockChangeable(tx, actor.access, id);
+    const dayStart = await companyDayStart(this.control.db, tenant);
+    const done = await db.transaction(async (tx) => {
+      const { loaded: before, sight } = await this.lockChangeable(tx, actor.access, id);
       refuseIf(editProblem(before.meeting, patch));
       const edit = editedMeeting(before.meeting, patch);
-      if (edit.changed.length === 0) return null;
+      if (edit.changed.length === 0) return { saved: before, sight, planned: null };
       const now = await databaseNow(tx);
       // The stored instant is kept unless the start changed, so a time the clock shows twice keeps its reading.
       const moved = edit.changed.includes("start");
@@ -246,27 +271,28 @@ export class MeetingsService {
           .set({ partStat: "needs-action", respondedAt: null, proposal: null, updatedAt: now })
           .where(and(eq(meetingAttendees.meetingId, id), isNull(meetingAttendees.deletedAt)));
       }
+      const saved = await this.loadedIn(tx, id);
+      const planned = await this.sends.plan(tx, "edit", saved.meeting, saved.row.updatedAt);
+      const sends = await this.checkSends(tx, userId, dayStart, planned.sends);
       await auditMeeting(this.auditLog, tenant, actor, tx, {
         action: "Edited meeting",
         meeting: before.meeting,
         before: { start: before.meeting.start, changed: edit.changed },
-        after: { start: edit.meeting.start, changed: edit.changed },
+        after: { start: edit.meeting.start, changed: edit.changed, [SENDS_ENTRY]: sends },
       });
-      return true;
+      return { saved, sight, planned };
     });
-    const saved = await this.loaded(db, id);
-    if (result) {
-      await this.sends.invites(tenant, actor.access.userId, "edit", saved.meeting, saved.row.updatedAt);
-      await this.reminders.sync(tenant, id);
-    }
-    return this.view(db, actor.access, saved.meeting);
+    if (done.planned) await this.afterCommit(tenant, userId, done.planned);
+    return this.shaped(actor.access, done);
   }
 
   /** Cancels a meeting, once (meetings.md sends table; ADR 0051): CANCEL to every guest and no reminder. */
   async cancel(tenant: TenantContext, actor: Actor, id: string): Promise<Meeting> {
+    const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    await db.transaction(async (tx) => {
-      const before = await this.lockChangeable(tx, actor.access, id);
+    const dayStart = await companyDayStart(this.control.db, tenant);
+    const done = await db.transaction(async (tx) => {
+      const { loaded: before, sight } = await this.lockChangeable(tx, actor.access, id);
       refuseIf(cancelProblem(before.meeting));
       const after = cancelledMeeting(before.meeting);
       await tx
@@ -278,17 +304,19 @@ export class MeetingsService {
           updatedAt: await databaseNow(tx),
         })
         .where(eq(meetings.id, id));
+      const saved = await this.loadedIn(tx, id);
+      const planned = await this.sends.plan(tx, "cancel", saved.meeting, saved.row.updatedAt);
+      const sends = await this.checkSends(tx, userId, dayStart, planned.sends);
       await auditMeeting(this.auditLog, tenant, actor, tx, {
         action: "Cancelled meeting",
         meeting: before.meeting,
         before: { status: before.meeting.status },
-        after: { status: after.status },
+        after: { status: after.status, [SENDS_ENTRY]: sends },
       });
+      return { saved, sight, planned };
     });
-    const saved = await this.loaded(db, id);
-    await this.sends.invites(tenant, actor.access.userId, "cancel", saved.meeting, saved.row.updatedAt);
-    await this.reminders.sync(tenant, id);
-    return this.view(db, actor.access, saved.meeting);
+    await this.afterCommit(tenant, userId, done.planned);
+    return this.shaped(actor.access, done);
   }
 
   /**
@@ -297,9 +325,11 @@ export class MeetingsService {
    * marked deleted, SEQUENCE rises by one, and only that guest gets a CANCEL that lists only them.
    */
   async removeGuest(tenant: TenantContext, actor: Actor, id: string, attendeeId: string): Promise<Meeting> {
+    const userId = actor.access.userId;
     const db = await this.tenancy.db(tenant);
-    const removed = await db.transaction(async (tx) => {
-      const before = await this.lockChangeable(tx, actor.access, id);
+    const dayStart = await companyDayStart(this.control.db, tenant);
+    const done = await db.transaction(async (tx) => {
+      const { loaded: before, sight } = await this.lockChangeable(tx, actor.access, id);
       const row = before.rows.get(attendeeId);
       const guest = before.meeting.attendees.find((a) => a.id === attendeeId);
       if (!row || !guest) throw notFound("guest");
@@ -308,18 +338,19 @@ export class MeetingsService {
       const now = await databaseNow(tx);
       await tx.update(meetingAttendees).set({ deletedAt: now, updatedAt: now }).where(eq(meetingAttendees.id, row.id));
       await tx.update(meetings).set({ sequence: after.sequence, updatedAt: now }).where(eq(meetings.id, id));
+      const saved = await this.loadedIn(tx, id);
+      const planned = await this.sends.plan(tx, "remove", saved.meeting, saved.row.updatedAt, guest);
+      const sends = await this.checkSends(tx, userId, dayStart, planned.sends);
       await auditMeeting(this.auditLog, tenant, actor, tx, {
         action: "Removed meeting guest",
         meeting: before.meeting,
         before: { guest: guestAuditName(guest, before.meeting) },
-        after: null,
+        after: { [SENDS_ENTRY]: sends },
       });
-      return guest;
+      return { saved, sight, planned };
     });
-    const saved = await this.loaded(db, id);
-    await this.sends.invites(tenant, actor.access.userId, "remove", saved.meeting, saved.row.updatedAt, removed);
-    await this.reminders.sync(tenant, id);
-    return this.view(db, actor.access, saved.meeting);
+    await this.afterCommit(tenant, userId, done.planned);
+    return this.shaped(actor.access, done);
   }
 
   /**
@@ -331,6 +362,7 @@ export class MeetingsService {
   async respond(tenant: TenantContext, actor: Actor, id: string, reply: MeetingReplyInput): Promise<Meeting> {
     const db = await this.tenancy.db(tenant);
     const userId = actor.access.userId;
+    const dayStart = await companyDayStart(this.control.db, tenant);
     const answered = await db.transaction(async (tx) => {
       const before = await this.lockVisible(tx, actor.access, id);
       const { meeting } = before;
@@ -380,13 +412,28 @@ export class MeetingsService {
           createdBy: userId,
         })
         .returning({ id: meetingResponses.id });
+      // The organiser's notice is one email, to a colleague.
+      const sends = await this.checkSends(
+        tx,
+        userId,
+        dayStart,
+        outcome.event ? [{ recipient: { kind: "staff" } }] : [],
+      );
       await auditMeeting(this.auditLog, tenant, actor, tx, {
         action: "Answered meeting",
         meeting,
         before: { answer: guest.partStat },
-        after: { answer: outcome.partStat },
+        after: { answer: outcome.partStat, [SENDS_ENTRY]: sends },
       });
-      return { meeting, guest, outcome, responseId: logged!.id };
+      const saved = await this.loadedIn(tx, id);
+      return {
+        meeting,
+        guest,
+        outcome,
+        responseId: logged!.id,
+        saved,
+        sight: await partySight(tx, actor.access, [saved.meeting]),
+      };
     });
     await this.sends.answered(
       tenant,
@@ -398,14 +445,16 @@ export class MeetingsService {
       reply.proposal?.start ?? null,
     );
     if (answered.outcome.statusChange) await this.reminders.sync(tenant, id);
-    const saved = await this.loaded(db, id);
-    return this.view(db, actor.access, saved.meeting);
+    return this.shaped(actor.access, answered);
   }
 
   /**
    * Asks a colleague to meet (meetings.md "Request a meeting"; ADR 0051): an active member who may
    * read meetings, never oneself. Half an hour, "To be agreed", tentative until they answer, with
    * the reminder from Settings → Meetings; they get `meeting.requested`, not a calendar file.
+   * Who is asked is checked before the transaction opens: their access is read through the
+   * company's pool, and a transaction that waited on a second connection from that small pool
+   * could hang the company when a few requests come at once (review of PR #33).
    */
   async request(tenant: TenantContext, actor: Actor, input: MeetingRequestCreate): Promise<Meeting> {
     const clock = await meetingClock(this.control.db, tenant);
@@ -414,15 +463,18 @@ export class MeetingsService {
     if (input.withUserId === userId) throw refuse("Choose who to meet with.");
     const db = await this.tenancy.db(tenant);
     const meetingSettings = await loadMeetingSettings(db);
-    const made = await db.transaction(async (tx) => {
-      const [asked] = await activeMembers(tx, this.control.db, [input.withUserId]);
-      const [askedAccess] = asked ? await this.access.membersAccess(tenant, [asked.id]) : [];
-      if (!asked || !askedAccess || askedAccess.disabled || !askedAccess.permissions.has("meetings.meeting.view"))
-        throw refuse("Choose who to meet with.");
-      const asker = await this.person(userId);
+    const [asked] = await activeMembers(db, this.control.db, [input.withUserId]);
+    const [askedAccess] = asked ? await this.access.membersAccess(tenant, [asked.id]) : [];
+    if (!asked || !askedAccess || askedAccess.disabled || !askedAccess.permissions.has("meetings.meeting.view"))
+      throw refuse("Choose who to meet with.");
+    const asker = await this.person(userId);
+    const dayStart = dayStartOf(clock);
+    const done = await db.transaction(async (tx) => {
       const guest = newAttendee({ kind: "staff", ...asked });
-      const id = await this.insert(tx, actor, {
-        fields: {
+      const id = await this.insert(
+        tx,
+        userId,
+        {
           title: input.title.trim(),
           start: input.start,
           durationMin: MEETING_REQUEST_DEFAULTS.durationMin,
@@ -436,15 +488,20 @@ export class MeetingsService {
           private: input.private,
           ...requestFlags(input.private, actor.access.permissions.has("meetings.meeting.edit")),
         },
-        attendees: [newAttendee({ kind: "staff", ...asker }, true), guest],
-        audit: { action: "Requested meeting", after: { with: guestAuditName(guest, { private: input.private }) } },
-        tenant,
+        [newAttendee({ kind: "staff", ...asker }, true), guest],
+      );
+      const sends = await this.checkSends(tx, userId, dayStart, [{ recipient: guest }]);
+      const saved = await this.loadedIn(tx, id);
+      await auditMeeting(this.auditLog, tenant, actor, tx, {
+        action: "Requested meeting",
+        meeting: saved.meeting,
+        before: null,
+        after: { with: guestAuditName(guest, { private: input.private }), [SENDS_ENTRY]: sends },
       });
-      return { id, asker, asked };
+      return { saved, sight: await partySight(tx, actor.access, [saved.meeting]) };
     });
-    const saved = await this.loaded(db, made.id);
-    await this.sends.requested(tenant, made.asker, saved.meeting, made.asked);
-    return this.view(db, actor.access, saved.meeting);
+    await this.sends.requested(tenant, asker, done.saved.meeting, asked);
+    return this.shaped(actor.access, done);
   }
 
   /**
@@ -473,28 +530,23 @@ export class MeetingsService {
     return { fileName: icsFileName(meeting.title), text };
   }
 
-  /** Writes a new meeting and its guests, organiser first, and its audit entry; returns its id. */
+  /** Writes a new meeting and its guests, organiser first; returns its id. The caller writes the audit entry. */
   private async insert(
     tx: CompanyDb,
-    actor: Actor,
-    made: {
-      fields: Omit<
-        Meeting,
-        "id" | "attendees" | "ownerUserId" | "until" | "exceptions" | "uid" | "sequence" | "rescheduleSequence"
-      >;
-      attendees: readonly Attendee[];
-      audit: { action: string; after: Record<string, unknown> };
-      tenant: TenantContext;
-    },
+    userId: string,
+    fields: Omit<
+      Meeting,
+      "id" | "attendees" | "ownerUserId" | "until" | "exceptions" | "uid" | "sequence" | "rescheduleSequence"
+    >,
+    attendees: readonly Attendee[],
   ): Promise<string> {
-    const userId = actor.access.userId;
-    const start = zonedToInstant(made.fields.start, made.fields.timeZone).instant;
+    const start = zonedToInstant(fields.start, fields.timeZone).instant;
     if (!start) throw refuse("Enter a date and a start time.");
     const now = await databaseNow(tx);
     const [row] = await tx
       .insert(meetings)
       .values({
-        ...made.fields,
+        ...fields,
         start,
         ownerUserId: userId,
         until: null,
@@ -509,7 +561,7 @@ export class MeetingsService {
       .returning({ id: meetings.id });
     const id = row!.id;
     await tx.insert(meetingAttendees).values(
-      made.attendees.map((guest, index) => ({
+      attendees.map((guest, index) => ({
         meetingId: id,
         partyType: guest.kind,
         partyId: guest.kind === "external" ? null : guest.id,
@@ -523,13 +575,36 @@ export class MeetingsService {
         updatedAt: now,
       })),
     );
-    await auditMeeting(this.auditLog, made.tenant, actor, tx, {
-      action: made.audit.action,
-      meeting: { id, title: made.fields.title, private: made.fields.private },
-      before: null,
-      after: made.audit.after,
-    });
     return id;
+  }
+
+  /**
+   * The emails an action will send, once the daily limits allow them (ADR 0051 "Volume limits"):
+   * refused with 400 before anything commits when they don't. The count goes into the action's
+   * audit entry, which is what later actions count.
+   */
+  private async checkSends(
+    tx: CompanyDb,
+    userId: string,
+    dayStart: Date,
+    emails: readonly { recipient: Pick<Attendee, "kind"> }[],
+  ): Promise<MeetingEmailCount> {
+    const sends = meetingEmailCount(emails.map((email) => email.recipient));
+    refuseIf(await dailyEmailsProblem(tx, userId, dayStart, sends));
+    return sends;
+  }
+
+  /**
+   * After a change committed: its invites, then the reminder re-sync. Neither throws (each catches
+   * and logs its own failure), and the re-sync runs whatever happened to the invites, so a
+   * committed change never answers 500 and never keeps a reminder of the meeting as it was.
+   */
+  private async afterCommit(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<void> {
+    try {
+      await this.sends.invites(tenant, actorUserId, planned);
+    } finally {
+      await this.reminders.sync(tenant, planned.meeting.id);
+    }
   }
 
   /** Locks a meeting the person may see, or answers 404 (CLAUDE.md rule 3). */
@@ -540,24 +615,37 @@ export class MeetingsService {
     return loaded;
   }
 
-  /** Locks a meeting the person may change: 404 when they can't see it, 403 when they see it but may not change it. */
-  private async lockChangeable(tx: CompanyDb, access: RequestAccess, id: string): Promise<LoadedMeeting> {
+  /**
+   * Locks a meeting the person may change (`canChangeMeeting`): 404 when they can't see it, 403
+   * when they see it but may not change it, including when they can't read a customer, supplier
+   * or contact on it. Returns it with their sight of its linked guests.
+   */
+  private async lockChangeable(
+    tx: CompanyDb,
+    access: RequestAccess,
+    id: string,
+  ): Promise<{ loaded: LoadedMeeting; sight: PartySight }> {
     const loaded = await this.lockVisible(tx, access, id);
-    if (!canChangeMeeting(meetingViewer(access), loaded.meeting)) throw notTheOrganiser();
-    return loaded;
+    const sight = await partySight(tx, access, [loaded.meeting]);
+    const viewer = meetingViewer(access);
+    if (!canChangeMeeting(viewer, loaded.meeting, sight)) {
+      const onlySightMissing =
+        !seesEveryLinkedGuest(loaded.meeting, sight) && canChangeMeeting(viewer, loaded.meeting, () => true);
+      throw onlySightMissing ? cantSeeEveryGuest() : notTheOrganiser();
+    }
+    return { loaded, sight };
   }
 
-  /** A meeting as stored now, cancelled or not. */
-  private async loaded(db: CompanyDb, id: string): Promise<LoadedMeeting> {
-    const [loaded] = await loadMeetings(db, { ids: [id], withCancelled: true });
+  /** A meeting as the caller's transaction sees it: as it will commit, cancelled or not. */
+  private async loadedIn(tx: CompanyDb, id: string): Promise<LoadedMeeting> {
+    const [loaded] = await loadMeetings(tx, { ids: [id], withCancelled: true });
     if (!loaded) throw notFound("meeting");
     return loaded;
   }
 
-  /** A meeting as this person may read it (`meetingForViewer`). */
-  private async view(db: CompanyDb, access: RequestAccess, meeting: Meeting): Promise<Meeting> {
-    const sight = await partySight(db, access, [meeting]);
-    return meetingForViewer(meeting, meetingViewer(access), sight);
+  /** The committed meeting as this person may read it (`meetingForViewer`), with no read after the commit. */
+  private shaped(access: RequestAccess, committed: Committed): Meeting {
+    return meetingForViewer(committed.saved.meeting, meetingViewer(access), committed.sight);
   }
 
   /** The person as a meeting names them, from their sign-in. */

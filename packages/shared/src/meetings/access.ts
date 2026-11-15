@@ -44,14 +44,36 @@ export function seesMeeting(viewer: MeetingViewer, meeting: Meeting): boolean {
 }
 
 /**
+ * Whether the viewer may read every customer, supplier and person at one on the meeting
+ * (`seesParty` is the API's check of each record's own permission and scope). Staff and email
+ * guests always pass.
+ */
+export function seesEveryLinkedGuest(
+  meeting: Pick<Meeting, "attendees">,
+  seesParty: (attendee: Attendee) => boolean,
+): boolean {
+  return meeting.attendees.every((attendee) => !isLinkedParty(attendee) || seesParty(attendee));
+}
+
+/**
  * Whether a viewer may change a meeting: edit details, cancel it, remove a guest (ADR 0051 "Who may
  * change a meeting", safer than meetings.md line 53, which lets anyone with edit who sees it). It
- * needs `meetings.meeting.edit` and sight of the meeting, and then the viewer must be its organiser,
- * or hold a scope wider than own on a meeting that is not private. So an own-scope Sales guest can't
- * change a colleague's meeting, and a private meeting is changed only by the person who set it up.
+ * needs `meetings.meeting.edit` and sight of the meeting, then:
+ * - sight of every linked guest (`seesEveryLinkedGuest`), the organiser included. Every change
+ *   emails the guests with the changer as the Outbox actor, and the Outbox shows its actor each row
+ *   whole, with the guest's name, address and calendar file. So someone who reads a customer or
+ *   supplier on the meeting only as "Customer" or "Supplier" can't change it (CLAUDE.md rule 3);
+ * - and being its organiser, or holding a scope wider than own on a meeting that is not private. So
+ *   an own-scope Sales guest can't change a colleague's meeting, and a private meeting is changed
+ *   only by the person who set it up.
  */
-export function canChangeMeeting(viewer: MeetingViewer, meeting: Meeting): boolean {
+export function canChangeMeeting(
+  viewer: MeetingViewer,
+  meeting: Meeting,
+  seesParty: (attendee: Attendee) => boolean,
+): boolean {
   if (!viewer.permissions.has("meetings.meeting.edit") || !seesMeeting(viewer, meeting)) return false;
+  if (!seesEveryLinkedGuest(meeting, seesParty)) return false;
   if (isOrganiser(meeting, viewer.userId)) return true;
   return viewer.dataScope !== "own" && !meeting.private;
 }
@@ -92,7 +114,7 @@ export function meetingForViewer(
   seesParty: (attendee: Attendee) => boolean,
 ): Meeting {
   const organiser = isOrganiser(meeting, viewer.userId);
-  const manages = organiser || canChangeMeeting(viewer, meeting);
+  const manages = organiser || canChangeMeeting(viewer, meeting, seesParty);
   const own = (a: Attendee) => a.kind === "staff" && a.id === viewer.userId;
   const listed = manages || !meeting.hideGuestList ? meeting.attendees : meeting.attendees.filter(own);
   const attendees = listed.map((a): Attendee => {

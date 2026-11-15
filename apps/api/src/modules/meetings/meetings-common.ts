@@ -53,6 +53,18 @@ export function notTheOrganiser(): ForbiddenException {
 }
 
 /**
+ * The answer when someone who could otherwise change a meeting can't read one of its customers,
+ * suppliers or contacts (ADR 0051 "Who may change a meeting"): the change would email that guest
+ * with them as its Outbox actor, which shows them the guest's name and address.
+ */
+export function cantSeeEveryGuest(): ForbiddenException {
+  return new ForbiddenException({
+    code: "forbidden",
+    message: "Only someone who can see every guest on this meeting can change it.",
+  });
+}
+
+/**
  * The company's clock and the zone its meetings are booked in (ADR 0051 "Owned by the server"). The
  * zone is the company's own, from the control database, never taken from a request. A zone the
  * calendar file has no block for answers 409, because every invite would carry wrong times.

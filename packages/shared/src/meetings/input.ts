@@ -2,6 +2,7 @@ import { recurrenceProblem } from "../calendar/ics";
 import { zonedToInstant, type LocalTimeProblem } from "../calendar/zones";
 import type { Attendee, Meeting, MeetingProposal, MeetingSettings } from "../types";
 import { GUEST_EMAIL_MAX, validGuestEmail } from "./email";
+import type { MeetingEmailCount } from "./sends";
 
 /**
  * Input and volume limits for meetings (ADR 0051 "Input limits" and "Volume limits"; meetings.md
@@ -24,6 +25,14 @@ export const MEETING_LIMITS = {
   emailGuestsMax: 20,
   /** New outside addresses one person may invite in one company day, across all meetings. */
   emailGuestsPerDay: 50,
+  /**
+   * Emails to people outside the company (customers, suppliers, people at them and email guests)
+   * one person's meeting changes may send in one company day. Every send counts, so mailing the
+   * same addresses again and again is bounded too.
+   */
+  outsideEmailsPerDay: 200,
+  /** Meeting emails of every kind one person's actions may send in one company day, colleagues included. */
+  emailsPerDay: 500,
 } as const;
 
 /** The reminder choices the New meeting form offers (meetings.md "Schedule a meeting", step 4). */
@@ -157,13 +166,28 @@ export function guestLimitProblem(counts: { guests: number; emailGuests: number 
 
 /**
  * Why one person can't invite these outside addresses today, or null (ADR 0051 "Volume limits"): at
- * most 50 new outside addresses a company day across all their meetings, so the invite system can't
- * be used to mail strangers at volume. `alreadyToday` counts the addresses they invited earlier today.
+ * most 50 different outside addresses a company day across all their meetings, so one person can't
+ * reach many strangers. `alreadyToday` counts the addresses they invited earlier today. How often
+ * those addresses are mailed is bounded by `dailyEmailProblem`.
  */
 export function dailyInviteProblem(alreadyToday: number, adding: number): string | null {
   return adding > 0 && alreadyToday + adding > MEETING_LIMITS.emailGuestsPerDay
     ? `You can invite at most ${MEETING_LIMITS.emailGuestsPerDay} people from outside the company a day. Try again tomorrow.`
     : null;
+}
+
+/**
+ * Why one person's action can't send its emails today, or null (ADR 0051 "Volume limits"): at most
+ * 200 emails to people outside the company and 500 meeting emails in all, a company day, counting
+ * every send, so editing a meeting again and again or scheduling it with the same guests over and
+ * over can't be used to mail people at volume. An action that sends nothing is never refused.
+ */
+export function dailyEmailProblem(alreadyToday: MeetingEmailCount, adding: MeetingEmailCount): string | null {
+  if (adding.outside > 0 && alreadyToday.outside + adding.outside > MEETING_LIMITS.outsideEmailsPerDay)
+    return `Your meetings can send at most ${MEETING_LIMITS.outsideEmailsPerDay} emails a day to people outside the company. Try again tomorrow.`;
+  if (adding.total > 0 && alreadyToday.total + adding.total > MEETING_LIMITS.emailsPerDay)
+    return `Your meetings can send at most ${MEETING_LIMITS.emailsPerDay} emails a day. Try again tomorrow.`;
+  return null;
 }
 
 /** The answers a guest may give; "No reply yet" is a state, not an answer (ADR 0051). */

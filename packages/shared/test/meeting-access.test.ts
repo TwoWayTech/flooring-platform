@@ -6,6 +6,7 @@ import {
   isOnMeeting,
   meetingAuditTarget,
   meetingForViewer,
+  seesEveryLinkedGuest,
   seesMeeting,
   staffGuestOf,
   type Attendee,
@@ -51,7 +52,7 @@ describe("who sees which meeting (meetings.md, ADR 0051 Access)", () => {
   it("denies without meetings.meeting.view, even to the organiser", () => {
     const viewer: MeetingViewer = { userId: ORGANISER, permissions: new Set(), dataScope: "all" };
     expect(seesMeeting(viewer, testMeeting())).toBe(false);
-    expect(canChangeMeeting(viewer, testMeeting())).toBe(false);
+    expect(canChangeMeeting(viewer, testMeeting(), seesAll)).toBe(false);
   });
 
   it("loses sight of a private meeting once removed from it", () => {
@@ -63,8 +64,8 @@ describe("who sees which meeting (meetings.md, ADR 0051 Access)", () => {
 describe("who may change a meeting (ADR 0051, safer than meetings.md line 53)", () => {
   it("lets an organiser with edit change their own meeting, private or not", () => {
     for (const role of ROLES) {
-      expect(canChangeMeeting(viewerAs(role, ORGANISER), testMeeting()), role).toBe(EDITORS.includes(role));
-      expect(canChangeMeeting(viewerAs(role, ORGANISER), testMeeting({ private: true })), role).toBe(
+      expect(canChangeMeeting(viewerAs(role, ORGANISER), testMeeting(), seesAll), role).toBe(EDITORS.includes(role));
+      expect(canChangeMeeting(viewerAs(role, ORGANISER), testMeeting({ private: true }), seesAll), role).toBe(
         EDITORS.includes(role),
       );
     }
@@ -73,16 +74,31 @@ describe("who may change a meeting (ADR 0051, safer than meetings.md line 53)", 
   it("lets a wider-than-own editor change someone else's meeting, but not an own-scope Sales guest", () => {
     for (const role of ROLES) {
       const expected = EDITORS.includes(role) && role !== "sales";
-      expect(canChangeMeeting(viewerAs(role, GUEST), testMeeting()), role).toBe(expected);
-      expect(canChangeMeeting(viewerAs(role, OUTSIDER), testMeeting()), role).toBe(expected);
+      expect(canChangeMeeting(viewerAs(role, GUEST), testMeeting(), seesAll), role).toBe(expected);
+      expect(canChangeMeeting(viewerAs(role, OUTSIDER), testMeeting(), seesAll), role).toBe(expected);
     }
   });
 
   it("lets only the organiser change a private meeting", () => {
     for (const role of ROLES) {
-      expect(canChangeMeeting(viewerAs(role, GUEST), testMeeting({ private: true })), role).toBe(false);
-      expect(canChangeMeeting(viewerAs(role, OUTSIDER), testMeeting({ private: true })), role).toBe(false);
+      expect(canChangeMeeting(viewerAs(role, GUEST), testMeeting({ private: true }), seesAll), role).toBe(false);
+      expect(canChangeMeeting(viewerAs(role, OUTSIDER), testMeeting({ private: true }), seesAll), role).toBe(false);
     }
+  });
+
+  it("lets nobody change a meeting with a customer or supplier they can't read, the organiser included", () => {
+    const seesNoCustomer = (a: Attendee) => a.kind !== "customer";
+    const meeting = testMeeting();
+    expect(seesEveryLinkedGuest(meeting, seesNoCustomer)).toBe(false);
+    expect(
+      seesEveryLinkedGuest(testMeeting({ attendees: meeting.attendees.filter((a) => a.id !== "c-1") }), () => false),
+    ).toBe(true);
+    for (const role of EDITORS) {
+      expect(canChangeMeeting(viewerAs(role, ORGANISER), meeting, seesNoCustomer), role).toBe(false);
+      expect(canChangeMeeting(viewerAs(role, OUTSIDER), meeting, seesNoCustomer), role).toBe(false);
+    }
+    // Staff and email guests need no record of their own.
+    expect(canChangeMeeting(viewerAs("hr", OUTSIDER), meeting, (a) => a.kind === "customer")).toBe(true);
   });
 });
 
@@ -121,6 +137,16 @@ describe("a meeting as one viewer reads it (ADR 0051 What a viewer sees)", () =>
     expect(byId(seen, "c-1")?.email).toBe("coby@example.com");
     expect(byId(seen, "x-1")).toMatchObject({ name: "riley@builder.example", email: "riley@builder.example" });
     expect(byId(seen, GUEST)).toMatchObject({ note: "", proposal: null });
+  });
+
+  it("gives addresses to a wider-scope editor only when they can read every linked guest", () => {
+    const seesNoCustomer = (a: Attendee) => a.kind !== "customer";
+    const seen = meetingForViewer(testMeeting(), viewerAs("hr", OUTSIDER), seesNoCustomer).attendees;
+    expect(byId(seen, "c-1")).toMatchObject({ name: "Customer", email: "" });
+    expect(seen.map((a) => a.email)).toEqual(["", "", "", ""]);
+    expect(
+      meetingForViewer(testMeeting({ hideGuestList: true }), viewerAs("hr", OUTSIDER), seesNoCustomer).attendees,
+    ).toEqual([]);
   });
 
   it("shows a hidden guest list only to those who may change the meeting", () => {

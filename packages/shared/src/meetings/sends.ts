@@ -54,7 +54,11 @@ function statusFor(kind: MeetingSendKind, meeting: Meeting): MeetingSend["status
  * - cancel: CANCEL with STATUS:CANCELLED to every guest;
  * - remove: CANCEL with no STATUS to `removed` only, listing only them.
  * The organiser never gets one (rule 9's `sendToGuests`), and with `meetings.invites` off nothing
- * is sent at all. With a hidden guest list each file names only its recipient.
+ * is sent at all. A REQUEST is never sent for a meeting that is already cancelled, so a schedule or
+ * edit raced by a cancel can't put it back in anyone's calendar (review of PR #33).
+ * Each file names only its recipient when the guest list is hidden, or when any guest is not staff,
+ * whatever the stored flag says (ADR 0051 "Hidden guest list"; Summit's seeded meetings keep the
+ * demo's open lists), so no file hands a colleague a customer's or a stranger's address.
  */
 export function sendPlan(
   kind: MeetingSendKind,
@@ -62,21 +66,35 @@ export function sendPlan(
   opts: { invitesOn: boolean; removed?: Attendee },
 ): MeetingSend[] {
   if (!opts.invitesOn) return [];
-  const recipients = kind === "remove" ? (opts.removed ? [opts.removed] : []) : meeting.attendees;
   const method = kind === "cancel" || kind === "remove" ? "CANCEL" : "REQUEST";
+  if (method === "REQUEST" && meeting.status === "cancelled") return [];
+  const recipients = kind === "remove" ? (opts.removed ? [opts.removed] : []) : meeting.attendees;
+  const onlyRecipient =
+    meeting.hideGuestList || kind === "remove" || meeting.attendees.some((guest) => guest.kind !== "staff");
   return recipients
     .filter((guest) => !(guest.kind === "staff" && isOrganiser(meeting, guest.id)))
     .map((guest) => ({
       recipient: guest,
       method,
       status: statusFor(kind, meeting),
-      listed: (meeting.hideGuestList || kind === "remove" ? [guest] : meeting.attendees).filter((a) =>
-        validGuestEmail(a.email),
-      ),
+      listed: (onlyRecipient ? [guest] : meeting.attendees).filter((a) => validGuestEmail(a.email)),
       sequence: meeting.sequence,
       action: ACTION[kind],
       inApp: guest.kind === "staff",
     }));
+}
+
+/** How many emails an action sends, as the daily limits count them (ADR 0051 "Volume limits"). */
+export interface MeetingEmailCount {
+  /** To people outside the company: customers, suppliers, people at them and email guests. */
+  outside: number;
+  /** Every email, colleagues included. */
+  total: number;
+}
+
+/** The emails that go to these recipients: one each, and every one that is not a colleague is outside. */
+export function meetingEmailCount(recipients: readonly Pick<Attendee, "kind">[]): MeetingEmailCount {
+  return { outside: recipients.filter((guest) => guest.kind !== "staff").length, total: recipients.length };
 }
 
 /** The calendar file of one send, as the real build writes it (product-neutral PRODID, ADR 0051). */

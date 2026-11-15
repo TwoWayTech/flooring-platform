@@ -1,15 +1,14 @@
 import type { CompanyDb, ControlDb } from "@workspace/db";
-import { customerContacts, customers, meetingAttendees, supplierContacts, suppliers } from "@workspace/db/company";
+import { customerContacts, customers, supplierContacts, suppliers } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import {
-  dailyInviteProblem,
   newAttendee,
   normalizeGuestEmail,
   type Attendee,
   type GuestOption,
   type NewGuestInput,
 } from "@workspace/shared";
-import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { notFound, seesCustomer } from "../sales/sales-common";
 import { loadBranches } from "../sales/sales-records";
@@ -170,34 +169,6 @@ async function supplierParties(
     .where(
       and(inArray(supplierContacts.id, [...ids]), isNull(supplierContacts.deletedAt), isNull(suppliers.deletedAt)),
     );
-}
-
-/**
- * Why one person can't invite these outside addresses today, or null (ADR 0051 "Volume limits"):
- * at most 50 different outside addresses a company day across all their meetings, counted from the
- * outside guests they added, removed ones included. A lock per person makes two meetings saved at
- * once count each other. `dayStart` is the start of the company's day.
- */
-export async function outsideInviteProblem(
-  tx: CompanyDb,
-  userId: string,
-  outside: readonly string[],
-  dayStart: Date,
-): Promise<string | null> {
-  if (outside.length === 0) return null;
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`meetings:outside-guests:${userId}`}))`);
-  const earlier = await tx
-    .selectDistinct({ email: sql<string>`lower(${meetingAttendees.email})` })
-    .from(meetingAttendees)
-    .where(
-      and(
-        eq(meetingAttendees.partyType, "external"),
-        eq(meetingAttendees.createdBy, userId),
-        gte(meetingAttendees.createdAt, dayStart),
-      ),
-    );
-  const already = new Set(earlier.map((row) => row.email));
-  return dailyInviteProblem(already.size, outside.filter((email) => !already.has(email)).length);
 }
 
 /**

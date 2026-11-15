@@ -6,6 +6,7 @@ import {
   icsFileName,
   inviteValues,
   inviteVersion,
+  meetingEmailCount,
   meetingIcs,
   meetingWhenText,
   sendIcsInput,
@@ -69,13 +70,34 @@ describe("what each Part 1 action sends (meetings.md sends table)", () => {
   });
 
   it("lists only the recipient with a hidden list, and never a guest without a valid address", () => {
-    const meeting = testMeeting({
-      attendees: [...testMeeting().attendees, guestRow({ kind: "staff", id: "u-x", email: "" })],
+    const staffOnly = testMeeting({
+      attendees: [
+        ...testMeeting().attendees.filter((a) => a.kind === "staff"),
+        guestRow({ kind: "staff", id: "u-x", email: "" }),
+      ],
     });
-    const open = sendPlan("schedule", meeting, on);
-    expect(open[0]?.listed.map((a) => a.id)).toEqual([ORGANISER, GUEST, "c-1", "x-1"]);
-    const hidden = sendPlan("schedule", { ...meeting, hideGuestList: true }, on);
-    expect(hidden.map((s) => s.listed.map((a) => a.id))).toEqual([[GUEST], ["c-1"], ["x-1"], []]);
+    const open = sendPlan("schedule", staffOnly, on);
+    expect(open[0]?.listed.map((a) => a.id)).toEqual([ORGANISER, GUEST]);
+    const hidden = sendPlan("schedule", { ...staffOnly, hideGuestList: true }, on);
+    expect(hidden.map((s) => s.listed.map((a) => a.id))).toEqual([[GUEST], []]);
+  });
+
+  it("lists only the recipient whenever a guest is not staff, even with an open list stored", () => {
+    const sends = sendPlan("schedule", testMeeting({ hideGuestList: false }), on);
+    expect(sends.map((s) => s.listed.map((a) => a.id))).toEqual([[GUEST], ["c-1"], ["x-1"]]);
+  });
+
+  it("sends no REQUEST for a meeting that is already cancelled, but its CANCEL still goes", () => {
+    const cancelled = cancelledMeeting(testMeeting());
+    expect(sendPlan("edit", cancelled, on)).toEqual([]);
+    expect(sendPlan("schedule", cancelled, on)).toEqual([]);
+    expect(sendPlan("cancel", cancelled, on)).toHaveLength(3);
+  });
+
+  it("counts an action's emails for the daily limits: every guest who is not staff is outside", () => {
+    const sends = sendPlan("schedule", testMeeting(), on);
+    expect(meetingEmailCount(sends.map((s) => s.recipient))).toEqual({ outside: 2, total: 3 });
+    expect(meetingEmailCount([])).toEqual({ outside: 0, total: 0 });
   });
 });
 

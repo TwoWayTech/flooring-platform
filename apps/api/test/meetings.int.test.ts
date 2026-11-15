@@ -17,9 +17,10 @@ import { and, eq } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NotificationService } from "../src/core/notifications/notification.service";
 import { TenantContext } from "../src/core/tenancy/tenant-context";
+import { MeetingSends } from "../src/modules/meetings/meeting-sends";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Waits until a check passes, for work the job worker does in the background. */
@@ -327,7 +328,11 @@ describe("meetings (needs the local PostgreSQL)", () => {
         .from(auditLog)
         .where(and(eq(auditLog.action, "Scheduled meeting"), eq(auditLog.targetId, made.id))),
     );
-    expect(entry).toMatchObject({ targetLabel: "Kitchen measure", after: { start: at("11-10"), guests: 3 } });
+    // The emails it sends are counted for the daily limits: the customer and Riley are outside.
+    expect(entry).toMatchObject({
+      targetLabel: "Kitchen measure",
+      after: { start: at("11-10"), guests: 3, sends: { outside: 2, total: 3 } },
+    });
     expect(JSON.stringify(entry)).not.toContain("@");
   });
 
@@ -799,6 +804,131 @@ describe("meetings (needs the local PostgreSQL)", () => {
       404,
     );
     status(await call("post", "/meetings", cookie).send(meetingBody({ title: "HR standup" })), 201);
+  });
+
+  it("answers every one of several requests sent at once: no second pool connection inside a transaction", async () => {
+    const askers = [cookies.employee, cookies.warehouse, cookies.manager];
+    const responses = await Promise.all(
+      [...askers, ...askers].map((cookie, i) =>
+        call("post", "/meeting-requests", cookie).send({
+          withUserId: ids.sales2,
+          title: `Quick sync ${i}`,
+          start: at("11-13", "10:00"),
+          note: "",
+          private: false,
+        }),
+      ),
+    );
+    expect(responses.map((response) => response.status)).toEqual([201, 201, 201, 201, 201, 201]);
+  }, 60_000);
+
+  it("lets nobody change a meeting with a customer they can't read, the organiser included, so /outbox never shows it", async () => {
+    const hr = await member(["hr"], "Hana HR");
+    const hrCookie = await enrolled(hr.email);
+    const homeowner = await rows(
+      async (db) =>
+        (
+          await db
+            .insert(customers)
+            .values({
+              type: "homeowner",
+              name: "Avery Homes",
+              email: "avery@homes.example",
+              terms: "due_on_receipt",
+              salesRepId: ids.sales,
+            })
+            .returning()
+        )[0]!.id,
+    );
+    const made = await schedule(cookies.sales, {
+      title: "Measure for Avery",
+      guests: [staff(ids.employee), { kind: "customer", id: homeowner }],
+    });
+    // The HR manager has all scope and meetings.*, but no customers: the meeting shows, the customer doesn't.
+    const seen = ((await call("get", "/meetings", hrCookie)).body as Meeting[]).find((m) => m.id === made.id);
+    expect(seen).toBeDefined();
+    expect(JSON.stringify(seen)).not.toMatch(/avery@homes\.example|Avery Homes/);
+    const message = "Only someone who can see every guest on this meeting can change it.";
+    const edit = await call("patch", `/meetings/${made.id}`, hrCookie).send({ notes: "Bring samples" });
+    status(edit, 403);
+    expect(edit.body).toEqual({ code: "forbidden", message });
+    status(await call("post", `/meetings/${made.id}/cancel`, hrCookie), 403);
+    status(await call("delete", `/meetings/${made.id}/attendees/${ids.employee}`, hrCookie), 403);
+    const outbox = await call("get", "/outbox", hrCookie);
+    status(outbox, 200);
+    expect(JSON.stringify(outbox.body)).not.toMatch(/avery@homes\.example|Avery Homes/);
+
+    // The organiser loses the change with the customer, once it moves to another rep.
+    await rows((db) => db.update(customers).set({ salesRepId: ids.sales2 }).where(eq(customers.id, homeowner)));
+    const own = await call("patch", `/meetings/${made.id}`, cookies.sales).send({ notes: "Mine" });
+    status(own, 403);
+    expect(own.body.message).toBe(message);
+    // Someone who reads every guest still may.
+    status(await call("patch", `/meetings/${made.id}`, cookies.owner).send({ notes: "Bring samples" }), 200);
+    const [stored] = await rows((db) => db.select().from(meetings).where(eq(meetings.id, made.id)));
+    expect(stored!.notes).toBe("Bring samples");
+  });
+
+  it("caps every email outside the company, repeats included: 200 a person a day, on schedule, edit and cancel", async () => {
+    const mailer = await member(["manager"], "Max Mailer");
+    const cookie = await harness.signIn(mailer.email);
+    const same = Array.from({ length: 20 }, (_, i) => ({ email: `repeat${i}@outside.example`, name: "" }));
+    const made: Meeting[] = [];
+    for (let i = 0; i < 10; i += 1) made.push(await schedule(cookie, { title: `Repeat ${i}`, newGuests: same }));
+    const message =
+      "Your meetings can send at most 200 emails a day to people outside the company. Try again tomorrow.";
+    refused(
+      await call("post", "/meetings", cookie).send(meetingBody({ title: "Repeat 10", newGuests: same })),
+      message,
+    );
+    const first = made[0]!.id;
+    refused(await call("patch", `/meetings/${first}`, cookie).send({ title: "Repeat 0 again" }), message);
+    refused(await call("post", `/meetings/${first}/cancel`, cookie), message);
+    // A refused change writes nothing.
+    const [kept] = await rows((db) => db.select().from(meetings).where(eq(meetings.id, first)));
+    expect(kept).toMatchObject({ title: "Repeat 0", status: "confirmed", sequence: 0 });
+    // Emails to colleagues only still go.
+    status(
+      await call("post", "/meetings", cookie).send(meetingBody({ title: "Team only", guests: [staff(ids.employee)] })),
+      201,
+    );
+    const invites = await rows((db) =>
+      db
+        .select()
+        .from(outboxMessages)
+        .where(and(eq(outboxMessages.actorUserId, mailer.userId), eq(outboxMessages.eventKey, "meeting.invite"))),
+    );
+    expect(invites.filter((row) => row.recipientType !== "user")).toHaveLength(200);
+  }, 120_000);
+
+  it("answers a committed change even when its invites can't be written, and still re-syncs the reminder", async () => {
+    const made = await schedule(cookies.manager, { title: "Sturdy edit", guests: [staff(ids.employee)] });
+    const notifications = harness.app.get(NotificationService);
+    const real = notifications.notify.bind(notifications);
+    const failing = vi.spyOn(notifications, "notify").mockImplementation(async (tenant, actor, input, within) => {
+      if (input.event === "meeting.invite") throw new Error("The Outbox is down.");
+      return real(tenant, actor, input, within);
+    });
+    try {
+      const edited = await call("patch", `/meetings/${made.id}`, cookies.manager).send({ reminderMin: 60 });
+      status(edited, 200);
+      expect(edited.body).toMatchObject({ reminderMin: 60 });
+    } finally {
+      failing.mockRestore();
+    }
+    const waiting = await waitingReminders(made.id);
+    expect(waiting.map((row) => row.scheduledFor?.toISOString())).toEqual([`${YEAR}-11-10T14:00:00.000Z`]);
+    expect((await outboxOf(made.id)).filter((row) => row.values["meeting.action"] === "Updated")).toEqual([]);
+
+    // A failure while working out what to send happens before the commit, so nothing is half done.
+    const planning = vi.spyOn(harness.app.get(MeetingSends), "plan").mockRejectedValueOnce(new Error("No control."));
+    try {
+      status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Half done" }), 500);
+    } finally {
+      planning.mockRestore();
+    }
+    const [stored] = await rows((db) => db.select().from(meetings).where(eq(meetings.id, made.id)));
+    expect(stored).toMatchObject({ title: "Sturdy edit", reminderMin: 60 });
   });
 
   it("answers 409 when the company's time zone has no calendar block", async () => {

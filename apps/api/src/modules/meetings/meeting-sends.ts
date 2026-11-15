@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { ControlDb, DbHandle } from "@workspace/db";
+import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
   featureOn,
   icsFileName,
@@ -12,6 +12,7 @@ import {
   sendPlan,
   type Attendee,
   type Meeting,
+  type MeetingSend,
   type MeetingSendKind,
   type ReplyOutcome,
 } from "@workspace/shared";
@@ -25,11 +26,25 @@ import { activeMembers, MEETING_SOURCE, organiserOf, type MeetingPerson } from "
 const MEETINGS_HREF = "/meetings";
 
 /**
+ * An action's invites as its own transaction worked them out (`MeetingSends.plan`): the meeting as
+ * that transaction commits it, its committed `updated_at`, the organiser the files name, and one
+ * send per guest who can still be written to.
+ */
+export interface PlannedInvites {
+  meeting: Meeting;
+  stamp: Date;
+  organiser: { name: string; email: string };
+  sends: MeetingSend[];
+}
+
+/**
  * The emails and in-app notes meetings raise through the notifications core (meetings.md "What
- * each action sends" and "Events and audit entries"; ADR 0051 "Invites"). Every call runs after the
- * change committed, one guest at a time with its own catch, so a failed send never undoes the
- * change and never stops the other guests' invites; a failure is logged without names or
- * addresses (CLAUDE.md rule 14).
+ * each action sends" and "Events and audit entries"; ADR 0051 "Invites"). What an action sends is
+ * worked out inside its transaction, from the state it commits, so the daily limits count it and a
+ * failed lookup undoes the change rather than leaving it half told. The rows are written after the
+ * commit, one guest at a time with its own catch, so a failed send never undoes the change, never
+ * stops the other guests' invites and never fails the request; a failure is logged without names
+ * or addresses (CLAUDE.md rule 14).
  */
 @Injectable()
 export class MeetingSends {
@@ -42,40 +57,39 @@ export class MeetingSends {
   ) {}
 
   /**
-   * Which of these people can still be written to: anyone outside the company, and colleagues who
-   * are still active members. A colleague who left or was disabled gets no more meeting email,
-   * since it would carry the company's titles, places and notes (ADR 0051 "Sends").
+   * One invite and one calendar file per guest for an action (shared `sendPlan`), worked out in the
+   * action's transaction `tx` from the meeting as it commits it. The organiser never gets one, and
+   * with `meetings.invites` off nothing goes. A colleague who left or was disabled is left out,
+   * since the email would carry the company's titles, places and notes (ADR 0051 "Sends"). `stamp`
+   * is the meeting's committed `updated_at`, so DTSTAMP follows commit order and the Outbox version
+   * is exact to the millisecond (RFC 5546 section 2.1.5).
    */
-  private async reachable(tenant: TenantContext, people: readonly Attendee[]): Promise<(guest: Attendee) => boolean> {
-    const staffIds = people.filter((guest) => guest.kind === "staff").map((guest) => guest.id);
-    const db = await this.tenancy.db(tenant);
-    const active = new Set((await activeMembers(db, this.control.db, staffIds)).map((member) => member.id));
-    return (guest) => guest.kind !== "staff" || active.has(guest.id);
-  }
-
-  /**
-   * One invite and one calendar file per guest for an action (shared `sendPlan`): the organiser
-   * never gets one, and with `meetings.invites` off nothing goes. `stamp` is the meeting's
-   * committed `updated_at`, so DTSTAMP follows commit order and the Outbox version is exact to the
-   * millisecond (ADR 0051; RFC 5546 section 2.1.5). A private meeting's rows are restricted, and a
-   * colleague who is no longer an active member is skipped.
-   */
-  async invites(
-    tenant: TenantContext,
-    actorUserId: string,
+  async plan(
+    tx: CompanyDb,
     kind: MeetingSendKind,
     meeting: Meeting,
     stamp: Date,
     removed?: Attendee,
-  ): Promise<void> {
-    const plan = sendPlan(kind, meeting, { invitesOn: featureOn("meetings.invites"), removed });
-    if (plan.length === 0) return;
-    const organiser = await organiserOf(this.control.db, meeting.ownerUserId);
-    const reachable = await this.reachable(
-      tenant,
-      plan.map((send) => send.recipient),
-    );
-    for (const send of plan.filter((planned) => reachable(planned.recipient))) {
+  ): Promise<PlannedInvites> {
+    const sends = sendPlan(kind, meeting, { invitesOn: featureOn("meetings.invites"), removed });
+    if (sends.length === 0) return { meeting, stamp, organiser: { name: "", email: "" }, sends };
+    const staffIds = sends.filter((send) => send.recipient.kind === "staff").map((send) => send.recipient.id);
+    const active = new Set((await activeMembers(tx, this.control.db, staffIds)).map((member) => member.id));
+    return {
+      meeting,
+      stamp,
+      organiser: await organiserOf(this.control.db, meeting.ownerUserId),
+      sends: sends.filter((send) => send.recipient.kind !== "staff" || active.has(send.recipient.id)),
+    };
+  }
+
+  /**
+   * Writes the planned invites to the Outbox, after the action committed. A private meeting's rows
+   * are restricted. It never throws: each guest's row has its own catch.
+   */
+  async invites(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<void> {
+    const { meeting, stamp, organiser } = planned;
+    for (const send of planned.sends) {
       try {
         const text = meetingIcs(sendIcsInput(send, meeting, organiser, stamp));
         const guest = send.recipient;

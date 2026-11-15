@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEETING_SETTINGS,
   MEETING_LIMITS,
+  dailyEmailProblem,
   dailyInviteProblem,
   guestLimitProblem,
   meetingFieldsProblem,
@@ -109,6 +110,16 @@ describe("guests added by address", () => {
     expect(dailyInviteProblem(45, 5)).toBeNull();
     expect(dailyInviteProblem(45, 6)).toMatch(/50 people/);
     expect(dailyInviteProblem(60, 0)).toBeNull();
+  });
+
+  it("caps every send, repeats included: 200 emails outside the company and 500 in all a day", () => {
+    expect(MEETING_LIMITS.outsideEmailsPerDay).toBe(200);
+    expect(MEETING_LIMITS.emailsPerDay).toBe(500);
+    expect(dailyEmailProblem({ outside: 180, total: 180 }, { outside: 20, total: 20 })).toBeNull();
+    expect(dailyEmailProblem({ outside: 181, total: 181 }, { outside: 20, total: 20 })).toMatch(/200 emails a day/);
+    expect(dailyEmailProblem({ outside: 200, total: 200 }, { outside: 0, total: 5 })).toBeNull();
+    expect(dailyEmailProblem({ outside: 0, total: 499 }, { outside: 0, total: 2 })).toMatch(/500 emails a day/);
+    expect(dailyEmailProblem({ outside: 900, total: 900 }, { outside: 0, total: 0 })).toBeNull();
   });
 });
 
