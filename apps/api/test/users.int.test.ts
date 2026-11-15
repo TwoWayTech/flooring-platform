@@ -301,6 +301,8 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
       .insert(platformAdmins)
       .values({ userId: await harness.userIdOf(adminEmail), role: "support", active: true });
     const admin = await enrolled(adminEmail);
+    // Every /platform write needs a step-up, the support request included (ADR 0052).
+    await stepUp(admin);
     const requested = await harness
       .post("/platform/support-grants")
       .set("Cookie", admin.cookie)

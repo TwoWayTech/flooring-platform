@@ -47,6 +47,21 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   hr: "HR Suite",
 };
 
+/** Whether a string names a module, so input from a request can be checked before it is trusted. */
+export function isModuleKey(value: string): value is ModuleKey {
+  return MODULES.some((m) => m.key === value);
+}
+
+/**
+ * The given modules in display order (the order of `MODULES`), without duplicates, so a list reads
+ * the same however a database or a set returned it: the console's module column and the audit row
+ * of an access change both use it.
+ */
+export function inModuleOrder(modules: Iterable<ModuleKey>): ModuleKey[] {
+  const given = new Set(modules);
+  return MODULES.map((m) => m.key).filter((key) => given.has(key));
+}
+
 /** Returns the module metadata for a key. */
 export function moduleInfo(key: ModuleKey): ModuleInfo {
   const found = MODULES.find((m) => m.key === key);

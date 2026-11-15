@@ -169,6 +169,11 @@ export function permissionDef(key: string): PermissionDef | undefined {
   return BY_KEY.get(key as PermissionKey);
 }
 
+/** Whether a string is a key of the catalog, so input from a request can be checked before it is trusted. */
+export function isPermissionKey(value: string): value is PermissionKey {
+  return permissionDef(value) !== undefined;
+}
+
 /** Label for an action column. */
 export function actionLabel(action: PermissionAction): string {
   return ACTION_LABELS[action];

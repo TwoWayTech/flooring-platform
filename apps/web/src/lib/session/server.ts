@@ -4,6 +4,7 @@ import { isDemoMode } from "../data-source";
 import { PRODUCT_HEADER } from "../product";
 import { toCompanySession, type SessionContext } from "./api-context";
 import { AUTH_SESSION_COOKIES } from "./auth-cookie";
+import { platformGateOf, type PlatformGate } from "./platform-gate";
 import { SESSION_COOKIE, verifySession, type DemoSession } from "./session";
 
 /** The product this request's host serves, as resolved by the proxy. */
@@ -17,15 +18,40 @@ export async function requestProduct(): Promise<ProductKey> {
  * the same company rules as on sign-in.
  */
 export async function getSessionContext(): Promise<SessionContext | null> {
+  const response = await fetchWithSession("/auth/context");
+  return response?.ok ? ((await response.json()) as SessionContext) : null;
+}
+
+/**
+ * Calls apps/api from the server with the browser's auth cookies and host, as the browser would;
+ * null when no auth cookie was sent, so a signed-out request never reaches the API.
+ */
+async function fetchWithSession(path: string): Promise<Response | null> {
   const jar = await cookies();
   const sent = AUTH_SESSION_COOKIES.filter((name) => jar.has(name)).map((name) => `${name}=${jar.get(name)?.value}`);
   if (sent.length === 0) return null;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-  const response = await fetch(`${apiUrl}/auth/context`, {
+  return fetch(`${apiUrl}${path}`, {
     headers: { cookie: sent.join("; "), "x-forwarded-host": (await headers()).get("host") ?? "" },
     cache: "no-store",
   });
-  return response.ok ? ((await response.json()) as SessionContext) : null;
+}
+
+/**
+ * Whether this request may open /admin (docs/specs/platform-admin.md, "Screens", Layout). In demo
+ * mode it is the "Platform admin (you)" session. In api mode the API decides through
+ * GET /platform/me, which reads the platform_admins row on every request; any failure denies.
+ */
+export async function getPlatformGate(): Promise<PlatformGate> {
+  if (isDemoMode()) {
+    const session = await getSession();
+    if (!session) return { kind: "signed_out" };
+    return session.kind === "platform" ? { kind: "admin", role: "owner" } : { kind: "not_admin" };
+  }
+  const response = await fetchWithSession("/platform/me").catch(() => undefined);
+  if (response === null) return { kind: "signed_out" };
+  if (!response) return { kind: "not_admin" };
+  return platformGateOf(response.status, await response.json().catch(() => null));
 }
 
 /**

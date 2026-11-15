@@ -5,12 +5,10 @@ import {
   actionLabel,
   visibleModules,
   PERMISSIONS,
-  PRODUCT_MODULES,
   type ModuleKey,
   type PermissionAction,
   type PermissionDef,
   type PermissionKey,
-  type ProductKey,
 } from "@workspace/shared";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@workspace/ui/components/tooltip";
@@ -46,7 +44,11 @@ function moduleRows(module: ModuleKey): { actions: PermissionAction[]; rows: Row
 }
 
 interface PermissionMatrixProps {
-  product: ProductKey;
+  /**
+   * The modules whose permissions are shown; hidden ones are left out (rule 18). Security roles
+   * passes its product's modules, the platform console those of all of a company's products.
+   */
+  modules: readonly ModuleKey[];
   granted: readonly PermissionKey[];
   lockOf: (key: PermissionKey) => CellLock;
   onToggle: (key: PermissionKey, on: boolean) => void;
@@ -56,8 +58,8 @@ interface PermissionMatrixProps {
  * The permission matrix by module, resource and action. A tick outside the plan stays visible
  * but inactive (blueprint rule 3), so restoring the ceiling restores the access.
  */
-export function PermissionMatrix({ product, granted, lockOf, onToggle }: PermissionMatrixProps) {
-  const modules = visibleModules().filter((m) => PRODUCT_MODULES[product].includes(m.key));
+export function PermissionMatrix({ modules: included, granted, lockOf, onToggle }: PermissionMatrixProps) {
+  const modules = visibleModules().filter((m) => included.includes(m.key));
   return (
     <div className="flex flex-col gap-6">
       {modules.map((module) => {

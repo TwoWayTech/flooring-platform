@@ -18,6 +18,10 @@ import type {
   LienWaiver,
   Location,
   PayPeriod,
+  PlatformAccessPatch,
+  PlatformCompany,
+  PlatformCompanySummary,
+  PlatformDirectory,
   Payment,
   Refund,
   Reservation,
@@ -115,6 +119,27 @@ export const API_METHODS: HttpRoutes = {
   resetRole: (http) => (roleId) => http.request<Role>("POST", `/roles/${roleId}/reset`),
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   verifyStepUp: (http) => (code) => http.request<void>("POST", "/auth/step-up", { code }),
+  // The platform console (docs/specs/platform-admin.md, part 1). PlatformAdminGuard decides who may
+  // call these. The demo's switcher, palette and sign-in keep `listCompanies` on DemoStore.
+  listPlatformCompanies: (http) => () => http.request<PlatformCompanySummary[]>("GET", "/platform/companies"),
+  getPlatformCompany: (http) => async (companyId) => {
+    // Company ids are UUIDs; any other id names no company, so it is not sent.
+    if (!isSaved(companyId)) return null;
+    try {
+      return await http.request<PlatformCompany>("GET", `/platform/companies/${companyId}`);
+    } catch (failure) {
+      if (failure instanceof HttpApiError && failure.status === 404) return null;
+      throw failure;
+    }
+  },
+  updatePlatformCompanyAccess: (http) => (companyId, patch) =>
+    http.request<PlatformCompany>(
+      "PATCH",
+      `/platform/companies/${encodeURIComponent(companyId)}/access`,
+      accessPatchBody(patch),
+    ),
+  getPlatformDirectory: (http) => (companyId) =>
+    http.request<PlatformDirectory>("GET", `/platform/companies/${encodeURIComponent(companyId)}/directory`),
   inventoryData: (http) => async () => {
     const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
       seen(http.request<Product[]>("GET", "/products")),
@@ -599,6 +624,20 @@ function contractBody(input: ContractInput) {
       ...(line.estimatedCost === undefined ? {} : { estimatedCost: line.estimatedCost }),
     })),
   };
+}
+
+/**
+ * A change of company access as the API takes it (spec "PlatformAccessPatch"): only the four fields,
+ * and only those the screen set, so nothing else on the object travels and a part left out stays
+ * as it is. The API's schema is strict and refuses anything more.
+ */
+function accessPatchBody(patch: PlatformAccessPatch): PlatformAccessPatch {
+  const body: PlatformAccessPatch = {};
+  if (patch.modules !== undefined) body.modules = [...patch.modules];
+  if (patch.ceiling !== undefined) body.ceiling = [...patch.ceiling];
+  if (patch.userLimit !== undefined) body.userLimit = patch.userLimit;
+  if (patch.branchLimit !== undefined) body.branchLimit = patch.branchLimit;
+  return body;
 }
 
 /** A list the person may not see (403) comes back empty, as the demo hides what a role cannot open. */

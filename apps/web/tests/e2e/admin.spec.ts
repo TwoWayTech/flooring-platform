@@ -13,6 +13,8 @@ test.describe("super-admin", () => {
     await page.getByRole("button", { name: "Sign in as platform admin" }).click();
     await expect(page).toHaveURL(/\/admin$/);
     await page.getByRole("row", { name: /Summit Floor Co\./ }).click();
+    // Outside a company workspace the console has one date format, "MMM d, yyyy" (useFormatDate).
+    await expect(page.getByText(/^since [A-Z][a-z]{2} \d{1,2}, \d{4}$/)).toBeVisible();
 
     await page.getByRole("checkbox", { name: "View sensitive margins" }).uncheck();
     await expect(page.getByRole("region", { name: "Effective access preview" })).toBeVisible();

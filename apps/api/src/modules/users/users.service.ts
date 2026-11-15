@@ -13,10 +13,8 @@ import { branches, userProfiles } from "@workspace/db/company";
 import {
   member,
   passkey,
-  planLimits,
   platformAdmins,
   session as sessionTable,
-  tenantSubscriptions,
   tenants,
   twoFactor,
   user,
@@ -36,6 +34,7 @@ import { and, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
+import { PlanLimits } from "../../core/access/plan-limits";
 import type { Actor } from "../../core/access/request-actor";
 import { AttemptLog } from "../../core/auth/attempts";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -89,6 +88,7 @@ export class UsersService {
     @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    private readonly limits: PlanLimits,
     private readonly stepUp: StepUpService,
     private readonly attempts: AttemptLog,
     @Inject(EMAIL) private readonly email: EmailProvider,
@@ -155,7 +155,7 @@ export class UsersService {
       .where(isNull(userProfiles.deletedAt));
     const seats = seatProblem(
       statuses.map((row) => row.status),
-      await this.userLimit(tenant.companyId),
+      (await this.limits.limitsOf(tenant.companyId)).userLimit,
     );
     if (seats) throw new ConflictException({ code: "seat_limit", message: seats });
     const [already] = await this.control.db
@@ -421,20 +421,6 @@ export class UsersService {
       await tx.update(user).set({ twoFactorEnabled: false }).where(eq(user.id, userId));
       await tx.delete(sessionTable).where(eq(sessionTable.userId, userId));
     });
-  }
-
-  /** The company's user limit: its live subscriptions' override or plan limit; null when it has none (a trial). */
-  private async userLimit(companyId: string): Promise<number | null> {
-    const rows = await this.control.db
-      .select({ override: tenantSubscriptions.userLimitOverride, planLimit: planLimits.maxUsers })
-      .from(tenantSubscriptions)
-      .leftJoin(planLimits, and(eq(planLimits.planId, tenantSubscriptions.planId), isNull(planLimits.deletedAt)))
-      .where(and(eq(tenantSubscriptions.tenantId, companyId), isNull(tenantSubscriptions.deletedAt)));
-    const limits = rows.flatMap((row) => {
-      const limit = row.override ?? row.planLimit;
-      return limit === null ? [] : [limit];
-    });
-    return limits.length === 0 ? null : Math.max(...limits);
   }
 
   private async sendInvitation(companyId: string, to: string, url: string, existing: boolean): Promise<void> {
