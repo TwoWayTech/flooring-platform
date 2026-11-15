@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import {
+  exceptionResends,
   featureOn,
   icsFileName,
   inviteValues,
@@ -14,6 +15,7 @@ import {
   type Meeting,
   type MeetingSend,
   type MeetingSendKind,
+  type OccurrenceTime,
   type ReplyOutcome,
 } from "@workspace/shared";
 import { CONTROL_DB } from "../../core/database/control-db";
@@ -24,6 +26,16 @@ import { activeMembers, MEETING_SOURCE, organiserOf, type MeetingPerson } from "
 
 /** Where a meeting's in-app notes open. */
 const MEETINGS_HREF = "/meetings";
+
+/** What one action's invites are about, besides the meeting (shared `sendPlan` and `exceptionResends`). */
+export interface InviteOptions {
+  /** The one guest a removal or a declined proposal goes to. */
+  only?: Attendee;
+  /** The occurrence an "occurrence" send is about. */
+  occurrence?: OccurrenceTime;
+  /** The series' time or rule changed, so its surviving exceptions are sent again (ADR 0051 "Part 2"). */
+  resendExceptions?: boolean;
+}
 
 /**
  * An action's invites as its own transaction worked them out (`MeetingSends.plan`): the meeting as
@@ -62,16 +74,22 @@ export class MeetingSends {
    * with `meetings.invites` off nothing goes. A colleague who left or was disabled is left out,
    * since the email would carry the company's titles, places and notes (ADR 0051 "Sends"). `stamp`
    * is the meeting's committed `updated_at`, so DTSTAMP follows commit order and the Outbox version
-   * is exact to the millisecond (RFC 5546 section 2.1.5).
+   * is exact to the millisecond (RFC 5546 section 2.1.5). With `resendExceptions`, every surviving
+   * exception that has not ended by `stamp` gets its own copy of each series REQUEST.
    */
   async plan(
     tx: CompanyDb,
     kind: MeetingSendKind,
     meeting: Meeting,
     stamp: Date,
-    removed?: Attendee,
+    options: InviteOptions = {},
   ): Promise<PlannedInvites> {
-    const sends = sendPlan(kind, meeting, { invitesOn: featureOn("meetings.invites"), removed });
+    const series = sendPlan(kind, meeting, {
+      invitesOn: featureOn("meetings.invites"),
+      only: options.only,
+      occurrence: options.occurrence,
+    });
+    const sends = options.resendExceptions ? [...series, ...exceptionResends(meeting, series, stamp)] : series;
     if (sends.length === 0) return { meeting, stamp, organiser: { name: "", email: "" }, sends };
     const staffIds = sends.filter((send) => send.recipient.kind === "staff").map((send) => send.recipient.id);
     const active = new Set((await activeMembers(tx, this.control.db, staffIds)).map((member) => member.id));
@@ -84,13 +102,21 @@ export class MeetingSends {
   }
 
   /**
-   * Writes the planned invites to the Outbox, after the action committed. A private meeting's rows
-   * are restricted. Every guest's row is written first, then the send jobs are queued, stopping at
-   * the first failure (`queueSends`), so a jobs outage costs the request one wait, not one per guest
-   * (final review of PR #33); the rows left with no job wait for Retry. It never throws: each guest's
-   * row has its own catch. Answers whether background jobs were found unavailable.
+   * Writes the planned invites of one action to the Outbox, after the action committed: one plan
+   * per meeting it changed (a split changes two). A private meeting's rows are restricted. Every
+   * guest's row is written first, then the send jobs are queued once, stopping at the first failure
+   * (`queueSends`), so a jobs outage costs the request one wait, not one per guest (final review of
+   * PR #33); the rows left with no job wait for Retry. It never throws: each guest's row has its own
+   * catch. Answers whether background jobs were found unavailable.
    */
-  async invites(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<boolean> {
+  async invites(tenant: TenantContext, actorUserId: string, plans: readonly PlannedInvites[]): Promise<boolean> {
+    const unqueued: UnqueuedSend[] = [];
+    for (const planned of plans) unqueued.push(...(await this.written(tenant, actorUserId, planned)));
+    return !(await this.notifications.queueSends(tenant, unqueued));
+  }
+
+  /** One plan's Outbox rows, each guest's with its own catch; answers the sends whose jobs still need queueing. */
+  private async written(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<UnqueuedSend[]> {
     const { meeting, stamp, organiser } = planned;
     const unqueued: UnqueuedSend[] = [];
     for (const send of planned.sends) {
@@ -119,7 +145,7 @@ export class MeetingSends {
         this.logger.warn("A meeting changed, but one guest's invite could not be written to the Outbox.");
       }
     }
-    return !(await this.notifications.queueSends(tenant, unqueued));
+    return unqueued;
   }
 
   /**

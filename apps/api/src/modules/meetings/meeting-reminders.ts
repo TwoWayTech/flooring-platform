@@ -8,13 +8,14 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow } from "../hr/hr-common";
 import { attendeesOf, meetingOf } from "./meeting-records";
-import { activeMembers, lockMeeting, MEETING_SOURCE } from "./meetings-common";
+import { activeMembers, lockMeetingRow, MEETING_SOURCE } from "./meetings-common";
 
 /**
  * A meeting's reminder as Outbox rows (meetings.md rule 10; ADR 0051 "Reminders"; ADR 0032: a
  * scheduled row and a delayed job, no reminders table). After every change that can move, add,
- * drop or end a reminder — schedule, edit, cancel, remove a guest, and an answer that confirms or
- * cancels a request (critic B6) — the waiting rows are cancelled and the next one is raised again.
+ * drop or end a reminder — schedule, edit, cancel, remove a guest, an answer that confirms or
+ * cancels a request (critic B6), a move, an undo and an accepted proposal — the waiting rows are
+ * cancelled and the next one is raised again.
  */
 @Injectable()
 export class MeetingReminders {
@@ -37,7 +38,8 @@ export class MeetingReminders {
    * The reminder goes to the staff guests but the organiser who are still active members, by email
    * only (spec rule 10), held until `reminderMin` before the next occurrence and dropped if not sent
    * by its start. None is raised for a cancelled meeting, a request still waiting, or while
-   * `meetings.invites` is off.
+   * `meetings.invites` is off, and a deleted meeting (the series an undo removed) only has its rows
+   * cancelled.
    * There is no actor, so a re-sync by someone else drops nobody. Later occurrences of a series get
    * theirs when a change re-syncs it; a sweeper for them is Part 4 (ADR 0051 "Deferred").
    *
@@ -52,9 +54,9 @@ export class MeetingReminders {
       await this.notifications.cancelScheduled(tenant, "meeting.reminder", source);
       const db = await this.tenancy.db(tenant);
       const unqueued = await db.transaction(async (tx): Promise<UnqueuedSend[]> => {
-        const row = await lockMeeting(tx, meetingId);
+        const row = await lockMeetingRow(tx, meetingId);
         await this.notifications.cancelScheduled(tenant, "meeting.reminder", source, tx);
-        if (!featureOn("meetings.invites")) return [];
+        if (!row || row.deletedAt || !featureOn("meetings.invites")) return [];
         const { meeting } = meetingOf(row, await attendeesOf(tx, [row.id]));
         const reminder = nextReminder(meeting, await databaseNow(tx));
         const guests = reminderRecipients(meeting);

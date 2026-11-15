@@ -30,8 +30,10 @@ export async function companyDayStart(control: ControlDb, tenant: TenantContext)
 /**
  * Takes one person's meeting-sends lock until the transaction ends, so two of their actions at once
  * count each other: the second waits until the first has committed its guests and its audit entry.
- * An action takes at most one meeting's row lock, always before this one, so actions never wait on
- * each other in a circle.
+ * Meeting row locks are always taken before this one. An action takes one meeting's row lock, or,
+ * for an undo that removes a split-off series, the original's and then the split's (ADR 0051 "Part
+ * 2"). Nothing locks a split before its original, and no action takes a second person's sends lock,
+ * so actions never wait on each other in a circle.
  */
 async function lockSendsOf(tx: CompanyDb, userId: string): Promise<void> {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`meetings:sends:${userId}`}))`);

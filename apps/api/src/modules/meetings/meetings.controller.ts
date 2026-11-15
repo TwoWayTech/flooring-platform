@@ -8,7 +8,8 @@ import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
-import { requireFeature } from "../sales/sales-common";
+import { refuse, requireFeature } from "../sales/sales-common";
+import { MeetingMoves } from "./meeting-moves.service";
 import { MeetingsService } from "./meetings.service";
 
 /**
@@ -121,15 +122,42 @@ const REQUEST = z
   .strict();
 
 /**
+ * A move (`MeetingMove`, meetings.md "Move or resize"). `meetingId` is the contract's and must name
+ * the meeting in the path (critic M); the shared rule checks the rest.
+ */
+const MOVE = z
+  .object({
+    meetingId: z.uuid("Choose a meeting.").optional(),
+    planned: LOCAL_TIME,
+    start: LOCAL_TIME,
+    durationMin: z.number(),
+    scope: z.enum(["this", "following", "all"], "Choose which events to move."),
+  })
+  .strict();
+
+/**
+ * An undo: only the SEQUENCE the screen saw before its move (`undo.previous.sequence`). The meeting
+ * is rebuilt from the server's own record, so a client's copy of it is refused, not read (critic B3).
+ */
+const UNDO = z.object({ sequence: z.number().int().min(0) }).strict();
+
+/** The organiser's decision on a proposed time. */
+const DECISION = z.object({ accept: z.boolean() }).strict();
+
+/**
  * Meetings (meetings.md; ADR 0051), in the `meetings` module of both products. Every route is
- * behind `meetings.calendar`; guests, answers and the guest picker also need `meetings.invites`;
- * requests need `meetings.requests` and invites, so a request can always be answered; My meetings
- * is the portal's (`hr.portal`). Data scope and the per-meeting rules are applied in the service.
+ * behind `meetings.calendar`; guests, answers, proposal decisions and the guest picker also need
+ * `meetings.invites`; requests need `meetings.requests` and invites, so a request can always be
+ * answered; My meetings is the portal's (`hr.portal`). Data scope and the per-meeting rules are
+ * applied in the services.
  */
 @Controller()
 @RequireModule("meetings")
 export class MeetingsController {
-  constructor(private readonly meetings: MeetingsService) {}
+  constructor(
+    private readonly meetings: MeetingsService,
+    private readonly moves: MeetingMoves,
+  ) {}
 
   /** GET /meetings: the meetings the person may see, each as they may read it. */
   @Get("meetings")
@@ -203,6 +231,60 @@ export class MeetingsController {
   ) {
     requireFeature("meetings.calendar");
     return this.meetings.update(tenant, actorOf(access, session, request), id, parse(PATCH, body));
+  }
+
+  /** POST /meetings/:id/reschedule: moves or resizes a meeting, or this, the following or all of a series' occurrences. */
+  @Post("meetings/:id/reschedule")
+  @RequirePermission("meetings.meeting.edit")
+  @Audited()
+  reschedule(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("meetings.calendar");
+    const { meetingId, ...move } = parse(MOVE, body);
+    if (meetingId !== undefined && meetingId !== id) throw refuse("The meeting moved must be the one in the address.");
+    return this.moves.reschedule(tenant, actorOf(access, session, request), id, move);
+  }
+
+  /** POST /meetings/:id/reschedule/undo: undoes the person's own last move of the meeting, rebuilt from its audit entry. */
+  @Post("meetings/:id/reschedule/undo")
+  @RequirePermission("meetings.meeting.edit")
+  @Audited()
+  undoReschedule(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("meetings.calendar");
+    const { sequence } = parse(UNDO, body);
+    return this.moves.undo(tenant, actorOf(access, session, request), id, sequence);
+  }
+
+  /** POST /meetings/:id/attendees/:attendeeId/proposal: the organiser accepts or declines a guest's proposed time. */
+  @Post("meetings/:id/attendees/:attendeeId/proposal")
+  @RequirePermission("meetings.meeting.edit")
+  @Audited()
+  decideProposal(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Param("attendeeId", new ParseUUIDPipe()) attendeeId: string,
+    @Body() body: unknown,
+  ) {
+    requireFeature("meetings.calendar");
+    requireFeature("meetings.invites");
+    const { accept } = parse(DECISION, body);
+    return this.moves.decide(tenant, actorOf(access, session, request), id, attendeeId, accept);
   }
 
   /** POST /meetings/:id/cancel: cancels the meeting for everyone. */

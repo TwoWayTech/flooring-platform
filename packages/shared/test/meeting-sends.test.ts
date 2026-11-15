@@ -178,6 +178,7 @@ describe("what each part 2 action sends (meetings.md sends table, ADR 0051 Part 
       ["c-1", "2026-12-03T08:30", "2026-12-03T11:00", 60, 4],
       ["x-1", "2026-12-03T08:30", "2026-12-03T11:00", 60, 4],
     ]);
+    expect(copies.some((s) => s.inApp)).toBe(false);
     // One Outbox version per RECURRENCE-ID, so the copies never merge with the series' own row.
     const stamp = new Date(0);
     const versions = new Set([...seriesSends, ...copies].map((s) => `${s.recipient.id}:${inviteVersion(s, stamp)}`));

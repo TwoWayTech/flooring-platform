@@ -130,7 +130,8 @@ const MINUTE_MS = 60_000;
  * every series REQUEST, at the series' SEQUENCE, with its own RECURRENCE-ID (the planned time as
  * the series now has it) and its own time and length. Only exceptions whose occurrence has not ended
  * by `now` are sent, which bounds what guests receive; one marked cancelled is skipped (nothing
- * writes one yet). A CANCEL has no copies.
+ * writes one yet). A CANCEL has no copies. A colleague's in-app note comes once, with the series'
+ * own invite, not once per copy.
  */
 export function exceptionResends(meeting: Meeting, seriesSends: readonly MeetingSend[], now: Date): MeetingSend[] {
   if (meeting.recurrence === "none") return [];
@@ -141,7 +142,7 @@ export function exceptionResends(meeting: Meeting, seriesSends: readonly Meeting
     const durationMin = exception.durationMin ?? meeting.durationMin;
     const startsAt = zonedToInstantLenient(start, meeting.timeZone);
     if (!startsAt || startsAt.getTime() + durationMin * MINUTE_MS <= now.getTime()) return [];
-    return requests.map((send) => ({ ...send, recurrenceId: exception.planned, start, durationMin }));
+    return requests.map((send) => ({ ...send, inApp: false, recurrenceId: exception.planned, start, durationMin }));
   });
 }
 
