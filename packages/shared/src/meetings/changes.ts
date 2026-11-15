@@ -1,6 +1,7 @@
 import type { Attendee, Meeting, MeetingSettings } from "../types";
 import { isOrganiser, sameAttendee } from "./access";
 import { meetingFieldsProblem } from "./input";
+import { shiftedSeries, shiftedSeriesProblem } from "./moves";
 
 /**
  * The status moves a meeting may make (meetings.md "Meeting.status"): a request is tentative until
@@ -39,18 +40,15 @@ export function changedFields(before: Meeting, patch: MeetingPatch): (keyof Meet
 /**
  * Why an edit can't be saved, or null (meetings.md `updateMeeting`; ADR 0051). A cancelled meeting is
  * refused. Only the changed fields are checked, so a new start must exist in the meeting's zone and
- * pass the monthly limit, while a title edit on a day-30 monthly series still works. A series with
- * occurrences moved on their own refuses a new start or length until those can be sent again with
- * it (ADR 0051 "Exceptions", ADR 0021: guests' calendars would keep them under old ids).
+ * pass the monthly limit, while a title edit on a day-30 monthly series still works. A series'
+ * occurrences moved on their own shift with a new start and are sent again (ADR 0051 "Part 2", ADR
+ * 0021), so a new start that would take one off the series (`shiftedSeriesProblem`) is refused.
  */
 export function editProblem(before: Meeting, patch: MeetingPatch): string | null {
   if (before.status === "cancelled") return "This meeting was cancelled.";
   const changed = changedFields(before, patch);
   const pick = <K extends keyof MeetingPatch>(key: K) => (changed.includes(key) ? patch[key] : undefined);
-  const timing = changed.includes("start") || changed.includes("durationMin");
-  if (timing && before.recurrence !== "none" && before.exceptions.length > 0)
-    return "Some occurrences of this series were changed on their own, so its time can't be edited yet.";
-  return meetingFieldsProblem(
+  const fields = meetingFieldsProblem(
     {
       title: pick("title"),
       notes: pick("notes"),
@@ -61,6 +59,8 @@ export function editProblem(before: Meeting, patch: MeetingPatch): string | null
     },
     { zone: before.timeZone, recurrence: before.recurrence },
   );
+  if (fields || !changed.includes("start")) return fields;
+  return shiftedSeriesProblem(before, editedMeeting(before, patch).meeting);
 }
 
 /** A guest asked again after a significant change: no answer, no reply time, no proposal (meetings.md rule 6). */
@@ -78,13 +78,19 @@ export interface MeetingEdit {
 /**
  * Applies an edit (meetings.md rule 6 and the sends table): a change of start, length or place
  * raises SEQUENCE, sets rescheduleSequence to it and asks every guest again, the organiser
- * included; a title, notes or reminder change keeps both and every answer. Check `editProblem`
- * first; with no changed field the meeting comes back as it was.
+ * included; a title, notes or reminder change keeps both and every answer. A series' start and
+ * length change as a move of all events does (`shiftedSeries`, rule 4): its exceptions' planned
+ * times shift with the start. Check `editProblem` first; with no changed field the meeting comes
+ * back as it was.
  */
 export function editedMeeting(before: Meeting, patch: MeetingPatch): MeetingEdit {
   const changed = changedFields(before, patch);
   const significant = changed.some((key) => SIGNIFICANT_KEYS.has(key));
   const sequence = before.sequence + (significant ? 1 : 0);
+  const timed = shiftedSeries(before, {
+    start: patch.start ?? before.start,
+    durationMin: patch.durationMin ?? before.durationMin,
+  });
   return {
     changed,
     significant,
@@ -93,8 +99,9 @@ export function editedMeeting(before: Meeting, patch: MeetingPatch): MeetingEdit
       title: patch.title ?? before.title,
       notes: patch.notes ?? before.notes,
       location: patch.location ?? before.location,
-      start: patch.start ?? before.start,
-      durationMin: patch.durationMin ?? before.durationMin,
+      start: timed.start,
+      durationMin: timed.durationMin,
+      exceptions: timed.exceptions,
       reminderMin: patch.reminderMin ?? before.reminderMin,
       sequence,
       rescheduleSequence: significant ? sequence : before.rescheduleSequence,

@@ -261,6 +261,26 @@ describe("calendar files written safely (ADR 0051)", () => {
     expect(lines.some((l) => l.startsWith("RDATE"))).toBe(false);
   });
 
+  it("writes a DECLINECOUNTER that lists only the proposer, with no STATUS and no reminder (part 2)", () => {
+    const lines = unfolded(meetingIcs(input({ method: "DECLINECOUNTER", status: undefined, attendees: [guest()] })));
+    expect(lines).toContain("METHOD:DECLINECOUNTER");
+    expect(lines.filter((l) => l.startsWith("ATTENDEE"))).toHaveLength(1);
+    expect(lines.some((l) => l.startsWith("STATUS") || l.startsWith("BEGIN:VALARM"))).toBe(false);
+  });
+
+  it("names the first date of a day-30 monthly series by its own RECURRENCE-ID, with no rule (part 2)", () => {
+    const safetyTalk = meeting({ start: "2026-09-30T13:00", durationMin: 60, recurrence: "monthly" });
+    const lines = unfolded(
+      meetingIcs(
+        input({ meeting: safetyTalk, recurrenceId: "2026-09-30T13:00", start: "2026-09-30T15:00", durationMin: 45 }),
+      ),
+    );
+    expect(lines).toContain("RECURRENCE-ID;TZID=America/Denver:20260930T130000");
+    expect(lines).toContain("DTSTART;TZID=America/Denver:20260930T150000");
+    expect(lines).toContain("DTEND;TZID=America/Denver:20260930T154500");
+    expect(lines.some((l) => l.startsWith("RRULE:FREQ=MONTHLY") || l.startsWith("RDATE"))).toBe(false);
+  });
+
   it("writes STATUS:TENTATIVE when asked, for a request still waiting", () => {
     expect(meetingIcs(input({ status: "TENTATIVE" }))).toContain("STATUS:TENTATIVE\r\n");
   });

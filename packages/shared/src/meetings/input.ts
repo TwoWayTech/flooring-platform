@@ -33,6 +33,11 @@ export const MEETING_LIMITS = {
   outsideEmailsPerDay: 200,
   /** Meeting emails of every kind one person's actions may send in one company day, colleagues included. */
   emailsPerDay: 500,
+  /**
+   * Occurrences of one series moved on their own (ADR 0051 "Part 2"). It bounds the stored list, the
+   * "Moved meeting" audit entry that keeps a copy of it, and the invites a series move sends again.
+   */
+  exceptionsMax: 100,
 } as const;
 
 /** The reminder choices the New meeting form offers (meetings.md "Schedule a meeting", step 4). */

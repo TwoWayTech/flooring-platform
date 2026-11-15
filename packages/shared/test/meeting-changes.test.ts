@@ -94,14 +94,34 @@ describe("editing a meeting (meetings.md rule 6, ADR 0051)", () => {
     expect(editProblem(safetyTalk, { start: "2026-10-29T13:00" })).toMatch(/fifth week/);
   });
 
-  it("refuses a new start or length on a series with occurrences changed on their own", () => {
+  it("shifts a series' occurrences changed on their own with its new start, keeping their own times (part 2)", () => {
     const series = testMeeting({
       recurrence: "weekly",
       exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-27T08:30" }],
     });
-    expect(editProblem(series, { start: "2026-11-19T09:00" })).toMatch(/changed on their own/);
-    expect(editProblem(series, { durationMin: 45 })).toMatch(/changed on their own/);
-    expect(editProblem(series, { location: "Studio", title: "Huddle" })).toBeNull();
+    expect(editProblem(series, { start: "2026-11-19T09:00" })).toBeNull();
+    expect(editProblem(series, { durationMin: 45 })).toBeNull();
+    const edit = editedMeeting(series, { start: "2026-11-20T09:00", durationMin: 45 });
+    expect(edit.meeting).toMatchObject({ start: "2026-11-20T09:00", durationMin: 45, sequence: 1 });
+    expect(edit.meeting.exceptions).toEqual([{ planned: "2026-11-27T09:00", start: "2026-11-27T08:30" }]);
+    expect(editedMeeting(series, { durationMin: 45 }).meeting.exceptions).toEqual(series.exceptions);
+  });
+
+  it("refuses a new start that would take an occurrence changed on its own off the series", () => {
+    // The fourth Thursday moved on its own; a week's shift puts the series in the first week, where it is not.
+    const monthly = testMeeting({
+      start: "2026-11-26T08:30",
+      recurrence: "monthly",
+      exceptions: [{ planned: "2026-12-24T08:30", start: "2026-12-23T08:30" }],
+    });
+    expect(editProblem(monthly, { start: "2026-12-03T08:30" })).toMatch(/no longer be part of the series/);
+    const ending = testMeeting({
+      recurrence: "weekly",
+      until: "2026-12-03",
+      exceptions: [{ planned: "2026-12-03T08:30", start: "2026-12-02T08:30" }],
+    });
+    expect(editProblem(ending, { start: "2026-11-20T08:30" })).toMatch(/no longer be part of the series/);
+    expect(editProblem(ending, { start: "2026-11-19T07:30" })).toBeNull();
   });
 });
 
