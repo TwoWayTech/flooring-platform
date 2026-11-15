@@ -264,14 +264,57 @@ This is the plan re-checked against the review and the code on `253058a`. The dr
   - The support request needs a step-up.
 - **Built on a draft spec.** The P11 approval stop can't happen overnight. This follows the precedent of `settings-users-access.md`, and here it is the overnight rule's choice.
 
-## Done in this step
-- docs/specs/platform-admin.md: the draft spec, with the parts 2 to 4 outline and the owner questions.
-- This session log.
-- The draft PR.
+## Outcome
+Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #34), in `[skip ci]` commits:
+
+| Commit | Stage | What |
+| --- | --- | --- |
+| `7d8285a` | Plan | Draft spec docs/specs/platform-admin.md, this log, the draft PR |
+| `4c42f97` | Shared | `types/platform.ts`, `platform/access-patch.ts` (`PROTECTED_CEILING_KEYS`, `accessPatchProblem`, `moduleOverridesFor`, `ceilingRowsFor`, `limitOverrideFor`, `accessDiff`), `platform/admin-roles.ts`, `isModuleKey`, `isPermissionKey`, 46 unit tests |
+| `aced3e1` | API refactor | `AccessService` company readers made public; `PlanLimits` in core/access (no behaviour change) |
+| `bc984bd` | API | modules/platform: guard, admin reader, platform audit, companies, change access, support request; the lint block |
+| `71c1c09` | API tests | guard unit tests, `platform.int.test.ts`, the isolation map, the users test's step-up |
+| `6869c63` | Web | the console on the API in api mode, the /admin gate, demo store on the shared check, data pages not found in api mode |
+| `025daae` | e2e | `tests/e2e-api/platform-admin.spec.ts` and the control-database test helpers in `packages/db/src/testing.ts` |
+| `f6f1bb4` | Test fix | a deleted subscription row gets no limit override |
+| this commit | Docs | ADR 0052, the delta row, api-contract, ADR 0030 and 0034 notes, the product spec's "Real build (ADR 0052)", the users spec's "Support access", data-model, the `admin.access` note, the spec's as-built notes |
+
+## Decisions taken during the build (all recorded in ADR 0052 and the delta row)
+- **Shared:** `accessPatchProblem` takes raw strings, so an unknown name gets the spec's own message; an unknown module name reads "The {name} module isn't offered to this company."; `moduleOverridesFor` takes the stored override rows and returns only real writes; `userLimitOverride` and `branchLimitOverride` are not sensitive fields (seat and branch counts).
+- **API:**
+  - The guard order is 401, 404 (the admin row is not read), 403, then on writes the role and the step-up.
+  - `last_error` is read only as `is not null`; a test plants a marker and checks no answer holds it.
+  - The audit row is written whenever any row was written, even when effective access did not change, and `after` adds `overrideRows` and `limitRows`. Rows are stamped with `clock_timestamp()`; `created_by` is the actor.
+  - The plan label reads "Trial, no plan" for a trial with no rows and "No plan" otherwise.
+  - The support request's body is strict and its company check is inside the transaction.
+- **Web:**
+  - The step-up is asked in api mode only; the demo saves at once.
+  - The gate sends any answer it does not recognise to /.
+  - One permission matrix over all of the company's products.
+  - Each demo company has a stand-in plan row at "0.00"; nothing shows it.
+  - The page reads the company again after a save in api mode only.
+  - `useFormatDate` falls back outside a company workspace (a filter chip on /admin would have thrown; found by reading, not by running).
+- **e2e:** the seeded owner is the platform admin for the run (reset before and after, since `login.spec.ts` enrols it first); the test helpers live in `@workspace/db/testing` because apps/web has no drizzle dependency.
+- **Docs:** the `admin.access` row in docs/FEATURES.md gets a note only (404 on every /platform route when off); its key, product, module, status and screens are unchanged, so `features.ts` does not change. ADR 0030's "only `/auth/context` uses `@SessionOnly()`" and ADR 0034's support lines get "Changed by ADR 0052" notes. The demo-only `listCompanies` and `listCompanyDirectory` rows in api-contract no longer name /platform routes.
+
+## Commands run (heavy ones through the lock)
+- `prettier --check` on the plan-stage docs: clean.
+- Shared: `vitest run test/platform-access.test.ts`, 46 passed; the shared suite, 47 files and 514 tests passed after one fix (the field-name test); lint and Prettier clean.
+- `pnpm -s typecheck`: exit 0 but 5 of 6 tasks came from the cache; `turbo run typecheck --force --concurrency=1`: 6 of 6 passed, none cached. Later, after the web stage, `pnpm -s typecheck`: 6 of 6.
+- API: typecheck and lint passed; Prettier clean; the lint probe gave 5 refusals in modules/platform and none in modules/sales. Unit: `platform-admin-guard.test.ts` 6 passed; the api unit project 12 files and 66 tests passed.
+- API integration, one file at a time: `platform.int.test.ts` 17 passed (first runs failed on two mistakes in the tests, not the API); `isolation.int.test.ts` 15 passed; `users.int.test.ts` 17 passed; `permissions.int.test.ts` 25 passed. After the deleted-row check: `platform.int.test.ts` and `isolation.int.test.ts` 32 passed; `users.int.test.ts` 17 passed; `platform.int.test.ts` again 17 passed.
+- Web: `pnpm --filter web typecheck` passed; `vitest run` 5 files and 33 tests passed; lint passed; Prettier fixed whitespace in two files. Later `platform-console.test.ts` 17 passed.
+- e2e: the api build, an api-mode web build, then Playwright on `platform-admin.spec.ts`, `users.spec.ts` and `login.spec.ts`: 10 passed, 0 failed, in 17.5 s. Afterwards ports 3000 and 4000 were free, `platform_admins` held 0 rows, and Summit's `retail.sample.view` ceiling row was back as it was.
+- Docs stage: `vitest run test/features.test.ts` in packages/shared (the register and `features.ts` in sync), 7 passed; `prettier --check` on the changed docs.
 
 ## Left
-- Build plan sections 1 to 5, then the docs in section 6, then the reviews and the merge in section 7.
-- **Owner questions** (spec, "Waiting for the owner"):
+- **Rebase on main.** Meetings PR #33 merged as `1de1e0c` while this branch was built. It changes `apps/api/src/core/access/access.service.ts` (the same file as the refactor here, so expect a conflict), `apps/api/src/app.module.ts`, `docs/api-contract.md`, `docs/data-model.md`, docs/blueprint-delta.md (both add a row at the top: keep both, this one first) and the shared index. Rerun the api typecheck and the integration files after it.
+- **Not run on this branch:** the full `pnpm lint`, `pnpm test`, `pnpm test:api` and the demo-mode Playwright suite (the admin, import, a11y and console specs). CI's `verify` and `e2e` run them once the PR is ready.
+- **Reviews:** `/review`, then a fresh security-reviewer (permissions, tenancy-adjacent and auth-adjacent work). Point it at the core/access refactor, the lint block, the guard order and the `:id` exception.
+- **Untested:** the not-found import and database pages in api mode, and a company user sent to / by the real layout (the gate's answers have unit tests).
+- **Follow-ups:** pass the admin's role to the access page so a support admin can't edit; the list's per-company queries; the audit IP behind the proxy (core/auth); an append-only trigger for `platform_audit_log` (a migration); the `users.int.test.ts` comment "until the admin host exists (P17)"; the shared comment in `access-patch.ts` that quotes the closed edge case by its old name.
+- **STATUS and BRANCHES** are for the orchestrating session: the ADR 0052 reservation, the owner questions and the follow-ups.
+- **Owner questions** (spec, "Waiting for the owner"; ADR 0052, "For the owner"):
   - the admin host;
   - grant use;
   - the real directory;

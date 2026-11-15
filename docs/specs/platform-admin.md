@@ -1,6 +1,6 @@
 # Platform admin: companies and access on the API (draft spec)
 
-**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.**
+**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Where the build settled a point this draft left open, the text below says what was built.
 
 Drafted by Claude on 2026-11-15 as P11 step 1 for module 17, "Platform admin and manual billing" (docs/real-build-plan.md). docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, the "Change company access" workflow, rules 18 and 24, and the edge cases. It has no server design and nothing on billing.
 
@@ -72,7 +72,7 @@ SessionGuard's own refusals come before all of these. For example, an admin with
 | `GET /platform/companies/:id/directory` | Any platform admin | No | None | `PlatformDirectory` |
 | `POST /platform/support-grants` | Any platform admin | Yes | `support.requested` | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`. 201 `{ id }`; 404 for an unknown company |
 
-A bad `:id` (not a UUID) answers 400 `invalid_request`. All of these routes answer 404 while `admin.access` is off.
+A bad `:id` (not a UUID) answers 400 `invalid_request`. All of these routes answer 404 while `admin.access` is off, with Nest's default body `{ code: "not_found", message: "Not Found" }`, as `requireFeature` answers elsewhere. The support request's body is strict: an unknown field answers 400.
 
 ## Fields
 
@@ -88,7 +88,7 @@ A bad `:id` (not a UUID) answers 400 `invalid_request`. All of these routes answ
 | `statusChangedAt` | ISO moment | `tenants.status_changed_at` | |
 | `phase` | `full`, `read_only` or `locked` | `companyPhase`, read the same way as TenantGuard | |
 | `maintenance` | `{ on, reason }` | `tenants.maintenance_mode`, `maintenance_reason` | Reason `migration_failed`, `move` or null |
-| `plan` | string | `plans.name` of the subscription rows that are not deleted | "Trial, no plan" when there are none. A cancelled row reads "{name} (cancelled)" |
+| `plan` | string | `plans.name` of the subscription rows that are not deleted | "Trial, no plan" when there are none and the company is a trial; "No plan" when there are none and it is not (it then has no plan modules at all). A cancelled row reads "{name} (cancelled)"; several are joined with commas |
 | `modules` | `ModuleKey[]` | `AccessService.companyModules` | Exactly what the guards enforce |
 | `userLimit`, `branchLimit` | number or null | `core/access/plan-limits.ts` | Null means no limit (a trial with no plan). The branch limit is not enforced yet |
 | `members` | number | Count of control `member` rows | Sign-ins with a membership. This is not seats in use, which needs the company database |
@@ -154,15 +154,17 @@ A save is one control transaction, which locks the company row first (`SELECT â€
   - A removed key answers 403 `forbidden` on the company's next request that needs it.
   - A module switched off answers `module_not_enabled`.
   - A lower user limit refuses the next invitation with `seat_limit`. Lowering it below the seats in use is allowed (product spec, edge cases).
-- **Nothing changed:** nothing is written and no audit row is added. The answer is still 200 with the company.
+- **Nothing written:** no audit row is added. The answer is still 200 with the company. A save can write a row without changing effective access, such as an override set back to what the plan already gives or a limit pinned on a cancelled row; that save is audited.
 
 ## Audit
 
-- **Where:** `platform_audit_log` only, in the same control transaction as the change. Each row records the actor, the company, the IP and the user agent.
+- **Where:** `platform_audit_log` only, in the same control transaction as the change. Each row records the actor (also as `created_by`), the company, the IP and the user agent. It is stamped by the database clock at the insert (`clock_timestamp()`), so a save that waited on the company row lock is stamped after the one that held it.
 - **`company.access_changed`:**
   - target type `tenant`, target id the company's id;
   - `before` holds the effective `userLimit` and `branchLimit` that changed;
-  - `after` holds `modulesSwitchedOn`, `modulesSwitchedOff`, `keysAdded`, `keysRemoved`, `userLimit` and `branchLimit`, each only when it changed.
+  - `after` holds `modulesSwitchedOn`, `modulesSwitchedOff`, `keysAdded`, `keysRemoved`, `userLimit` and `branchLimit`, each only when it changed;
+  - `after` also holds `overrideRows` (each module override written or removed) and `limitRows` (each subscription row's new `userLimitOverride` and `branchLimitOverride`) when there were any, so the row records exactly what was written;
+  - one row whenever any row was written, none otherwise.
 - **`support.requested`:** as before, now with the IP and user agent.
 - **Reads:** not audited. Part 1 reads no company data. Blueprint p28's "every action in the platform audit log" is read as every change.
 - **The company's own `audit_log`:** gets nothing in api mode, so Owners no longer see ceiling changes there.
@@ -189,20 +191,23 @@ Part 1 adds no feature key.
 - **Layout.** /admin asks `GET /platform/me`:
   - signed out, or MFA still to set up: to /login;
   - not a platform admin: to /;
-  - `admin.access` off: not found.
+  - `admin.access` off: not found;
+  - anything else (an unknown role, a 5xx, a network failure, an unreadable answer): to /. The API's guard decides again on every request.
 - **Companies (/admin).** The columns are:
   - Company and Location;
   - Status, including Cancelled;
   - Phase, Plan and Products;
   - Modules;
-  - User limit, which reads "No limit" when null.
+  - User limit, which reads "No limit" when null;
+  - Members (people who can sign in).
 
   A row opens the company's access page.
 - **Company access (/admin/companies/:id):**
   - **Modules and limits:** the modules come from the company's products. The Platform switch is disabled, and Installation stays hidden by rule 18.
   - **Trial with no plan:** the limit inputs are disabled, with "On a trial with no plan there is no limit."
   - **Branch limit:** it reads "Stored, not enforced yet."
-  - **Permission ceiling:** a matrix per product.
+  - **Account facts:** status and since when, phase, members ("People who can sign in, not seats in use."), and the database state and schema. With a failed migration it says "Error details are hidden: they can hold the company's data."
+  - **Permission ceiling:** one matrix over every offered, visible module of the company's products. As built: the Flooring Suite's modules already include HR's, so a matrix per product would repeat modules. The preview lists pages for each product.
   - **Effective access preview (rule 24):** it works on the draft and the default roles.
   - **Roles, read only:** the default roles.
   - **Users:** "The company's users and custom roles need support access, which isn't available yet."
@@ -215,7 +220,13 @@ Part 1 adds no feature key.
 
 ### Demo mode
 
-Behaviour is unchanged, with one exception: the store now checks the same rules (`accessPatchProblem`). This closes the edge case "`updateCompanyAccess` has no check in the store". The demo directory still lists the fixture's roles and users, and the demo still writes "Changed company access" to the company's log.
+Behaviour is unchanged, with one exception: the store now checks the same rules (`accessPatchProblem`, through `updatePlatformCompanyAccess`). This closes the edge case "`updateCompanyAccess` has no check in the store". The demo directory still lists the fixture's roles and users, and the demo still writes "Changed company access" to the company's log.
+
+As built:
+- **No step-up in the demo.** Save applies at once, as before, so the demo admin spec does not change.
+- **A stand-in plan.** Each demo company has one subscription row at price "0.00", so its limits stay editable. Nothing shows it.
+- **No life cycle.** Every demo company shows phase "Full use", maintenance off and no database line. "Members" is the number of fixture users.
+- **The import and database pages** stay, with their tabs, in demo mode only.
 
 ## Edge cases and known limits
 
@@ -225,6 +236,8 @@ Behaviour is unchanged, with one exception: the store now checks the same rules 
 - **Two admins saving at once.** The last save wins. Both saves are in the platform audit log.
 - **A broken company database.** A company whose database failed a migration, or that is in maintenance, still shows and saves, because only the control database is used.
 - **The session the console runs on.** With no admin host, the console runs on a company host with the home company's session and timeouts. The step-up protects writes; reads are open to that session.
+- **The audit IP.** The API has no `trust proxy` setting, so in production the platform audit log records the web proxy's address, as the company audit log already does. Fixing it touches core/auth.
+- **A support admin sees the editor.** The screen does not know the admin's role, so a support admin can tick boxes and step up before the API's 403 shows in a toast.
 - **MFA reset.** A company can't reset a platform admin's MFA (existing, ADR 0034).
 - **Members.** The count is of sign-ins, not seats in use.
 - **Database errors.** The error text is never shown, only the status and a "has error" flag. The SQLSTATE code comes with part 3, which stores it.
@@ -277,7 +290,9 @@ Behaviour is unchanged, with one exception: the store now checks the same rules 
     - ticks it back.
 
     A company user who opens /admin is sent to /. The Data import and Connect a database pages are not found.
-18. The demo-mode admin and import Playwright specs keep passing.
+
+    As built, `apps/web/tests/e2e-api/platform-admin.spec.ts` covers sign-in and enrolment, Summit in the list, unticking `retail.sample.view`, a wrong step-up code, the save, the toast and the reload. The key is put back through the database, not the UI (review A6). The gate's answers, a company user sent to / among them, have unit tests (`tests/unit/platform-console.test.ts`); the not-found data pages have no automated test yet.
+18. The demo-mode admin and import Playwright specs keep passing. They were not edited; CI's `e2e` check runs them.
 
 ## Parts 2 to 4 (outline, not built here)
 

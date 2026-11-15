@@ -27,7 +27,7 @@
   - **Public endpoints:** they share a per-IP limit.
   - **Reaching the profile:** the company profile is reached through `JobTenants`, so the TenantGuard checks apply. Lint allows only `invitations.service.ts` to do this.
 - **Password reset:** Better Auth's endpoints, with `sendResetPassword` taking from the shared 3-an-hour per-address email budget. Links last one hour, and a reset ends every session.
-- **Support access:** a platform admin requests access, and the company's Owner approves it (with a step-up) or revokes it. Both write `platform_audit_log` and `audit_log`. Using a grant comes with P17.
+- **Support access:** a platform admin requests access, and the company's Owner approves it (with a step-up) or revokes it. Both write `platform_audit_log` and `audit_log`. Using a grant comes with P17. **Changed by ADR 0052:** the request moved to modules/platform behind `PlatformAdminGuard` and needs a step-up; it writes `platform_audit_log` only, as it always did, now with the IP and user agent. Approve and revoke are unchanged. Using a grant waits for the owner.
 - **Web:**
   - **Routes:** `routeClient` factories receive the demo client, so `list` and `get` go to the API for `users`, `roles` and `audit` only.
   - **API_METHODS:** gains the Users and Roles methods and `verifyStepUp`.
@@ -37,4 +37,4 @@
 ## Consequences
 - **Hybrid api mode:** other screens still read demo collections, so a demo record's user id may not match an API user until its module moves.
 - **Invitation limit:** the invitation endpoints count by the socket IP the API sees. Behind the web proxy that is the web server's IP until these routes go through the auth proxy (STATUS).
-- **Support access:** a grant opens nothing yet. P17 must build read-only access from an approved, unexpired grant, with every read audited.
+- **Support access:** a grant opens nothing yet. P17 must build read-only access from an approved, unexpired grant, with every read audited. **ADR 0052** defers it to the owner (a tenancy change), so a grant still opens nothing.

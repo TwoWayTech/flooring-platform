@@ -55,7 +55,7 @@ Every change writes `audit_log` with the before and after values.
 - **Shared accounts:** if the person also belongs to another company, the reset is refused (409 `shared_account`), so one company cannot weaken another's security. Platform support handles those accounts.
 
 ## Support access (blueprint role rule 6)
-- **Requesting:** a platform admin requests read-only access to a company for a reason and a time, at most 72 hours: `POST /platform/support-grants`, with a platform session.
+- **Requesting:** a platform admin requests read-only access to a company for a reason and a time, at most 72 hours: `POST /platform/support-grants`. Since ADR 0052 the route sits behind `PlatformAdminGuard`: an active admin with role `owner` or `support`, a step-up from the last 5 minutes, a strict body, and 404 while `admin.access` is off (docs/specs/platform-admin.md).
 - **Approving:** the company's Owner approves with step-up (`POST /support-grants/:id/approve`), or revokes at any time (`POST /support-grants/:id/revoke`). `GET /support-grants` lists them for Owners.
-- **Audit:** each step writes `platform_audit_log` and the company's `audit_log`.
-- **Deferred:** using a grant to open the company read-only comes with the platform-admin screens (P17). Until then a grant gives no data access.
+- **Audit:** the request writes `platform_audit_log` only (`support.requested`, with the IP and user agent). Approving and revoking write `platform_audit_log` and the company's `audit_log`.
+- **Deferred:** using a grant to open the company read-only was planned with the platform-admin screens (P17). ADR 0052 defers it to the owner, because it is a tenancy change. Until then a grant gives no data access.
