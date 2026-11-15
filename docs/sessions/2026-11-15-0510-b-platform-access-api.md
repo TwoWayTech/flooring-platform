@@ -314,12 +314,15 @@ Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #
 - Review round 2 (docs only): shared `vitest run test/platform-access.test.ts` 48 passed; `prettier --check` on the three changed docs, clean. No code changed, so typecheck and lint were not rerun.
 - Review round 3: api integration `platform.int.test.ts` and `users.int.test.ts`, 35 passed (18 and 17); `pnpm -s typecheck` 6 of 6 (after typing the test's product key); `pnpm -s lint` 6 of 6 and Prettier clean; the api build and an api-mode web build, then Playwright `login.spec.ts`, `users.spec.ts` and `platform-admin.spec.ts`, 11 passed, 0 failed, in 16.1 s. Ports 3000 and 4000 were free afterwards.
 
+## Final checks (orchestrating session, merged head `e7f554b`)
+- **Merge of main.** `1de1e0c` (meetings PR #33) merged in as `e7f554b`. Three conflicts: `apps/api/src/app.module.ts` (both imports kept, in order), `apps/api/src/core/access/access.service.ts` (main's batched `rolesOf(tenant, ids)`, which returns a map, with this branch's public `companyCeiling`, in `resolve` and `membersAccess`), and docs/blueprint-delta.md (both rows kept, this one first).
+- **Full checks** through the lock, all exit 0: `pnpm lint`, `pnpm typecheck`, `pnpm test` (shared 616, web 33, api 70, db 11, providers 11) and `pnpm test:api` (api 438, db 45, providers 2).
+- **Demo mode:** `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build`, then Playwright with one worker on the flooring project for `admin`, `import`, `roles`, `console`, `users`, `settings` and `a11y`: 188 passed in 4.2 min. Port 3000 was free afterwards.
+- **Not run locally after the merge:** the api-mode Playwright suite (it ran on this branch before the merge, and meetings part 1 changed no screen). CI's `verify` runs it.
+
 ## Left
-- **Rebase on main.** Meetings PR #33 merged as `1de1e0c` while this branch was built. It changes `apps/api/src/core/access/access.service.ts` (the same file as the refactor here, so expect a conflict), `apps/api/src/app.module.ts`, `docs/api-contract.md`, `docs/data-model.md`, docs/blueprint-delta.md (both add a row at the top: keep both, this one first) and the shared index. Rerun the api typecheck and the integration files after it.
-- **Not run on this branch:** the full `pnpm lint`, `pnpm test`, `pnpm test:api` and the demo-mode Playwright suite (the admin, import, a11y and console specs). CI's `verify` and `e2e` run them once the PR is ready.
-- **Reviews:** `/review`, then a fresh security-reviewer (permissions, tenancy-adjacent and auth-adjacent work). Point it at the core/access refactor, the lint block, the guard order and the `:id` exception.
 - **Follow-ups:** pass the admin's role to the access page so a support admin can't edit; the list's per-company queries; the audit IP behind the proxy (core/auth); an append-only trigger for `platform_audit_log` (a migration); the `users.int.test.ts` comment "until the admin host exists (P17)"; the shared comment in `access-patch.ts` that quotes the closed edge case by its old name.
-- **STATUS and BRANCHES** are for the orchestrating session: the ADR 0052 reservation, the owner questions and the follow-ups.
+- **STATUS and BRANCHES:** updated by the orchestrating session (the PR #34 entry, the next parts, the owner questions and the residual risks as follow-ups).
 - **Owner questions** (spec, "Waiting for the owner"; ADR 0052, "For the owner"):
   - the admin host;
   - grant use;
