@@ -12,6 +12,7 @@ import { platformAuditDetails } from "../src/platform/audit-details";
 import { ownerBillingNotice } from "../src/platform/company-billing";
 import { companyStandingState } from "../src/platform/company-standing";
 import {
+  COMPANY_STATUS_ACTION_LABELS,
   COMPANY_STATUS_ACTIONS,
   COMPANY_STATUS_AUDIT_ACTIONS,
   companyStatusAuditBody,
@@ -479,6 +480,15 @@ describe("statusActionText, the dialog's words (CS-11)", () => {
     const locked = statusActionText("reinstate", next({ status: "active", phase: "locked" }), "Summit", format);
     expect(locked.body).toContain("so it stays locked until a payment is recorded");
     expect(statusActionText("suspend", next({}), "Summit", format).body).not.toContain("Its plan has ended");
+  });
+
+  it("titles each action with the one shared label the button and the step-up also use", () => {
+    expect(COMPANY_STATUS_ACTION_LABELS).toEqual({ suspend: "Suspend", reinstate: "Reinstate", cancel: "Cancel" });
+    for (const action of COMPANY_STATUS_ACTIONS) {
+      expect(statusActionText(action, next({}), "Summit", format).title).toBe(
+        `${COMPANY_STATUS_ACTION_LABELS[action]} Summit?`,
+      );
+    }
   });
 });
 

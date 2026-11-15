@@ -1823,7 +1823,7 @@ Seven methods, in their own commented block after part 4's in `contract.ts`, `ht
   - **The support role** sees the panel without buttons, and the note "Read only: only the platform owner role can change a company's status."
   - Under the panel: "Subscriptions, payments and period corrections wait for the owner's billing decisions." For a company that never had a plan, the refusal's text already names its Access page.
 - **The status dialog:**
-  - **Title:** "Suspend {name}?", "Reinstate {name}?" or "Cancel {name}?".
+  - **Title:** "Suspend {name}?", "Reinstate {name}?" or "Cancel {name}?". The button, this title and the step-up label ("Suspend {name}") take their word from one shared map, `COMPANY_STATUS_ACTION_LABELS` in `company-status.ts`.
   - **Body,** from `statusActionText` with the preview's `next`:
     - full: "It is in full use after this.";
     - read only with a lock date: "Read only from now: its people can sign in, read and export, but not change anything. It locks on {date}.";
@@ -1923,7 +1923,7 @@ Settled while building, all in ADR 0056. The plan and the code never contradicte
 
 **Other choices:**
 - **Body check order:** `expectedStatus` first, then the reason, then cancel's name: the refusal order of step 5 and what the strict schema gives.
-- **Signatures:** `companyStatusView(companyId, current, facts)`, because `PlatformCompanyStatus` holds the id; `planModulesAfter(product, stored, requested, visible?)`. `CompanyStatusAction` is in `types/platform.ts` and `COMPANY_STATUS_ACTIONS` in `company-status.ts`. Extra shared helpers so the API and the demo use one copy: `companyStatusAuditBody`, `COMPANY_STATUS_AUDIT_ACTIONS`, `LIFECYCLE_STATUSES`, `isLifecycleStatus`, `newPlanValues` and `storedPlanPrice` (prices stored and audited with two decimals, so the audit row matches the stored value). `visibleModuleKeys` in `access-patch.ts` is exported, with no behaviour change.
+- **Signatures:** `companyStatusView(companyId, current, facts)`, because `PlatformCompanyStatus` holds the id; `planModulesAfter(product, stored, requested, visible?)`. `CompanyStatusAction` is in `types/platform.ts` and `COMPANY_STATUS_ACTIONS` in `company-status.ts`. Extra shared helpers so the API and the demo use one copy: `companyStatusAuditBody`, `COMPANY_STATUS_AUDIT_ACTIONS`, `LIFECYCLE_STATUSES`, `isLifecycleStatus`, `newPlanValues` and `storedPlanPrice` (prices stored and audited with two decimals, so the audit row matches the stored value). `COMPANY_STATUS_ACTION_LABELS` is the one word per action that the Status button, the dialog title and the step-up label share (review round 1). `visibleModuleKeys` in `access-patch.ts` is exported, with no behaviour change.
 - **A taken key** is found by `insert … on conflict do nothing`, not by a pre-check or a caught unique violation.
 - **The plan lock** covers the plan row only; a join would also lock the product row and hold up other plans of that product.
 - **Refusal order on plan writes:** the body's shape (400), the admin under the lock (403), the plan (404), the field rules (400), then 409 or 422; retire and restore check the reason after the 404 and before the 409. Every refusal writes nothing, so the order changes no outcome.

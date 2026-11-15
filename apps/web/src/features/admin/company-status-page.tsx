@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { CircleAlert, Eye, RotateCw } from "lucide-react";
 import {
+  COMPANY_STATUS_ACTION_LABELS,
   mayManageBilling,
   statusActionText,
-  type CompanyStatusAction,
   type CompanyStatusActionView,
   type PlatformAdminRole,
   type PlatformCompany,
@@ -23,13 +23,6 @@ import { CompanyPhasePill, CompanyStatusPill } from "./company-status";
 import { usePlatformRole } from "./platform-role";
 import { StatusActionDialog } from "./status-action-dialog";
 
-/** Each action's button label. */
-const ACTION_LABELS: Readonly<Record<CompanyStatusAction, string>> = {
-  suspend: "Suspend",
-  reinstate: "Reinstate",
-  cancel: "Cancel",
-};
-
 interface ActionRowProps {
   company: PlatformCompany;
   view: CompanyStatusActionView;
@@ -44,7 +37,7 @@ interface ActionRowProps {
  */
 function ActionRow({ company, view, writer, onAct }: ActionRowProps) {
   const formatDate = useFormatDate();
-  const label = ACTION_LABELS[view.action];
+  const label = COMPANY_STATUS_ACTION_LABELS[view.action];
   const descriptionId = `status-${view.action}-text`;
   const description = view.next
     ? statusActionText(view.action, view.next, company.name, (iso) => formatDate(iso)).body

@@ -178,6 +178,10 @@ Heavy runs went through the scratchpad lock, one at a time across both builds; l
 | 6 | `pnpm exec prettier --check docs` | exit 0, "All matched files use Prettier code style!" (Markdown is in `.prettierignore`, so it checks nothing in docs) |
 | 6 | the bounds check | empty |
 
+## Review round 1
+- **Should fix, one label map in three places:** the Status button (`ACTION_LABELS` in `company-status-page.tsx`), the step-up label (`VERBS` in `status-action-dialog.tsx`) and the dialog title (the private `ACTION_VERBS` behind `statusActionText`) each held {suspend: "Suspend", reinstate: "Reinstate", cancel: "Cancel"}. Now one exported `COMPANY_STATUS_ACTION_LABELS` in `packages/shared/src/platform/company-status.ts` feeds all three; the words on screen are unchanged. A CS-11 test pins the map and checks every title uses it. The spec's "As built" signatures and ADR 0056 name it.
+- **Checks:** shared vitest `company-status.test.ts` 46 passed; shared and web typecheck clean; eslint on the four files clean; Prettier clean. No web unit test covers the two pages, and the button and title words did not change, so the browser tests were not re-run.
+
 ## Left
 - **For the orchestrating session:** STATUS and BRANCHES (the PR #40 Done entry, the part 2 residual risks and owner questions 34 to 47 under Blockers, the follow-ups below, the branch row); the full local run (`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api`, `pnpm test:hooks`) with per-package counts for this log and the PR body; `/review`; a fresh security-reviewer and a fresh schema-reviewer (packages/db test helpers and the bounds), with both summaries posted on the PR; then ready, `verify` and `e2e` green on a head commit without `[skip ci]`, and the self-merge under the CLAUDE.md rule.
 - **The PR body:** bring it up to date before ready (checks with counts; the look by eye, with the screenshots in the scratchpad's `platform2/logs/look`, which are not committed).

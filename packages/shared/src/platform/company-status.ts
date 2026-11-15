@@ -329,7 +329,11 @@ export interface StatusActionText {
   body: string;
 }
 
-const ACTION_VERBS: Readonly<Record<CompanyStatusAction, string>> = {
+/**
+ * Each status action's one word, kept here so the button, the dialog title and the step-up label
+ * say the same thing (spec part 2, "The status dialog").
+ */
+export const COMPANY_STATUS_ACTION_LABELS: Readonly<Record<CompanyStatusAction, string>> = {
   suspend: "Suspend",
   reinstate: "Reinstate",
   cancel: "Cancel",
@@ -375,5 +379,5 @@ export function statusActionText(
       `Its plan has ended, so it stays ${stays} until a payment is recorded, which the console can't do yet.`,
     );
   }
-  return { title: `${ACTION_VERBS[action]} ${name}?`, body: sentences.join(" ") };
+  return { title: `${COMPANY_STATUS_ACTION_LABELS[action]} ${name}?`, body: sentences.join(" ") };
 }

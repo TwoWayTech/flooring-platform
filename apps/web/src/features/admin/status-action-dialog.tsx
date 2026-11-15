@@ -2,7 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { statusActionText, type CompanyStatusAction, type CompanyStatusNext } from "@workspace/shared";
+import {
+  COMPANY_STATUS_ACTION_LABELS,
+  statusActionText,
+  type CompanyStatusAction,
+  type CompanyStatusNext,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -26,13 +31,6 @@ import {
   type StatusDraft,
   type StatusField,
 } from "./status-action-flow";
-
-/** The step-up's words for each action, e.g. "Suspend Summit Floor Co.". */
-const VERBS: Readonly<Record<CompanyStatusAction, string>> = {
-  suspend: "Suspend",
-  reinstate: "Reinstate",
-  cancel: "Cancel",
-};
 
 interface StatusActionDialogProps {
   company: { id: string; name: string };
@@ -166,7 +164,7 @@ export function StatusActionDialog({
       </Dialog>
       <StepUpDialog
         open={stage === "confirm"}
-        action={`${VERBS[action]} ${company.name}`}
+        action={`${COMPANY_STATUS_ACTION_LABELS[action]} ${company.name}`}
         onOpenChange={(open) => !open && setStage("form")}
         onConfirm={send}
       />
