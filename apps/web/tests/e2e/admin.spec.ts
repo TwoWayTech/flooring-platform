@@ -47,16 +47,19 @@ test.describe("super-admin", () => {
     await page.getByRole("link", { name: "Support" }).click();
     const reason = `Checking the roles the Owner asked about ${Date.now()}`;
     await page.getByRole("button", { name: "Ask for support access" }).click();
-    await page.getByLabel("Reason").fill(reason);
-    await page.getByRole("button", { name: "Continue" }).click();
+    // Scoped to the form: the request table behind it has a "Reason, column options" button.
+    const form = page.getByRole("dialog", { name: "Ask for support access" });
+    await form.getByLabel("Reason").fill(reason);
+    await form.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByText("Support access requested.")).toBeVisible();
     await expect(page.getByRole("row", { name: new RegExp(reason) })).toContainText("Pending");
     await expect(page.getByRole("button", { name: "Ask for support access" })).toBeDisabled();
 
     await page.getByRole("navigation", { name: "Platform" }).getByRole("link", { name: "Audit log" }).click();
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
-    await expect(page.getByRole("row", { name: /Changed company access.*Summit Floor Co\./ })).toBeVisible();
-    await expect(page.getByRole("row", { name: /Asked for support access.*Summit Floor Co\./ })).toBeVisible();
+    const summitRows = page.getByRole("row").filter({ hasText: "Summit Floor Co." });
+    await expect(summitRows.filter({ hasText: "Changed company access" })).toBeVisible();
+    await expect(summitRows.filter({ hasText: "Asked for support access" })).toBeVisible();
 
     await page.getByRole("combobox", { name: "Action" }).click();
     await page.getByRole("option", { name: "Asked for support access" }).click();

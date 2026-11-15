@@ -42,9 +42,11 @@ test.describe("platform support access and audit log (api mode)", () => {
 
     await test.step("ask for support access after a step-up", async () => {
       await page.getByRole("button", { name: "Ask for support access" }).click();
-      await page.getByLabel("Reason").fill(reason);
-      await page.getByLabel("Hours").fill("2");
-      await page.getByRole("button", { name: "Continue" }).click();
+      // Scoped to the form: the request table behind it has a "Reason, column options" button.
+      const form = page.getByRole("dialog", { name: "Ask for support access" });
+      await form.getByLabel("Reason").fill(reason);
+      await form.getByLabel("Hours").fill("2");
+      await form.getByRole("button", { name: "Continue" }).click();
       await page.getByLabel("Authenticator code").fill(nextCode(secret));
       await page.getByRole("button", { name: "Confirm" }).click();
       await expect(page.getByText("Support access requested.")).toBeVisible();
