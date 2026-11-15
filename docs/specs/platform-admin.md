@@ -223,7 +223,7 @@ Part 1 adds no feature key.
 Behaviour is unchanged, with one exception: the store now checks the same rules (`accessPatchProblem`, through `updatePlatformCompanyAccess`). This closes the edge case "`updateCompanyAccess` has no check in the store". The demo directory still lists the fixture's roles and users, and the demo still writes "Changed company access" to the company's log.
 
 As built:
-- **No step-up in the demo.** Save applies at once, as before, so the demo admin spec does not change.
+- **No step-up in the demo.** Save applies at once, as before, so the demo admin spec's save flow does not change. That spec gained only one assertion, for the console's date format.
 - **A stand-in plan.** Each demo company has one subscription row at price "0.00", so its limits stay editable. Nothing shows it.
 - **No life cycle.** Every demo company shows phase "Full use", maintenance off and no database line. "Members" is the number of fixture users.
 - **The import and database pages** stay, with their tabs, in demo mode only.
@@ -292,7 +292,7 @@ As built:
     A company user who opens /admin is sent to /. The Data import and Connect a database pages are not found.
 
     As built, `apps/web/tests/e2e-api/platform-admin.spec.ts` covers sign-in and enrolment, Summit in the list, unticking `retail.sample.view`, a wrong step-up code, the save, the toast and the reload. The key is put back through the database, not the UI (review A6). The gate's answers, a company user sent to / among them, have unit tests (`tests/unit/platform-console.test.ts`); the not-found data pages have no automated test yet.
-18. The demo-mode admin and import Playwright specs keep passing. They were not edited; CI's `e2e` check runs them.
+18. The demo-mode admin and import Playwright specs keep passing; CI's `e2e` check runs them. The import spec was not edited. The admin spec gained one assertion, that the console's "since" date reads "MMM d, yyyy" (review round 1), and was otherwise unchanged.
 
 ## Parts 2 to 4 (outline, not built here)
 
