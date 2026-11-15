@@ -6,6 +6,7 @@ import {
   paymentsReport,
   pnlReport,
   REPORT_CATALOG,
+  REPORT_CUSTOMER_SEARCH_MAX,
   REPORT_QUERY_MESSAGES as M,
   REPORT_WHOLE_COMPANY,
   reportAccess,
@@ -43,8 +44,6 @@ export interface ReportViewer {
 const SWITCHED_OFF = "This report is switched off.";
 /** Who a rep no longer among the company's users reads as (spec rule 15), as on the API. */
 const FORMER_EMPLOYEE = "Former employee";
-/** The longest customer search the API takes (GET /reports/payments `customer`, ADR 0055 S10). */
-const MAX_CUSTOMER_SEARCH = 100;
 
 /** Names sorted as the API sorts them: by name in English, then by id, so ties never shuffle. */
 const byName = (a: { id: string; name: string }, b: { id: string; name: string }) =>
@@ -195,7 +194,7 @@ export function demoSalesByCategoryReport(db: CompanyDb, viewer: ReportViewer, q
 export function demoPaymentsReport(db: CompanyDb, viewer: ReportViewer, query: PaymentsReportQuery): Report {
   assertOpens(viewer, "payments");
   // The query is read before the warehouse, as on the API (its parser, then its service).
-  if (query.customer.trim().length > MAX_CUSTOMER_SEARCH) throw new DemoRuleError(M.customer);
+  if (query.customer.trim().length > REPORT_CUSTOMER_SEARCH_MAX) throw new DemoRuleError(M.customer);
   assertWarehouse(db, query.locationId);
   const invoices = db.list("invoices").filter((i) => seesInvoice(viewer, i));
   const seen = new Set(invoices.map((i) => i.id));

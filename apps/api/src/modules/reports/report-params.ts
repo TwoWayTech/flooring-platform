@@ -3,6 +3,7 @@ import {
   CATEGORY_LABELS,
   EXPENSE_CATEGORIES,
   PAYMENT_METHODS,
+  REPORT_CUSTOMER_SEARCH_MAX,
   REPORT_QUERY_MESSAGES as M,
   REPORT_RANGE_KEYS,
   reportDayProblem,
@@ -97,7 +98,7 @@ const PAYMENTS = z.strictObject(
   {
     ...HUB,
     method: z.enum(PAYMENT_METHODS, { error: M.method }).optional(),
-    customer: z.string({ error: M.customer }).max(100, { error: M.customer }).optional(),
+    customer: z.string({ error: M.customer }).max(REPORT_CUSTOMER_SEARCH_MAX, { error: M.customer }).optional(),
   },
   UNKNOWN,
 );

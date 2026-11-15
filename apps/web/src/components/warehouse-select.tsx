@@ -11,7 +11,8 @@ export const ALL_WAREHOUSES = "all";
 export const ALL_WAREHOUSES_OPTION = { value: ALL_WAREHOUSES, label: "All warehouses" } as const;
 
 interface WarehouseSelectProps {
-  locations: readonly Location[];
+  /** Any locations; only warehouses are offered. Reports pass the server's short list (ADR 0055). */
+  locations: readonly Pick<Location, "id" | "name" | "kind">[];
   value: string;
   onChange: (locationId: string) => void;
   /** Visible label, or the accessible name when `id` is not tied to a visible label. */

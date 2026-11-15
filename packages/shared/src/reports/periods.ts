@@ -29,6 +29,9 @@ export const MAX_REPORT_DAYS = 366;
 /** The years a report day may fall in (ADR 0055 S8): date arithmetic and SQL bounds stay four-digit. */
 export const REPORT_YEARS = { from: 1900, to: 2999 } as const;
 
+/** The longest customer search Payments received takes, in characters (ADR 0055 S10). */
+export const REPORT_CUSTOMER_SEARCH_MAX = 100;
+
 /** Every refusal of a report query, in the person's words (the API and the demo say the same). */
 export const REPORT_QUERY_MESSAGES = {
   date: "Enter a date.",

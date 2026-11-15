@@ -12,7 +12,7 @@ import {
   type BusinessReport,
   type BusinessRow,
   type BusinessSection,
-  type Location,
+  type ReportOptions,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
@@ -22,14 +22,14 @@ import { Panel } from "@workspace/ui/components/panel";
 import { Segmented } from "@workspace/ui/components/segmented";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { downloadText } from "@/components/data-table/csv";
-import { QueryFallback } from "@/components/query-fallback";
 import { ScrollRegion } from "@/components/scroll-region";
-import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { ReportFallback } from "./report-fallback";
 
 const ALL = "all";
 type Preset = "month" | "last_month" | "quarter" | "ytd" | "custom";
@@ -196,9 +196,13 @@ function toCsvText(report: BusinessReport): string {
   return lines.map((l) => l.map(quote).join(",")).join("\n");
 }
 
-/** The business report (spec F2): one report with sections, comparison, filters, drill-down and matching exports. */
-export function BusinessReportView({ locations }: { locations: readonly Location[] }) {
-  const can = useCan();
+/**
+ * The business report (spec F2): one report with sections, comparison, filters, drill-down and
+ * matching exports. It covers the whole company, so the server opens it only for data scope `all`
+ * (ADR 0055 S1). The location, salesperson and vendor choices come from `options`, so only ids the
+ * server knows are sent, and sections the person may not see are not in the answer at all (S7).
+ */
+export function BusinessReportView({ options, onRefresh }: { options: ReportOptions; onRefresh: () => void }) {
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
   const today = api.today();
@@ -212,26 +216,22 @@ export function BusinessReportView({ locations }: { locations: readonly Location
   const [supplierId, setSupplier] = useState(ALL);
   const [drill, setDrill] = useState<{ title: string; row: BusinessRow } | null>(null);
   const range = preset === "custom" ? { from: customFrom, to: customTo } : rangeFor(preset, today);
-  const options = useApiQuery(async (client) => {
-    const [users, suppliers, invoices] = await Promise.all([
-      client.list("users"),
-      client.list("suppliers"),
-      client.list("invoices"),
-    ]);
-    const reps = new Set(invoices.map((i) => i.salesRepId));
-    return { reps: users.filter((u) => reps.has(u.id)), suppliers };
-  }, []);
+  // Only choices the server still lists are sent, so a stale pick reads as "all" instead of a refusal.
+  const listed = (id: string, choices: readonly { id: string }[]) => choices.some((c) => c.id === id);
+  const locations = locationIds.filter((id) => listed(id, options.locations));
+  const rep = listed(salesRepId, options.salespeople) ? salesRepId : null;
+  const vendor = listed(supplierId, options.vendors) ? supplierId : null;
   const report = useApiQuery(
     (client) =>
       client.businessReport({
         ...range,
-        locationIds,
+        locationIds: locations,
         productCategory: productCategory === ALL ? null : productCategory,
         expenseCategory: expenseCategory === ALL ? null : expenseCategory,
-        salesRepId: salesRepId === ALL ? null : salesRepId,
-        supplierId: supplierId === ALL ? null : supplierId,
+        salesRepId: rep,
+        supplierId: vendor,
       }),
-    [range.from, range.to, locationIds.join(), productCategory, expenseCategory, salesRepId, supplierId],
+    [range.from, range.to, locations.join(), productCategory, expenseCategory, rep, vendor],
   );
   const filters = `${formatDate(range.from)} to ${formatDate(range.to)}, compared with the same length before`;
   const stem = `business-report-${today}`;
@@ -256,7 +256,7 @@ export function BusinessReportView({ locations }: { locations: readonly Location
       <Panel
         title="Business report"
         actions={
-          can("reports.financial.export") ? (
+          options.exports.includes("business") ? (
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -301,27 +301,27 @@ export function BusinessReportView({ locations }: { locations: readonly Location
             />
             <Pick
               label="Salesperson"
-              value={salesRepId}
+              value={rep ?? ALL}
               onChange={setRep}
-              options={[[ALL, "All salespeople"], ...(options.data?.reps ?? []).map((u) => [u.id, u.name] as const)]}
+              options={[[ALL, "All salespeople"], ...options.salespeople.map((u) => [u.id, u.name] as const)]}
             />
             <Pick
               label="Vendor"
-              value={supplierId}
+              value={vendor ?? ALL}
               onChange={setSupplier}
-              options={[[ALL, "All vendors"], ...(options.data?.suppliers ?? []).map((s) => [s.id, s.name] as const)]}
+              options={[[ALL, "All vendors"], ...options.vendors.map((s) => [s.id, s.name] as const)]}
             />
           </div>
-          {locations.length > 0 ? (
+          {options.locations.length > 0 ? (
             <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
               <legend className="text-muted-foreground mb-1 text-xs">Locations (none ticked means all)</legend>
-              {locations.map((l) => (
+              {options.locations.map((l) => (
                 <label key={l.id} className="flex items-center gap-2">
                   <Checkbox
                     aria-label={l.name}
-                    checked={locationIds.includes(l.id)}
+                    checked={locations.includes(l.id)}
                     onCheckedChange={(on) =>
-                      setLocations(on ? [...locationIds, l.id] : locationIds.filter((x) => x !== l.id))
+                      setLocations(on ? [...locations, l.id] : locations.filter((x) => x !== l.id))
                     }
                   />
                   {l.name}
@@ -333,7 +333,7 @@ export function BusinessReportView({ locations }: { locations: readonly Location
         </div>
       </Panel>
       {report.status !== "ready" ? (
-        <QueryFallback query={report} className="h-96" label="Loading the business report" />
+        <ReportFallback query={report} className="h-96" label="Loading the business report" onRefresh={onRefresh} />
       ) : (
         report.data.sections.map((section) => (
           <ReportSection
@@ -351,11 +351,17 @@ export function BusinessReportView({ locations }: { locations: readonly Location
                 <SheetTitle>{drill.row.label}</SheetTitle>
                 <SheetDescription>{drill.title}: the records behind this figure.</SheetDescription>
               </SheetHeader>
+              {drill.row.recordCount !== undefined ? (
+                <p className="text-muted-foreground px-4 text-sm">
+                  Showing the latest <Num kind="count" value={String(drill.row.records.length)} /> of{" "}
+                  <Num kind="count" value={String(drill.row.recordCount)} /> records.
+                </p>
+              ) : null}
               <ul className="divide-hairline flex flex-col divide-y px-4 pb-6 text-sm">
                 {drill.row.records.length === 0 ? (
                   <li className="text-muted-foreground py-2">This figure is worked out from other lines.</li>
                 ) : null}
-                {drill.row.records.slice(0, 200).map((r, i) => (
+                {drill.row.records.map((r, i) => (
                   <li key={`${r.label}-${i}`} className="flex justify-between gap-3 py-2">
                     <span>
                       {r.href ? (
