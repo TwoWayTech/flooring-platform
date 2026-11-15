@@ -220,6 +220,22 @@ test.describe("meetings on the shared rules (ADR 0051 part 3)", () => {
     await expect(warning).not.toContainText("Private review");
   });
 
+  test("Undo in a move's warning works from the open drawer, which follows the meeting back", async ({ page }) => {
+    const run = Date.now().toString(36);
+    const day = nextWeekday(5, 2);
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    await schedule(page, { title: `Clash ${run}`, date: day, start: "15:00", guests: ["Bri Alvarez"] });
+    await schedule(page, { title: `Undo check ${run}`, date: day, start: "10:00", guests: ["Bri Alvarez"] });
+    const drawer = await openInAgenda(page, `Undo check ${run}`);
+    await drawer.getByLabel("Start").fill("15:00");
+    await drawer.getByRole("button", { name: "Move meeting" }).click();
+    await expect(page.getByText(/^Also booked then:/)).toContainText(`Bri Alvarez (Clash ${run}, 3:00 PM)`);
+    await expect(drawer.getByText(/3:00 PM/)).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(page.getByText("Move undone")).toBeVisible();
+    await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
+  });
+
   test("someone who may not change a meeting gets no move or edit controls", async ({ page }) => {
     const title = `Controls check ${Date.now().toString(36)}`;
     await signInAs(page, SUMMIT_OWNER, "/meetings");

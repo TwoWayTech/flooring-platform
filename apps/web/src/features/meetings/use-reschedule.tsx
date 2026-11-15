@@ -38,9 +38,9 @@ export interface RescheduleOptions {
  * Moves or resizes a meeting from a drag, a resize or the reschedule form (spec F). A one-off moves
  * at once; a repeating meeting first asks which occurrences the change covers, offering only the
  * scopes the shared move rules allow for that drop and saying why each other one is left out
- * (ADR 0051 "Part 3", safest option 6); the server decides again. After the save, guests booked
- * elsewhere then are named in a warning, and every move offers Undo, which sends only the SEQUENCE
- * the screen saw and shows every refusal (safest option 7).
+ * (ADR 0051 "Part 3", safest option 6); the server decides again. After the save, the move's toast
+ * offers Undo, which sends only the SEQUENCE the screen saw and shows every refusal (safest option
+ * 7), and names in a warning the guests booked elsewhere then.
  */
 export function useReschedule({ onMoved }: RescheduleOptions = {}) {
   const [pending, setPending] = useState<Pending | null>(null);
@@ -68,11 +68,16 @@ export function useReschedule({ onMoved }: RescheduleOptions = {}) {
       const answer = await api.rescheduleMeeting(move);
       const from = keyOf(occurrence);
       const to = movedKey(move, answer, occurrence.meeting);
-      toast.success(`${occurrence.meeting.title} moved`, {
+      // One toast per move: a conflict warning comes with the move's own Undo, so a second toast never
+      // stacks over the Undo just when a clash makes it most wanted (spec F, "Move or resize"). The
+      // toast takes the pointer back, since the meeting drawer, a modal, turns it off outside itself.
+      const shown = {
         action: { label: "Undo", onClick: () => undo(answer.undo, from, to) },
-      });
+        className: "pointer-events-auto",
+      };
       const warning = conflictWarning(answer.conflicts);
-      if (warning) toast.warning(warning);
+      if (warning) toast.warning(`${occurrence.meeting.title} moved`, { ...shown, description: warning });
+      else toast.success(`${occurrence.meeting.title} moved`, shown);
       onMoved?.(from, to);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The meeting was not moved.");

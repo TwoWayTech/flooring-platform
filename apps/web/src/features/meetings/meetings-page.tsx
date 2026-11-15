@@ -50,6 +50,15 @@ function shiftMonth(iso: string, by: number) {
 }
 
 /**
+ * Keeps the drawer open when the pointer goes to a toast: a move made from the drawer offers Undo
+ * in its toast, and that click must not close the drawer, which follows the occurrence the Undo
+ * brings back (ADR 0051 "Part 3").
+ */
+function keepOpenForToasts(event: Event) {
+  if (event.target instanceof Element && event.target.closest("[data-sonner-toaster]")) event.preventDefault();
+}
+
+/**
  * Meetings (spec Tier 2, F): day, week, month and agenda views of meetings with staff, customers
  * and suppliers. Drag a meeting to move it, drag its edge to change its length, click an empty
  * slot to schedule; a repeating meeting asks this event, this and following, or all. Conflicts
@@ -224,7 +233,7 @@ export function MeetingsPage() {
         )}
       </Panel>
       <Sheet open={!!current} onOpenChange={(o) => !o && setOpen(null)}>
-        <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md">
+        <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md" onInteractOutside={keepOpenForToasts}>
           {current ? (
             <>
               <SheetHeader>
