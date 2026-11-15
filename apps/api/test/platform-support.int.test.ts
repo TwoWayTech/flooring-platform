@@ -191,16 +191,14 @@ describe("platform support requests API (P11 part 3, needs the local PostgreSQL)
       const response = await call("post", "/platform/support-grants", support.cookie).send(body);
       expect({ body, status: response.status, message: response.body.message }).toEqual({ body, status: 400, message });
     }
-    expect(
-      (
-        await call("post", "/platform/support-grants", support.cookie).send({
-          companyId: company,
-          reason: "x",
-          hours: 2,
-          extra: 1,
-        })
-      ).status,
-    ).toBe(400);
+    // A body valid in every field but one unknown key: only `.strict()` can refuse it.
+    const unknownField = await call("post", "/platform/support-grants", support.cookie).send({
+      companyId: company,
+      reason: "A reason long enough",
+      hours: 2,
+      extra: 1,
+    });
+    expect([unknownField.status, unknownField.body.code]).toEqual([400, "invalid_request"]);
     expect(await written(support.userId)).toEqual({ grants: 0, audits: 0 });
     await ask(support, company).expect(201);
   });

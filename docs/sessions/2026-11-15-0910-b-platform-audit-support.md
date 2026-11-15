@@ -232,6 +232,19 @@ Docs: the spec ("Older entries", as built, and the test mapping), ADR 0053 (the 
 | `eslint src/features/admin tests/unit/platform-audit.test.tsx` in apps/web (lock); Prettier on the touched files | clean |
 | demo build, then `tests/e2e/admin.spec.ts` on one worker (lock); ports 3000 and 4000 free before and after | 2 passed |
 
+## Review round 3 (one finding, confirmed by a skeptic)
+1. **The strict-body test could not catch a missing `.strict()`.** The case for an unknown field in `POST /platform/support-grants` sent `reason: "x"`, which the reason rule refuses anyway, so the 400 came from the reason whether or not `SUPPORT_REQUEST` was strict. Without `.strict()`, zod drops unknown keys, so nothing leaked, but no test proved the spec's "an unknown field answers 400" (spec, "POST /platform/support-grants", Body).
+   - **Fix:** the case in `apps/api/test/platform-support.int.test.ts` now sends a body that is valid in every field (`reason: "A reason long enough"`, `hours: 2`) plus `extra: 1`. It asserts 400 with code `invalid_request`, and the existing check that the admin wrote no grant and no `support.requested` row follows it.
+   - **Checked by mutation:** with `.strict()` removed from `SUPPORT_REQUEST`, the test fails (`[201, undefined]` instead of `[400, "invalid_request"]`). The controller was restored after the run.
+   - No behaviour change, so the spec, ADR 0053 and the delta row are unchanged; the file still has 10 tests.
+
+| Command | Result |
+| --- | --- |
+| API integration `platform-support.int.test.ts` (lock) | 10 passed |
+| the first test of that file with `.strict()` removed from `SUPPORT_REQUEST` (lock; the controller restored after) | failed, as it should |
+| `pnpm run typecheck` in apps/api (lock; `test/` is included) | exit 0 |
+| `eslint test/platform-support.int.test.ts` in apps/api (lock); Prettier on it | clean |
+
 ## Left
 - **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time; the full `pnpm lint` passed in review round 1); then mark ready and wait for `verify` and `e2e` on the head.
 - **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.
