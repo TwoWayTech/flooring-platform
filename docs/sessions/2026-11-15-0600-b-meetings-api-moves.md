@@ -410,8 +410,41 @@ Then lint, typecheck and tests through the lock, a fresh security-reviewer (perm
 - Docs stage: Markdown only (Prettier ignores `*.md`), so no code checks were re-run.
 - Not run: `seed` and `table-rules` (no schema, seed or migration change), Playwright and `next build` (no screen changed, and forbidden on this laptop).
 
+## Review round 1 of PR #35 (`26ef472`)
+Three findings, each confirmed by a skeptic. All are fixed, with tests.
+
+- **Blocking (security, availability):** `moveConflicts` loaded every live meeting that shared a guest with the moved one, with no date filter, and `meetingOccurrences` walked each series week by week from its first date to the moved day. Nothing bounded the dates (years 1900 to 2999 were valid), so series dated 1900 and a one-off moved to 2999 cost about 16 seconds of shared CPU per request (the skeptic's measurement), inside the move's transaction, holding the meeting's lock and a pooled connection. No email was sent, so no cap applied. Part 1's `nextOccurrence` and `nextReminder` walked the same way. Fixes:
+  - **Window, not walk** (`packages/shared/src/operations/meetings.ts`): `onSeriesRule` decides directly whether a date is one of a series' dates, weekly by counting and monthly by working out that month's date. `meetingOccurrences` counts a series' dates inside the window from its start and checks the exceptions (at most 100) on their own. The result is unchanged, the 31-day reach for an occurrence moved earlier included: an oracle test compares it with the old walk on generated series. `isPlannedOccurrence` uses `onSeriesRule` too, so the monthly walk of `dd91811` is gone.
+  - **Query bound** (`meeting-conflicts.ts`): the conflict query joins `meetings` and reads only meetings that can hold an occurrence on the moved day (`storedStartBounds`). That changes no result.
+  - **Start bound** (`typedStartProblem` in `meetings/input.ts`): a start a person types must lie from 366 days before the company's today to 1096 days after it, on create, on an edit that changes the start, on a request, on a proposal, on accepting one and for a move's new start. The company's today comes from the control database (`companyDay` in `meeting-limits.ts`). The shared rules take `today` as a required argument, so no caller can skip it.
+- **Should fix (test):** `lockSplit` refusing had no test. One integration case now answers on, edits (a title, so SEQUENCE stays 0 and only the last audit entry shows it) and cancels the split-off series. Each undo answers 409 `meeting_changed`, both series stay as they were, nothing is sent, and no undo entry is written.
+- **Should fix (duplication):** the "ask again" reset of rule 6 was written four times. It is now `ASKED_AGAIN` in `meetings/changes.ts`: the shared `askedAgain` (now exported) spreads it on a guest for an edit and for `acceptedProposal`, and `resetAnswers` in `meeting-writes.ts` writes it to every live guest row for `MeetingsService.update` and `MeetingMoves.decide`.
+
+### Decisions (safer direction, in the blueprint-delta row as item 13 and in ADR 0051)
+- **The start bound is a year back and three years ahead.** meetings.md sets none. A year back lets a past occurrence be put right; three years ahead covers any booking the screens offer. It is checked by local date against the company's today.
+- **Only typed starts are bounded.** A start a rule derives is not: an "all" move of an old series shifts its first date, which stays old; an undo restores the server's own record; a series that began long ago keeps running and takes edits that leave its start alone. Bounding those would have refused moves of series that are simply old.
+- **Accepting a proposal checks the bound again**, against the day of the decision.
+- **No behaviour change otherwise:** the window rule and the query bound give the same occurrences and conflicts as before. "Moves don't reset answers" and the sends table are kept.
+
+### Tests added or changed
+- packages/shared: `meetings.test.ts` (the oracle against the old walk, with a check that it compared over a thousand occurrences and moved ones among them; a monthly series' far dates; 200 series from 1900 against a day in 2999 under 250 ms); `meeting-input`, `meeting-changes`, `meeting-moves` and `meeting-proposals` (the bound on each rule; a move of an old series as All events still allowed; 200 conflicts from 1900 series under 250 ms). The fixtures gained `TODAY`.
+- `apps/api/test/meetings-moves.int.test.ts`, now 24 cases:
+  - new: the bound on `POST /meetings`, `POST /meeting-requests`, `PATCH`, a proposal in an answer and a move, with nothing written;
+  - new: conflicts three years out with 600 series from 1900 sharing the guest, under 2.5 seconds, the one real overlap found;
+  - new: undo refused after the split was answered, edited or cancelled;
+  - changed: the "Long runner" series and the 100-exception series start where the bound allows. The first is written directly back to two years ago, the second starts 300 days ago, so neither fails in some months of the year.
+
+### Checks run (this round)
+- packages/shared `vitest run`: 54 files, 613 tests passed.
+- apps/api `vitest --project unit`: 12 files, 66 tests passed.
+- Integration `meetings` and `meetings-moves`: 56 of 56. `isolation`, `permissions` and `notifications`: 60 of 60.
+- `pnpm -s typecheck`: 6 of 6; web and db forced past the cache (`turbo run typecheck --force`): both passed.
+- `pnpm -s lint`: 6 of 6. Prettier `--check` on the touched code and tests: clean.
+- Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
+
 ## Outcome
 - Part 2 is built, tested and documented on `feat/meetings-api-moves` (draft PR #35): the reschedule, undo and proposal-decision routes, conflicts with "Busy", the series exceptions sent again (lifting part 1's refusal), and the PATCH change.
 - Every deviation from meetings.md is in the safer direction and is recorded in ADR 0051 "Part 2" and the blueprint-delta row. "Moves don't reset answers" and the sends table are kept.
-- **Next:** a fresh security-reviewer pass (permissions, data scope, audit, the undo rebuild), including a check that the helper move into `meeting-writes.ts` changed nothing; then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
+- Review round 1 of PR #35 is fixed (above): occurrences worked out from the window, the conflict query bounded to the moved day, typed starts bounded, the split guard tested and the answer reset written once.
+- **Next:** a fresh security-reviewer pass on the round 1 fixes (the start bound, the conflict query, the window rule); then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
 - **Open for the owner:** the questions under "For the owner" above, also in ADR 0051.
