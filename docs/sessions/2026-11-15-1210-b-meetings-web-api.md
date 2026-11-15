@@ -176,6 +176,11 @@ Heavy commands went one at a time through the scratchpad lock. Integration tests
   - Api e2e (plan 8.5, on the throwaway database on 5433, neither re-created nor reseeded): the meetings spec 2 passed, the new series test included; the full api suite 19 passed.
   - **The new api test is a real repro:** the page from before the fix was put back for one run (a fresh api-mode web build, then only that test), and the test failed at "the drawer shows 11:00 AM" after "All events". The file was then restored, so the web `.next` in the worktree is that build until the next e2e script rebuilds it. Ports 3000 and 4000 were free before and after every run.
 - **Review round 2 fix (commit 16):** apps/web `vitest run` on `demo-meetings`, `demo-meetings-switches`, `meeting-screens` and `meetings-api`: 4 files, 34 tests passed. apps/web `typecheck` exit 0, and `eslint` on the two changed files exit 0, both through the lock. Prettier clean. No e2e run: no screen and no behaviour changed.
+- **Review round 3 fix (`50f25ad`):**
+  - apps/web `vitest run` on `meeting-screens`, `demo-meetings-switches` and `demo-meetings` through the lock: 3 files, 27 tests passed, the two new cases included. apps/web `typecheck` exit 0, and `eslint` on `src/features/meetings`, `src/features/outbox` and the changed test exit 0, both through the lock. Prettier clean.
+  - Demo e2e, from a fresh demo build: `meetings`, `meetings-invites`, `states` and `a11y` (flooring) gave 143 passed, Simulate reply in `meetings-invites` included. Flow 6 passed (1), and the HR meetings spec passed (1).
+  - Api e2e (plan 8.5, on the throwaway database on 5433, neither re-created nor reseeded): the meetings spec 2 passed, the drawer's series test included; the full api suite 19 passed. Ports 3000 and 4000 were free before and after every run.
+  - No e2e for Simulate reply with invites off: switches are fixed at build time, and the e2e builds run with it on, so the unit case covers the switch.
 - **Not run yet:** the full checks (plan 8.3: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api`), at the review step.
 
 ## Reviews
@@ -188,6 +193,10 @@ Heavy commands went one at a time through the scratchpad lock. Integration tests
 - **Review round 2** (correctness). One should-fix finding, confirmed by a skeptic, and fixed in commit 16:
   - **The finding:** splitting the demo's meeting actions into `meeting-actions.ts` and `meeting-moves.ts` copied the private helper `auditTime` into both, which breaks the CLAUDE.md Style rule "no duplicated logic". Both copies write meeting starts into the same audit log, so one changed alone would mix two time formats.
   - **The fix:** `meeting-actions.ts` exports `auditTime`, with a JSDoc, and `meeting-moves.ts` imports it next to the other helpers it takes from there. No behaviour change, so no new test, and no doc beyond this log: the audit text is as before.
+
+- **Review round 3** (correctness). Two should-fix findings, each confirmed by a skeptic, and fixed in `50f25ad`:
+  - **Simulate reply with `meetings.invites` off.** Part 3 made the demo's `simulateReply` refuse with "This feature is switched off." when invites are off, but the Outbox drawer still offered Accept, Maybe, Decline and Propose on every invite row, so every click failed. That breaks CLAUDE.md rule 13 and part 3's rule that a screen never offers what the store refuses. The fix: `offersSimulateReply` in `meeting-rights.ts` (an invite row, and invites on, with the switches injectable for tests), and `SimulateReply` neither reads the meeting nor renders without it. A `meeting-screens` case checks it with invites on, invites off, requests off and a non-invite row. ADR 0051 "Part 3" safest option 2, meetings.md's Part 3 bullet and the delta row's (1) now name Simulate reply. It is the safer direction: a control is hidden that the store refuses anyway.
+  - **`movedKey` copied the shared `movedOccurrenceKey` rule** (CLAUDE.md Style, "no duplicated logic", the same class as round 2's `auditTime`). The drawer's copy and the server's conflict check could drift apart and name different occurrences. The fix: `movedKey` now calls `movedOccurrenceKey` on the move's answer, the effective scope and the drawer's meeting, with the split found as the answer's meeting whose id the server created. Its `answer` parameter widens to `{ meetings, undo }`, which both the API and the demo already send. The unit fixture now carries `meetings`, the existing cases are unchanged, and a new case ties `movedKey` to `movedOccurrenceKey(move, movedMeetings(...))` for every scope. The shared function is not changed. One edge differs from the old copy: an answer that lists a created id but not its meeting now names the original, as the shared rule does, where the copy named the created id. Neither the API nor the demo sends such an answer. ADR 0051 "Part 3"'s drawer bullet now names the shared rule; no behaviour changes, so no other doc.
 
 ## Residual risks
 Also in ADR 0051 "Residual risks (part 3)".
@@ -229,7 +238,9 @@ Part 3 is built, tested and documented on `feat/meetings-web-api` (draft PR #37)
 | 13 | `a9ab07d` | docs(meetings): ADR 0051 part 3, delta, contract, meetings and notifications specs as built |
 | 14 | `a37be29` | fix(web): the meeting drawer waits for the re-read after a series move or its Undo (review round 1) |
 | 15 | `492b7f9` | docs(meetings): the drawer waiting for the re-read, as built (review round 1) |
-| 16 | this commit | refactor(web): one audit time helper for the demo's meetings (review round 2) |
+| 16 | `dca85db` | refactor(web): one audit time helper for the demo's meetings (review round 2) |
+| 17 | `50f25ad` | fix(web): Simulate reply hidden with invites off; the drawer names a move by the shared rule (review round 3) |
+| 18 | this commit | docs(meetings): review round 3 fixes as built |
 
 Docs in commit 13:
 - ADR 0051: the "Part 3 (2026-11-15)" section (the ApiClient, who is looking, what the screens offer and why it is safe, re-reading, the demo store, the API change, the company's day, 22 safest options, kept, deferred, owner questions, residual risks R1 to R16, consequences); the title and status; the undo checks reordered in "Part 2"; "Later parts" marks part 3 done; the part 2 residual risks part 3 closes are removed, and part 1's "Api mode" risk is brought up to date.

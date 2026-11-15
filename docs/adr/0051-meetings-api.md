@@ -582,7 +582,7 @@
 - **Undo** sends only `{ sequence }`. It shows "Move undone" or the refusal in the server's words, and an open drawer follows the meeting back.
 - **The drawer holds an occurrence key** (`current-occurrence.ts`), not a copy of the meeting:
   - `occurrenceAt` finds the occurrence in the newest read. A one-off is rebuilt from the fresh meeting; a series occurrence is found by its planned time, with its exception's own time;
-  - `movedKey` follows a move made from the drawer ("this", "all", and "following" onto the split's id), and the Reschedule form is keyed by the occurrence's time;
+  - `movedKey` follows a move made from the drawer ("this", "all", and "following" onto the split the answer holds). It builds the key with the shared `movedOccurrenceKey`, the rule the conflict check uses on the server and in the demo, so the drawer and the server always name the same occurrence (review round 3). The Reschedule form is keyed by the occurrence's time;
   - the drawer waits for the re-read after a move or an Undo made from it (`DrawerTarget`, `followMove`, `drawerOccurrence`; review round 1). The screens' re-read only starts when the write answers, and on the API it answers later, so the read on screen then has neither an "all" shift's new times nor a split's new series, and after an Undo it still has the shifted series or the split. Until a newer read than that one answers, the drawer keeps showing the occurrence it showed; then it shows the moved one. The page tells reads apart by identity, and it notes the read on screen in a ref after each render, so a toast's Undo minutes later compares against the read then shown;
   - the drawer closes once a newer read no longer has its occurrence (moved away by someone else, cancelled or removed), set while rendering, so a meeting that comes back stays closed.
 - **Request** lists the server's `colleagues`, the first chosen. Its dialog opens only while Request is offered, and Edit details closes itself if a re-read takes the change away.
@@ -667,7 +667,7 @@
 
 ### Safest options taken in part 3 (also in docs/blueprint-delta.md)
 1. **Controls follow the server's own shaping (M1).** A non-organiser is offered drag, resize, Reschedule, Edit details, Cancel meeting and Remove only when their own keys and scope allow it and the meeting as the server sent it shows the organiser's address. The organiser is checked with `canChangeMeeting` and `shownParty`. The screen can only hide a control the server would allow; a property test proves it.
-2. **Accept time and Decline time** show only to the organiser who may change the meeting. Answers, Remove and decisions show only while `meetings.invites` is on.
+2. **Accept time and Decline time** show only to the organiser who may change the meeting. Answers, Remove and decisions show only while `meetings.invites` is on. So does Simulate reply on the Outbox drawer's invite rows (`offersSimulateReply`, review round 3), which the demo store refuses with the switch off.
 3. **The guest picker, "Hide the guest list" and "You're the organiser."** show only while `meetings.invites` is on, and with it off the form sends no guests (rule 13).
 4. **The organiser is never sent as a guest.** A guest travels as `{ kind, id }` only, and a new guest as `{ email, name }` only.
 5. **The reader's id comes from the server** (`GET /me/meetings`, else `GET /auth/context`), never from the demo persona's fixture id.
