@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { MANAGER_EMAIL, nextCode, OWNER_EMAIL, seedPassword, signInAs, totpCode } from "./accounts";
 import {
+  allowSeededCeilingKey,
   removePlatformAdmin,
   resetAuthState,
   restoreCeilingRow,
@@ -43,8 +44,9 @@ async function permissionsInEffect(page: Page): Promise<number> {
 
 // Platform admin part 1 on the real API (docs/specs/platform-admin.md; critic A6). The owner
 // account is made a platform admin through the database, the console change is undone through the
-// database, and the platform_admins row is removed afterwards. Global setup resets the owner's MFA
-// and clears a leftover admin row at the start of every run.
+// database (and reset to the seeded state first, after a stopped run), and the platform_admins row
+// is removed afterwards. Global setup resets the owner's MFA and clears a leftover admin row at the
+// start of every run.
 test.describe("platform admin console (api mode)", () => {
   let before: CeilingRowSnapshot | null = null;
 
@@ -52,6 +54,8 @@ test.describe("platform admin console (api mode)", () => {
     // login.spec.ts, which runs first, enrols the owner's authenticator app; this test enrols its own.
     await resetAuthState(CONTROL_URL, [OWNER_EMAIL]);
     await setPlatformAdmin(CONTROL_URL, OWNER_EMAIL, "owner");
+    // A run stopped before its afterAll leaves the box unticked, and re-seeding keeps that row.
+    await allowSeededCeilingKey(CONTROL_URL, SUMMIT, KEY);
   });
 
   test.afterAll(async () => {

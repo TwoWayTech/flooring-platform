@@ -150,6 +150,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `GET /meetings` and `GET /me/meetings` load every meeting the company ever had. Add a date window before companies have years of meetings.
   - A guest whose customer, supplier or contact record is later soft-deleted would leave the meeting unchangeable (latent).
   - Invites name the organiser's sign-in address to outside guests.
+- **PR #34 final review notes (none blocking):**
+  - The access editor doesn't run the shared protected-key check, so an admin who unticks a users, roles or audit key types a step-up code before the API's 400 shows. Run `accessPatchProblem` before the step-up, or lock those boxes.
+  - The 422 and the disabled-limit hint say "on a trial with no plan" for any company with no live subscription row, a non-trial company with soft-deleted rows included. Use wording that doesn't depend on the status.
+  - Support requests have no rate limit or open-grant cap (the spec's 409 and 429 are in part 3). Build them before a grant can open a company.
+  - A subscription row whose plan has no `plan_limits` row counts as no limit, not as unlimited (unchanged from before). Make the rule explicit when the owner settles unlimited plans.
+  - The demo store writes "Changed company access" for a save that changes nothing; the API writes no row. The screen never sends one.
+  - Coverage: the ceiling test doesn't check the audit count rose by exactly one; "stays on when the plan later includes the module" is tested only in shared; the refused Summit installation-key case doesn't re-read Summit.
 - **Platform admin residual risks (ADR 0052, part 1):**
   - The console runs on a company host with the home company's session timeouts; an injected script on that origin could read every `/platform` GET (the step-up guards writes only). Fixed by the admin host (owner question).
   - The access page doesn't know the admin's role, so a support admin sees the editor and only the API's 403 stops them. Pass the role from `GET /platform/me`.

@@ -120,6 +120,27 @@ export async function snapshotCeilingRow(
   }
 }
 
+/**
+ * Puts a seeded company's ceiling row for `key` back to the seeded state (allowed, not deleted),
+ * so a run that was stopped before its own clean-up doesn't leave the next run on a changed
+ * ceiling: re-seeding never overwrites an existing row. Throws when the row isn't there. Tests only.
+ */
+export async function allowSeededCeilingKey(controlUrl: string, companyName: string, key: string): Promise<void> {
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const [company] = await handle.db.select({ id: tenants.id }).from(tenants).where(eq(tenants.name, companyName));
+    if (!company) throw new Error(`No seeded company ${companyName}.`);
+    const updated = await handle.db
+      .update(tenantPermissionCeiling)
+      .set({ allowed: true, deletedAt: null })
+      .where(and(eq(tenantPermissionCeiling.tenantId, company.id), eq(tenantPermissionCeiling.permissionKey, key)))
+      .returning({ id: tenantPermissionCeiling.id });
+    if (updated.length === 0) throw new Error(`${companyName} has no seeded ceiling row for ${key}.`);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Puts a ceiling row back exactly as the snapshot found it. Tests only. */
 export async function restoreCeilingRow(controlUrl: string, snapshot: CeilingRowSnapshot): Promise<void> {
   const handle = openControlDb(controlUrl, { max: 1 });
