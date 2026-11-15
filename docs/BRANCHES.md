@@ -5,11 +5,11 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/meetings-web-api` | B (Claude) | Meetings part 3: the meetings screens on the API, DemoStore on the shared rules, api-mode e2e (worktree `../flooring-platform-meetings`) | Ready for merge once CI is green | [#37](https://github.com/TwoWayTech/flooring-platform/pull/37) | see the PR |
-| `feat/billing-company-standing` | B (Claude) | Platform admin part 4: `GET /company/standing`, the maintenance and suspended screens, the Owner's banner, a read-only billing page and the Owner's support-access panel (main checkout) | In progress | [#38](https://github.com/TwoWayTech/flooring-platform/pull/38) (draft) | see the PR |
+| `feat/billing-company-standing` | B (Claude) | Platform admin part 4: `GET /company/standing`, the maintenance and suspended screens, the Owner's banner, a read-only billing page and the Owner's support-access panel (main checkout) | Ready for merge once CI is green | [#38](https://github.com/TwoWayTech/flooring-platform/pull/38) | see the PR |
+| `feat/reports-api` | B (Claude) | Reports on the API: the business report, profit and loss, sales by category and payments received (worktree `../flooring-platform-reports`) | Planning | none yet | see the branch |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
-Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API); PR #34 (`feat/platform-access-api`, `bb3e81f`, platform admin part 1); PR #35 (`feat/meetings-api-moves`, `8ddf7fa`, meetings part 2); PR #36 (`feat/platform-audit-support`, `c763938`, platform admin part 3).
+Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API); PR #34 (`feat/platform-access-api`, `bb3e81f`, platform admin part 1); PR #35 (`feat/meetings-api-moves`, `8ddf7fa`, meetings part 2); PR #36 (`feat/platform-audit-support`, `c763938`, platform admin part 3); PR #37 (`feat/meetings-web-api`, `e6b37ea`, meetings part 3).
 
 Merged on 2026-11-14: PR #31 (`fix/docs-handoff-2026-11-14`, `bd9155d`), the handoff after PRs #28 to #30. PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
 

@@ -53,6 +53,40 @@ const platformImports = {
   ],
 };
 
+/**
+ * The company side of platform admin, part 4 (ADR 0054): `GET /billing` reads control rows only,
+ * so on top of the rules above nothing in modules/billing may import the company schema or
+ * TenantConnectionService. Flat config replaces a rule's options, so the earlier paths repeat.
+ */
+const billingImports = {
+  paths: [
+    ...companyDatabaseImports.paths,
+    { name: "@workspace/db/company", message: "Billing reads the control database only (ADR 0054)." },
+  ],
+  patterns: [
+    ...companyDatabaseImports.patterns,
+    {
+      group: ["**/tenancy/tenant-connection.service"],
+      message: "Billing reads the control database only (ADR 0054).",
+    },
+  ],
+};
+
+/**
+ * The session-only `GET /company/standing` and its guard answer before any TenantContext exists and
+ * must never make or use one (ADR 0054): the billing rules plus no TenantContext at all.
+ */
+const standingImports = {
+  paths: billingImports.paths,
+  patterns: [
+    ...billingImports.patterns,
+    {
+      group: ["**/tenancy/tenant-context"],
+      message: "The standing route never sees a TenantContext (ADR 0054).",
+    },
+  ],
+};
+
 const tenantContextMessage =
   "Only TenantGuard (from the verified session) and the job runner build a TenantContext (CLAUDE.md rule 2).";
 
@@ -92,6 +126,15 @@ export default tseslint.config(
   {
     files: ["src/modules/platform/**/*.ts"],
     rules: { "no-restricted-imports": ["error", platformImports] },
+  },
+  {
+    files: ["src/modules/billing/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", billingImports] },
+  },
+  {
+    // After the billing block, so the standing files get the stricter options.
+    files: ["src/modules/billing/company-standing.*.ts"],
+    rules: { "no-restricted-imports": ["error", standingImports] },
   },
   {
     files: ["src/core/tenancy/tenant.guard.ts", "src/core/tenancy/tenant-context.ts", "src/core/jobs/job-tenants.ts"],

@@ -288,6 +288,8 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
   it("needs an open company on every route except the session-only ones", async () => {
     // Session-only routes answer for themselves: the step-up POST refuses an empty body (400), and
     // the platform guard refuses someone who is not a platform admin (403) before any body check.
+    // GET /company/standing is session-only too, but its StandingMemberGuard answers company_required, so the
+    // company-route branch below checks it, code included (ADR 0054).
     const sessionOnly = new Map([
       ["GET /auth/context", 200],
       ["POST /auth/step-up", 400],

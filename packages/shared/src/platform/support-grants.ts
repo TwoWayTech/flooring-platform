@@ -164,3 +164,53 @@ export function supportRequestRefusal(facts: SupportRequestFacts): SupportReques
     return { status: 429, code: "rate_limited", message: SUPPORT_LIMIT_MESSAGE };
   return null;
 }
+
+/** The 403 `forbidden` message of the Owner's support-access routes (spec "Validations and messages (part 4)"). */
+export const SUPPORT_OWNER_ONLY_MESSAGE = "Only an Owner can manage support access.";
+
+/** A decision the company's Owner makes on a support grant. */
+export type SupportGrantStep = "approve" | "revoke";
+
+/**
+ * The 409 `grant_closed` message for each decision (spec "Validations and messages (part 4)"). The
+ * API, the demo and the web, which never sends an id that isn't a UUID, all say these words.
+ */
+export const SUPPORT_CLOSED_MESSAGES: Readonly<Record<SupportGrantStep, string>> = {
+  approve: "This request is no longer waiting for approval.",
+  revoke: "This access has already ended.",
+};
+
+/**
+ * The note on the Owner's panel while the company is read only (spec part 4, "Safer than the
+ * outline"): TenantGuard refuses every write then (403 `company_read_only`), so the panel offers
+ * no decision, and requests end on their own.
+ */
+export const SUPPORT_READ_ONLY_MESSAGE =
+  "Support access can't be changed while your company's account is read only. Requests end on their own at the time shown.";
+
+/**
+ * Why the Owner's decision on a grant is refused, or null when it may be made (spec part 4, "The
+ * support-access routes"): approving needs a pending grant, revoking a pending or approved one,
+ * each unexpired. This is the API's conditional update (`support-grants.service.ts`, `change`);
+ * the demo has no deleted grants, and an expiry that can't be read counts as expired.
+ */
+export function supportGrantDecisionRefusal(
+  grant: SupportGrantDates,
+  step: SupportGrantStep,
+  now: Date,
+): "grant_closed" | null {
+  const status = supportGrantStatus(grant, now);
+  const open = step === "approve" ? status === "pending" : status === "pending" || status === "approved";
+  return open ? null : "grant_closed";
+}
+
+/**
+ * The decisions the Owner's panel offers on a grant (spec part 4, "Screens (part 4)"): approve or
+ * revoke while pending, revoke while approved, and none once it has ended. None at all while the
+ * company is read only, because the API refuses every write then.
+ */
+export function supportActions(status: SupportGrantStatus, readOnly: boolean): readonly SupportGrantStep[] {
+  if (readOnly) return [];
+  if (status === "pending") return ["approve", "revoke"];
+  return status === "approved" ? ["revoke"] : [];
+}

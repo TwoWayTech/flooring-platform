@@ -14,6 +14,8 @@ export interface MenuItem {
   /** Settings pages only: the group on the settings home and one sentence saying what it controls. */
   group?: SettingsGroup;
   description?: string;
+  /** Only the company's Owner sees the item and opens the page; `anyOf` is then empty (ADR 0054). */
+  ownerOnly?: boolean;
   /**
    * A page whose data has no API route yet, shown only in the demo build: in api mode it would save
    * to the browser's demo data while the API reads its own (ADR 0051 "Part 3").

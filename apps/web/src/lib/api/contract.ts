@@ -89,6 +89,7 @@ import type {
   PlatformSupportGrant,
   SupportRequestInput,
 } from "@workspace/shared";
+import type { CompanyBilling, CompanyStanding, CompanySupportGrant } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
 export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "settings">;
@@ -783,6 +784,18 @@ export interface ApiClient {
   requestSupportAccess(input: SupportRequestInput): Promise<{ id: string }>;
   /** Closes the company the store has open: the platform admin's pages act as the platform, not a company user. */
   closeCompany(): void;
+
+  // Platform admin part 4: company standing, billing and support access (docs/specs/platform-admin.md, "ApiClient (part 4)").
+  /** Where the open company stands (GET /company/standing): what its next request meets. Every member gets the same answer. */
+  getCompanyStanding(): Promise<CompanyStanding>;
+  /** The open company's plan, period, limits and banner notice, for its Owner (GET /billing). 403 for anyone else; 404 while settings.billing is off. */
+  getCompanyBilling(): Promise<CompanyBilling>;
+  /** The open company's support-access requests, newest first, for its Owner (GET /support-grants). */
+  listSupportGrants(): Promise<CompanySupportGrant[]>;
+  /** The Owner approves a pending request, after a step-up in api mode (POST /support-grants/:id/approve). */
+  approveSupportGrant(grantId: string): Promise<void>;
+  /** The Owner ends a pending or approved request (POST /support-grants/:id/revoke). */
+  revokeSupportGrant(grantId: string): Promise<void>;
 
   /**
    * Data import (spec G1) for a company: from Settings by a user with settings.import.manage in the
