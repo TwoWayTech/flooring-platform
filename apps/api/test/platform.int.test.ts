@@ -427,7 +427,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
     expect(subscription.override).toBeNull();
   });
 
-  it("makes a new user limit the effective one with an active row and a cancelled row on a bigger plan", async () => {
+  it("makes a new user limit the effective one with an active row and a cancelled row on a bigger plan, never a deleted row", async () => {
     const id = await flooringCompany("limits");
     const plan = async (key: string, maxUsers: number, maxBranches: number) => {
       const [row] = await harness.control.db
@@ -462,13 +462,33 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         ...period,
       },
     ]);
+    // A deleted row on a still bigger plan counts for nothing and gets no override (spec "What a
+    // save does", Limits: every subscription row that is not deleted).
+    const [deleted] = await harness.control.db
+      .insert(tenantSubscriptions)
+      .values({
+        tenantId: id,
+        planId: await plan("Huge", 500, 200),
+        interval: "monthly",
+        price: "900",
+        status: "active",
+        deletedAt: new Date(),
+        ...period,
+      })
+      .returning({ id: tenantSubscriptions.id });
     expect(await company(id)).toMatchObject({ userLimit: 50, branchLimit: 20, plan: "Small, Big (cancelled)" });
     await stepUp(owner);
     const changed = (await patchAccess(id, { userLimit: 10 }).expect(200)).body as PlatformCompany;
     expect([changed.userLimit, changed.branchLimit]).toEqual([10, 20]);
     expect(changed.subscriptions.map((row) => row.userLimitOverride)).toEqual([10, 10]);
+    const [untouched] = await harness.control.db
+      .select({ user: tenantSubscriptions.userLimitOverride, branch: tenantSubscriptions.branchLimitOverride })
+      .from(tenantSubscriptions)
+      .where(eq(tenantSubscriptions.id, deleted.id));
+    expect(untouched).toEqual({ user: null, branch: null });
     const [row] = await auditRows("company.access_changed");
     expect(row).toMatchObject({ before: { userLimit: 50 }, after: { userLimit: 10 } });
+    expect(JSON.stringify(row.after)).not.toContain(deleted.id);
   });
 
   it("answers and saves for a company whose database failed or is in maintenance, without the error text", async () => {
