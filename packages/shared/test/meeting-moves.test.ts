@@ -535,6 +535,16 @@ describe("undo, rebuilt from the move's own audit entry (critic B3)", () => {
     expect(undoProblem({ ...moved.original, status: "cancelled" }, ctx())).toBe(MEETING_CHANGED);
   });
 
+  it("answers meeting_changed, not forbidden, to a stale toast after someone else's newer move", () => {
+    // The SEQUENCE is checked before the mover (ADR 0051 "Part 3"; docs/api-contract.md undo).
+    expect(undoProblem(moved.original, ctx({ callerUserId: GUEST, clientSequence: 1 }))).toBe(MEETING_CHANGED);
+    expect(undoProblem({ ...moved.original, sequence: 4 }, ctx({ callerUserId: GUEST }))).toBe(MEETING_CHANGED);
+    expect(undoProblem(moved.original, ctx({ callerUserId: GUEST }))).toMatchObject({ status: 403, code: "forbidden" });
+    expect(undoProblem(moved.original, ctx({ clientSequence: 1, ageMs: UNDO_WINDOW_MINUTES * 60_000 + 1 }))).toBe(
+      MEETING_CHANGED,
+    );
+  });
+
   it("restores start, length, end and exceptions from the record, SEQUENCE + 1, guests untouched", () => {
     const restored = undoneMeeting(moved.original, record);
     expect(restored).toMatchObject({

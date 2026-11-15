@@ -1,4 +1,5 @@
 import { featureOn, type Access, type ProductKey } from "@workspace/shared";
+import { isDemoMode } from "@/lib/data-source";
 import { FLOORING } from "./flooring";
 import { HR } from "./hr";
 import type { MenuItem, ProductConfig } from "./types";
@@ -15,9 +16,16 @@ export function itemAllows(item: Pick<MenuItem, "anyOf" | "ownerOnly">, access: 
   return item.ownerOnly ? access.isOwner : item.anyOf.some((key) => access.permissions.has(key));
 }
 
-/** Menu items the access allows and whose feature is switched on; the rest disappear. */
+/** Whether an item exists in this build: a demo-only page is left out in api mode (`MenuItem.demoOnly`). */
+export function inThisBuild(item: Pick<MenuItem, "demoOnly">): boolean {
+  return !item.demoOnly || isDemoMode();
+}
+
+/** Menu items the access allows, whose feature is switched on and that exist in this build; the rest disappear. */
 export function visibleItems(items: readonly MenuItem[], access: Access): MenuItem[] {
-  return items.filter((item) => item.features.some((key) => featureOn(key)) && itemAllows(item, access));
+  return items.filter(
+    (item) => inThisBuild(item) && item.features.some((key) => featureOn(key)) && itemAllows(item, access),
+  );
 }
 
 /** A persona's home: the first menu item they may open (spec "Login": each persona lands on its allowed home). */

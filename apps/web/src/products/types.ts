@@ -16,6 +16,11 @@ export interface MenuItem {
   description?: string;
   /** Only the company's Owner sees the item and opens the page; `anyOf` is then empty (ADR 0054). */
   ownerOnly?: boolean;
+  /**
+   * A page whose data has no API route yet, shown only in the demo build: in api mode it would save
+   * to the browser's demo data while the API reads its own (ADR 0051 "Part 3").
+   */
+  demoOnly?: boolean;
 }
 
 /** What a product host shows: its name, menus and the branding used before a company is picked. */

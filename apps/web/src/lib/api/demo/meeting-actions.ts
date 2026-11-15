@@ -1,136 +1,281 @@
 import {
-  addMinutes,
-  attendeeConflicts,
+  cancelledMeeting,
+  cancelProblem,
+  changeRefusal,
+  DEFAULT_MEETING_SETTINGS,
+  editedMeeting,
+  editProblem,
   featureOn,
+  guestAuditName,
+  guestLimitProblem,
+  icsFileName,
+  instantToZoned,
+  isOnMeeting,
+  isOrganiser,
+  DEMO_PRODID,
+  MEETING_REFUSALS,
+  MEETING_REQUEST_DEFAULTS,
+  meetingAuditTarget,
+  meetingFieldsProblem,
   meetingIcs,
-  moveOccurrence,
-  recurrenceProblem,
+  meetingRequestProblem,
+  meetingWhenText,
+  newAttendee,
+  newGuestProblem,
+  nextOccurrence,
+  normalizeGuestEmail,
+  OUTBOX_RECIPIENT_KIND,
+  REMINDER_MINUTES,
+  removeGuestProblem,
+  replyOutcome,
+  replyProblem,
+  requestFlags,
+  scheduleFlags,
+  seesGuestAddresses,
+  seesMeeting,
+  sendPlan,
+  staffGuestOf,
+  supportedMeetingZone,
+  withoutGuest,
   type Attendee,
+  type Company,
   type Customer,
   type Meeting,
+  type MeetingPatch,
   type MeetingResponse,
-  type OutboxRecipient,
+  type MeetingSettings,
+  type MyMeetings,
+  type ReplyAnswer,
+  type ReplyOutcome,
 } from "@workspace/shared";
-import type { MeetingInput, MeetingMove, MeetingRequestInput, MeetingUndo, NewGuest, ReplyInput } from "../contract";
+import type { MeetingInput, MeetingRequestInput, MeetingsData, NewGuest, ReplyInput } from "../contract";
 import { DemoRuleError } from "./admin-rules";
-import { inAppFor, notify } from "./notification-actions";
+import type { MeetingMoveMemo } from "./meeting-moves";
+import { deliver, invitesOn, organizerOf, seriesSends, syncReminder } from "./meeting-sends";
+import {
+  colleaguesFor,
+  guestOptionsFor,
+  partyOf,
+  shapedFor,
+  visibleMeetings,
+  type MeetingSight,
+} from "./meeting-sight";
+import { notify } from "./notification-actions";
 import type { ActionContext } from "./payment-actions";
 
-function need(ctx: ActionContext, id: string): Meeting {
+/** What every demo meetings action is given besides its context (ADR 0051 "Part 3"). */
+export interface MeetingScope {
+  /** The reader's sight of meetings and their guests (`meetingSightFor`). */
+  sight: MeetingSight;
+  /** The last move of each meeting, for Undo; every other write forgets it (`saveMeeting`). */
+  memo: MeetingMoveMemo;
+  company: Company;
+}
+
+/** The demo's words for a switched-off feature, which the API answers with a bare 404 (CLAUDE.md rule 13). */
+const SWITCHED_OFF = "This feature is switched off.";
+/** The API's 404 for a meeting that is gone or outside the reader's sight (`notFound("meeting")`). */
+const MEETING_GONE = "This meeting no longer exists.";
+/** The API's 404 for a guest who is not on the meeting or not in the reader's reach (`notFound("guest")`). */
+export const GUEST_GONE = "This guest no longer exists.";
+
+/** Refuses every meetings action while `meetings.calendar` is off, as every API route does (S4). */
+export function calendarOn(): void {
+  if (!featureOn("meetings.calendar")) throw new DemoRuleError(SWITCHED_OFF);
+}
+
+/** Refuses an action on guests (removals, answers, decisions, Simulate reply) while `meetings.invites` is off (S4). */
+export function invitesSwitchedOn(): void {
+  if (!invitesOn()) throw new DemoRuleError(SWITCHED_OFF);
+}
+
+/** Refuses with a shared rule's own words when it found a problem (the API's `refuseIf`). */
+export function refuseIf(problem: string | null): void {
+  if (problem) throw new DemoRuleError(problem);
+}
+
+/**
+ * A meeting the reader may see (the API's `lockVisible`), or a refusal in the API's 404 words that
+ * does not say whether it exists. `withCancelled` false also refuses a cancelled meeting, as the
+ * calendar file's route does.
+ */
+export function visible(ctx: ActionContext, sight: MeetingSight, id: string, withCancelled = true): Meeting {
   const meeting = ctx.db.get("meetings", id);
-  if (!meeting) throw new DemoRuleError("This meeting no longer exists.");
+  if (!meeting || (!withCancelled && meeting.status === "cancelled") || !seesMeeting(sight.viewer, meeting))
+    throw new DemoRuleError(MEETING_GONE);
   return meeting;
 }
 
-const organizerOf = (ctx: ActionContext, meeting: Meeting) => {
-  const owner = ctx.db.get("users", meeting.ownerUserId);
-  return { name: owner?.name ?? "Organiser", email: owner?.email ?? "" };
-};
+/**
+ * A meeting the reader may change (the API's `lockChangeable`; ADR 0051 "Who may change a
+ * meeting"): seen, and `canChangeMeeting` on it, refused in `changeRefusal`'s words otherwise.
+ */
+export function changeable(ctx: ActionContext, sight: MeetingSight, id: string): Meeting {
+  const meeting = visible(ctx, sight, id);
+  refuseIf(changeRefusal(sight.viewer, meeting, sight.seesParty));
+  return meeting;
+}
 
-const RECIPIENT_KIND: Record<Attendee["kind"], OutboxRecipient["kind"]> = {
-  staff: "user",
-  customer: "customer",
-  supplier: "supplier",
-  "customer-contact": "customer_contact",
-  "supplier-contact": "supplier_contact",
-  external: "guest",
-};
+/**
+ * Saves a meeting after any change but a move, and forgets its last move: on the API that change's
+ * audit entry would follow the move's, so Undo answers `meeting_changed` (ADR 0051 "Part 2").
+ */
+export function saveMeeting(ctx: ActionContext, memo: MeetingMoveMemo, meeting: Meeting): Meeting {
+  ctx.db.put("meetings", meeting);
+  memo.forget(meeting.id);
+  return meeting;
+}
 
-const whenText = (start: string) => `${start.slice(0, 10)} at ${start.slice(11, 16)}`;
+/** The time zone meetings are booked in, the company's own, or the API's 409 words when it is not a US one. */
+function meetingZone(ctx: ActionContext): string {
+  const zone = supportedMeetingZone(ctx.db.settings.localization.region.timeZone);
+  if (!zone) throw new DemoRuleError(MEETING_REFUSALS.zoneUnsupported);
+  return zone;
+}
 
-/** One Outbox row and one calendar file per guest (ADR 0021). With a hidden guest list, each file names only its recipient. */
-function sendToGuests(
-  ctx: ActionContext,
-  meeting: Meeting,
-  opts: {
-    recipients: readonly Attendee[];
-    method: "REQUEST" | "CANCEL" | "DECLINECOUNTER";
-    action: string;
-    sequence: number;
-    status?: "CONFIRMED" | "TENTATIVE" | "CANCELLED";
-    listed?: readonly Attendee[];
-    recurrenceId?: string;
-    start?: string;
-    durationMin?: number;
-  },
-) {
-  if (!featureOn("meetings.invites")) return;
-  const organizer = organizerOf(ctx, meeting);
-  const start = opts.start ?? meeting.start;
-  for (const guest of opts.recipients) {
-    if (guest.kind === "staff" && guest.id === meeting.ownerUserId) continue;
-    const listed = meeting.hideGuestList ? [guest] : (opts.listed ?? meeting.attendees);
-    const text = meetingIcs({
-      method: opts.method,
+/** Settings → Meetings with a reminder the form offers, as the API's `loadMeetingSettings` checks it. */
+function meetingSettings(ctx: ActionContext): MeetingSettings {
+  const stored = ctx.db.settings.meetings;
+  return {
+    ...stored,
+    defaultReminderMin: REMINDER_MINUTES.includes(stored.defaultReminderMin)
+      ? stored.defaultReminderMin
+      : DEFAULT_MEETING_SETTINGS.defaultReminderMin,
+  };
+}
+
+/**
+ * A meeting's wall-clock start as the demo's audit log writes it ("2026-11-16 09:00"), one format
+ * for every meeting entry: create, edit, move, Undo and proposal decisions.
+ */
+export const auditTime = (start: string): string => start.replace("T", " ");
+
+/**
+ * The Meetings page's data (`MeetingsData`; ADR 0051 "Part 3"): every meeting the reader may see,
+ * shaped for them; whom they may invite, only with the create key and `meetings.invites` on (GET
+ * /meeting-guests); whom they may ask to meet (`colleaguesFor`); the reader's own id; and what a new
+ * guest becomes, the demo's setting (Settings → Meetings is demo-only until part 4).
+ */
+export async function meetingsData(ctx: ActionContext, { sight, company }: MeetingScope): Promise<MeetingsData> {
+  calendarOn();
+  await ctx.assertCan(["meetings.meeting.view"]);
+  const invites = sight.access.permissions.has("meetings.meeting.create") && invitesOn();
+  return {
+    viewerUserId: sight.viewer.userId,
+    meetings: visibleMeetings(ctx.db, sight),
+    guests: invites ? guestOptionsFor(ctx.db, sight) : [],
+    colleagues: colleaguesFor(ctx.db, company, sight),
+    newGuestHandling: ctx.db.settings.meetings.newGuestHandling,
+  };
+}
+
+/**
+ * My meetings (GET /me/meetings; ADR 0051): refused with `meetings.calendar` or `hr.portal` off or
+ * without the meetings module (M3), and without the portal key. The meetings the reader organises or
+ * is a staff guest on, not cancelled, each with its next occurrence from today, soonest first and
+ * shaped for them, and whom they may ask to meet.
+ */
+export async function myMeetings(ctx: ActionContext, { sight, company }: MeetingScope): Promise<MyMeetings> {
+  if (!featureOn("meetings.calendar") || !featureOn("hr.portal") || !sight.modules.includes("meetings"))
+    throw new DemoRuleError(SWITCHED_OFF);
+  await ctx.assertCan(["hr.portal.view"]);
+  const coming = ctx.db
+    .list("meetings")
+    .filter((meeting) => meeting.status !== "cancelled" && isOnMeeting(meeting, sight.viewer.userId))
+    .flatMap((meeting) => {
+      const next = nextOccurrence(meeting, ctx.today);
+      return next ? [{ meeting: shapedFor(sight, meeting), next }] : [];
+    })
+    .sort((a, b) => a.next.startsAt.getTime() - b.next.startsAt.getTime());
+  return {
+    viewerUserId: sight.viewer.userId,
+    meetings: coming.map(({ meeting, next }) => ({
       meeting,
-      sequence: opts.sequence,
-      stamp: new Date(),
-      organizer,
-      attendees: listed.filter((a) => a.email),
-      status: opts.status,
-      recurrenceId: opts.recurrenceId,
-      start: opts.start,
-      durationMin: opts.durationMin,
-    });
-    notify(ctx, {
-      key: "meeting.invite",
-      source: { type: "meeting", id: meeting.id, href: "/meetings" },
-      values: {
-        "meeting.action": opts.action,
-        "meeting.title": meeting.title,
-        "meeting.when": whenText(start),
-        "meeting.location": meeting.location,
-        "meeting.organiser": organizer.name,
-        "meeting.sequence": String(opts.sequence),
-      },
-      to: [{ kind: RECIPIENT_KIND[guest.kind], id: guest.id, name: guest.name, email: guest.email }],
-      attachments: [{ kind: "ics", fileName: `${meeting.title.replace(/[^\w ]+/g, "")}.ics`, text }],
-      inApp: guest.kind === "staff" ? [{ userId: guest.id, title: `${opts.action}: ${meeting.title}` }] : undefined,
-      version: `${opts.sequence}-${opts.method}-${ctx.now}-${opts.recurrenceId ?? ""}`,
-      restricted: meeting.private,
-    });
+      next: { start: next.start, durationMin: next.durationMin, planned: next.planned },
+    })),
+    colleagues: colleaguesFor(ctx.db, company, sight),
+  };
+}
+
+/** The kinds of guest a person picks from the company's records (the API's `GUEST` schema). */
+const PICKED_KINDS = ["staff", "customer", "customer-contact", "supplier", "supplier-contact"] as const;
+
+/**
+ * Who a new meeting's guests are, resolved from the demo's own records as the API's `resolveGuests`
+ * does (ADR 0051 "Guests"; critic B4). Only a picked guest's kind and id are read, and only a guest
+ * the picker offers this reader (`guestOptionsFor`) is taken; any other is refused in the API's 404
+ * words. Names and addresses come from the records, the organiser is left out, and each guest counts
+ * once. An address that is an active colleague's becomes that colleague. Returns the guests and the
+ * ones added by an address that belongs to nobody in the company.
+ */
+function resolveGuests(
+  ctx: ActionContext,
+  sight: MeetingSight,
+  picked: readonly Pick<Attendee, "kind" | "id">[],
+  byEmail: readonly NewGuest[],
+): { guests: Attendee[]; outside: NewGuest[] } {
+  if (picked.some((guest) => !(PICKED_KINDS as readonly string[]).includes(guest.kind)))
+    throw new DemoRuleError("Choose a guest.");
+  const offered = guestOptionsFor(ctx.db, sight);
+  const guests: Attendee[] = [];
+  for (const kind of PICKED_KINDS) {
+    const ids = new Set(
+      picked.filter((g) => g.kind === kind && !(kind === "staff" && g.id === sight.viewer.userId)).map((g) => g.id),
+    );
+    for (const id of ids) {
+      const option = offered.find((o) => o.kind === kind && o.id === id);
+      if (!option) throw new DemoRuleError(GUEST_GONE);
+      // A colleague is offered by name only; their address comes from their record.
+      const email = kind === "staff" ? (ctx.db.get("users", id)?.email ?? "") : option.email;
+      guests.push(newAttendee({ kind, id, name: option.name, email }));
+    }
   }
+  const typed = new Map<string, NewGuest>();
+  for (const guest of byEmail) {
+    const key = normalizeGuestEmail(guest.email);
+    if (!typed.has(key)) typed.set(key, guest);
+  }
+  const members = ctx.db.list("users").filter((user) => user.status === "active");
+  const outside: NewGuest[] = [];
+  for (const [key, guest] of typed) {
+    const member = members.find((m) => normalizeGuestEmail(m.email) === key);
+    if (member?.id === sight.viewer.userId) continue;
+    if (member) {
+      if (!staffGuestOf({ attendees: guests }, member.id))
+        guests.push(newAttendee({ kind: "staff", id: member.id, name: member.name, email: member.email }));
+      continue;
+    }
+    if (guests.some((g) => g.email && normalizeGuestEmail(g.email) === key)) continue;
+    const email = guest.email.trim();
+    guests.push(
+      newAttendee({ kind: "external", id: `ext-${ctx.newId("g")}`, name: guest.name.trim() || email, email }),
+    );
+    outside.push(guest);
+  }
+  return { guests, outside };
 }
 
-/** Sets who is told when a meeting's reminder is due; held in the Outbox until then (spec E). */
-function scheduleReminder(ctx: ActionContext, meeting: Meeting) {
-  const scheduledFor = addMinutes(meeting.start, -meeting.reminderMin);
-  if (scheduledFor <= ctx.now) return;
-  const staff = meeting.attendees.filter((a) => a.kind === "staff");
-  notify(ctx, {
-    key: "meeting.reminder",
-    source: { type: "meeting", id: meeting.id, href: "/meetings" },
-    values: {
-      "meeting.title": meeting.title,
-      "meeting.when": whenText(meeting.start),
-      "meeting.location": meeting.location,
-    },
-    to: staff.map((a) => ({ kind: "user" as const, id: a.id, name: a.name, email: a.email })),
-    scheduledFor,
-    version: `${meeting.sequence}-reminder`,
-    restricted: meeting.private,
-  });
-}
-
-/** Saves someone added by email the way Settings → Meetings says (spec E, assumption E-1). */
-function keepNewGuest(ctx: ActionContext, guest: NewGuest) {
-  const { newGuestHandling } = ctx.db.settings.meetings;
-  const name = guest.name.trim() || guest.email;
-  if (newGuestHandling === "contact" && guest.customerId) {
-    ctx.db.put("customerContacts", {
-      id: ctx.newId("ccon"),
-      customerId: guest.customerId,
-      name,
-      email: guest.email,
-      phone: "",
-    });
-  } else if (newGuestHandling === "lead") {
+/**
+ * Keeps a guest added by an outside address the way Settings → Meetings says (demo only, spec
+ * assumption E-1; the API never saves one, ADR 0051 "Deferred"), narrowed (ADR 0051 "Part 3", safest
+ * option 18): a contact only under a customer the reader can see, a lead only for a reader who may
+ * read and create customers. Otherwise the guest is invited and not saved.
+ */
+function keepNewGuest(ctx: ActionContext, sight: MeetingSight, guest: NewGuest, settings: MeetingSettings): void {
+  const name = guest.name.trim() || guest.email.trim();
+  const email = guest.email.trim();
+  if (settings.newGuestHandling === "contact" && guest.customerId) {
+    const customer = ctx.db.get("customers", guest.customerId);
+    if (!customer || !sight.readsCustomers || !sight.seesParty(partyOf("customer", customer.id))) return;
+    ctx.db.put("customerContacts", { id: ctx.newId("ccon"), customerId: customer.id, name, email, phone: "" });
+  } else if (settings.newGuestHandling === "lead") {
+    if (!sight.readsCustomers || !sight.access.permissions.has("customers.customer.create")) return;
     const lead: Customer = {
       id: ctx.newId("cust"),
       type: "homeowner",
       name,
       contactName: name,
-      email: guest.email,
+      email,
       phone: "",
       addresses: [],
       defaultBillingId: null,
@@ -147,49 +292,45 @@ function keepNewGuest(ctx: ActionContext, guest: NewGuest) {
   }
 }
 
-const blankResponse = {
-  role: "required",
-  partStat: "needs-action",
-  respondedAt: null,
-  respondedSequence: null,
-  note: "",
-  proposal: null,
-} satisfies Partial<Attendee>;
-
-/** Whether a guest's email is valid enough to invite. */
-const validEmail = (email: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
-
 /**
- * Schedules a meeting and invites every guest (spec E, ADR 0021): one Outbox row and .ics each,
- * SEQUENCE 0. A guest added by email is kept per Settings → Meetings.
+ * Schedules a meeting (meetings.md "Schedule a meeting"; ADR 0051), as the API's `create`: the
+ * company's US zone, the shared field and guest checks, no one else asked while `meetings.invites`
+ * is off, guests resolved from the demo's own records (`resolveGuests`), the guest limits, and the
+ * server's flags (`scheduleFlags`: a customer or other outside guest hides the list; proposals only
+ * for an organiser who may decide them). The organiser joins first, as accepted. Every guest gets an
+ * invitation, and the reminder is set. The demo has no daily email caps (B.6 item 4).
  */
-export async function createMeeting(ctx: ActionContext, input: MeetingInput): Promise<Meeting> {
+export async function createMeeting(ctx: ActionContext, { sight }: MeetingScope, input: MeetingInput) {
+  calendarOn();
   await ctx.assertCan(["meetings.meeting.create"]);
-  if (!input.title.trim()) throw new DemoRuleError("Give the meeting a title.");
-  const problem = recurrenceProblem(input.start, input.recurrence);
-  if (problem) throw new DemoRuleError(problem);
-  for (const g of input.newGuests)
-    if (!validEmail(g.email)) throw new DemoRuleError(`"${g.email}" is not a valid email address.`);
-  input.newGuests.forEach((g) => keepNewGuest(ctx, g));
-  const external = input.newGuests.map((g, i): Attendee => ({
-    ...blankResponse,
-    kind: "external",
-    id: `ext-${ctx.newId("g")}-${i}`,
-    name: g.name.trim() || g.email,
-    email: g.email,
-  }));
+  const zone = meetingZone(ctx);
+  refuseIf(meetingFieldsProblem(input, { zone, today: ctx.today, recurrence: input.recurrence }));
+  for (const guest of input.newGuests) refuseIf(newGuestProblem(guest));
+  const othersAsked =
+    input.newGuests.length > 0 || input.guests.some((g) => !(g.kind === "staff" && g.id === sight.viewer.userId));
+  if (othersAsked && !invitesOn()) throw new DemoRuleError(MEETING_REFUSALS.invitesOff);
+  const { guests, outside } = resolveGuests(ctx, sight, input.guests, input.newGuests);
+  refuseIf(guestLimitProblem({ guests: guests.length, emailGuests: outside.length }));
+  const settings = meetingSettings(ctx);
+  const flags = scheduleFlags(
+    { private: input.private, hideGuestList: input.hideGuestList },
+    guests,
+    settings,
+    sight.access.permissions.has("meetings.meeting.edit"),
+  );
+  const { actor } = ctx;
   const meeting: Meeting = {
     id: ctx.newId("mtg"),
     title: input.title.trim(),
     start: input.start,
     durationMin: input.durationMin,
-    location: input.location,
-    attendees: [...input.guests.map((g) => ({ ...blankResponse, ...g })), ...external],
+    location: input.location.trim(),
+    attendees: [newAttendee({ kind: "staff", id: actor.id, name: actor.name, email: actor.email }, true), ...guests],
     recurrence: input.recurrence,
     reminderMin: input.reminderMin,
-    ownerUserId: ctx.actor.id,
+    ownerUserId: actor.id,
     notes: input.notes,
-    timeZone: ctx.db.settings.localization.region.timeZone,
+    timeZone: zone,
     until: null,
     exceptions: [],
     uid: crypto.randomUUID(),
@@ -198,298 +339,267 @@ export async function createMeeting(ctx: ActionContext, input: MeetingInput): Pr
     status: "confirmed",
     kind: "meeting",
     private: input.private,
-    hideGuestList: input.hideGuestList || input.private || external.length > 0,
-    allowProposals: input.allowProposals,
+    ...flags,
   };
   ctx.db.put("meetings", meeting);
-  sendToGuests(ctx, meeting, {
-    recipients: meeting.attendees,
-    method: "REQUEST",
-    action: "Invitation",
-    sequence: 0,
-    status: "CONFIRMED",
-  });
-  scheduleReminder(ctx, meeting);
+  for (const guest of outside) keepNewGuest(ctx, sight, guest, settings);
+  deliver(ctx, meeting, sendPlan("schedule", meeting, { invitesOn: invitesOn() }));
+  syncReminder(ctx, meeting);
   ctx.audit({
     category: "data",
     action: "Scheduled meeting",
-    target: meeting.title,
+    target: meetingAuditTarget(meeting),
     before: null,
-    after: `${meeting.start.replace("T", " ")}, ${meeting.attendees.length} guests`,
+    after: `${auditTime(meeting.start)}, ${guests.length} guests`,
   });
-  return meeting;
+  return shapedFor(sight, meeting);
 }
 
-const SIGNIFICANT = ["start", "durationMin", "recurrence", "until", "status", "location"] as const;
-
-/** Edits a meeting (ADR 0021): a significant change raises SEQUENCE and asks every guest again; a title or notes edit keeps it. */
-export async function updateMeeting(
-  ctx: ActionContext,
-  id: string,
-  patch: Partial<Pick<Meeting, "title" | "notes" | "location" | "start" | "durationMin" | "reminderMin">>,
-) {
+/**
+ * Edits a meeting (meetings.md rule 6 and the sends table; ADR 0051), as the API's `update`: only
+ * someone who may change it, only an edit `editProblem` allows, and nothing written for no change. A
+ * change of start, length or place raises SEQUENCE and asks every guest again; every guest gets an
+ * "Updated" invite, with a series' surviving exceptions again, and the reminder follows.
+ */
+export async function updateMeeting(ctx: ActionContext, { sight, memo }: MeetingScope, id: string, sent: MeetingPatch) {
+  calendarOn();
   await ctx.assertCan(["meetings.meeting.edit"]);
-  const before = need(ctx, id);
-  if (before.status === "cancelled") throw new DemoRuleError("This meeting was cancelled.");
-  const merged = { ...before, ...patch };
-  const significant = SIGNIFICANT.some((k) => merged[k] !== before[k]);
-  const sequence = before.sequence + (significant ? 1 : 0);
-  const saved = ctx.db.put("meetings", {
-    ...merged,
-    sequence,
-    rescheduleSequence: significant ? sequence : before.rescheduleSequence,
-    attendees: significant
-      ? merged.attendees.map((a) => ({ ...a, partStat: "needs-action" as const, respondedAt: null, proposal: null }))
-      : merged.attendees,
-  });
-  sendToGuests(ctx, saved, {
-    recipients: saved.attendees,
-    method: "REQUEST",
-    action: "Updated",
-    sequence,
-    status: "CONFIRMED",
-  });
+  // Compared as stored, so a title or place sent with spaces around it is no change of its own.
+  const patch: MeetingPatch = { ...sent, title: sent.title?.trim(), location: sent.location?.trim() };
+  const before = changeable(ctx, sight, id);
+  const now = new Date();
+  refuseIf(editProblem(before, patch, ctx.today, now));
+  const edit = editedMeeting(before, patch);
+  if (edit.changed.length === 0) return shapedFor(sight, before);
+  const saved = saveMeeting(ctx, memo, edit.meeting);
+  deliver(ctx, saved, seriesSends(saved, now));
+  syncReminder(ctx, saved);
   ctx.audit({
     category: "data",
     action: "Edited meeting",
-    target: saved.title,
-    before: before.start.replace("T", " "),
-    after: saved.start.replace("T", " "),
+    target: meetingAuditTarget(before),
+    before: auditTime(before.start),
+    after: auditTime(saved.start),
   });
-  return saved;
+  return shapedFor(sight, saved);
 }
 
-/** Cancels a meeting and sends the cancellation (ADR 0021: CANCEL, SEQUENCE + 1, all guests). */
-export async function cancelMeeting(ctx: ActionContext, id: string) {
+/** Cancels a meeting, once (meetings.md sends table; ADR 0051): CANCEL to every guest, and its reminder is dropped. */
+export async function cancelMeeting(ctx: ActionContext, { sight, memo }: MeetingScope, id: string) {
+  calendarOn();
   await ctx.assertCan(["meetings.meeting.edit"]);
-  const meeting = need(ctx, id);
-  const sequence = meeting.sequence + 1;
-  const saved = ctx.db.put("meetings", { ...meeting, status: "cancelled", sequence, rescheduleSequence: sequence });
-  sendToGuests(ctx, saved, {
-    recipients: saved.attendees,
-    method: "CANCEL",
-    action: "Cancelled",
-    sequence,
-    status: "CANCELLED",
-  });
+  const before = changeable(ctx, sight, id);
+  refuseIf(cancelProblem(before));
+  const saved = saveMeeting(ctx, memo, cancelledMeeting(before));
+  deliver(ctx, saved, sendPlan("cancel", saved, { invitesOn: invitesOn() }));
+  syncReminder(ctx, saved);
   ctx.audit({
     category: "data",
     action: "Cancelled meeting",
-    target: meeting.title,
-    before: "confirmed",
-    after: "cancelled",
+    target: meetingAuditTarget(before),
+    before: before.status,
+    after: saved.status,
   });
-  return saved;
+  return shapedFor(sight, saved);
 }
 
-/** Removes one guest: they get a CANCEL, everyone else keeps their answer (ADR 0021). */
-export async function removeGuest(ctx: ActionContext, meetingId: string, attendeeId: string) {
+/**
+ * Takes one guest off a meeting (meetings.md sends table; ADR 0051), as the API's `removeGuest`:
+ * only while `meetings.invites` is on (S4), only someone who may change it, never the organiser and
+ * never on a cancelled meeting. SEQUENCE rises by one and only that guest gets a CANCEL.
+ */
+export async function removeGuest(
+  ctx: ActionContext,
+  { sight, memo }: MeetingScope,
+  meetingId: string,
+  attendeeId: string,
+) {
+  calendarOn();
+  invitesSwitchedOn();
   await ctx.assertCan(["meetings.meeting.edit"]);
-  const meeting = need(ctx, meetingId);
-  const guest = meeting.attendees.find((a) => a.id === attendeeId);
-  if (!guest) throw new DemoRuleError("This guest is not on the meeting.");
-  const sequence = meeting.sequence + 1;
-  const saved = ctx.db.put("meetings", {
-    ...meeting,
-    sequence,
-    attendees: meeting.attendees.filter((a) => a.id !== attendeeId),
-  });
-  sendToGuests(ctx, saved, { recipients: [guest], listed: [guest], method: "CANCEL", action: "Removed", sequence });
+  const before = changeable(ctx, sight, meetingId);
+  const guest = before.attendees.find((a) => a.id === attendeeId);
+  if (!guest) throw new DemoRuleError(GUEST_GONE);
+  refuseIf(removeGuestProblem(before, guest));
+  const saved = saveMeeting(ctx, memo, withoutGuest(before, guest));
+  deliver(ctx, saved, sendPlan("remove", saved, { invitesOn: invitesOn(), only: guest }));
+  syncReminder(ctx, saved);
   ctx.audit({
     category: "data",
     action: "Removed meeting guest",
-    target: meeting.title,
-    before: guest.name,
+    target: meetingAuditTarget(before),
+    before: guestAuditName(guest, before),
     after: null,
   });
-  return saved;
+  return shapedFor(sight, saved);
 }
 
-/** Records a reply and tells the organiser; a reply to an older version is kept but changes nothing (ADR 0021). */
-function applyReply(
+/**
+ * Records one guest's checked answer (meetings.md rules 7 and 8; `replyOutcome`): logged whatever
+ * it does, saved unless it is stale, the organiser told unless they left, and the reminder re-synced
+ * when a request was confirmed or cancelled by it. Every answer forgets the meeting's last move, as
+ * its audit entry would on the API.
+ */
+function recordAnswer(
   ctx: ActionContext,
+  memo: MeetingMoveMemo,
   meeting: Meeting,
-  attendee: Attendee,
+  guest: Attendee,
   reply: ReplyInput,
   sequence: number,
-): Meeting {
-  const stale = sequence < meeting.rescheduleSequence;
+): ReplyOutcome {
+  // `replyProblem` has passed, so the answer is Accept, Maybe or Decline.
+  const outcome = replyOutcome(meeting, guest, reply as ReplyAnswer, {
+    sequence,
+    respondedAt: instantToZoned(new Date(), meeting.timeZone),
+  });
   const log: MeetingResponse = {
     id: ctx.newId("mres"),
     meetingId: meeting.id,
-    attendeeId: attendee.id,
-    method: reply.proposal ? "counter" : "reply",
-    partStat: reply.partStat,
+    attendeeId: guest.id,
+    method: outcome.method,
+    partStat: outcome.partStat,
     proposedStart: reply.proposal?.start ?? null,
     note: reply.note,
     sequence,
     at: ctx.now,
-    stale,
+    stale: outcome.stale,
   };
   ctx.db.put("meetingResponses", log);
-  if (stale) return meeting;
-  const updated = {
-    ...attendee,
-    partStat: reply.partStat,
-    respondedAt: ctx.now,
-    respondedSequence: sequence,
-    note: reply.note,
-    proposal: reply.proposal ? { ...reply.proposal, status: "pending" as const } : attendee.proposal,
-  };
-  let saved: Meeting = { ...meeting, attendees: meeting.attendees.map((a) => (a.id === attendee.id ? updated : a)) };
-  if (saved.kind === "request" && saved.status === "tentative") {
-    if (reply.partStat === "accepted") saved = { ...saved, status: "confirmed", sequence: saved.sequence + 1 };
-    if (reply.partStat === "declined") saved = { ...saved, status: "cancelled", sequence: saved.sequence + 1 };
-  }
-  ctx.db.put("meetings", saved);
-  const owner = ctx.db.get("users", meeting.ownerUserId);
-  if (owner) {
-    const word = reply.proposal ? "proposed a new time" : reply.partStat;
-    notify(ctx, {
-      key: reply.proposal ? "meeting.proposed" : "meeting.reply",
-      source: { type: "meeting", id: meeting.id, href: "/meetings" },
-      values: {
-        "guest.name": attendee.name,
-        "guest.reply": reply.partStat,
-        "meeting.title": meeting.title,
-        "meeting.when": whenText(reply.proposal?.start ?? meeting.start),
-      },
-      to: [{ kind: "user", id: owner.id, name: owner.name, email: owner.email }],
-      inApp: inAppFor([owner], `${attendee.name} ${word}: ${meeting.title}`),
-      version: `${attendee.id}-${ctx.now}`,
-      restricted: meeting.private,
-    });
-  }
-  return saved;
+  memo.forget(meeting.id);
+  if (!outcome.stale) ctx.db.put("meetings", outcome.meeting);
+  tellOrganiser(ctx, meeting, guest, outcome, log.id, reply.proposal?.start ?? null);
+  if (outcome.statusChange) syncReminder(ctx, outcome.meeting);
+  return outcome;
 }
 
-/** The signed-in person answers an invitation or request (spec E). */
-export async function respondToMeeting(ctx: ActionContext, meetingId: string, reply: ReplyInput) {
+/** Tells the organiser a guest answered (meetings.md "Events": `meeting.reply` or `meeting.proposed`), unless they left. */
+function tellOrganiser(
+  ctx: ActionContext,
+  meeting: Meeting,
+  guest: Attendee,
+  outcome: ReplyOutcome,
+  responseId: string,
+  proposedStart: string | null,
+): void {
+  const organiser = ctx.db.get("users", meeting.ownerUserId);
+  if (!outcome.event || organiser?.status !== "active") return;
+  const word = outcome.event === "meeting.proposed" ? "proposed a new time" : outcome.partStat;
+  notify(ctx, {
+    key: outcome.event,
+    source: { type: "meeting", id: meeting.id, href: "/meetings" },
+    values: {
+      "guest.name": guest.name,
+      "guest.reply": outcome.partStat,
+      "meeting.title": meeting.title,
+      "meeting.when": meetingWhenText(proposedStart ?? meeting.start),
+    },
+    to: [{ kind: "user", id: organiser.id, name: organiser.name, email: organiser.email }],
+    inApp: [{ userId: organiser.id, title: `${guest.name} ${word}: ${meeting.title}` }],
+    version: responseId,
+    restricted: meeting.private,
+  });
+}
+
+/**
+ * The reader answers their own invitation or request (meetings.md "Answer", rules 7 and 8; ADR
+ * 0051), as the API's `respond`: only while `meetings.invites` is on (S4), only a staff guest who
+ * is not the organiser, never on a cancelled meeting, and only an answer `replyProblem` allows.
+ */
+export async function respondToMeeting(
+  ctx: ActionContext,
+  { sight, memo }: MeetingScope,
+  id: string,
+  reply: ReplyInput,
+) {
+  calendarOn();
+  invitesSwitchedOn();
   await ctx.assertCan(["meetings.meeting.view"]);
-  const meeting = need(ctx, meetingId);
-  const me = meeting.attendees.find((a) => a.kind === "staff" && a.id === ctx.actor.id);
-  if (!me) throw new DemoRuleError("You are not on this meeting.");
-  if (reply.proposal && (!meeting.allowProposals || meeting.recurrence !== "none"))
-    throw new DemoRuleError("This meeting does not take proposed times.");
+  const meeting = visible(ctx, sight, id);
+  const guest = staffGuestOf(meeting, sight.viewer.userId);
+  if (!guest || isOrganiser(meeting, sight.viewer.userId)) throw new DemoRuleError(MEETING_REFUSALS.notAGuest);
+  refuseIf(replyProblem(meeting, reply, ctx.today));
+  const outcome = recordAnswer(ctx, memo, meeting, guest, reply, meeting.sequence);
   ctx.audit({
     category: "data",
     action: "Answered meeting",
-    target: meeting.title,
-    before: me.partStat,
-    after: reply.partStat,
+    target: meetingAuditTarget(meeting),
+    before: guest.partStat,
+    after: outcome.partStat,
   });
-  return applyReply(ctx, meeting, me, reply, meeting.sequence);
+  return shapedFor(sight, outcome.meeting);
 }
 
-/** Stands in for a guest's email reply, from the Outbox (spec E, ADR 0021). */
-export async function simulateReply(ctx: ActionContext, outboxId: string, reply: ReplyInput) {
-  const message = ctx.db.list("outboxMessages").find((m) => m.id === outboxId);
+/**
+ * Stands in for a guest's email reply, from the Outbox (demo only, B.6 item 1; meetings.md rule 8):
+ * only while `meetings.invites` is on (S4), for the organiser or a holder of `settings.outbox.view`
+ * who may see the meeting, from the invite's own guest, with an answer `replyProblem` allows (a
+ * proposal only where the meeting takes one), at the SEQUENCE the invite was sent with (rule 7).
+ */
+export async function simulateReply(
+  ctx: ActionContext,
+  { sight, memo }: MeetingScope,
+  outboxId: string,
+  reply: ReplyInput,
+) {
+  calendarOn();
+  invitesSwitchedOn();
+  const message = ctx.db.get("outboxMessages", outboxId);
   if (!message || message.eventKey !== "meeting.invite")
     throw new DemoRuleError("Only a meeting invite can be answered.");
-  const meeting = need(ctx, message.sourceId);
-  await ctx.assertCan(meeting.ownerUserId === ctx.actor.id ? ["meetings.meeting.view"] : ["settings.outbox.view"]);
-  const attendee = meeting.attendees.find((a) => a.id === message.recipient.id);
-  if (!attendee) throw new DemoRuleError("This guest is no longer on the meeting.");
-  const saved = applyReply(
-    ctx,
-    meeting,
-    attendee,
-    reply,
-    Number(message.values["meeting.sequence"] ?? meeting.sequence),
+  const meeting = ctx.db.get("meetings", message.sourceId);
+  if (!meeting || !seesMeeting(sight.viewer, meeting)) throw new DemoRuleError(MEETING_GONE);
+  await ctx.assertCan(isOrganiser(meeting, sight.viewer.userId) ? ["meetings.meeting.view"] : ["settings.outbox.view"]);
+  const guest = meeting.attendees.find(
+    (a) => a.id === message.recipient.id && OUTBOX_RECIPIENT_KIND[a.kind] === message.recipient.kind,
   );
+  if (!guest) throw new DemoRuleError("This guest is no longer on the meeting.");
+  refuseIf(replyProblem(meeting, reply, ctx.today));
+  const sent = Number(message.values["meeting.sequence"]);
+  const outcome = recordAnswer(ctx, memo, meeting, guest, reply, Number.isInteger(sent) ? sent : meeting.sequence);
   ctx.audit({
     category: "data",
     action: "Simulated guest reply",
-    target: meeting.title,
-    before: attendee.name,
-    after: reply.partStat,
+    target: meetingAuditTarget(meeting),
+    before: guestAuditName(guest, meeting),
+    after: outcome.partStat,
   });
-  return saved;
+  return shapedFor(sight, outcome.meeting);
 }
 
-/** The organiser accepts or declines a proposed time. Accepting moves the meeting and asks everyone again (ADR 0021). */
-export async function decideProposal(ctx: ActionContext, meetingId: string, attendeeId: string, accept: boolean) {
-  await ctx.assertCan(["meetings.meeting.edit"]);
-  const meeting = need(ctx, meetingId);
-  const guest = meeting.attendees.find((a) => a.id === attendeeId);
-  if (!guest?.proposal || guest.proposal.status !== "pending")
-    throw new DemoRuleError("There is no proposal waiting from this guest.");
-  if (!accept) {
-    const saved = ctx.db.put("meetings", {
-      ...meeting,
-      attendees: meeting.attendees.map((a) =>
-        a.id === attendeeId ? { ...a, proposal: { ...a.proposal!, status: "declined" as const } } : a,
-      ),
-    });
-    sendToGuests(ctx, saved, {
-      recipients: [guest],
-      listed: [guest],
-      method: "DECLINECOUNTER",
-      action: "Proposal declined",
-      sequence: saved.sequence,
-    });
-    return saved;
-  }
-  const sequence = meeting.sequence + 1;
-  const saved = ctx.db.put("meetings", {
-    ...meeting,
-    start: guest.proposal.start,
-    durationMin: guest.proposal.durationMin,
-    sequence,
-    rescheduleSequence: sequence,
-    attendees: meeting.attendees.map((a) => ({
-      ...a,
-      partStat: "needs-action" as const,
-      respondedAt: null,
-      proposal: a.id === attendeeId ? { ...a.proposal!, status: "accepted" as const } : null,
-    })),
-  });
-  sendToGuests(ctx, saved, {
-    recipients: saved.attendees,
-    method: "REQUEST",
-    action: "Updated",
-    sequence,
-    status: "CONFIRMED",
-  });
-  ctx.audit({
-    category: "data",
-    action: "Accepted proposed time",
-    target: meeting.title,
-    before: meeting.start.replace("T", " "),
-    after: saved.start.replace("T", " "),
-  });
-  return saved;
-}
-
-/** Any user asks someone to meet (spec E): tentative until they accept. Between staff there is no .ics (ADR 0021). */
-export async function requestMeeting(ctx: ActionContext, input: MeetingRequestInput): Promise<Meeting> {
+/**
+ * Asks a colleague to meet (meetings.md "Request a meeting"; ADR 0051), as the API's `request`:
+ * only with `meetings.requests` and `meetings.invites` on, in the company's US zone, with a request
+ * `meetingRequestProblem` allows, and only someone `colleaguesFor` offers the reader (safer than the
+ * API, which checks the colleague only: the demo also needs the portal, as Request does on screen).
+ * Half an hour, "To be agreed", tentative until they answer, with the server's flags; they are told
+ * with `meeting.requested`, not a calendar file.
+ */
+export async function requestMeeting(ctx: ActionContext, { sight, company }: MeetingScope, input: MeetingRequestInput) {
+  calendarOn();
+  if (!featureOn("meetings.requests") || !invitesOn()) throw new DemoRuleError(SWITCHED_OFF);
   await ctx.assertCan(["meetings.meeting.create"]);
-  if (!input.title.trim()) throw new DemoRuleError("Say what the meeting is about.");
-  const other = ctx.db.get("users", input.withUserId);
-  if (!other || other.id === ctx.actor.id) throw new DemoRuleError("Choose who to meet with.");
-  const guest = (id: string, name: string, email: string, partStat: Attendee["partStat"]): Attendee => ({
-    ...blankResponse,
-    kind: "staff",
-    id,
-    name,
-    email,
-    partStat,
-  });
+  const zone = meetingZone(ctx);
+  refuseIf(meetingRequestProblem(input, { zone, today: ctx.today }));
+  const asked = colleaguesFor(ctx.db, company, sight).some((colleague) => colleague.id === input.withUserId)
+    ? ctx.db.get("users", input.withUserId)
+    : undefined;
+  if (!asked) throw new DemoRuleError(MEETING_REFUSALS.chooseColleague);
+  const settings = meetingSettings(ctx);
+  const { actor } = ctx;
+  const guest = newAttendee({ kind: "staff", id: asked.id, name: asked.name, email: asked.email });
   const meeting: Meeting = {
     id: ctx.newId("mtg"),
     title: input.title.trim(),
     start: input.start,
-    durationMin: input.durationMin,
-    location: input.location,
-    attendees: [
-      guest(ctx.actor.id, ctx.actor.name, ctx.actor.email, "accepted"),
-      guest(other.id, other.name, other.email, "needs-action"),
-    ],
+    durationMin: MEETING_REQUEST_DEFAULTS.durationMin,
+    location: MEETING_REQUEST_DEFAULTS.location,
+    attendees: [newAttendee({ kind: "staff", id: actor.id, name: actor.name, email: actor.email }, true), guest],
     recurrence: "none",
-    reminderMin: ctx.db.settings.meetings.defaultReminderMin,
-    ownerUserId: ctx.actor.id,
+    reminderMin: settings.defaultReminderMin,
+    ownerUserId: actor.id,
     notes: input.note,
-    timeZone: ctx.db.settings.localization.region.timeZone,
+    timeZone: zone,
     until: null,
     exceptions: [],
     uid: crypto.randomUUID(),
@@ -498,126 +608,56 @@ export async function requestMeeting(ctx: ActionContext, input: MeetingRequestIn
     status: "tentative",
     kind: "request",
     private: input.private,
-    hideGuestList: input.private,
-    allowProposals: true,
+    ...requestFlags(input.private, settings, sight.access.permissions.has("meetings.meeting.edit")),
   };
   ctx.db.put("meetings", meeting);
   notify(ctx, {
     key: "meeting.requested",
     source: { type: "meeting", id: meeting.id, href: "/meetings" },
-    values: { "actor.name": ctx.actor.name, "meeting.title": meeting.title, "meeting.when": whenText(meeting.start) },
-    to: [{ kind: "user", id: other.id, name: other.name, email: other.email }],
-    inApp: inAppFor([other], `${ctx.actor.name} asked to meet: ${meeting.title}`),
+    values: {
+      "actor.name": actor.name,
+      "meeting.title": meeting.title,
+      "meeting.when": meetingWhenText(meeting.start),
+    },
+    to: [{ kind: "user", id: asked.id, name: asked.name, email: asked.email }],
+    inApp: [{ userId: asked.id, title: `${actor.name} asked to meet: ${meeting.title}` }],
+    version: "request",
     restricted: meeting.private,
   });
-  ctx.audit({ category: "data", action: "Requested meeting", target: meeting.title, before: null, after: other.name });
-  return meeting;
+  ctx.audit({
+    category: "data",
+    action: "Requested meeting",
+    target: meetingAuditTarget(meeting),
+    before: null,
+    after: guestAuditName(guest, meeting),
+  });
+  return shapedFor(sight, meeting);
 }
 
 /**
- * Moves or resizes a meeting occurrence (spec F) and tells the guests (ADR 0021): one occurrence goes
- * out with RECURRENCE-ID, "this and following" splits into a new UID, and "all" updates the series.
+ * "Add to my calendar" (meetings.md sends table; the API's `calendarFile`): a PUBLISH file with no
+ * guests, at the current UID and SEQUENCE, for a meeting the reader may see and that is not
+ * cancelled. The ORGANIZER address goes only to a reader who may read guests' addresses
+ * (`seesGuestAddresses`), so the file never gives an address the meeting hides from them.
  */
-export async function rescheduleMeeting(ctx: ActionContext, move: MeetingMove) {
-  await ctx.assertCan(["meetings.meeting.edit"]);
-  const meeting = need(ctx, move.meetingId);
-  if (move.durationMin < 15) throw new DemoRuleError("A meeting lasts at least 15 minutes.");
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(move.start)) throw new DemoRuleError("Enter a date and a start time.");
-  const moved = moveOccurrence(
-    meeting,
-    move.planned,
-    { start: move.start, durationMin: move.durationMin },
-    move.scope,
-    ctx.newId("mtg"),
-  );
-  const sequence = meeting.sequence + 1;
-  const saved = moved.map((m) =>
-    m.id === meeting.id
-      ? { ...m, sequence, rescheduleSequence: move.scope === "this" ? meeting.rescheduleSequence : sequence }
-      : { ...m, uid: crypto.randomUUID(), sequence: 0, rescheduleSequence: 0 },
-  );
-  for (const m of saved) ctx.db.put("meetings", m);
-  const conflicts = attendeeConflicts(ctx.db.list("meetings"), {
-    meetingId: meeting.id,
-    planned: move.planned,
-    start: move.start,
-    durationMin: move.durationMin,
-    attendees: meeting.attendees,
-  });
-  ctx.audit({
-    category: "data",
-    action: "Moved meeting",
-    target: meeting.title,
-    before: move.planned.replace("T", " "),
-    after: `${move.start.replace("T", " ")}, ${move.durationMin} min (${move.scope === "this" ? "this event" : move.scope === "following" ? "this and following" : "all events"})`,
-  });
-  for (const m of saved) {
-    if (move.scope === "this") {
-      sendToGuests(ctx, m, {
-        recipients: m.attendees,
-        method: "REQUEST",
-        action: "Updated",
-        sequence,
-        status: "CONFIRMED",
-        recurrenceId: move.planned,
-        start: move.start,
-        durationMin: move.durationMin,
-      });
-    } else {
-      sendToGuests(ctx, m, {
-        recipients: m.attendees,
-        method: "REQUEST",
-        action: "Updated",
-        sequence: m.sequence,
-        status: "CONFIRMED",
-      });
-    }
-  }
-  const undo: MeetingUndo = {
-    previous: meeting,
-    createdIds: saved.filter((m) => m.id !== meeting.id).map((m) => m.id),
-  };
-  return { meetings: saved, conflicts, undo };
-}
-
-/** Puts a meeting back as it was before a move, removing a series the move split off. */
-export async function undoReschedule(ctx: ActionContext, undo: MeetingUndo): Promise<Meeting> {
-  await ctx.assertCan(["meetings.meeting.edit"]);
-  for (const id of undo.createdIds) ctx.db.remove("meetings", id);
-  const current = ctx.db.get("meetings", undo.previous.id);
-  const sequence = (current?.sequence ?? undo.previous.sequence) + 1;
-  const restored = ctx.db.put("meetings", { ...undo.previous, sequence, rescheduleSequence: sequence });
-  sendToGuests(ctx, restored, {
-    recipients: restored.attendees,
-    method: "REQUEST",
-    action: "Updated",
-    sequence,
-    status: "CONFIRMED",
-  });
-  ctx.audit({
-    category: "data",
-    action: "Undid meeting move",
-    target: undo.previous.title,
-    before: null,
-    after: undo.previous.start.replace("T", " "),
-  });
-  return restored;
-}
-
-/** Copy for the person's own calendar (ADR 0021): METHOD:PUBLISH, no attendees, same UID and SEQUENCE. */
 export async function meetingCalendarFile(
   ctx: ActionContext,
+  { sight }: MeetingScope,
   meetingId: string,
 ): Promise<{ fileName: string; text: string }> {
+  calendarOn();
   await ctx.assertCan(["meetings.meeting.view"]);
-  const meeting = need(ctx, meetingId);
+  const meeting = visible(ctx, sight, meetingId, false);
+  const organizer = organizerOf(ctx.db, meeting);
+  const showsAddress = seesGuestAddresses(sight.viewer, meeting, sight.seesParty);
   const text = meetingIcs({
     method: "PUBLISH",
     meeting,
     sequence: meeting.sequence,
     stamp: new Date(),
-    organizer: organizerOf(ctx, meeting),
+    organizer: showsAddress ? organizer : { ...organizer, email: "" },
     attendees: [],
+    prodId: DEMO_PRODID,
   });
-  return { fileName: `${meeting.title.replace(/[^\w ]+/g, "")}.ics`, text };
+  return { fileName: icsFileName(meeting.title), text };
 }

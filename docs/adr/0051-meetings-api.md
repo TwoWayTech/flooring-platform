@@ -1,7 +1,8 @@
-# ADR 0051: Meetings on the API, parts 1 and 2 (calendar, guests, invites, answers, requests, calendar files and reminders; moves, undo, proposal decisions and conflicts)
+# ADR 0051: Meetings on the API, parts 1 to 3 (calendar, guests, invites, answers, requests, calendar files and reminders; moves, undo, proposal decisions and conflicts; the web on the API)
 
 - **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15, putting meetings first, and was asleep during the build. The rule for that run: follow meetings.md as the approved behaviour, deviate only in the safer direction and record each deviation in docs/blueprint-delta.md, and defer what can't be done safely. The safer deviations and the questions under "For the owner" are open for the owner's review.
 - **Part 2** (moves, undo, proposal decisions and conflicts) was added on 2026-11-15 under the same rule, on branch `feat/meetings-api-moves` (PR #35). It is the section "Part 2 (2026-11-15)" below. Where it changes a part 1 decision, the part 1 text says so.
+- **Part 3** (the web on the API: the Meetings page, its drawer and dialogs, and My meetings in api mode, and the demo store on the shared rules) was added on 2026-11-15 under the same rule, on branch `feat/meetings-web-api` (PR #37). It is the section "Part 3 (2026-11-15)" below. Its one API behaviour change is the undo check order; where it changes a part 1 or part 2 text, that text says so.
 - **Context:**
   - docs/real-build-plan.md row 14, "Meetings, invites and .ics": spec meetings.md, depends on module 5 (the notifications core), week 18 in the schedule.
   - meetings.md describes the demo: a calendar in both products, guests from one search or by email, an Outbox row and `.ics` per guest (ADR 0021), answers and proposals, requests, reminders and Settings → Meetings.
@@ -346,11 +347,11 @@
 - **The record:** the "Moved meeting" entry keeps what undo needs, in times only:
   - before: `{ planned, sequence, series: { start, startsAt, durationMin, until, exceptions } }`, where `startsAt` is the stored instant;
   - after: `{ start, durationMin, scope, sequence, createdIds, sends }`.
-- **The checks,** in one transaction after `lockChangeable`:
+- **The checks,** in one transaction after `lockChangeable`, in this order since part 3 (the SEQUENCE before the mover; "Part 3", "API change"):
   1. The meeting's newest audit entry, by time and then id, must be "Moved meeting" and read back through a strict Zod schema, and the meeting must not be cancelled. Otherwise 409 `meeting_changed`. Every change to a meeting writes an entry under its lock, so this means nothing changed since the move, and the guests' answers are those the move left.
-  2. The entry's actor must be the caller: 403 "Only the person who moved this meeting can undo the move."
-  3. The entry must be at most 5 minutes old by the database clock (`UNDO_WINDOW_MINUTES`; entries are stamped with `clock_timestamp()`): 409 `undo_expired`.
-  4. The current SEQUENCE must be the one the move saved, and the body's `sequence` the one before it: 409 `meeting_changed`. So a toast for an older move can't undo a newer one.
+  2. The current SEQUENCE must be the one the move saved, and the body's `sequence` the one before it: 409 `meeting_changed`. So a toast for an older move can't undo a newer one, and since part 3 a stale toast after a colleague's newer move answers 409, as docs/api-contract.md says, not 403.
+  3. The entry's actor must be the caller: 403 "Only the person who moved this meeting can undo the move."
+  4. The entry must be at most 5 minutes old by the database clock (`UNDO_WINDOW_MINUTES`; entries are stamped with `clock_timestamp()`): 409 `undo_expired`.
   5. No undo may leave an occurrence moved on its own behind (`undoneSeriesProblem`, the same `leftBehindProblem` as a move, on the database clock): otherwise 400 `invalid_request`, and nothing is written (review round 3 of PR #35). Since the final review of PR #35 this covers undoing "this event" too, because it sends a series REQUEST; its message points to moving the occurrence back with This event, which sends none.
   6. A series the move split off is locked after the original. It must be live, not cancelled, at SEQUENCE 0 and changeable by the caller, with this move's "Split meeting series" by the caller as its newest entry. Otherwise 409 `meeting_changed`, also when the caller can no longer change it.
 - **The restored state** comes only from the record: the stored instant, the length, `until` and the exceptions, with SEQUENCE + 1 and `rescheduleSequence` set to it (sends table). The guests are untouched.
@@ -492,14 +493,11 @@
 - **Calendars may keep stray overrides:** after an "all" move, a split (the old series' overrides past its new UNTIL, the dragged occurrence's included) or an undo, a guest's calendar may keep an override under a RECURRENCE-ID that is no longer an instance (Google). No valid message can cancel it.
 - **Ended exceptions are not sent again,** so a calendar that drops a series' overrides on an update may show a past moved occurrence at its series time. Since review round 3 of PR #35 that series time is always past too: a change that would leave it ahead is refused.
 - **A held occurrence can hold a series back:** while an occurrence moved on its own has taken place and its date in the series is still ahead, the series can't be edited at all (time, length, rule, title, place, notes or reminder) and every undo is refused, "this event" included, until that date's slot ends (at most the length of the shift for a held-late occurrence, and up to 31 days for one held early; final review of PR #35). "This event" moves still work.
-- **"All events" can't start from an occurrence moved on its own:** the mover drags another occurrence, or moves that one with "This event" (final review of PR #35). Until part 3 the screens don't say so before the drop.
+- **"All events" can't start from an occurrence moved on its own:** the mover drags another occurrence, or moves that one with "This event" (final review of PR #35).
 - **The daily caps can block a move or an edit:** a series with many exceptions and guests sends one REQUEST per guest per surviving exception, after a move and after any edit (review round 2 of PR #35). At 50 guests, the 500 meeting emails a day allow about nine, so moving or editing such a series is refused on a busy day rather than half sent.
 - **Undo is short:** it is offered for 5 minutes, to the mover only, and only for the meeting's last change. Anything later is a new move.
 - **Undo relies on every change being audited under the meeting's lock.** A future write path that changes a meeting without an entry would not be seen by check 1. The SEQUENCE check still catches any change that raises it.
 - **"Busy" still says something:** the mover already reads the guest on the moved meeting, and learns that the guest is booked at that start, and how many of their meetings overlap it.
-- **The demo keeps its own copies** of conflicts and moves (`attendeeConflicts`, `rescheduleMeeting`), with self-warnings and private titles, until part 3 moves DemoStore onto the shared rules (the same overlap part 1 accepted, critic K).
-- **A proposal decided on the API** is not seen by the screens until part 3.
-- **The start bound is on the API only:** the demo's screens take any start until part 3 moves DemoStore onto the shared rules.
 - **An occurrence moved earlier by more than 31 days** is not found on its new day, by the calendar or by a conflict check, as before: the window rule keeps the walk's reach (`MOVED_EARLIER_REACH_DAYS`). Since review round 3 of PR #35 no move or edit can make one; only a row written by hand could hold one.
 
 ### Consequences (part 2)
@@ -516,21 +514,236 @@
   - the `isolation` and `permissions` route inventories pick the new routes up.
   - There are no Playwright tests, because no screen changed.
 
+## Part 3 (2026-11-15): the web on the API
+
+- **Context:**
+  - meetings.md "Views", "Who uses it", "Move or resize", "Answer", "Propose a new time", "Request a meeting" and "Edge cases and known limits";
+  - the "Later parts" list of parts 1 and 2 (what part 3 must do, critic B5 included);
+  - the session logs' part 3 items, and the STATUS note "PR #35 final review notes": a stale undo toast after someone else's newer move answered 403, where docs/api-contract.md says 409 `meeting_changed`;
+  - the plan and log: docs/sessions/2026-11-15-1210-b-meetings-web-api.md.
+- In api mode the Meetings page, its drawer and dialogs, and My meetings read and write through the meetings routes of parts 1 and 2. The demo store follows the same shared rules, so both modes refuse and shape alike.
+- No table, migration or dependency change, and no behaviour change in core/auth or core/tenancy. The one API behaviour change is the undo check order ("API change" below). Part 4 stays out.
+
+### The ApiClient (`apps/web/src/lib/api/http/api-methods.ts`, block "Meetings (ADR 0051 part 3)")
+
+| Method | Route | Body |
+| --- | --- | --- |
+| `meetingsData()` (new) | `GET /meetings`; `GET /meeting-guests` (403 or 404 → no guests); `GET /me/meetings` only while `meetings.requests` and `meetings.invites` are on (403 or 404 → none); `GET /auth/context` only when `/me/meetings` gave no answer | none. Answers `{ viewerUserId, meetings, guests, colleagues, newGuestHandling: "none" }` |
+| `myMeetings()` (new) | `GET /me/meetings` | none. A 403 (no key, or the module off) or 404 (`meetings.calendar` or `hr.portal` off) reads as `{ viewerUserId: "", meetings: [], colleagues: [] }` |
+| `createMeeting` | `POST /meetings` | the fields the server reads; a guest as `{ kind, id }`, a new guest as `{ email, name }` |
+| `updateMeeting` | `PATCH /meetings/:id` | only the patch keys the screen set, of the six |
+| `cancelMeeting` | `POST /meetings/:id/cancel` | none |
+| `removeGuest` | `DELETE /meetings/:id/attendees/:attendeeId` | none |
+| `respondToMeeting` | `POST /meetings/:id/response` | `{ partStat, note, proposal: { start, durationMin, note } \| null }` |
+| `decideProposal` | `POST /meetings/:id/attendees/:attendeeId/proposal` | `{ accept }` |
+| `requestMeeting` | `POST /meeting-requests` | `{ withUserId, title, start, note, private }`; the server sets the length and place |
+| `meetingCalendarFile` | `GET /meetings/:id/calendar.ics` | none |
+| `rescheduleMeeting` | `POST /meetings/:id/reschedule` | `{ meetingId, planned, start, durationMin, scope }` |
+| `undoReschedule` | `POST /meetings/:id/reschedule/undo` | `{ sequence: undo.previous.sequence }` and nothing else |
+
+- **Bodies send only what the server reads.** No name, address, answer or "save under customer" a screen holds is sent, and the organiser is never sent as a guest. Ids in paths are escaped.
+- **These stay on DemoStore in api mode:**
+  - `simulateReply` (never on the API);
+  - `list("meetings")` and `get("meetings")`, whose only reader is Simulate reply on the demo Outbox's rows (they are not in `SERVED_LISTS`);
+  - `updateSettings("meetings")`, since the page is hidden in api mode;
+  - the Outbox and the bell, which are the notifications module's screens.
+
+### Who is looking
+- **The reader's id comes from the server:** `viewerUserId` of `GET /me/meetings` when it answered, otherwise `user.id` of `GET /auth/context`. It never comes from the demo persona's fixture id. It is read on every load, not remembered, so a new session can't reuse an old id.
+- **The reader's keys and scope** come from the shell (`useWorkspace().access`, `useMeetingViewer`). In api mode these are still DemoStore's roles until `GET /company` and the roles move (risk R1). The server decides every action again.
+
+### What the screens offer (`apps/web/src/features/meetings/meeting-rights.ts`)
+- **`meetingRights(viewer, shown)`**, on the meeting as the server shaped it:
+  - drag, resize, Reschedule, Edit details and Cancel meeting need a meeting that is not cancelled and `changeableAsShown`;
+  - Remove also needs `meetings.invites` on, and is never offered for the organiser;
+  - Accept time and Decline time also need invites on and `decidableAsShown` (the organiser only);
+  - the answer buttons need a meeting that is not cancelled, invites on, and a staff guest who is not the organiser;
+  - the guest list shows to the organiser, to anyone who may change the meeting, and otherwise only when the list is not hidden.
+- **`changeableAsShown`** (`packages/shared/src/meetings/access.ts`):
+  - for the organiser, `canChangeMeeting` with `shownParty`: a linked guest shown by kind with no address is one they can't read;
+  - for anyone else, `canChangeMeeting` with every guest readable (their own keys, scope and the private rule), and the organiser's address on the shaped list (`organiserAddressShown`).
+- **Why that is safe (the M1 proof):**
+  - For a non-organiser, `meetingForViewer` gives other guests' addresses exactly when the server found they may change the meeting (`seesGuestAddresses`, which is `canChangeMeeting` on the stored meeting with the reader's sight).
+  - The organiser's staff row is never a hidden party. It keeps its address when the reader may change the meeting, and otherwise it is blanked, or left out under a hidden list.
+  - So the organiser's address is shown exactly when the server would allow the change, given a stored organiser address. Control users always have one, and every seeded and fixture meeting has its organiser's row with an address. An empty address fails closed.
+  - The screen can therefore only hide a control the server would allow, never offer one it refuses. A property test proves this over every flooring role for five people, six meetings (hidden lists, private and a series included) and three sights. The two agree everywhere but one case: the organiser of a meeting with a readable linked guest named like its kind ("Customer") with no address loses the button.
+  - A mutation check (the address test removed) failed three tests.
+- **`meetingOffers`:**
+  - New meeting needs `meetings.meeting.create`;
+  - the guest picker, "Hide the guest list from guests" and "You're the organiser." show only while `meetings.invites` is on, and with it off the form sends no guests (it still sends the default hidden-list value);
+  - Request needs `meetings.requests` and `meetings.invites` on and at least one colleague to ask, from the server's `colleagues`.
+- **The move dialog** (`scope-choices.ts`, `use-reschedule.tsx`):
+  - it runs the shared `moveProblem` for each scope with the drop's start and length and the browser's today and clock, and offers only the scopes it allows. "This event" is selected when it is offered;
+  - each refused scope is a muted line "{label}: {reason}" in the rule's own words. With none left, the dialog shows only the reasons and Cancel;
+  - a one-off still moves at once as `all`, and the server decides again.
+- **After a move** there is one toast, "{title} moved", with Undo.
+  - When guests are booked elsewhere then, that same toast is a warning whose description names them: "Also booked then: Priya Natarajan (Busy, 3:00 PM)" (`conflict-warning.ts`). The API's `title` is shown as it comes, and the screen never fills one in.
+  - The toast takes pointer events back, and a click on a toast does not close the drawer. The drawer is a modal sheet, so before this fix the Undo of a move made from the open drawer could not be clicked, and a second warning toast stacked over it.
+- **Undo** sends only `{ sequence }`. It shows "Move undone" or the refusal in the server's words, and an open drawer follows the meeting back.
+- **The drawer holds an occurrence key** (`current-occurrence.ts`), not a copy of the meeting:
+  - `occurrenceAt` finds the occurrence in the newest read. A one-off is rebuilt from the fresh meeting; a series occurrence is found by its planned time, with its exception's own time;
+  - `movedKey` follows a move made from the drawer ("this", "all", and "following" onto the split the answer holds). It builds the key with the shared `movedOccurrenceKey`, the rule the conflict check uses on the server and in the demo, so the drawer and the server always name the same occurrence (review round 3). The Reschedule form is keyed by the occurrence's time;
+  - the drawer waits for the re-read after a move or an Undo made from it (`DrawerTarget`, `followMove`, `drawerOccurrence`; review round 1). The screens' re-read only starts when the write answers, and on the API it answers later, so the read on screen then has neither an "all" shift's new times nor a split's new series, and after an Undo it still has the shifted series or the split. Until a newer read than that one answers, the drawer keeps showing the occurrence it showed; then it shows the moved one. The page tells reads apart by identity, and it notes the read on screen in a ref after each render, so a toast's Undo minutes later compares against the read then shown;
+  - the drawer closes once a newer read no longer has its occurrence (moved away by someone else, cancelled or removed), set while rendering, so a meeting that comes back stays closed.
+- **Request** lists the server's `colleagues`, the first chosen. Its dialog opens only while Request is offered, and Edit details closes itself if a re-read takes the change away.
+- **New meeting** takes its options from `GET /meeting-guests` and starts with no guests.
+  - "Save under customer" shows only when new guests become contacts and a readable customer is among the options; otherwise `customerId` is null. In api mode `newGuestHandling` is always "none", so it never shows.
+  - A colleague's address typed in Guests offers "Add guest by email", and the server makes it that colleague.
+- **My meetings** reads `myMeetings`:
+  - each row shows the API's next occurrence ("{date} at HH:mm"), the first 20, soonest first;
+  - Request shows only with a colleague to ask;
+  - the page and its tab are hidden with `meetings.calendar` off or without the company's meetings module.
+- **Settings → Meetings is demo-only** (`MenuItem.demoOnly`; `inThisBuild` in `apps/web/src/products/index.ts`):
+  - in api mode it is left out of the sidebar, settings home and nav, the palette, settings search and the access preview (`pageList`);
+  - its route calls `notFound()`. Inside the app shell Next shows the not-found page with status 200, as for any unknown address there (risk R14);
+  - why: the page would save to DemoStore while the API reads the stored group. Part 4 builds it on the API.
+
+### Re-reading after a write
+- `routeClient` gives every method factory a third argument, `changed`, and its `subscribe` hears both DemoStore's own changes and `changed`. Existing factories ignore it, so no other module changes.
+- **Every routed meetings write goes through `wrote`.** The screens read again after the server answered: a success, or a 400, 403, 404 or 409 refusal, since a refusal often means the screen was stale. A network failure, 401, 429 or 5xx triggers no re-read. The meetings queries keep their data when a re-read fails.
+- **The newest read wins:** `useApiQuery` drops an older read that answers after a newer one (`latestRun`). This applies to every screen, and only drops answers a newer read supersedes.
+
+### The demo store on the shared rules
+- **Files:** `demo/meeting-sight.ts` (who is looking, the shaped list, the guest options, the colleagues), `demo/meeting-sends.ts` (invites from `sendPlan`, and the reminder re-sync), `demo/meeting-moves.ts` (moves, undo, decisions and the undo memory) and a rewritten `demo/meeting-actions.ts`.
+- **One subject** (`meetingSightFor`): the signed-in person's id with the role's keys and scope, under View as the viewed role's, for the list, guest sight, the drawer and every action. Customers are read through that subject's data scope, a person at a customer through their customer, and suppliers through `readsSupplierGuests` and the record existing.
+- **`list("meetings")`** returns the meetings the reader may see, shaped and not cancelled, and none with `meetings.calendar` off. `get` and Simulate reply read the same list. `applyScope` now gives no meetings at all, so no other path reads them unshaped, and `FILTERS.meetings` is gone.
+- **Each action follows the API:**
+  - `meetings.calendar` on every action, and `meetings.invites` on removals, answers, decisions and Simulate reply;
+  - `changeRefusal` for edits, cancels, removals, moves, undo and decisions, and the `MEETING_REFUSALS` texts;
+  - the shared input, edit, cancel, move, undo, proposal, reply and request rules;
+  - guests resolved from the store's own records, only among the options `guestOptionsFor` offers. The organiser is dropped, and an active colleague's address becomes that colleague;
+  - the server's flags (`scheduleFlags`, `requestFlags`);
+  - sends through `sendPlan` and `exceptionResends`, and the reminder re-synced after every change;
+  - conflicts through `occurrenceConflicts` and `conflictForViewer`;
+  - audit targets from `meetingAuditTarget` and names from `guestAuditName`.
+- **What this closes in the demo** (meetings.md "Who uses it", rules and "Edge cases and known limits"):
+  - edits by anyone with the key who sees the meeting, and a hidden list shown to any edit holder;
+  - requests always taking proposals; no length check at creation; no start bound; the monthly limit checked only at creation;
+  - reminders set only at creation and never moved or cancelled;
+  - "This and following" from the first occurrence, and an undo removing a split without a CANCEL;
+  - conflicts naming private titles and warning about the meeting itself;
+  - an organiser without edit seeing Accept time; answers, removals and decisions on a cancelled meeting; `simulateReply` taking any proposal; a second cancel;
+  - no switch checks on removals, answers or decisions;
+  - two identical invites in one minute merging into one Outbox row (rule 17).
+- **Safer than the API in the demo** (found in the build):
+  - a request goes only to a colleague `colleaguesFor` offers, so it also needs the portal key and switch, as Request on screen does. The API checks the colleague only;
+  - Simulate reply also needs the reader to see the meeting, and matches the guest by recipient kind as well as id. So a private meeting the reader is not on gets no Simulate reply;
+  - a lead is saved only for a reader who reads customers (the `core` module, the view key and the switch) and may create them, and a contact only under a customer in their sight;
+  - `myMeetings` without the meetings module refuses with "This feature is switched off.", where the API answers 403;
+  - any answer, even a stale one, forgets the meeting's last move, and a change or move of a split-off series forgets the move that made it. On the API each of these writes an audit entry, which already blocks the undo;
+  - a request's reminder is Settings → Meetings' default, checked against the reminder choices, as the API reads the setting.
+- **Demo-only, and why:**
+  1. **Simulate reply:** no real email reaches outside guests.
+  2. **Settings → Meetings and saving new guests** (rule 11; `keepNewGuest`, narrowed as above): part 4 builds them on the API.
+  3. **The demo PRODID** (ADR 0021, "File hardening"): `DEMO_PRODID` is now exported from `calendar/ics.ts`.
+  4. **No daily email caps.** They bound real email and are counted from the audit `sends` the demo does not keep. The per-meeting limits (50 guests, 20 email guests, 100 exceptions) do apply.
+  5. **The clock:** "now" and "today" are the browser's (the fixtures are shifted to it), and meeting times stay the zone's wall time (ADR 0018). The shared `hasEnded`, `leftBehindProblem` and `nextReminder` read real instants in the meeting's zone, so in a browser far from the company the "today" edges are about a day off, a known demo approximation. A reminder's `scheduledFor` is a browser-local stamp, so `releaseScheduled` compares like with like.
+  6. **Undo memory:** the demo keeps each meeting's last move in memory (`MeetingMoveMemo`), cleared when a company opens and on reset. A reload forgets it, and the toast is then refused in the API's 409 `meeting_changed` words. The client's copy of the meeting is never applied. The API reads its audit log instead; the demo's audit entries hold text, not a move record.
+  7. **Audit entries** keep the demo's own before and after text (no `sends`), but use `meetingAuditTarget` and `guestAuditName`, so no private title, address or private guest's name lands in them.
+  8. **Email guest ids** stay `ext-…`.
+  9. **Reminders** turn to sent when the company opens (`releaseScheduled`; no worker).
+  10. **View as** for meetings uses the signed-in person's id with the viewed role's keys and scope. Other demo lists keep borrowing the role's first user (owner question 3).
+
+### API change: the undo check order (`undoProblem`, the contract gap)
+- **The gap:** api-contract says undo answers 409 `meeting_changed` when the screen's SEQUENCE is not the one before the move. After Alice moves and Bob moves again, Alice's toast read Bob's entry and got 403 "Only the person who moved this meeting can undo the move." (STATUS, "PR #35 final review notes").
+- **The new order:**
+  1. no move entry, or a cancelled meeting: 409 `meeting_changed`;
+  2. a SEQUENCE that is not the move's (the current one against the entry's after, the body's against its before): 409 `meeting_changed`;
+  3. not the mover: 403;
+  4. older than 5 minutes: 409 `undo_expired`.
+  - The later checks (an occurrence left behind, 400; the split-off series, 409) are unchanged.
+- **Why it is safe:** both orders refuse and write nothing, and the caller has passed `lockChangeable`, so they already hold the meeting and its SEQUENCE. Nothing new is exposed. A stale toast that is also old now answers `meeting_changed`, not `undo_expired`.
+- **Test:** `meetings-moves.int.test.ts`. The owner moves the manager's one-off (SEQUENCE 0 to 1) and the manager moves it again (1 to 2). The owner's undo with SEQUENCE 0 answers 409 `meeting_changed`, with the meeting row, its Outbox rows and the audit count unchanged. The manager's own undo with SEQUENCE 1 answers 201.
+- **The refactor changes no behaviour:**
+  - `lockChangeable` refuses with the shared `changeRefusal`, the same choice and words as `notTheOrganiser` and `cantSeeEveryGuest`, which are deleted;
+  - the zone, decision, answer, request and invites texts come from `MEETING_REFUSALS`;
+  - the API's `readsCustomers` and `readsSuppliers` moved to `packages/shared/src/meetings/guest-sight.ts` as `readsCustomerGuests` and `readsSupplierGuests` (type `GuestReaderAccess`), with the same bodies. They take an optional feature register that defaults to `FEATURES`, as `featureOn` does, so tests can switch a feature off; the API passes none. They are exported from `meetings/index.ts`, not from `src/index.ts`.
+  - The four integration files (`meetings`, `meetings-moves`, `permissions`, `isolation`) pass.
+
+### The company's day
+- **Where meetings read `api.today()`:** the calendar's anchor and its Today highlight, New meeting's default (today 09:00) and Request's (today 10:00), and the move dialog's `moveProblem` pre-check. My meetings no longer reads it: the API's next occurrence is worked out in each meeting's zone.
+- **The client has each meeting's zone** (`Meeting.timeZone`). Still, nothing meetings send is refused for a one-day offset, because the start bound is 366 days back and 1096 ahead. The person sees the date and can change it, and the drawer says which zone its times are in.
+- **No change, and why:** `today()` in api mode has about 55 call sites in every module. Changing it for meetings alone would split the calendar's day from DemoStore's shifted data. The STATUS follow-up stays open for every module. `playwright.api.config.ts` runs the browser in America/Denver.
+
+### Safest options taken in part 3 (also in docs/blueprint-delta.md)
+1. **Controls follow the server's own shaping (M1).** A non-organiser is offered drag, resize, Reschedule, Edit details, Cancel meeting and Remove only when their own keys and scope allow it and the meeting as the server sent it shows the organiser's address. The organiser is checked with `canChangeMeeting` and `shownParty`. The screen can only hide a control the server would allow; a property test proves it.
+2. **Accept time and Decline time** show only to the organiser who may change the meeting. Answers, Remove and decisions show only while `meetings.invites` is on. So does Simulate reply on the Outbox drawer's invite rows (`offersSimulateReply`, review round 3), which the demo store refuses with the switch off.
+3. **The guest picker, "Hide the guest list" and "You're the organiser."** show only while `meetings.invites` is on, and with it off the form sends no guests (rule 13).
+4. **The organiser is never sent as a guest.** A guest travels as `{ kind, id }` only, and a new guest as `{ email, name }` only.
+5. **The reader's id comes from the server** (`GET /me/meetings`, else `GET /auth/context`), never from the demo persona's fixture id.
+6. **The move dialog leaves out every scope the shared `moveProblem` refuses** for the drop and shows the rule's reason. With none left it shows the reasons and no Move button.
+7. **Undo sends only the SEQUENCE, and every refusal is shown.** The API checks the SEQUENCE before the mover, so a stale toast after someone else's newer move answers 409 `meeting_changed`, as api-contract says (was 403).
+8. **"Busy" stays "Busy",** with the time the API gives. The screen never fills in a title from anything else it holds.
+9. **Request shows only when there is a colleague to ask,** on both pages, and only with `meetings.requests` and `meetings.invites` on. That list comes from `GET /me/meetings`, so a role without the portal key, or with `hr.portal` off, gets no Request, in the demo too.
+10. **My meetings honours `meetings.calendar` and the meetings module:** the tab and page are hidden when either is off, the demo refuses as the API does, and the api client reads a 403 or 404 as nothing to show.
+11. **Settings → Meetings and "Save under customer" are hidden in api mode** (menus, settings home, search, palette and access preview; the route shows the not-found page). New guests are never saved as contacts or leads on the API. "Save under customer" also needs a readable customer in the demo.
+12. **The demo refuses what the API refuses,** shapes every meeting for its reader, warns about no meeting in its own conflicts and names no meeting the mover can't read, with the same switch checks. `applyScope` gives no meetings, so nothing reads them unshaped.
+13. **The demo's undo lives only in memory.** A reload forgets the move, and the stale toast is then refused in the API's words. The client's copy of the meeting is never applied. Any answer, and any change of a split-off series, also forgets it.
+14. **A re-read follows every routed write the server answered,** refusals (400, 403, 404, 409) included, so a stale screen catches up. A network failure, 401, 429 or 5xx triggers none, and the meetings queries keep their data when a re-read fails.
+15. **The newest read wins:** `useApiQuery` drops an older read that finishes after a newer one.
+16. **The drawer follows its occurrence and closes when that occurrence is gone,** so it never offers a move against an occurrence that no longer exists, or a second cancel. After an Undo it follows the meeting back. After a move or an Undo made from it, it keeps showing the occurrence it showed until the re-read after that write answers, and only that read or a later one can close it (review round 1: on the API it closed on the read from before a series "all" or "following" move, and before their Undo).
+17. **Demo View as uses one subject** for meetings: the signed-in person's id with the viewed role's keys and scope, for the list, guest sight, the drawer and every action.
+18. **Demo new-guest saving is narrowed** (rule 11, demo-only): a contact only under a customer the reader can see, a lead only for a reader who reads customers and holds `customers.customer.create`. Otherwise the guest is invited and not saved.
+19. **The company's day: no change** (above).
+20. **Simulate reply, the Outbox and the bell stay on DemoStore in api mode.** They are the notifications module's screens.
+21. **The demo is stricter than the API in two places** (found in the build): a request needs a colleague `colleaguesFor` offers, so the portal key and switch too; and Simulate reply needs the reader to see the meeting.
+22. **One toast per move** (found in the build): a conflict warning is the move toast's own description, so it never covers the Undo, and that Undo works from the open drawer.
+
+### Kept as meetings.md says in part 3 (not safety)
+- The views, drag and resize, the Reschedule form, the four answers and Simulate reply are unchanged.
+- A one-off still moves at once as `all`, a repeating meeting still asks which events move with "This event" selected, and conflicts still only warn, after a move.
+- New meeting still sends `allowProposals` from the defaults, and Request still sends 30 minutes and "To be agreed". The contract keeps both; the API and the demo ignore them and set their own.
+
+### Deferred in part 3, not invented
+- **Part 4,** with the owner: Settings → Meetings on the API, contacts and leads, the reminder sweeper for later occurrences, a signed-link reply page, iMIP and the index migration.
+- **An explicit "may change" flag** on the API's meeting shape (owner question 1).
+- **A colleagues route outside the portal,** so Request works on the calendar without `hr.portal.view` (owner question 2).
+- **The company's day in api mode,** for every module (above).
+- **The Outbox, bell and Simulate reply on the API** (the notifications screens), and live updates of other people's changes.
+
+### For the owner (part 3)
+1. **The "may change" signal:** a non-organiser's change controls show only when the server's shaped meeting gives them the organiser's address, which it does exactly for someone who may change it. Should the API instead send an explicit "may change" flag with each meeting (a contract addition, later)?
+2. **Request needs the portal:** Request a meeting on the Meetings page needs `GET /me/meetings` (the portal key and switch), in both modes. Should a `GET /meeting-colleagues` route (or `colleagues` on another route) let a role without the portal request from the calendar? Part 3 hides Request for them.
+3. **Demo View as:** for meetings it uses the signed-in person with the viewed role's keys and scope, customer sight included; other demo lists borrow the role's first user. Keep, or borrow for meetings too?
+4. **Form defaults in api mode:** the New meeting form's default reminder and hide-list checkbox come from the demo's Settings → Meetings until part 4 (Summit's stored group is the same). Fine until then?
+5. **Move dialog reasons:** the dialog leaves out the scopes the move rules refuse and shows each rule's reason. Keep, or show them disabled with the reason?
+6. **Demo undo:** the demo forgets an undo on reload. Acceptable for a presenter tool?
+7. **Demo new guests:** contacts are saved only under a customer the reader can see, and leads only for someone who reads and may create customers. Keep?
+8. **Part 2's open questions still stand:** the 5-minute window, a CANCEL to an undone split, past exceptions, held occurrences, "this and following" from the first occurrence, 100 exceptions, declining audited, the caps' status code, the start bound, a "Busy" conflict's time, and Outlook and SEQUENCE.
+
+### Residual risks (part 3)
+- **R1 Client keys and scope in api mode** come from the shell's DemoStore roles until `GET /company` and the roles move. For an organiser, a role edited on the API can show a button the API refuses (a 403 toast, then a re-read). For anyone else the server's address signal guards it. Either way a control can be hidden that the API would allow.
+- **R2 No live updates:** other people's changes show on reload, or after the person's own write or refusal. A stale drawer can still send an action the server refuses (a 409, 400 or 403 toast, then a re-read).
+- **R3 Load:** the Meetings page makes three GETs per load and per write, or four when `/me/meetings` gives no answer. `GET /me/meetings` loads the reader's meetings just for `colleagues`, and `GET /meetings` has no date window.
+- **R4 The address and name signals:** the organiser path relies on a hidden guest being shown by kind with no address (`shownParty`), so a readable customer literally named "Customer" with no address loses the button; the other path relies on a stored organiser address. Both fail closed.
+- **R5 Api mode's Outbox, bell and Simulate reply** still show DemoStore's rows, not what the API sent.
+- **R6 Merge order with PR #36:** both change `contract.ts`, `demo/store.ts`, `http/api-methods.ts`, `tests/e2e-api/accounts.ts`, docs/blueprint-delta.md and docs/api-contract.md. Whichever lands second merges main in; the meetings additions sit in their own blocks.
+- **R7 The local api e2e database is reused:** each run adds two cancelled meetings, audit entries and about ten Outbox rows, on a Monday the run picks, far below the daily caps. A run that times out can leave its meeting confirmed, because its clean-up can't use a page that has already closed; one did on the local database. CI's database is fresh.
+- **R8 The move dialog's pre-check** uses the browser's day and clock. Near the start bound, or with clock skew, it can leave out a scope the server would take, or offer one the server refuses (a 400 toast, then a re-read).
+- **R9 Demo behaviour changes for presenters:** moves, edits, decisions and answers the API refuses are now refused in the demo; Request needs the portal; a company switched to an unsupported zone can't book meetings, as on the API.
+- **R10 The company's day** stays the browser's for every module.
+- **R11 `changed` re-runs every subscribed query on the page**, the portal's `GET /me/portal` on My meetings included. That is cheap now; a narrower channel would help if more modules adopt it.
+- **R12 A linked guest the reader can't read** still shows its record id and answer (PR #33 note).
+- **R13 The newest-read rule** in `useApiQuery` applies to every screen. It only drops answers that a newer read supersedes.
+- **R14 The not-found status:** in api mode `/settings/meetings` shows the not-found page and nothing of the settings, but inside the app shell Next answers it, like any unknown address there, with status 200.
+- **R15 Keyboard Undo from the open drawer:** the drawer keeps focus inside itself, so a keyboard user reaches the move toast's Undo only after Escape, then the toasts' shortcut (alt+T).
+- **R16 The same pointer problem elsewhere,** on main and not changed here: "Try again" toasts shown while the refund, record-payment and supplier-payment sheets are open, and the reason dialog, can't be clicked while that modal is open.
+
+### Consequences (part 3)
+- **No schema or dependency change:** no table, column, index, migration or dependency. Nothing changes in core/auth, core/tenancy, packages/providers or docs/FEATURES.md (statuses stay `demo`).
+- **New shared exports:** `shownParty`, `organiserAddressShown`, `changeableAsShown`, `decidableAsShown`, `MEETING_REFUSALS` and `changeRefusal` in `meetings/access.ts`; `readsCustomerGuests`, `readsSupplierGuests` and `GuestReaderAccess` in `meetings/guest-sight.ts`; `DEMO_PRODID` in `calendar/ics.ts`.
+- **General web changes:** the router's `changed` channel and the newest-read rule in `useApiQuery`. Other modules' api-mode screens can adopt `changed` (STATUS follow-up). `MenuItem.demoOnly` marks a page with no API route yet.
+- **Tests:**
+  - packages/shared: `meeting-access` (shaped meetings, with the property test and the two M1 fixtures; `changeRefusal`; the guest readers) and `meeting-moves` (the stale toast answering `meeting_changed`);
+  - `apps/api/test/meetings-moves.int.test.ts`, now 31 cases: one added, the stale undo toast after a colleague's newer move;
+  - web unit tests in Node with no DOM: `api-router`, `latest-run`, `meetings-api` (routes and bodies), `products-demo-only`, `meeting-screens` (the screen helpers), `demo-meetings` (the demo store driven through `new DemoStore` and `openCompany`) and `demo-meetings-switches`;
+  - demo e2e: seven new tests in `meetings.spec.ts` (no "This and following" on a first occurrence, no "All events" on an occurrence moved on its own, a one-off moved twice from its drawer, "Busy" for a private meeting, Undo in a move's warning from the open drawer, the drawer following a series moved with "All events" and with "This and following" and back on each Undo, and no controls for someone who may not change the meeting) and two in `meetings-invites.spec.ts` (decisions for the organiser only, and My meetings with Request). Seeded meetings are opened in the Week view, where the fixtures' whole-week shift keeps them;
+  - api-mode e2e: `tests/e2e-api/meetings.spec.ts`, the manager and Priya in two browsers (schedule, "Busy", undo, propose, decide, My meetings, the hidden settings, cancel), and a second test in which the drawer follows a weekly series moved with "All events" and with "This and following" and back on each Undo, with `SALES_EMAIL` added to `accounts.ts`. `login.spec.ts`'s step-up test now waits until its revert is saved. Before, it could end first and leave Priya as Accountant, a role that needs MFA, for the specs after it.
+  - Playwright now covers meetings in api mode.
+
 ## Later parts
 - **Part 2** (`feat/meetings-api-moves`, PR #35): done, under "Part 2 (2026-11-15)" above.
-- **Part 3** (`feat/meetings-web-api`):
-  - the meetings methods join `API_METHODS`;
-  - the screens take the viewer id from the server (`GET /auth/context`, `viewerUserId`);
-  - the New meeting dialog stops sending the organiser as a guest;
-  - drag, Reschedule, Edit, Cancel and Remove are gated on `canChangeMeeting` (critic B5);
-  - Undo sends `{ sequence: undo.previous.sequence }` to `/meetings/:id/reschedule/undo`, and the toast handles 403 and 409;
-  - the conflict warning renders "Busy" rows;
-  - "This and following events" is hidden on a series' first occurrence;
-  - Accept time and Decline time show only to an organiser who may change the meeting;
-  - Request is hidden when `colleagues` is empty;
-  - Settings → Meetings and "Save under customer" are hidden in api mode;
-  - DemoStore moves onto the shared rules, its own conflicts and moves included;
-  - an e2e-api spec is added.
+- **Part 3** (`feat/meetings-web-api`, PR #37): done, under "Part 3 (2026-11-15)" above. Every item this list held is built: the meetings methods in `API_METHODS`, the viewer id from the server, the organiser no longer sent as a guest, the change controls gated on the shared rules (critic B5, on the meeting as the server shaped it), Undo by `{ sequence }` with its refusals shown, "Busy" rows, the move dialog leaving out "This and following events" on a series' first occurrence (and every other scope the move rules refuse), Accept time and Decline time only for an organiser who may change the meeting, Request hidden without colleagues, Settings → Meetings and "Save under customer" hidden in api mode, DemoStore on the shared rules with its own conflicts and moves, and an e2e-api spec.
 - **Part 4** (later, with the owner):
   - Settings → Meetings on the API;
   - contacts and leads;
@@ -562,7 +775,7 @@
   - later occurrences and the seeded meetings have none until part 4 or a change;
   - with no instance running workers nothing is sent, and late reminders are dropped.
 - **Outside guests can't answer**, and with RSVP=TRUE their calendar's reply goes to the organiser's mailbox, where nothing reads it.
-- **A proposal can be sent but not decided** on the API until part 2, which adds the decision. The screens don't use the API until part 3.
+- **A proposal can be sent but not decided** on the API until part 2, which adds the decision. The screens use the API since part 3.
 - **A linked guest with no address** gets a failed row on every send, and the actor gets a notice, as in the demo.
 - **Branch scope sees every meeting that is not private**, from any branch, as in the spec. Narrowing it needs a branch on meetings and the owner.
 - **The calendar file sits inline** in the Outbox row, readable by anyone who may read that row unredacted.
@@ -571,7 +784,7 @@
 - **The limits refuse cancels too:** a person over the outside cap can't cancel or edit a meeting with outside guests until the next company day; someone else who may change it can.
 - **Seeded meetings whose organiser can't read the customer** are changed on the API only by someone who reads every guest.
 - **A company outside the seven zones** can't book meetings on the API at all (409).
-- **Api mode before part 3:** Settings → Meetings, the bell, the Outbox and Simulate reply run on DemoStore, so they don't show what the API wrote.
+- **Api mode since part 3:** only the bell, the Outbox and Simulate reply still run on DemoStore, so they don't show what the API wrote. Settings → Meetings is hidden in api mode until part 4.
 
 ## Consequences (part 1)
 - **No schema or dependency change:** no table, column, index or migration changes, and no dependency is added. RFC 5545 is written by hand in `packages/shared/src/calendar/ics.ts`, with `Intl` for the zones.

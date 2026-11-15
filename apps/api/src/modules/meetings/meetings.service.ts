@@ -14,6 +14,7 @@ import {
   instantToZoned,
   isOnMeeting,
   isOrganiser,
+  MEETING_REFUSALS,
   MEETING_REQUEST_DEFAULTS,
   meetingFieldsProblem,
   meetingForViewer,
@@ -175,8 +176,7 @@ export class MeetingsService {
     const userId = actor.access.userId;
     const othersAsked =
       input.newGuests.length > 0 || input.guests.some((g) => !(g.kind === "staff" && g.id === userId));
-    if (othersAsked && !featureOn("meetings.invites"))
-      throw refuse("Guests can't be invited while meeting invites are switched off.");
+    if (othersAsked && !featureOn("meetings.invites")) throw refuse(MEETING_REFUSALS.invitesOff);
     const db = await this.tenancy.db(tenant);
     const meetingSettings = await loadMeetingSettings(db);
     const dayStart = dayStartOf(clock);
@@ -372,7 +372,7 @@ export class MeetingsService {
       const guest = staffGuestOf(meeting, userId);
       const row = before.rows.get(userId);
       if (!guest || !row || row.partyType !== "staff" || isOrganiser(meeting, userId))
-        throw refuse("Only a guest on this meeting can answer it.");
+        throw refuse(MEETING_REFUSALS.notAGuest);
       refuseIf(replyProblem(meeting, reply, today));
       const now = await databaseNow(tx);
       const outcome = replyOutcome(meeting, guest, reply as ReplyAnswer, {
@@ -458,13 +458,13 @@ export class MeetingsService {
     const clock = await meetingClock(this.control.db, tenant);
     refuseIf(meetingRequestProblem(input, { zone: clock.zone, today: clock.day }));
     const userId = actor.access.userId;
-    if (input.withUserId === userId) throw refuse("Choose who to meet with.");
+    if (input.withUserId === userId) throw refuse(MEETING_REFUSALS.chooseColleague);
     const db = await this.tenancy.db(tenant);
     const meetingSettings = await loadMeetingSettings(db);
     const [asked] = await activeMembers(db, this.control.db, [input.withUserId]);
     const [askedAccess] = asked ? await this.access.membersAccess(tenant, [asked.id]) : [];
     if (!asked || !askedAccess || askedAccess.disabled || !askedAccess.permissions.has("meetings.meeting.view"))
-      throw refuse("Choose who to meet with.");
+      throw refuse(MEETING_REFUSALS.chooseColleague);
     const asker = await this.person(userId);
     const dayStart = dayStartOf(clock);
     const done = await db.transaction(async (tx) => {

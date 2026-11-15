@@ -330,10 +330,10 @@ All events in `NOTIFICATION_EVENTS`. Every event also offers `company.name`, so 
 | `timeoff.requested` | The manager, else HR | `usersWith` `hr.pto.approve` | `requestTimeOff` | Request id; none |
 | `timeoff.decided` | The employee | The user linked to the employee | `decideTimeOff` | Request id; none |
 | `commission.ready` | The sales rep | The statement's user | `approveStatement` | Statement id; none |
-| `meeting.invite` | Each guest | Each guest except the organiser; in-app for staff | `sendToGuests` | Meeting id; `<sequence>-<method>-<now>-<recurrenceId>` |
-| `meeting.reminder` | Each guest | Staff guests only; no in-app list is passed | `scheduleReminder`, from `createMeeting` | Meeting id; `<sequence>-reminder` |
-| `meeting.reply` | The organiser | The organiser | `applyReply` | Meeting id; `<attendeeId>-<now>` |
-| `meeting.proposed` | The organiser | The organiser | `applyReply` | Meeting id; `<attendeeId>-<now>` |
+| `meeting.invite` | Each guest | Each guest except the organiser, in-app for staff; a colleague who is no longer active gets none. Nothing while `meetings.invites` is off | `deliver` in `demo/meeting-sends.ts`, from the shared `sendPlan` (and `exceptionResends` after a series change) of every meetings action (ADR 0051 part 3) | Meeting id; `inviteVersion`, `<sequence>-<method>-<recurrenceId>-<stamp in ms>` |
+| `meeting.reminder` | Each guest | Staff guests but the organiser (`reminderRecipients`) who are still active; no in-app list is passed. Nothing while `meetings.invites` is off | `syncReminder` in `demo/meeting-sends.ts`, after every change: the meeting's waiting rows are cancelled and the next occurrence's is raised (`nextReminder`; ADR 0051 part 3) | Meeting id; `<sequence>-reminder-<planned>-<now in ms>` |
+| `meeting.reply` | The organiser | The organiser, unless no longer active | `respondToMeeting` and `simulateReply`, through the shared `replyOutcome` (ADR 0051 part 3) | Meeting id; the `meetingResponses` row id |
+| `meeting.proposed` | The organiser | The organiser, unless no longer active | `respondToMeeting` and `simulateReply`, through the shared `replyOutcome` (ADR 0051 part 3) | Meeting id; the `meetingResponses` row id |
 | `meeting.requested` | The person asked | The person asked | `requestMeeting` | Meeting id; none |
 | `contract.signature` | The other party's signer | The contract's customer or supplier record (`party`) | `sendContract` | Contract id; `ctx.now` |
 | `contract.expiring` | The contract owner and Owners | `usersWith` `contracts.contract.approve` | `raiseContractReminders`, from `openCompany` | The reminder's key; none |
@@ -430,7 +430,7 @@ Behaviour to carry into the real build:
 - `payment.to_verify` uses `<number>-<amount>` as its source id. A second pending payment of the same amount on the same document is deduplicated if email is on. The in-app note is still written.
 - `invoice.sent` and `po.sent` have no version, so a repeat send would write nothing. The invoice action refuses a second send anyway.
 - `quote.sent` uses `quote.sentAt` as its version, and that date is set only the first time, so sending a quote again writes no new row.
-- Reminders turn to `sent` only when a company is opened, because the demo has no worker. Rows are not cancelled when the meeting moves or is cancelled. The real build cancels and raises them again on every change, and drops one not sent by the meeting's start (rule 13, ADR 0051).
+- Reminders turn to `sent` only when a company is opened, because the demo has no worker. Rows are not cancelled when the meeting moves or is cancelled (closed in part 3, ADR 0051: the demo also cancels and raises them again after every change). The real build cancels and raises them again on every change, and drops one not sent by the meeting's start (rule 13, ADR 0051).
 - Dates in variables are stored as `YYYY-MM-DD`, or as `YYYY-MM-DD at HH:mm` for meetings. The catalogue's samples show friendlier formats.
 - With `settings.notifications` off, nothing is written. With only `settings.outbox` off, rows are still written and the pages and bell link are hidden.
 - `docs/api-contract.md` has no rows for these calls. The contract is `apps/web/src/lib/api/contract.ts`.
@@ -446,4 +446,4 @@ The five `meeting.*` events keep their keys, templates and recipients. On the AP
 | `meeting.reply`, `meeting.proposed` | The `meeting_responses` row id | Email, in-app | To the organiser, one per answer |
 | `meeting.requested` | `request` | Email, in-app | To the person asked |
 
-Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none. Part 2 adds no event: moves, undo and proposal decisions send through `meeting.invite`, and every send counts against the daily meeting email limits.
+Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none. Part 2 adds no event: moves, undo and proposal decisions send through `meeting.invite`, and every send counts against the daily meeting email limits. Part 3 adds no event either: the demo store now writes these rows from the same shared send plan, reminder and reply rules (the table under "Recipients and triggers, as built"), with its own PRODID and no daily caps. In api mode the Outbox and the bell still read DemoStore's rows, not the API's (ADR 0051 part 3, residual risks).

@@ -11,6 +11,7 @@ import {
   guestAuditName,
   MEETING_AUDIT_ACTIONS,
   MEETING_CHANGED,
+  MEETING_REFUSALS,
   meetingEmailCount,
   meetingForViewer,
   moveAuditEntry,
@@ -182,8 +183,9 @@ export class MeetingMoves {
    * Undoes the last move of a meeting (meetings.md `undoReschedule` and the sends table; ADR 0051
    * "Part 2", critic B3). The meeting is rebuilt from the server's own "Moved meeting" entry, never
    * from the client: only the SEQUENCE the client saw before the move is read, to refuse a mismatch.
-   * `undoProblem` decides: the move must be the meeting's last change, by the caller, within five
-   * minutes. Every undo sends a series REQUEST, so it is refused with 400 when the restored series
+   * `undoProblem` decides: the move must be the meeting's last change, at the SEQUENCE the screen
+   * saw (checked first, so a stale toast after a colleague's newer move is 409 `meeting_changed`; ADR
+   * 0051 "Part 3"), by the caller, within five minutes. Every undo sends a series REQUEST, so it is refused with 400 when the restored series
    * would leave an occurrence changed on its own that has taken place behind at a date still ahead
    * (`undoneSeriesProblem`, review round 3 and the final review of PR #35, "this event" included).
    * A series the move split off must still be exactly as the move left it, and
@@ -266,7 +268,7 @@ export class MeetingMoves {
     const done = await db.transaction(async (tx) => {
       const { loaded: before, sight } = await lockChangeable(tx, actor.access, id);
       if (!canDecideProposal(meetingViewer(actor.access), before.meeting, sight))
-        throw new ForbiddenException({ code: "forbidden", message: "Only the organiser can decide a proposed time." });
+        throw new ForbiddenException({ code: "forbidden", message: MEETING_REFUSALS.organiserDecides });
       const row = before.rows.get(attendeeId);
       const guest = before.meeting.attendees.find((a) => a.id === attendeeId);
       if (!row || !guest) throw notFound("guest");

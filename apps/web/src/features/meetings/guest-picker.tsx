@@ -2,13 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
-import type { Attendee, Customer, CustomerContact, Supplier, SupplierContact, User } from "@workspace/shared";
+import type { Attendee, GuestOption } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Field } from "@/components/field";
-import { useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
-import type { NewGuest } from "@/lib/api/contract";
+import type { MeetingsData, NewGuest } from "@/lib/api/contract";
 
 /** The fields a guest starts with, before anyone has answered. */
 const fresh = (kind: Attendee["kind"], id: string, name: string, email: string): Attendee => ({
@@ -37,43 +36,32 @@ const looksLikeEmail = (text: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text.
 
 /**
  * Finds guests from one search: staff, customers, people at customers and suppliers, or someone
- * new by email (spec E). What happens to a new guest is set in Settings → Meetings.
+ * new by email (spec E). The choices are the server's own list of whom this reader may invite
+ * (GET /meeting-guests, ADR 0051), so nothing they can't read is offered. Staff come with no
+ * address: typing a colleague's address offers "Add guest by email", and the server makes it that
+ * colleague. What happens to a new guest is set in Settings → Meetings, in the demo only; on the
+ * API a new guest is invited and never saved, so "Save under customer" does not show.
  */
 export function GuestPicker({
   guests,
   newGuests,
-  users,
-  customers,
-  contacts,
-  suppliers,
-  supplierContacts,
+  options,
+  newGuestHandling,
   onGuests,
   onNewGuests,
 }: {
   guests: Attendee[];
   newGuests: NewGuest[];
-  users: readonly User[];
-  customers: readonly Customer[];
-  contacts: readonly CustomerContact[];
-  suppliers: readonly Supplier[];
-  supplierContacts: readonly SupplierContact[];
+  options: readonly GuestOption[];
+  newGuestHandling: MeetingsData["newGuestHandling"];
   onGuests: (guests: Attendee[]) => void;
   onNewGuests: (guests: NewGuest[]) => void;
 }) {
-  const { settings } = useWorkspace();
+  const customers = useMemo(() => options.filter((o) => o.kind === "customer"), [options]);
   const [text, setText] = useState("");
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
-  const all = useMemo(
-    () => [
-      ...users.filter((u) => u.status === "active").map((u) => fresh("staff", u.id, u.name, u.email)),
-      ...customers.map((c) => fresh("customer", c.id, c.name, c.email)),
-      ...contacts.map((c) => fresh("customer-contact", c.id, c.name, c.email)),
-      ...suppliers.map((s) => fresh("supplier", s.id, s.name, s.email)),
-      ...supplierContacts.map((c) => fresh("supplier-contact", c.id, c.name, c.email)),
-    ],
-    [users, customers, contacts, suppliers, supplierContacts],
-  );
+  const all = useMemo(() => options.map((o) => fresh(o.kind, o.id, o.name, o.email)), [options]);
   const q = text.trim().toLowerCase();
   const taken = new Set(guests.map((g) => `${g.kind}-${g.id}`));
   const matches = q
@@ -86,13 +74,11 @@ export function GuestPicker({
     : [];
   const known = all.some((g) => g.email.toLowerCase() === q) || newGuests.some((g) => g.email.toLowerCase() === q);
   const canAddEmail = looksLikeEmail(text) && !known;
-  const handling = settings.meetings.newGuestHandling;
+  // "Save under customer" only where the demo keeps new guests as contacts and the reader may read a customer.
+  const saveUnder = newGuestHandling === "contact" && customers.length > 0;
 
   function addEmail() {
-    onNewGuests([
-      ...newGuests,
-      { email: text.trim(), name: name.trim(), customerId: handling === "contact" ? customerId : null },
-    ]);
+    onNewGuests([...newGuests, { email: text.trim(), name: name.trim(), customerId: saveUnder ? customerId : null }]);
     setText("");
     setName("");
   }
@@ -129,7 +115,7 @@ export function GuestPicker({
           <Field id="guest-name" label="Name (optional)">
             <Input id="guest-name" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          {handling === "contact" ? (
+          {saveUnder ? (
             <Field id="guest-customer" label="Save under customer">
               <Pick
                 id="guest-customer"

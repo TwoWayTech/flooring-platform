@@ -68,8 +68,11 @@ import type {
   Reservation,
   StockAdjustment,
   Conflict,
+  GuestOption,
   Meeting,
+  MeetingSettings,
   MoveScope,
+  MyMeetings,
   ColumnMapping,
   ImportBatch,
   ImportKind,
@@ -296,7 +299,11 @@ export interface NewGuest {
   customerId: string | null;
 }
 
-/** A meeting to schedule (spec E). */
+/**
+ * A meeting to schedule (spec E). The server reads only who each guest is: a picked guest's `kind`
+ * and `id`, and a new guest's `email` and `name`; names, addresses, answers and the organiser come
+ * from its own records (ADR 0051 "Part 3"). `allowProposals` is the server's to set.
+ */
 export interface MeetingInput {
   title: string;
   start: string;
@@ -604,10 +611,32 @@ export interface MeetingMove {
   scope: MoveScope;
 }
 
-/** What Undo needs to put a meeting back after a move. */
+/**
+ * What Undo needs to put a meeting back after a move. The API reads only `previous.id` (the
+ * address) and `previous.sequence`, the SEQUENCE the screen saw, and rebuilds the meeting from its
+ * own record of the move: within 5 minutes, by the mover only, while the move is the meeting's
+ * last change (ADR 0051 "Part 2" and "Part 3"). The client's copy of the meeting is never applied.
+ */
 export interface MeetingUndo {
   previous: Meeting;
   createdIds: string[];
+}
+
+/**
+ * The Meetings page (meetings.md "Views"; ADR 0051 "Part 3"): every meeting as the reader may read
+ * it (`meetingForViewer`), who the reader is in the ids those meetings use, whom they may invite and
+ * whom they may ask to meet.
+ */
+export interface MeetingsData {
+  /** The reader as the meetings name people: the session's user id on the API. */
+  viewerUserId: string;
+  meetings: Meeting[];
+  /** Whom the reader may invite (GET /meeting-guests); empty without `meetings.meeting.create` or with `meetings.invites` off. */
+  guests: GuestOption[];
+  /** Colleagues the reader may ask to meet; empty when they can't send a request, which hides Request. */
+  colleagues: MyMeetings["colleagues"];
+  /** What a guest added by email becomes: always "none" on the API (ADR 0051 "Deferred"), the setting in the demo. */
+  newGuestHandling: MeetingSettings["newGuestHandling"];
 }
 
 /** The import wizard's starting point (spec G1): the kinds this company can import, saved mappings and history, newest first. */
@@ -851,6 +880,10 @@ export interface ApiClient {
   saveRecurringExpense(input: RecurringExpenseInput): Promise<RecurringExpense>;
   /** The business report (spec F2), computed from the company's whole record. */
   businessReport(filters: BusinessFilters): Promise<BusinessReport>;
+  /** The Meetings page's data (`MeetingsData`). Needs meetings.meeting.view. */
+  meetingsData(): Promise<MeetingsData>;
+  /** My meetings (GET /me/meetings): the reader's coming meetings with their next occurrence, and whom they may ask to meet. Needs hr.portal.view. */
+  myMeetings(): Promise<MyMeetings>;
   /** Schedules a meeting and invites its guests (spec E). */
   createMeeting(input: MeetingInput): Promise<Meeting>;
   /** Edits a meeting; a significant change asks every guest again. */
@@ -1117,11 +1150,15 @@ export interface ApiClient {
   /** Starts a scheduled job on or after its day. Needs installation.job.edit. Audited. */
   startJob(jobId: string): Promise<Job>;
   /**
-   * Moves or resizes one occurrence, this and following, or all (spec F). Needs meetings.meeting.edit.
-   * Returns the saved meetings, attendee conflicts at the new time and the Undo record. Audited.
+   * Moves or resizes one occurrence, this and following, or all (spec F). Needs meetings.meeting.edit
+   * and a reader who may change the meeting (`canChangeMeeting`, ADR 0051). Returns the saved
+   * meetings, attendee conflicts at the new time and the Undo record. Audited.
    */
   rescheduleMeeting(move: MeetingMove): Promise<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>;
-  /** Undoes a move. Audited. */
+  /**
+   * Undoes the reader's own last move of a meeting. Only `undo.previous.sequence` is read; the
+   * meeting is rebuilt from the server's own record of the move (`MeetingUndo`). Audited.
+   */
   undoReschedule(undo: MeetingUndo): Promise<Meeting>;
   /** Creates a purchase order as a draft or ordered at once (spec D1). Needs purchasing.order.create. Audited. */
   createPurchaseOrder(input: NewPurchaseOrderInput): Promise<PurchaseOrder>;

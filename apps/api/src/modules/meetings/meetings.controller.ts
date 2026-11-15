@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
+import { MEETING_REFUSALS } from "@workspace/shared";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
 import { Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
@@ -111,7 +112,7 @@ const REPLY = z
 /** A request to meet (`MeetingRequestInput`); the length and place sent are ignored, the server fixes them. */
 const REQUEST = z
   .object({
-    withUserId: z.uuid("Choose who to meet with."),
+    withUserId: z.uuid(MEETING_REFUSALS.chooseColleague),
     title: z.string().max(TEXT_MAX),
     start: LOCAL_TIME,
     durationMin: z.number().optional(),

@@ -444,23 +444,25 @@ export interface UndoContext {
 /**
  * Why an undo can't be made, or null (meetings.md `undoReschedule`; ADR 0051 "Part 2", safer than the
  * spec, which restores whatever copy the client sends). The caller has already locked a meeting they
- * may change. Then:
+ * may change. Then, in this order:
  * - the meeting's last audit entry must be the move (`record`), so nothing changed since: every
  *   change to a meeting writes an entry under its lock, so its guests still answer as they did;
- * - only the person who moved it may undo it;
- * - within `UNDO_WINDOW_MINUTES` by the database clock;
  * - the SEQUENCE must be the one the move saved, and the screen's must be the one before it, so a
- *   toast for an older move can't undo a newer one.
+ *   toast for an older move can't undo a newer one. This comes before the mover check (ADR 0051
+ *   "Part 3"), so a stale toast after a colleague's newer move answers 409 `meeting_changed`, as
+ *   docs/api-contract.md says, not 403; the caller already holds the meeting and its SEQUENCE;
+ * - only the person who moved it may undo it;
+ * - within `UNDO_WINDOW_MINUTES` by the database clock.
  */
 export function undoProblem(current: Meeting, ctx: UndoContext): UndoRefusal | null {
   const { record } = ctx;
   if (!record || current.status === "cancelled") return MEETING_CHANGED;
+  if (current.sequence !== record.after.sequence || ctx.clientSequence !== record.before.sequence)
+    return MEETING_CHANGED;
   if (ctx.moverUserId !== ctx.callerUserId)
     return { status: 403, code: "forbidden", message: "Only the person who moved this meeting can undo the move." };
   if (ctx.ageMs > UNDO_WINDOW_MINUTES * 60_000)
     return { status: 409, code: "undo_expired", message: "This move can no longer be undone." };
-  if (current.sequence !== record.after.sequence || ctx.clientSequence !== record.before.sequence)
-    return MEETING_CHANGED;
   return null;
 }
 

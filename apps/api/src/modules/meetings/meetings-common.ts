@@ -1,9 +1,10 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ConflictException } from "@nestjs/common";
 import type { CompanyDb, ControlDb } from "@workspace/db";
 import { meetings, settings, userProfiles } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import {
   DEFAULT_MEETING_SETTINGS,
+  MEETING_REFUSALS,
   meetingAuditTarget,
   REMINDER_MINUTES,
   supportedMeetingZone,
@@ -57,23 +58,6 @@ export function refuseIf(problem: string | null): void {
   if (problem) throw refuse(problem);
 }
 
-/** The answer when someone who may see a meeting may not change it (ADR 0051 "Who may change a meeting"). */
-export function notTheOrganiser(): ForbiddenException {
-  return new ForbiddenException({ code: "forbidden", message: "Only the organiser can change this meeting." });
-}
-
-/**
- * The answer when someone who could otherwise change a meeting can't read one of its customers,
- * suppliers or contacts (ADR 0051 "Who may change a meeting"): the change would email that guest
- * with them as its Outbox actor, which shows them the guest's name and address.
- */
-export function cantSeeEveryGuest(): ForbiddenException {
-  return new ForbiddenException({
-    code: "forbidden",
-    message: "Only someone who can see every guest on this meeting can change it.",
-  });
-}
-
 /**
  * The company's clock and the zone its meetings are booked in (ADR 0051 "Owned by the server"). The
  * zone is the company's own, from the control database, never taken from a request. A zone the
@@ -86,10 +70,7 @@ export async function meetingClock(
   const clock = await companyClock(control, tenant);
   const zone = supportedMeetingZone(clock.zone);
   if (!zone) {
-    throw new ConflictException({
-      code: "time_zone_unsupported",
-      message: "Meetings can be booked only in a US time zone, and this company's time zone is not one of them yet.",
-    });
+    throw new ConflictException({ code: "time_zone_unsupported", message: MEETING_REFUSALS.zoneUnsupported });
   }
   return { ...clock, zone };
 }

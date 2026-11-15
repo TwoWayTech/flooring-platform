@@ -16,7 +16,7 @@ No real email is sent, and no guest outside the company can really answer. The O
 | Default reminder, new guests, invite defaults | `settings.meetings` | `/settings/meetings` |
 | The person's own coming meetings | `hr.portal` | `/my/meetings` |
 
-Code: `apps/web/src/lib/api/demo/meeting-actions.ts` (store actions), `packages/shared/src/operations/meetings.ts` (occurrences, moves, conflicts), `packages/shared/src/calendar/ics.ts` (calendar files), `apps/web/src/features/meetings/` (screens).
+Code: `apps/web/src/lib/api/demo/meeting-actions.ts` (store actions), `packages/shared/src/operations/meetings.ts` (occurrences, moves, conflicts), `packages/shared/src/calendar/ics.ts` (calendar files), `apps/web/src/features/meetings/` (screens). Since part 3 (ADR 0051) also `apps/web/src/lib/api/demo/meeting-sight.ts` (who is looking, the shaped list, guest options, colleagues), `meeting-sends.ts` (invites and reminders), `meeting-moves.ts` (moves, undo, proposal decisions) and `apps/web/src/features/meetings/meeting-rights.ts` (which controls a meeting offers), on the shared rules in `packages/shared/src/meetings/`.
 
 ## Who uses it
 
@@ -41,7 +41,7 @@ The nine default roles are Owner, Manager, Accountant, Sales, Purchasing, Wareho
 | Delete a meeting | `meetings.meeting.delete` | Owner, Manager, HR manager | Not enforced anywhere. The key exists and no action checks it. There is no delete. |
 | Change Settings > Meetings | `settings.meetings.manage` | Owner | `MeetingsSettingsPage`; `settingsPermissions("meetings")` in `apps/web/src/lib/api/demo/permission-rules.ts` |
 
-Who sees which meeting (`FILTERS.meetings` in `scope.ts`, applied at every data scope):
+Who sees which meeting (`FILTERS.meetings` in `scope.ts`, applied at every data scope; since part 3 the shared `seesMeeting` through `visibleMeetings` in `meeting-sight.ts`, and `FILTERS.meetings` is gone, ADR 0051):
 
 | Viewer's data scope | Non-private meeting | Private meeting |
 | --- | --- | --- |
@@ -50,9 +50,9 @@ Who sees which meeting (`FILTERS.meetings` in `scope.ts`, applied at every data 
 
 A private meeting is hidden from an Owner who is not on it.
 
-The edit actions check the permission only. They do not check that the person is the organiser, so anyone with `meetings.meeting.edit` who can see a meeting can change it. The generic `save` refuses `meetings`, `meetingResponses` and `customerContacts` (`SAVE_PERMISSIONS` in `permission-rules.ts`), so these change only through the actions below.
+The edit actions check the permission only. They do not check that the person is the organiser, so anyone with `meetings.meeting.edit` who can see a meeting can change it (closed in part 3, ADR 0051). The generic `save` refuses `meetings`, `meetingResponses` and `customerContacts` (`SAVE_PERMISSIONS` in `permission-rules.ts`), so these change only through the actions below.
 
-The guest list in the drawer shows when `organiser || !meeting.hideGuestList || canEdit` (`MeetingAnswers` in `apps/web/src/features/meetings/meeting-answers.tsx`). Only the viewer's own answer is shown otherwise.
+The guest list in the drawer shows when `organiser || !meeting.hideGuestList || canEdit` (`MeetingAnswers` in `apps/web/src/features/meetings/meeting-answers.tsx`). Only the viewer's own answer is shown otherwise. (Closed in part 3, ADR 0051: the list shows to the organiser, to those who may change the meeting, or when it is not hidden, on the meeting as the server shaped it.)
 
 ## Workflows and status rules
 
@@ -161,13 +161,13 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 4. They set Repeats (`none`, `weekly`, `biweekly`, `monthly`), Reminder (10, 15, 30 or 60 minutes), Private and Hide the guest list.
 5. Schedule meeting checks the title, the recurrence start and each new email. It saves new guests, writes the meeting, sends the invites and schedules the reminder.
 
-**Move or resize** (`useReschedule`, `TimeGrid`, `RescheduleForm`, `rescheduleMeeting`). Drag moves a meeting and snaps to 15 minutes. Dragging the bottom edge resizes it. The drawer's Reschedule form does the same by keyboard. A repeating meeting asks This event, This and following events, or All events, with This event selected. A one-off goes straight through with scope `all`. After saving, conflicts appear as a warning, and the toast offers Undo.
+**Move or resize** (`useReschedule`, `TimeGrid`, `RescheduleForm`, `rescheduleMeeting`). Drag moves a meeting and snaps to 15 minutes. Dragging the bottom edge resizes it. The drawer's Reschedule form does the same by keyboard. A repeating meeting asks This event, This and following events, or All events, with This event selected. A one-off goes straight through with scope `all`. After saving, conflicts appear as a warning, and the toast offers Undo. (Since part 3, ADR 0051: the dialog offers only the scopes the shared move rules allow for that drop and names why each other one is left out, and a move gives one toast that offers Undo and names any conflicts in it.)
 
 **Answer.** Staff answer in the meeting drawer with Accept, Maybe, Decline or Propose a new time. The organiser gets no answer buttons. External guests are represented by Simulate reply on the Outbox row (`SimulateReply` in `simulate-reply.tsx`), which offers the same four answers.
 
 **Propose a new time.** Offered when `meeting.allowProposals && meeting.recurrence === "none"` (`ReplyButtons`). A proposal is stored as a `tentative` answer with `proposal.status: pending`. The organiser sees Accept time and Decline time in the drawer. Accepting moves the meeting and asks everyone again. Declining sends the proposer a DECLINECOUNTER.
 
-**Request a meeting** (`RequestMeetingDialog`, `requestMeeting`). The person picks one active colleague, a subject, a date, a start and a note, and can mark it private. The dialog fixes the length at 30 minutes and the place at "To be agreed". The reminder comes from Settings > Meetings. The meeting is `tentative`, `kind: request`, with `allowProposals: true`. The drawer says "Waiting for an answer."
+**Request a meeting** (`RequestMeetingDialog`, `requestMeeting`). The person picks one active colleague, a subject, a date, a start and a note, and can mark it private. The dialog fixes the length at 30 minutes and the place at "To be agreed". The reminder comes from Settings > Meetings. The meeting is `tentative`, `kind: request`, with `allowProposals: true` (closed in part 3, ADR 0051). The drawer says "Waiting for an answer."
 
 **Settings > Meetings** (`MeetingsSettingsPage`). Four values. See `MeetingSettings` below.
 
@@ -227,7 +227,7 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 
    A stale reply is logged in `meetingResponses` with `stale: true` and changes nothing. `respondToMeeting` passes `meeting.sequence`, so a staff answer is never stale. `simulateReply` passes the SEQUENCE the Outbox row was sent with (`message.values["meeting.sequence"]`).
 
-8. **When a proposal is allowed.** `respondToMeeting` refuses a proposal unless `meeting.allowProposals && meeting.recurrence === "none"`. `simulateReply` has no such check and relies on the screen.
+8. **When a proposal is allowed.** `respondToMeeting` refuses a proposal unless `meeting.allowProposals && meeting.recurrence === "none"`. `simulateReply` has no such check and relies on the screen (closed in part 3, ADR 0051).
 
 9. **Hidden guest lists.** At creation (`createMeeting`):
 
@@ -292,7 +292,7 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 
     With an end date, `;UNTIL=<endOfDayUtc(until, timeZone)>` is added. The monthly week is `monthlyWeekOf` in `operations/meetings.ts`, the same cap at 4 as rule 2. A monthly series that starts after day 28 starts its RRULE at its second occurrence and lists the first as an RDATE. One that ends before its second occurrence gets no RRULE (ADR 0051).
 
-17. **Outbox row identity.** The invite's version is `` `${opts.sequence}-${opts.method}-${ctx.now}-${opts.recurrenceId ?? ""}` ``. `ctx.now` has minute precision (`nowStamp` in `store.ts`), so two identical sends in one minute write one row.
+17. **Outbox row identity.** The invite's version is `` `${opts.sequence}-${opts.method}-${ctx.now}-${opts.recurrenceId ?? ""}` ``. `ctx.now` has minute precision (`nowStamp` in `store.ts`), so two identical sends in one minute write one row (closed in part 3, ADR 0051: the demo uses the shared `inviteVersion`, stamped in milliseconds).
 
 ## Entities and fields
 
@@ -303,7 +303,7 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 | `id` | string | `ctx.newId("mtg")`. |
 | `title` | string | Required, trimmed. |
 | `start` | string | Local `YYYY-MM-DDTHH:mm`, no zone. The first occurrence of a series. |
-| `durationMin` | number | Minutes. At least 15 on a move. The store does not check it at creation. |
+| `durationMin` | number | Minutes. At least 15 on a move. The store does not check it at creation (closed in part 3, ADR 0051). |
 | `location` | string | Free text. A change is significant. |
 | `attendees` | Attendee[] | The form adds the organiser. |
 | `recurrence` | `none`, `weekly`, `biweekly`, `monthly` | |
@@ -320,7 +320,7 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 | `kind` | `meeting`, `request` | |
 | `private` | boolean | Only organiser and guests can see it. |
 | `hideGuestList` | boolean | See rule 9. |
-| `allowProposals` | boolean | From `settings.meetings.allowProposals`; always true on a request. |
+| `allowProposals` | boolean | From `settings.meetings.allowProposals`; always true on a request (closed in part 3, ADR 0051). |
 
 ### Attendee (inside `Meeting.attendees`)
 
@@ -467,24 +467,24 @@ Differences from ADR 0021, as built:
 
 Reminders:
 
-- A reminder is scheduled only by `createMeeting`, only for the first occurrence, and never for a request.
-- Moving or cancelling a meeting does not change or cancel its reminder row.
+- A reminder is scheduled only by `createMeeting`, only for the first occurrence, and never for a request (closed in part 3, ADR 0051).
+- Moving or cancelling a meeting does not change or cancel its reminder row (closed in part 3, ADR 0051).
 - Scheduled rows turn to sent only when the company is opened (`releaseScheduled`).
 
 Moves and conflicts:
 
-- `recurrenceProblem` is checked only at creation in the demo; the API also checks it when an edit changes the start. A monthly series moved to day 29 to 31 keeps a fourth-week RRULE with its first date as an RDATE, matching `nextMonthSameWeekday` (rule 16).
-- "This and following" from the first occurrence leaves the old series with `until` before its `start`. It shows no occurrences and still gets an update.
-- Undo removes a split-off series without sending its guests a cancellation.
+- `recurrenceProblem` is checked only at creation in the demo; the API also checks it when an edit changes the start (closed in part 3, ADR 0051). A monthly series moved to day 29 to 31 keeps a fourth-week RRULE with its first date as an RDATE, matching `nextMonthSameWeekday` (rule 16).
+- "This and following" from the first occurrence leaves the old series with `until` before its `start`. It shows no occurrences and still gets an update (closed in part 3, ADR 0051).
+- Undo removes a split-off series without sending its guests a cancellation (closed in part 3, ADR 0051).
 - Conflicts are checked only on a move, only warn, cover only the moved occurrence on its own day, and are not checked at creation.
-- `attendeeConflicts` reads every meeting without the viewer's scope, so a warning can name the title of a private meeting the viewer cannot see.
+- `attendeeConflicts` reads every meeting without the viewer's scope, so a warning can name the title of a private meeting the viewer cannot see (closed in part 3, ADR 0051).
 - The time grid places an occurrence by hour with no clamp, so a meeting before 07:00 or after 19:00 falls outside the grid column. Month and agenda still list it. Dragging is clamped to the grid.
 
 Permissions and answers:
 
-- An organiser without `meetings.meeting.edit`, such as an Employee, sees Accept time and Decline time and is refused on clicking.
+- An organiser without `meetings.meeting.edit`, such as an Employee, sees Accept time and Decline time and is refused on clicking (closed in part 3, ADR 0051).
 - A non-organiser who changes a meeting does not cause a row for the organiser, because `sendToGuests` always skips the organiser.
-- `respondToMeeting`, `removeGuest` and `decideProposal` do not check for a cancelled meeting. The screen hides those controls.
+- `respondToMeeting`, `removeGuest` and `decideProposal` do not check for a cancelled meeting. The screen hides those controls (closed in part 3, ADR 0051).
 - `simulateReply` audits and shows success even when the reply was stale.
 - A later plain answer keeps an earlier pending proposal (`attendee.proposal` is carried over in `applyReply`).
 
@@ -500,11 +500,12 @@ Other:
 
 ## Real build (ADR 0051)
 
-Parts 1 and 2 of Meetings are on the API:
+Parts 1 to 3 of Meetings are on the API:
 - part 1: the calendar, guests, invites, answers, requests and the calendar file; reminders; the Summit seed;
-- part 2: moves and resizes, Undo, proposal decisions and conflicts.
+- part 2: moves and resizes, Undo, proposal decisions and conflicts;
+- part 3: the screens, in api mode, and the demo store on the same shared rules (below, "Part 3").
 
-The screens move to the API in part 3. Until then the screens run on DemoStore as described above. The routes are in docs/api-contract.md, "Meetings (real build, ADR 0051)".
+The routes are in docs/api-contract.md, "Meetings (real build, ADR 0051)". The demo text above describes the demo as it was written; where part 3 closed a limit, the line says so.
 
 The API follows this spec. Where it differs, it is in the safer direction, and each difference is a row in docs/blueprint-delta.md:
 
@@ -556,7 +557,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
   - the seeded meetings have none until changed.
 - **Audit:** a private meeting's target is "Private meeting", and no entry holds emails, notes or titles. An email guest is "Email guest".
 - **New guests** are never saved as contacts or leads: rule 11 is deferred on the API, and `newGuestHandling` is ignored.
-- **Settings → Meetings** stays on DemoStore. The API reads the stored group, or 15 minutes, proposals off and the list hidden where a value is missing.
+- **Settings → Meetings** stays on DemoStore, and since part 3 it is hidden in api mode. The API reads the stored group, or 15 minutes, proposals off and the list hidden where a value is missing.
 
 Part 2 (ADR 0051 "Part 2"), also safer than this spec where it differs, each in the part 2 row of docs/blueprint-delta.md:
 
@@ -583,6 +584,37 @@ Part 2 (ADR 0051 "Part 2"), also safer than this spec where it differs, each in 
 - **Start bound** (review round 1 of PR #35): a start a person types, on create, edit, request, proposal, accepting a proposal and a move, must lie from a year before the company's today to three years after it. This spec sets no bound. A start a rule derives is not bounded, so a series that began long ago keeps running and moves through any occurrence inside the bound. The occurrences themselves follow this spec unchanged; the API works them out from the window it looks at rather than from a series' first date.
 
 Kept as this spec says in part 2: a move does not reset answers or clear a pending proposal; the sends-table rows stand; accepting a proposal resets every answer, the organiser's included; the shift is measured from `planned` ("All events" from an occurrence moved on its own is refused); conflicts only warn, only on a move, only for the moved occurrence on its day.
+
+Part 3 (ADR 0051 "Part 3"), the screens on the API, also safer than this spec where it differs, each in the part 3 row of docs/blueprint-delta.md:
+
+- **The screens on the API.** In api mode the Meetings page, its drawer and dialogs, and My meetings read and write through the routes above. The reader's id comes from the server, and the organiser is never sent as a guest: a guest goes as who it is, a new guest as an address and a name. Simulate reply, the Outbox and the bell stay on DemoStore (they are the notifications screens).
+- **Who sees which control** (`meetingRights`, on the meeting as the server shaped it for the reader):
+  - drag, resize, Reschedule, Edit details and Cancel meeting show only to someone the shared rules let change the meeting (`changeableAsShown`). A non-organiser also needs the organiser's address on the meeting, which the server gives only to someone who may change it. So the screen can hide a control the server would allow, never offer one it refuses;
+  - Remove, the answer buttons, Simulate reply on the Outbox drawer's invite rows, and Accept time and Decline time show only while `meetings.invites` is on, and never on a cancelled meeting. Accept time and Decline time show only to the organiser who may change the meeting, which closes "An organiser without `meetings.meeting.edit` … sees Accept time";
+  - the guest list shows to the organiser, to those who may change the meeting, or when it is not hidden.
+- **New meeting** offers guests, "Hide the guest list from guests" and "You're the organiser." only while `meetings.invites` is on; with it off no guests are sent. Its guests come from the server's guest list (`GET /meeting-guests`). "Save under customer" shows only when new guests become contacts and a customer the reader can read is offered; in api mode it never shows, since the API never saves new guests.
+- **The move dialog** runs the shared move rules for each scope of the drop and offers only those they allow, "This event" selected when offered. Each other scope is listed with the rule's reason, for example "This and following events: This is the first occurrence of the series. Choose All events to move the whole series.", and with none left the dialog offers no Move. A one-off still moves at once.
+- **After a move** there is one toast with Undo. Conflicts are named in it, as the other meeting's title, or "Busy" with its time when the mover can't read that meeting or that guest on it: "Also booked then: Priya Natarajan (Busy, 3:00 PM)". The Undo works from the open drawer.
+- **Undo** sends only the SEQUENCE the screen saw. A refused undo says why, in the server's words: after someone else's newer move it is "changed since", not "only the person who moved".
+- **The drawer** follows its occurrence: after a move made from it, after an Undo, and after a re-read. Until the re-read after a move or an Undo answers, it keeps showing the occurrence as it was, so a series moved with "All events" or "This and following" (and its Undo) stays open and then shows its new time. It closes when a newer read no longer has that occurrence (moved away, cancelled or removed).
+- **Request a meeting** shows only when there is a colleague to ask, on both pages, from the colleagues the server lists: active members who can read meetings, for someone who may create meetings, holds `hr.portal.view`, and has `meetings.requests`, `meetings.invites` and `hr.portal` on.
+- **My meetings** lists each meeting the person organises or is a staff guest on with its next occurrence, worked out in the meeting's zone, soonest first. The page and its tab are hidden with `meetings.calendar` off or without the meetings module.
+- **Settings → Meetings is demo-only:** in api mode it is left out of the menus, settings home, search, palette and access preview, and its address shows the not-found page. Part 4 builds it on the API.
+- **After every write the server answered,** a refusal included, the screens read again, so a stale screen catches up; when reads overlap, the newest wins.
+- **The demo store follows the same rules,** which closes in the demo: changes by anyone with the key who sees a meeting; a hidden list shown to any edit holder; requests always taking proposals; no length check at creation, no start bound, and the monthly limit checked only at creation; reminders set only at creation and never moved or cancelled; "This and following" from the first occurrence; an undo removing a split without a cancellation; conflicts naming private titles and warning about the meeting itself; Accept time for an organiser without edit; answers, removals and decisions on a cancelled meeting; Simulate reply taking any proposal; a second cancel; no switch checks on removals, answers or decisions; and identical invites in one minute merging into one row. In two places the demo is stricter than the API: a request goes only to a colleague the list above offers, and Simulate reply needs the reader to see the meeting.
+- **What stays demo-only, and why:**
+  - Simulate reply, because no real email reaches outside guests;
+  - Settings → Meetings and saving new guests (rule 11), narrowed: a contact only under a customer the reader can see, a lead only for someone who reads and may create customers;
+  - the demo's PRODID;
+  - no daily email caps (the per-meeting limits apply);
+  - the browser's day and clock, with meeting times as the zone's wall time;
+  - Undo remembered in memory only, so a reload forgets it and the toast is refused;
+  - audit entries in the demo's own words, naming no private title, address or private guest;
+  - email guest ids `ext-…`;
+  - reminders sent when the company opens (`releaseScheduled`);
+  - under View as, the signed-in person with the viewed role's keys and scope, for meetings.
+
+Kept as this spec says in part 3: the views, drag, resize, the Reschedule form, the four answers and Simulate reply; a one-off moves at once; conflicts only warn.
 
 Kept as this spec says:
 - a move does not reset answers (part 2 follows the sends table, and keeps it);

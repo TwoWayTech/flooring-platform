@@ -36,6 +36,7 @@ import {
   type BusinessFilters,
   type CommissionPlan,
   type Meeting,
+  type MyMeetings,
   type ContractLine,
   type Employee,
   type ImportTable,
@@ -72,6 +73,7 @@ import type {
   RecurringExpenseInput,
   MeetingInput,
   MeetingRequestInput,
+  MeetingsData,
   ReplyInput,
   BillingInput,
   CertificateInput,
@@ -152,16 +154,18 @@ import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-a
 import {
   cancelMeeting,
   createMeeting,
-  decideProposal,
   meetingCalendarFile,
+  meetingsData,
+  myMeetings,
   removeGuest,
   requestMeeting,
-  rescheduleMeeting,
   respondToMeeting,
   simulateReply,
-  undoReschedule,
   updateMeeting,
+  type MeetingScope,
 } from "./meeting-actions";
+import { decideProposal, MeetingMoveMemo, rescheduleMeeting, undoReschedule } from "./meeting-moves";
+import { meetingSightFor, visibleMeetings } from "./meeting-sight";
 import {
   cancelOrder,
   createPurchaseOrder,
@@ -311,6 +315,8 @@ export class DemoStore implements ApiClient {
   private viewer: Viewer | null = null;
   private readonly todayIso = format(new Date(), "yyyy-MM-dd");
   private notices: string[] = [];
+  /** Each meeting's last move, for Undo; in memory only (ADR 0051 "Part 3", B.6 item 6). */
+  private readonly meetingMoves = new MeetingMoveMemo();
 
   /** Proof files live outside the overlay, behind the FileStore interface (spec Appendix A). */
   constructor(private readonly files: FileStore = indexedDbFileStore) {}
@@ -318,6 +324,7 @@ export class DemoStore implements ApiClient {
   async openCompany(companyId: CompanyId, viewer: Viewer) {
     this.current = await this.db(companyId);
     this.viewer = viewer;
+    this.meetingMoves.clear();
     releaseScheduled(this.actionContext(this.current));
     raiseRecurringDrafts(this.actionContext(this.current));
     await raiseContractReminders(this.actionContext(this.current));
@@ -353,6 +360,7 @@ export class DemoStore implements ApiClient {
     await this.files.clear().catch(() => undefined);
     this.dbs.clear();
     this.platform = null;
+    this.meetingMoves.clear();
     if (this.current) this.current = await this.db(this.current.companyId);
     this.emit();
   }
@@ -619,6 +627,11 @@ export class DemoStore implements ApiClient {
     const can = this.actionContext(db).can;
     const needed = PRIVATE_COLLECTIONS[collection];
     if (needed && !(await can(needed))) return [] as unknown as Collections[K];
+    // Meetings are read as GET /meetings reads them: seen and shaped for the reader (ADR 0051 "Part 3").
+    if (collection === "meetings") {
+      const meetings = featureOn("meetings.calendar") ? visibleMeetings(db, (await this.meetingScope(db)).sight) : [];
+      return meetings as unknown as Collections[K];
+    }
     const items = applyScope(db, collection, db.list(collection), this.subject(db));
     // Pay rate needs its own permission (CLAUDE.md rule 2), so the record never carries it without it.
     if (collection === "employees" && !(await can(SENSITIVE.payRate))) {
@@ -1218,43 +1231,56 @@ export class DemoStore implements ApiClient {
     );
   }
 
+  // Meetings follow the shared rules the API uses (ADR 0051 "Part 3"); what stays demo-only is in
+  // meeting-actions.ts (Simulate reply, new-guest saving) and meeting-moves.ts (Undo's memory).
+  async meetingsData(): Promise<MeetingsData> {
+    const db = this.open();
+    return meetingsData(this.actionContext(db), await this.meetingScope(db));
+  }
+
+  async myMeetings(): Promise<MyMeetings> {
+    const db = this.open();
+    return myMeetings(this.actionContext(db), await this.meetingScope(db));
+  }
+
   async createMeeting(input: MeetingInput) {
-    return this.act((ctx) => createMeeting(ctx, input));
+    return this.actOnMeetings((ctx, scope) => createMeeting(ctx, scope, input));
   }
 
   async updateMeeting(
     id: string,
     patch: Partial<Pick<Meeting, "title" | "notes" | "location" | "start" | "durationMin" | "reminderMin">>,
   ) {
-    return this.act((ctx) => updateMeeting(ctx, id, patch));
+    return this.actOnMeetings((ctx, scope) => updateMeeting(ctx, scope, id, patch));
   }
 
   async cancelMeeting(id: string) {
-    return this.act((ctx) => cancelMeeting(ctx, id));
+    return this.actOnMeetings((ctx, scope) => cancelMeeting(ctx, scope, id));
   }
 
   async removeGuest(meetingId: string, attendeeId: string) {
-    return this.act((ctx) => removeGuest(ctx, meetingId, attendeeId));
+    return this.actOnMeetings((ctx, scope) => removeGuest(ctx, scope, meetingId, attendeeId));
   }
 
   async respondToMeeting(meetingId: string, reply: ReplyInput) {
-    return this.act((ctx) => respondToMeeting(ctx, meetingId, reply));
+    return this.actOnMeetings((ctx, scope) => respondToMeeting(ctx, scope, meetingId, reply));
   }
 
   async simulateReply(outboxId: string, reply: ReplyInput) {
-    return this.act((ctx) => simulateReply(ctx, outboxId, reply));
+    return this.actOnMeetings((ctx, scope) => simulateReply(ctx, scope, outboxId, reply));
   }
 
   async decideProposal(meetingId: string, attendeeId: string, accept: boolean) {
-    return this.act((ctx) => decideProposal(ctx, meetingId, attendeeId, accept));
+    return this.actOnMeetings((ctx, scope) => decideProposal(ctx, scope, meetingId, attendeeId, accept));
   }
 
   async requestMeeting(input: MeetingRequestInput) {
-    return this.act((ctx) => requestMeeting(ctx, input));
+    return this.actOnMeetings((ctx, scope) => requestMeeting(ctx, scope, input));
   }
 
   async meetingCalendarFile(meetingId: string) {
-    return meetingCalendarFile(this.actionContext(this.open()), meetingId);
+    const db = this.open();
+    return meetingCalendarFile(this.actionContext(db), await this.meetingScope(db), meetingId);
   }
 
   async saveContract(input: ContractInput) {
@@ -1511,11 +1537,11 @@ export class DemoStore implements ApiClient {
   }
 
   async rescheduleMeeting(move: MeetingMove) {
-    return this.act((ctx) => rescheduleMeeting(ctx, move));
+    return this.actOnMeetings((ctx, scope) => rescheduleMeeting(ctx, scope, move));
   }
 
   async undoReschedule(undo: MeetingUndo) {
-    return this.act((ctx) => undoReschedule(ctx, undo));
+    return this.actOnMeetings((ctx, scope) => undoReschedule(ctx, scope, undo));
   }
 
   async signOffJob(jobId: string, signer: string) {
@@ -1802,6 +1828,22 @@ export class DemoStore implements ApiClient {
     const result = await action(this.actionContext(this.open()));
     this.emit();
     return result;
+  }
+
+  /** Runs a meetings action with the reader's sight and the undo memory (`MeetingScope`). */
+  private async actOnMeetings<T>(action: (ctx: ActionContext, scope: MeetingScope) => Promise<T>): Promise<T> {
+    const scope = await this.meetingScope(this.open());
+    return this.act((ctx) => action(ctx, scope));
+  }
+
+  /**
+   * What a meetings action needs: one subject under View as (S12), the signed-in person with the
+   * viewed role's keys and scope (`meetingSightFor`), the undo memory and the company.
+   */
+  private async meetingScope(db: CompanyDb): Promise<MeetingScope> {
+    const { access, company } = await this.granter(db);
+    const actor = db.get("users", this.viewer!.userId)!;
+    return { sight: meetingSightFor(db, access, company.modules, actor), memo: this.meetingMoves, company };
   }
 
   private open(): CompanyDb {
