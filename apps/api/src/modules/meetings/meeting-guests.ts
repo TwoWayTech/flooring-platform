@@ -4,6 +4,8 @@ import { user } from "@workspace/db/control";
 import {
   newAttendee,
   normalizeGuestEmail,
+  readsCustomerGuests,
+  readsSupplierGuests,
   type Attendee,
   type GuestOption,
   type NewGuestInput,
@@ -12,7 +14,6 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { notFound, seesCustomer } from "../sales/sales-common";
 import { loadBranches } from "../sales/sales-records";
-import { readsCustomers, readsSuppliers } from "./meeting-records";
 import { activeMembers } from "./meetings-common";
 
 /** A guest picked from the company's records, as a request names it: only who they are (critic B4). */
@@ -64,11 +65,11 @@ export async function resolveGuests(
   };
   add("staff", wanted("staff"), await activeMembers(tx, control, wanted("staff")));
   for (const kind of ["customer", "customer-contact"] as const) {
-    if (wanted(kind).length > 0 && !readsCustomers(access)) throw notFound("guest");
+    if (wanted(kind).length > 0 && !readsCustomerGuests(access)) throw notFound("guest");
     add(kind, wanted(kind), await seenCustomerParties(tx, access, kind, wanted(kind)));
   }
   for (const kind of ["supplier", "supplier-contact"] as const) {
-    if (wanted(kind).length > 0 && !readsSuppliers(access)) throw notFound("guest");
+    if (wanted(kind).length > 0 && !readsSupplierGuests(access)) throw notFound("guest");
     add(kind, wanted(kind), await supplierParties(tx, kind, wanted(kind)));
   }
   const outside = await addEmailGuests(tx, control, access, guests, byEmail);
@@ -181,7 +182,7 @@ export async function guestOptions(db: CompanyDb, control: ControlDb, access: Re
   const options: GuestOption[] = (await activeMembers(db, control))
     .filter((member) => member.id !== access.userId)
     .map((member) => ({ kind: "staff", id: member.id, name: member.name, email: "" }));
-  if (readsCustomers(access)) {
+  if (readsCustomerGuests(access)) {
     const branches = await loadBranches(db);
     const seen = (salesRepId: string | null) => seesCustomer(access, { salesRepId: salesRepId ?? "" }, branches);
     const customerRows = await db
@@ -208,7 +209,7 @@ export async function guestOptions(db: CompanyDb, control: ControlDb, access: Re
         .map((row) => ({ kind: "customer-contact" as const, id: row.id, name: row.name, email: row.email })),
     );
   }
-  if (readsSuppliers(access)) {
+  if (readsSupplierGuests(access)) {
     const supplierRows = await db
       .select({ id: suppliers.id, name: suppliers.name, email: suppliers.email })
       .from(suppliers)

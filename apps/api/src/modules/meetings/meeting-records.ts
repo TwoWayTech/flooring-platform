@@ -7,7 +7,14 @@ import {
   supplierContacts,
   suppliers,
 } from "@workspace/db/company";
-import { featureOn, instantToZoned, isOrganiser, type Attendee, type Meeting } from "@workspace/shared";
+import {
+  instantToZoned,
+  isOrganiser,
+  readsCustomerGuests,
+  readsSupplierGuests,
+  type Attendee,
+  type Meeting,
+} from "@workspace/shared";
 import { and, asc, inArray, isNull, ne } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { seesCustomer } from "../sales/sales-common";
@@ -132,22 +139,6 @@ export async function loadMeetings(
   );
 }
 
-/** Whether the person may read customers here: the core module, the key and the switch (sales.md "Who uses it"). */
-export function readsCustomers(access: RequestAccess): boolean {
-  return (
-    access.modules.includes("core") && access.permissions.has("customers.customer.view") && featureOn("sales.customers")
-  );
-}
-
-/** Whether the person may read suppliers here: the core module, the key and the switch (purchasing.md). */
-export function readsSuppliers(access: RequestAccess): boolean {
-  return (
-    access.modules.includes("core") &&
-    access.permissions.has("purchasing.supplier.view") &&
-    featureOn("purchasing.suppliers")
-  );
-}
-
 /**
  * Which linked guests of these meetings the person may see by name and address (ADR 0051 "What a
  * viewer sees", critic section C): a customer or a person at one only with `customers.customer.view`
@@ -166,7 +157,7 @@ export async function partySight(
   const seenCustomers = new Set<string>();
   const customerOfContact = new Map<string, string>();
   const liveSuppliers = new Set<string>();
-  if (readsCustomers(access)) {
+  if (readsCustomerGuests(access)) {
     const contactRows = await rowsWhere(ids("customer-contact"), (wanted) =>
       db
         .select({ id: customerContacts.id, customerId: customerContacts.customerId })
@@ -188,7 +179,7 @@ export async function partySight(
       if (seesCustomer(access, { salesRepId: customer.salesRepId ?? "" }, branches)) seenCustomers.add(customer.id);
     }
   }
-  if (readsSuppliers(access)) {
+  if (readsSupplierGuests(access)) {
     const contactRows = await rowsWhere(ids("supplier-contact"), (wanted) =>
       db
         .select({ id: supplierContacts.id, supplierId: supplierContacts.supplierId })

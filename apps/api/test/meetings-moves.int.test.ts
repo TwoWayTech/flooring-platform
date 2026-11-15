@@ -1019,6 +1019,38 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     conflicted(await undo(cookies.manager, made.id, second.undo.previous.sequence), "meeting_changed");
   });
 
+  it("answers a stale undo toast after a colleague's newer move with 409 meeting_changed and writes nothing", async () => {
+    // The SEQUENCE is checked before the mover (ADR 0051 "Part 3"; docs/api-contract.md undo).
+    const made = await schedule(cookies.manager, { title: "Stale toast", guests: [staff(ids.employee)] });
+    const ownersMove = await moved(cookies.owner, made, {
+      planned: made.start,
+      start: at("11-12", "10:00"),
+      scope: "all",
+    });
+    expect(ownersMove.undo.previous.sequence).toBe(0);
+    const managersMove = await moved(cookies.manager, made, {
+      planned: at("11-12", "10:00"),
+      start: at("11-12", "13:00"),
+      scope: "all",
+    });
+    expect(managersMove.undo.previous.sequence).toBe(1);
+    const storedBefore = await storedMeeting(made.id);
+    expect(storedBefore).toMatchObject({ sequence: 2 });
+    const outboxBefore = (await outboxOf(made.id)).map((row) => row.id).sort();
+    const entriesBefore = (await entriesOf(made.id)).length;
+
+    const stale = await undo(cookies.owner, made.id, ownersMove.undo.previous.sequence);
+    conflicted(stale, "meeting_changed");
+    expect(stale.body.message).toBe("This meeting changed after the move, so the move can't be undone.");
+    expect(await storedMeeting(made.id)).toEqual(storedBefore);
+    expect((await outboxOf(made.id)).map((row) => row.id).sort()).toEqual(outboxBefore);
+    expect(await entriesOf(made.id)).toHaveLength(entriesBefore);
+
+    const undone = await undo(cookies.manager, made.id, managersMove.undo.previous.sequence);
+    status(undone, 201);
+    expect(undone.body).toMatchObject({ start: at("11-12", "10:00"), sequence: 3 });
+  });
+
   it("counts an undo and a decision against the daily email limits and writes nothing when over", async () => {
     const mover = await member(["manager"], "Cap Mover");
     const cookie = await harness.signIn(mover.email);
