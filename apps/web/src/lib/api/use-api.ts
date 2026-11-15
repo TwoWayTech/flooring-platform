@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type DependencyList } from "react";
 import { api } from ".";
 import type { ApiClient } from "./contract";
+import { latestRun } from "./latest-run";
 
 type Result<T> =
   | { status: "loading"; data: undefined; error: undefined }
@@ -21,7 +22,8 @@ interface QueryOptions {
 
 /**
  * Reads data through the ApiClient and re-reads whenever the data changes, so every screen
- * reflects an edit made anywhere else (for example a new brand color or a roll cut).
+ * reflects an edit made anywhere else (for example a new brand color or a roll cut). When reads
+ * overlap, only the newest one's answer is shown.
  */
 export function useApiQuery<T>(
   read: (client: ApiClient) => Promise<T>,
@@ -36,17 +38,22 @@ export function useApiQuery<T>(
   }, []);
   useEffect(() => {
     let current = true;
-    const run = () =>
-      read(api).then(
-        (data) => current && setState({ status: "ready", data, error: undefined }),
+    // Only the newest of overlapping reads applies its answer (`latestRun`, ADR 0051 "Part 3").
+    const ticket = latestRun();
+    const run = () => {
+      const isLatest = ticket();
+      return read(api).then(
+        (data) => current && isLatest() && setState({ status: "ready", data, error: undefined }),
         (error: unknown) =>
           current &&
+          isLatest() &&
           setState((previous) =>
             keepDataOnError && previous.status === "ready"
               ? previous
               : { status: "error", data: undefined, error: error instanceof Error ? error : new Error(String(error)) },
           ),
       );
+    };
     void run();
     const unsubscribe = api.subscribe(() => void run());
     return () => {

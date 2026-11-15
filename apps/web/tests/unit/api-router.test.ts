@@ -4,10 +4,18 @@ import { ApiError } from "@/lib/api/errors";
 import { routeClient } from "@/lib/api/http/router";
 import { HttpApiError, HttpTransport } from "@/lib/api/http/transport";
 
-/** A stand-in for DemoStore with the two methods these tests touch. */
+/** A stand-in for DemoStore with the methods these tests touch; `emit` is a change the demo store makes itself. */
 function fakeDemo() {
   const demo = {
     calls: [] as string[],
+    listeners: new Set<() => void>(),
+    subscribe(listener: () => void) {
+      demo.listeners.add(listener);
+      return () => void demo.listeners.delete(listener);
+    },
+    emit() {
+      demo.listeners.forEach((listener) => listener());
+    },
     today() {
       demo.calls.push("today");
       return "2026-11-12";
@@ -47,6 +55,46 @@ describe("routeClient", () => {
     const demo = fakeDemo();
     const client = routeClient(demo as unknown as ApiClient, new HttpTransport("http://api.test"), {});
     expect(await client.getCompany()).toEqual({ name: "from demo" });
+  });
+
+  /** A client whose one routed write tells the screens it changed data (ADR 0051 part 3). */
+  function writingClient(demo: ReturnType<typeof fakeDemo>) {
+    const http = new HttpTransport("http://api.test", fetchReturning(200, { id: "m1" }));
+    return routeClient(demo as unknown as ApiClient, http, {
+      cancelMeeting: (transport, _demo, changed) => async (id) => {
+        const saved = await transport.request<Awaited<ReturnType<ApiClient["cancelMeeting"]>>>(
+          "POST",
+          `/meetings/${id}/cancel`,
+        );
+        changed();
+        return saved;
+      },
+    });
+  }
+
+  it("re-reads subscribed screens after a routed write reports a change, and still passes the demo store's own changes on", async () => {
+    const demo = fakeDemo();
+    const client = writingClient(demo);
+    const heard: string[] = [];
+    client.subscribe(() => heard.push("screen"));
+
+    await client.cancelMeeting("m1");
+    expect(heard).toEqual(["screen"]);
+    demo.emit();
+    expect(heard).toEqual(["screen", "screen"]);
+  });
+
+  it("unsubscribing stops both", async () => {
+    const demo = fakeDemo();
+    const client = writingClient(demo);
+    const heard: string[] = [];
+    const unsubscribe = client.subscribe(() => heard.push("screen"));
+    unsubscribe();
+
+    await client.cancelMeeting("m1");
+    demo.emit();
+    expect(heard).toEqual([]);
+    expect(demo.listeners.size).toBe(0);
   });
 });
 
