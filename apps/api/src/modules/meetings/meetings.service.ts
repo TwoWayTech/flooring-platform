@@ -232,9 +232,10 @@ export class MeetingsService {
    * raises SEQUENCE and asks every guest again; every guest gets an "Updated" invite either way. A
    * series' occurrences moved on their own shift with a new start, and after any edit the ones that
    * have not ended are sent again, since each carries the title, place, notes, time and reminder it
-   * was sent with (ADR 0051 "Series exceptions sent again", ADR 0021). A start or length change that
-   * `editProblem` refuses by the database clock, such as one that would leave an occurrence that has
-   * taken place behind at a date still ahead, is 400 and writes nothing (review round 3 of PR #35).
+   * was sent with (ADR 0051 "Series exceptions sent again", ADR 0021). An edit `editProblem` refuses
+   * by the database clock is 400 and writes nothing: a start or length change that would put an
+   * occurrence out of reach (review round 3 of PR #35), and any edit of a series that would leave an
+   * occurrence that has taken place behind at a date still ahead (final review of PR #35).
    */
   async update(tenant: TenantContext, actor: Actor, id: string, sent: MeetingPatch): Promise<Meeting> {
     // Compared as stored, so a title or place sent with spaces around it is no change of its own.

@@ -7,6 +7,7 @@ import {
   conflictForViewer,
   effectiveScope,
   isPlannedOccurrence,
+  meetingOccurrences,
   moveAuditEntry,
   moveProblem,
   movedMeetings,
@@ -20,6 +21,7 @@ import {
   type Attendee,
   type Meeting,
   type MeetingMoveInput,
+  type MoveScope,
   type UndoContext,
 } from "../src";
 import { GUEST, NOW, ORGANISER, TODAY, guestRow, testMeeting, viewerAs } from "./meeting-fixtures";
@@ -42,6 +44,8 @@ const KEPT =
   "The earlier occurrences stay where they are, so this and following must start after the last of them ends. Choose a later time, or choose This event or All events.";
 const BEYOND_REACH = /more than 31 days before its date in the series/;
 const LEFT_BEHIND = /has already taken place, but its date in the series is still ahead/;
+const CHANGED_ON_ITS_OWN =
+  "This occurrence was changed on its own. Choose This event, or move another occurrence to move all events.";
 /** Fridays at 09:00 in Denver from 30 October; NOW is the Sunday after 13 November, at noon. */
 const fridays = (exceptions: Meeting["exceptions"]) =>
   testMeeting({ start: "2026-10-30T09:00", recurrence: "weekly", exceptions });
@@ -273,6 +277,36 @@ describe("what a move refuses (ADR 0051 Part 2)", () => {
     const fromLastFriday = move({ planned: "2026-11-13T09:00", start: "2026-11-16T09:00", scope: "following" });
     expect(moveProblem(heldEarly(), fromLastFriday, TODAY, NOW)).toMatch(LEFT_BEHIND);
     expect(moveProblem(heldEarly(), move(later), TODAY, NOW)).toBeNull();
+  });
+
+  it("refuses all events from an occurrence changed on its own; this and following from it starts at the new time (final review of PR #35)", () => {
+    // 26 November was moved on its own to Friday the 27th at 10:00; that Friday occurrence is dragged to Saturday.
+    const series = huddle({
+      exceptions: [{ planned: "2026-11-26T08:30", start: "2026-11-27T10:00", durationMin: 60 }],
+    });
+    const drag = (scope: MoveScope) =>
+      move({ planned: "2026-11-26T08:30", start: "2026-11-28T10:00", durationMin: 60, scope });
+    // All events would shift its date to Saturday but leave it on Friday, while the conflict check looks at Saturday.
+    expect(moveProblem(series, drag("all"), TODAY, NOW)).toBe(CHANGED_ON_ITS_OWN);
+    // Resized only, it would keep its old length while the series and the conflict check take the new one.
+    const resized = huddle({ exceptions: [{ planned: "2026-11-26T08:30", durationMin: 30 }] });
+    const longer = move({ planned: "2026-11-26T08:30", start: "2026-11-26T08:30", durationMin: 45, scope: "all" });
+    expect(moveProblem(resized, longer, TODAY, NOW)).toBe(CHANGED_ON_ITS_OWN);
+    // All events from another occurrence still takes the one changed on its own along, at its own time.
+    expect(
+      moveProblem(series, move({ planned: "2026-12-03T08:30", start: "2026-12-05T10:00", scope: "all" }), TODAY, NOW),
+    ).toBeNull();
+    // This event moves it again; this and following drops it from both series, so it lands where it was dragged.
+    expect(moveProblem(series, drag("this"), TODAY, NOW)).toBeNull();
+    expect(moveProblem(series, drag("following"), TODAY, NOW)).toBeNull();
+    const split = movedMeetings(series, drag("following"), ids);
+    expect(split.original).toMatchObject({ until: "2026-11-25", exceptions: [] });
+    expect(split.split).toMatchObject({ start: "2026-11-28T10:00", durationMin: 60, exceptions: [] });
+    const held = meetingOccurrences([split.original, split.split!], "2026-11-26", "2026-11-28");
+    expect(held.map((o) => [o.meeting.id, o.start, o.planned])).toEqual([
+      ["m2", "2026-11-28T10:00", "2026-11-28T10:00"],
+    ]);
+    expect(movedOccurrenceKey(drag("following"), split)).toEqual({ meetingId: "m2", planned: "2026-11-28T10:00" });
   });
 
   it("takes at most 100 occurrences changed on their own", () => {
@@ -515,7 +549,7 @@ describe("undo, rebuilt from the move's own audit entry (critic B3)", () => {
     expect(restored.attendees).toEqual(moved.original.attendees);
   });
 
-  it("refuses to undo all events or a split that would leave an occurrence that has taken place behind (review round 3 of PR #35)", () => {
+  it("refuses any undo that would leave an occurrence that has taken place behind (review round 3 and the final review of PR #35)", () => {
     // Two weeks back puts the occurrence held early at a date that has passed, so the move is taken.
     const back = move({ planned: "2026-12-04T09:00", start: "2026-11-20T09:00", scope: "all" });
     expect(moveProblem(heldEarly(), back, TODAY, NOW)).toBeNull();
@@ -523,12 +557,16 @@ describe("undo, rebuilt from the move's own audit entry (critic B3)", () => {
     const allRecord = moveAuditEntry(heldEarly(), new Date(0), back, allMoved);
     expect(undoneSeriesProblem(allMoved.original, allRecord, NOW)).toMatch(LEFT_BEHIND);
     expect(undoneSeriesProblem(allMoved.original, allRecord, new Date("2026-11-20T17:00:00.000Z"))).toBeNull();
-    // Undoing this event leaves the series' time and rule alone.
+    // Undoing this event sends a series REQUEST too, so it waits as well, and points to moving the occurrence back.
     const one = move({ planned: "2026-11-27T09:00", start: "2026-11-27T10:00" });
     const oneMoved = movedMeetings(heldEarly(), one, ids);
-    expect(
-      undoneSeriesProblem(oneMoved.original, moveAuditEntry(heldEarly(), new Date(0), one, oneMoved), NOW),
-    ).toBeNull();
+    const oneRecord = moveAuditEntry(heldEarly(), new Date(0), one, oneMoved);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, NOW)).toMatch(LEFT_BEHIND);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, NOW)).toMatch(/Move the occurrence back with This event/);
+    expect(undoneSeriesProblem(oneMoved.original, oneRecord, new Date("2026-11-20T17:00:00.000Z"))).toBeNull();
+    // With no occurrence held, undoing this event is taken.
+    const plain = movedMeetings(fridays([]), one, ids);
+    expect(undoneSeriesProblem(plain.original, moveAuditEntry(fridays([]), new Date(0), one, plain), NOW)).toBeNull();
   });
 
   it("puts an undone occurrence back at its earlier exception's time, or the series' own", () => {

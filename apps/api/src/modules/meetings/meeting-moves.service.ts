@@ -183,9 +183,10 @@ export class MeetingMoves {
    * "Part 2", critic B3). The meeting is rebuilt from the server's own "Moved meeting" entry, never
    * from the client: only the SEQUENCE the client saw before the move is read, to refuse a mismatch.
    * `undoProblem` decides: the move must be the meeting's last change, by the caller, within five
-   * minutes. Undoing "all" or a split is refused with 400 when it would leave an occurrence changed
-   * on its own that has taken place behind at a date still ahead (`undoneSeriesProblem`, review
-   * round 3 of PR #35). A series the move split off must still be exactly as the move left it, and
+   * minutes. Every undo sends a series REQUEST, so it is refused with 400 when the restored series
+   * would leave an occurrence changed on its own that has taken place behind at a date still ahead
+   * (`undoneSeriesProblem`, review round 3 and the final review of PR #35, "this event" included).
+   * A series the move split off must still be exactly as the move left it, and
    * is removed: soft-deleted with its guests, cancelled at SEQUENCE 1, and its guests get a CANCEL
    * (closing the spec's "Undo removes a split-off series without sending its guests a cancellation").
    */
@@ -425,18 +426,19 @@ export class MeetingMoves {
 
   /**
    * What an undo sends (meetings.md sends table, "Undo a move"): an "Updated" REQUEST to every guest
-   * at the new SEQUENCE. After undoing "all" or a split, the restored series' surviving exceptions
-   * go again; after undoing "this event", that occurrence goes again at its restored time, so the
-   * override the move sent is taken back (ADR 0051 "Part 2").
+   * at the new SEQUENCE, with the restored series' surviving exceptions again, as every series
+   * REQUEST has them (final review of PR #35: a calendar that replaces the whole set on a series-only
+   * REQUEST would otherwise drop them). After undoing "this event", that occurrence also goes again
+   * at its restored time, so the override the move sent is taken back (ADR 0051 "Part 2"), unless an
+   * earlier exception there is already among the re-sends: the two would be one Outbox version.
    */
   private async undoPlans(tx: CompanyDb, record: MoveRecord, saved: LoadedMeeting): Promise<PlannedInvites[]> {
     const { meeting, row } = saved;
-    if (record.after.scope !== "this")
-      return [await this.sends.plan(tx, "edit", meeting, row.updatedAt, { resendExceptions: true })];
-    return [
-      await this.sends.plan(tx, "edit", meeting, row.updatedAt),
-      await this.sends.plan(tx, "occurrence", meeting, row.updatedAt, { occurrence: restoredOccurrence(record) }),
-    ];
+    const series = await this.sends.plan(tx, "edit", meeting, row.updatedAt, { resendExceptions: true });
+    const { planned } = record.before;
+    if (record.after.scope !== "this" || series.sends.some((send) => send.recurrenceId === planned)) return [series];
+    const occurrence = restoredOccurrence(record);
+    return [series, await this.sends.plan(tx, "occurrence", meeting, row.updatedAt, { occurrence })];
   }
 
   /**

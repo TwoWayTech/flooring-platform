@@ -94,8 +94,9 @@ export class MeetingSends {
     });
     const sends = options.resendExceptions ? [...series, ...exceptionResends(meeting, series, stamp)] : series;
     if (sends.length === 0) return { meeting, stamp, organiser: { name: "", email: "" }, sends };
-    const staffIds = sends.filter((send) => send.recipient.kind === "staff").map((send) => send.recipient.id);
-    const active = new Set((await activeMembers(tx, this.control.db, staffIds)).map((member) => member.id));
+    // Each colleague is looked up once, however many exceptions are sent again to them.
+    const staffIds = new Set(sends.filter((send) => send.recipient.kind === "staff").map((send) => send.recipient.id));
+    const active = new Set((await activeMembers(tx, this.control.db, [...staffIds])).map((member) => member.id));
     return {
       meeting,
       stamp,

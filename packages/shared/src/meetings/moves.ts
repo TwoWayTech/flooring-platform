@@ -70,17 +70,25 @@ function beyondReach(exception: Pick<MeetingException, "planned" | "start">): bo
 
 const BEYOND_REACH = `An occurrence changed on its own would be more than ${MOVED_EARLIER_REACH_DAYS} days before its date in the series, where the calendar can't find it. Choose another time.`;
 
+const LEFT_BEHIND =
+  "An occurrence changed on its own has already taken place, but its date in the series is still ahead, so guests' calendars would show the meeting again on that date.";
+
 /**
- * Why a series whose time or rule changes would leave an occurrence changed on its own behind, or
- * null (ADR 0051 "Part 2", review round 3 of PR #35, safer than the spec). A guest's calendar drops a
- * series' overrides when its DTSTART, DTEND or RRULE changes, and one is sent again only while its
- * own time has not ended (`exceptionResends`, `hasEnded`). So an occurrence that has taken place
- * while the date the series plans for it is still ahead would leave that date in every guest's
- * calendar as a plain occurrence, a meeting the app doesn't have. Such a change is refused until
- * that date has passed. Check it on the series as the change saves it: after an "all" move, both
- * series of a split, an edit of the start or length, and an undo of "all" or a split.
+ * Why a series REQUEST would leave an occurrence changed on its own behind, or null (ADR 0051 "Part
+ * 2", review round 3 and the final review of PR #35, safer than the spec). A guest's calendar drops a
+ * series' overrides when its DTSTART, DTEND or RRULE changes, and one that replaces the whole set on
+ * a series-only REQUEST drops them on any update; an override is sent again only while its own time
+ * has not ended (`exceptionResends`, `hasEnded`). So an occurrence that has taken place while the
+ * date the series plans for it is still ahead would leave that date in every guest's calendar as a
+ * plain occurrence, a meeting the app doesn't have. Every change that sends a series REQUEST is
+ * refused until that date has passed. Check it on the series as the change saves it: after an "all"
+ * move, both series of a split, any edit of a series, and any undo. `advice` ends the message.
  */
-export function leftBehindProblem(series: Meeting, now: Date): string | null {
+export function leftBehindProblem(
+  series: Meeting,
+  now: Date,
+  advice = "Change the series after that date, or move one occurrence at a time.",
+): string | null {
   if (series.recurrence === "none") return null;
   const { timeZone, durationMin } = series;
   const behind = series.exceptions.some(
@@ -89,9 +97,7 @@ export function leftBehindProblem(series: Meeting, now: Date): string | null {
       hasEnded(e.start ?? e.planned, e.durationMin ?? durationMin, timeZone, now) &&
       !hasEnded(e.planned, durationMin, timeZone, now),
   );
-  return behind
-    ? "An occurrence changed on its own has already taken place, but its date in the series is still ahead, so guests' calendars would show the meeting again on that date. Change the series after that date, or move one occurrence at a time."
-    : null;
+  return behind ? `${LEFT_BEHIND} ${advice}` : null;
 }
 
 /**
@@ -165,6 +171,19 @@ export function shiftedSeries(meeting: Meeting, change: { start: string; duratio
 const CHECK_ID = "split-check";
 
 /**
+ * Whether the occurrence a move names was changed on its own: a live exception at `planned` with its
+ * own start or length. Rule 4's "all" shift moves each exception's planned time but keeps its own
+ * time and length, so an "all" move dragged from such an occurrence would leave it where it was (or
+ * at its old length) while the conflict check looks at the new slot (final review of PR #35). A
+ * split drops the exception at `planned`, so the new series starts at the new time and length.
+ */
+function changedOnItsOwn(meeting: Meeting, planned: string): boolean {
+  return meeting.exceptions.some(
+    (e) => e.planned === planned && !e.cancelled && (e.start !== undefined || e.durationMin !== undefined),
+  );
+}
+
+/**
  * Why a move can't be made, or null (meetings.md rules 4 and 5, "Move or resize"; ADR 0051 "Part 2",
  * each refusal safer than the demo, which moves whatever it is given). `today` is the company's day
  * and `now` the database clock of the move:
@@ -174,6 +193,8 @@ const CHECK_ID = "split-check";
  * - `planned` must be one of the meeting's occurrences (`isPlannedOccurrence`);
  * - "this and following" from the first occurrence is refused: the old series would keep a DTSTART
  *   that RFC 5545 counts as an occurrence, so guests would see the meeting twice;
+ * - "all" from an occurrence changed on its own is refused (`changedOnItsOwn`, final review of PR
+ *   #35): it would stay at its own time and length. "This and following" from one is taken;
  * - "this and following" must start after the last occurrence the old series keeps has ended
  *   (`lastKeptEnd`), or both series would hold the same weeks and every guest would get both
  *   (review round 3 of PR #35; rule 4 only says the new series starts at the new time);
@@ -194,6 +215,8 @@ export function moveProblem(meeting: Meeting, move: MeetingMoveInput, today: str
   const scope = effectiveScope(meeting, move.scope);
   if (scope === "following" && move.planned === meeting.start)
     return "This is the first occurrence of the series. Choose All events to move the whole series.";
+  if (scope === "all" && changedOnItsOwn(meeting, move.planned))
+    return "This occurrence was changed on its own. Choose This event, or move another occurrence to move all events.";
   const [original, split] = moveOccurrence(meeting, move.planned, move, scope, CHECK_ID);
   if (!original) return "This meeting can't be moved.";
   if (scope === "this") {
@@ -442,13 +465,15 @@ export function undoProblem(current: Meeting, ctx: UndoContext): UndoRefusal | n
 }
 
 /**
- * Why an undo can't put the series back, or null (ADR 0051 "Part 2", review round 3 of PR #35, safer
- * than the spec): undoing "all" or a split changes the restored series' time or rule again, so it is
- * refused when that would leave an occurrence changed on its own behind (`leftBehindProblem`), as a
- * move is. Undoing "this event" leaves the series' own time and rule as they are.
+ * Why an undo can't put the series back, or null (ADR 0051 "Part 2", review round 3 and the final
+ * review of PR #35, safer than the spec): every undo of a series sends a series REQUEST, undoing
+ * "this event" included, so it is refused when the restored series would leave an occurrence changed
+ * on its own behind (`leftBehindProblem`), as a move or an edit is. After "this event", the message
+ * points to moving that occurrence back on its own, which sends no series REQUEST.
  */
 export function undoneSeriesProblem(current: Meeting, record: MoveRecord, now: Date): string | null {
-  return record.after.scope === "this" ? null : leftBehindProblem(undoneMeeting(current, record), now);
+  const advice = record.after.scope === "this" ? "Move the occurrence back with This event instead." : undefined;
+  return leftBehindProblem(undoneMeeting(current, record), now, advice);
 }
 
 /**

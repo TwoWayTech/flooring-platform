@@ -18,12 +18,11 @@ import { meetingViewer } from "./meetings-common";
 
 /**
  * The stored start instants a meeting must have to hold an occurrence on a day as
- * `meetingOccurrences` finds one (ADR 0051 "Part 2", review round 1 of PR #35): a series must start
- * before the end of the day plus the days an occurrence moved earlier is still found from
+ * `meetingOccurrences` finds one (ADR 0051 "Part 2", review round 1 of PR #35): every meeting must
+ * start before the end of the day plus the days an occurrence moved earlier is still found from
  * (`MOVED_EARLIER_REACH_DAYS`), and a one-off with no occurrence moved on its own must start on the
  * day. Each bound is a day wider than the day in UTC, so it holds in any zone; the shared rule then
- * decides exactly. So a conflict check reads the meetings near the day, not every meeting the guests
- * were ever on.
+ * decides exactly.
  */
 function storedStartBounds(day: string): { from: Date; before: Date } {
   return {
@@ -34,9 +33,13 @@ function storedStartBounds(day: string): { from: Date; before: Date } {
 
 /**
  * The ids of the live meetings any of these guests is on, matched by kind and record id (email guests
- * never match), that are not cancelled and can hold an occurrence on the day (`storedStartBounds`).
+ * never match), that are not cancelled and can hold an occurrence on the day: within the start
+ * bounds (`storedStartBounds`), and a series only while its end date is not before the day, unless it
+ * has occurrences moved on their own, since one can be moved past that date (final review of PR
+ * #35). `until` and the day are local dates, compared as the shared rule compares them. So a conflict
+ * check reads the meetings near the day, not every meeting the guests were ever on.
  */
-async function meetingsSharing(tx: CompanyDb, guests: readonly Attendee[], day: string): Promise<string[]> {
+export async function meetingsSharing(tx: CompanyDb, guests: readonly Attendee[], day: string): Promise<string[]> {
   const byKind = new Map<Attendee["kind"], string[]>();
   for (const guest of guests) {
     if (guest.kind === "external") continue;
@@ -55,7 +58,7 @@ async function meetingsSharing(tx: CompanyDb, guests: readonly Attendee[], day: 
         ne(meetings.status, "cancelled"),
         lt(meetings.start, bounds.before),
         or(
-          ne(meetings.recurrence, "none"),
+          and(ne(meetings.recurrence, "none"), or(isNull(meetings.until), gte(meetings.until, day))),
           gte(meetings.start, bounds.from),
           sql`${meetings.exceptions} <> '[]'::jsonb`,
         ),

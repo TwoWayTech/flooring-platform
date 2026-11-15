@@ -144,13 +144,35 @@ describe("editing a meeting (meetings.md rule 6, ADR 0051)", () => {
     // The 20 November occurrence held early on the 14th: a length edit changes the series' DTEND, so it waits too.
     const heldEarly = fridays([{ planned: "2026-11-20T09:00", start: "2026-11-14T09:00" }]);
     expect(editProblem(heldEarly, { durationMin: 45 }, TODAY, NOW)).toMatch(behind);
-    expect(editProblem(heldEarly, { title: "Renamed", location: "Bay 2" }, TODAY, NOW)).toBeNull();
     // Moved 28 days earlier on its own, a week's shift would put it 35 days before its date, out of the calendar's reach.
     const early = testMeeting({
       recurrence: "weekly",
       exceptions: [{ planned: "2026-12-31T08:30", start: "2026-12-03T10:00" }],
     });
     expect(editProblem(early, { start: "2026-11-26T08:30" }, TODAY, NOW)).toMatch(/more than 31 days/);
+  });
+
+  it("refuses any edit of a series while an occurrence that has taken place is tied to a date still ahead (final review of PR #35)", () => {
+    // Every edit of a series sends a series REQUEST, and a calendar that replaces the whole set on one would drop the
+    // override of the 20 November occurrence held early on the 14th, which is not sent again.
+    const fridays = (exceptions: Meeting["exceptions"]) =>
+      testMeeting({ start: "2026-10-30T09:00", recurrence: "weekly", exceptions });
+    const heldEarly = fridays([{ planned: "2026-11-20T09:00", start: "2026-11-14T09:00" }]);
+    for (const patch of [{ title: "Renamed" }, { location: "Bay 2" }, { notes: "Bring boots" }, { reminderMin: 30 }]) {
+      const problem = editProblem(heldEarly, patch, TODAY, NOW);
+      expect(problem, JSON.stringify(patch)).toMatch(
+        /has already taken place, but its date in the series is still ahead/,
+      );
+      expect(problem).toMatch(/Edit the series after that date\.$/);
+    }
+    // Taken once that date's slot has ended, when nothing is held, on a one-off, and when nothing changes.
+    expect(editProblem(heldEarly, { title: "Renamed" }, TODAY, new Date("2026-11-20T17:00:00.000Z"))).toBeNull();
+    const heldLate = fridays([{ planned: "2026-11-13T09:00", start: "2026-11-13T10:00" }]);
+    expect(editProblem(heldLate, { title: "Renamed", location: "Bay 2" }, TODAY, NOW)).toBeNull();
+    const ahead = fridays([{ planned: "2026-11-20T09:00", start: "2026-11-19T09:00" }]);
+    expect(editProblem(ahead, { title: "Renamed", location: "Bay 2" }, TODAY, NOW)).toBeNull();
+    expect(editProblem(testMeeting(), { title: "Renamed" }, TODAY, NOW)).toBeNull();
+    expect(editProblem(heldEarly, { title: heldEarly.title }, TODAY, NOW)).toBeNull();
   });
 });
 

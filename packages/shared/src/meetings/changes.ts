@@ -1,7 +1,7 @@
 import type { Attendee, Meeting, MeetingSettings } from "../types";
 import { isOrganiser, sameAttendee } from "./access";
 import { meetingFieldsProblem } from "./input";
-import { shiftedSeries, shiftedSeriesProblem } from "./moves";
+import { leftBehindProblem, shiftedSeries, shiftedSeriesProblem } from "./moves";
 
 /**
  * The status moves a meeting may make (meetings.md "Meeting.status"): a request is tentative until
@@ -43,9 +43,10 @@ export function changedFields(before: Meeting, patch: MeetingPatch): (keyof Meet
  * meeting's zone against the company's `today` and pass the monthly limit, while a title edit on a
  * day-30 monthly series still works. A series' occurrences moved on their own shift with a new start
  * and are sent again (ADR 0051 "Part 2", ADR 0021), so a new start or length that would take one off
- * the series, out of the calendar's reach, or leave one that has taken place behind at a date still
- * ahead of `now` (the database clock of the edit) is refused (`shiftedSeriesProblem`, review round 3
- * of PR #35).
+ * the series or out of the calendar's reach is refused (`shiftedSeriesProblem`, review round 3 of PR
+ * #35). Every edit of a series sends a series REQUEST, so any change, a title, place, notes or
+ * reminder one included, is refused while it would leave one that has taken place behind at a date
+ * still ahead of `now`, the database clock of the edit (`leftBehindProblem`, final review of PR #35).
  */
 export function editProblem(before: Meeting, patch: MeetingPatch, today: string, now: Date): string | null {
   if (before.status === "cancelled") return "This meeting was cancelled.";
@@ -62,8 +63,10 @@ export function editProblem(before: Meeting, patch: MeetingPatch, today: string,
     },
     { zone: before.timeZone, today, recurrence: before.recurrence },
   );
-  if (fields || !(changed.includes("start") || changed.includes("durationMin"))) return fields;
-  return shiftedSeriesProblem(before, editedMeeting(before, patch).meeting, now);
+  if (fields || changed.length === 0) return fields;
+  const after = editedMeeting(before, patch).meeting;
+  if (changed.includes("start") || changed.includes("durationMin")) return shiftedSeriesProblem(before, after, now);
+  return leftBehindProblem(after, now, "Edit the series after that date.");
 }
 
 /**

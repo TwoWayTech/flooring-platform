@@ -141,11 +141,11 @@ export function hasEnded(start: string, durationMin: number, zone: string, now: 
  * edit it would keep the old ones (review round 2 of PR #35). Each surviving exception gets one copy of
  * every series REQUEST, at the series' SEQUENCE, with its own RECURRENCE-ID (the planned time as
  * the series now has it) and its own time and length. Only exceptions whose occurrence has not ended
- * by `now` are sent (`hasEnded`), which bounds what guests receive; a change of a series' time or
- * rule that would leave an ended one at a planned time still ahead is refused before this runs
- * (`leftBehindProblem`, review round 3 of PR #35). One marked cancelled is skipped (nothing writes
- * one yet). A CANCEL has no copies. A colleague's in-app note comes once, with the series'
- * own invite, not once per copy.
+ * by `now` are sent (`hasEnded`), which bounds what guests receive; any change that sends a series
+ * REQUEST while an ended one sits at a planned time still ahead is refused before this runs
+ * (`leftBehindProblem`, review round 3 and the final review of PR #35). One marked cancelled is
+ * skipped (nothing writes one yet). A CANCEL has no copies. A colleague's in-app note comes once,
+ * with the series' own invite, not once per copy.
  */
 export function exceptionResends(meeting: Meeting, seriesSends: readonly MeetingSend[], now: Date): MeetingSend[] {
   if (meeting.recurrence === "none") return [];
