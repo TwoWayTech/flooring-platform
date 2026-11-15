@@ -27,8 +27,6 @@ import {
   quoteState,
   quoteStateLabel,
   type AuditEntry,
-  payAuditDetailsVisible,
-  redactPayAudit,
   type Company,
   type CompanyId,
   type CompanySettings,
@@ -114,6 +112,7 @@ import type {
   Viewer,
 } from "../contract";
 import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, permissionDiff } from "./admin-rules";
+import { demoAuditAsSeen } from "./audit-view";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -1632,19 +1631,11 @@ export class DemoStore implements ApiClient {
     return { access: viewerAccess(company, db.list("roles"), self, this.viewer!.viewAsRoleId), company };
   }
 
-  /**
-   * The audit log as the viewer may read it: plan terms and pay reasons only for the Owner, and for
-   * pay viewers only about people in their data scope (owner decisions 2026-11-14 and 2026-11-15; ADR
-   * 0048 "Audit visibility"), through the same shared rule the API uses. The API looks up each
-   * entry's person; demo entries carry no person id, so each one counts as about the company and a
-   * non-Owner pay viewer below scope `all` sees no pay details. That is stricter than the API, never
-   * looser.
-   */
+  /** The audit log as the viewer may read it (`demoAuditAsSeen`; ADR 0048 "Audit visibility"). */
   private async auditAsSeen(db: CompanyDb, entries: readonly AuditEntry[]): Promise<AuditEntry[]> {
     const { access } = await this.granter(db);
     const employeeId = db.get("users", this.viewer!.userId)?.employeeId ?? null;
-    const seesPay = payAuditDetailsVisible({ ...access, employeeId }, { kind: "company" });
-    return entries.map((entry) => redactPayAudit(entry, seesPay));
+    return demoAuditAsSeen({ ...access, employeeId }, entries);
   }
 
   /**
