@@ -45,8 +45,6 @@ import type {
   TransferInput,
   Location,
   Customer,
-  ModuleKey,
-  PermissionKey,
   Role,
   User,
   QuoteAction,
@@ -79,6 +77,10 @@ import type {
   ImportPlan,
   ImportRequest,
   PlannedRow,
+  PlatformAccessPatch,
+  PlatformCompany,
+  PlatformCompanySummary,
+  PlatformDirectory,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -387,20 +389,20 @@ export interface Viewer {
   viewAsRoleId: string | null;
 }
 
-/** A super-admin change to a company's access (spec "Super-admin"). */
-export interface CompanyAccessPatch {
-  modules?: ModuleKey[];
-  ceiling?: PermissionKey[];
-  userLimit?: number;
-  branchLimit?: number;
-}
-
 /** A company as seen from outside it: who can sign in, and how it looks. */
 export interface CompanyDirectory {
   roles: Role[];
   users: User[];
   branding: Branding;
 }
+
+/**
+ * A company's directory on the platform console (docs/specs/platform-admin.md, "PlatformDirectory").
+ * From the API it is restricted: the default role templates of its products and no users, because
+ * a company's own roles and users need support access, which opens nothing yet. The demo keeps its
+ * full fixture directory (spec "Demo mode"), marked `restricted: false`.
+ */
+export type ConsoleDirectory = PlatformDirectory | (CompanyDirectory & { restricted: false });
 
 /** Fields for inviting a user (spec "Settings: Users"). */
 export interface InviteUserInput {
@@ -710,12 +712,25 @@ export interface ApiClient {
    */
   takeNotices(): string[];
 
-  /** All companies on the platform (super-admin). */
+  /** All companies of the demo, for the company switcher, the palette and the demo sign-in. */
   listCompanies(): Promise<Company[]>;
-  /** Changes a company's products, modules, ceiling or limits; audited in both logs. */
-  updateCompanyAccess(companyId: CompanyId, patch: CompanyAccessPatch): Promise<Company>;
-  /** Roles, users and branding of any company, read-only (login personas, super-admin "Company access"). */
+  /** Roles, users and branding of a demo company, read-only (login personas, switching company). */
   listCompanyDirectory(companyId: CompanyId): Promise<CompanyDirectory>;
+  /**
+   * Platform console (docs/specs/platform-admin.md, part 1): every company with its status, phase,
+   * plan, products, modules, limits and member count. Platform admins only.
+   */
+  listPlatformCompanies(): Promise<PlatformCompanySummary[]>;
+  /** One company in full for the console, or null when no company has that id. */
+  getPlatformCompany(companyId: string): Promise<PlatformCompany | null>;
+  /**
+   * Changes a company's modules, ceiling or limits (spec "What a save does"). The platform owner
+   * role only, after a step-up; recorded in the platform audit log. Answers with the company read
+   * again.
+   */
+  updatePlatformCompanyAccess(companyId: string, patch: PlatformAccessPatch): Promise<PlatformCompany>;
+  /** A company's roles, users and branding as the console may see them (restricted from the API). */
+  getPlatformDirectory(companyId: string): Promise<ConsoleDirectory>;
   /** Closes the company the store has open: the platform admin's pages act as the platform, not a company user. */
   closeCompany(): void;
 

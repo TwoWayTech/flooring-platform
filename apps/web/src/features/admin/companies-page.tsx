@@ -1,48 +1,61 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { CircleCheck, Clock, CreditCard, PauseCircle } from "lucide-react";
-import { PRODUCT_LABELS, visibleModules, type Company } from "@workspace/shared";
+import { PRODUCT_LABELS, visibleModules, type PlatformCompanySummary } from "@workspace/shared";
+import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
-import { StatusPill } from "@workspace/ui/components/status-pill";
 import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useApiQuery } from "@/lib/api/use-api";
+import { CompanyPhasePill, CompanyStatusPill, PHASE, STATUS } from "./company-status";
 
-const STATUS = {
-  active: { tone: "success", icon: CircleCheck, label: "Active" },
-  trial: { tone: "brand", icon: Clock, label: "Trial" },
-  past_due: { tone: "warning", icon: CreditCard, label: "Past due" },
-  suspended: { tone: "neutral", icon: PauseCircle, label: "Suspended" },
-} as const;
+/** The company's modules a person can see, by label; Platform is always on, so it is left out (rule 18). */
+function moduleLabels(company: PlatformCompanySummary): string {
+  return visibleModules()
+    .filter((m) => m.key !== "platform" && company.modules.includes(m.key))
+    .map((m) => m.label)
+    .join(", ");
+}
 
-/** Super-admin: every company on the platform with its status, plan, product and modules (spec "Super-admin"). */
+const COLUMNS: ColumnSpec<PlatformCompanySummary>[] = [
+  { id: "name", header: "Company", value: (c) => c.name, cell: (c) => <span className="font-medium">{c.name}</span> },
+  { id: "city", header: "Location", value: (c) => `${c.city}, ${c.state}` },
+  {
+    id: "status",
+    header: "Status",
+    value: (c) => STATUS[c.status].label,
+    cell: (c) => <CompanyStatusPill status={c.status} />,
+  },
+  {
+    id: "phase",
+    header: "Phase",
+    value: (c) => PHASE[c.phase].label,
+    cell: (c) => <CompanyPhasePill phase={c.phase} />,
+  },
+  { id: "plan", header: "Plan", value: (c) => c.plan },
+  { id: "products", header: "Products", value: (c) => c.products.map((p) => PRODUCT_LABELS[p]).join(", ") },
+  { id: "modules", header: "Modules", value: moduleLabels },
+  {
+    id: "users",
+    header: "User limit",
+    kind: "count",
+    value: (c) => c.userLimit,
+    cell: (c, { delta }) =>
+      c.userLimit === null ? (
+        <span className="text-muted-foreground">No limit</span>
+      ) : (
+        <Num kind="count" value={c.userLimit} delta={delta} />
+      ),
+  },
+  // People with a sign-in to the company, not seats in use: seats need the company's own database.
+  { id: "members", header: "Members", kind: "count", value: (c) => c.members },
+];
+
+/** Platform admin: every company with its status, phase, plan, products and modules (docs/specs/platform-admin.md). */
 export function CompaniesPage() {
   const router = useRouter();
-  const data = useApiQuery((client) => client.listCompanies(), []);
-  const columns: ColumnSpec<Company>[] = [
-    { id: "name", header: "Company", value: (c) => c.name, cell: (c) => <span className="font-medium">{c.name}</span> },
-    { id: "city", header: "Location", value: (c) => `${c.city}, ${c.state}` },
-    {
-      id: "status",
-      header: "Status",
-      value: (c) => STATUS[c.status].label,
-      cell: (c) => <StatusPill {...STATUS[c.status]} />,
-    },
-    { id: "plan", header: "Plan", value: (c) => c.plan },
-    { id: "product", header: "Product", value: (c) => PRODUCT_LABELS[c.product] },
-    {
-      id: "modules",
-      header: "Modules",
-      value: (c) =>
-        visibleModules()
-          .filter((m) => m.key !== "platform" && c.modules.includes(m.key))
-          .map((m) => m.label)
-          .join(", "),
-    },
-    { id: "users", header: "User limit", kind: "count", value: (c) => c.userLimit },
-  ];
+  const data = useApiQuery((client) => client.listPlatformCompanies(), []);
   return (
     <>
       <PageHeader
@@ -55,9 +68,9 @@ export function CompaniesPage() {
         <DataTable
           id="admin-companies"
           rows={data.data}
-          columns={columns}
+          columns={COLUMNS}
           getRowId={(c) => c.id}
-          onRowClick={(c) => router.push(`/admin/companies/${c.id}`)}
+          onRowClick={(c) => router.push(`/admin/companies/${encodeURIComponent(c.id)}`)}
           rowLabel={(c) => `Open access for ${c.name}`}
           searchPlaceholder="Search companies"
           csvName="companies"

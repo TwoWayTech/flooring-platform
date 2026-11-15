@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Copy, Lock, RotateCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { permissionDef, type DataScope, type PermissionKey, type Role } from "@workspace/shared";
+import { permissionDef, PRODUCT_MODULES, type DataScope, type PermissionKey, type Role } from "@workspace/shared";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -174,7 +174,7 @@ export function RoleEditor({ role, isNew, canManage, onCopy, onSaved, onDeleted 
         </div>
       </div>
       <PermissionMatrix
-        product={session.product}
+        modules={PRODUCT_MODULES[session.product]}
         granted={role.owner ? company.ceiling : draft.permissions}
         lockOf={lockOf}
         onToggle={(key, on) =>

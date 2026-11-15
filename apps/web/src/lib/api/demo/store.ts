@@ -57,6 +57,8 @@ import {
   type ColumnMapping,
   type ImportKind,
   type ImportRequest,
+  accessPatchProblem,
+  type PlatformAccessPatch,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -77,7 +79,6 @@ import type {
   ApiClient,
   AuditInput,
   CollectionName,
-  CompanyAccessPatch,
   DatabaseTestInput,
   ScheduleJobInput,
   InviteUserInput,
@@ -113,6 +114,7 @@ import type {
 } from "../contract";
 import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, permissionDiff } from "./admin-rules";
 import { demoAuditAsSeen } from "./audit-view";
+import { demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -343,11 +345,29 @@ export class DemoStore implements ApiClient {
     return platform.companies.map((c) => changed[c.id] ?? c);
   }
 
-  async updateCompanyAccess(companyId: CompanyId, patch: CompanyAccessPatch) {
-    const before = (await this.listCompanies()).find((c) => c.id === companyId)!;
-    const after: Company = { ...before, ...patch };
-    writeStored(PLATFORM_KEY, { ...this.changedCompanies(), [companyId]: after });
-    const db = await this.db(companyId);
+  async listPlatformCompanies() {
+    const companies = await this.listCompanies();
+    return Promise.all(companies.map(async (c) => demoSummary(c, await this.consoleFacts(c.id))));
+  }
+
+  async getPlatformCompany(companyId: string) {
+    const company = await this.platformCompany(companyId);
+    return company ? demoDetail(company, await this.consoleFacts(company.id), this.todayIso) : null;
+  }
+
+  /**
+   * The console's change of access (docs/specs/platform-admin.md, "Demo mode"): the same refusals as
+   * the API (`accessPatchProblem`), then the merged company is saved and the company's own log gets
+   * "Changed company access", as the demo always did. Every demo company has a plan.
+   */
+  async updatePlatformCompanyAccess(companyId: string, patch: PlatformAccessPatch) {
+    const before = await this.platformCompany(companyId);
+    if (!before) throw new DemoRuleError("That company does not exist.");
+    const problem = accessPatchProblem({ products: [before.product], hasSubscription: true }, patch);
+    if (problem) throw new DemoRuleError(problem.message);
+    const after = withAccess(before, patch);
+    writeStored(PLATFORM_KEY, { ...this.changedCompanies(), [before.id]: after });
+    const db = await this.db(before.id);
     const { before: was, after: now } = diffSummary(before, after);
     this.appendAudit(
       db,
@@ -358,7 +378,13 @@ export class DemoStore implements ApiClient {
       },
     );
     this.emit();
-    return after;
+    return demoDetail(after, await this.consoleFacts(before.id), this.todayIso);
+  }
+
+  async getPlatformDirectory(companyId: string) {
+    const company = await this.platformCompany(companyId);
+    if (!company) throw new DemoRuleError("That company does not exist.");
+    return { ...(await this.listCompanyDirectory(company.id)), restricted: false as const };
   }
 
   async listCompanyDirectory(companyId: CompanyId) {
@@ -1534,6 +1560,21 @@ export class DemoStore implements ApiClient {
       this.platform = shiftDates(fixtures, dateShift(fixtures.anchorDate, this.todayIso));
     }
     return this.platform;
+  }
+
+  /** The demo company with this id, as the console names it by a plain string. */
+  private async platformCompany(companyId: string): Promise<Company | undefined> {
+    return (await this.listCompanies()).find((c) => c.id === companyId);
+  }
+
+  /** The profile and member count the console shows for a demo company. */
+  private async consoleFacts(companyId: CompanyId): Promise<DemoCompanyFacts> {
+    const db = await this.db(companyId);
+    return {
+      legalName: db.settings.profile.legalName,
+      timeZone: db.settings.localization.region.timeZone,
+      members: db.list("users").length,
+    };
   }
 
   /** Companies the super-admin changed, upgrading what an older demo saved. */
