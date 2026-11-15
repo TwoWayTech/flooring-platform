@@ -147,6 +147,8 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["settings.meetings"],
     group: "notifications",
     description: "Default reminders and what happens to guests added by email.",
+    // The meeting settings have no API route until meetings part 4 (ADR 0051 "Part 3").
+    demoOnly: true,
   },
   {
     label: "HR",

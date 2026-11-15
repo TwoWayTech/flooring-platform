@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CalendarPlus, Check, CircleHelp, Clock, Download, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import type { Attendee, Meeting, User } from "@workspace/shared";
+import { isOrganiser, staffGuestOf, type Attendee, type Meeting, type MeetingViewer } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -16,10 +16,10 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Field } from "@/components/field";
 import { downloadText } from "@/components/data-table/csv";
-import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
-import type { ReplyInput } from "@/lib/api/contract";
+import type { MeetingsData, ReplyInput } from "@/lib/api/contract";
+import { meetingRights } from "./meeting-rights";
 
 const STATE_LABEL: Record<Attendee["partStat"], string> = {
   accepted: "Accepted",
@@ -177,14 +177,14 @@ function EditMeetingDialog({ meeting, onClose }: { meeting: Meeting; onClose: ()
   );
 }
 
-/** The drawer's guest list and actions (spec E): answers, proposals, Add to my calendar and cancel. */
-export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
-  const can = useCan();
-  const { user } = useWorkspace();
-  const mine = meeting.attendees.find((a) => a.kind === "staff" && a.id === user.id);
-  const organiser = meeting.ownerUserId === user.id;
-  const canEdit = can("meetings.meeting.edit");
-  const showGuests = organiser || !meeting.hideGuestList || canEdit;
+/**
+ * The drawer's guest list and actions (spec E): answers, proposals, Add to my calendar and cancel.
+ * Every control follows `meetingRights` on the meeting as the server shaped it for this reader
+ * (ADR 0051 "Part 3"), so it is offered only when the server would take it.
+ */
+export function MeetingAnswers({ meeting, viewer }: { meeting: Meeting; viewer: MeetingViewer }) {
+  const mine = staffGuestOf(meeting, viewer.userId);
+  const rights = meetingRights(viewer, meeting);
   const cancelled = meeting.status === "cancelled";
   const [editing, setEditing] = useState(false);
 
@@ -197,7 +197,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
     <div className="flex flex-col gap-4">
       {meeting.status === "tentative" ? <p className="text-warning-ink">Waiting for an answer.</p> : null}
       {cancelled ? <p className="text-danger-ink">This meeting was cancelled.</p> : null}
-      {mine && !organiser && !cancelled ? (
+      {rights.answer && mine ? (
         <section className="flex flex-col gap-2">
           <h3 className="font-semibold">Your answer: {answerLabel(mine)}</h3>
           <ReplyButtons
@@ -206,7 +206,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
           />
         </section>
       ) : null}
-      {showGuests ? (
+      {rights.seesGuests ? (
         <section className="flex flex-col gap-2">
           <h3 className="font-semibold">Attendees</h3>
           <ul className="flex flex-col gap-1.5">
@@ -220,7 +220,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="text-muted-foreground">{answerLabel(a)}</span>
-                  {canEdit && a.id !== meeting.ownerUserId && !cancelled ? (
+                  {rights.removeGuest && !(a.kind === "staff" && isOrganiser(meeting, a.id)) ? (
                     <Button
                       size="icon"
                       variant="ghost"
@@ -231,7 +231,7 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
                     </Button>
                   ) : null}
                 </span>
-                {a.proposal?.status === "pending" && organiser ? (
+                {a.proposal?.status === "pending" && rights.decide ? (
                   <span className="bg-raised flex w-full flex-wrap items-center justify-between gap-2 rounded-md p-2">
                     Proposes {a.proposal.start.replace("T", " at ")}
                     <span className="flex gap-1.5">
@@ -263,12 +263,12 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
             <Download />
             Add to my calendar
           </Button>
-          {canEdit ? (
+          {rights.change ? (
             <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
               Edit details
             </Button>
           ) : null}
-          {canEdit ? (
+          {rights.change ? (
             <Button
               size="sm"
               variant="ghost"
@@ -280,16 +280,24 @@ export function MeetingAnswers({ meeting }: { meeting: Meeting }) {
           ) : null}
         </div>
       ) : null}
-      {editing ? <EditMeetingDialog meeting={meeting} onClose={() => setEditing(false)} /> : null}
+      {editing && rights.change ? <EditMeetingDialog meeting={meeting} onClose={() => setEditing(false)} /> : null}
     </div>
   );
 }
 
-/** Any user asks someone to meet (spec E); they accept, decline or propose another time. */
-export function RequestMeetingDialog({ users, onClose }: { users: readonly User[]; onClose: () => void }) {
-  const { user } = useWorkspace();
-  const others = users.filter((u) => u.status === "active" && u.id !== user.id);
-  const [withUserId, setWith] = useState(others[0]?.id ?? "");
+/**
+ * Asks a colleague to meet (spec E); they accept, decline or propose another time. The colleagues
+ * are the server's own list of whom the reader may ask (`colleagues`, ADR 0051 "Part 3"); the
+ * server sets the length and place, so the 30 minutes and "To be agreed" sent here are ignored.
+ */
+export function RequestMeetingDialog({
+  colleagues,
+  onClose,
+}: {
+  colleagues: MeetingsData["colleagues"];
+  onClose: () => void;
+}) {
+  const [withUserId, setWith] = useState(colleagues[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(api.today());
   const [time, setTime] = useState("10:00");
@@ -326,7 +334,7 @@ export function RequestMeetingDialog({ users, onClose }: { users: readonly User[
               id="req-with"
               value={withUserId}
               onChange={setWith}
-              options={others.map((u) => [u.id, u.name] as const)}
+              options={colleagues.map((c) => [c.id, c.name] as const)}
             />
           </Field>
           <Field id="req-title" label="About" className="sm:col-span-2">

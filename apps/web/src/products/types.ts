@@ -14,6 +14,11 @@ export interface MenuItem {
   /** Settings pages only: the group on the settings home and one sentence saying what it controls. */
   group?: SettingsGroup;
   description?: string;
+  /**
+   * A page whose data has no API route yet, shown only in the demo build: in api mode it would save
+   * to the browser's demo data while the API reads its own (ADR 0051 "Part 3").
+   */
+  demoOnly?: boolean;
 }
 
 /** What a product host shows: its name, menus and the branding used before a company is picked. */

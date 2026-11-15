@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { BellRing, CalendarPlus, ChevronLeft, ChevronRight, Globe, Repeat } from "lucide-react";
-import { addDays, featureOn, meetingOccurrences, mondayOf, type MeetingOccurrence } from "@workspace/shared";
+import { addDays, meetingOccurrences, mondayOf, type Meeting, type OccurrenceKey } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -15,10 +15,14 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { keyOf, occurrenceAt } from "./current-occurrence";
 import { MeetingAnswers, RequestMeetingDialog } from "./meeting-answers";
+import { meetingOffers, meetingRights } from "./meeting-rights";
 import { NewMeetingDialog, RECURRENCE } from "./new-meeting-dialog";
 import { RescheduleForm } from "./reschedule-form";
-import { timeOf, TimeGrid } from "./time-grid";
+import { TimeGrid } from "./time-grid";
+import { timeOf } from "./time-text";
+import { useMeetingViewer } from "./use-meeting-viewer";
 import { useReschedule } from "./use-reschedule";
 
 type View = "day" | "week" | "month" | "agenda";
@@ -50,6 +54,8 @@ function shiftMonth(iso: string, by: number) {
  * and suppliers. Drag a meeting to move it, drag its edge to change its length, click an empty
  * slot to schedule; a repeating meeting asks this event, this and following, or all. Conflicts
  * are named, every move has Undo, and the drawer's Reschedule form does the same by keyboard.
+ * Every meeting comes as the server shaped it for the reader, and every control follows the shared
+ * rules on that shaped meeting (`meetingRights`, ADR 0051 "Part 3"); the server decides again.
  */
 export function MeetingsPage() {
   const can = useCan();
@@ -57,23 +63,23 @@ export function MeetingsPage() {
   const today = api.today();
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState(today);
-  const [open, setOpen] = useState<MeetingOccurrence | null>(null);
+  // The drawer holds the occurrence's key, not a copy, so it always shows the meeting as last read.
+  const [open, setOpen] = useState<OccurrenceKey | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
-  const { reschedule, dialog } = useReschedule();
-  const data = useApiQuery(async (client) => {
-    const [meetings, users, customers, suppliers, contacts, supplierContacts] = await Promise.all([
-      client.list("meetings"),
-      client.list("users"),
-      client.list("customers"),
-      client.list("suppliers"),
-      client.list("customerContacts"),
-      client.list("supplierContacts"),
-    ]);
-    return { meetings, users, customers, suppliers, contacts, supplierContacts };
-  }, []);
+  const { reschedule, dialog } = useReschedule({
+    onMoved: (from, to) => setOpen((o) => (o && o.meetingId === from.meetingId && o.planned === from.planned ? to : o)),
+  });
+  const data = useApiQuery((client) => client.meetingsData(), [], { keepDataOnError: true });
+  const viewer = useMeetingViewer(data.data?.viewerUserId ?? "");
+  const current = open && data.data ? occurrenceAt(data.data.meetings, open) : null;
+  // Close the drawer once its occurrence is gone (moved away by someone else, cancelled or removed),
+  // so it never offers a move or a cancel against it, and a meeting that comes back stays closed.
+  // Set while rendering, as react.dev "You might not need an effect" adjusts state on new data.
+  if (open !== null && data.status === "ready" && current === null) setOpen(null);
   if (!can("meetings.meeting.view")) return <NoAccess />;
-  const canEdit = can("meetings.meeting.edit");
+  const rights = (meeting: Meeting) => meetingRights(viewer, meeting);
+  const offers = meetingOffers(can("meetings.meeting.create"), data.data?.colleagues.length ?? 0);
 
   const week = mondayOf(anchor);
   const days = view === "day" ? [anchor] : Array.from({ length: 7 }, (_, i) => addDays(week, i));
@@ -103,18 +109,15 @@ export function MeetingsPage() {
           : `Week of ${formatDate(week)}`;
   const shortDay = (day: string) =>
     `${WEEKDAYS[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7]} ${formatDate(day).replace(/,? \d{4}$/, "")}`;
-  const current = open
-    ? (occurrences.find((o) => o.meeting.id === open.meeting.id && o.planned === open.planned) ?? open)
-    : null;
 
   return (
     <>
       <PageHeader
         title="Meetings"
         actions={
-          can("meetings.meeting.create") ? (
+          offers.create ? (
             <>
-              {featureOn("meetings.requests") ? (
+              {offers.request ? (
                 <Button variant="outline" onClick={() => setRequesting(true)}>
                   Request a meeting
                 </Button>
@@ -153,10 +156,11 @@ export function MeetingsPage() {
             days={days}
             occurrences={occurrences}
             today={today}
-            canEdit={canEdit}
-            onOpen={setOpen}
+            canMove={(meeting) => rights(meeting).change}
+            canCreate={offers.create}
+            onOpen={(o) => setOpen(keyOf(o))}
             onMove={reschedule}
-            onCreate={(start) => can("meetings.meeting.create") && setCreating(start)}
+            onCreate={(start) => offers.create && setCreating(start)}
             dayLabel={shortDay}
           />
         ) : view === "month" ? (
@@ -179,7 +183,7 @@ export function MeetingsPage() {
                     <button
                       key={`${o.meeting.id}-${o.planned}`}
                       type="button"
-                      onClick={() => setOpen(o)}
+                      onClick={() => setOpen(keyOf(o))}
                       className="bg-surface hover:bg-raised truncate rounded-sm px-1 text-left"
                     >
                       {timeOf(o.start)} {o.meeting.title}
@@ -201,7 +205,7 @@ export function MeetingsPage() {
                       <li key={`${o.meeting.id}-${o.planned}`}>
                         <button
                           type="button"
-                          onClick={() => setOpen(o)}
+                          onClick={() => setOpen(keyOf(o))}
                           className="hover:bg-raised flex w-full gap-3 rounded-sm px-2 py-1.5 text-left text-sm"
                         >
                           <span className="w-20 shrink-0 tabular-nums">{timeOf(o.start)}</span>
@@ -243,10 +247,10 @@ export function MeetingsPage() {
                   <Globe aria-hidden="true" className="text-muted-foreground size-4" />
                   Times in {current.meeting.timeZone.replace("_", " ")}
                 </p>
-                <MeetingAnswers meeting={current.meeting} />
-                {canEdit && current.meeting.status !== "cancelled" ? (
+                <MeetingAnswers meeting={current.meeting} viewer={viewer} />
+                {rights(current.meeting).change ? (
                   <RescheduleForm
-                    key={`${current.meeting.id}-${current.planned}`}
+                    key={`${current.meeting.id}-${current.planned}-${current.start}-${current.durationMin}`}
                     occurrence={current}
                     onSubmit={(start, minutes) => reschedule(current, start, minutes)}
                   />
@@ -261,16 +265,14 @@ export function MeetingsPage() {
           key={creating}
           open
           onOpenChange={(o) => !o && setCreating(null)}
-          users={data.data.users}
-          customers={data.data.customers}
-          contacts={data.data.contacts}
-          suppliers={data.data.suppliers}
-          supplierContacts={data.data.supplierContacts}
+          options={data.data.guests}
+          newGuestHandling={data.data.newGuestHandling}
+          invite={offers.invite}
           initialStart={creating}
         />
       ) : null}
-      {data.data && requesting ? (
-        <RequestMeetingDialog users={data.data.users} onClose={() => setRequesting(false)} />
+      {data.data && requesting && offers.request ? (
+        <RequestMeetingDialog colleagues={data.data.colleagues} onClose={() => setRequesting(false)} />
       ) : null}
       {dialog}
     </>

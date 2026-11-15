@@ -2,9 +2,10 @@
 
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Repeat } from "lucide-react";
-import { addDays, type MeetingOccurrence } from "@workspace/shared";
+import { addDays, type Meeting, type MeetingOccurrence } from "@workspace/shared";
 import { cn } from "@workspace/ui/lib/utils";
 import { RECURRENCE } from "./new-meeting-dialog";
+import { timeOf } from "./time-text";
 
 /** The hours the grid shows, and how tall an hour is. */
 const FIRST_HOUR = 7;
@@ -17,12 +18,6 @@ const snap = (min: number) => Math.round(min / SNAP_MIN) * SNAP_MIN;
 const minutesOf = (iso: string) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 const at = (day: string, minutes: number) =>
   `${day}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-
-/** "9:00 AM" from an ISO date-time. */
-export function timeOf(iso: string): string {
-  const [h, m] = iso.slice(11, 16).split(":").map(Number) as [number, number];
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
-}
 
 /**
  * Side-by-side lanes for meetings that overlap on one day, so none hides another: each takes the
@@ -70,13 +65,16 @@ interface Drag {
  * Day or week time grid (spec F): meetings sit at their time and length; drag one to move it
  * (to another day in the week), drag its bottom edge to change its length, click an empty slot to
  * schedule there. Moves snap to 15 minutes. A press without movement opens the meeting, so every
- * meeting is also reachable by keyboard and screen reader as a plain button.
+ * meeting is also reachable by keyboard and screen reader as a plain button. Only a meeting the
+ * reader may change (`canMove`, from `meetingRights`) can be dragged or resized, and empty slots
+ * schedule only for someone who may create meetings (ADR 0051 "Part 3").
  */
 export function TimeGrid({
   days,
   occurrences,
   today,
-  canEdit,
+  canMove,
+  canCreate,
   onOpen,
   onMove,
   onCreate,
@@ -85,7 +83,10 @@ export function TimeGrid({
   days: string[];
   occurrences: MeetingOccurrence[];
   today: string;
-  canEdit: boolean;
+  /** Whether the reader may move this meeting: drag and resize show only then. */
+  canMove: (meeting: Meeting) => boolean;
+  /** Whether clicking an empty slot schedules a meeting there. */
+  canCreate: boolean;
   onOpen: (o: MeetingOccurrence) => void;
   onMove: (o: MeetingOccurrence, start: string, durationMin: number) => void;
   onCreate: (start: string) => void;
@@ -108,7 +109,7 @@ export function TimeGrid({
   }
 
   function begin(event: ReactPointerEvent, occurrence: MeetingOccurrence, mode: Drag["mode"]) {
-    if (!canEdit || event.button !== 0) return;
+    if (!canMove(occurrence.meeting) || event.button !== 0) return;
     event.stopPropagation();
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
     const columnPx = grid.current ? grid.current.clientWidth / days.length : 1;
@@ -162,7 +163,7 @@ export function TimeGrid({
                   type="button"
                   tabIndex={-1}
                   aria-hidden="true"
-                  disabled={!canEdit}
+                  disabled={!canCreate}
                   onClick={() => onCreate(at(day, h * 60))}
                   className="border-hairline hover:bg-raised/60 block w-full border-t"
                   style={{ height: HOUR_PX }}
@@ -215,7 +216,7 @@ export function TimeGrid({
                         <span className="line-clamp-2">{o.meeting.title}</span>
                         <span className="sr-only">, {o.durationMin} minutes</span>
                       </button>
-                      {canEdit ? (
+                      {canMove(o.meeting) ? (
                         <span
                           aria-hidden="true"
                           onPointerDown={(e) => begin(e, o, "resize")}

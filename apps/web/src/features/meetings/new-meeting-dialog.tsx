@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import type { Attendee, Customer, CustomerContact, Meeting, Supplier, SupplierContact, User } from "@workspace/shared";
+import type { Attendee, GuestOption, Meeting } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Field } from "@/components/field";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
-import type { NewGuest } from "@/lib/api/contract";
+import type { MeetingsData, NewGuest } from "@/lib/api/contract";
 import { GuestPicker } from "./guest-picker";
 
 /** How each repeat choice reads. */
@@ -38,11 +38,12 @@ const REMINDERS = {
 interface NewMeetingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  users: User[];
-  customers: Customer[];
-  contacts: CustomerContact[];
-  suppliers: Supplier[];
-  supplierContacts: SupplierContact[];
+  /** Whom the reader may invite, as the server lists them (GET /meeting-guests). */
+  options: readonly GuestOption[];
+  /** What a guest added by email becomes: always "none" on the API. */
+  newGuestHandling: MeetingsData["newGuestHandling"];
+  /** Whether guests may be invited at all (`meetingOffers`): false with `meetings.invites` off. */
+  invite: boolean;
   /** The slot clicked on the calendar, "2026-11-09T10:00"; empty starts today at 9:00. */
   initialStart?: string;
 }
@@ -50,37 +51,26 @@ interface NewMeetingDialogProps {
 /**
  * Schedules a meeting (spec E): guests from one search or by email, and each gets an invite with a
  * calendar file in the Outbox. Times can repeat; reminder defaults come from Settings → Meetings.
+ * The organiser is the person signed in, set by the server and never sent as a guest. With
+ * `meetings.invites` off there is no guest picker and no hidden list, and no guests are sent
+ * (ADR 0051 "Part 3", safest options 3 and 4; CLAUDE.md rule 13).
  */
 export function NewMeetingDialog({
   open,
   onOpenChange,
-  users,
-  customers,
-  contacts,
-  suppliers,
-  supplierContacts,
+  options,
+  newGuestHandling,
+  invite,
   initialStart,
 }: NewMeetingDialogProps) {
-  const { user, settings } = useWorkspace();
+  const { settings } = useWorkspace();
   const defaults = settings.meetings;
-  const me: Attendee = {
-    kind: "staff",
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: "required",
-    partStat: "accepted",
-    respondedAt: null,
-    respondedSequence: null,
-    note: "",
-    proposal: null,
-  };
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(initialStart?.slice(0, 10) ?? api.today());
   const [time, setTime] = useState(initialStart?.slice(11, 16) ?? "09:00");
   const [duration, setDuration] = useState("30");
   const [location, setLocation] = useState("Conference room");
-  const [guests, setGuests] = useState<Attendee[]>([me]);
+  const [guests, setGuests] = useState<Attendee[]>([]);
   const [newGuests, setNewGuests] = useState<NewGuest[]>([]);
   const [recurrence, setRecurrence] = useState<Meeting["recurrence"]>("none");
   const [reminder, setReminder] = useState(String(defaults.defaultReminderMin) as keyof typeof REMINDERS);
@@ -95,8 +85,8 @@ export function NewMeetingDialog({
         start: `${date}T${time}`,
         durationMin: Number(duration),
         location,
-        guests,
-        newGuests,
+        guests: invite ? guests : [],
+        newGuests: invite ? newGuests : [],
         recurrence,
         reminderMin: Number(reminder),
         notes: "",
@@ -106,7 +96,7 @@ export function NewMeetingDialog({
       });
       toast.success(`Meeting ${meeting.title} scheduled`);
       setTitle("");
-      setGuests([me]);
+      setGuests([]);
       setNewGuests([]);
       onOpenChange(false);
     } catch (e) {
@@ -146,17 +136,19 @@ export function NewMeetingDialog({
           <Field id="mtg-location" label="Where">
             <Input id="mtg-location" value={location} onChange={(e) => setLocation(e.target.value)} />
           </Field>
-          <GuestPicker
-            guests={guests}
-            newGuests={newGuests}
-            users={users}
-            customers={customers}
-            contacts={contacts}
-            suppliers={suppliers}
-            supplierContacts={supplierContacts}
-            onGuests={setGuests}
-            onNewGuests={setNewGuests}
-          />
+          {invite ? (
+            <div className="flex flex-col gap-1.5">
+              <GuestPicker
+                guests={guests}
+                newGuests={newGuests}
+                options={options}
+                newGuestHandling={newGuestHandling}
+                onGuests={setGuests}
+                onNewGuests={setNewGuests}
+              />
+              <p className="text-muted-foreground text-xs">You&apos;re the organiser.</p>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="mtg-repeat" label="Repeats">
               <Select value={recurrence} onValueChange={(v) => setRecurrence(v as Meeting["recurrence"])}>
@@ -196,14 +188,16 @@ export function NewMeetingDialog({
               />
               Private: only the people invited can see it
             </label>
-            <label className="flex items-center gap-2">
-              <Checkbox
-                checked={hideGuests}
-                onCheckedChange={(v) => setHideGuests(v === true)}
-                aria-label="Hide the guest list"
-              />
-              Hide the guest list from guests
-            </label>
+            {invite ? (
+              <label className="flex items-center gap-2">
+                <Checkbox
+                  checked={hideGuests}
+                  onCheckedChange={(v) => setHideGuests(v === true)}
+                  aria-label="Hide the guest list"
+                />
+                Hide the guest list from guests
+              </label>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
