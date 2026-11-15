@@ -187,6 +187,7 @@ Real build (ADR 0051):
   On the wire, `Attendee.id` is `party_id`, or the row's own id for an email guest.
 - **Removed guests:** a removed guest's row is soft-deleted.
 - **Changes:** `meetings.updated_at` is set from the database clock whenever the row is written, and becomes the invite's DTSTAMP.
+- **Moves (part 2):** a "this and following" move inserts a `meetings` row for the new series and copies the live `meeting_attendees` rows with their answers (an email guest gets a new row id; `meeting_responses` rows are not copied). An undo soft-deletes that row and its guests. `exceptions` holds at most 100 entries per series. Undo reads the meeting's last `audit_log` entry by `(target_type, target_id)`. No table changes.
 
 ### Notifications and email
 

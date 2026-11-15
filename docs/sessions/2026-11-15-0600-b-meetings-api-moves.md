@@ -312,6 +312,8 @@ Then lint, typecheck and tests through the lock, a fresh security-reviewer (perm
 8. **The daily caps** (part 1) count every email of a move, undo and decision. The copied email guests of a split count as addresses the mover invited that day. An action over a limit is refused and writes nothing.
 9. **At most 100 exceptions per series:** a `this` move that would exceed them is refused. It bounds the jsonb, the audit entry and the re-sends.
 10. **Strict bodies:** a move's `meetingId`, if sent, must equal `:id`. An undo takes only `{ sequence }`.
+11. **Proposal decisions are refused** on a cancelled meeting (the spec does not check), on a series, and for a proposed start the clocks skip (added in the build).
+12. **An undo of a split answers 409** whenever the split-off series changed since the move, or the caller may no longer change it (409 rather than 403, decided in the build).
 
 ### Kept as meetings.md says (not safety)
 - **A move does not reset answers or clear a pending proposal:**
@@ -340,6 +342,10 @@ Then lint, typecheck and tests through the lock, a fresh security-reviewer (perm
 - Should past exceptions be re-sent after a series move? Part 2 re-sends only those that have not ended.
 - Should a "Busy" conflict show its start? Part 2 shows it, as free/busy.
 - ADR 0021 notes that Outlook discards answers when SEQUENCE rises, while the spec keeps answers on a move. The spec stands. Revisit it?
+- Should "this and following" from the first occurrence be read as All events rather than refused?
+- Is 100 exceptions per series right?
+- Should declining a proposal stay audited? The spec leaves it unaudited.
+- An undo or decision over a daily cap answers 400 `invalid_request`, as part 1's actions do; the spec names no status.
 
 ### Residual risks
 - **Calendars may keep stray overrides:** after an `all` move or an undo, a guest's calendar may keep an override under a RECURRENCE-ID that is no longer an instance (Google). No valid message can cancel it.
@@ -347,5 +353,65 @@ Then lint, typecheck and tests through the lock, a fresh security-reviewer (perm
 - **Undo is short:** it is offered for 5 minutes, to the mover only. Anything later is a new move.
 - **The demo keeps its own copies:** it keeps its conflict self-warnings and private titles until part 3.
 
-## Run in this stage
-- No code changed, so no checks were run. Prettier checked this log.
+## Build (`48eb63e`, `31f6eaf`, `073ac4c`, `eb3eb65`, `dd91811`)
+- The shared rules and unit tests, the three routes and the PATCH change, then the integration tests, as planned.
+- **Deviations from this plan,** none of which changes behaviour beyond what is listed:
+  - `parseMoveRecord` is in the API (`meeting-undo.ts`), not in packages/shared, because packages/shared has no Zod dependency and none may be added.
+  - The re-sent exception emails carry no in-app note, so a colleague gets one note per series change, not one per exception.
+  - Declining a proposal also moves the meeting's `updated_at`. Without it, a second decline at the same SEQUENCE would merge into the first Outbox row and never be sent.
+  - Speed: checking whether dates are occurrences counts weekly steps and walks a monthly rule once for all exceptions (`dd91811`). Before it, a worst-case move check took about 2 seconds while holding the meeting's lock.
+  - `MeetingSends`: part 1's `removed` option is now `only` (it also names the proposer), `plan` takes an options object, and `invites` takes a list of plans and queues their jobs once.
+  - Decisions 11 and 12 above were settled in the build.
+
+## Tests (`9d850c2`, test-writer)
+- Five integration cases added to `apps/api/test/meetings-moves.int.test.ts` (21 in all), reusing its helpers:
+  - the reminder put back after an undo, and no title, note, name or email in the move and undo entries;
+  - only the last move undone: an older toast gets 409, the newest undoes, and a repeat gets 409;
+  - the daily caps on an undo and on an accepted proposal: 400, nothing written;
+  - a proposal declined twice: two DECLINECOUNTER rows and two audit entries without notes or titles, SEQUENCE unchanged, and a third decline 400;
+  - the 100-exception cap: a 101st "this event" move is 400 and writes nothing.
+- No product bug was found. Not covered by a test, checked in the code instead:
+  - undo and the decision with the whole module off: `@RequireModule("meetings")` is on the controller class;
+  - a decision on a removed proposer: `before.rows` holds only live guest rows, so it is 404 and nothing is written.
+- Not covered: conflicts with a cancelled meeting (the spec says nothing).
+
+## Fixes
+- None needed: no test showed a product bug, so no commit.
+
+## Docs (this stage)
+- ADR 0051: a dated "Part 2" section (routes and checks, moves, conflicts and "Busy", undo, decisions, exceptions sent again, audit, limits, the 12 safest options, kept, deferred, owner questions, residual risks, consequences). The part 1 text it changes points to it, and "Later parts" marks part 2 done and lists what part 3 must do.
+- docs/api-contract.md: the three new rows, the changed PATCH row, the undo refusal codes (`meeting_changed`, `undo_expired`), the daily limits and reminders notes, "Not on the API yet", and the domain-action rows of `rescheduleMeeting`, `undoReschedule` and `decideProposal`.
+- docs/product-spec/meetings.md "Real build": the part 2 notes, with the limits they close, and the edits and reminders bullets brought up to date.
+- docs/product-spec/notifications.md: `meeting.invite` and `meeting.reminder` notes. No event is added.
+- docs/data-model.md: what a split and an undo write, the exceptions cap, and undo's read of `audit_log`.
+- docs/blueprint-delta.md: one dated part 2 row at the top, listing every safest option.
+- Not changed: FEATURES.md (statuses stay `demo`), STATUS.md and BRANCHES.md (left for the hand-off).
+
+## Checks run
+- Heavy commands went through the scratchpad lock (`heavy.sh`), with the CI database variables exported, because the worktree has no env file.
+- Plan stage: no code, so no checks.
+- Build stage:
+  - packages/shared `vitest run`: 54 files, 604 tests passed;
+  - apps/api `vitest --project unit`: 11 files passed, plus `meeting-undo.test.ts` (2);
+  - `meetings-moves.int.test.ts` and `meetings.int.test.ts`: 48 passed, re-run after the last code change;
+  - `isolation`, `permissions` and `notifications` integration tests: 60 passed;
+  - `pnpm -s typecheck`: 6 of 6 (web and db forced again past the shared cache: both passed);
+  - `pnpm -s lint`: passed, Prettier clean.
+- Tests stage:
+  - `vitest run --project integration test/meetings-moves.int.test.ts`: 21 of 21 (one failure on the first run was the new test's own setup, fixed);
+  - the moves and meetings integration files after formatting: 53 of 53;
+  - ESLint on the moves test file: clean.
+- Fixes stage (`9d850c2`):
+  - integration `meetings`, `meetings-moves` and `notifications`: 73 of 73 (the "Error: No control." in the log is the forced failure in `meetings.int.test.ts`);
+  - apps/api unit `meeting-undo` and `notification-rules`: 13 of 13;
+  - packages/shared `meeting*`, `ics`, `notifications` and `zones`: 158 of 158;
+  - `pnpm -s typecheck` and `pnpm -s lint`: exit 0, 6 of 6 each;
+  - Prettier `--check` on the meetings module, its tests and the shared meetings code and tests: clean.
+- Docs stage: Markdown only (Prettier ignores `*.md`), so no code checks were re-run.
+- Not run: `seed` and `table-rules` (no schema, seed or migration change), Playwright and `next build` (no screen changed, and forbidden on this laptop).
+
+## Outcome
+- Part 2 is built, tested and documented on `feat/meetings-api-moves` (draft PR #35): the reschedule, undo and proposal-decision routes, conflicts with "Busy", the series exceptions sent again (lifting part 1's refusal), and the PATCH change.
+- Every deviation from meetings.md is in the safer direction and is recorded in ADR 0051 "Part 2" and the blueprint-delta row. "Moves don't reset answers" and the sends table are kept.
+- **Next:** a fresh security-reviewer pass (permissions, data scope, audit, the undo rebuild), including a check that the helper move into `meeting-writes.ts` changed nothing; then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
+- **Open for the owner:** the questions under "For the owner" above, also in ADR 0051.
