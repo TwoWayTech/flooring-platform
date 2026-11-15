@@ -83,10 +83,16 @@ export interface AccessDiff {
   };
 }
 
+/**
+ * The 422 for a limit on a company with no subscription row that is not deleted (spec
+ * "Validations"). It doesn't name the company's status, because a company past its trial whose
+ * rows were all deleted has no plan either (PR #34 final review notes; ADR 0053).
+ */
+export const ACCESS_NO_PLAN_MESSAGE = "This company has no plan, so it has no limits to change.";
+
 const PLATFORM_LOCKED = "The Platform module can't be switched off.";
 const PROTECTED_MISSING =
   "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people.";
-const NO_PLAN = "This company is on a trial with no plan, so it has no limits to change.";
 
 /** The keys of the modules the feature switches leave visible (product spec rule 18). */
 function visibleModuleKeys(): ModuleKey[] {
@@ -156,20 +162,22 @@ function ceilingProblem(
 /**
  * Spec "Validations": limits are whole numbers from 1 to 100,000, and they need a subscription row
  * that is not deleted. Limits live on those rows, and creating one would end a fresh trial for good
- * (`planModulesOf`; ADR 0033), so a trial with no plan is refused with 422 rather than given a row.
+ * (`planModulesOf`; ADR 0033), so a company with no subscription row that is not deleted is refused
+ * with 422 rather than given a row.
  */
 function limitsProblem(facts: AccessPatchFacts, patch: AccessPatchInput): AccessPatchProblem | null {
   const limits = [patch.userLimit, patch.branchLimit].filter((limit) => limit !== undefined);
   if (limits.length === 0) return null;
   if (!limits.every(isAccessLimit)) return invalid(ACCESS_LIMIT_MESSAGE);
-  return facts.hasSubscription ? null : { status: 422, message: NO_PLAN };
+  return facts.hasSubscription ? null : { status: 422, message: ACCESS_NO_PLAN_MESSAGE };
 }
 
 /**
  * Why a change of company access is refused, or null when it may be saved
  * (docs/specs/platform-admin.md, "Validations (PATCH access)"). The API and the demo store both call
- * it, so they refuse the same things; this closes the product spec's edge case "updateCompanyAccess
- * has no check in the store". Checks run in the spec's order: modules, ceiling, then limits, and
+ * it, so they refuse the same things. This closed the product spec's edge case "`updateCompanyAccess`
+ * has no check in the store" (settings-and-permissions.md, Edge cases; the store's method is now
+ * `updatePlatformCompanyAccess`). Checks run in the spec's order: modules, ceiling, then limits, and
  * every 400 comes before the 422. Duplicates in a list are ignored. Shape checks (unknown fields,
  * wrong types, list lengths) are the API schema's job.
  */

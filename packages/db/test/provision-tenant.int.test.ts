@@ -8,17 +8,20 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PRODUCT_ROLES } from "@workspace/shared";
+import { migrationErrorCode, PRODUCT_ROLES } from "@workspace/shared";
 import {
   alertMigrationFailure,
   decryptSecret,
   encryptSecret,
   migrateAllCompanies,
   migrateControl,
+  MigrationStoppedError,
   openCompanyDb,
   openControlDb,
   productPermissions,
   provisionTenant,
+  type CompanyMigrationFailure,
+  type ControlDb,
   type NewCompany,
 } from "../src";
 import { auditLog, branches, rolePermissions, roles, userProfiles, userRoles } from "../src/company";
@@ -47,6 +50,43 @@ async function expectRefused(query: PromiseLike<unknown>): Promise<void> {
   const cause = (error as { cause?: { message?: string } } | null)?.cause?.message ?? "";
   expect(cause).toMatch(/append-only/);
 }
+/**
+ * Makes one control write fail on purpose (ADR 0053 tests): a trigger function that raises, a
+ * trigger refusing the `company.migration_failed` audit row, and one refusing to turn maintenance
+ * on. Only on this file's scratch control database, and dropped in `finally`.
+ */
+const REFUSE_FUNCTION = sql.raw(
+  "create or replace function test_refuse() returns trigger language plpgsql as $$ begin raise exception 'test: refused'; end $$",
+);
+const REFUSE_MIGRATION_AUDIT = sql.raw(
+  "create trigger test_refuse_migration_audit before insert on platform_audit_log for each row when (new.action = 'company.migration_failed') execute function test_refuse()",
+);
+const REFUSE_MAINTENANCE = sql.raw(
+  "create trigger test_refuse_maintenance before update on tenants for each row when (new.maintenance_mode and not old.maintenance_mode) execute function test_refuse()",
+);
+
+/** Drops the refusing triggers and their function, whichever of them exist. */
+async function dropRefusals(db: ControlDb): Promise<void> {
+  await db.execute(sql.raw("drop trigger if exists test_refuse_migration_audit on platform_audit_log"));
+  await db.execute(sql.raw("drop trigger if exists test_refuse_maintenance on tenants"));
+  await db.execute(sql.raw("drop function if exists test_refuse()"));
+}
+
+/** Runs a rollout that must fail, and returns the error and what `onFailure` was told. */
+async function failedRollout(db: ControlDb, key: string) {
+  const failures: CompanyMigrationFailure[] = [];
+  const error = await migrateAllCompanies(db, key, {
+    onFailure: async (failure) => {
+      failures.push(failure);
+    },
+  }).then(
+    () => null,
+    (failure: unknown) => failure,
+  );
+  expect(error).toBeInstanceOf(MigrationStoppedError);
+  return { error: error as MigrationStoppedError, failures };
+}
+
 /** Slugs unique to this run, so parallel or earlier runs never collide on the shared server. */
 const run = `${process.pid}${randomBytes(2).toString("hex")}`.replace(/[^a-z0-9]/g, "");
 
@@ -296,55 +336,181 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     }
   });
 
-  it("keeps a read-only database read-only when its migration fails, in maintenance until it recovers (PR #8 review; owner decision 2026-11-13)", async () => {
+  /**
+   * Points a company's database at a wrong password with `status`, so its migration fails, and
+   * returns how to put the URL back. The rollout stops at the first failing company in created_at
+   * order, so every test that breaks one repairs it in `finally`.
+   */
+  async function breakDatabase(db: ControlDb, tenantId: string, status: "ready" | "read_only") {
+    const [database] = await db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId));
+    const unreachable = decryptSecret(database.encryptedUrl, encryptionKey).replace(/:[^:@/]+@/, ":wrong-password@");
+    await db
+      .update(tenantDatabases)
+      .set({ status, encryptedUrl: encryptSecret(unreachable, encryptionKey) })
+      .where(eq(tenantDatabases.tenantId, tenantId));
+    return {
+      databaseId: database.id,
+      restore: async () => {
+        await db
+          .update(tenantDatabases)
+          .set({ encryptedUrl: database.encryptedUrl })
+          .where(eq(tenantDatabases.tenantId, tenantId));
+      },
+    };
+  }
+
+  /** The platform audit rows of one company and action. */
+  function logged(db: ControlDb, tenantId: string, action: string) {
+    return db
+      .select()
+      .from(platformAuditLog)
+      .where(and(eq(platformAuditLog.tenantId, tenantId), eq(platformAuditLog.action, action)));
+  }
+
+  async function tenantOf(db: ControlDb, tenantId: string) {
+    return (await db.select().from(tenants).where(eq(tenants.id, tenantId)))[0];
+  }
+
+  async function databaseOf(db: ControlDb, tenantId: string) {
+    return (await db.select().from(tenantDatabases).where(eq(tenantDatabases.tenantId, tenantId)))[0];
+  }
+
+  it("keeps a read-only database read-only when its migration fails, in maintenance until it recovers, with only the code in the audit row and the error (PR #8 review; owner decision 2026-11-13; ADR 0053)", async () => {
     const readOnly = await provision(company(`fail${run}`));
     const handle = openControlDb(control.url, { max: 1 });
+    const broken = await breakDatabase(handle.db, readOnly.tenantId, "read_only");
     try {
-      const [database] = await handle.db
-        .select()
-        .from(tenantDatabases)
-        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
-      const unreachable = decryptSecret(database.encryptedUrl, encryptionKey).replace(/:[^:@/]+@/, ":wrong-password@");
-      await handle.db
-        .update(tenantDatabases)
-        .set({ status: "read_only", encryptedUrl: encryptSecret(unreachable, encryptionKey) })
-        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
-      const failures: string[] = [];
-      await expect(
-        migrateAllCompanies(handle.db, encryptionKey, {
-          onFailure: async (failure) => {
-            failures.push(failure.tenantId);
-          },
-        }),
-      ).rejects.toThrow(/Migration stopped/);
-      expect(failures).toEqual([readOnly.tenantId]);
-      const [after] = await handle.db
-        .select()
-        .from(tenantDatabases)
-        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+      const { error, failures } = await failedRollout(handle.db, encryptionKey);
+      // The wrong password is refused with SQLSTATE 28P01 (invalid_password).
+      expect(failures).toEqual([
+        { tenantId: readOnly.tenantId, code: "28P01", recorded: true, maintenance: true, readOnly: true },
+      ]);
+      expect(migrationErrorCode(failures[0].code)).toBe(failures[0].code);
+      const after = await databaseOf(handle.db, readOnly.tenantId);
       expect(after.status).toBe("read_only");
-      expect(after.lastError).not.toBeNull();
-      const tenantOf = async () => (await handle.db.select().from(tenants).where(eq(tenants.id, readOnly.tenantId)))[0];
-      expect(await tenantOf()).toMatchObject({ maintenanceMode: true, maintenanceReason: "migration_failed" });
-      const logged = (action: string) =>
-        handle.db
-          .select()
-          .from(platformAuditLog)
-          .where(and(eq(platformAuditLog.tenantId, readOnly.tenantId), eq(platformAuditLog.action, action)));
-      expect(await logged("company.migration_failed")).toHaveLength(1);
+      const text = after.lastError ?? "";
+      expect(text).not.toBe("");
+      // The thrown error names the code, not the text, and keeps the original error as its cause.
+      expect(error.message).toMatch(/Migration stopped/);
+      expect(error.message).toContain("28P01");
+      expect(error.message).not.toContain(text);
+      expect(error.cause).toBeInstanceOf(Error);
+      expect(text).toContain((error.cause as Error).message.slice(0, 100));
+      expect(await tenantOf(handle.db, readOnly.tenantId)).toMatchObject({
+        maintenanceMode: true,
+        maintenanceReason: "migration_failed",
+      });
+      const [row, ...more] = await logged(handle.db, readOnly.tenantId, "company.migration_failed");
+      expect(more).toEqual([]);
+      expect(row).toMatchObject({ targetType: "tenant_database", targetId: broken.databaseId });
+      expect(row.after).toEqual({ maintenanceMode: true, code: "28P01" });
+      expect(JSON.stringify(row.after)).not.toContain(text);
+      await broken.restore();
+      await migrateAllCompanies(handle.db, encryptionKey);
+      expect((await databaseOf(handle.db, readOnly.tenantId)).status).toBe("read_only");
+      expect(await tenantOf(handle.db, readOnly.tenantId)).toMatchObject({
+        maintenanceMode: false,
+        maintenanceReason: null,
+      });
+      expect(await logged(handle.db, readOnly.tenantId, "company.migration_recovered")).toHaveLength(1);
+    } finally {
+      await broken.restore();
+      await handle.close();
+    }
+  });
+
+  it("falls back to maintenance mode when the failure can't be recorded (ADR 0053)", async () => {
+    const target = await provision(company(`fback${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    const broken = await breakDatabase(handle.db, target.tenantId, "read_only");
+    try {
+      await handle.db.execute(REFUSE_FUNCTION);
+      await handle.db.execute(REFUSE_MIGRATION_AUDIT);
+      const { error, failures } = await failedRollout(handle.db, encryptionKey);
+      // Not recorded, so the thrown error is the only place the migration's text is kept.
+      expect(error.message).toContain((error.cause as Error).message.slice(0, 100));
+      expect(error.message).not.toContain("test: refused");
+      expect(failures).toEqual([
+        { tenantId: target.tenantId, code: "28P01", recorded: false, maintenance: true, readOnly: true },
+      ]);
+      expect(await tenantOf(handle.db, target.tenantId)).toMatchObject({
+        maintenanceMode: true,
+        maintenanceReason: "migration_failed",
+      });
+      // The refused audit row rolled the whole transaction back, last_error included.
+      expect(await databaseOf(handle.db, target.tenantId)).toMatchObject({ status: "read_only", lastError: null });
+      expect(await logged(handle.db, target.tenantId, "company.migration_failed")).toEqual([]);
+    } finally {
+      await dropRefusals(handle.db);
+      await broken.restore();
+      await handle.db
+        .update(tenants)
+        .set({ maintenanceMode: false, maintenanceReason: null })
+        .where(eq(tenants.id, target.tenantId));
+      await handle.close();
+    }
+  });
+
+  it("tells onFailure when neither the failure nor the fallback could be written (ADR 0053)", async () => {
+    const target = await provision(company(`nowrite${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    const broken = await breakDatabase(handle.db, target.tenantId, "ready");
+    try {
+      await handle.db.execute(REFUSE_FUNCTION);
+      await handle.db.execute(REFUSE_MIGRATION_AUDIT);
+      await handle.db.execute(REFUSE_MAINTENANCE);
+      const { failures } = await failedRollout(handle.db, encryptionKey);
+      expect(failures).toEqual([
+        { tenantId: target.tenantId, code: "28P01", recorded: false, maintenance: false, readOnly: false },
+      ]);
+      expect(await tenantOf(handle.db, target.tenantId)).toMatchObject({ maintenanceMode: false });
+      // The claim stands, so nobody can open the company until a run gets through.
+      expect(await databaseOf(handle.db, target.tenantId)).toMatchObject({ status: "migrating", lastError: null });
+    } finally {
+      await dropRefusals(handle.db);
+      await broken.restore();
       await handle.db
         .update(tenantDatabases)
-        .set({ encryptedUrl: database.encryptedUrl })
-        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
+        .set({ status: "ready" })
+        .where(eq(tenantDatabases.tenantId, target.tenantId));
+      await handle.close();
+    }
+  });
+
+  it("keeps a move's maintenance reason when a migration fails (ADR 0053)", async () => {
+    const moving = await provision(company(`mvfail${run}`));
+    const handle = openControlDb(control.url, { max: 1 });
+    const broken = await breakDatabase(handle.db, moving.tenantId, "ready");
+    try {
+      await handle.db
+        .update(tenants)
+        .set({ maintenanceMode: true, maintenanceReason: "move" })
+        .where(eq(tenants.id, moving.tenantId));
+      const { failures } = await failedRollout(handle.db, encryptionKey);
+      expect(failures).toEqual([
+        { tenantId: moving.tenantId, code: "28P01", recorded: true, maintenance: true, readOnly: false },
+      ]);
+      expect((await databaseOf(handle.db, moving.tenantId)).status).toBe("failed");
+      expect(await tenantOf(handle.db, moving.tenantId)).toMatchObject({
+        maintenanceMode: true,
+        maintenanceReason: "move",
+      });
+      const [row] = await logged(handle.db, moving.tenantId, "company.migration_failed");
+      expect(row.after).toEqual({ maintenanceMode: true, code: "28P01" });
+      await broken.restore();
       await migrateAllCompanies(handle.db, encryptionKey);
-      const [retried] = await handle.db
-        .select()
-        .from(tenantDatabases)
-        .where(eq(tenantDatabases.tenantId, readOnly.tenantId));
-      expect(retried.status).toBe("read_only");
-      expect(await tenantOf()).toMatchObject({ maintenanceMode: false, maintenanceReason: null });
-      expect(await logged("company.migration_recovered")).toHaveLength(1);
+      expect((await databaseOf(handle.db, moving.tenantId)).status).toBe("ready");
+      expect(await tenantOf(handle.db, moving.tenantId)).toMatchObject({
+        maintenanceMode: true,
+        maintenanceReason: "move",
+      });
+      expect(await logged(handle.db, moving.tenantId, "company.migration_recovered")).toEqual([]);
     } finally {
+      await broken.restore();
+      await handle.db
+        .update(tenants)
+        .set({ maintenanceMode: false, maintenanceReason: null })
+        .where(eq(tenants.id, moving.tenantId));
       await handle.close();
     }
   });
@@ -387,28 +553,57 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     }
   });
 
-  it("emails every active platform admin, one email each, when a migration fails (owner decision 2026-11-13)", async () => {
+  it("emails every active platform admin with a known role, one email each, with only the code and where the company stands (owner decision 2026-11-13; ADR 0053)", async () => {
     const failed = await provision(company(`alrt${run}`));
     const handle = openControlDb(control.url, { max: 1 });
     try {
-      const admins = [`admin-a-${run}@example.test`, `admin-b-${run}@example.test`, `admin-c-${run}@example.test`];
+      const admins = [
+        `admin-a-${run}@example.test`,
+        `admin-b-${run}@example.test`,
+        `admin-c-${run}@example.test`,
+        `admin-d-${run}@example.test`,
+      ];
+      const ids: string[] = [];
       for (const [index, email] of admins.entries()) {
         const id = uuidv7();
+        ids.push(id);
         await handle.db.insert(user).values({ id, name: "Platform Admin", email });
-        await handle.db.insert(platformAdmins).values({ userId: id, role: "support", active: index < 2 });
+        await handle.db
+          .insert(platformAdmins)
+          .values({ userId: id, role: index === 0 ? "owner" : "support", active: index !== 2 });
       }
-      const email = new MemoryEmailProvider();
-      const count = await alertMigrationFailure(handle.db, email, "alerts@example.test", {
-        tenantId: failed.tenantId,
-        error: "relation does not exist on host db.internal",
-        code: "42P01",
-      });
-      const sent = email.sent.filter((message) => message.subject.includes(`alrt${run}`));
+      // An active row with a role the console doesn't accept is no admin, so it gets no alert. The
+      // column is free text, so the test writes the unknown role with plain SQL.
+      await handle.db.execute(sql`update platform_admins set role = 'billing' where user_id = ${ids[3]}`);
+      const alert = async (standing: Pick<CompanyMigrationFailure, "recorded" | "maintenance" | "readOnly">) => {
+        const email = new MemoryEmailProvider();
+        const count = await alertMigrationFailure(handle.db, email, "alerts@example.test", {
+          tenantId: failed.tenantId,
+          code: "42P01",
+          ...standing,
+        });
+        return { count, sent: email.sent.filter((message) => message.subject.includes(`alrt${run}`)) };
+      };
+      const { count, sent } = await alert({ recorded: true, maintenance: true, readOnly: false });
       expect(count).toBeGreaterThanOrEqual(2);
       expect(sent.map((message) => message.to)).toEqual(expect.arrayContaining([[admins[0]], [admins[1]]]));
       expect(sent.flatMap((message) => message.to)).not.toContain(admins[2]);
+      expect(sent.flatMap((message) => message.to)).not.toContain(admins[3]);
+      expect(sent[0].subject).toMatch(/is in maintenance mode$/);
       expect(sent[0].text).toContain("42P01");
-      expect(sent[0].text).not.toContain("db.internal");
+      expect(sent[0].text).toContain("tenant_databases.last_error");
+      expect(sent[0].text).not.toContain("platform_audit_log");
+      const servingReads = (await alert({ recorded: false, maintenance: false, readOnly: true })).sent[0];
+      expect(servingReads.subject).toMatch(/is NOT in maintenance mode$/);
+      expect(servingReads.text).toContain("may still read a half-updated database");
+      expect(servingReads.text).toContain("Turn maintenance mode on by hand");
+      expect(servingReads.text).toContain("only in the output of pnpm db:migrate");
+      expect(servingReads.text).not.toContain("platform_audit_log");
+      const unavailable = (await alert({ recorded: true, maintenance: false, readOnly: false })).sent[0];
+      expect(unavailable.subject).toMatch(/is NOT in maintenance mode$/);
+      expect(unavailable.text).toContain("can't open the company");
+      expect(unavailable.text).toContain("Turn maintenance mode on by hand");
+      expect(unavailable.text).toContain("tenant_databases.last_error");
     } finally {
       await handle.close();
     }

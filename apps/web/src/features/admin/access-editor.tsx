@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Save } from "lucide-react";
+import { Eye, Save } from "lucide-react";
 import { toast } from "sonner";
 import {
+  mayChangeCompanyAccess,
   moduleInfo,
   offeredModules,
   PRODUCT_LABELS,
@@ -21,11 +22,21 @@ import { StepUpDialog } from "@/components/step-up-dialog";
 import { PermissionMatrix } from "@/features/settings/roles/permission-matrix";
 import { api, type ConsoleDirectory } from "@/lib/api";
 import { isDemoMode } from "@/lib/data-source";
-import { accessChanges, draftOf, hasPlan, limitProblem, type AccessDraft, type LimitField } from "./access-draft";
+import {
+  accessChanges,
+  ceilingLock,
+  draftOf,
+  hasPlan,
+  limitProblem,
+  saveProblem,
+  type AccessDraft,
+  type LimitField,
+} from "./access-draft";
 import { CompanyAdminNav } from "./company-admin-nav";
 import { CompanyFacts } from "./company-facts";
+import { usePlatformRole } from "./platform-role";
 
-const NO_PLAN_HINT = "On a trial with no plan there is no limit.";
+const NO_PLAN_HINT = "With no plan there is no limit.";
 
 /** The directory's roles for the preview; a default template has no id, so its key stands in. */
 function previewRoles(directory: ConsoleDirectory): PreviewRole[] {
@@ -39,16 +50,18 @@ interface LimitInputProps {
   label: string;
   draft: AccessDraft;
   current: number | null;
-  /** False on a trial with no plan, which has no limits to change. */
+  /** False for a company with no plan, which has no limits to change. */
   editable: boolean;
+  /** True for a role that may not change access: the field is disabled but keeps its own hint. */
+  readOnly: boolean;
   note?: string;
   onChange: (text: string) => void;
 }
 
 /** A user or branch limit: a whole number, refused inline before anything is sent. */
-function LimitInput({ field, label, draft, current, editable, note, onChange }: LimitInputProps) {
+function LimitInput({ field, label, draft, current, editable, readOnly, note, onChange }: LimitInputProps) {
   const id = field === "userLimit" ? "limit-users" : "limit-branches";
-  const problem = editable ? limitProblem(draft[field], current) : null;
+  const problem = editable && !readOnly ? limitProblem(draft[field], current) : null;
   const hint = problem ?? (editable ? note : NO_PLAN_HINT);
   return (
     <Field
@@ -65,7 +78,7 @@ function LimitInput({ field, label, draft, current, editable, note, onChange }: 
         step={1}
         placeholder="No limit"
         value={draft[field]}
-        disabled={!editable}
+        disabled={!editable || readOnly}
         aria-invalid={problem ? true : undefined}
         aria-describedby={hint ? `${id}-hint` : undefined}
         onChange={(e) => onChange(e.target.value)}
@@ -84,11 +97,14 @@ interface AccessEditorProps {
 /**
  * Platform admin → Company → Access (docs/specs/platform-admin.md, "Screens"; product spec rule
  * 24): the company's modules, permission ceiling and limits, with the effective-access preview on
- * the draft. Save sends only the parts that changed. The API asks for a fresh authenticator code on
- * every platform write, so in api mode Save goes through the step-up first; the demo saves at once,
- * as it always did.
+ * the draft. Save sends only the parts that changed, after the API's shared check (part 3: a
+ * refusal never asks for a code). The API asks for a fresh authenticator code on every platform
+ * write, so in api mode Save goes through the step-up first; the demo saves at once, as it always
+ * did. A role that may not change access (`mayChangeCompanyAccess`) sees the page read only, with
+ * no Save and no step-up; the API's guard still decides.
  */
 export function AccessEditor({ company, directory, onSaved }: AccessEditorProps) {
+  const readOnly = !mayChangeCompanyAccess(usePlatformRole());
   const [draft, setDraft] = useState(() => draftOf(company));
   const [confirming, setConfirming] = useState(false);
   const changes = accessChanges(company, draft);
@@ -110,7 +126,12 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
   }
 
   function save() {
-    if (!changes) return;
+    if (!changes || readOnly) return;
+    const problem = saveProblem(company, changes);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     if (isDemoMode()) void send(changes);
     else setConfirming(true);
   }
@@ -121,13 +142,24 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
         title={company.name}
         description={`${company.products.map((p) => PRODUCT_LABELS[p]).join(" and ")}, ${company.plan}`}
         actions={
-          <Button onClick={save} disabled={!changes || invalid}>
-            <Save />
-            Save access
-          </Button>
+          readOnly ? undefined : (
+            <Button onClick={save} disabled={!changes || invalid}>
+              <Save />
+              Save access
+            </Button>
+          )
         }
       />
       <CompanyAdminNav companyId={company.id} />
+      {readOnly ? (
+        <p
+          role="note"
+          className="border-hairline bg-raised text-muted-foreground flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
+        >
+          <Eye aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          Read only: only the platform owner role can change a company&apos;s access.
+        </p>
+      ) : null}
       <CompanyFacts company={company} />
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <Panel title="Modules and limits" bodyClassName="flex flex-col gap-4">
@@ -141,7 +173,7 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
                 <Switch
                   aria-label={`${m.label} module`}
                   checked={draft.modules.includes(m.key)}
-                  disabled={m.key === "platform"}
+                  disabled={readOnly || m.key === "platform"}
                   onCheckedChange={(on) =>
                     setDraft({
                       ...draft,
@@ -159,6 +191,7 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
               draft={draft}
               current={company.userLimit}
               editable={planned}
+              readOnly={readOnly}
               onChange={(text) => setDraft({ ...draft, userLimit: text })}
             />
             <LimitInput
@@ -167,6 +200,7 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
               draft={draft}
               current={company.branchLimit}
               editable={planned}
+              readOnly={readOnly}
               note="Stored, not enforced yet."
               onChange={(text) => setDraft({ ...draft, branchLimit: text })}
             />
@@ -190,7 +224,7 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
         <PermissionMatrix
           modules={modules.map((m) => m.key)}
           granted={draft.ceiling}
-          lockOf={() => null}
+          lockOf={(key) => ceilingLock(key, draft.ceiling, readOnly)}
           onToggle={(key, on) =>
             setDraft({ ...draft, ceiling: on ? [...draft.ceiling, key] : draft.ceiling.filter((k) => k !== key) })
           }
@@ -234,7 +268,7 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
           )}
         </Panel>
       </div>
-      {changes ? (
+      {changes && !readOnly ? (
         <StepUpDialog
           open={confirming}
           action={`Saving access for ${company.name}`}

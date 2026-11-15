@@ -9,6 +9,14 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { useApiQuery } from "@/lib/api/use-api";
 import { CompanyPhasePill, CompanyStatusPill, PHASE, STATUS } from "./company-status";
+import { DATABASE_LABELS, databaseErrorText, databaseText, MAINTENANCE_LABELS } from "./database-labels";
+
+/** A company's maintenance switch in words: "Off", or why it is on. */
+function maintenanceText(company: PlatformCompanySummary): string {
+  const { on, reason } = company.maintenance;
+  if (!on) return "Off";
+  return reason ? MAINTENANCE_LABELS[reason] : "On";
+}
 
 /** The company's modules a person can see, by label; Platform is always on, so it is left out (rule 18). */
 function moduleLabels(company: PlatformCompanySummary): string {
@@ -50,6 +58,34 @@ const COLUMNS: ColumnSpec<PlatformCompanySummary>[] = [
   },
   // People with a sign-in to the company, not seats in use: seats need the company's own database.
   { id: "members", header: "Members", kind: "count", value: (c) => c.members },
+  // The state and, after a failed update, its error code only (part 3, "Database errors and
+  // maintenance"): the text never reaches the console, so neither the cell nor the CSV can show it.
+  {
+    id: "database",
+    header: "Database",
+    value: (c) => databaseText(c.database),
+    cell: (c) => {
+      if (!c.database.status) return <span className="text-muted-foreground">No database</span>;
+      const error = databaseErrorText(c.database);
+      return (
+        <span className="flex flex-col">
+          <span>{DATABASE_LABELS[c.database.status]}</span>
+          {error ? <span className="text-danger-ink text-xs tabular-nums">{error}</span> : null}
+        </span>
+      );
+    },
+  },
+  {
+    id: "maintenance",
+    header: "Maintenance",
+    value: maintenanceText,
+    cell: (c) =>
+      c.maintenance.on ? (
+        <span className="text-warning-ink font-medium">{maintenanceText(c)}</span>
+      ) : (
+        <span className="text-muted-foreground">Off</span>
+      ),
+  },
 ];
 
 /** Platform admin: every company with its status, phase, plan, products and modules (docs/specs/platform-admin.md). */

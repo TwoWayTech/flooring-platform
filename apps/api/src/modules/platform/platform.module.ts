@@ -3,6 +3,8 @@ import { AuthModule } from "../../core/auth/auth.module";
 import { CompanyAccessService } from "./company-access.service";
 import { PlatformAdminGuard } from "./platform-admin.guard";
 import { PlatformAdmins } from "./platform-admins";
+import { PlatformAuditController } from "./platform-audit.controller";
+import { PlatformAuditQueryService } from "./platform-audit-query.service";
 import { PlatformAuditService } from "./platform-audit.service";
 import { PlatformCompaniesService } from "./platform-companies.service";
 import {
@@ -13,18 +15,25 @@ import {
 import { SupportRequestsService } from "./support-requests.service";
 
 /**
- * The platform console's API, part 1 (P11 module 17; docs/specs/platform-admin.md; ADR 0052):
- * the platform guard, /platform/me, companies and their access, the restricted directory and the
- * support-access request. Control database only: lint keeps the tenancy and company-schema imports
- * out of this folder. AuthModule gives StepUpService.
+ * The platform console's API, parts 1 and 3 (P11 module 17; docs/specs/platform-admin.md; ADR 0052;
+ * ADR 0053): the platform guard, /platform/me, companies and their access, the restricted
+ * directory, the platform audit log, and support requests with their list and limits. Control
+ * database only: lint keeps the tenancy and company-schema imports out of this folder. AuthModule
+ * gives StepUpService.
  */
 @Module({
   imports: [AuthModule],
-  controllers: [PlatformMeController, PlatformCompaniesController, PlatformSupportGrantsController],
+  controllers: [
+    PlatformMeController,
+    PlatformCompaniesController,
+    PlatformSupportGrantsController,
+    PlatformAuditController,
+  ],
   providers: [
     PlatformAdmins,
     PlatformAdminGuard,
     PlatformAuditService,
+    PlatformAuditQueryService,
     PlatformCompaniesService,
     CompanyAccessService,
     SupportRequestsService,

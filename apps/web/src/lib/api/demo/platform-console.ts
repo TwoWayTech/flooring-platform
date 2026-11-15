@@ -1,6 +1,8 @@
 import {
+  accessDiff,
   offeredKeys,
   offeredModules,
+  type AccessDiff,
   type Company,
   type PlatformAccessPatch,
   type PlatformCompany,
@@ -68,7 +70,7 @@ export function demoSummary(company: Company, facts: DemoCompanyFacts): Platform
     userLimit: company.userLimit,
     branchLimit: company.branchLimit,
     members: facts.members,
-    database: { status: null, schemaVersion: null, hasError: false },
+    database: { status: null, schemaVersion: null, hasError: false, errorCode: null },
   };
 }
 
@@ -113,4 +115,19 @@ export function withAccess(company: Company, patch: PlatformAccessPatch): Compan
   if (patch.userLimit !== undefined) next.userLimit = patch.userLimit;
   if (patch.branchLimit !== undefined) next.branchLimit = patch.branchLimit;
   return next;
+}
+
+/**
+ * What a demo save changed, as the `company.access_changed` row records it (spec "Audit"), or null
+ * when it changed nothing. The shared `accessDiff` over the whole company, so a save that changes
+ * nothing writes nothing, as on the API (docs/specs/platform-admin.md, part 3, "Demo mode").
+ */
+export function demoAccessDiff(before: Company, after: Company): AccessDiff | null {
+  const stateOf = (company: Company) => ({
+    modules: company.modules,
+    ceiling: company.ceiling,
+    userLimit: company.userLimit,
+    branchLimit: company.branchLimit,
+  });
+  return accessDiff(stateOf(before), stateOf(after));
 }

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { HARBOR_OWNER, HR_TAG, PHONE, signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
-import { FLOORING_SCREENS, HR_SCREENS } from "./screens";
+import { HARBOR_OWNER, HR_TAG, PHONE, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER, type Persona } from "./helpers";
+import { ADMIN_SCREENS, FLOORING_SCREENS, HR_SCREENS } from "./screens";
 
 /** Fails when the page scrolls sideways (CLAUDE.md rule 6: responsive from 375 px). */
 async function expectNoSidewaysScroll(page: Page, persona: Persona, path: string) {
@@ -16,6 +16,20 @@ test.describe("phone layout", () => {
   test.use(PHONE);
   for (const path of FLOORING_SCREENS) {
     test(`${path} has no horizontal page scroll`, ({ page }) => expectNoSidewaysScroll(page, SUMMIT_OWNER, path));
+  }
+});
+
+test.describe("phone layout, platform admin console", () => {
+  test.use(PHONE);
+  for (const path of ADMIN_SCREENS) {
+    test(`${path} has no horizontal page scroll`, async ({ page }) => {
+      await signInAsPlatformAdmin(page, path);
+      await page.waitForLoadState("networkidle");
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
   }
 });
 

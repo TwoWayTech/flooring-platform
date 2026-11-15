@@ -24,9 +24,13 @@ import type {
   MyMeetings,
   PayPeriod,
   PlatformAccessPatch,
+  PlatformAuditQuery,
+  PlatformAuditResult,
   PlatformCompany,
   PlatformCompanySummary,
   PlatformDirectory,
+  PlatformSupportGrant,
+  SupportRequestInput,
   Payment,
   Refund,
   Reservation,
@@ -148,6 +152,23 @@ export const API_METHODS: HttpRoutes = {
     ),
   getPlatformDirectory: (http) => (companyId) =>
     http.request<PlatformDirectory>("GET", `/platform/companies/${encodeURIComponent(companyId)}/directory`),
+  // Platform admin part 3 (docs/specs/platform-admin.md, "ApiClient (part 3)"). A company id or a
+  // cursor that is not a UUID, such as a demo slug, names nothing on the API, so it is never sent.
+  listPlatformAudit: (http) => async (query) => {
+    const params = auditQueryParams(query);
+    if (!params) return { entries: [], nextCursor: null };
+    const search = params.toString();
+    return http.request<PlatformAuditResult>("GET", search ? `/platform/audit?${search}` : "/platform/audit");
+  },
+  listPlatformSupportGrants: (http) => async (companyId) =>
+    isSaved(companyId)
+      ? http.request<PlatformSupportGrant[]>(
+          "GET",
+          `/platform/support-grants?companyId=${encodeURIComponent(companyId)}`,
+        )
+      : [],
+  requestSupportAccess: (http) => (input) =>
+    http.request<{ id: string }>("POST", "/platform/support-grants", supportRequestBody(input)),
   inventoryData: (http) => async () => {
     const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
       seen(http.request<Product[]>("GET", "/products")),
@@ -807,6 +828,29 @@ function accessPatchBody(patch: PlatformAccessPatch): PlatformAccessPatch {
   if (patch.userLimit !== undefined) body.userLimit = patch.userLimit;
   if (patch.branchLimit !== undefined) body.branchLimit = patch.branchLimit;
   return body;
+}
+
+/**
+ * The audit log's query string (spec "ApiClient (part 3)"): only the fields that are set, in the
+ * order companyId, action, before, limit. Null when the company or the cursor is not a UUID, since
+ * such an id names no entry on the API and the page is then empty.
+ */
+function auditQueryParams(query: PlatformAuditQuery): URLSearchParams | null {
+  if ([query.companyId, query.before].some((id) => id !== undefined && !isSaved(id))) return null;
+  const params = new URLSearchParams();
+  if (query.companyId !== undefined) params.set("companyId", query.companyId);
+  if (query.action !== undefined) params.set("action", query.action);
+  if (query.before !== undefined) params.set("before", query.before);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  return params;
+}
+
+/**
+ * A support request as the API takes it (spec "POST /platform/support-grants", Body): only the
+ * three fields, rebuilt, so nothing else on the object travels. The API's schema is strict.
+ */
+function supportRequestBody(input: SupportRequestInput): SupportRequestInput {
+  return { companyId: input.companyId, reason: input.reason, hours: input.hours };
 }
 
 /** A list the person may not see (403) comes back empty, as the demo hides what a role cannot open. */

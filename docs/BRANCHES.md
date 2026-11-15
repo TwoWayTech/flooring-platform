@@ -5,11 +5,11 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/platform-audit-support` | B (Claude) | Platform admin part 3: the platform audit viewer, support requests with limits, database errors, migrate.ts hardening (main checkout) | In progress | draft | see the PR |
-| `feat/meetings-api-moves` | B (Claude) | Meetings part 2: reschedule, undo, deciding proposals, conflicts (worktree `../flooring-platform-meetings`) | Ready for merge once CI is green | [#35](https://github.com/TwoWayTech/flooring-platform/pull/35) | this commit |
+| `feat/platform-audit-support` | B (Claude) | Platform admin part 3: the platform audit viewer, support requests with limits, database errors, migrate.ts hardening (main checkout) | Ready for merge once CI is green | [#36](https://github.com/TwoWayTech/flooring-platform/pull/36) | see the PR |
+| `feat/meetings-web-api` | B (Claude) | Meetings part 3: the meetings screens on the API, DemoStore on the shared rules, api-mode e2e (worktree `../flooring-platform-meetings`) | In progress | [#37](https://github.com/TwoWayTech/flooring-platform/pull/37) (draft) | see the PR |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
-Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API); PR #34 (`feat/platform-access-api`, `bb3e81f`, platform admin part 1).
+Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API); PR #34 (`feat/platform-access-api`, `bb3e81f`, platform admin part 1); PR #35 (`feat/meetings-api-moves`, `8ddf7fa`, meetings part 2).
 
 Merged on 2026-11-14: PR #31 (`fix/docs-handoff-2026-11-14`, `bd9155d`), the handoff after PRs #28 to #30. PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
 

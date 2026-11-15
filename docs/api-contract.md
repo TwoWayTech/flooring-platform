@@ -58,11 +58,11 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 
 ## Tenancy (real build, P9, ADR 0030)
 
-Every Nest route needs a signed-in session with an open company, unless it is marked `@Public()` (`GET /health`, `GET /public/branding`) or `@SessionOnly()`. The session-only routes are `GET /auth/context` and `POST /auth/step-up` (ADR 0034), and the six /platform routes (ADR 0052), which carry `PlatformAdminGuard` at class level as their only authorization layer. The guards run globally in this order: SessionGuard, then TenantGuard. So a new route is closed until it says otherwise.
+Every Nest route needs a signed-in session with an open company, unless it is marked `@Public()` (`GET /health`, `GET /public/branding`) or `@SessionOnly()`. The session-only routes are `GET /auth/context` and `POST /auth/step-up` (ADR 0034), and the eight /platform routes (ADR 0052 and ADR 0053), which carry `PlatformAdminGuard` at class level as their only authorization layer. The guards run globally in this order: SessionGuard, then TenantGuard. So a new route is closed until it says otherwise.
 
 The company always comes from the verified session. A `companyId` or `tenantId` in the path, query, body or headers is never read. Company data is reached only through `TenantConnectionService.db(tenant)`, where `tenant` is the `@CurrentTenant()` context that TenantGuard made.
 
-**The one exception: platform routes (ADR 0052).** A /platform route names the company it acts on, by `:id` (a UUID, checked with `ParseUUIDPipe`) or by `companyId` in the support request's body. That id selects control-database rows only: `tenants`, products, subscriptions, module overrides, the ceiling, branding, database status and member counts. It is never passed to TenantConnectionService, no TenantContext is built from it, and no company database is opened, so CLAUDE.md rule 2 holds. Lint bans the tenancy, tenant-context and company-schema imports in `apps/api/src/modules/platform`, and a test shows these routes answering for a company whose database failed or is in maintenance.
+**The one exception: platform routes (ADR 0052).** A /platform route names the company it acts on, by `:id` (a UUID, checked with `ParseUUIDPipe`), or by `companyId` in the support request's body and in the query of `GET /platform/audit` and `GET /platform/support-grants` (a UUID, "That company id is not valid." otherwise). That id selects control-database rows only: `tenants`, products, subscriptions, module overrides, the ceiling, branding, database status and member counts. It is never passed to TenantConnectionService, no TenantContext is built from it, and no company database is opened, so CLAUDE.md rule 2 holds. Lint bans the tenancy, tenant-context and company-schema imports in `apps/api/src/modules/platform`, and a test shows these routes answering for a company whose database failed or is in maintenance.
 
 | Status and code | When |
 | --- | --- |
@@ -109,13 +109,13 @@ Draft spec: docs/specs/settings-users-access.md.
 | `GET /support-grants` | The Owner role | The company's support-access requests and their status |
 | `POST /support-grants/:id/approve` | The Owner role and a step-up | 409 `grant_closed` |
 | `POST /support-grants/:id/revoke` | The Owner role | 409 `grant_closed` |
-| `POST /platform/support-grants` | A platform admin (role `owner` or `support`) and a step-up | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`, strict. 201 `{ id }`; 404 for an unknown company and while `admin.access` is off. Behind `PlatformAdminGuard` since ADR 0052; see "Platform admin (real build, ADR 0052)" |
+| `POST /platform/support-grants` | A platform admin (role `owner` or `support`) and a step-up | `{ companyId, reason (10 to 500 characters), hours (1 to 72) }`, strict. 201 `{ id }`; 403 if no longer an admin (checked again under a lock on the admin's row); 404 for an unknown company and while `admin.access` is off; 409 `grant_open` while the same admin has an open grant for the company; 429 `rate_limited` after 10 requests by the admin in 24 hours. Behind `PlatformAdminGuard` since ADR 0052; limits since ADR 0053. See "Platform admin (real build, ADR 0052 and ADR 0053)" |
 
 A route that needs a step-up answers 403 `step_up_required` without one from the last 5 minutes. Someone whose only factor is a passkey steps up by signing in again with it: a session under 5 minutes old counts. Password reset is Better Auth's `/api/auth/request-password-reset` and `/api/auth/reset-password` (one-hour links, every session ended; 3 emails an hour per address, shared with verification and invitation emails).
 
-## Platform admin (real build, ADR 0052)
+## Platform admin (real build, ADR 0052 and ADR 0053)
 
-Part 1. Spec: docs/specs/platform-admin.md (draft). Every route is `@SessionOnly()`: it needs a session but no open company and never uses the open company. TenantGuard, PermissionGuard and the AuditInterceptor don't apply, so `PlatformAdminGuard`, set at class level, is the only authorization layer. It runs in this order:
+Parts 1 (ADR 0052) and 3 (ADR 0053). Spec: docs/specs/platform-admin.md (draft). Every route is `@SessionOnly()`: it needs a session but no open company and never uses the open company. TenantGuard, PermissionGuard and the AuditInterceptor don't apply, so `PlatformAdminGuard`, set at class level, is the only authorization layer. It runs in this order:
 
 1. No verified session: 401 `unauthenticated` (SessionGuard answers first; the guard is the backstop).
 2. `admin.access` off: 404 `not_found`, on every route below.
@@ -127,11 +127,13 @@ SessionGuard's own refusals come first: an admin with no factor gets 403 `mfa_en
 | Route | Who | Does |
 | --- | --- | --- |
 | `GET /platform/me` | Any platform admin | `PlatformMe` `{ userId, name, email, role }`. The web's /admin layout asks it to decide who may open the console |
-| `GET /platform/companies` | Any platform admin | `PlatformCompanySummary[]` by name: `id`, `slug`, `name`, `city`, `state`, `products`, `status` (five values, as stored), `statusChangedAt`, `phase` (`full`, `read_only` or `locked`, as TenantGuard reads it), `maintenance { on, reason }`, `plan` (the plan names of the subscription rows that are not deleted, "(cancelled)" marked; "Trial, no plan" or "No plan" with none), `modules` (what the guards enforce), `userLimit` and `branchLimit` (null is no limit), `members` (control memberships, not seats in use), `database { status, schemaVersion, hasError }`. Never the database's error text |
+| `GET /platform/companies` | Any platform admin | `PlatformCompanySummary[]` by name: `id`, `slug`, `name`, `city`, `state`, `products`, `status` (five values, as stored), `statusChangedAt`, `phase` (`full`, `read_only` or `locked`, as TenantGuard reads it), `maintenance { on, reason }`, `plan` (the plan names of the subscription rows that are not deleted, "(cancelled)" marked; "Trial, no plan" or "No plan" with none), `modules` (what the guards enforce), `userLimit` and `branchLimit` (null is no limit), `members` (control memberships, not seats in use), `database { status, schemaVersion, hasError, errorCode }`. `errorCode` is the SQLSTATE of the company's newest `company.migration_failed` audit row, only while `last_error` is set and only when it matches `^[A-Z0-9_]{1,32}$`, else null (ADR 0053). Never the database's error text, for any role |
 | `GET /platform/companies/:id` | Any platform admin | `PlatformCompany`: the summary plus `legalName`, `timeZone`, `region`, `createdAt`, `ceiling` (the allowed keys, in catalog order) and `subscriptions` (the rows that are not deleted, each `{ id, planKey, planName, product, interval, price, currentPeriodStart, currentPeriodEnd, status, userLimitOverride, branchLimitOverride }`; `price` is a decimal string) |
 | `PATCH /platform/companies/:id/access` | The `owner` role and a step-up | `PlatformAccessPatch` `{ modules?, ceiling?, userLimit?, branchLimit? }`, strict. A field left out stays as it is. See below. Answers with the company read again |
 | `GET /platform/companies/:id/directory` | Any platform admin | `PlatformDirectory`, restricted: `roles` (the default role templates of the company's products), `users: []`, `branding` (display name, monogram, colour, pattern, default theme; no logo keys) and `restricted: true`. The company's own roles and users need support access, which opens nothing yet |
-| `POST /platform/support-grants` | Either role and a step-up | `{ companyId, reason, hours }` (see "Users, roles, step-up, invitations and support access"). Audited `support.requested` |
+| `POST /platform/support-grants` | Either role and a step-up | `{ companyId, reason, hours }` (see "Users, roles, step-up, invitations and support access"). 403 if no longer an admin, 404, 409 `grant_open`, 429 `rate_limited`, in that order; parallel requests by one admin are serialised. Audited `support.requested`. See "Support requests" below |
+| `GET /platform/support-grants` | Any platform admin | `PlatformSupportGrant[]`, newest first, at most 100: `{ id, company { id, name }, admin { userId, name }, mine, reason, requestedAt, expiresAt, approvedAt, revokedAt, status }`. Query `companyId?` (a UUID), strict. The owner role gets every admin's requests, the support role only its own. Never the approver |
+| `GET /platform/audit` | Any platform admin | `PlatformAuditResult` `{ entries: PlatformAuditView[], nextCursor }`, newest first. Query `companyId?`, `action?`, `before?`, `limit?`, strict. See "Platform audit" below. Not audited |
 
 **Change company access.** `accessPatchProblem` (packages/shared, also run by the demo store) refuses with 400 `invalid_request`:
 - a `modules` list without `platform`: "The Platform module can't be switched off.";
@@ -140,7 +142,7 @@ SessionGuard's own refusals come first: an admin with no factor gets 403 `mfa_en
 - a `ceiling` list without all of `settings.users.view`, `settings.users.manage`, `settings.roles.view`, `settings.roles.manage` and `settings.audit.view`: "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people.";
 - a limit that is not a whole number from 1 to 100,000: "Enter a whole number from 1 to 100,000.".
 
-A limit for a company with no subscription row that is not deleted is 422 `rule_broken`, "This company is on a trial with no plan, so it has no limits to change."; no row is ever created.
+A limit for a company with no subscription row that is not deleted is 422 `rule_broken`, "This company has no plan, so it has no limits to change." (`ACCESS_NO_PLAN_MESSAGE`; it said "trial" before ADR 0053); no row is ever created.
 
 A save is one control transaction that locks the company row first:
 - **modules:** an override row only where the choice differs from the plan, `deleted_at` cleared; a stored override for a module set back to the plan is soft-deleted. Hidden modules and `platform` keep their rows;
@@ -150,7 +152,24 @@ A save is one control transaction that locks the company row first:
 
 Guards read modules, the ceiling and limits on every request, so a change applies to the company's next request: 403 for a removed key, `module_not_enabled` for a module switched off, `seat_limit` on the next invitation. Reads are not audited.
 
-**Not on the API yet:** using a support grant, the company's own roles and users, the platform audit log, plans, billing and company status actions (parts 2 to 4, ADR 0052). The import and database calls below stay on DemoStore; their /admin pages are not found in api mode.
+**Platform audit (`GET /platform/audit`, ADR 0053).** Query, strict (an unknown or repeated parameter is 400 `invalid_request`):
+- `companyId`: a UUID, "That company id is not valid.". No existence check, so a deleted company's history still lists;
+- `action`: one of `company.access_changed`, `support.requested`, `support.approved`, `support.revoked`, `company.migration_failed`, `company.migration_recovered`, "Choose an action from the list.";
+- `before`: the `id` of the last entry of the previous page; a UUID that names an existing entry, "That page of the audit log does not exist. Start from the newest entries.";
+- `limit`: digits, 1 to 100, default 50, "Ask for 1 to 100 entries at a time.".
+
+Order `at desc, id desc`; the cursor is compared in SQL as `(at, id)`, so entries of the same millisecond page correctly under any filter. `nextCursor` is the last entry's id while there are more, else null. Each `PlatformAuditView` is `{ id, at, action, company { id, name } | null, actor, targetType, targetId, details, network? }`:
+- **`actor`** comes from the action, never from today's `platform_admins` rows: `{ kind: "platform_admin", userId, name }` ("Former admin" when the user row is gone) for the access save and the support request; `{ kind: "company_user" }`, with no id or name, for the Owner's approve and revoke; `{ kind: "system" }` for migrate.ts; `{ kind: "unknown" }` otherwise;
+- **`details`** is a per-action allow-list in packages/shared (`platformAuditDetails`), deny by default: `access_changed` (the four lists, `userLimit` and `branchLimit` as `{ from, to }`, and `overrideRows` and `limitRows` as counts); `support_requested` (`reason`, `expiresAt`); `support_decided` (`decision`); `migration_failed` (`code` only, for every row, old ones included); `migration_recovered` (`version`); and `{ kind: "hidden" }` for anything that doesn't fit its shape exactly;
+- **`network`** (`{ ip, userAgent }`) only for the owner role, and only on platform admins' own entries; the key is absent otherwise, and for the support role the columns are never selected;
+- **the support role** gets another admin's `support.requested` entry with `details: { kind: "hidden" }`, its actor and company kept;
+- `action`, `targetType` and `targetId` show only when they match their patterns (`targetId` a UUID), else `"unknown"` or null.
+
+Migration text, other admins' reasons and company people's ids and names are narrowed out in SQL before the shared mapping checks every row again. Reading writes no audit row. There is no export.
+
+**Support requests (ADR 0053).** The POST runs in one control transaction: it locks the admin's own `platform_admins` row (`FOR UPDATE`) and re-checks it (403 "Only platform admins can use this."), then checks the company (404), then refuses an open grant (pending or approved, unexpired) by the same admin for the same company with 409 `grant_open`, "You already have an open support request for this company.", then 10 requests by the admin in the last 24 hours, across companies and counting revoked, expired and deleted grants, with 429 `rate_limited`, "You can send at most 10 support requests in 24 hours. Try again later.". A refused request writes nothing and does not count. The body's messages are "Give a reason of 10 to 500 characters." and "Enter a whole number of hours from 1 to 72.". The status in both lists is derived, revoked first, then expired (`expiresAt` at or before now), approved and pending.
+
+**Not on the API yet:** using a support grant, the company's own roles and users, plans, billing and company status actions (parts 2 and 4, ADR 0052). The import and database calls below stay on DemoStore; their /admin pages are not found in api mode.
 
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
@@ -501,7 +520,10 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `listCompanyDirectory(id)` | none (demo only) | A demo company's roles, users and branding, read-only. Used by the login page and switching company. |
 | `listPlatformCompanies()` | `GET /platform/companies` | `PlatformCompanySummary[]`: status, phase, plan, products, modules, limits, members, database state. |
 | `getPlatformCompany(id)` | `GET /platform/companies/:id` | `PlatformCompany`, or null for an unknown company or an id that is not a UUID (never sent). |
-| `updatePlatformCompanyAccess(id, patch)` | `PATCH /platform/companies/:id/access` | Modules, ceiling, user and branch limits; only the four fields travel. Takes effect at once. Written to `platform_audit_log` only (ADR 0052); the demo also writes "Changed company access" to the company's own log. |
+| `updatePlatformCompanyAccess(id, patch)` | `PATCH /platform/companies/:id/access` | Modules, ceiling, user and branch limits; only the four fields travel. Takes effect at once. Written to `platform_audit_log` only (ADR 0052); the demo also writes "Changed company access" to the company's own log and its platform audit, and writes nothing for a save that changes nothing (ADR 0053). |
+| `listPlatformAudit(query)` | `GET /platform/audit` | One page of the platform audit log, `{ entries, nextCursor }`. Only the fields that are set travel; a `companyId` or `before` that is not a UUID is never sent and gives an empty page. The demo keeps its rows in this browser's local storage (`platform-audit`) and maps them through the same shared redaction. |
+| `listPlatformSupportGrants(companyId)` | `GET /platform/support-grants?companyId=` | The company's support requests the admin may see; `[]` for an id that is not a UUID (never sent). The demo keeps its requests in local storage (`platform-support`). |
+| `requestSupportAccess(input)` | `POST /platform/support-grants` | `{ companyId, reason, hours }`, only those three fields, after a step-up in api mode. The demo applies the same bounds, messages and limits, with no step-up. |
 | `getPlatformDirectory(id)` | `GET /platform/companies/:id/directory` | From the API: the default roles and branding, no users (`restricted: true`). The demo returns its full fixture directory (`restricted: false`). |
 | `closeCompany()` | none (session) | The platform pages close the company the store had open, so the platform admin acts as the platform. |
 | `importOverview(id)` | `GET /companies/:id/imports` | Import kinds the company's modules allow, saved column mappings and the import history. Company users need `settings.import.manage` in their own company; the platform admin may use any company. |

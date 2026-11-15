@@ -83,6 +83,14 @@ export class AuthHarness {
     this.control = openControlDb(this.scratch[0].url, { max: 1 });
   }
 
+  /**
+   * The scratch control database's URL, for a test that needs a second connection of its own, such
+   * as the support-request lock tests (ADR 0053). Read-only; set by start().
+   */
+  get controlUrl(): string {
+    return this.scratch[0].url;
+  }
+
   /** Stops the app and drops the databases. */
   async stop(): Promise<void> {
     await this.app?.close();

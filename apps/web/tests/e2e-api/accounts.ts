@@ -51,3 +51,24 @@ export async function signInAs(page: Page, email: string): Promise<void> {
   }
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
+
+/**
+ * Signs the seeded owner in and enrols an authenticator app, which the platform guard requires.
+ * Returns the app's setup key, so a later step-up can compute the next code.
+ */
+export async function signInAndEnrolOwner(page: Page): Promise<string> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(OWNER_EMAIL);
+  await page.getByLabel("Password").fill(seedPassword());
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByLabel("Confirm your password").fill(seedPassword());
+  await page.getByRole("button", { name: "Continue" }).click();
+  const secret = (await page.getByTestId("mfa-setup-key").getAttribute("data-key")) ?? "";
+  expect(secret).toMatch(/^[A-Z2-7]+=*$/);
+  await page.getByLabel("Code from the app").fill(totpCode(secret));
+  await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
+  await page.getByLabel("I have saved my backup codes").check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  return secret;
+}
