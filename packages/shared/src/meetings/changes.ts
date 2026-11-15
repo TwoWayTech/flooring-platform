@@ -181,9 +181,15 @@ export function scheduleFlags(
 }
 
 /**
- * The flags of a request (meetings.md "Request a meeting"): the list is hidden when it is private,
- * and it takes proposals, as the spec says, only when the person asking can decide them (ADR 0051).
+ * The flags of a request (meetings.md "Request a meeting"): the list is hidden when it is private.
+ * The spec has a request always take proposals; the API is stricter and treats it as any meeting
+ * (ADR 0051 decision 8; blueprint-delta row of 2026-11-15, item 8): only when Settings → Meetings
+ * allows them and the person asking holds `meetings.meeting.edit`, since only they can decide one.
  */
-export function requestFlags(isPrivate: boolean, organiserCanEdit: boolean): ScheduleFlags {
-  return { hideGuestList: isPrivate, allowProposals: organiserCanEdit };
+export function requestFlags(
+  isPrivate: boolean,
+  settings: Pick<MeetingSettings, "allowProposals">,
+  organiserCanEdit: boolean,
+): ScheduleFlags {
+  return { hideGuestList: isPrivate, allowProposals: settings.allowProposals && organiserCanEdit };
 }

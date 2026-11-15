@@ -86,7 +86,7 @@
 - **Flags:**
   - `hideGuestList` is on when asked, when the meeting is private, and when any guest is not staff;
   - `allowProposals` is the Settings → Meetings value AND whether the organiser holds `meetings.meeting.edit`, so nobody is offered a proposal that no one could decide. The client's value is ignored.
-- **A request** lasts 30 minutes, at "To be agreed", with the reminder from Settings → Meetings, as tentative, of kind `request`. Its list is hidden when it is private, and it takes proposals only when the person asking holds edit (the spec says always).
+- **A request** lasts 30 minutes, at "To be agreed", with the reminder from Settings → Meetings, as tentative, of kind `request`. Its list is hidden when it is private. It takes proposals as any meeting does: only when Settings → Meetings allows them and the person asking holds edit (the spec says always).
   - `withUserId` must be an active member holding `meetings.meeting.view`, and never the person asking (400 "Choose who to meet with.").
 
 ### Settings → Meetings

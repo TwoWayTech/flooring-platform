@@ -486,7 +486,7 @@ export class MeetingsService {
           status: "tentative",
           kind: "request",
           private: input.private,
-          ...requestFlags(input.private, actor.access.permissions.has("meetings.meeting.edit")),
+          ...requestFlags(input.private, meetingSettings, actor.access.permissions.has("meetings.meeting.edit")),
         },
         [newAttendee({ kind: "staff", ...asker }, true), guest],
       );

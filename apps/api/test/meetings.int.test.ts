@@ -8,11 +8,19 @@ import {
   rolePermissions,
   roles,
   settings,
+  suppliers,
   userProfiles,
 } from "@workspace/db/company";
 import { tenantModuleOverrides, tenants, user } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { FEATURES, type Attendee, type FeatureKey, type Meeting, type MyMeetings } from "@workspace/shared";
+import {
+  FEATURES,
+  type Attendee,
+  type FeatureKey,
+  type GuestOption,
+  type Meeting,
+  type MyMeetings,
+} from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
@@ -929,6 +937,243 @@ describe("meetings (needs the local PostgreSQL)", () => {
     }
     const [stored] = await rows((db) => db.select().from(meetings).where(eq(meetings.id, made.id)));
     expect(stored).toMatchObject({ title: "Sturdy edit", reminderMin: 60 });
+  });
+
+  it("takes an email guest off by its row id with a CANCEL to them alone, and refuses the organiser and anyone not on it", async () => {
+    const made = await schedule(cookies.manager, {
+      title: "Tile samples",
+      guests: [staff(ids.employee)],
+      newGuests: [{ email: "pat@outside.example", name: "Pat Lee" }],
+    });
+    refused(
+      await call("delete", `/meetings/${made.id}/attendees/${ids.manager}`, cookies.manager),
+      "The organiser can't be removed from the meeting.",
+    );
+    // Someone who is not on the meeting is 404, a colleague or not, before any other check.
+    status(await call("delete", `/meetings/${made.id}/attendees/${uuidv7()}`, cookies.manager), 404);
+    status(await call("delete", `/meetings/${made.id}/attendees/${ids.sales}`, cookies.manager), 404);
+
+    // An email guest has no record of their own, so their wire id is their guest row's id (ADR 0051 "Ids").
+    const emailGuest = made.attendees.find((a) => a.kind === "external")!;
+    const [stored] = await rows((db) =>
+      db
+        .select()
+        .from(meetingAttendees)
+        .where(and(eq(meetingAttendees.meetingId, made.id), eq(meetingAttendees.partyType, "external"))),
+    );
+    expect(emailGuest.id).toBe(stored!.id);
+    const removed = await call("delete", `/meetings/${made.id}/attendees/${emailGuest.id}`, cookies.manager);
+    status(removed, 200);
+    expect(removed.body).toMatchObject({ sequence: 1 });
+    expect((removed.body as Meeting).attendees.map((a) => a.id)).toEqual([ids.manager, ids.employee]);
+    const cancels = (await outboxOf(made.id)).filter((row) => row.values["meeting.action"] === "Removed");
+    expect(cancels.map((row) => [row.recipientType, row.recipientEmail])).toEqual([["guest", "pat@outside.example"]]);
+    const file = cancels[0]!.attachments[0]?.text ?? "";
+    expect(file).toContain("METHOD:CANCEL");
+    expect(file.match(/^ATTENDEE/gm)).toHaveLength(1);
+    expect(file).not.toContain(emails.employee);
+    // The colleague still on it keeps their reminder.
+    expect((await waitingReminders(made.id)).map((row) => row.recipientId)).toEqual([ids.employee]);
+    status(await call("delete", `/meetings/${made.id}/attendees/${emailGuest.id}`, cookies.manager), 404);
+
+    status(await call("post", `/meetings/${made.id}/cancel`, cookies.manager), 201);
+    refused(
+      await call("delete", `/meetings/${made.id}/attendees/${ids.employee}`, cookies.manager),
+      "This meeting was cancelled.",
+    );
+  });
+
+  it("refuses an answer on a cancelled meeting and a proposal where none is taken; a declined request is cancelled", async () => {
+    const proposal = { start: at("11-11"), durationMin: 30, note: "" };
+    const weekly = await schedule(cookies.manager, {
+      title: "Weekly stock check",
+      recurrence: "weekly",
+      guests: [staff(ids.employee)],
+    });
+    // A series takes no proposed time (meetings.md rule 8), even with proposals on.
+    expect(weekly.allowProposals).toBe(true);
+    refused(
+      await call("post", `/meetings/${weekly.id}/response`, cookies.employee).send({
+        partStat: "tentative",
+        note: "",
+        proposal,
+      }),
+      "This meeting does not take proposed times.",
+    );
+    status(await call("post", `/meetings/${weekly.id}/cancel`, cookies.manager), 201);
+    refused(
+      await call("post", `/meetings/${weekly.id}/response`, cookies.employee).send({
+        partStat: "accepted",
+        note: "",
+        proposal: null,
+      }),
+      "This meeting was cancelled.",
+    );
+    const logged = await rows((db) =>
+      db.select().from(meetingResponses).where(eq(meetingResponses.meetingId, weekly.id)),
+    );
+    expect(logged).toEqual([]);
+
+    // An employee holds no edit key, so their request takes no proposals.
+    const asked = await call("post", "/meeting-requests", cookies.employee).send({
+      withUserId: ids.sales,
+      title: "Leave plan",
+      start: at("11-16", "15:00"),
+      note: "",
+      private: false,
+    });
+    status(asked, 201);
+    const requested = asked.body as Meeting;
+    expect(requested.allowProposals).toBe(false);
+    refused(
+      await call("post", `/meetings/${requested.id}/response`, cookies.sales).send({
+        partStat: "tentative",
+        note: "",
+        proposal,
+      }),
+      "This meeting does not take proposed times.",
+    );
+    const declined = await call("post", `/meetings/${requested.id}/response`, cookies.sales).send({
+      partStat: "declined",
+      note: "Busy that week",
+      proposal: null,
+    });
+    status(declined, 201);
+    expect(declined.body).toMatchObject({ kind: "request", status: "cancelled", sequence: 1 });
+    expect(await waitingReminders(requested.id)).toEqual([]);
+    const told = (await outboxOf(requested.id)).filter((row) => row.eventKey === "meeting.reply");
+    expect(told.map((row) => row.recipientId)).toEqual([ids.employee]);
+    refused(
+      await call("post", `/meetings/${requested.id}/response`, cookies.sales).send({
+        partStat: "accepted",
+        note: "",
+        proposal: null,
+      }),
+      "This meeting was cancelled.",
+    );
+  });
+
+  it("gives a request proposals only when Settings → Meetings allows them and the asker holds edit", async () => {
+    const ask = (title: string) =>
+      call("post", "/meeting-requests", cookies.manager).send({
+        withUserId: ids.employee,
+        title,
+        start: at("11-17", "11:00"),
+        note: "",
+        private: false,
+      });
+    const on = await ask("Goals check");
+    status(on, 201);
+    expect(on.body).toMatchObject({ allowProposals: true });
+    const [stored] = await rows((db) => db.select().from(settings).where(eq(settings.group, "meetings")));
+    const value = stored!.value as Record<string, unknown>;
+    await rows((db) =>
+      db
+        .update(settings)
+        .set({ value: { ...value, allowProposals: false } })
+        .where(eq(settings.id, stored!.id)),
+    );
+    try {
+      const off = await ask("Goals check again");
+      status(off, 201);
+      expect(off.body).toMatchObject({ allowProposals: false });
+    } finally {
+      await rows((db) => db.update(settings).set({ value }).where(eq(settings.id, stored!.id)));
+    }
+  });
+
+  it("lists the colleagues one may ask to meet: active members who read meetings, never oneself, none without create or a switch", async () => {
+    await rows(async (db) => {
+      const [role] = await db.insert(roles).values({ key: "meetview", name: "meetview", dataScope: "own" }).returning();
+      // My meetings lives in the employee portal, so the role reads it too.
+      await db
+        .insert(rolePermissions)
+        .values(
+          ["meetings.meeting.view", "hr.portal.view"].map((permissionKey) => ({ roleId: role!.id, permissionKey })),
+        );
+    });
+    const viewer = await member(["meetview"], "Vic Viewer");
+    const left = await member(["employee"], "Lee Left");
+    await rows((db) => db.update(userProfiles).set({ status: "disabled" }).where(eq(userProfiles.userId, left.userId)));
+
+    const mine = await call("get", "/me/meetings", cookies.sales);
+    status(mine, 200);
+    const colleagues = (mine.body as MyMeetings).colleagues;
+    const listed = colleagues.map((c) => c.id);
+    expect(listed).toEqual(
+      expect.arrayContaining([ids.owner, ids.manager, ids.sales2, ids.employee, ids.warehouse, viewer.userId]),
+    );
+    expect(listed).not.toContain(ids.sales);
+    expect(listed).not.toContain(left.userId);
+    // Nora holds no meetings key, so nobody may ask her; and a colleague comes with a name only.
+    expect(colleagues.some((c) => c.name === "Nora None")).toBe(false);
+    expect(colleagues.every((c) => Object.keys(c).sort().join() === "id,name")).toBe(true);
+
+    // Without meetings.meeting.create there is nobody to ask.
+    const viewOnly = await call("get", "/me/meetings", await harness.signIn(viewer.email));
+    status(viewOnly, 200);
+    expect((viewOnly.body as MyMeetings).colleagues).toEqual([]);
+    for (const key of ["meetings.requests", "meetings.invites"] as const) {
+      await withFeatureOff(key, async () => {
+        const off = await call("get", "/me/meetings", cookies.sales);
+        status(off, 200);
+        expect((off.body as MyMeetings).colleagues, key).toEqual([]);
+      });
+    }
+  });
+
+  it("lets only those who read suppliers invite one, from the record, and hides it from a guest who can't", async () => {
+    const supplierId = await rows(
+      async (db) =>
+        (
+          await db
+            .insert(suppliers)
+            .values({
+              name: "Granite Supply",
+              type: "goods" as const,
+              terms: "net_30" as const,
+              email: "orders@granite.example",
+              address: { street: "1 Main St", city: "Austin", state: "TX", zip: "78701" },
+            })
+            .returning()
+        )[0]!.id,
+    );
+    const forWarehouse = (await call("get", "/meeting-guests", cookies.warehouse)).body as GuestOption[];
+    expect(forWarehouse.find((o) => o.kind === "supplier" && o.id === supplierId)).toMatchObject({
+      name: "Granite Supply",
+      email: "orders@granite.example",
+    });
+    // Sales holds no supplier key: no supplier is offered, and one sent anyway reads as missing.
+    const forSales = (await call("get", "/meeting-guests", cookies.sales)).body as GuestOption[];
+    expect(forSales.some((o) => o.kind === "supplier" || o.kind === "supplier-contact")).toBe(false);
+    status(
+      await call("post", "/meetings", cookies.sales).send(
+        meetingBody({ guests: [{ kind: "supplier", id: supplierId }] }),
+      ),
+      404,
+    );
+
+    const made = await schedule(cookies.warehouse, {
+      title: "Slab delivery",
+      guests: [{ kind: "supplier", id: supplierId, name: "Forged", email: "forged@evil.example" }, staff(ids.sales)],
+    });
+    expect(made.attendees.find((a) => a.kind === "supplier")).toMatchObject({
+      id: supplierId,
+      name: "Granite Supply",
+      email: "orders@granite.example",
+    });
+    expect(made.hideGuestList).toBe(true);
+    const invites = (await outboxOf(made.id)).filter((row) => row.eventKey === "meeting.invite");
+    expect(invites.map((row) => [row.recipientType, row.recipientEmail]).sort()).toEqual(
+      [
+        ["supplier", "orders@granite.example"],
+        ["user", emails.sales],
+      ].sort(),
+    );
+    // The staff guest who can't read suppliers sees only their own row.
+    const seen = ((await call("get", "/meetings", cookies.sales)).body as Meeting[]).find((m) => m.id === made.id)!;
+    expect(seen.attendees.map((a) => a.id)).toEqual([ids.sales]);
+    expect(JSON.stringify(seen)).not.toMatch(/Granite|orders@granite|forged/);
   });
 
   it("answers 409 when the company's time zone has no calendar block", async () => {

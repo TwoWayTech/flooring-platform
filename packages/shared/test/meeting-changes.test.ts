@@ -160,8 +160,15 @@ describe("guest-list and proposal flags (meetings.md rule 9, ADR 0051)", () => {
     expect(
       scheduleFlags({ private: false, hideGuestList: false }, [], { allowProposals: false }, true).allowProposals,
     ).toBe(false);
-    expect(requestFlags(true, false)).toEqual({ hideGuestList: true, allowProposals: false });
-    expect(requestFlags(false, true)).toEqual({ hideGuestList: false, allowProposals: true });
+  });
+
+  it("treats a request like any meeting: proposals need the setting and the asker's edit key (delta item 8)", () => {
+    const on = { allowProposals: true };
+    const off = { allowProposals: false };
+    expect(requestFlags(true, on, false)).toEqual({ hideGuestList: true, allowProposals: false });
+    expect(requestFlags(false, on, true)).toEqual({ hideGuestList: false, allowProposals: true });
+    // With proposals off in Settings → Meetings (the default when none are stored), not even an editor's request takes one.
+    expect(requestFlags(false, off, true)).toEqual({ hideGuestList: false, allowProposals: false });
   });
 });
 
