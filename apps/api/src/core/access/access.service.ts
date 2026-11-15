@@ -6,6 +6,7 @@ import {
   tenantModuleOverrides,
   tenantPermissionCeiling,
   tenantSubscriptions,
+  type TenantStatus,
 } from "@workspace/db/control";
 import {
   enabledModules,
@@ -14,7 +15,10 @@ import {
   roleRequiresMfa,
   type DataScope,
   type ModuleKey,
+  type ModuleOverride,
   type PermissionKey,
+  type PlanModules,
+  type ProductKey,
   type RoleLike,
 } from "@workspace/shared";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -63,7 +67,7 @@ export class AccessService {
   async resolve(tenant: TenantContext): Promise<RequestAccess> {
     const [held, ceiling, modules] = await Promise.all([
       this.rolesOf(tenant, tenant.userId),
-      this.ceilingOf(tenant.companyId),
+      this.companyCeiling(tenant.companyId),
       this.modulesOf(tenant),
     ]);
     return this.accessOf(tenant.userId, held, ceiling, modules);
@@ -76,7 +80,7 @@ export class AccessService {
    */
   async membersAccess(tenant: TenantContext, userIds: readonly string[]): Promise<RequestAccess[]> {
     if (userIds.length === 0) return [];
-    const [ceiling, modules] = await Promise.all([this.ceilingOf(tenant.companyId), this.modulesOf(tenant)]);
+    const [ceiling, modules] = await Promise.all([this.companyCeiling(tenant.companyId), this.modulesOf(tenant)]);
     return Promise.all(
       userIds.map(async (userId) => this.accessOf(userId, await this.rolesOf(tenant, userId), ceiling, modules)),
     );
@@ -144,8 +148,13 @@ export class AccessService {
     };
   }
 
-  private async ceilingOf(companyId: string): Promise<PermissionKey[]> {
-    const rows = await this.control.db
+  /**
+   * The company's permission ceiling: its allowed keys (blueprint role rule 3). Public, with an
+   * optional `db` for a caller's own control transaction, so the platform console shows and diffs
+   * exactly what the guards enforce (docs/specs/platform-admin.md). Control database only.
+   */
+  async companyCeiling(companyId: string, db: ControlDb = this.control.db): Promise<PermissionKey[]> {
+    const rows = await db
       .select({ key: tenantPermissionCeiling.permissionKey })
       .from(tenantPermissionCeiling)
       .where(
@@ -158,8 +167,16 @@ export class AccessService {
     return rows.map((row) => row.key as PermissionKey);
   }
 
-  private async modulesOf(tenant: TenantContext): Promise<ModuleKey[]> {
-    const allSubscriptions = await this.control.db
+  /**
+   * The plan modules that limit a company (`planModulesOf`; ADR 0031): null for a fresh trial, which
+   * gets all of its products' modules. Public for the platform console, like `companyCeiling`.
+   */
+  async companyPlanModules(
+    companyId: string,
+    status: TenantStatus,
+    db: ControlDb = this.control.db,
+  ): Promise<PlanModules> {
+    const allSubscriptions = await db
       .select({
         planId: tenantSubscriptions.planId,
         status: tenantSubscriptions.status,
@@ -167,31 +184,54 @@ export class AccessService {
         deletedAt: tenantSubscriptions.deletedAt,
       })
       .from(tenantSubscriptions)
-      .where(eq(tenantSubscriptions.tenantId, tenant.companyId));
+      .where(eq(tenantSubscriptions.tenantId, companyId));
     // Soft-deleted rows still prove the company once had a subscription, so soft-deleting them
     // never makes it a fresh trial again (PR #8 review); only live rows give plan modules. Rows are
     // never hard-deleted (CLAUDE.md rule 8, deleted_at on business tables).
-    const freshTrial = tenant.status === "trial" && allSubscriptions.length === 0;
+    const freshTrial = status === "trial" && allSubscriptions.length === 0;
     const subscriptions = allSubscriptions.filter((subscription) => subscription.deletedAt === null);
     const planIds = [...new Set(subscriptions.map((subscription) => subscription.planId))];
     const moduleRows =
       planIds.length === 0
         ? []
-        : await this.control.db
+        : await db
             .select({ planId: planModules.planId, module: planModules.module })
             .from(planModules)
             .where(and(inArray(planModules.planId, planIds), isNull(planModules.deletedAt)));
-    const plan = planModulesOf(
+    return planModulesOf(
       subscriptions.map((subscription) => ({
         ...subscription,
         modules: moduleRows.filter((row) => row.planId === subscription.planId).map((row) => row.module),
       })),
       freshTrial,
     );
-    const overrides = await this.control.db
+  }
+
+  /** The company's live module overrides (`tenant_module_overrides`). Public for the platform console. */
+  async companyModuleOverrides(companyId: string, db: ControlDb = this.control.db): Promise<ModuleOverride[]> {
+    return db
       .select({ module: tenantModuleOverrides.module, enabled: tenantModuleOverrides.enabled })
       .from(tenantModuleOverrides)
-      .where(and(eq(tenantModuleOverrides.tenantId, tenant.companyId), isNull(tenantModuleOverrides.deletedAt)));
-    return enabledModules(tenant.products, plan, overrides);
+      .where(and(eq(tenantModuleOverrides.tenantId, companyId), isNull(tenantModuleOverrides.deletedAt)));
+  }
+
+  /**
+   * The modules switched on for a company (blueprint p4, layer 2): its products, limited by its
+   * plan, then its overrides (`enabledModules`). Public for the platform console, which reads it by
+   * company id from the control database only; requests go through `resolve` with their context.
+   */
+  async companyModules(
+    companyId: string,
+    status: TenantStatus,
+    products: readonly ProductKey[],
+    db: ControlDb = this.control.db,
+  ): Promise<ModuleKey[]> {
+    const plan = await this.companyPlanModules(companyId, status, db);
+    const overrides = await this.companyModuleOverrides(companyId, db);
+    return enabledModules(products, plan, overrides);
+  }
+
+  private async modulesOf(tenant: TenantContext): Promise<ModuleKey[]> {
+    return this.companyModules(tenant.companyId, tenant.status, tenant.products);
   }
 }
