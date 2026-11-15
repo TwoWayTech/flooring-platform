@@ -1,10 +1,10 @@
 # Platform admin: companies and access on the API (draft spec)
 
-**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and its row of docs/blueprint-delta.md; see "Part 3: audit and support". Part 4 is built on `feat/billing-company-standing` (PR #38) under the same rule, and recorded in ADR 0054 and the top row of docs/blueprint-delta.md; see "Part 4: the company side". Where the build settled a point this draft left open, the text below says what was built.
+**Draft, built under the owner's overnight rule of 2026-11-15; open points took the safest option.** Part 1 is built on `feat/platform-access-api` (PR #34) and recorded in ADR 0052 and the 2026-11-15 row of docs/blueprint-delta.md. Part 3 is built on `feat/platform-audit-support` (PR #36), under the same rule, and recorded in ADR 0053 and its row of docs/blueprint-delta.md; see "Part 3: audit and support". Part 4 is built on `feat/billing-company-standing` (PR #38) under the same rule, and recorded in ADR 0054 and the top row of docs/blueprint-delta.md; see "Part 4: the company side". Part 2 is being built on `feat/platform-manual-billing` under the same rule, reduced to plans and company status, and is recorded in ADR 0056 and its row of docs/blueprint-delta.md; see "Part 2: plans and company status". Where the build settled a point this draft left open, the text below says what was built.
 
 Drafted by Claude on 2026-11-15 as P11 step 1 for module 17, "Platform admin and manual billing" (docs/real-build-plan.md). docs/product-spec/settings-and-permissions.md describes the demo's console: who uses it, the "Change company access" workflow, rules 18 and 24, and the edge cases. It has no server design and nothing on billing.
 
-The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052 (ADR 0053 for part 3, ADR 0054 for part 4).
+The owner restarted the queue with this module next and is asleep. So this draft is built without the P11 "stop for my approval" step, as `docs/specs/settings-users-access.md` was (docs/blueprint-delta.md, 2026-11-13). Each open point takes the safer side and is recorded in docs/blueprint-delta.md and ADR 0052 (ADR 0053 for part 3, ADR 0054 for part 4, ADR 0056 for part 2).
 
 Sources:
 - blueprint p4 to p7: the layers of control, super-admin "Company access", and role rules 3, 6 and 8;
@@ -17,7 +17,7 @@ Sources:
 | Part | Branch | What | State |
 | --- | --- | --- | --- |
 | 1 | `feat/platform-access-api` | The platform guard, `/platform/me`, the companies list and detail, change company access, the restricted directory, and the support-access request behind the guard. The /admin console reads and writes the API in api mode | Built in PR #34; acceptance criteria 1 to 18 |
-| 2 | `feat/platform-manual-billing` | Plans as data; suspend, reinstate and cancel. Subscriptions and payments wait for the owner | Later, see "Parts 2 to 4" |
+| 2 | `feat/platform-manual-billing` | Plans as data (list, create, edit, retire, restore); suspend, reinstate and cancel a company, behind the new key `admin.billing`. Subscriptions and payments wait for the owner | Being built (draft PR, ADR 0056); see "Part 2: plans and company status"; acceptance criteria 64 to 91 |
 | 3 | `feat/platform-audit-support` | The platform audit viewer, support requests in the console with limits, database and maintenance columns, migrate.ts hardening, and the read-only access page for the support role | Built in PR #36 (ADR 0053); acceptance criteria 19 to 39 |
 | 4 | `feat/billing-company-standing` | The company side: `GET /company/standing` and `GET /billing`, the maintenance, unavailable and suspended screens, the Owner's banner, a read-only billing page (new key `settings.billing`), the Owner's support-access panel | Built in PR #38 (ADR 0054); acceptance criteria 40 to 63 |
 
@@ -1441,20 +1441,551 @@ Done in the build's docs stage:
 - 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts` (2 tests), with its state helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/standing-test-helpers.int.test.ts` (5, one checking that every helper taking a slug refuses any company but Summit, as `restoreStandingFacts` does for another company's snapshot), and `tests/e2e-api/global-setup.ts`.
 - 62 in the demo, and 63: `apps/web/tests/e2e/billing.spec.ts` (3 Flooring tests and 1 `@hr`), `/settings/billing` in `tests/e2e/screens.ts` for both hosts (axe in both themes, the console check, 375 px), and `apps/web/tests/unit/demo-billing-support.test.ts` (7, the end of a month in UTC among them).
 
+## Part 2: plans and company status
+
+**Being built under the same overnight rule** on `feat/platform-manual-billing` (draft PR), from main at `86c1689` (parts 1, 3 and 4 merged); still a draft until the owner approves it. It is recorded in ADR 0056 (written in the docs stage) and a new top row of docs/blueprint-delta.md. It takes a new number because it adds a feature key, `admin.billing` (/feature-change step 3), as part 4 did; ADR 0052 "Later parts" points to it. It is the outline's part 2, reduced: plans as data, and suspend, reinstate and cancel. Where it departs from the outline or from the specs it builds on, it is on the safer side. Each departure is listed in "Safer than the outline (part 2)". Points the build settles go in "As built (part 2)".
+
+Sources:
+- **Blueprint:**
+  - p13 (the control tables `plans`, `plan_modules`, `plan_limits` and `tenant_subscriptions`);
+  - p23 (manual billing, step 5: suspended) and p24 (plans and limits);
+  - p28 ("every action in the platform audit log") and p29 (a company that paid and cancels is read only for 90 days).
+- **ADRs:** 0033 (the life cycle), 0052 ("Later parts", part 2; "For the owner" 2, 4, 7 and 11), 0053 (the audit viewer; the lock on the admin's own row) and 0054 (standing, the Owner's notice and `phaseDates`).
+- **STATUS:** the platform residual risks and follow-ups, among them "Trial with no subscription stays `full`", and the PR #34 final review notes (a plan with no live limits row gives no limit).
+- **The part 2 outline** that stood under "Parts 2 to 4".
+
+**Bounds:**
+- **No schema change.** No new or altered table, column, index or trigger, and no migration. Part 2 writes `plans`, `plan_modules`, `plan_limits`, `tenants.status`, `tenants.updated_at` and `platform_audit_log` as they are. `tenants.status_changed_at` is stamped by the existing trigger `tenants_status_changed` (control migration 0003). packages/db gains test-only helpers.
+- **No new dependency,** and no `package.json` or lockfile change.
+- **No change in `apps/api/src/core`** (auth, tenancy, access). `git diff --stat origin/main -- apps/api/src/core packages/db/src/control packages/db/migrations` stays empty. The only change next to the life-cycle rule is an export in packages/shared, `companyEverPaid`, which `companyPhase` then calls, with no behaviour change.
+- **Out of scope** (owner decisions; nothing is invented):
+  - **Creating or changing a subscription, recording a payment and correcting a period.** An `active` row counts as paid (`wasPaid` in company-lifecycle.ts), so a subscription created before any payment would give a never-paid company the paid ladder: read only for good after a suspension, and 90 days after a cancel instead of 30. A payment would exist only as an audit row and a moved date, with nothing that can't be edited (CLAUDE.md rule 9). These need the owner's answers on `first_paid_at` or a `platform_payments` table, and an approved billing spec (ADR 0052, "For the owner" 7).
+  - **Invoices, what a price means, and $0 plans** (question 7).
+  - **Using a support grant** (question 2).
+  - **The cuts** in "Safer than the outline (part 2)": suspending or cancelling a company that never had a plan, writing the company's own audit log, plans with no price or no limits, applying a plan change to every company on it, and deleting a plan.
+
+### Stories (part 2)
+
+16. As a platform admin, I see every plan with its product, modules, limits, prices and the number of companies on it, so I know what each plan includes.
+17. As a platform admin with the owner role, I create a plan, rename it or change its prices, change the modules and limits of a plan no company uses, and retire or restore a plan, each with a reason and a step-up. A plan in use keeps its modules and limits, so no company's access changes behind its back.
+18. As a platform admin with the owner role, I suspend, reinstate or cancel a company with a reason and a step-up, after seeing what each action would do: the next status, whether the company becomes read only, and when it locks. Cancel needs the company's name typed exactly, and deletes nothing.
+19. As the business that runs the platform, I find every plan and status change in the platform audit log: who, when, from which address and device, and why. The support role sees these entries without other admins' reasons.
+
+### Who may call what (part 2)
+
+| What | Owner role | Support role | Step-up |
+| --- | --- | --- | --- |
+| List plans (`GET /platform/plans`) | Yes | Yes | No |
+| Create, edit, retire or restore a plan | Yes | No: 403 `forbidden`, "Only the platform owner role can change this." | Yes |
+| Read a company's status and what each action would do (`GET /platform/companies/:id/status`) | Yes | Yes | No |
+| Suspend, reinstate or cancel a company | Yes | No: 403, as above | Yes |
+| Read the reason on a plan or status entry in the audit log | Every reason | Only on entries it wrote (an admin moved from the owner role keeps its own); every other reads "Reason hidden" | No |
+
+- **One rule for the API and the web,** in `packages/shared/src/platform/admin-roles.ts`:
+  - `mayManageBilling(role)`: true when the role is in `PLATFORM_DEFAULT_WRITE_ROLES` (`["owner"]`). The console uses it to offer plan and status writes; the guard still decides every request. It is a separate name from `mayChangeCompanyAccess`, because it is a different power, though the list is the same today.
+  - `seesAdminReason(viewer, authorId)`: true for the owner role, or when the viewer wrote the entry. An empty author never counts as the viewer. `seesSupportReason` delegates to it, with no behaviour change.
+- **Company users** get 403 on every route, whatever the body: the guard runs before the body is read.
+- **The acting admin is checked again under a lock.** Every plan and status write starts its control transaction with `lockActingAdmin(tx, userId, roles)` (`apps/api/src/modules/platform/admin-lock.ts`). It reads the admin's own `platform_admins` row (`active`, not deleted) `FOR UPDATE`.
+  - No row, or a role that is not `owner` or `support`: 403 `forbidden`, "Only platform admins can use this."
+  - A role the route doesn't allow: 403 `forbidden`, "Only the platform owner role can change this."
+  - So an admin deactivated, deleted or moved to the support role while their write waits on that lock gets 403, and nothing is written. Under READ COMMITTED the locked row is read again after the other transaction commits; the guard's plain reads are not blocked.
+  - Part 3's support request uses the same function: its private `lockAdmin` moves there, with no behaviour change.
+- **The console is outside the standing gate.** `app/admin/layout.tsx` checks only the platform gate and `admin.access`; `StandingGate` is in `app/(app)/layout.tsx`. So an admin whose home company is suspended, read only or locked still opens the console and can reinstate it. A locked company still signs in.
+
+### Endpoints (part 2)
+
+| Method and path | Who | Step-up | Audit action | Answer |
+| --- | --- | --- | --- | --- |
+| `GET /platform/plans` | Any platform admin | No | None | 200 `PlatformPlan[]`, retired plans included, with `Cache-Control: no-store` |
+| `POST /platform/plans` | Owner role | Yes | `plan.created` | Body `PlatformPlanInput`. 201 `PlatformPlan` |
+| `PATCH /platform/plans/:id` | Owner role | Yes | `plan.changed`; none for a save that changes nothing | Body `PlatformPlanPatch`. 200 `PlatformPlan` |
+| `POST /platform/plans/:id/retire` | Owner role | Yes | `plan.retired` | Body `{ reason }`. 200 `PlatformPlan` |
+| `POST /platform/plans/:id/restore` | Owner role | Yes | `plan.restored` | Body `{ reason }`. 200 `PlatformPlan` |
+| `GET /platform/companies/:id/status` | Any platform admin | No | None | 200 `PlatformCompanyStatus`, with `Cache-Control: no-store` |
+| `POST /platform/companies/:id/suspend` | Owner role | Yes | `company.suspended` | Body `{ reason, expectedStatus }`. 200 `PlatformCompany`, read again |
+| `POST /platform/companies/:id/reinstate` | Owner role | Yes | `company.reinstated` | Body `{ reason, expectedStatus }`. 200 `PlatformCompany`, read again |
+| `POST /platform/companies/:id/cancel` | Owner role | Yes | `company.cancelled` | Body `{ reason, expectedStatus, confirmName }`. 200 `PlatformCompany`, read again |
+
+- **Controllers.** `PlatformPlansController` owns `platform/plans`. `PlatformCompanyStatusController` is a second controller on part 1's `platform/companies` prefix; its paths don't clash with `:id`, `:id/access` or `:id/directory`. Both are `@SessionOnly()` and carry `PlatformAdminGuard` and `@PlatformFeature("admin.billing")` at class level, so a handler added to either later inherits both. They join the existing `PlatformModule`, so there is no new Nest module and `app.module.ts` doesn't change.
+- **Ids.** `:id` is a UUID checked with `ParseUUIDPipe`; anything else answers 400 `invalid_request`. A company id selects control rows only, as in part 1 ("How a route names a company").
+- **Bodies are strict** (`z.strictObject`): an unknown field answers 400 `invalid_request`. `GET /platform/plans` takes no query; any parameter answers 400.
+- **The five action routes** (retire, restore, suspend, reinstate and cancel) answer 200 (`@HttpCode(200)`), not Nest's default 201 for a POST. Only create answers 201.
+- **No DELETE.** No route deletes a plan, softly or for good, so a plan in use can never disappear and a key is never freed.
+- **Counts.** After part 2, /platform has 17 routes on 6 controllers (8 on 4 before it). The metadata test and the 401, 403 and `admin.access` 404 loops in `platform.int.test.ts`, the session-only map in `isolation.int.test.ts` and S-21 in `company-standing.int.test.ts` cover the new routes. docs/api-contract.md's Tenancy count becomes seventeen.
+
+### The platform guard (part 2): a switch per route
+
+- **`PlatformFeature(key)`** is a decorator in `platform-admin.guard.ts`, which lives under `modules/platform`, not core. It sets the metadata `platform:feature`, which the guard reads with `getAllAndOverride([handler, class])`, so a handler's key wins over its class's.
+- **Step 2 of the guard** becomes: `admin.access` is off, **or the route's own key is off**: 404 `not_found` with Nest's default body, still before the admin row is read. A route with no key behaves exactly as before.
+- **So with `admin.billing` off,** the nine routes answer 404 to everyone, before the role check and the step-up (CLAUDE.md rule 13), and a non-admin learns only that a switch is off. The switch is read on every request, never once at load, because tests flip it at run time.
+
+The order on the nine routes:
+1. SessionGuard: 401 `unauthenticated` (the guard checks again), or 403 `mfa_enrolment_required`.
+2. 404 `not_found`, "Not Found", while `admin.access` or `admin.billing` is off.
+3. 403 `forbidden`, "Only platform admins can use this."
+4. On a write: 403 `forbidden`, "Only the platform owner role can change this." for the support role; then 403 `step_up_required`, or `step_up_mfa_required` for an admin with no factor.
+5. 400 `invalid_request`: an `:id` that is not a UUID, or a body of the wrong shape.
+
+Each route's own checks follow, below.
+
+### Plans
+
+#### PlatformPlan
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The plan's UUID |
+| `key` | 2 to 40 lowercase letters, digits and dashes, starting with a letter. Fixed after creation and never reused |
+| `name` | 1 to 80 characters, trimmed. Names need not be unique; the key tells two plans apart |
+| `product` | `flooring` or `hr`. Fixed after creation |
+| `monthlyPrice`, `yearlyPrice` | Decimal strings such as `"0.00"` (CLAUDE.md rule 6). Prices are data, not code (owner, 2026-11-13): nothing is charged from them |
+| `modules` | The stored modules in catalog order, with `platform` left out. A hidden module (rule 18) that is stored, such as `installation` on Flooring Pro, is included |
+| `maxUsers`, `maxBranches` | Whole numbers, or null when the plan has no live limits row, which means no limit (only possible by SQL). New plans always have one |
+| `active` | False once the plan is retired |
+| `companies` | How many companies have a subscription row naming the plan, counting deleted rows and deleted companies. Above 0 means the plan is in use |
+| `createdAt`, `updatedAt` | ISO moments |
+
+- **No subscription, company id or company name leaves.** `companies` is a count.
+- **`PlatformPlanInput`** is `{ key, name, product, monthlyPrice, yearlyPrice, modules, maxUsers, maxBranches, reason }`, every field required.
+- **`PlatformPlanPatch`** is `{ name?, monthlyPrice?, yearlyPrice?, modules?, maxUsers?, maxBranches?, reason }`. `reason` is required; every other field is optional, and only the fields sent are checked and changed.
+
+#### The plan rules (`packages/shared/src/platform/plans.ts`)
+One copy for the API, the web before the step-up, and the demo.
+- **Key:** `^[a-z][a-z0-9-]{1,39}$`, exactly as sent (not trimmed).
+- **Name:** trimmed, 1 to 80 characters.
+- **Product:** `flooring` or `hr`.
+- **Prices:** trimmed, then `^\d{1,11}(\.\d{1,2})?$`: digits with up to two decimals, inside numeric(14,2). No sign, exponent, comma or leading dot, and never a JSON number. Both are typed by the admin: 0.00 only when typed, no default, and no rule that derives the yearly price from the monthly one. Prices are compared with decimal.js, never as floats.
+- **Modules:** among the product's visible modules (`offeredModules([product])`). `platform` is accepted and never stored. Duplicates collapse, and the stored order is the catalog's. At least one module besides Platform is needed. A module of the other product, a hidden module and an unknown key are refused.
+- **Limits:** whole numbers from 1 to 100,000 (`isAccessLimit`). "Unlimited" can't be created.
+- **Reason:** trimmed, 10 to 500 characters (`adminReasonProblem`, the same rule as the support request's, which now aliases it).
+- **`planProblem(input)`** checks in this order: key, name, product, monthly price, yearly price, modules, max users, max branches, reason. The first problem answers 400 with its message.
+- **`planPatchProblem(plan, patch, inUse)`:** an unknown field 400; each field that is sent, as on create; the reason; then, for a plan in use, a real change of modules (compared as sets of visible modules) or of either limit: 422.
+- **`planChanges(plan, patch)`:** only the fields that differ. `"49"` equals `"49.00"`, and the same modules in another order are no change. Null when nothing differs.
+- **`planModulesAfter(stored, requested, visible)`:** the requested visible modules plus the stored hidden ones, in catalog order. A hidden module is kept as part 1 keeps hidden overrides.
+- **Shapes first.** The API's Zod schemas check shapes only, each with its field's message: a key of at most 40 characters, a name of 200, a product of 10, prices of 20, module keys of 100 and no more modules than the catalog has, a reason of 2,000, and limits that are numbers. Then the shared rule decides.
+
+#### GET /platform/plans
+- Every plan that is not soft-deleted, retired ones included, ordered by product key, then name, then key. The list isn't paged: there are a handful of plans.
+- One query reads the plans with their product key, their live limits row and the company count; a second reads their live `plan_modules` rows. Unknown module values and `platform` are dropped.
+- Prices come back as numeric strings (`"0.00"`).
+- `Cache-Control: no-store`. Not audited.
+- A fresh seed has `flooring-pro`, `flooring-wholesale` and `hr-standard`, each at `"0.00"` ("zero until the owner sets them"), with the seed's modules and limits. Summit is on Flooring Pro (16 users, 3 branches).
+
+#### POST /platform/plans
+In one control transaction:
+1. `lockActingAdmin` (403).
+2. `planProblem`: 400 with the first problem's message.
+3. The product row by key. Missing: 400 "Choose Flooring Suite or HR Suite."
+4. A plan with this key, deleted or retired ones included: 409 `conflict`, "A plan with this key already exists. A key can't be reused, even after its plan is retired." A unique violation on `plans_key_uidx` from a parallel create gives the same 409.
+5. Insert the `plans` row (prices trimmed), one `plan_modules` row per module (never `platform`) and one `plan_limits` row, each with `created_by` the admin.
+6. One `plan.created` audit row (no company, target `plan`).
+7. 201 with the plan, read again.
+
+#### PATCH /platform/plans/:id
+In one control transaction:
+1. `lockActingAdmin` (403).
+2. The plan row, not deleted, `FOR UPDATE`. None: 404 `not_found`, "That plan does not exist." This lock conflicts with the `FOR KEY SHARE` lock that a future subscription insert takes through its foreign key, so the in-use check can't race one.
+3. Its stored modules (every live row, hidden ones included), its live limits row (which may be absent), and whether it is in use: any subscription row names it, deleted rows included.
+4. `planPatchProblem`:
+   - `key`, `product` or any other unknown field: 400 "Only a plan's name, prices, modules and limits can change." (the API's strict schema gives the same message);
+   - a sent field that breaks its rule: 400 with its message; the reason, likewise;
+   - in use, with a real change of modules or limits: 422 `rule_broken`, "This plan is in use, so its modules and limits can't change. Change one company's access on its Access page instead."
+5. `planChanges` is null: 200 with the plan, and nothing is written, not even an audit row.
+6. Otherwise:
+   - update `plans` (name, prices and `updated_at`);
+   - upsert each wanted `plan_modules` row with `deleted_at` cleared (`created_by` the admin on insert), soft-delete each removed visible one, and keep each stored hidden one;
+   - upsert the `plan_limits` row on `plan_id` with `deleted_at` cleared (`created_by` the admin on insert);
+   - one `plan.changed` audit row.
+7. 200 with the plan, read again.
+
+Two parallel edits of one plan run one after the other under the plan's lock. The last save wins and both are audited (owner question 46).
+
+#### POST /platform/plans/:id/retire and /restore
+In one control transaction: `lockActingAdmin` (403); the plan row `FOR UPDATE` (404); then
+- retiring a retired plan: 409 `conflict`, "This plan is already retired.";
+- restoring an active plan: 409 `conflict`, "This plan isn't retired.";
+- otherwise `active` and `updated_at` change, one `plan.retired` or `plan.restored` row is written, and the answer is 200 with the plan.
+
+Nothing reads `plans.active` for access, so retiring a plan in use changes no company. It marks the plan as not offered for new subscriptions, which the console can't create yet (owner question 44).
+
+#### A plan in use, and what a plan edit reaches
+A plan is **in use** when any subscription row names it, a deleted row included. Its modules and limits then stay as they are; its name and prices may change.
+
+| Change | What it reaches |
+| --- | --- |
+| Name | `plans.name` is read by the Owner's `GET /billing` (`BillingFacts`) and by the console's companies list and detail. The new name shows on the billing page of every company with a row on the plan, deleted rows included, and in the console |
+| Prices | Nothing outside the seed reads a plan's prices. No company sees or pays a different amount: each company's price is kept on its own subscription row |
+| Modules and limits (only while not in use) | A plan's live `plan_modules` and `plan_limits` rows decide the modules and limits of the companies on it (`access.service.ts`, `PlanLimits`). Only a plan no company has used can change them, so no company's access, limits or ladder changes |
+| Retire or restore | Nothing; `plans.active` isn't read for access |
+
+The plan dialog says so for a plan in use: "Renaming shows the new name on the billing page of every company on this plan. Changing a price here doesn't change what any company on this plan pays: each company's price is kept on its own subscription."
+
+**Lock order everywhere:** the admin's own row, then the plan or company row. Nothing locks them the other way, so they can't deadlock.
+
+### Company status
+
+#### GET /platform/companies/:id/status
+- **Who:** any platform admin; no step-up; not audited; `Cache-Control: no-store`.
+- **404** `not_found`, "That company does not exist.", for an unknown or deleted company.
+- **It reads,** without a lock: `select now()` (the database's time), the company's `name`, `status` and `status_changed_at`, and every subscription row (deleted ones included: status, period end, price and `deleted_at`, the columns TenantDirectory reads). Reading writes nothing.
+- **The answer, `PlatformCompanyStatus`:**
+
+| Field | Meaning |
+| --- | --- |
+| `companyId` | The company's id |
+| `status` | The stored status text, as it is, even one the console doesn't know. The web sends it back as `expectedStatus` |
+| `statusChangedAt` | ISO moment of the last status change |
+| `phase` | `full`, `read_only` or `locked`, from `companyPhase` at the database's time |
+| `readOnlyFrom`, `lockedFrom` | ISO moments from `phaseDates` at the database's time, or null |
+| `actions` | Always three, in the order suspend, reinstate, cancel. Each is `{ action, refusal, next }`: `refusal` is `{ code, message }` (`conflict` or `rule_broken`) or null; `next` is `{ status, phase, readOnlyFrom, lockedFrom }` from `statusAfter`, then `companyPhase` and `phaseDates` on the facts after it, or null when refused |
+
+`companyStatusView` in packages/shared builds it, for the API and the demo.
+
+#### POST /platform/companies/:id/suspend, /reinstate and /cancel
+
+**Bodies** (strict):
+- `reason`: trimmed, 10 to 500 characters.
+- `expectedStatus`: the `status` the admin saw in the preview, a string of 1 to 40 characters. It is text, not one of the five statuses, so a stored unknown status still reaches the 422 below.
+- `confirmName`: cancel only. Trimmed, it must equal the company's name trimmed, case-sensitive. Suspend and reinstate refuse it as an unknown field.
+
+**Refusal order** (each code and message exact):
+1. 401 `unauthenticated`; 403 `mfa_enrolment_required` (SessionGuard).
+2. 404 `not_found`, "Not Found", while `admin.access` or `admin.billing` is off, before the admin row is read.
+3. 403 `forbidden`, "Only platform admins can use this."
+4. 403 `forbidden`, "Only the platform owner role can change this." (the support role); 403 `step_up_required` or `step_up_mfa_required`.
+5. 400 `invalid_request`:
+   - `:id` not a UUID;
+   - the body's shape: an unknown field or a wrong type;
+   - `expectedStatus` missing, empty, longer than 40 characters or not a string: "Read the company's status again before changing it.";
+   - the reason: "Give a reason of 10 to 500 characters."
+
+   These run in the controller (`statusActionBodyProblem`), before the company is read.
+6. 403 under the lock on the admin's own row: "Only platform admins can use this." when deactivated or deleted meanwhile, "Only the platform owner role can change this." when moved to the support role.
+7. 404 `not_found`, "That company does not exist." (unknown or deleted, read under the lock).
+8. Cancel only: 400 `invalid_request`, "Type the company's name exactly to confirm." It needs the locked row's name.
+9. 409 `conflict`, "This company's status changed meanwhile. Read it again." (`staleStatusRefusal`).
+10. `statusAfter`'s refusals, in its order: 422 `rule_broken` for an unknown status; 409 `conflict` for a transition the table refuses; 422 `rule_broken` for a company that never had a plan; 422 `rule_broken` for a widening.
+11. 200 with `PlatformCompany` (part 1's detail), read again after the commit. Its phase comes from `TenantDirectory.access`, so the answer shows exactly what the guards now enforce.
+
+**One control transaction** (READ COMMITTED, the default):
+1. `lockActingAdmin` (403).
+2. `select now()`: the transaction's start, the moment the trigger will stamp.
+3. The company row (`id`, `name`, `status`, `status_changed_at`), not deleted, `FOR UPDATE` (404). Parallel actions on one company run one after the other.
+4. Cancel: `confirmNameProblem` with the locked name (400).
+5. `staleStatusRefusal(expectedStatus, status, status_changed_at, now)` (409).
+6. Every subscription row of the company, deleted ones included.
+7. `statusAfter(action, status, { statusChangedAt, subscriptions, now })`. A refusal answers 409 `conflict` or 422 `rule_broken` with its message.
+8. `update tenants set status = <next>, updated_at = <now> where id = <id> and status = <current> returning status_changed_at`. No row: the same 409 "changed meanwhile" (defensive; the lock makes it unreachable).
+9. One audit row: `company.suspended`, `company.reinstated` or `company.cancelled`, with the company, target `tenant`, `before: { status, statusChangedAt }` and `after: { status, statusChangedAt, reason }`.
+10. After the commit: the company's detail, read again.
+
+#### `statusAfter`: the shared rule
+`packages/shared/src/platform/company-status.ts`, one copy for the API, the preview and the demo. It reads the stored status as text, `statusChangedAt`, every subscription row (deleted ones included) and `now`, the database's transaction time. Every message is an exported constant (`STATUS_ACTION_MESSAGES`). The first check that applies wins:
+
+1. **An unknown status.** The stored status is not `trial`, `active`, `past_due`, `suspended` or `cancelled` (there is no CHECK on the column): 422 `rule_broken`, "This company's status isn't one the console knows, so it can't be changed here."
+2. **The transition.** 409 `conflict` where the table says so:
+
+   | Current | Suspend | Reinstate | Cancel |
+   | --- | --- | --- | --- |
+   | `trial` | `suspended` | 409 "This company isn't suspended or cancelled, so there is nothing to reinstate." | `cancelled` |
+   | `active` | `suspended` | 409, as above | `cancelled` |
+   | `past_due` | `suspended` | 409, as above | `cancelled` |
+   | `suspended` | 409 "This company is already suspended." | `active` or `trial` (check 5) | `cancelled`, unless check 4 refuses |
+   | `cancelled` | 409 "A cancelled company can't be suspended. Reinstate it first if it should be suspended instead." | `active` or `trial` (check 5) | 409 "This company is already cancelled." |
+
+   - Suspending a cancelled company is refused because it would widen: a paid company's 90 days would become read only for good, and an unpaid one's 30 days would start again.
+   - The same status twice is always refused, so every action that succeeds really changes the status, and the trigger always stamps `status_changed_at`.
+3. **No subscription row ever** (none at all, deleted rows included): 422 `rule_broken`.
+   - Suspend and cancel: "This company has never had a plan. Suspending or cancelling it would also switch off every module but Platform, so its people couldn't read or export their data. To limit it now, switch its modules off on its Access page. This waits for the owner's decision."
+   - Reinstate: "This company has never had a plan, so the console can't tell what to put back. This waits for the owner's decision."
+   - **Why:** the access rule gives a company with no subscription row every product module only while its status is `trial` (`freshTrial` in `access.service.ts`; `planModulesOf` in `access-rules.ts`). For any other status with no rows it gives Platform only. A suspended or cancelled fresh trial would therefore lose every module, and its people couldn't read or export during the read-only days ADR 0033 promises. Changing that rule is a core/access change that widens access (owner question 34). The console can't make a zero-row company suspended or cancelled, so one that is was made by SQL, and SQL undoes it.
+   - A company with only deleted rows is not a fresh trial (its modules are already Platform only), so it passes this check.
+4. **Never widen** (suspend and cancel only). Take the facts before (`status`, `statusChangedAt`, the rows) and after (the next status, `now`, the same rows). For each target, read only and locked, the moment the company reaches it is `now` when `companyPhase` already gives that phase or a stricter one; otherwise the `phaseReachedAt` moment; or never. If the action would make either moment later: 422 `rule_broken`, "That would give this company more time before it becomes read only or locked than it has now, so nothing was changed."
+   - It never fires for suspend or cancel from `trial`, `active` or `past_due`: the status's phase goes from full to stricter, and `companyPhase` keeps the stricter of the status and the rows.
+   - It never fires for cancelling a paid suspension: read only for good becomes read only until the earlier of the rows' own lock and the change plus 90 days.
+   - It fires for cancelling a never-paid suspension when the status's ladder binds: the cancel would restart the 30 days, or reopen a locked company (owner question 37).
+   - It is worked out from `companyPhase` itself, so there is no second copy of the ladder (ADR 0054's rule).
+5. **The next status.** Suspend gives `suspended`, cancel gives `cancelled`. Reinstate gives `active` when the company ever paid (`companyEverPaid`: any row, deleted ones included, that is `active` or `past_due`, or `cancelled` with a price above 0), and `trial` otherwise.
+   - `past_due` is never written. A company suspended from `past_due` comes back `active`, and its rows say whether a payment is overdue. Its access doesn't change (full either way), but the Owner's "payment overdue" notice goes when its rows are current, because that notice reads the stored `past_due` (owner question 35).
+   - With rows present, `active` and `trial` give the same access; the choice changes only the word shown.
+
+The facts after carry `statusChangedAt = now`, what the trigger stamps. The inputs are never changed.
+
+#### Stale status
+`staleStatusRefusal(expected, current, statusChangedAt, now)` answers 409 `conflict`, "This company's status changed meanwhile. Read it again.", when:
+- `expected` is not the stored status: another admin changed it after this admin read the preview; or
+- `now` is earlier than the stored `status_changed_at`: this transaction started before another admin's change committed, so its own stamp would be earlier than the stored one, and it lost the race.
+
+Otherwise null. One copy for the API (under the lock) and the demo. It runs after the 404 and the name check, and before `statusAfter`. The access PATCH has no such check ("the last save wins", question 11); part 2 is stricter.
+
+#### How each result reads
+No new reading code: `companyPhase`, part 4's `companyStandingState` and the Owner's notice read the new status as they read any status.
+
+| After | `companyPhase` | Standing (part 4) | The Owner's notice (part 4) | TenantGuard on a company route |
+| --- | --- | --- | --- | --- |
+| Suspended, ever paid | `read_only` now; `locked` only when its rows' own ladder locks (the last paid row's end plus 44 days) | `read_only` | `read_only`, reason `suspended`, with `lockedFrom` the rows' lock | GET 200; a write gets 403 `company_read_only` |
+| Suspended, never paid | `read_only` now; `locked` at the change plus 30 days, or sooner when its rows lock sooner | `read_only`, then `locked` | `read_only`, reason `suspended`, with `lockedFrom`; once locked the route is refused | As above, then 403 `company_suspended`; sign-in and `/auth/context` still work |
+| Cancelled, ever paid | `read_only` now; `locked` at the change plus 90 days, or at the rows' lock if sooner | As above | `read_only`, reason `cancelled`, with `lockedFrom` | As above |
+| Cancelled, never paid | `read_only` now; `locked` at the change plus 30 days, or sooner | As above | As above | As above |
+| Reinstated (`active` or `trial`) | Its rows' phase: `full` while a row is current; `read_only` or `locked` once its plan has lapsed | From the rows | From the rows: `payment_overdue`; `read_only` with `payment_lapsed` or `trial_ended`; or none | As the rows say |
+
+- **Reinstate never extends a period.** Paying ends a lapse, and an admin action ends a suspension. Payments wait for the owner, so a company whose plan has lapsed stays read only or locked after a reinstate.
+- **Read only starts the moment the status changes.** The trigger stamps the database's transaction time.
+
+#### What each action changes, and when
+- **Exactly** `tenants.status`, `tenants.status_changed_at` (the trigger) and `tenants.updated_at`, plus one `platform_audit_log` row.
+- **Nothing else:** no subscription row, module override, ceiling, product, member, session, branding, maintenance flag or `tenant_databases` row, and no company database. No pool is opened.
+- **Cancel deletes nothing.** Reinstate undoes it: the status goes back to `active` or `trial` with a new `status_changed_at`, and the subscription rows give the phase.
+- **It takes effect** on the company's next request and next job. TenantDirectory reads `tenants` and every subscription row on every request, with no cache; jobs read through it and skip read-only companies. A request already past TenantGuard finishes, as with maintenance (ADR 0033). The web's standing watch reacts to the next refused request and to the next full page load (ADR 0054).
+- **Sessions are not revoked.** TenantGuard reads the status on every request, and a locked company still signs in.
+
+#### The company's own audit log
+It is not written. It lives in the company's database, which is reachable only through TenantConnectionService with a TenantContext that TenantGuard builds from the verified session's company. Building one from `:id` is what CLAUDE.md rule 2 forbids, and lint bans the company schema, TenantConnectionService, TenantContext and the job tenants in `apps/api/src/modules/platform`. A job would need the same context. So the platform audit log is the record, and the Owner learns of the change from part 4's standing and notice ("Account suspended: read only", "Account cancelled: read only"). Owner question 4 stands, now also for status changes (question 42).
+
+### Validations and messages (part 2)
+
+Every 400 is `invalid_request`, every 404 `not_found`, every 409 `conflict` and every 422 `rule_broken`, with the message shown.
+
+| Where | Rule | Answer |
+| --- | --- | --- |
+| Any of the nine routes | `admin.access` or `admin.billing` off | 404 "Not Found", before the admin row is read |
+| | `:id` not a UUID | 400 |
+| | An unknown field in a body, or any query on `GET /platform/plans` | 400 |
+| Every write | Not an admin any more, checked under the lock on the admin's row | 403 `forbidden`, "Only platform admins can use this." |
+| | Moved to a role the route doesn't allow, checked under the lock | 403 `forbidden`, "Only the platform owner role can change this." |
+| | Reason under 10 or over 500 characters after trimming, or not a string | 400 "Give a reason of 10 to 500 characters." |
+| Create and edit a plan | Key not 2 to 40 lowercase letters, digits and dashes starting with a letter | 400 "Enter a key of 2 to 40 lowercase letters, digits and dashes that starts with a letter, such as flooring-pro." |
+| | Name empty after trimming, or over 80 characters | 400 "Enter a name of 1 to 80 characters." |
+| | Product not `flooring` or `hr`, or no such product row | 400 "Choose Flooring Suite or HR Suite." |
+| | Monthly price not digits with up to two decimals | 400 "Enter a monthly price such as 49.00: digits with up to two decimals." |
+| | Yearly price, likewise | 400 "Enter a yearly price such as 490.00: digits with up to two decimals." |
+| | Modules not a list of strings | 400 "Choose the plan's modules." |
+| | No module besides Platform | 400 "Choose at least one module besides Platform." |
+| | An unknown module key | 400 "{key} is not a module." |
+| | A module of the other product, or a hidden one | 400 "The {label} module isn't offered with {product label}." |
+| | A limit not a whole number from 1 to 100,000 | 400 "Enter a whole number from 1 to 100,000." |
+| Create a plan | The key is taken, by a retired or deleted plan too | 409 "A plan with this key already exists. A key can't be reused, even after its plan is retired." |
+| Edit a plan | `key`, `product` or any other unknown field | 400 "Only a plan's name, prices, modules and limits can change." |
+| | In use, and the modules or a limit would change | 422 "This plan is in use, so its modules and limits can't change. Change one company's access on its Access page instead." |
+| Edit, retire or restore a plan | Unknown or deleted plan | 404 "That plan does not exist." |
+| Retire a plan | Already retired | 409 "This plan is already retired." |
+| Restore a plan | Not retired | 409 "This plan isn't retired." |
+| Status preview and actions | Unknown or deleted company | 404 "That company does not exist." |
+| Suspend, reinstate, cancel | `expectedStatus` missing, empty, over 40 characters or not a string | 400 "Read the company's status again before changing it." |
+| Cancel | `confirmName` missing, or not the company's name exactly (trimmed, case-sensitive) | 400 "Type the company's name exactly to confirm." |
+| Suspend, reinstate, cancel | The status changed since the admin read it, or a later change won the race | 409 "This company's status changed meanwhile. Read it again." |
+| | A stored status the console doesn't know | 422 "This company's status isn't one the console knows, so it can't be changed here." |
+| Suspend | Already suspended | 409 "This company is already suspended." |
+| | Cancelled | 409 "A cancelled company can't be suspended. Reinstate it first if it should be suspended instead." |
+| Reinstate | Not suspended or cancelled | 409 "This company isn't suspended or cancelled, so there is nothing to reinstate." |
+| Cancel | Already cancelled | 409 "This company is already cancelled." |
+| Suspend, cancel | The company never had a subscription row | 422 "This company has never had a plan. Suspending or cancelling it would also switch off every module but Platform, so its people couldn't read or export their data. To limit it now, switch its modules off on its Access page. This waits for the owner's decision." |
+| Reinstate | The company never had a subscription row | 422 "This company has never had a plan, so the console can't tell what to put back. This waits for the owner's decision." |
+| Suspend, cancel | The action would give more time before read only or locked | 422 "That would give this company more time before it becomes read only or locked than it has now, so nothing was changed." |
+| `GET /platform/audit` | `action` not one of the 13, or one of the seven new ones while `admin.billing` is off | 400 "Choose an action from the list." |
+| DemoStore, any part 2 method | `admin.billing` off | "This feature is switched off." |
+
+The input checks are shared, one copy for the API, the web before the step-up, and the demo: `planProblem`, `planPatchProblem`, `statusActionBodyProblem`, `confirmNameProblem`, and `statusActionInputProblem` (the body check, then the name check).
+
+### ApiClient (part 2)
+Seven methods, in their own commented block after part 4's in `contract.ts`, `http/api-methods.ts` and DemoStore:
+- **`listPlatformPlans()`:** `GET /platform/plans`.
+- **`createPlatformPlan(input)`:** `POST /platform/plans` with the nine fields, rebuilt.
+- **`updatePlatformPlan(planId, patch)`:** `PATCH /platform/plans/:id` with only the fields set, plus `reason`.
+- **`retirePlatformPlan(planId, reason)`** and **`restorePlatformPlan(planId, reason)`:** `POST /platform/plans/:id/retire` or `/restore` with `{ reason }`.
+- **`getPlatformCompanyStatus(companyId)`:** `GET /platform/companies/:id/status`. Null for an id that is not a UUID (never sent) and for any 404, as `getPlatformCompany` does. The page tells the cases apart (see "Screens").
+- **`changePlatformCompanyStatus(companyId, input)`:** `POST /platform/companies/:id/<action>` with `{ reason, expectedStatus }`, plus `confirmName` for cancel only. Answers the company's detail.
+- **Ids that are not UUIDs are never sent.** A plan call rejects with "That plan does not exist."; a status action with "That company does not exist."
+- **Error codes:** `apiErrorCode(error)` in `lib/api/errors.ts` gives the `code` of an `HttpApiError` or of the demo's `DemoRefusal`, else null. Screens decide on the code, never on the text (PR #36 note). `DemoRefusal` extends `DemoRuleError`, so every existing catch still shows its message.
+
+### Screens (part 2)
+
+#### Api mode
+- **Platform nav:** Companies, Plans (`/admin/plans`, only while `admin.billing` is on), Audit log. Plans is current on /admin/plans.
+- **Company tabs:** Access, Status (`/admin/companies/:id/status`, only while the switch is on), Support, then the demo-only tabs.
+- **Plans (/admin/plans):**
+  - The page checks `featureOn("admin.billing")` itself and is not found when it is off: `featureForPath` attributes /admin/plans to `admin.access`, whose `/admin/*` wildcard outranks an exact path, and the admin layout checks only `admin.access`.
+  - **Header:** "Plans", with the description "What each plan includes. Prices are data: nothing is charged from here." The owner role gets "New plan".
+  - **The support role** reads the note (`role="note"`) "Read only: only the platform owner role can change plans." and gets no actions.
+  - **Columns:** Plan (the name, with the key under it in muted text), Product, Modules (labels; a hidden one with "(hidden)"), Users and Branches (`<Num kind="count">`, or "No limit" for null), Monthly and Yearly (`<Num kind="money">`), Companies (`<Num kind="count">`, with an "In use" hint), Status ("Active" or "Retired"). The owner role's row actions: Edit, then Retire or Restore.
+  - At 375 px the table scrolls inside its container; the page doesn't.
+- **The plan dialog** (create and edit in one form):
+  - **Fields:** key (create only; read only on edit), name, product (create only), monthly and yearly price (text inputs with `inputMode="decimal"`; what is typed is sent as typed, with no rounding and no `toFixed`), a switch per visible module of the product (Platform shown on and disabled), the user and branch limits, and the reason.
+  - **A plan in use:** the module switches and limit inputs are disabled with "In use by {n} companies: its modules and limits can't change. Change one company's access on its Access page.", and the note on what a rename and a price change reach.
+  - **Continue** runs `planProblem` or `planPatchProblem` first. The field in error is marked invalid, described and focused, and no code is asked for.
+  - Then the step-up dialog ("Save plan {name}"), the call, the toast "Plan created." or "Plan saved.", and a read again. A refusal shows its message and brings the form back with what was typed.
+- **Retire and Restore:** a dialog with the reason, then the step-up. Retiring reads: "Retiring hides nothing and changes no company today: companies on {name} keep it. It marks the plan as not offered for new subscriptions, which the console can't create yet."
+- **Company status (/admin/companies/:id/status):**
+  - The page checks `featureOn("admin.billing")` first and is not found when it is off.
+  - It reads `getPlatformCompany` and `getPlatformCompanyStatus`. No company: "This company does not exist." A company whose status reads null: the error card "The company's status can't be read right now." (a switch mismatch between the web build and the API, or a company deleted meanwhile).
+  - **Layout:** Back to companies, the company name, the company tabs, the facts (status, since, phase, with the existing status and phase pills), then a "Status" panel with the three actions in order.
+  - **Each action:** its button (Suspend, Reinstate, and Cancel as a destructive button) with the dialog copy under it. A refused action shows its button disabled and the refusal's message in muted text, and never asks for a code.
+  - **The support role** sees the panel without buttons, and the note "Read only: only the platform owner role can change a company's status."
+  - Under the panel: "Subscriptions, payments and period corrections wait for the owner's billing decisions." For a company that never had a plan, the refusal's text already names its Access page.
+- **The status dialog:**
+  - **Title:** "Suspend {name}?", "Reinstate {name}?" or "Cancel {name}?".
+  - **Body,** from `statusActionText` with the preview's `next`:
+    - full: "It is in full use after this.";
+    - read only with a lock date: "Read only from now: its people can sign in, read and export, but not change anything. It locks on {date}.";
+    - read only with no lock date: "Read only from now: its people can sign in, read and export, but not change anything. It stays read only until it is reinstated.";
+    - locked: "Locked from now: its people can sign in but can't open its data.";
+    - cancel adds: "Nothing is deleted: its database, people, plans and settings stay. Reinstate puts the status back.";
+    - reinstate, when the next phase is not full, adds: "Its plan has ended, so it stays {read only or locked} until a payment is recorded, which the console can't do yet."
+  - **Fields:** the reason; for cancel, "Type {name} to confirm".
+  - **Continue** runs `statusActionInputProblem` with `expectedStatus` the preview's `status`, then the step-up ("Suspend {name}", and so on), then the call.
+  - **Success:** the toast "{name} is suspended.", "{name} is reinstated." or "{name} is cancelled. Nothing was deleted.", then both queries read again. Focus goes to the "Status" heading, because the button may be gone.
+  - **A 409 or 422** (`apiErrorCode` is `conflict` or `rule_broken`) shows its message, closes the dialog and reads again: another admin may have acted. Any other failure brings the form back with the text kept.
+- **The reason field** is one shared component (`reason-field.tsx`): the text area, the hint "Don't paste the company's data here: the reason is kept in the platform audit log.", a counter and the error. The support request dialog uses it too, with its ids unchanged.
+- **Audit log:** the labels "Suspended company", "Reinstated company", "Cancelled company", "Created plan", "Changed plan", "Retired plan" and "Restored plan". Detail lines: "Active → Suspended"; the plan's fields, with prices through `formatNumber(…, "money")`; and "Reason: …", or "Reason hidden" in muted text. While `admin.billing` is off the Action filter doesn't offer the seven.
+- **Frontend rules:** existing components and tokens only, in both themes. At 375 px the dialogs are `sm:max-w-md` with a scrolling body, the tables scroll inside their containers, and the nav scrolls sideways. Focus is visible; the Radix dialogs trap and return it. There is no new animation, so `prefers-reduced-motion` holds through the existing components. docs/design-brief.md applies.
+
+#### Demo mode
+The same screens run on DemoStore, through the same shared rules and messages, with no step-up, like every demo console write.
+- **Every part 2 method** first checks `featureOn("admin.billing")` and otherwise refuses with "This feature is switched off."
+- **Plans:**
+  - the fixture companies' plans as seeded: Flooring Pro, Flooring Wholesale and HR Standard at "0.00", the fixture's modules (without Platform) and limits, each in use by its fixture companies;
+  - created plans and edits are kept in this browser's local storage under `platform-plans`, read defensively (an unreadable entry is dropped);
+  - a plan's id in the demo is its key (the HTTP client never sends it);
+  - a plan's modules and limits never change a demo company, which holds its own; the fixture plans are each in use, so the API's in-use rule gives the same refusals.
+- **Status:**
+  - the console's status is kept under `platform-status` (the status and its change time per company);
+  - the facts are the company's stand-in subscription row (`demoSubscription`, price "0.00");
+  - the companies list and detail show the stored status and the phase `companyPhase` gives; an untouched company keeps the demo's `full`;
+  - actions run `statusActionBodyProblem`, the company (404 text), `confirmNameProblem`, `staleStatusRefusal` against the stored status, then `statusAfter`; refusals are `DemoRefusal`s with `conflict` or `rule_broken`.
+- **Every write** appends a platform audit row with the API's shapes, shown as "Platform admin" with "Not recorded" for address and device.
+- **The demo company's own side doesn't change:** its standing stays `full`, its billing has no notice, and the sign-in list still offers it. The demo has no life cycle (ADR 0054).
+- **Every demo company has its stand-in row,** so the "never had a plan" refusal never shows in the demo; a unit test covers it with a constructed fact set.
+- **The audit filter** refuses the seven actions while the switch is off, as the API does.
+- **Reset demo** clears both new keys.
+
+### Audit (part 2)
+Seven new actions, all by a platform admin. `PLATFORM_AUDIT_ACTIONS` lists 13 and `PLATFORM_ADMIN_AUDIT_ACTIONS` 9.
+
+| Action | Target | Company | `before` | `after` | Details |
+| --- | --- | --- | --- | --- | --- |
+| `company.suspended`, `company.reinstated`, `company.cancelled` | `tenant`, the company id | The company | `{ status, statusChangedAt }` | `{ status, statusChangedAt, reason }` | `{ kind: "status_changed", from, to, reason }` |
+| `plan.created` | `plan`, the plan id | None | null | `{ key, name, product, monthlyPrice, yearlyPrice, modules, maxUsers, maxBranches, reason }` | `{ kind: "plan_created", …the same fields, reason }` |
+| `plan.changed` | `plan`, the plan id | None | The changed fields' old values | The changed fields' new values and `reason` | `{ kind: "plan_changed", changes: { field, from, to }[], reason }` |
+| `plan.retired`, `plan.restored` | `plan`, the plan id | None | `{ active }` | `{ active, reason }` | `{ kind: "plan_active", active, reason }` |
+
+- **Allow-listed exactly:** statuses among the five, ISO moments, keys, names, prices, modules and limits by the plan rules' patterns, and `reason` a string of 1 to 500 characters or null. Anything else reads `{ kind: "hidden" }` ("Details hidden").
+- **Reasons** are an admin's free text. For a viewer who is not the owner role, a row of one of the seven actions written by another admin has `after` selected with `reason` set to null in SQL (`jsonb_set` only when `after` is an object; no `?` operator), so the text never reaches the API's memory. `platformAuditView` nulls it again unless `seesAdminReason` holds. The owner role reads every reason. The `support.requested` and migration narrowing is unchanged.
+- **Address and device** go to the owner role only, on these rows as on every platform admin's row (part 3).
+- **Prices** in details are decimal strings; the console shows them through `formatNumber(…, "money")`.
+- **The filter and the switch:** `BILLING_AUDIT_ACTIONS` lists the seven, and `platformAuditActionOn(action)` is false for them while `admin.billing` is off. The web's Action filter, the demo and the API's `action` check all use it, per call. Stored rows of the seven still list and render while the switch is off: they are history (owner question 47).
+- **Reads are not audited.** A refusal writes nothing, and a plan save that changes nothing writes no row.
+- **The company's own `audit_log` is not written** (see "The company's own audit log").
+
+### Feature switch (part 2)
+- **New key `admin.billing`:** "Platform admin: plans and company status", both products, the Platform module, status `demo`, `enabled: true`, screens `/admin/plans` and `/admin/companies/*/status`. It sits right after `admin.access` in `packages/shared/src/features.ts` and docs/FEATURES.md, kept in sync by `features.test.ts`. No permission key: the platform owner role writes.
+- **`admin.access` is retitled** "Platform admin: companies, modules and ceilings" (it read "plans, modules and ceilings"). Its key, screens and row are otherwise unchanged; the title is read nowhere else.
+- **When `admin.billing` is off:**
+  - the nine routes answer 404 to everyone, before the admin row is read;
+  - the Plans nav item and the Status tab go, and both pages are not found;
+  - the audit log's Action filter stops offering the seven actions, and the API and the demo refuse them as a filter with 400 "Choose an action from the list."; their entries still list;
+  - DemoStore's part 2 methods refuse with "This feature is switched off.";
+  - the rest of the console (companies, access, support and the audit log) works as before.
+- **When `admin.access` is off,** everything under /admin is already gone, and the nine routes answer 404 too.
+- **Owner question 43** asks the owner to confirm the key. The /feature-change step-2 impact summary is in the PR body and ADR 0056.
+
+### Safer than the outline (part 2)
+Each is recorded in docs/blueprint-delta.md and ADR 0056.
+1. **A fresh trial can't be suspended or cancelled, and a company that never had a plan can't be reinstated, from the console** (422). The access rule would leave a suspended or cancelled fresh trial with Platform only, so its people couldn't read or export during the read-only days. The fix is a core/access change (owner question 34). The refusal and the page name the stop-gap: switch its modules off on its Access page, reversibly and audited.
+2. **Suspend and cancel never widen.** The shared check refuses any action that would make the company read only or locked later than it already would be, from `companyPhase` itself. Suspending a cancelled company is refused outright.
+3. **Reinstate restores what the rows say:** `active` if the company ever paid, else `trial`. `past_due` is never written (owner question 35). Reinstating after a cancel is allowed, because cancel deletes nothing (owner question 36).
+4. **Cancel changes only the status, its stamp and `updated_at`,** plus one audit row, and needs the company's name typed exactly. Nothing is deleted, revoked or detached.
+5. **A plan in use keeps its modules and limits.** In use means any subscription row, a deleted one included, names it. Name and prices may change: a rename shows on every such company's billing page, and a price changes nothing any company pays (owner question 38).
+6. **No plan is ever deleted.** Retire and restore only, both reversible, neither changes a company. A key is never reused (owner question 45).
+7. **Every new plan names every field:** both prices typed (0.00 only as typed, no default, no yearly rule), at least one module, and both limits from 1 to 100,000. "No price" needs a migration and "unlimited" an owner decision (owner questions 39 and 40).
+8. **`admin.billing` hides everything when off,** answering 404 before the admin row is read, through a route-level switch in the platform guard, so neither the role check nor the step-up reveals the routes.
+9. **Every write: the owner role, a step-up, a reason of 10 to 500 characters, and one audit row in the same control transaction,** under row locks (the admin's own row, then the company or the plan). State checks run under the lock, so two admins can't both apply the same action.
+10. **Reasons are seen by the owner role and their author only,** narrowed in SQL first and by the shared view again (owner question 41).
+11. **No company database is opened,** and the company's own `audit_log` isn't written (CLAUDE.md rule 2; owner question 42). The Owner learns of a suspension or cancellation from part 4's standing and notice.
+12. **The console shows the consequences before the step-up.** The server computes the preview from every row, deleted ones included, at the database's time. A refused action is disabled with its reason, and the shared input checks run before any code is asked for.
+13. **Both new GETs send `Cache-Control: no-store`.**
+14. **The api-mode e2e touches only Summit's status and its own `e2e-` plans.** It never switches the status trigger off on the shared database, moves Summit back to `active` only, and hard-deletes only `e2e-` plans that no subscription row names.
+15. **A status action carries the status the admin saw** (`expectedStatus`). If another admin changed it meanwhile, or a later change won the race, it answers 409 and writes nothing. This is stricter than the access PATCH's "last save wins".
+16. **The acting admin is checked again under a lock on their own row** in every plan and status write: deactivated, deleted or moved to the support role meanwhile gives 403.
+17. **While `admin.billing` is off, the audit log doesn't offer the seven actions as a filter,** in the web, the demo and the API. Their rows stay listed as history (owner question 47).
+
+### As built (part 2)
+Filled in by the docs stage: the points the build settles, and anything where the code needed the safer reading.
+
+### Edge cases and known limits (part 2)
+- **Clock skew.** The trigger stamps the database's clock, and TenantGuard compares with the API's. If the API's clock runs behind the database's, a cancelled company, or a never-paid suspended one, reads `full` for that gap after the change. A paid suspension is read only whatever the time.
+- **Reinstate gives time back.** Reinstating restores full use, and a later suspend starts a new 30 days within the rows' own ladder; it never gives more than the rows allow, because `companyPhase` takes the stricter of the two. Each step is an owner-role write with a step-up, a reason and an audit row.
+- **Owners get no email,** and no entry in their own audit log (owner question 42).
+- **The demo's company side has no life cycle.** A company suspended in the demo console keeps working on its own side and stays on the demo sign-in list.
+- **`featureForPath` attributes /admin/plans to `admin.access`** (wildcard ranking). The admin pages check `admin.billing` themselves, and nothing under /admin uses `pathOn`.
+- **The plan list isn't paged.** There are a handful of plans.
+- **History stays visible:** audit rows of the seven actions still list while `admin.billing` is off (owner question 47).
+- **Each local api-mode e2e run** adds plan and status rows to `platform_audit_log`, which is append-only. A killed run can leave Summit suspended until the next global setup, and an `e2e-` plan until the next clean-up. Moving Summit back stamps a new `status_changed_at`, which doesn't change an `active` company's phase.
+- **Plan names aren't unique;** the key tells two plans apart.
+- **In use means "ever named",** so a plan used once keeps its modules and limits for good.
+- **The `freshTrial` rule** stays as it is (owner question 34), and a fresh trial still has no end (STATUS, "Trial with no subscription stays `full`").
+- **The access PATCH** still has neither an actor re-check under a lock nor a stale-save check (question 11); part 2's writes have both. A follow-up.
+- **Admins can type company data into a reason.** The hint discourages it, and the support role can't read other admins' reasons.
+- **The whole Flooring demo project runs in CI only** for this part (see the acceptance criteria). CI's `e2e` job must be green before the self-merge.
+
+### Acceptance criteria (part 2)
+
+**Access**
+
+64. The nine routes answer 401 without a session. They answer 404 to the owner role, the support role and a non-admin while `admin.billing` or `admin.access` is off, before the admin row is read. They answer 403 `forbidden` to a non-admin, and to an inactive, deleted or other-role admin, whatever the body. The metadata test, the isolation map and S-21 include them.
+65. The support role reads `GET /platform/plans` and `GET /platform/companies/:id/status` (200) and gets 403 "Only the platform owner role can change this." on every write. The owner role without a step-up from the last 5 minutes gets 403 `step_up_required`.
+66. An owner-role admin who is deactivated, or moved to the support role, while their write waits on the lock on their own row gets 403, and nothing is written.
+
+**Plans**
+
+67. The list holds every plan, retired ones included, with the exact fields. The seeded plans read "0.00". No subscription id, company id or company name appears. It sends `no-store` and writes no audit row.
+68. Create answers 201 with the plan. It writes one `plans` row, one `plan_modules` row per module (never `platform`) and one `plan_limits` row, each with `created_by`, and one `plan.created` audit row with no company, the actor, the IP, the user agent and the trimmed reason.
+69. Each create refusal answers 400 with its field's message, or 409 for a used key, a retired plan's included. Two parallel creates with one key give one 201 and one 409, one plan and one audit row. A refusal writes nothing.
+70. Editing a plan no company uses changes its name, prices, modules and limits. A removed module's row is soft-deleted, and adding it again restores it. A stored hidden module stays. A save that changes nothing answers 200 and writes nothing. A key, a product or an unknown field answers 400 "Only a plan's name, prices, modules and limits can change." Two parallel edits both answer 200 and are both audited, and the stored values are those of the later audit row.
+71. Editing a plan in use changes its name and prices only. The new name shows on the billing page of every company on it; no company's access, limits, subscription price, standing or phase changes. A change of modules or limits answers 422; the same modules in another order answer 200 with no change.
+72. Retire and restore flip `active`, are audited, answer 409 when the plan is already so, and change no company. No route deletes a plan.
+73. An unknown plan answers 404 "That plan does not exist."; an id that is not a UUID, 400.
+
+**Company status**
+
+74. The status preview lists the three actions with their refusals, or their next status, phase and dates, as the shared rule computes them at the database's time. Reading it writes nothing.
+75. Suspending a company that paid makes it `suspended` and read only at once. Its reads pass, and its writes get 403 `company_read_only`. Its standing reads `read_only`, and the Owner's notice reads `suspended` with the lock date its rows give. One audit row holds before, after, the reason, the IP and the user agent, and `status_changed_at` is the change's transaction time.
+76. Suspending a company that never paid makes it read only, and locked 30 days later, or sooner when its plan's own period runs out first: then 403 `company_suspended` and standing `locked`, while sign-in and `/auth/context` still work.
+77. Reinstating sets `active` for a company that ever paid and `trial` otherwise, never `past_due`. A company suspended from `past_due` comes back `active`, and its overdue notice goes when its rows are current. The phase is then its rows', and writes pass while a row is current.
+78. Cancelling needs the company's exact name. It makes the company read only, locking 90 days later (paid) or 30 days later (never paid), or sooner when its plan's own period runs out first. Nothing is deleted: its subscription, override, ceiling, product, member and database rows are unchanged, its database still exists and its rows still read. Reinstating restores writes.
+79. Each impossible transition answers 409 with its message and writes nothing. Two parallel suspends give one 200, one 409 and one audit row.
+80. A status action carries the status the admin saw. When another admin changed it meanwhile, it answers 409 "This company's status changed meanwhile. Read it again." and writes nothing.
+81. A company that never had a subscription row answers 422 to suspend, cancel and reinstate, keeps its status and modules, and the message points to its Access page. One with only deleted rows can be suspended.
+82. Cancelling a never-paid suspended company, when it would restart its read-only days, answers 422 and writes nothing. A paid suspended company can be cancelled.
+83. A stored status the console doesn't know answers 422 to all three actions.
+84. The status routes answer for a company whose database failed or is in maintenance. They open no company database pool, write nothing to the company's `audit_log`, and each answer's phase equals TenantDirectory's.
+
+**Audit**
+
+85. The platform audit log lists the seven new actions with their allow-listed details. The support role reads each reason as hidden, narrowed in SQL. The owner role reads every reason. The `action` filter accepts the 13 actions. A shape that doesn't fit reads "Details hidden".
+86. While `admin.billing` is off, the Action filter offers only the six other actions, and filtering by one of the seven answers 400 "Choose an action from the list." in the API and the demo. Stored entries still list.
+
+**Web**
+
+87. In api mode, an owner-role admin creates and retires a test plan, suspends Summit with a reason and a step-up, and sees Suspended and Read-only and the Owner's suspended notice. They reinstate Summit and see Active and Full use, and find "Suspended company" with its reason in the audit log. Summit is `active` again afterwards and the test plans are removed. The whole api-mode suite passes in the same run.
+88. The support role sees /admin/plans and the Status tab read only, with the note and no write buttons.
+89. In the demo, the three plans read "$0.00". A plan is created, edited, retired and restored. Flooring Pro's modules and limits are locked as in use. Summit is suspended, reinstated and cancelled with its typed name, and the audit log lists each. /admin/plans and the Status tab pass axe in both themes and the console check, with no sideways scroll at 375 px.
+90. With `admin.billing` off, there is no Plans nav item and no Status tab, both pages are not found, DemoStore refuses with "This feature is switched off.", the API answers 404, and the rest of the console works.
+91. A refusal the shared rules can see (a plan field, a reason, the typed name, an action the preview refuses) is caught before the step-up. A refusal the server finds later (409 or 422) closes the dialog and reads again, in both modes.
+
+**Planned coverage** (the docs stage replaces this with "As built, the criteria are covered by"):
+- 64: `apps/api/test/platform-admin-guard.test.ts` (G-7 to G-9), P-1, C-1, `apps/api/test/platform.int.test.ts` (the 401, 403 and 404 loops; at least 17 routes and 6 controllers), the session-only map in `apps/api/test/isolation.int.test.ts`, and S-21 in `company-standing.int.test.ts`.
+- 65 and 66: P-2, C-2, P-13 and C-18, with the lock helpers in `apps/api/test/support/admin-locks.ts`.
+- 67 to 73: `apps/api/test/platform-plans.int.test.ts` (67 is P-3, 68 is P-4, 69 is P-5, 70 is P-6 and P-12, 71 is P-7, 72 is P-8 and P-9, 73 is P-10; P-11 for no company pool and no company audit row) and `packages/shared/test/platform-plans.test.ts` (PL-1 to PL-9).
+- 74 to 84: `apps/api/test/platform-company-status.int.test.ts` (74 is C-14, 75 is C-5, 76 is C-6, 77 is C-7, 78 is C-8 and C-9, 79 is C-10 and C-13, 80 is C-13b, 81 is C-11, 82 is C-12, 83 is C-17, 84 is C-15 and C-16; C-3 and C-4 for the 400s and 404s) and `packages/shared/test/company-status.test.ts` (CS-1 to CS-12), with CS-0 in `company-lifecycle.test.ts`.
+- 85 and 86: `packages/shared/test/platform-audit.test.ts` (AU-1 to AU-5), `apps/api/test/platform-audit.int.test.ts` (A-9), and `apps/web/tests/unit/platform-audit.test.tsx` (W-8).
+- 87: `apps/web/tests/e2e-api/platform-billing.spec.ts` and `tests/e2e-api/global-setup.ts`, with the test-only helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/status-test-helpers.int.test.ts` (H-1 to H-4).
+- 88, 90 and 91: `apps/web/tests/unit/platform-billing.test.tsx` (W-1 to W-6) and `apps/web/tests/unit/demo-platform.test.ts` (W-7), with P-1 and C-1 for the API.
+- 89: `apps/web/tests/e2e/admin-billing.spec.ts` (D-1 and D-2), and /admin/plans and /admin/companies/summit/status in `tests/e2e/screens.ts` (axe in both themes, the console check, the 375 px loop in `responsive.spec.ts`).
+- Locally the touched demo specs, the axe, console and responsive specs, the whole HR project and the whole api-mode suite run. The whole Flooring demo project runs in CI's `e2e` job, which must be green before the self-merge (one 8 GB Mac shared with another build).
+
 ## Parts 2 to 4 (outline, not built here)
 
-**Part 2: plans and company status.**
-- **Safe to build:**
-  - plans as data: list, create, edit, retire and restore, with `planProblem` checks; key and product fixed after creation; prices are decimal strings and data, not code (owner, 2026-11-13);
-  - suspend, reinstate and cancel through `statusAfter`:
-    - each needs a reason, and cancel also needs the typed company name;
-    - subscription rows are left alone;
-    - `past_due` is derived, never written;
-  - a new feature key `admin.billing` through `/feature-change`.
-- **Waits for the owner:** creating or changing a subscription, recording a payment and correcting a period.
-  - An `active` row counts as paid (`wasPaid` in company-lifecycle.ts). A subscription created before any payment would give a never-paid company the paid ladder: read-only for good after a suspension, and 90 days after a cancel instead of 30.
-  - A payment would exist only as an audit row and a moved date, with nothing that can't be edited (CLAUDE.md rule 9).
-  - These need the owner's answers on `first_paid_at` or a `platform_payments` table, and an approved billing spec.
+**Part 2: plans and company status.** Specified in full in "Part 2: plans and company status" above. The outline's reasons for leaving subscriptions and payments to the owner are kept there, under "Bounds".
 
 **Part 3: audit and support.** Specified in full in "Part 3: audit and support" above.
 
@@ -1518,3 +2049,23 @@ Added by part 4 (ADR 0054). Each records the option taken; questions 1, 2 and 7 
     - A person who is both a platform admin and a company's Owner can approve their own request. The approve route doesn't compare the approver with the requester, and `platform-support.spec.ts` sets up exactly such a person for Summit.
     - Taken: unchanged, because grants open nothing.
     - It must be refused before grant use is built (question 2).
+
+Added by part 2 (ADR 0056). Each records the option taken; questions 1, 2, 4, 7 and 11 stay open.
+
+34. **Suspending or cancelling a company that never had a plan.**
+    - The access rule gives a company with no subscription row every module only while its status is `trial`, and Platform only otherwise, so a suspended or cancelled fresh trial couldn't read or export.
+    - Taken: the console refuses (422). The stop-gap is switching its modules off on its Access page.
+    - Or should the access rule change so a suspended or cancelled company with no rows keeps its products' modules, read only? That is a core/access change.
+35. **Reinstate's status.** Taken: `active` when the company ever paid, else `trial`. A company suspended from `past_due` comes back `active` and loses its overdue notice when its rows are current. Or should it get back the exact status it had before the suspension, read from its audit row?
+36. **Reinstate after cancel.** Taken: allowed, because cancel deletes nothing. Should cancel be final?
+37. **Cancelling a never-paid suspended company** when it would restart its read-only days. Taken: refused. Confirm.
+38. **A plan change for the companies on it.** Taken: a plan in use keeps its modules and limits, and per-company changes stay on the Access page. Or should a plan change apply to every company on it at once, after a confirmation?
+39. **Prices.** Taken: required and typed, 0.00 allowed as typed, no "no price" without a migration, and no rule that the yearly price is ten monthly ones. Confirm, and say what a $0 plan means (question 7).
+40. **Unlimited plans and employee bands.** Taken: not creatable. A plan with no limits row, only possible by SQL, means no limit today.
+41. **Reasons on status and plan entries.** Taken: the owner role and the author see them; the support role sees "Reason hidden". Confirm.
+42. **Telling the company.** Should its Owner be emailed, or see an entry in the company's own audit log, when it is suspended, reinstated or cancelled? Taken: neither; the Owner sees part 4's standing and notice (also question 4).
+43. **The new key `admin.billing`.** Confirm status `demo`, both products, the Platform module and writes by the owner role only; and the retitle of `admin.access` to "Platform admin: companies, modules and ceilings". The /feature-change step-2 impact summary is in the PR body and ADR 0056.
+44. **Retired plans in the list.** Retiring a plan changes nothing today, because subscriptions can't be created yet. Taken: retired plans are listed, marked Retired. Should they be hidden by default?
+45. **Deleting a plan.** Taken: a plan is never deleted and its key is never reused. Confirm.
+46. **Stale plan edits.** Taken: the last save wins under the plan's lock, and both saves are audited. Should plan edits also carry what the admin saw, as status actions now do (and should the access PATCH, question 11)?
+47. **Audit history while `admin.billing` is off.** Taken: the seven actions' rows stay listed, and only the filter stops offering them. Should their rows be hidden too?
