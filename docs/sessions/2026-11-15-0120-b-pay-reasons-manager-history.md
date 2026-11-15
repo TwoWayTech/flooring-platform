@@ -71,7 +71,16 @@ Plan steps 1 to 6 are built on draft PR #32, except the STATUS and BRANCHES edit
 - **Second review of PR #32:** two should-fix findings.
   - Foreign-key indexes: fixed in `124cc24`, which adds migration 0006, a test and doc updates.
   - STATUS and BRANCHES not updated: this log is now completed. STATUS and BRANCHES are left to the orchestrating session; the items they need are under "Left".
-- Before the PR is marked ready, a fresh schema-reviewer and a fresh security-reviewer run, and their summary is posted on the PR.
+- **Third review of PR #32:** one should-fix finding: the self-made check on since-records-began rows (the backfill case) had no test. Fixed in `facf7ca` with two integration tests, plus a mutation check of `withSetters`.
+- **Final fresh reviews on `8df1b1e`:** security-reviewer PASS and schema-reviewer PASS, with no blocking or should-fix finding. Their notes went to STATUS follow-ups:
+  - the pay-run approver self-check doesn't look at a stored employee who is no longer the approver's link;
+  - the `paysActorOverride` look-back window can miss a back-dated assignment;
+  - the approval audit entry doesn't record the stored employee;
+  - no trigger blocks UPDATE or DELETE on the history;
+  - the backfill insert has no guard against rows that already exist;
+  - nothing makes `(employee_id, effective_from)` unique.
+
+  The owner questions are unchanged. The summary is posted on the PR.
 
 ## Commands run and results (second-review fixes, final tree)
 - `pnpm exec drizzle-kit generate --config drizzle.company.config.ts --name foreign_key_indexes` (in packages/db): wrote `0006_foreign_key_indexes.sql`, with two `CREATE INDEX` statements only.
@@ -84,15 +93,27 @@ Plan steps 1 to 6 are built on draft PR #32, except the STATUS and BRANCHES edit
 - `pnpm -s typecheck`: pass (6 of 6 tasks). `pnpm -s lint`: pass (6 of 6 tasks, Prettier clean).
 - Not run here: Playwright and `next build`, because this Mac has too little memory. They run in CI once the PR is ready.
 
+## Final checks (`8df1b1e`, orchestrating session)
+- `pnpm lint`: pass, 6 of 6 tasks.
+- `pnpm typecheck`: pass, 6 of 6 tasks.
+- `pnpm test`: pass.
+  - shared: 468 tests
+  - api: 60
+  - web: 16
+  - db: 11
+  - providers: 11
+- `pnpm test:api`: pass.
+  - api: 386 tests in 24 files
+  - db: 44
+  - providers: 2
+
+  "Do not know how to serialize a BigInt" is logged twice, as on main (STATUS follow-up).
+
 ## Left
-- **STATUS (orchestrator):**
-  - Close the follow-ups "Dated manager history for overrides" and "Commission pay to the employee at approval".
-  - Close the PR #30 owner questions on bonus and exclusion reasons and on pay viewers' scope.
-  - Add the owner questions and follow-ups that ADR 0048 names:
-    - confirm that a non-Owner pay viewer at scope `all` sees every rep;
-    - whether a way to waive self-made override lines is wanted;
-    - stable override attribution after an Owner re-link, which needs a schema change.
-  - Keep the stored `carry_out` follow-up open.
-- **BRANCHES (orchestrator):** add `feat/hr-pay-reasons-and-history`, owner B, PR #32, with the last commit.
-- **Reviews:** the fresh reviews above, then mark the PR ready and self-merge under the CLAUDE.md rule.
-- **Next prompt:** "Resume `feat/hr-pay-reasons-and-history` (PR #32): run fresh schema-reviewer and security-reviewer on the branch, fix any blocking finding, update STATUS and BRANCHES as the session log's 'Left' lists, then mark the PR ready and self-merge when CI is green. Then continue the work queue in STATUS order (meetings first)."
+- STATUS, BRANCHES and the reviews are done (`8df1b1e` and this commit). The PR goes ready, then self-merges when `verify` and `e2e` are green.
+- **Owner questions** (STATUS):
+  - Should a non-Owner pay viewer at scope `all` see every rep?
+  - Is a way to waive self-made override lines wanted?
+  - Approve the schema change for stable override attribution after an Owner re-link?
+- **Follow-ups** (STATUS): the final reviews' notes, the stored `carry_out`, and the BigInt log line.
+- **Next prompt:** "Resume the work queue in STATUS order: meetings part 1 (`feat/meetings-api-core`, PR #33). Update it from main, run checks and fresh reviews, then mark it ready and self-merge under the CLAUDE.md rule."
