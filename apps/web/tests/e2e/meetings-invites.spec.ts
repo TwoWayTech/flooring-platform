@@ -4,9 +4,13 @@ import { signInAs, SUMMIT_OWNER, skipIfFeatureOff, type Persona } from "./helper
 const BRI: Persona = { companyId: "summit", userId: "sm-usr-14", roleKey: "employee" };
 const SUMMIT_MANAGER: Persona = { companyId: "summit", userId: "sm-usr-02", roleKey: "manager" };
 
-/** Opens a seeded meeting from the Agenda view (the next 30 days), whatever day of the week it falls on. */
-async function openSeeded(page: Page, name: string | RegExp) {
-  await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Agenda" }).click();
+/**
+ * Opens a seeded meeting in the Week view the page starts on. The fixtures move meetings by whole
+ * weeks (packages/shared/src/date-shift.ts), so a seeded meeting keeps its weekday in the current
+ * week, even when that day is already past; the Agenda starts today and would miss it.
+ */
+async function openSeeded(page: Page, name: RegExp) {
+  await expect(page.getByRole("region", { name: /^Week of / })).toBeVisible();
   await page.getByRole("button", { name }).first().click();
 }
 
