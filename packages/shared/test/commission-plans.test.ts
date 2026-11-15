@@ -5,7 +5,10 @@ import {
   commissionLines,
   commissionShortfalls,
   dec,
+  lineConfirmedAt,
   managerOn,
+  managerRowOn,
+  managerSelfSetOn,
   statementChain,
   statementKey,
   type CommissionAssignment,
@@ -369,9 +372,9 @@ describe("dated managers for overrides (owner decision 2026-11-15; ADR 0048)", (
   const reorg = [row("e-dana", "e-boss", null, "01"), row("e-dana", "e-new", "2026-11-15", "02")];
   const employeeOf: Readonly<Record<string, string>> = { dana: "e-dana" };
   const userOfEmployee: Readonly<Record<string, string>> = { "e-boss": "boss", "e-new": "newboss" };
-  /** User, then employee, then the manager on the day, then that manager's user, as the API does. */
-  const managerOf = (userId: string, date: string) => {
-    const manager = managerOn(reorg, employeeOf[userId] ?? "", date, null);
+  /** User, then employee, then the manager on the moment's day, then that manager's user, as the API does. */
+  const managerOf = (userId: string, at: string) => {
+    const manager = managerOn(reorg, employeeOf[userId] ?? "", at.slice(0, 10), null);
     return manager ? (userOfEmployee[manager] ?? null) : null;
   };
 
@@ -410,5 +413,75 @@ describe("dated managers for overrides (owner decision 2026-11-15; ADR 0048)", (
     );
     const reversal = lines.find((l) => l.kind === "reversal" && l.subjectUserId === "dana");
     expect(reversal).toMatchObject({ userId: "boss", month: "2026-12", commission: "-20.00" });
+  });
+
+  it("asks for the manager at the moment a payment was confirmed, its review over its recording, and finds that moment for a line", () => {
+    const asked: string[] = [];
+    const reviewed = payment("p1", "1000.00", "2026-11-14", { reviewedAt: "2026-11-15T01:30" });
+    const credit = {
+      id: "c1",
+      invoiceId: "i1",
+      customerId: "cu",
+      kind: "credit_applied" as const,
+      amount: "100.00",
+      reason: "",
+      byName: "",
+      at: "2026-11-20T23:10",
+    };
+    const all = inputs({
+      plans: [plan({ overridePct: "2" })],
+      invoices: [invoice({ subtotal: "2000.00", total: "2000.00", cost: "0" })],
+      payments: [reviewed],
+      adjustments: [credit],
+      managerOf: (_userId, at) => {
+        asked.push(at);
+        return "boss";
+      },
+    });
+    const overrides = commissionLines(all).filter((l) => l.kind === "override");
+    expect(asked).toEqual(["2026-11-15T01:30", "2026-11-20T23:10"]);
+    expect(overrides.map((l) => lineConfirmedAt(all, l))).toEqual(["2026-11-15T01:30", "2026-11-20T23:10"]);
+    expect(lineConfirmedAt(all, { sourceId: "gone", confirmedOn: "2026-11-02" })).toBe("2026-11-02");
+  });
+});
+
+describe("self-made managers judged on the line's day (ADR 0048; first review of PR #32)", () => {
+  const row = (
+    managerId: string | null,
+    effectiveFrom: string | null,
+    recordedOrder: string,
+    setBy: string | null,
+  ): ManagerHistoryRow => ({ employeeId: "e-rex", managerId, effectiveFrom, recordedOrder, setBy });
+
+  it("reads the row in force on the day, or none without rows", () => {
+    const history = [row("e-sid", null, "01", "sid"), row("e-ola", "2026-11-15", "02", "owner")];
+    expect(managerRowOn(history, "e-rex", "2026-11-14")).toMatchObject({ managerId: "e-sid", setBy: "sid" });
+    expect(managerRowOn(history, "e-rex", "2026-11-15")).toMatchObject({ managerId: "e-ola" });
+    expect(managerRowOn(history, "e-other", "2026-11-15")).toBeNull();
+  });
+
+  it("keeps the days a person set themselves self-made when the manager later moves to someone else", () => {
+    const history = [row("e-sid", "2026-01-05", "01", "sid"), row("e-ola", "2026-11-15", "02", "owner")];
+    expect(managerSelfSetOn(history, "e-rex", "2026-10-01", "sid")).toBe(true);
+    expect(managerSelfSetOn(history, "e-rex", "2026-11-15", "sid")).toBe(false);
+    expect(managerSelfSetOn(history, "e-rex", "2026-10-01", "owner")).toBe(false);
+  });
+
+  it("clears the earlier days once someone else sets that same manager again, but not by a row overtaken the same day", () => {
+    const overtaken = [
+      row("e-sid", "2026-01-05", "01", "sid"),
+      row("e-sid", "2026-11-15", "02", "owner"),
+      row("e-ola", "2026-11-15", "03", "owner"),
+    ];
+    expect(managerSelfSetOn(overtaken, "e-rex", "2026-10-01", "sid")).toBe(true);
+    const setAgain = [...overtaken, row("e-sid", "2026-11-20", "04", "owner")];
+    expect(managerSelfSetOn(setAgain, "e-rex", "2026-10-01", "sid")).toBe(false);
+    const bySelf = [...overtaken, row("e-sid", "2026-11-20", "04", "sid")];
+    expect(managerSelfSetOn(bySelf, "e-rex", "2026-10-01", "sid")).toBe(true);
+  });
+
+  it("treats a row with nobody known as set by someone else", () => {
+    expect(managerSelfSetOn([row("e-sid", null, "01", null)], "e-rex", "2026-10-01", "sid")).toBe(false);
+    expect(managerSelfSetOn([], "e-rex", "2026-10-01", "sid")).toBe(false);
   });
 });
