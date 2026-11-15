@@ -71,7 +71,12 @@ export const employeeManagerHistory = pgTable(
      */
     effectiveFrom: day(),
   },
-  (table) => [index("employee_manager_history_employee_idx").on(table.employeeId, table.effectiveFrom)],
+  (table) => [
+    index("employee_manager_history_employee_idx").on(table.employeeId, table.effectiveFrom),
+    // The sign-in re-link guard reads who an employee has ever managed (people.service.ts
+    // managesOverridePeople), and every foreign key gets an index (company migration 0006).
+    index("employee_manager_history_manager_idx").on(table.managerId),
+  ],
 );
 
 /** One onboarding or offboarding step for an employee (spec C1). */

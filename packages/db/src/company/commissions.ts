@@ -1,5 +1,5 @@
 import type { CommissionPlan } from "@workspace/shared";
-import { integer, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { at, business, day, money, rate, userRef } from "../columns";
 import { employees, payPeriods } from "./hr";
 import { invoices } from "./sales";
@@ -64,7 +64,12 @@ export const commissionStatements = pgTable(
     employeeId: uuid().references(() => employees.id),
     payPeriodId: uuid().references(() => payPeriods.id),
   },
-  (table) => [uniqueIndex("commission_statements_uidx").on(table.userId, table.month)],
+  (table) => [
+    uniqueIndex("commission_statements_uidx").on(table.userId, table.month),
+    // A pay run looks up the approved statements that pay its employees (commission-records.ts
+    // commissionForRun), and every foreign key gets an index (company migration 0006).
+    index("commission_statements_employee_idx").on(table.employeeId),
+  ],
 );
 
 /**

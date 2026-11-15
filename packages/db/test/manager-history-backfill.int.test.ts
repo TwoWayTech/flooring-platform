@@ -9,10 +9,11 @@ import { MIGRATIONS, migrateCompany, openCompanyDb } from "../src";
 import { scratchDatabase } from "../src/testing";
 
 /**
- * Company migration 0005 on a database that already holds data (owner decision 2026-11-15; ADR 0048):
- * the database is migrated up to 0004, filled with people and statements, then brought to the newest
- * version. Every live employee gets one since-records-began manager row, and every approved or paid
- * statement stores the employee its rep's sign-in is linked to, so nothing worked out before moves.
+ * Company migrations 0005 and 0006 on a database that already holds data (owner decision 2026-11-15;
+ * ADR 0048): the database is migrated up to 0004, filled with people and statements, then brought to
+ * the newest version. Every live employee gets one since-records-began manager row, every approved or
+ * paid statement stores the employee its rep's sign-in is linked to, so nothing worked out before
+ * moves, and the new foreign keys are indexed.
  */
 describe("migration 0005 backfill (needs the local PostgreSQL)", () => {
   let scratch: Awaited<ReturnType<typeof scratchDatabase>>;
@@ -119,6 +120,24 @@ describe("migration 0005 backfill (needs the local PostgreSQL)", () => {
     expect(stored.get(users.draft)).toBeNull();
     expect(stored.get(users.none)).toBeNull();
     expect(stored.get(users.removed)).toBeNull();
+  });
+
+  it("indexes every foreign key the history and the stored employee add (migration 0006)", async () => {
+    // Schema rule 5: the re-link guard filters the history by manager, and pay runs filter statements
+    // by their stored employee, so each foreign key needs an index that leads with its column.
+    const rows = await sql<{ name: string; indexed: boolean }[]>`
+      select c.conname as name,
+        exists (select 1 from pg_index i where i.indrelid = c.conrelid and i.indkey[0] = c.conkey[1]) as indexed
+      from pg_constraint c
+      where c.contype = 'f'
+        and (c.conrelid = 'employee_manager_history'::regclass
+          or c.conname = 'commission_statements_employee_id_employees_id_fk')`;
+    expect(rows.map((row) => row.name).sort()).toEqual([
+      "commission_statements_employee_id_employees_id_fk",
+      "employee_manager_history_employee_id_employees_id_fk",
+      "employee_manager_history_manager_id_employees_id_fk",
+    ]);
+    expect(rows.filter((row) => !row.indexed)).toEqual([]);
   });
 
   it("leaves every other column of the statements as it was", async () => {
