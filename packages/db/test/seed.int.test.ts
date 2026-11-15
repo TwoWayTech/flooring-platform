@@ -397,7 +397,10 @@ describe("test company seed", () => {
       expect(huddle).toMatchObject({ recurrence: "weekly", timeZone: "America/Denver", status: "confirmed" });
       // The day-30 monthly safety talk is kept as the fixture has it; its calendar file lists the 30th as an RDATE.
       const safety = rows.find((m) => m.title === "Monthly safety talk")!;
-      expect(safety).toMatchObject({ recurrence: "monthly", uid: fixtures.meetings.find((m) => m.title === "Monthly safety talk")!.uid });
+      expect(safety).toMatchObject({
+        recurrence: "monthly",
+        uid: fixtures.meetings.find((m) => m.title === "Monthly safety talk")!.uid,
+      });
       expect(safety.start.toISOString()).toBe("2026-09-30T19:00:00.000Z");
       expect(rows.find((m) => m.kind === "request")).toMatchObject({ status: "tentative", title: "Review my goals" });
       expect(await company.db.select().from(meetingResponses)).toEqual([]);
