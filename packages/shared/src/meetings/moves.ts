@@ -1,5 +1,6 @@
 import { recurrenceProblem } from "../calendar/ics";
 import { isLocalDateTime } from "../calendar/zones";
+import { daysBetween } from "../dates";
 import {
   addMinutes,
   meetingOccurrences,
@@ -26,6 +27,9 @@ export function effectiveScope(meeting: Pick<Meeting, "recurrence">, scope: Move
   return meeting.recurrence === "none" ? "all" : scope;
 }
 
+/** The days between a weekly or biweekly series' planned dates (meetings.md rule 2). */
+const STEP_DAYS: Partial<Record<Meeting["recurrence"], number>> = { weekly: 7, biweekly: 14 };
+
 /**
  * Whether a date-time is one of the meeting's occurrences as the series plans them (meetings.md rules
  * 1 and 2): a one-off's own start, or a date-time its rule reaches from `start` up to `until`, that
@@ -36,19 +40,44 @@ export function isPlannedOccurrence(
   meeting: Pick<Meeting, "start" | "recurrence" | "until" | "exceptions">,
   planned: string,
 ): boolean {
-  if (!isLocalDateTime(planned)) return false;
-  if (meeting.until && planned.slice(0, 10) > meeting.until) return false;
-  if (meeting.exceptions.some((e) => e.planned === planned && e.cancelled)) return false;
-  for (let p: string | null = meeting.start; p !== null && p <= planned; p = nextPlannedStart(p, meeting.recurrence)) {
-    if (p === planned) return true;
-  }
-  return false;
+  return allPlanned(meeting, [planned]);
+}
+
+/**
+ * Whether every one of these date-times is a planned occurrence (`isPlannedOccurrence`). A weekly
+ * step is counted rather than walked, and a monthly rule is walked once for all of them, so checking
+ * a series' exceptions costs one walk however many there are and however far ahead they lie.
+ */
+function allPlanned(
+  meeting: Pick<Meeting, "start" | "recurrence" | "until" | "exceptions">,
+  keys: readonly string[],
+): boolean {
+  const cancelled = new Set(meeting.exceptions.filter((e) => e.cancelled).map((e) => e.planned));
+  const inRange = (key: string) =>
+    isLocalDateTime(key) &&
+    key >= meeting.start &&
+    !(meeting.until && key.slice(0, 10) > meeting.until) &&
+    !cancelled.has(key);
+  if (!keys.every(inRange)) return false;
+  const step = STEP_DAYS[meeting.recurrence];
+  if (step)
+    return keys.every(
+      (key) => key.slice(10) === meeting.start.slice(10) && daysBetween(meeting.start, key) % step === 0,
+    );
+  const wanted = new Set(keys);
+  const last = keys.reduce((latest, key) => (key > latest ? key : latest), meeting.start);
+  for (let p: string | null = meeting.start; p !== null && p <= last; p = nextPlannedStart(p, meeting.recurrence))
+    wanted.delete(p);
+  return wanted.size === 0;
 }
 
 /** Why a series as a move leaves it has an exception off its own rule, or null (ADR 0051 "Part 2"). */
 function strandedException(series: Meeting): string | null {
   const plain = { ...series, exceptions: [] };
-  return series.exceptions.every((e) => isPlannedOccurrence(plain, e.planned))
+  return allPlanned(
+    plain,
+    series.exceptions.map((e) => e.planned),
+  )
     ? null
     : "An occurrence changed on its own would no longer be part of the series after this move. Move it on its own first, or choose another time.";
 }

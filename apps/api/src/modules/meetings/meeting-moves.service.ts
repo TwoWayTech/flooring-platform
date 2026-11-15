@@ -151,11 +151,15 @@ export class MeetingMoves {
       );
       return { before, saved, split, sight, plans, conflicts, record };
     });
-    const savedIds = [done.saved, ...(done.split ? [done.split] : [])].map((loaded) => loaded.meeting.id);
-    await this.writes.afterCommit(tenant, userId, done.plans, savedIds);
-    const result = [done.saved, ...(done.split ? [done.split] : [])];
+    const savedMeetings = done.split ? [done.saved, done.split] : [done.saved];
+    await this.writes.afterCommit(
+      tenant,
+      userId,
+      done.plans,
+      savedMeetings.map((loaded) => loaded.meeting.id),
+    );
     return {
-      meetings: result.map((saved) => shaped(actor.access, { saved, sight: done.sight })),
+      meetings: savedMeetings.map((saved) => shaped(actor.access, { saved, sight: done.sight })),
       conflicts: done.conflicts,
       undo: {
         previous: meetingForViewer(done.before.meeting, meetingViewer(actor.access), done.sight),

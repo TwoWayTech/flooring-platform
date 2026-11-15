@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUSY_TITLE,
+  addDays,
   MEETING_CHANGED,
   UNDO_WINDOW_MINUTES,
   conflictForViewer,
@@ -44,6 +45,14 @@ describe("which occurrence a move names (meetings.md rules 1 and 2)", () => {
     expect(isPlannedOccurrence(huddle(), "2026-12-31T08:30")).toBe(true);
     for (const fake of ["2026-11-26T09:00", "2026-11-25T08:30", "2026-11-12T08:30", "2026-11-26", "2026-02-30T08:30"])
       expect(isPlannedOccurrence(huddle(), fake), fake).toBe(false);
+  });
+
+  it("counts a weekly or biweekly step rather than walking it, however far ahead", () => {
+    const far = addDays("2026-11-19T08:30", 7 * 40_000);
+    expect(isPlannedOccurrence(huddle(), far)).toBe(true);
+    expect(isPlannedOccurrence(huddle(), addDays(far, 1))).toBe(false);
+    expect(isPlannedOccurrence(huddle({ recurrence: "biweekly" }), "2026-12-03T08:30")).toBe(true);
+    expect(isPlannedOccurrence(huddle({ recurrence: "biweekly" }), "2026-11-26T08:30")).toBe(false);
   });
 
   it("stops at until, skips a cancelled occurrence and keeps the monthly week cap", () => {
