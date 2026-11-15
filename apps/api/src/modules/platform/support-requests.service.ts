@@ -1,9 +1,9 @@
-import { ConflictException, ForbiddenException, HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
-import { platformAdmins, supportAccessGrants, tenants, user } from "@workspace/db/control";
+import { supportAccessGrants, tenants, user } from "@workspace/db/control";
 import {
   FORMER_ADMIN_NAME,
-  isPlatformAdminRole,
+  PLATFORM_ADMIN_ROLES,
   seesAllSupportGrants,
   seesSupportReason,
   supportGrantExpiresAt,
@@ -18,7 +18,8 @@ import {
 } from "@workspace/shared";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { CONTROL_DB } from "../../core/database/control-db";
-import { PLATFORM_REFUSALS, type PlatformActor } from "./platform-admin.guard";
+import { lockActingAdmin } from "./admin-lock";
+import type { PlatformActor } from "./platform-admin.guard";
 import { PlatformAuditService } from "./platform-audit.service";
 import { companyNotFound } from "./platform-companies.service";
 
@@ -101,7 +102,8 @@ export class SupportRequestsService {
    */
   async request(actor: PlatformActor, input: SupportRequestInput): Promise<{ id: string }> {
     return this.control.db.transaction(async (tx) => {
-      await lockAdmin(tx, actor.userId);
+      // Any role the console accepts may ask (`@PlatformWriteRoles("owner", "support")`).
+      await lockActingAdmin(tx, actor.userId, PLATFORM_ADMIN_ROLES);
       // After the lock, so a request that waited sees the insert of the one before it.
       const now = new Date();
       const [company] = await tx
@@ -132,25 +134,6 @@ export class SupportRequestsService {
       });
       return { id: grant.id };
     });
-  }
-}
-
-/**
- * Locks the admin's own `platform_admins` row for the rest of the transaction and re-checks it
- * (spec "What a request does", step 1; "Why a row lock"). Two parallel requests by one admin both
- * pass the guard, because a step-up isn't used up; the row is unique per user, so the lock
- * serialises their facts and inserts with no new table or key. The guard's plain reads are not
- * blocked. An admin deactivated, deleted or given a role the console doesn't accept while waiting
- * gets 403: under READ COMMITTED the locked row is read again after the other transaction commits.
- */
-async function lockAdmin(tx: ControlDb, userId: string): Promise<void> {
-  const [row] = await tx
-    .select({ role: platformAdmins.role })
-    .from(platformAdmins)
-    .where(and(eq(platformAdmins.userId, userId), eq(platformAdmins.active, true), isNull(platformAdmins.deletedAt)))
-    .for("update");
-  if (!row || !isPlatformAdminRole(row.role)) {
-    throw new ForbiddenException({ code: "forbidden", message: PLATFORM_REFUSALS.not_admin });
   }
 }
 

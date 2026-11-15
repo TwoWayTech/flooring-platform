@@ -78,4 +78,6 @@ export const ADMIN_SCREENS = [
   "/admin/companies/harbor/database",
   "/admin/audit",
   "/admin/companies/summit/support",
+  "/admin/plans",
+  "/admin/companies/summit/status",
 ];

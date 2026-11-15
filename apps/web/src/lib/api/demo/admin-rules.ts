@@ -5,6 +5,21 @@ import { ApiError } from "../errors";
 /** A rule the demo refuses to break; its message is shown to the presenter as is. */
 export class DemoRuleError extends ApiError {}
 
+/**
+ * A demo refusal the API answers with 409 `conflict` or 422 `rule_broken` (docs/specs/platform-admin.md,
+ * "ApiClient (part 2)"). It carries the API's code, so a screen that decides on `apiErrorCode`
+ * behaves the same in both modes; it is still a `DemoRuleError`, so every existing catch shows its
+ * message.
+ */
+export class DemoRefusal extends DemoRuleError {
+  constructor(
+    message: string,
+    readonly code: "conflict" | "rule_broken",
+  ) {
+    super(message);
+  }
+}
+
 /** Seats are used by active and invited users; disabled users free their seat (spec "Settings: Users"). */
 export function seatsUsed(users: readonly User[]): number {
   return users.filter((u) => u.status !== "disabled").length;

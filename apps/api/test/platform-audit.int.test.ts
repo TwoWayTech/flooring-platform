@@ -13,6 +13,7 @@ import { count, eq, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, SUMMIT_ID } from "./auth-harness";
+import { companyFacts } from "./support/company-facts";
 import { AGENT, platformHelpers, type EnrolledAdmin } from "./support/platform-admins";
 
 /** Text planted in stored rows that must never reach an answer. */
@@ -34,11 +35,13 @@ interface Planted {
 /**
  * GET /platform/audit (docs/specs/platform-admin.md, "GET /platform/audit"; ADR 0053) and the
  * companies' `database.errorCode`: who may read the log, paging, names, the per-action allow-list,
- * the support-reason rule, addresses for the owner role only, and that reading writes nothing.
+ * the support-reason rule, addresses for the owner role only, and that reading writes nothing; and
+ * the part 2 plan and status entries' reasons and filter (spec "Audit (part 2)"; ADR 0056).
  */
 describe("platform audit log API (P11 part 3, needs the local PostgreSQL)", () => {
   const harness = new AuthHarness();
   const { call, enrolled, stepUp, adminEmail, companyOn } = platformHelpers(harness);
+  const facts = companyFacts(harness);
   let owner: EnrolledAdmin;
   let support: EnrolledAdmin;
   let plain = "";
@@ -421,5 +424,101 @@ describe("platform audit log API (P11 part 3, needs the local PostgreSQL)", () =
       .set({ status: "ready", lastError: null })
       .where(eq(tenantDatabases.tenantId, company));
     expect(await database()).toMatchObject({ status: "ready", hasError: false, errorCode: null });
+  });
+
+  it("A-9: shows plan and status reasons to the owner role and their author only, narrowed in SQL, and drops their filter while admin.billing is off", async () => {
+    const secret = `REASON-${randomBytes(4).toString("hex")}`;
+    const company = await companyOn("auditstatus");
+    await facts.addSubscription(company, { status: "active", price: "99", interval: "monthly", endInDays: 20 });
+    await facts.setTenant(company, { status: "active" });
+    const statusReason = `Suspending for the audit check ${secret}`;
+    const planReason = `Creating a plan for the audit check ${secret}`;
+    await stepUp(owner);
+    await call("post", `/platform/companies/${company}/suspend`, owner.cookie)
+      .send({ reason: statusReason, expectedStatus: "active" })
+      .expect(200);
+    const plan = (
+      await call("post", "/platform/plans", owner.cookie)
+        .send({
+          key: `audit-${Date.now().toString(36)}`,
+          name: "Audit Plan",
+          product: "flooring",
+          monthlyPrice: "49.00",
+          yearlyPrice: "490.00",
+          modules: ["core"],
+          maxUsers: 5,
+          maxBranches: 1,
+          reason: planReason,
+        })
+        .expect(201)
+    ).body as { id: string };
+    const ownReason = "Suspended while still on the owner role";
+    const [own] = await plant([
+      {
+        tenantId: company,
+        action: "company.reinstated",
+        actorUserId: support.userId,
+        targetType: "tenant",
+        before: { status: "suspended", statusChangedAt: new Date().toISOString() },
+        after: { status: "active", statusChangedAt: new Date().toISOString(), reason: ownReason },
+      },
+    ]);
+    const statusEntry = (result: PlatformAuditResult) =>
+      result.entries.find((entry) => entry.action === "company.suspended" && entry.company?.id === company);
+    const planEntry = (result: PlatformAuditResult) =>
+      result.entries.find((entry) => entry.action === "plan.created" && entry.targetId === plan.id);
+
+    const ownerStatus = await audit(owner, "?action=company.suspended&limit=100");
+    const ownerPlans = await audit(owner, "?action=plan.created&limit=100");
+    expect(ownerStatus.entries.every((entry) => entry.action === "company.suspended")).toBe(true);
+    expect(ownerPlans.entries.every((entry) => entry.action === "plan.created")).toBe(true);
+    expect(statusEntry(ownerStatus)).toMatchObject({
+      actor: { kind: "platform_admin", userId: owner.userId },
+      details: { kind: "status_changed", from: "active", to: "suspended", reason: statusReason },
+      network: { ip: expect.any(String), userAgent: AGENT },
+    });
+    expect(planEntry(ownerPlans)).toMatchObject({
+      company: null,
+      details: { kind: "plan_created", key: expect.any(String), reason: planReason },
+      network: { ip: expect.any(String), userAgent: AGENT },
+    });
+
+    for (const query of ["?action=company.suspended&limit=100", "?action=plan.created&limit=100"]) {
+      const raw = await call("get", `/platform/audit${query}`, support.cookie).expect(200);
+      expect(raw.text).not.toContain(secret);
+    }
+    const supportStatus = await audit(support, `?companyId=${company}`);
+    expect(statusEntry(supportStatus)?.details).toEqual({
+      kind: "status_changed",
+      from: "active",
+      to: "suspended",
+      reason: null,
+    });
+    expect(statusEntry(supportStatus)).not.toHaveProperty("network");
+    expect(entryOf(supportStatus, own).details).toMatchObject({ kind: "status_changed", reason: ownReason });
+    const supportPlan = planEntry(await audit(support, "?action=plan.created&limit=100"));
+    expect(supportPlan?.details).toMatchObject({ kind: "plan_created", reason: null });
+    expect(supportPlan).not.toHaveProperty("network");
+
+    const deleted = await call("get", "/platform/audit?action=plan.deleted", owner.cookie);
+    expect([deleted.status, deleted.body.message]).toEqual([400, PLATFORM_AUDIT_QUERY_MESSAGES.action]);
+    const feature = FEATURES["admin.billing"] as { enabled: boolean };
+    feature.enabled = false;
+    try {
+      for (const action of ["company.suspended", "plan.created"]) {
+        const refused = await call("get", `/platform/audit?action=${action}`, owner.cookie);
+        expect({ action, status: refused.status, message: refused.body.message }).toEqual({
+          action,
+          status: 400,
+          message: PLATFORM_AUDIT_QUERY_MESSAGES.action,
+        });
+      }
+      await call("get", "/platform/audit?action=company.access_changed", owner.cookie).expect(200);
+      const history = await allPages(owner, "", 100);
+      expect(statusEntry({ entries: history, nextCursor: null })?.details).toMatchObject({ reason: statusReason });
+      expect(planEntry({ entries: history, nextCursor: null })?.details).toMatchObject({ reason: planReason });
+    } finally {
+      feature.enabled = true;
+    }
   });
 });

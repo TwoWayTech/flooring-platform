@@ -134,6 +134,32 @@ import {
 } from "@workspace/shared";
 import { demoBilling, demoStanding } from "./company-standing";
 import { demoGrantDecision, demoOwnerGrantViews } from "./platform-support";
+// Platform admin part 2 (ADR 0056) keeps its own imports, so the lists above stay as they are.
+import {
+  adminReasonProblem,
+  COMPANY_STATUS_ACTIONS,
+  COMPANY_STATUS_AUDIT_ACTIONS,
+  companyStatusAuditBody,
+  companyStatusView,
+  confirmNameProblem,
+  newPlanValues,
+  PLAN_MESSAGES,
+  planAuditBody,
+  planChanges,
+  planPatchProblem,
+  planProblem,
+  staleStatusRefusal,
+  statusActionBodyProblem,
+  statusAfter,
+  type CompanyStatusInput,
+  type PlanAuditBody,
+  type PlatformPlan,
+  type PlatformPlanInput,
+  type PlatformPlanPatch,
+} from "@workspace/shared";
+import { DemoRefusal } from "./admin-rules";
+import { DEMO_PLANS_KEY, demoFixturePlans, demoPlans, demoPlanStore, type DemoPlanEdit } from "./platform-plans";
+import { DEMO_STATUS_KEY, demoConsoleStanding, demoStatusFacts, demoStatusStore } from "./platform-status";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -383,12 +409,14 @@ export class DemoStore implements ApiClient {
 
   async listPlatformCompanies() {
     const companies = await this.listCompanies();
-    return Promise.all(companies.map(async (c) => demoSummary(c, await this.consoleFacts(c.id))));
+    return Promise.all(
+      companies.map(async (c) => demoSummary(c, await this.consoleFacts(c.id), this.consoleStanding(c))),
+    );
   }
 
   async getPlatformCompany(companyId: string) {
     const company = await this.platformCompany(companyId);
-    return company ? demoDetail(company, await this.consoleFacts(company.id), this.todayIso) : null;
+    return company ? this.consoleDetail(company) : null;
   }
 
   /**
@@ -405,7 +433,7 @@ export class DemoStore implements ApiClient {
     if (problem) throw new DemoRuleError(problem.message);
     const after = withAccess(before, patch);
     const diff = demoAccessDiff(before, after);
-    if (!diff) return demoDetail(before, await this.consoleFacts(before.id), this.todayIso);
+    if (!diff) return this.consoleDetail(before);
     writeStored(PLATFORM_KEY, { ...this.changedCompanies(), [before.id]: after });
     const db = await this.db(before.id);
     const { before: was, after: now } = diffSummary(before, after);
@@ -427,7 +455,7 @@ export class DemoStore implements ApiClient {
       after: diff.after,
     });
     this.emit();
-    return demoDetail(after, await this.consoleFacts(before.id), this.todayIso);
+    return this.consoleDetail(after);
   }
 
   async listPlatformAudit(query: PlatformAuditQuery) {
@@ -545,6 +573,196 @@ export class DemoStore implements ApiClient {
       after: null,
     });
     this.emit();
+  }
+
+  // Platform admin part 2 (docs/specs/platform-admin.md, part 2, "Demo mode"): the same shared rules
+  // and messages as the API, in its refusal order; no step-up, like every demo console write. A
+  // refusal the API answers with 409 or 422 is a `DemoRefusal` with the API's code.
+  async listPlatformPlans() {
+    this.assertBillingOn();
+    return this.demoPlanList();
+  }
+
+  /** A new plan: the field rules (400), then a key no demo plan holds (409), as `POST /platform/plans`. */
+  async createPlatformPlan(input: PlatformPlanInput) {
+    this.assertBillingOn();
+    const problem = planProblem(input);
+    if (problem) throw new DemoRuleError(problem.message);
+    if ((await this.demoPlanList()).some((plan) => plan.key === input.key)) {
+      throw new DemoRefusal(PLAN_MESSAGES.keyTaken, "conflict");
+    }
+    const values = newPlanValues(input);
+    const now = new Date().toISOString();
+    const plan: PlatformPlan = {
+      id: values.key,
+      ...values,
+      active: true,
+      companies: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const store = this.planStore();
+    writeStored(DEMO_PLANS_KEY, { ...store, created: [...store.created, plan] });
+    this.appendPlanAudit(
+      "plan.created",
+      plan.id,
+      planAuditBody({ action: "plan.created", plan: values, reason: input.reason }),
+    );
+    this.emit();
+    return plan;
+  }
+
+  /**
+   * A plan change (spec "PATCH /platform/plans/:id"): 404, the field rules (400), then a plan in use
+   * keeps its modules and limits (422). A save that changes nothing writes nothing, not even a row.
+   */
+  async updatePlatformPlan(planId: string, patch: PlatformPlanPatch) {
+    this.assertBillingOn();
+    const plan = await this.demoPlan(planId);
+    const problem = planPatchProblem(plan, patch, plan.companies > 0);
+    if (problem?.status === 422) throw new DemoRefusal(problem.message, "rule_broken");
+    if (problem) throw new DemoRuleError(problem.message);
+    const changes = planChanges(plan, patch);
+    if (!changes) return plan;
+    const edit: DemoPlanEdit = { ...changes.after, updatedAt: new Date().toISOString() };
+    this.editPlan(plan.id, edit);
+    this.appendPlanAudit(
+      "plan.changed",
+      plan.id,
+      planAuditBody({ action: "plan.changed", changes, reason: patch.reason }),
+    );
+    this.emit();
+    return { ...plan, ...edit };
+  }
+
+  async retirePlatformPlan(planId: string, reason: string) {
+    return this.setPlanActive(planId, reason, false);
+  }
+
+  async restorePlatformPlan(planId: string, reason: string) {
+    return this.setPlanActive(planId, reason, true);
+  }
+
+  /** The status preview at this moment, or null for an unknown company (spec "GET /platform/companies/:id/status"). */
+  async getPlatformCompanyStatus(companyId: string) {
+    this.assertBillingOn();
+    const company = await this.platformCompany(companyId);
+    if (!company) return null;
+    const facts = demoStatusFacts(company, this.statusStore(), this.todayIso);
+    return companyStatusView(company.id, facts.status, {
+      statusChangedAt: facts.statusChangedAt,
+      subscriptions: facts.subscriptions,
+      now: new Date(),
+    });
+  }
+
+  /**
+   * Suspend, reinstate or cancel in the demo console (spec part 2, "Refusal order"): the body (400),
+   * the company (404), the typed name for cancel (400), the status the admin saw (409), then
+   * `statusAfter` (409 or 422). Only the console's status changes, with one audit row in the API's
+   * shape: the demo company's own side has no life cycle.
+   */
+  async changePlatformCompanyStatus(companyId: string, input: CompanyStatusInput) {
+    this.assertBillingOn();
+    if (!COMPANY_STATUS_ACTIONS.includes(input.action)) throw new DemoRuleError("That action does not exist.");
+    const bodyProblem = statusActionBodyProblem(input.action, input);
+    if (bodyProblem) throw new DemoRuleError(bodyProblem);
+    const company = await this.platformCompany(companyId);
+    if (!company) throw new DemoRuleError("That company does not exist.");
+    const nameProblem = input.action === "cancel" ? confirmNameProblem(input, company.name) : null;
+    if (nameProblem) throw new DemoRuleError(nameProblem);
+    const stored = this.statusStore();
+    const facts = demoStatusFacts(company, stored, this.todayIso);
+    const now = new Date();
+    const stale = staleStatusRefusal(input.expectedStatus, facts.status, facts.statusChangedAt, now);
+    if (stale) throw new DemoRefusal(stale.message, stale.code);
+    const result = statusAfter(input.action, facts.status, { ...facts, now });
+    if (!result.ok) throw new DemoRefusal(result.refusal.message, result.refusal.code);
+    writeStored(DEMO_STATUS_KEY, {
+      ...stored,
+      [company.id]: { status: result.status, statusChangedAt: now.toISOString() },
+    });
+    const body = companyStatusAuditBody(facts, { status: result.status, statusChangedAt: now }, input.reason);
+    this.appendPlatformAudit({
+      tenantId: company.id,
+      companyName: company.name,
+      action: COMPANY_STATUS_AUDIT_ACTIONS[input.action],
+      targetType: "tenant",
+      targetId: company.id,
+      before: body.before,
+      after: body.after,
+    });
+    this.emit();
+    return this.consoleDetail(company);
+  }
+
+  /** Part 2 is behind `admin.billing`: switched off, every method refuses, as the API answers 404. */
+  private assertBillingOn() {
+    if (!featureOn("admin.billing")) throw new DemoRuleError("This feature is switched off.");
+  }
+
+  private planStore() {
+    return demoPlanStore(readStored<unknown>(DEMO_PLANS_KEY));
+  }
+
+  private statusStore() {
+    return demoStatusStore(readStored<unknown>(DEMO_STATUS_KEY));
+  }
+
+  /** Every demo plan: the fixture companies' plans as seeded, with what this browser created or changed. */
+  private async demoPlanList(): Promise<PlatformPlan[]> {
+    return demoPlans(this.planStore(), demoFixturePlans((await this.platformData()).companies));
+  }
+
+  private async demoPlan(planId: string): Promise<PlatformPlan> {
+    const plan = (await this.demoPlanList()).find((p) => p.id === planId);
+    if (!plan) throw new DemoRuleError(PLAN_MESSAGES.notFound);
+    return plan;
+  }
+
+  private editPlan(planId: string, edit: DemoPlanEdit) {
+    const store = this.planStore();
+    writeStored(DEMO_PLANS_KEY, { ...store, edits: { ...store.edits, [planId]: { ...store.edits[planId], ...edit } } });
+  }
+
+  /** Retire or restore (spec "POST /platform/plans/:id/retire and /restore"): 404, the reason, then 409. */
+  private async setPlanActive(planId: string, reason: string, active: boolean) {
+    this.assertBillingOn();
+    const plan = await this.demoPlan(planId);
+    const reasonProblem = adminReasonProblem(reason);
+    if (reasonProblem) throw new DemoRuleError(reasonProblem);
+    if (plan.active === active) {
+      throw new DemoRefusal(active ? PLAN_MESSAGES.notRetired : PLAN_MESSAGES.alreadyRetired, "conflict");
+    }
+    const edit: DemoPlanEdit = { active, updatedAt: new Date().toISOString() };
+    this.editPlan(plan.id, edit);
+    const action = active ? "plan.restored" : "plan.retired";
+    this.appendPlanAudit(action, plan.id, planAuditBody({ action, reason }));
+    this.emit();
+    return { ...plan, ...edit };
+  }
+
+  /** A plan row of the platform audit log: it names no company (spec "Audit (part 2)"). */
+  private appendPlanAudit(action: string, planId: string, body: PlanAuditBody) {
+    this.appendPlatformAudit({
+      tenantId: null,
+      companyName: null,
+      action,
+      targetType: "plan",
+      targetId: planId,
+      before: body.before,
+      after: body.after,
+    });
+  }
+
+  /** Where a demo company stands in the console, with the status the console stored for it. */
+  private consoleStanding(company: Company) {
+    return demoConsoleStanding(company, this.statusStore(), this.todayIso, new Date());
+  }
+
+  /** A demo company in full for the console, with its console standing. */
+  private async consoleDetail(company: Company) {
+    return demoDetail(company, await this.consoleFacts(company.id), this.todayIso, this.consoleStanding(company));
   }
 
   async getPlatformDirectory(companyId: string) {
@@ -1934,7 +2152,11 @@ export class DemoStore implements ApiClient {
    * never changed, like `platform_audit_log`; every one is the demo admin's.
    */
   private appendPlatformAudit(entry: Omit<DemoPlatformAuditRow, "id" | "at">) {
-    const row: DemoPlatformAuditRow = { id: newId(entry.tenantId, "pal"), at: new Date().toISOString(), ...entry };
+    const row: DemoPlatformAuditRow = {
+      id: newId(entry.tenantId ?? "platform", "pal"),
+      at: new Date().toISOString(),
+      ...entry,
+    };
     writeStored(PLATFORM_AUDIT_KEY, [...this.storedList(PLATFORM_AUDIT_KEY), row]);
   }
 

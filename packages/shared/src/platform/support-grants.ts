@@ -1,4 +1,5 @@
 import type { SupportGrantStatus } from "../types/platform";
+import { ADMIN_REASON, ADMIN_REASON_MESSAGE, adminReasonProblem } from "./admin-reason";
 
 /** A moment as the API (a `Date` from the database) or the demo (an ISO string) holds it. */
 type Moment = Date | string;
@@ -15,11 +16,14 @@ export const SUPPORT_REQUEST_LIMIT = { perWindow: 10, windowMs: 24 * HOUR_MS } a
 /** The whole hours a support grant may last (spec "POST /platform/support-grants", Body). */
 export const SUPPORT_HOURS = { min: 1, max: 72 } as const;
 
-/** The length of a support request's reason, after trimming (spec "POST /platform/support-grants", Body). */
-export const SUPPORT_REASON = { min: 10, max: 500 } as const;
+/**
+ * The length of a support request's reason, after trimming (spec "POST /platform/support-grants",
+ * Body). Every platform write takes the same reason rule, so this names `ADMIN_REASON`, the one copy.
+ */
+export const SUPPORT_REASON = ADMIN_REASON;
 
-/** Why a reason is refused; the API's 400, the dialog and the demo say the same. */
-export const SUPPORT_REASON_MESSAGE = `Give a reason of ${SUPPORT_REASON.min} to ${SUPPORT_REASON.max} characters.`;
+/** Why a reason is refused; the API's 400, the dialog and the demo say the same (`ADMIN_REASON_MESSAGE`). */
+export const SUPPORT_REASON_MESSAGE = ADMIN_REASON_MESSAGE;
 
 /** Why the hours are refused; the API's 400, the dialog and the demo say the same. */
 export const SUPPORT_HOURS_MESSAGE = `Enter a whole number of hours from ${SUPPORT_HOURS.min} to ${SUPPORT_HOURS.max}.`;
@@ -111,8 +115,8 @@ export interface SupportRequestFields {
  * them. The reason counts after trimming; the hours are a whole number in `SUPPORT_HOURS`.
  */
 export function supportRequestInputProblem(input: SupportRequestFields): string | null {
-  const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-  if (reason.length < SUPPORT_REASON.min || reason.length > SUPPORT_REASON.max) return SUPPORT_REASON_MESSAGE;
+  const reasonProblem = adminReasonProblem(input.reason);
+  if (reasonProblem) return reasonProblem;
   const { hours } = input;
   if (!Number.isInteger(hours) || hours < SUPPORT_HOURS.min || hours > SUPPORT_HOURS.max) return SUPPORT_HOURS_MESSAGE;
   return null;

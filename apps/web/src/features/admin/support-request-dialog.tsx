@@ -7,7 +7,6 @@ import {
   SUPPORT_HOURS,
   SUPPORT_LIMIT_MESSAGE,
   SUPPORT_OPEN_MESSAGE,
-  SUPPORT_REASON,
   SUPPORT_REASON_MESSAGE,
   supportRequestInputProblem,
   type SupportRequestInput,
@@ -24,11 +23,10 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
-import { Textarea } from "@workspace/ui/components/textarea";
-import { cn } from "@workspace/ui/lib/utils";
 import { StepUpDialog } from "@/components/step-up-dialog";
 import { api } from "@/lib/api";
 import { isDemoMode } from "@/lib/data-source";
+import { ReasonField } from "./reason-field";
 
 /** The hours a new request starts with (spec part 3, "Ask for support access"). */
 const DEFAULT_HOURS = "4";
@@ -63,7 +61,6 @@ export function SupportRequestDialog({ company, onClose, onRequested }: SupportR
   const [pending, setPending] = useState(false);
   const reasonField = useRef<HTMLTextAreaElement>(null);
   const hoursField = useRef<HTMLInputElement>(null);
-  const length = reason.trim().length;
 
   function request(): SupportRequestInput {
     return { companyId: company.id, reason: reason.trim(), hours: Number(hours) };
@@ -120,37 +117,13 @@ export function SupportRequestDialog({ company, onClose, onRequested }: SupportR
                 and ends after the hours you set.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="support-reason">Reason</Label>
-              <Textarea
-                ref={reasonField}
-                id="support-reason"
-                rows={3}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                aria-invalid={error?.field === "reason" ? true : undefined}
-                aria-describedby={describedBy("reason", "support-reason-hint", "support-reason-count")}
-              />
-              <div className="flex items-start justify-between gap-3 text-xs">
-                <p id="support-reason-hint" className="text-muted-foreground">
-                  Don&apos;t paste the company&apos;s data here: the reason is kept in the platform audit log.
-                </p>
-                <p
-                  id="support-reason-count"
-                  className={cn(
-                    "shrink-0 tabular-nums",
-                    length > SUPPORT_REASON.max ? "text-danger-ink" : "text-muted-foreground",
-                  )}
-                >
-                  {formatNumber(length, "count", settings)} of {formatNumber(SUPPORT_REASON.max, "count", settings)}
-                </p>
-              </div>
-              {error?.field === "reason" ? (
-                <p id="support-reason-error" className="text-danger-ink text-xs">
-                  {error.message}
-                </p>
-              ) : null}
-            </div>
+            <ReasonField
+              ref={reasonField}
+              idPrefix="support"
+              value={reason}
+              onChange={setReason}
+              error={error?.field === "reason" ? error.message : null}
+            />
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="support-hours">Hours</Label>
               <Input

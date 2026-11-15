@@ -11,6 +11,7 @@ import {
 } from "@workspace/shared";
 import { ceilingLock } from "@/features/admin/access-draft";
 import { auditColumns } from "@/features/admin/audit-columns";
+import { AuditDetails } from "@/features/admin/audit-details";
 import { auditActionLabel, auditActorText, auditDetailsText, type AuditFormat } from "@/features/admin/audit-labels";
 import { appendOlderAuditPage, auditRows, olderAuditCursor, runOlderAuditLoad } from "@/features/admin/audit-paging";
 import { databaseErrorText, databaseText } from "@/features/admin/database-labels";
@@ -86,6 +87,7 @@ function grant(
 
 const FORMAT: AuditFormat & { dateTime: (iso: string) => string } = {
   count: (value) => `#${value}`,
+  money: (value) => `$${value}`,
   date: (iso) => `on ${iso.slice(0, 10)}`,
   dateTime: (iso) => iso,
 };
@@ -414,6 +416,84 @@ describe("console labels", () => {
       "Now on schema 0006_foreign_key_indexes",
     );
     expect(text({ kind: "hidden" })).toBe("Details hidden");
+  });
+
+  it("names the seven plan and status actions (part 2, W-8)", () => {
+    expect(
+      [
+        "company.suspended",
+        "company.reinstated",
+        "company.cancelled",
+        "plan.created",
+        "plan.changed",
+        "plan.retired",
+        "plan.restored",
+      ].map(auditActionLabel),
+    ).toEqual([
+      "Suspended company",
+      "Reinstated company",
+      "Cancelled company",
+      "Created plan",
+      "Changed plan",
+      "Retired plan",
+      "Restored plan",
+    ]);
+  });
+
+  it("writes plan and status details with prices in the money format and the reason or Reason hidden (W-8)", () => {
+    const text = (details: PlatformAuditDetails) => auditDetailsText(details, FORMAT);
+    const reason = "Owner asked by phone to pause";
+    expect(text({ kind: "status_changed", from: "active", to: "suspended", reason })).toBe(
+      `Active → Suspended; Reason: ${reason}`,
+    );
+    expect(text({ kind: "status_changed", from: "cancelled", to: "trial", reason: null })).toBe(
+      "Cancelled → Trial; Reason hidden",
+    );
+    expect(
+      text({
+        kind: "plan_created",
+        key: "e2e-starter",
+        name: "Starter",
+        product: "flooring",
+        monthlyPrice: "49.00",
+        yearlyPrice: "490.00",
+        modules: ["core", "retail", "retired_module"],
+        maxUsers: 5,
+        maxBranches: 1,
+        reason,
+      }),
+    ).toBe(
+      `Plan: Starter (e2e-starter); Product: Flooring Suite; Monthly price: $49.00; Yearly price: $490.00; Modules: Core, Retail, retired_module; User limit: #5; Branch limit: #1; Reason: ${reason}`,
+    );
+    expect(
+      text({
+        kind: "plan_changed",
+        changes: [
+          { field: "name", from: "Starter", to: "Starter Plus" },
+          { field: "monthlyPrice", from: "49.00", to: "59.00" },
+          { field: "modules", from: ["core"], to: [] },
+          { field: "maxUsers", from: null, to: 10 },
+        ],
+        reason: null,
+      }),
+    ).toBe(
+      "Name: Starter → Starter Plus; Monthly price: $49.00 → $59.00; Modules: Core → None; User limit: No limit → #10; Reason hidden",
+    );
+    expect(text({ kind: "plan_active", active: false, reason })).toBe(`Retired; Reason: ${reason}`);
+    expect(text({ kind: "plan_active", active: true, reason: null })).toBe("Restored; Reason hidden");
+  });
+
+  it("shows Reason hidden muted and a reason as text (W-8)", () => {
+    const hiddenReason = renderToStaticMarkup(
+      <AuditDetails details={{ kind: "plan_active", active: false, reason: null }} format={FORMAT} />,
+    );
+    expect(hiddenReason).toContain('<span class="text-muted-foreground">Reason hidden</span>');
+    expect(hiddenReason).toContain('<span class="break-words">Retired</span>');
+    const shown = renderToStaticMarkup(
+      <AuditDetails details={{ kind: "plan_active", active: true, reason: "Back on offer" }} format={FORMAT} />,
+    );
+    expect(shown).toContain("Back on offer");
+    expect(shown).not.toContain("Reason hidden");
   });
 
   it("offers the address and device column to the owner role only", () => {

@@ -94,8 +94,11 @@ const PLATFORM_LOCKED = "The Platform module can't be switched off.";
 const PROTECTED_MISSING =
   "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people.";
 
-/** The keys of the modules the feature switches leave visible (product spec rule 18). */
-function visibleModuleKeys(): ModuleKey[] {
+/**
+ * The keys of the modules the feature switches leave visible (product spec rule 18), read per call
+ * so a switch flipped at run time counts. The access and plan rules take it as their default.
+ */
+export function visibleModuleKeys(): ModuleKey[] {
   return visibleModules().map((m) => m.key);
 }
 

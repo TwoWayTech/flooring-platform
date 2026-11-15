@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { featureOn } from "@workspace/shared";
 import { cn } from "@workspace/ui/lib/utils";
 import { isDemoMode } from "@/lib/data-source";
 
@@ -20,18 +21,18 @@ export function BackToCompanies() {
 }
 
 /**
- * The platform admin's pages for one company (spec G1, G2): its access, its support-access requests
- * (docs/specs/platform-admin.md, part 3, "Support tab"), and in the demo its data import and the
- * database connection planner. Import has not moved to the API yet, so in api mode those pages are
- * not found and their tabs are not offered (docs/specs/platform-admin.md, "Screens").
+ * The platform admin's pages for one company (spec G1, G2): its access, its status while
+ * `admin.billing` is on (docs/specs/platform-admin.md, part 2, "Screens"), its support-access
+ * requests (part 3, "Support tab"), and in the demo its data import and the database connection
+ * planner. Import has not moved to the API yet, so in api mode those pages are not found and their
+ * tabs are not offered (docs/specs/platform-admin.md, "Screens").
  */
 export function CompanyAdminNav({ companyId }: { companyId: string }) {
   const pathname = usePathname();
   const base = `/admin/companies/${encodeURIComponent(companyId)}`;
-  const items: (readonly [string, string])[] = [
-    [base, "Access"],
-    [`${base}/support`, "Support"],
-  ];
+  const items: (readonly [string, string])[] = [[base, "Access"]];
+  if (featureOn("admin.billing")) items.push([`${base}/status`, "Status"]);
+  items.push([`${base}/support`, "Support"]);
   if (isDemoMode()) items.push([`${base}/import`, "Data import"], [`${base}/database`, "Connect a database"]);
   return (
     <nav aria-label="Company pages" className="scrollbar-none -mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">

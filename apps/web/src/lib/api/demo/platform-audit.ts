@@ -1,6 +1,8 @@
 import {
+  isPlatformAuditAction,
   PLATFORM_AUDIT_PAGE,
   PLATFORM_AUDIT_QUERY_MESSAGES,
+  platformAuditActionOn,
   platformAuditView,
   type PlatformAdminRole,
   type PlatformAuditQuery,
@@ -21,14 +23,14 @@ export const DEMO_PLATFORM_ADMIN: { userId: string; name: string; role: Platform
 /**
  * One platform audit row as the demo keeps it in local storage (key `platform-audit`). It is the
  * shape of `platform_audit_log` without the actor and the address: every demo row is the demo
- * admin's, and the demo records no IP or device.
+ * admin's, and the demo records no IP or device. A plan row names no company (part 2).
  */
 export interface DemoPlatformAuditRow {
   id: string;
   /** ISO moment. */
   at: string;
-  tenantId: string;
-  companyName: string;
+  tenantId: string | null;
+  companyName: string | null;
   action: string;
   targetType: string;
   targetId: string | null;
@@ -54,8 +56,8 @@ function isDemoAuditRow(value: unknown): value is DemoPlatformAuditRow {
   return (
     typeof id === "string" &&
     isMoment(at) &&
-    typeof tenantId === "string" &&
-    typeof companyName === "string" &&
+    (tenantId === null || typeof tenantId === "string") &&
+    (companyName === null || typeof companyName === "string") &&
     typeof action === "string" &&
     typeof targetType === "string" &&
     (targetId === null || typeof targetId === "string")
@@ -67,6 +69,18 @@ function newerFirst(a: DemoPlatformAuditRow, b: DemoPlatformAuditRow): number {
   const byTime = Date.parse(b.at) - Date.parse(a.at);
   if (byTime !== 0) return byTime;
   return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+/**
+ * Refuses an action filter the API's `action` check refuses (part 3; part 2, "Audit (part 2)"): one
+ * that isn't among the thirteen, or one of the seven plan and status actions while `admin.billing`
+ * is off. Their stored rows still list when no action is asked for.
+ */
+function assertActionOn(action: string | undefined): void {
+  if (action === undefined) return;
+  if (!isPlatformAuditAction(action) || !platformAuditActionOn(action)) {
+    throw new DemoRuleError(PLATFORM_AUDIT_QUERY_MESSAGES.action);
+  }
 }
 
 /** The page size asked for, or the default; anything else is the API's 400. */
@@ -81,13 +95,15 @@ function pageSize(limit: number | undefined): number {
 /**
  * One page of the demo's platform audit log (spec "GET /platform/audit"), the API's rules on the
  * stored rows:
- * - filtered by company and action, newest first;
+ * - filtered by company and action, newest first; an action the API's check refuses is refused
+ *   with its message;
  * - `before` names the last entry of the previous page, among all rows whatever the filters, and
  *   an unknown cursor is refused with the API's message;
  * - every row is mapped through the shared `platformAuditView` as the demo admin sees it, so a
  *   migration row only ever shows its code and anything outside its allow-list reads hidden.
  */
 export function demoAuditPage(stored: readonly unknown[], query: PlatformAuditQuery): PlatformAuditResult {
+  assertActionOn(query.action);
   const size = pageSize(query.limit);
   const rows = stored.filter(isDemoAuditRow).sort(newerFirst);
   let candidates = rows;

@@ -132,8 +132,9 @@ export interface PlatformDirectory {
 }
 
 /**
- * The six actions `platform_audit_log` holds (docs/specs/platform-admin.md, "GET /platform/audit",
- * The six actions). `PLATFORM_AUDIT_ACTIONS` in `platform/audit-details.ts` lists them at run time.
+ * The thirteen actions `platform_audit_log` holds (docs/specs/platform-admin.md, "GET
+ * /platform/audit", The six actions; "Audit (part 2)" adds the seven plan and status actions).
+ * `PLATFORM_AUDIT_ACTIONS` in `platform/audit-details.ts` lists them at run time.
  */
 export type PlatformAuditAction =
   | "company.access_changed"
@@ -141,7 +142,14 @@ export type PlatformAuditAction =
   | "support.approved"
   | "support.revoked"
   | "company.migration_failed"
-  | "company.migration_recovered";
+  | "company.migration_recovered"
+  | "company.suspended"
+  | "company.reinstated"
+  | "company.cancelled"
+  | "plan.created"
+  | "plan.changed"
+  | "plan.retired"
+  | "plan.restored";
 
 /**
  * A support grant's status, derived from its dates and never stored (spec "Support requests",
@@ -203,7 +211,37 @@ export type PlatformAuditDetails =
   | { kind: "support_decided"; decision: "approved" | "revoked" }
   | { kind: "migration_failed"; code: string | null }
   | { kind: "migration_recovered"; version: string | null }
+  /** `company.suspended`, `.reinstated` and `.cancelled`; `reason` is null when the viewer may not read it. */
+  | { kind: "status_changed"; from: LifecycleStatus; to: LifecycleStatus; reason: string | null }
+  /** `plan.created`: the plan as created. Prices are decimal strings (rule 6). */
+  | ({ kind: "plan_created" } & PlatformAuditPlanFields & { reason: string | null })
+  /** `plan.changed`: each changed field with its old and new value. */
+  | { kind: "plan_changed"; changes: PlatformAuditPlanChange[]; reason: string | null }
+  /** `plan.retired` and `plan.restored`: whether the plan is active after the change. */
+  | { kind: "plan_active"; active: boolean; reason: string | null }
   | { kind: "hidden" };
+
+/** A plan's fields as a `plan.created` entry shows them (spec "Audit (part 2)"). */
+export interface PlatformAuditPlanFields {
+  key: string;
+  name: string;
+  product: ProductKey;
+  monthlyPrice: string;
+  yearlyPrice: string;
+  /** Module keys as stored; a pattern, not the catalog, so a retired module still shows. */
+  modules: string[];
+  maxUsers: number;
+  maxBranches: number;
+}
+
+/**
+ * One changed field of a `plan.changed` entry (spec "Audit (part 2)"). A limit is null on the side
+ * where the plan had no limits row; prices are decimal strings.
+ */
+export type PlatformAuditPlanChange =
+  | { field: "name" | "monthlyPrice" | "yearlyPrice"; from: string; to: string }
+  | { field: "modules"; from: string[]; to: string[] }
+  | { field: "maxUsers" | "maxBranches"; from: number | null; to: number | null };
 
 /** One entry of the platform audit log as the console shows it (spec "PlatformAuditView"). */
 export interface PlatformAuditView {
@@ -336,4 +374,100 @@ export interface CompanySupportGrant {
   requestedAt: string;
   expiresAt: string;
   status: SupportGrantStatus;
+}
+
+// Platform admin part 2: plans and company status (docs/specs/platform-admin.md, "Part 2"; ADR 0056).
+
+/** The three status actions of the console (spec part 2). `past_due` is derived and never written. */
+export type CompanyStatusAction = "suspend" | "reinstate" | "cancel";
+
+/** One plan as the console shows it (spec part 2, "PlatformPlan"). Prices are decimal strings (rule 6). */
+export interface PlatformPlan {
+  id: string;
+  key: string;
+  name: string;
+  product: ProductKey;
+  monthlyPrice: string;
+  yearlyPrice: string;
+  /** Stored modules in catalog order, `platform` left out; a hidden one (rule 18) included. */
+  modules: ModuleKey[];
+  /** Null when the plan has no limits row: no limit (STATUS, PR #34 notes). New plans always have one. */
+  maxUsers: number | null;
+  maxBranches: number | null;
+  /** False once the plan is retired. */
+  active: boolean;
+  /** Companies any of whose subscription rows, deleted ones included, name the plan; above 0 means in use. */
+  companies: number;
+  /** ISO moments. */
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A new plan as the console sends it (spec part 2, "PlatformPlanInput"): every field is required. */
+export interface PlatformPlanInput {
+  key: string;
+  name: string;
+  product: ProductKey;
+  monthlyPrice: string;
+  yearlyPrice: string;
+  modules: ModuleKey[];
+  maxUsers: number;
+  maxBranches: number;
+  reason: string;
+}
+
+/**
+ * A change of plan as the console sends it (spec part 2, "PlatformPlanPatch"). Only the fields sent
+ * are checked and changed; the key and the product never change; `reason` is required.
+ */
+export interface PlatformPlanPatch {
+  name?: string;
+  monthlyPrice?: string;
+  yearlyPrice?: string;
+  modules?: ModuleKey[];
+  maxUsers?: number;
+  maxBranches?: number;
+  reason: string;
+}
+
+/**
+ * A status action as the console sends it (spec part 2, Bodies). `expectedStatus` is the status
+ * text the admin saw in the preview; `confirmName` is for cancel only.
+ */
+export interface CompanyStatusInput {
+  action: CompanyStatusAction;
+  reason: string;
+  expectedStatus: string;
+  confirmName?: string;
+}
+
+/** What a company would be after an action: its status, phase and dates (ISO moments or null). */
+export interface CompanyStatusNext {
+  status: LifecycleStatus;
+  phase: CompanyPhase;
+  readOnlyFrom: string | null;
+  lockedFrom: string | null;
+}
+
+/** One action of the status preview: why it is refused, or what it would give. */
+export interface CompanyStatusActionView {
+  action: CompanyStatusAction;
+  refusal: { code: "conflict" | "rule_broken"; message: string } | null;
+  next: CompanyStatusNext | null;
+}
+
+/**
+ * The body of `GET /platform/companies/:id/status` (spec part 2, "PlatformCompanyStatus"). `status`
+ * is the stored text as it is, even one the console doesn't know; the web sends it back as
+ * `expectedStatus`. `actions` always holds suspend, reinstate and cancel, in that order.
+ */
+export interface PlatformCompanyStatus {
+  companyId: string;
+  status: string;
+  /** ISO moment of the last status change. */
+  statusChangedAt: string;
+  phase: CompanyPhase;
+  readOnlyFrom: string | null;
+  lockedFrom: string | null;
+  actions: CompanyStatusActionView[];
 }

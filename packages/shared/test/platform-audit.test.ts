@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { FEATURES, type FeatureRegister } from "../src/features";
 import { accessDiff, type AccessState, type ModuleOverrideChange } from "../src/platform/access-patch";
 import {
   auditActionName,
   auditTargetId,
   auditTargetType,
+  BILLING_AUDIT_ACTIONS,
   FORMER_ADMIN_NAME,
   isPlatformAuditAction,
   MIGRATION_ERROR_CODE,
@@ -14,6 +16,7 @@ import {
   PLATFORM_AUDIT_ACTOR,
   PLATFORM_AUDIT_PAGE,
   PLATFORM_AUDIT_QUERY_MESSAGES,
+  platformAuditActionOn,
   platformAuditActor,
   platformAuditActorKind,
   platformAuditDetails,
@@ -21,6 +24,7 @@ import {
   type PlatformAuditRow,
 } from "../src/platform/audit-details";
 import { ALL_PERMISSION_KEYS } from "../src/permissions/catalog";
+import type { PlatformAuditAction } from "../src/types/platform";
 
 const MARKER = "MARKER-7f3a";
 const SUBSCRIPTION = "0196f3a2-7c1d-7e4b-9a10-2b3c4d5e6f70";
@@ -30,6 +34,17 @@ const ADMIN_OWNER = "0196f3a2-7c1d-7e4b-9a10-2b3c4d5e6f73";
 const ADMIN_SUPPORT = "0196f3a2-7c1d-7e4b-9a10-2b3c4d5e6f74";
 const COMPANY_OWNER = "0196f3a2-7c1d-7e4b-9a10-2b3c4d5e6f75";
 const HIDDEN = { kind: "hidden" };
+
+/** Part 2's plan and status actions, in the order of `PLATFORM_AUDIT_ACTOR`. */
+const SEVEN: PlatformAuditAction[] = [
+  "company.suspended",
+  "company.reinstated",
+  "company.cancelled",
+  "plan.created",
+  "plan.changed",
+  "plan.retired",
+  "plan.restored",
+];
 
 /** A value as it comes back from a jsonb column. */
 function stored<T>(value: T): unknown {
@@ -371,8 +386,8 @@ describe("platformAuditDetails: unknown actions", () => {
   });
 });
 
-describe("the six actions and their actors", () => {
-  it("lists six actions from the one record, in its order", () => {
+describe("the thirteen actions and their actors (part 3, and part 2's seven; AU-4)", () => {
+  it("lists thirteen actions from the one record, in its order", () => {
     expect(PLATFORM_AUDIT_ACTIONS).toEqual([
       "company.access_changed",
       "support.requested",
@@ -380,12 +395,13 @@ describe("the six actions and their actors", () => {
       "support.revoked",
       "company.migration_failed",
       "company.migration_recovered",
+      ...SEVEN,
     ]);
     expect(PLATFORM_AUDIT_ACTIONS).toEqual(Object.keys(PLATFORM_AUDIT_ACTOR));
   });
 
-  it("names the two platform-admin actions", () => {
-    expect(PLATFORM_ADMIN_AUDIT_ACTIONS).toEqual(["company.access_changed", "support.requested"]);
+  it("names the nine platform-admin actions", () => {
+    expect(PLATFORM_ADMIN_AUDIT_ACTIONS).toEqual(["company.access_changed", "support.requested", ...SEVEN]);
   });
 
   it("takes the actor kind from the action", () => {
@@ -394,16 +410,210 @@ describe("the six actions and their actors", () => {
     expect(platformAuditActorKind("support.revoked")).toBe("company_user");
     expect(platformAuditActorKind("company.migration_failed")).toBe("system");
     expect(platformAuditActorKind("company.migration_recovered")).toBe("system");
+    for (const action of SEVEN) expect(platformAuditActorKind(action)).toBe("platform_admin");
     for (const action of ["company.secret_dump", "toString", "__proto__", 42, null]) {
       expect(platformAuditActorKind(action)).toBe("unknown");
     }
   });
 
-  it("knows only the six actions, not inherited names", () => {
+  it("knows only the thirteen actions, not inherited names", () => {
     for (const action of PLATFORM_AUDIT_ACTIONS) expect(isPlatformAuditAction(action)).toBe(true);
-    for (const action of ["toString", "__proto__", "constructor", "company.deleted", "", "SUPPORT.REQUESTED"]) {
+    for (const action of [
+      "toString",
+      "__proto__",
+      "constructor",
+      "company.deleted",
+      "plan.deleted",
+      "",
+      "SUPPORT.REQUESTED",
+    ]) {
       expect(isPlatformAuditAction(action)).toBe(false);
     }
+  });
+});
+
+describe("the plan and status actions behind admin.billing (spec Audit (part 2); AU-5)", () => {
+  it("lists exactly the seven", () => {
+    expect(BILLING_AUDIT_ACTIONS).toEqual(SEVEN);
+  });
+
+  it("offers the seven only while admin.billing is on, and the six others always", () => {
+    const off: FeatureRegister = { ...FEATURES, "admin.billing": { ...FEATURES["admin.billing"], enabled: false } };
+    for (const action of PLATFORM_AUDIT_ACTIONS) {
+      expect(platformAuditActionOn(action, off), action).toBe(!SEVEN.includes(action));
+      expect(platformAuditActionOn(action, FEATURES), action).toBe(true);
+    }
+  });
+
+  it("reads the switch on every call", () => {
+    const feature = FEATURES["admin.billing"] as { enabled: boolean };
+    feature.enabled = false;
+    try {
+      expect(platformAuditActionOn("plan.created")).toBe(false);
+      expect(platformAuditActionOn("support.requested")).toBe(true);
+    } finally {
+      feature.enabled = true;
+    }
+    expect(platformAuditActionOn("plan.created")).toBe(true);
+  });
+});
+
+describe("platformAuditDetails: company status entries (spec Audit (part 2); AU-1)", () => {
+  const changedAt = "2026-08-01T09:00:00.000Z";
+  const at = "2026-11-15T12:00:00.000Z";
+  const before = { status: "active", statusChangedAt: changedAt };
+  const after = { status: "suspended", statusChangedAt: at, reason: "Owner asked to pause the account" };
+
+  it("shows from, to and the reason of an entry that fits exactly", () => {
+    expect(platformAuditDetails("company.suspended", stored(before), stored(after))).toEqual({
+      kind: "status_changed",
+      from: "active",
+      to: "suspended",
+      reason: "Owner asked to pause the account",
+    });
+    expect(
+      platformAuditDetails(
+        "company.reinstated",
+        { status: "suspended", statusChangedAt: at },
+        { ...after, status: "trial" },
+      ),
+    ).toMatchObject({ kind: "status_changed", from: "suspended", to: "trial" });
+    expect(
+      platformAuditDetails(
+        "company.cancelled",
+        { status: "past_due", statusChangedAt: at },
+        { ...after, status: "cancelled" },
+      ),
+    ).toMatchObject({ from: "past_due", to: "cancelled" });
+  });
+
+  it("shows a reason the API's SQL nulled as null", () => {
+    expect(platformAuditDetails("company.suspended", before, { ...after, reason: null })).toMatchObject({
+      kind: "status_changed",
+      reason: null,
+    });
+  });
+
+  it("hides an entry that doesn't fit in any way", () => {
+    const cases: [string, unknown, unknown][] = [
+      ["company.suspended", before, { ...after, extra: MARKER }],
+      ["company.suspended", { ...before, extra: 1 }, after],
+      ["company.suspended", { status: "frozen", statusChangedAt: changedAt }, after],
+      ["company.suspended", before, { ...after, status: "active" }],
+      ["company.suspended", { ...before, status: "suspended" }, after],
+      ["company.reinstated", { status: "suspended", statusChangedAt: at }, { ...after, status: "past_due" }],
+      ["company.cancelled", before, after],
+      ["company.suspended", { ...before, statusChangedAt: "1" }, after],
+      ["company.suspended", before, { ...after, statusChangedAt: null }],
+      ["company.suspended", before, { ...after, reason: "" }],
+      ["company.suspended", before, { ...after, reason: "r".repeat(501) }],
+      ["company.suspended", before, { status: "suspended", statusChangedAt: at }],
+      ["company.suspended", null, after],
+      ["company.suspended", before, [after]],
+    ];
+    for (const [action, rowBefore, rowAfter] of cases) {
+      expect(platformAuditDetails(action, rowBefore, rowAfter), JSON.stringify([action, rowBefore, rowAfter])).toEqual(
+        HIDDEN,
+      );
+    }
+  });
+});
+
+describe("platformAuditDetails: plan entries (AU-1)", () => {
+  const plan = {
+    key: "e2e-starter",
+    name: "Starter",
+    product: "flooring",
+    monthlyPrice: "49.00",
+    yearlyPrice: "490.00",
+    modules: ["core", "retail"],
+    maxUsers: 5,
+    maxBranches: 1,
+  };
+  const reason = "New plan for small stores";
+
+  it("shows a created plan's fields", () => {
+    expect(platformAuditDetails("plan.created", null, stored({ ...plan, reason }))).toEqual({
+      kind: "plan_created",
+      ...plan,
+      reason,
+    });
+  });
+
+  it("hides a created plan that doesn't fit", () => {
+    const afters: unknown[] = [
+      { ...plan, reason, extra: 1 },
+      { ...plan },
+      { ...plan, reason, key: "Bad Key" },
+      { ...plan, reason, name: "  " },
+      { ...plan, reason, product: "both" },
+      { ...plan, reason, monthlyPrice: "1e3" },
+      { ...plan, reason, yearlyPrice: 490 },
+      { ...plan, reason, modules: [] },
+      { ...plan, reason, modules: ["Bad Module"] },
+      { ...plan, reason, maxUsers: 0 },
+      { ...plan, reason, maxBranches: 100_001 },
+      { ...plan, reason: "" },
+    ];
+    for (const after of afters) expect(platformAuditDetails("plan.created", null, after)).toEqual(HIDDEN);
+    expect(platformAuditDetails("plan.created", { key: "x" }, { ...plan, reason })).toEqual(HIDDEN);
+  });
+
+  it("shows a changed plan's fields in their order, a missing limit as null", () => {
+    expect(
+      platformAuditDetails(
+        "plan.changed",
+        { maxUsers: null, name: "Starter", modules: ["core"] },
+        { maxUsers: 5, name: "Starter Plus", modules: ["core", "retail"], reason: null },
+      ),
+    ).toEqual({
+      kind: "plan_changed",
+      changes: [
+        { field: "name", from: "Starter", to: "Starter Plus" },
+        { field: "modules", from: ["core"], to: ["core", "retail"] },
+        { field: "maxUsers", from: null, to: 5 },
+      ],
+      reason: null,
+    });
+  });
+
+  it("hides a changed plan that doesn't fit", () => {
+    const cases: [unknown, unknown][] = [
+      [{}, { reason }],
+      [{ name: "Starter" }, { name: "Starter Plus" }],
+      [{ name: "Starter" }, { name: "Starter Plus", monthlyPrice: "1.00", reason }],
+      [{ key: "a1" }, { key: "a2", reason }],
+      [{ product: "flooring" }, { product: "hr", reason }],
+      [{ monthlyPrice: "0.00" }, { monthlyPrice: "-1", reason }],
+      [{ maxUsers: 5 }, { maxUsers: null, reason }],
+      [{ modules: "core" }, { modules: ["core"], reason }],
+      [null, { name: "Starter", reason }],
+    ];
+    for (const [before, after] of cases) {
+      expect(platformAuditDetails("plan.changed", before, after), JSON.stringify([before, after])).toEqual(HIDDEN);
+    }
+  });
+
+  it("shows a retire or restore only when active flips the way the action says", () => {
+    expect(platformAuditDetails("plan.retired", { active: true }, { active: false, reason })).toEqual({
+      kind: "plan_active",
+      active: false,
+      reason,
+    });
+    expect(platformAuditDetails("plan.restored", { active: false }, { active: true, reason })).toEqual({
+      kind: "plan_active",
+      active: true,
+      reason,
+    });
+    const cases: [string, unknown, unknown][] = [
+      ["plan.retired", { active: false }, { active: false, reason }],
+      ["plan.retired", { active: true }, { active: true, reason }],
+      ["plan.restored", { active: true }, { active: true, reason }],
+      ["plan.retired", { active: true, extra: 1 }, { active: false, reason }],
+      ["plan.retired", { active: true }, { active: false }],
+      ["plan.retired", { active: "true" }, { active: false, reason }],
+    ];
+    for (const [action, before, after] of cases) expect(platformAuditDetails(action, before, after)).toEqual(HIDDEN);
   });
 });
 
@@ -608,5 +818,70 @@ describe("platformAuditView (platform-admin spec, PlatformAuditView; ADR 0053)",
     const view = platformAuditView(row({ at: "2026-11-15T10:00:00.123456+00:00", actorName: null }), owner);
     expect(view.at).toBe("2026-11-15T10:00:00.123456+00:00");
     expect(view.actor).toEqual({ kind: "platform_admin", userId: ADMIN_OWNER, name: FORMER_ADMIN_NAME });
+  });
+
+  const STATUS_REASON = `Paused at the owner's request ${MARKER}`;
+  const statusRow = (overrides: Partial<PlatformAuditRow> = {}) =>
+    row({
+      action: "company.suspended",
+      targetType: "tenant",
+      targetId: COMPANY,
+      before: { status: "active", statusChangedAt: "2026-08-01T09:00:00.000Z" },
+      after: { status: "suspended", statusChangedAt: "2026-11-15T10:00:00.000Z", reason: STATUS_REASON },
+      ...overrides,
+    });
+
+  it("shows a status or plan reason to the owner role and to its author only (AU-2)", () => {
+    expect(platformAuditView(statusRow(), owner).details).toMatchObject({ reason: STATUS_REASON });
+    expect(platformAuditView(statusRow({ actorUserId: ADMIN_SUPPORT }), support).details).toMatchObject({
+      reason: STATUS_REASON,
+    });
+    const other = platformAuditView(statusRow(), support);
+    expect(other.details).toEqual({ kind: "status_changed", from: "active", to: "suspended", reason: null });
+    expect(JSON.stringify(other)).not.toContain(MARKER);
+    expect(platformAuditView(statusRow({ actorUserId: null }), support).details).toMatchObject({ reason: null });
+    const retired = row({
+      action: "plan.retired",
+      tenantId: null,
+      companyName: null,
+      targetType: "plan",
+      before: { active: true },
+      after: { active: false, reason: STATUS_REASON },
+    });
+    expect(platformAuditView(retired, support).details).toEqual({ kind: "plan_active", active: false, reason: null });
+    expect(platformAuditView(retired, owner).details).toMatchObject({ reason: STATUS_REASON });
+  });
+
+  it("gives a plan entry no company, an admin actor, and the network to the owner role only (AU-3)", () => {
+    const created = row({
+      action: "plan.created",
+      tenantId: null,
+      companyName: null,
+      targetType: "plan",
+      targetId: SUBSCRIPTION,
+      after: {
+        key: "e2e-starter",
+        name: "Starter",
+        product: "hr",
+        monthlyPrice: "0.00",
+        yearlyPrice: "0.00",
+        modules: ["hr"],
+        maxUsers: 5,
+        maxBranches: 1,
+        reason: STATUS_REASON,
+      },
+    });
+    const forOwner = platformAuditView(created, owner);
+    expect(forOwner).toMatchObject({
+      company: null,
+      actor: { kind: "platform_admin", userId: ADMIN_OWNER, name: "Dana Whitfield" },
+      targetType: "plan",
+      targetId: SUBSCRIPTION,
+      details: { kind: "plan_created", key: "e2e-starter", reason: STATUS_REASON },
+      network: { ip: "203.0.113.9", userAgent: "Test agent" },
+    });
+    const forSupport = platformAuditView(created, support);
+    expect(forSupport.details).toMatchObject({ kind: "plan_created", reason: null });
+    expect("network" in forSupport).toBe(false);
   });
 });

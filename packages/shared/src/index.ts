@@ -80,3 +80,6 @@ export * from "./platform/audit-details";
 export * from "./platform/support-grants";
 export * from "./platform/company-standing";
 export * from "./platform/company-billing";
+export * from "./platform/admin-reason";
+export * from "./platform/plans";
+export * from "./platform/company-status";

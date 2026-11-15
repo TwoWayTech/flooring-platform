@@ -45,6 +45,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Data import, Connect a database | `settings.import.manage` | Owner | `DemoStore.importScope`. See `docs/product-spec/import.md` |
 | Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile` |
 | Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx` (`getPlatformGate`). `DemoStore.updatePlatformCompanyAccess` runs `accessPatchProblem`. On the API, `PlatformAdminGuard` with the platform `owner` role and a step-up (see Real build) |
+| Manage plans; suspend, reinstate or cancel a company | None. Needs the platform session and `admin.billing` | Platform admin (`owner` role; `support` reads) | `PlansPage` and `CompanyStatusPage` in `apps/web/src/features/admin/`, with `mayManageBilling` in packages/shared. `DemoStore` runs the shared `planProblem`, `planPatchProblem`, `statusActionBodyProblem`, `confirmNameProblem`, `staleStatusRefusal` and `statusAfter`. On the API, `PlatformAdminGuard` with `@PlatformFeature("admin.billing")`, the `owner` role and a step-up, and the admin's own row checked again under a lock (ADR 0056; see Real build) |
 
 ### Default roles
 
@@ -300,7 +301,9 @@ stateDiagram-v2
     suspended
 ```
 
-`CompanyStatus` in `packages/shared/src/types/company.ts` has four values. `buildCompany` seeds `active` for all three companies. `PlatformAccessPatch` has no status, so no action changes it. `useLoginDirectory` lists only `active` companies on the sign-in page.
+`CompanyStatus` in `packages/shared/src/types/company.ts` has four values. `buildCompany` seeds `active` for all three companies. `PlatformAccessPatch` has no status. `useLoginDirectory` lists only `active` companies on the sign-in page.
+
+Since ADR 0056 the console's Status tab (/admin/companies/:id/status, behind `admin.billing`) suspends, reinstates and cancels a company through the shared `statusAfter`: from `trial`, `active` or `past_due` to `suspended` or `cancelled`; from `suspended` to `cancelled`, unless that would give the company more read-only time; from `suspended` or `cancelled` back to `active` (it ever paid) or `trial`. `past_due` is never written, and a cancelled company can't be suspended. In the demo the console keeps its own status per company in local storage (`platform-status`), which the companies list and detail show; the fixture's `CompanyStatus`, the sign-in list and the company's own side don't change. In api mode the action writes `tenants.status`, which TenantGuard reads on the company's next request (see Real build).
 
 ### Feature status
 
@@ -868,7 +871,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Invited users have no accept step.** See User status.
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it. Lowering `userLimit` below the seats in use is allowed.
 - **`branchLimit` is not enforced.** Nothing reads it except the company access form.
-- **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", part 4.
+- **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. A status set on the console's Status tab (ADR 0056) shows in the console and its audit log only: the company keeps working on its own side and stays on the sign-in list. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", parts 2 and 4.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
 - **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
 - **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_PERMISSIONS` accepts either key. Only the tabs separate them.
@@ -884,9 +887,9 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
-## Real build (ADR 0052, ADR 0053 and ADR 0054)
+## Real build (ADR 0052, ADR 0053, ADR 0054 and ADR 0056)
 
-Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052 and ADR 0053)", and the draft spec is docs/specs/platform-admin.md.
+Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. Part 2 (ADR 0056) adds plans as data and suspend, reinstate and cancel, behind the new switch `admin.billing`. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052, ADR 0053 and ADR 0056)", and the draft spec is docs/specs/platform-admin.md.
 
 The API follows this spec. Where it differs, it is in the safer direction, and each difference is in the 2026-11-15 rows of docs/blueprint-delta.md:
 
@@ -900,6 +903,13 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Database errors are hidden.** The company's facts show its database state and schema version and, after a failed migration, only its error code: "Error code 42P01" or "No error code recorded", then "The error text stays in the control database: it can hold the company's data." The companies list has Database and Maintenance columns (part 3).
 - **The data pages are not found in api mode.** Data import and Connect a database stay on the demo; their tabs show in demo mode only.
 - **One permission matrix** covers every module the company's products offer. A ticked protected key is locked, and the shared check runs before the step-up, so a refused change never costs an authenticator code (part 3).
+
+**Part 2 (ADR 0056), plans and company status:**
+- **Plans (/admin/plans).** Every plan, retired ones included, with its product, modules, user and branch limits, monthly and yearly prices and how many companies use it. Prices are data: nothing is charged from them. The platform `owner` role creates a plan (key, name, product, both prices typed, at least one module, both limits, a reason), edits one, and retires or restores one, each after a step-up; the `support` role reads with a note. A plan in use keeps its modules and limits; its name and prices may change (a rename shows on every company's Billing page, a price changes nothing any company pays). No plan is ever deleted, and a key is never reused.
+- **Status tab (/admin/companies/:id/status).** The company's status, since when, and its phase, then Suspend, Reinstate and Cancel, each with what it would do (the next status, read only from now, the day it locks) or why it is refused. Each needs a reason and a step-up; Cancel also needs the company's name typed exactly. Suspended or cancelled makes the company read only at once: its people can sign in, read and export, but not change anything; it locks 30 days later if it never paid and 90 days after a cancel if it paid, while a paid suspension stays read only; in each case it locks sooner if its plan's own period lapses first. Cancel deletes nothing, and Reinstate puts back `active` (or `trial` for a company that never paid). A company that never had a plan can't be suspended or cancelled here: its Access page can switch its modules off instead. If another admin changed the status meanwhile, the action is refused and the page reads it again.
+- **Audit.** Each action is one platform audit entry ("Created plan", "Changed plan", "Retired plan", "Restored plan", "Suspended company", "Reinstated company", "Cancelled company") with its reason, which the `support` role sees only on its own entries ("Reason hidden"). Nothing is written to the company's own audit log, and no email is sent: the Owner sees the suspension or cancellation in part 4's standing and banner.
+- **The switch `admin.billing`** hides the Plans item, the Status tab, both pages, the seven actions in the audit filter and the API routes (404). The rest of the console works as before.
+- **The demo** has the same pages on DemoStore with the same rules and messages and no step-up. Its plans are the fixture companies' plans at "0.00", each in use; a status change shows in the console and its audit log only.
 
 **Part 4 (ADR 0054), the company side:**
 - **Where the company stands.** On every full page load the app asks `GET /company/standing`, which answers one of `full`, `read_only`, `locked`, `maintenance` or `unavailable`, the same for every member. A company under maintenance, whose data isn't available, or that is locked shows one full-page screen instead of the app: "Under maintenance", "Not available right now" or "Account suspended", with the API's own text, Try again and Sign out, and no reason or dates, the Owner included. When a request is refused that way while a page is open, the same screen covers the page as an alert dialog, without reloading or remounting it; Try again closes it once the company is usable.
@@ -920,4 +930,4 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.
-- **Support access opens nothing yet.** The Owner approves and revokes in Settings → Users (Support access panel, ADR 0054), only while the company is in full use. Company status actions and plans are part 2; billing writes wait for the owner.
+- **Support access opens nothing yet.** The Owner approves and revokes in Settings → Users (Support access panel, ADR 0054), only while the company is in full use. Billing writes (subscriptions, payments, period corrections, invoices) wait for the owner (ADR 0056).

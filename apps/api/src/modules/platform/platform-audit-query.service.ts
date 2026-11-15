@@ -2,11 +2,13 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import { platformAuditLog, tenants, user } from "@workspace/db/control";
 import {
+  BILLING_AUDIT_ACTIONS,
   MIGRATION_ERROR_CODE,
   PLATFORM_ADMIN_AUDIT_ACTIONS,
   PLATFORM_AUDIT_PAGE,
   PLATFORM_AUDIT_QUERY_MESSAGES,
   platformAuditView,
+  seesAdminReason,
   seesAllSupportGrants,
   seesAuditNetwork,
   type PlatformAuditQuery,
@@ -29,7 +31,11 @@ import type { PlatformActor } from "./platform-admin.guard";
  * - the IP and user agent only for the owner role (`seesAuditNetwork`), and only on those actions;
  * - for a role that doesn't see every admin's requests, another admin's `support.requested` row
  *   has no `before` or `after`, so its reason stays hidden (`seesAllSupportGrants`,
- *   `seesSupportReason`).
+ *   `seesSupportReason`);
+ * - for a role that doesn't see every admin's reasons (`seesAdminReason`: the owner role, or the
+ *   author), another admin's plan or status row (`BILLING_AUDIT_ACTIONS`) has its `after.reason`
+ *   set to null, and an `after` that isn't an object is dropped (spec "Audit (part 2)"; ADR 0056).
+ *   `jsonb_set` with `create_missing` false adds nothing to a row that has no reason.
  */
 @Injectable()
 export class PlatformAuditQueryService {
@@ -45,6 +51,10 @@ export class PlatformAuditQueryService {
     const otherRequest = seesAllSupportGrants(viewer.role)
       ? sql`false`
       : sql`(${log.action} = 'support.requested' and ${log.actorUserId} is distinct from ${viewer.userId})`;
+    // A null author never counts as the viewer, so this is true for the owner role only.
+    const hiddenReason = seesAdminReason(viewer, null)
+      ? sql`false`
+      : sql`(${inArray(log.action, [...BILLING_AUDIT_ACTIONS])} and ${log.actorUserId} is distinct from ${viewer.userId})`;
     const network = seesAuditNetwork(viewer.role);
     const rows = await this.control.db
       .select({
@@ -65,6 +75,8 @@ export class PlatformAuditQueryService {
             when jsonb_typeof(${log.after} -> 'code') = 'string' and ${log.after} ->> 'code' ~ ${MIGRATION_ERROR_CODE.source}
             then ${log.after} -> 'code' end)
           when ${otherRequest} then null
+          when ${hiddenReason} then case when jsonb_typeof(${log.after}) = 'object'
+            then jsonb_set(${log.after}, '{reason}', 'null'::jsonb, false) end
           else ${log.after} end`.mapWith(log.after),
         // Never selected for a role that doesn't see addresses: the value stays in the database.
         ip: network ? sql<string | null>`case when ${adminRow} then ${log.ip} end` : sql<string | null>`null::text`,

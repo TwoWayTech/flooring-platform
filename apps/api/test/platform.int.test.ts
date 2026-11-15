@@ -51,7 +51,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         name: `${route.method} ${route.path}`,
         url: route.path.replace(/:[^/]+/g, SUMMIT_ID),
       }));
-    expect(routes.length).toBeGreaterThanOrEqual(8);
+    expect(routes.length).toBeGreaterThanOrEqual(17);
     return routes;
   }
 
@@ -96,7 +96,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
         const paths: unknown = Reflect.getMetadata(PATH_METADATA, controller);
         return [paths].flat().some((path) => String(path).replace(/^\//, "").startsWith("platform"));
       });
-    expect(controllers.length).toBeGreaterThanOrEqual(4);
+    expect(controllers.length).toBeGreaterThanOrEqual(6);
     for (const controller of controllers) {
       expect({ controller: controller.name, guards: Reflect.getMetadata(GUARDS_METADATA, controller) }).toEqual({
         controller: controller.name,
