@@ -112,7 +112,7 @@ export function RolesPage() {
           Pick a role or a person to see every page, action and sensitive field they get under your plan.
         </p>
         <AccessPreview
-          company={company}
+          products={[company.product]}
           roles={roles}
           users={users}
           ceiling={company.ceiling}

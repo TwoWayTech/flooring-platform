@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import type { CompanyId } from "@workspace/shared";
 import { cn } from "@workspace/ui/lib/utils";
+import { isDemoMode } from "@/lib/data-source";
 
 /** Back to the platform's company list, above every company page. */
 export function BackToCompanies() {
@@ -20,17 +20,15 @@ export function BackToCompanies() {
 }
 
 /**
- * The platform admin's pages for one company (spec G1, G2): its access, its data import and
- * the database connection planner.
+ * The platform admin's pages for one company (spec G1, G2): its access, and in the demo its data
+ * import and the database connection planner. Import has not moved to the API yet, so in api mode
+ * those pages are not found and their tabs are not offered (docs/specs/platform-admin.md, "Screens").
  */
-export function CompanyAdminNav({ companyId }: { companyId: CompanyId }) {
+export function CompanyAdminNav({ companyId }: { companyId: string }) {
   const pathname = usePathname();
-  const base = `/admin/companies/${companyId}`;
-  const items = [
-    [base, "Access"],
-    [`${base}/import`, "Data import"],
-    [`${base}/database`, "Connect a database"],
-  ] as const;
+  const base = `/admin/companies/${encodeURIComponent(companyId)}`;
+  const items: (readonly [string, string])[] = [[base, "Access"]];
+  if (isDemoMode()) items.push([`${base}/import`, "Data import"], [`${base}/database`, "Connect a database"]);
   return (
     <nav aria-label="Company pages" className="scrollbar-none -mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
       <ul className="border-hairline flex gap-1 border-b pb-2">

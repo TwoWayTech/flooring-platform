@@ -6,22 +6,16 @@ import { AnyCompanyMember, Audited } from "../../core/access/permission.decorato
 import { CurrentAccess } from "../../core/access/permission.guard";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
-import { Public, SessionOnly } from "../../core/tenancy/access";
+import { Public } from "../../core/tenancy/access";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { InvitationsService } from "./invitations.service";
 import { actorOf, parse } from "../../core/access/request-actor";
-import { MAX_SUPPORT_HOURS, SupportGrantsService } from "./support-grants.service";
+import { SupportGrantsService } from "./support-grants.service";
 
 /** A token as emailed: 43 URL-safe characters (32 bytes); anything else is not a token. */
 const TOKEN = z.string().regex(/^[A-Za-z0-9_-]{20,100}$/, "This invitation link is not valid.");
 
 const ACCEPT = z.object({ token: TOKEN, password: z.string().max(200).optional() });
-
-const SUPPORT_REQUEST = z.object({
-  companyId: z.string().uuid(),
-  reason: z.string().trim().min(10).max(500),
-  hours: z.number().int().min(1).max(MAX_SUPPORT_HOURS),
-});
 
 /**
  * Invitation acceptance, open to anyone with the emailed link (draft spec "Invitations"). The
@@ -47,7 +41,10 @@ export class InvitationsController {
   }
 }
 
-/** Support access, from the Owner's side (blueprint role rule 6). */
+/**
+ * Support access, from the Owner's side (blueprint role rule 6). Platform admins ask for it through
+ * POST /platform/support-grants, behind the platform guard (modules/platform).
+ */
 @Controller("support-grants")
 export class SupportGrantsController {
   constructor(private readonly grants: SupportGrantsService) {}
@@ -92,20 +89,6 @@ export class SupportGrantsController {
     @Param("id", new ParseUUIDPipe()) grantId: string,
   ) {
     await this.grants.revoke(tenant, actorOf(access, session, request), grantId);
-  }
-}
-
-/** Support access, from the platform admin's side: a session, no company (P17 adds the screens). */
-@Controller("platform/support-grants")
-@SessionOnly()
-export class PlatformSupportGrantsController {
-  constructor(private readonly grants: SupportGrantsService) {}
-
-  /** POST /platform/support-grants: a platform admin asks a company's Owner for access. */
-  @Post()
-  request(@CurrentSession() session: AuthSession, @Body() body: unknown) {
-    const input = parse(SUPPORT_REQUEST, body);
-    return this.grants.request(session, input.companyId, input.reason, input.hours);
   }
 }
 

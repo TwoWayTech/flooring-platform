@@ -1,10 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../../core/auth/auth.module";
-import {
-  InvitationsController,
-  PlatformSupportGrantsController,
-  SupportGrantsController,
-} from "./access-requests.controller";
+import { InvitationsController, SupportGrantsController } from "./access-requests.controller";
 import { AuditLogService } from "./audit-log.service";
 import { InvitationsService } from "./invitations.service";
 import { RolesService } from "./roles.service";
@@ -18,14 +14,7 @@ import { UsersService } from "./users.service";
  */
 @Module({
   imports: [AuthModule],
-  controllers: [
-    UsersController,
-    RolesController,
-    AuditLogController,
-    InvitationsController,
-    SupportGrantsController,
-    PlatformSupportGrantsController,
-  ],
+  controllers: [UsersController, RolesController, AuditLogController, InvitationsController, SupportGrantsController],
   providers: [UsersService, RolesService, AuditLogService, InvitationsService, SupportGrantsService],
 })
 export class UsersModule {}

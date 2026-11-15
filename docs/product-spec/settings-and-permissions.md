@@ -42,7 +42,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Read the audit log | `settings.audit.view` | Owner, Manager, Accountant, HR manager | `AuditLogPage` in `apps/web/src/features/settings/audit-log-page.tsx` |
 | Data import, Connect a database | `settings.import.manage` | Owner | `DemoStore.importScope`. See `docs/product-spec/import.md` |
 | Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile` |
-| Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx`. `DemoStore.updateCompanyAccess` has no check of its own |
+| Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx` (`getPlatformGate`). `DemoStore.updatePlatformCompanyAccess` runs `accessPatchProblem`. On the API, `PlatformAdminGuard` with the platform `owner` role and a step-up (see Real build) |
 
 ### Default roles
 
@@ -297,7 +297,7 @@ stateDiagram-v2
     suspended
 ```
 
-`CompanyStatus` in `packages/shared/src/types/company.ts` has four values. `buildCompany` seeds `active` for all three companies. `CompanyAccessPatch` has no status, so no action changes it. `useLoginDirectory` lists only `active` companies on the sign-in page.
+`CompanyStatus` in `packages/shared/src/types/company.ts` has four values. `buildCompany` seeds `active` for all three companies. `PlatformAccessPatch` has no status, so no action changes it. `useLoginDirectory` lists only `active` companies on the sign-in page.
 
 ### Feature status
 
@@ -333,7 +333,7 @@ stateDiagram-v2
 
 **Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. `DemoStore.resetSettings` exists, but no screen calls it.
 
-**Change company access.** Platform admin, Company. `AccessEditor` in `apps/web/src/features/admin/company-access-page.tsx` edits modules, ceiling, user limit and branch limit, with a live preview. Save access calls `updateCompanyAccess`. It applies at once.
+**Change company access.** Platform admin, Company. `AccessEditor` in `apps/web/src/features/admin/access-editor.tsx`, loaded by `company-access-page.tsx`, edits modules, ceiling, user limit and branch limit, with a live preview. Save access sends only the parts that changed through `updatePlatformCompanyAccess`. It applies at once. In api mode it asks for a step-up first and reads the company again after the save (see Real build).
 
 **Sign in.** `POST /api/demo/login` records the chosen persona in a signed cookie. The MFA step is on the login page, and any six digits pass. `useLoginDirectory` picks the first active user who holds the persona's role.
 
@@ -828,7 +828,7 @@ Formulas below are copied from the code.
 
 | Action | Category | Target | Trigger | Where |
 | --- | --- | --- | --- | --- |
-| `Changed company access` | `ceiling` | Company name | `updateCompanyAccess`. Actor is `Platform admin`, role `Super-admin` | `store.ts` |
+| `Changed company access` | `ceiling` | Company name | `updatePlatformCompanyAccess`, demo only. Actor is `Platform admin`, role `Super-admin`. The API writes `company.access_changed` to `platform_audit_log` instead (see Real build) | `store.ts` |
 | `Changed branding` | `settings` | `Branding` | `updateSettings("branding")` | `store.ts` |
 | `Changed localization and tax` | `settings` | `Localization and tax` | `updateSettings("localization")` | `store.ts` |
 | `Changed number format` | `settings` | `Number format` | `updateSettings("numbers")` | `store.ts` |
@@ -867,7 +867,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **`branchLimit` is not enforced.** Nothing reads it except the company access form.
 - **Company status has no effect beyond sign-in.** The sign-in list filters on it and the companies page shows it. Nothing else reads it.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
-- **`updateCompanyAccess` has no check in the store.** Only the `/admin` layout guards it. The store would accept a patch that drops `platform`, whose switch is only disabled on screen.
+- **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
 - **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_PERMISSIONS` accepts either key. Only the tabs separate them.
 - **Most sensitive fields are hidden by the screens alone.** Product cost, margin and credit limit stay in the records `list` returns. Only pay rate and contract line estimated cost are removed by the store.
 - **The audit log is not a private collection.** `list("audit")` answers any viewer. Only the page checks `settings.audit.view`.
@@ -880,3 +880,30 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **A section is replaced whole.** Two people editing different tabs of `localization` would overwrite each other. The demo has one user at a time.
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
+
+## Real build (ADR 0052)
+
+Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. In api mode the /admin pages read and write it; demo mode works as described above. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052)", and the draft spec is docs/specs/platform-admin.md.
+
+The API follows this spec. Where it differs, it is in the safer direction, and each difference is in the 2026-11-15 row of docs/blueprint-delta.md:
+
+- **Who may open /admin.** In api mode the layout asks `GET /platform/me`. A platform admin is a person with an active `platform_admins` row whose role is `owner` or `support`, with MFA set up. Signed out, or MFA still to set up, goes to /login; anyone else goes to /. The API checks again on every request.
+- **Who may change access.** Only the platform `owner` role saves, after a step-up from the last 5 minutes. The `support` role reads and asks for support access, also after a step-up.
+- **The audit entry.** In api mode a save is written to the platform's own log, `platform_audit_log`, as `company.access_changed` with the admin, the IP and the device. Nothing is written to the company's audit log, so the company's Owner no longer sees "Changed company access" in Settings → Audit log in api mode. Writing a company's log from the console waits for the owner. The demo still writes its entry.
+- **The directory is restricted.** The access page shows the default roles of the company's products and no users. The Users panel says "The company's users and custom roles need support access, which isn't available yet." The demo still shows the fixture's roles and users.
+- **What a save refuses** (the same check runs in the demo store): a modules list without Platform; a module the company's products don't offer, or a hidden one such as Installation (rule 18), which keeps its stored setting; a key outside the company's products; a ceiling without `settings.users.view`, `settings.users.manage`, `settings.roles.view`, `settings.roles.manage` and `settings.audit.view`, because the ceiling binds the Owner too; a limit that is not a whole number from 1 to 100,000.
+- **Limits need a plan.** A company on a trial with no plan has no limits: its limit inputs are disabled ("On a trial with no plan there is no limit."), and the API refuses limits with 422 rather than create a subscription. A new limit is written to every subscription row that is not deleted, cancelled ones included, so it is the one that applies.
+- **A module set back to what the plan gives** loses its override, so an old "off" never outlives a later plan change.
+- **Database errors are hidden.** The company's facts show its database state and schema version, and only whether a migration failed: "Error details are hidden: they can hold the company's data."
+- **The data pages are not found in api mode.** Data import and Connect a database stay on the demo; their tabs show in demo mode only.
+- **One permission matrix** covers every module the company's products offer.
+
+**Known limits in api mode:**
+- **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
+- **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes when Settings → Locations moves to the API.
+- **The company app can look stale.** It still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403.
+- **A support admin sees the editor.** The screen does not know the admin's role, so a support admin can tick boxes and step up before the API's refusal shows.
+- **"Members"** counts people who can sign in, not seats in use.
+- **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
+- **The last save wins** when two admins edit one company. Both saves are in the platform audit log.
+- **Support access opens nothing yet**, and company status, plans and billing are later parts.

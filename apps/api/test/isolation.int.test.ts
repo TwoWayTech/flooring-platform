@@ -286,11 +286,17 @@ describe("company isolation (P9, needs the local PostgreSQL)", () => {
   });
 
   it("needs an open company on every route except the session-only ones", async () => {
-    // Session-only routes answer for themselves; with an empty body the two POSTs refuse it (400).
+    // Session-only routes answer for themselves: the step-up POST refuses an empty body (400), and
+    // the platform guard refuses someone who is not a platform admin (403) before any body check.
     const sessionOnly = new Map([
       ["GET /auth/context", 200],
       ["POST /auth/step-up", 400],
-      ["POST /platform/support-grants", 400],
+      ["GET /platform/me", 403],
+      ["GET /platform/companies", 403],
+      ["GET /platform/companies/:id", 403],
+      ["PATCH /platform/companies/:id/access", 403],
+      ["GET /platform/companies/:id/directory", 403],
+      ["POST /platform/support-grants", 403],
     ]);
     const noCompanyYet = await harness.signIn(await harness.addUser({ companyIds: [a.id, b.id] }));
     for (const route of checkedRoutes()) {

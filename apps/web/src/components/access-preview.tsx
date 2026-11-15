@@ -6,11 +6,12 @@ import {
   dataScope,
   permissionDef,
   resolveAccess,
+  PRODUCT_LABELS,
   SENSITIVE,
-  type Company,
   type ModuleKey,
   type PermissionKey,
-  type Role,
+  type ProductKey,
+  type RoleLike,
   type User,
 } from "@workspace/shared";
 import {
@@ -35,10 +36,15 @@ const SENSITIVE_LABELS: Record<keyof typeof SENSITIVE, string> = {
 
 const SCOPE_LABELS = { own: "Own records", branch: "Their branch", all: "Everything" } as const;
 
+/** A role as the preview needs it: a company's own role, or a default template given an id. */
+export type PreviewRole = RoleLike & { key: string; name: string };
+
 interface AccessPreviewProps {
-  company: Company;
-  roles: Role[];
-  users: User[];
+  /** The products whose pages are listed; a company with both products lists each one's pages. */
+  products: readonly ProductKey[];
+  roles: readonly PreviewRole[];
+  /** People to preview; the platform console has none while a company's users need support access. */
+  users: readonly User[];
   /** The ceiling and modules to preview under; the super-admin passes the draft plan before saving. */
   ceiling: PermissionKey[];
   modules: ModuleKey[];
@@ -63,7 +69,7 @@ function Allowed({ ok, children }: { ok: boolean; children: React.ReactNode }) {
  * every page, action and sensitive field they get. The super-admin uses it with the plan being
  * edited; a company admin uses it in Security roles with the plan as it is.
  */
-export function AccessPreview({ company, roles, users, ceiling, modules }: AccessPreviewProps) {
+export function AccessPreview({ products, roles, users, ceiling, modules }: AccessPreviewProps) {
   const [subject, setSubject] = useState(`role:${roles.find((r) => r.key === "sales")?.id ?? roles[0]?.id}`);
   const [kind, id] = subject.split(":") as ["role" | "user", string];
   const held =
@@ -71,7 +77,7 @@ export function AccessPreview({ company, roles, users, ceiling, modules }: Acces
       ? roles.filter((r) => r.id === id)
       : roles.filter((r) => users.find((u) => u.id === id)?.roleIds.includes(r.id));
   const access = resolveAccess(held, ceiling, modules);
-  const pages = pageList(company.product);
+  const people = users.filter((u) => u.status !== "disabled");
   const actions = [...access.permissions]
     .map((key) => permissionDef(key)!)
     .filter((def) => def.action !== "view" && def.action !== "view_sensitive");
@@ -91,16 +97,16 @@ export function AccessPreview({ company, roles, users, ceiling, modules }: Acces
               </SelectItem>
             ))}
           </SelectGroup>
-          <SelectGroup>
-            <SelectLabel>Users</SelectLabel>
-            {users
-              .filter((u) => u.status !== "disabled")
-              .map((u) => (
+          {people.length > 0 ? (
+            <SelectGroup>
+              <SelectLabel>Users</SelectLabel>
+              {people.map((u) => (
                 <SelectItem key={u.id} value={`user:${u.id}`}>
                   {u.name}
                 </SelectItem>
               ))}
-          </SelectGroup>
+            </SelectGroup>
+          ) : null}
         </SelectContent>
       </Select>
       <dl className="grid gap-4 sm:grid-cols-2">
@@ -113,18 +119,20 @@ export function AccessPreview({ company, roles, users, ceiling, modules }: Acces
           <dd className="text-sm font-medium">{SCOPE_LABELS[dataScope(held)]}</dd>
         </div>
       </dl>
-      <section aria-labelledby="preview-pages">
-        <h3 id="preview-pages" className="mb-2 text-sm font-semibold">
-          Pages
-        </h3>
-        <ul className="grid gap-1 sm:grid-cols-2">
-          {pages.map((page) => (
-            <Allowed key={page.href} ok={page.anyOf.some((k) => access.permissions.has(k))}>
-              {page.label}
-            </Allowed>
-          ))}
-        </ul>
-      </section>
+      {products.map((product) => (
+        <section key={product} aria-labelledby={`preview-pages-${product}`}>
+          <h3 id={`preview-pages-${product}`} className="mb-2 text-sm font-semibold">
+            {products.length > 1 ? `Pages in ${PRODUCT_LABELS[product]}` : "Pages"}
+          </h3>
+          <ul className="grid gap-1 sm:grid-cols-2">
+            {pageList(product).map((page) => (
+              <Allowed key={page.href} ok={page.anyOf.some((k) => access.permissions.has(k))}>
+                {page.label}
+              </Allowed>
+            ))}
+          </ul>
+        </section>
+      ))}
       <section aria-labelledby="preview-actions">
         <h3 id="preview-actions" className="mb-2 text-sm font-semibold">
           Actions ({actions.length})

@@ -5,10 +5,11 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/meetings-api-core` | B (Claude) | Meetings part 1 on the API: core, invites, `.ics`, reminders (worktree `../flooring-platform-meetings`) | Ready for merge once CI is green | [#33](https://github.com/TwoWayTech/flooring-platform/pull/33) | this commit |
+| `feat/platform-access-api` | B (Claude) | Platform admin part 1: the platform guard, companies and access on the API (main checkout) | Ready for merge once CI is green | [#34](https://github.com/TwoWayTech/flooring-platform/pull/34) | this commit |
+| `feat/meetings-api-moves` | B (Claude) | Meetings part 2: reschedule, undo, deciding proposals (worktree `../flooring-platform-meetings`) | In progress | [#35](https://github.com/TwoWayTech/flooring-platform/pull/35) (draft) | see the PR |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
-Merged on 2026-11-15: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee), self-merged by Claude under the CLAUDE.md rule.
+Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API).
 
 Merged on 2026-11-14: PR #31 (`fix/docs-handoff-2026-11-14`, `bd9155d`), the handoff after PRs #28 to #30. PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
 
