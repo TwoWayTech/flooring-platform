@@ -2080,6 +2080,123 @@ describe("commissions API (needs the local PostgreSQL)", () => {
       status(await approve(cookies.owner, setter.userId, M1), 201);
     });
 
+    /**
+     * An "Edited employee" entry from before the manager history began, as a People save writes it
+     * (people.service.ts `save`): `by` changed the manager `from` → `to` at `when`. Only these entries
+     * say who set the manager a since-records-began row holds (ADR 0048 "Self-made manager").
+     */
+    async function earlierManagerChange(
+      employeeId: string,
+      name: string,
+      by: string,
+      change: { from: string | null; to: string; when: Date },
+    ) {
+      await rows((db) =>
+        db.insert(auditLog).values({
+          at: change.when,
+          actorUserId: by,
+          actorRole: "HR manager",
+          category: "data",
+          action: "Edited employee",
+          targetType: "employee",
+          targetId: employeeId,
+          targetLabel: name,
+          before: { managerId: change.from },
+          after: { managerId: change.to },
+        }),
+      );
+    }
+
+    /**
+     * The row migration 0005 gave every live employee: since records began, the manager they had, and
+     * the employee row's own created_by, as no person recorded it.
+     */
+    async function backfilled(employeeId: string) {
+      await rows(async (db) => {
+        const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId));
+        await db.insert(employeeManagerHistory).values({
+          employeeId,
+          managerId: employee!.managerId,
+          effectiveFrom: null,
+          createdBy: employee!.createdBy,
+        });
+      });
+    }
+
+    // Third review of PR #32: the self-made guard on the rows migration 0005 wrote, which only the audit log
+    // can say who set (`withSetters` in commission-records.ts).
+    it("refuses the months of a backfilled manager the statement's own person set, read from the audit log, until someone else sets that manager again", async () => {
+      const setter = await manager("Sam Backfill");
+      const other = await manager("Opal Pick");
+      const rep = await newRep("Tia Migrated", { managerId: setter.employeeId, createdBy: ids.hrA });
+      // Before the history began the Owner made Opal Tia's manager, then Sam made himself her manager.
+      // Migration 0005 then wrote one since-records-began row naming Sam, created by hrA, who added Tia.
+      await earlierManagerChange(rep.employeeId, "Tia Migrated", ids.owner, {
+        from: null,
+        to: other.employeeId,
+        when: new Date("2024-02-01T15:00:00Z"),
+      });
+      await earlierManagerChange(rep.employeeId, "Tia Migrated", setter.userId, {
+        from: other.employeeId,
+        to: setter.employeeId,
+        when: new Date("2024-03-01T15:00:00Z"),
+      });
+      await backfilled(rep.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+      ]);
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-BF1", M1, "10");
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      // No dated row yet: the last manager change of all set the row, and that was Sam's own.
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // The Owner moves Tia to Opal today, her first dated row. That save's own audit entry comes after the
+      // row in the same transaction, so Sam's change stays the last one before the history began.
+      await moveTo(rep.employeeId, "Tia Migrated", other.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.hrA },
+        { managerId: other.employeeId, effectiveFrom: companyDay(), createdBy: ids.owner },
+      ]);
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+      refused(await approve(cookies.hrB, setter.userId, M1), SELF_MADE);
+
+      // The Owner sets Sam again: someone else has now chosen him, the backfilled days included.
+      await moveTo(rep.employeeId, "Tia Migrated", setter.employeeId);
+      status(await approve(cookies.owner, setter.userId, M1), 201);
+    });
+
+    // Third review of PR #32: a person with no history row gets their since-records-began row from the first
+    // People save, created by that editor, who did not set the manager it holds.
+    it("reads who set the manager a person had before their first People save from the audit log, not from that save or a later one", async () => {
+      const setter = await manager("Seb Unrecorded");
+      const other = await manager("Otis Other");
+      // Uma was added outside the app, so no history row records that Seb made himself her manager.
+      const rep = await newRep("Uma Unrecorded", { managerId: setter.employeeId, createdBy: ids.hrA });
+      await earlierManagerChange(rep.employeeId, "Uma Unrecorded", setter.userId, {
+        from: null,
+        to: setter.employeeId,
+        when: new Date("2024-03-01T15:00:00Z"),
+      });
+      await assignOverride(rep.userId);
+      await sale(rep.userId, "INV-FE1", M1, "10");
+      expect(await overrideOf(setter.userId, M1)).toBe("20.00");
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // The Owner's save writes both rows, each created by the Owner, and its audit entry in one transaction.
+      await moveTo(rep.employeeId, "Uma Unrecorded", other.employeeId);
+      expect(await historyOf(rep.employeeId)).toEqual([
+        { managerId: setter.employeeId, effectiveFrom: null, createdBy: ids.owner },
+        { managerId: other.employeeId, effectiveFrom: companyDay(), createdBy: ids.owner },
+      ]);
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+
+      // A later save, here clearing her manager, does not move where the history began: the first dated row.
+      await moveTo(rep.employeeId, "Uma Unrecorded", null);
+      refused(await approve(cookies.owner, setter.userId, M1), SELF_MADE);
+    });
+
     // First review of PR #32: `paysActorOverride` counts every manager in the window, not only today's.
     it("refuses a past manager in the statements' window an override assignment or an override plan edit for that person", async () => {
       const next = await manager("Ned Next");
