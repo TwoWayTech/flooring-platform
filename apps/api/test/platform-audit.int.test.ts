@@ -165,7 +165,14 @@ describe("platform audit log API (P11 part 3, needs the local PostgreSQL)", () =
         .sort((x, y) => (x.at === y.at ? y.id.localeCompare(x.id) : y.at.localeCompare(x.at)))
         .map((row) => row.id);
     const ofA = rows.filter((row) => row.tenantId === a);
-    expect((await allPages(owner, `companyId=${a}`, 3)).map((entry) => entry.id)).toEqual(newestFirst(ofA));
+    // a's newest first: the two rows at 02.000000, then 01.0, 00.123457 and 00.123456. A limit of 1 puts
+    // a page boundary between every pair, so between the two rows of the same `at` (only the id
+    // tie-break keeps both) and between the two 1 µs apart (a cursor cut to milliseconds skips one);
+    // 2 and 4 put one between the two 1 µs apart, and 3 one between 01.0 and 00.123457.
+    for (const limit of [1, 2, 3, 4]) {
+      const paged = (await allPages(owner, `companyId=${a}`, limit)).map((entry) => entry.id);
+      expect({ limit, paged }).toEqual({ limit, paged: newestFirst(ofA) });
+    }
     const firstPage = await audit(owner, `?companyId=${a}&limit=3`);
     expect(firstPage.nextCursor).toBe(firstPage.entries[2].id);
     const recoveredOfA = ofA.filter((row) => row.action === "company.migration_recovered");

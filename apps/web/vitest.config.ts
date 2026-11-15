@@ -9,5 +9,5 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   oxc: { jsx: { runtime: "automatic" } },
-  test: { include: ["tests/unit/**/*.test.ts"] },
+  test: { include: ["tests/unit/**/*.test.{ts,tsx}"] },
 });

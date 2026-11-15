@@ -1,4 +1,3 @@
-import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -353,9 +352,13 @@ describe("access page locks and role", () => {
   });
 
   it("reads the least privilege without a provider and the given role inside one", () => {
-    const Probe = () => createElement("span", null, usePlatformRole());
-    expect(renderToStaticMarkup(createElement(Probe))).toBe("<span>support</span>");
-    const inside = createElement(PlatformRoleProvider, { role: "owner", children: createElement(Probe) });
+    const Probe = () => <span>{usePlatformRole()}</span>;
+    expect(renderToStaticMarkup(<Probe />)).toBe("<span>support</span>");
+    const inside = (
+      <PlatformRoleProvider role="owner">
+        <Probe />
+      </PlatformRoleProvider>
+    );
     expect(renderToStaticMarkup(inside)).toBe("<span>owner</span>");
   });
 });

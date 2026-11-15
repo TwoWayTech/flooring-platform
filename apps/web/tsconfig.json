@@ -18,6 +18,7 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "tests/**/*.ts",
+    "tests/**/*.tsx",
     "playwright.config.ts",
     "playwright.api.config.ts"
   ],
