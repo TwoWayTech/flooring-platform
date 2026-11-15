@@ -31,6 +31,28 @@ const companyDatabaseImports = {
 /** The same rules, with job handlers allowed to use JobTenants. */
 const jobHandlerImports = { paths: companyDatabaseImports.paths };
 
+/**
+ * The platform console names a company by its id, for control-database rows only (ADR 0052;
+ * docs/api-contract.md, Tenancy). So on top of the rules above, nothing in modules/platform may
+ * import the way to a company database or its schema, even for types.
+ */
+const platformImports = {
+  paths: [
+    ...companyDatabaseImports.paths,
+    {
+      name: "@workspace/db/company",
+      message: "The platform console reads only the control database (ADR 0052).",
+    },
+  ],
+  patterns: [
+    ...companyDatabaseImports.patterns,
+    {
+      group: ["**/tenancy/tenant-connection.service", "**/tenancy/tenant-context"],
+      message: "A platform route names a company for control rows only, never for its database (ADR 0052).",
+    },
+  ],
+};
+
 const tenantContextMessage =
   "Only TenantGuard (from the verified session) and the job runner build a TenantContext (CLAUDE.md rule 2).";
 
@@ -66,6 +88,10 @@ export default tseslint.config(
       "src/modules/finance/recurring-expenses.job.ts",
     ],
     rules: { "no-restricted-imports": ["error", jobHandlerImports] },
+  },
+  {
+    files: ["src/modules/platform/**/*.ts"],
+    rules: { "no-restricted-imports": ["error", platformImports] },
   },
   {
     files: ["src/core/tenancy/tenant.guard.ts", "src/core/tenancy/tenant-context.ts", "src/core/jobs/job-tenants.ts"],
