@@ -258,3 +258,82 @@ export interface SupportRequestInput {
   reason: string;
   hours: number;
 }
+
+/**
+ * Where the session's own company stands, as `GET /company/standing` answers (docs/specs/platform-admin.md,
+ * "Part 4: the company side"): what its next company request meets, in TenantGuard's order.
+ * `maintenance`, `unavailable` and `locked` block every company route; `read_only` refuses writes.
+ */
+export type CompanyStandingState = "full" | "read_only" | "locked" | "maintenance" | "unavailable";
+
+/**
+ * The body of `GET /company/standing` (spec part 4, "GET /company/standing"). Every member gets the
+ * same answer, and it carries nothing else: no reason, date, plan or status word.
+ */
+export interface CompanyStanding {
+  state: CompanyStandingState;
+}
+
+/**
+ * One subscription row's standing on the Owner's billing page (spec part 4, "CompanyBillingSubscription"):
+ * from its status and whether its period has ended. `unknown` for a status or end that can't be read.
+ */
+export type SubscriptionStanding =
+  "current" | "past_due" | "overdue" | "trial" | "trial_ended" | "cancelled" | "unknown";
+
+/**
+ * One live subscription row as the Owner's billing page shows it (spec part 4, "CompanyBillingSubscription").
+ * It never carries a price, an id, a plan key or a limit override.
+ */
+export interface CompanyBillingSubscription {
+  planName: string;
+  product: ProductKey;
+  interval: "monthly" | "yearly";
+  /** ISO moments. */
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  standing: SubscriptionStanding;
+}
+
+/** Why a company in full use or read only shows the Owner a read-only notice (spec part 4, "The Owner's notice"). */
+export type ReadOnlyReason = "suspended" | "cancelled" | "payment_lapsed" | "trial_ended" | "database" | "account";
+
+/**
+ * The notice the Owner's banner and billing page show (spec part 4, "The Owner's notice"): a paid
+ * period that ended inside its grace or is past due, or a read-only account with the reason. Dates
+ * are ISO moments, or null when unknown or never reached.
+ */
+export type OwnerBillingNotice =
+  | { kind: "payment_overdue"; since: string | null; readOnlyFrom: string | null }
+  | { kind: "read_only"; reason: ReadOnlyReason; since: string | null; lockedFrom: string | null };
+
+/**
+ * The body of `GET /billing`, the Owner's read-only billing (spec part 4, "GET /billing"). Read from
+ * control tables only. No price, payment detail, user id or seat count is ever part of it.
+ */
+export interface CompanyBilling {
+  /** `tenants.status` as stored. */
+  status: LifecycleStatus;
+  /** `companyPhase`, the rule TenantDirectory uses; `locked` never reaches the route. */
+  phase: CompanyPhase;
+  /** The live rows, oldest first; empty for a fresh trial and when every row is deleted. */
+  subscriptions: CompanyBillingSubscription[];
+  /** Null means no limit. The branch limit is stored, not enforced. */
+  limits: { userLimit: number | null; branchLimit: number | null };
+  notice: OwnerBillingNotice | null;
+}
+
+/**
+ * A support-access request as the company's Owner sees it in Settings → Users (spec part 4, "The
+ * support-access routes"; `GET /support-grants`). It names the admin who asked, never the approver
+ * or an admin id; `status` comes from the shared `supportGrantStatus`.
+ */
+export interface CompanySupportGrant {
+  id: string;
+  adminName: string;
+  reason: string;
+  /** ISO moments. */
+  requestedAt: string;
+  expiresAt: string;
+  status: SupportGrantStatus;
+}

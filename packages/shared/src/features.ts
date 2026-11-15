@@ -484,6 +484,14 @@ export const FEATURES = {
     enabled: true,
     screens: ["/settings/audit"],
   },
+  "settings.billing": {
+    title: "Billing (Owner, read only)",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/settings/billing"],
+  },
   "admin.access": {
     title: "Platform admin: plans, modules and ceilings",
     product: "both",

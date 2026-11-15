@@ -108,6 +108,7 @@ describe("feature for a page", () => {
       ["hr", "/hr/time-off", "hr.time-off"],
       ["hr", "/meetings", "meetings.calendar"],
       ["flooring", "/settings/roles", "settings.roles"],
+      ["flooring", "/settings/billing", "settings.billing"],
       ["flooring", "/admin/companies/summit", "admin.access"],
     ];
     for (const [product, href, key] of cases) expect(featureForPath(product, href), href).toBe(key);
