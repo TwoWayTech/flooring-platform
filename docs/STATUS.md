@@ -136,6 +136,10 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
     - Add the `audit_log` block-update-and-delete trigger to `employee_manager_history`.
     - The 0005 backfill insert has no guard against rows that already exist; it is safe on the migration path.
     - Consider whether `(employee_id, effective_from)` should be unique: same-day rows are ordered by id today.
+- **The company's day on the web client:** `api.today()` is the browser's day in api mode too: DemoStore's `todayIso` is `format(new Date())`, and about 55 screen call sites use it for default dates. A browser in a different zone from the company (Summit is on America/Denver) gets a default that is the company's tomorrow during its evening. The API refuses it ("An expense can't be dated in the future."), so nothing wrong is saved, but the form stops the person.
+  - CI hit this: PR #32's `verify` ran at 01:44 UTC, and `expenses.spec.ts` failed. It would fail on main too, every day from 00:00 to 07:00 UTC.
+  - `playwright.api.config.ts` now runs the browser in America/Denver.
+  - Fix: in api mode, work out `today()` in the company's time zone, once the client has the zone.
 - **API test log noise:** "Do not know how to serialize a BigInt" is logged during `pnpm test:api` on main (seen 2026-11-15, Part A checks); tests still pass. Find the logger call that gets a bigint and send it as a string.
 - **Commission carry-out column:** the carry is derived from each person's whole history (ADR 0048, PR #27 first review); store `carry_out` on `commission_statements` at approval when a migration is next allowed, so an approved month's carry is frozen like its payable.
 - **Required check on a paid GitHub plan:** when the repository moves to a paid GitHub plan, make `verify` (which runs the isolation suite) a required check on `main`. GitHub Free cannot enforce it on a private repository, so until then the CLAUDE.md self-merge rule is the guard (owner decision, 2026-11-13).

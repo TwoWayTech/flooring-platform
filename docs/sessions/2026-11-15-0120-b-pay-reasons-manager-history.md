@@ -109,6 +109,14 @@ Plan steps 1 to 6 are built on draft PR #32, except the STATUS and BRANCHES edit
 
   "Do not know how to serialize a BigInt" is logged twice, as on main (STATUS follow-up).
 
+## CI
+- **First `verify` on `64f4555`, 01:44 UTC: failed.** The failure was in `apps/web/tests/e2e-api/expenses.spec.ts`: "An expense can't be dated in the future." instead of the receipt message. The cause is not this PR.
+  - The api-mode web client takes today's date from the browser, and CI's browser is on UTC.
+  - At 01:44 UTC it was still 2026-11-14 in Denver, so the form's default date was the API's tomorrow.
+  - This fails on main too, every day from 00:00 to 07:00 UTC.
+- **Fix:** `playwright.api.config.ts` sets `timezoneId: "America/Denver"`, the seeded company's zone, so the browser runs like Summit's staff. The product issue is a STATUS follow-up (the company's day on the web client).
+- Checked locally at 01:47 UTC, inside the failing window: `expenses.spec.ts` passes with the fix, and fails without it in a UTC browser with the same message as CI.
+
 ## Left
 - STATUS, BRANCHES and the reviews are done (`8df1b1e` and this commit). The PR goes ready, then self-merges when `verify` and `e2e` are green.
 - **Owner questions** (STATUS):
