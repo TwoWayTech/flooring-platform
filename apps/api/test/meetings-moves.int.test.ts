@@ -786,6 +786,148 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     );
   });
 
+  it("puts the reminder back after an undo and keeps titles, emails and notes out of every audit entry", async () => {
+    const made = await schedule(cookies.manager, {
+      title: "Cabinet walkthrough",
+      notes: "Gate code is a secret",
+      guests: [staff(ids.employee)],
+      newGuests: [{ email: "walk@outside.example", name: "Wanda Walker" }],
+    });
+    const result = await moved(cookies.manager, made, {
+      planned: made.start,
+      start: at("11-14", "13:00"),
+      scope: "all",
+    });
+    expect((await waitingReminders(made.id))[0]?.scheduledFor).toEqual(new Date(`${YEAR}-11-14T18:45:00.000Z`));
+    status(await undo(cookies.manager, made.id, result.undo.previous.sequence), 201);
+    const [reminder, ...more] = await waitingReminders(made.id);
+    expect(more).toEqual([]);
+    expect(reminder?.scheduledFor).toEqual(new Date(`${YEAR}-11-10T14:45:00.000Z`));
+    const entries = await entriesOf(made.id);
+    expect(entries.map((row) => row.action)).toEqual(expect.arrayContaining(["Moved meeting", "Undid meeting move"]));
+    expect(JSON.stringify(entries.map((row) => [row.before, row.after]))).not.toMatch(
+      /Cabinet|secret|Wanda|walk@|outside\.example/,
+    );
+  });
+
+  it("undoes only the last move: an older toast is refused, the newest answers, and the undo itself can't be undone", async () => {
+    const made = await schedule(cookies.manager, { title: "Two moves", guests: [staff(ids.employee)] });
+    const first = await moved(cookies.manager, made, {
+      planned: made.start,
+      start: at("11-10", "10:00"),
+      scope: "all",
+    });
+    const second = await moved(cookies.manager, made, {
+      planned: at("11-10", "10:00"),
+      start: at("11-10", "12:00"),
+      scope: "all",
+    });
+    expect(second.undo.previous.sequence).toBe(first.meetings[0]!.sequence);
+    conflicted(await undo(cookies.manager, made.id, first.undo.previous.sequence), "meeting_changed");
+    expect(await storedMeeting(made.id)).toMatchObject({ sequence: 2 });
+    const undone = await undo(cookies.manager, made.id, second.undo.previous.sequence);
+    status(undone, 201);
+    expect(undone.body).toMatchObject({ start: at("11-10", "10:00") });
+    conflicted(await undo(cookies.manager, made.id, second.undo.previous.sequence), "meeting_changed");
+  });
+
+  it("counts an undo and a decision against the daily email limits and writes nothing when over", async () => {
+    const mover = await member(["manager"], "Cap Mover");
+    const cookie = await harness.signIn(mover.email);
+    const made = await schedule(cookie, {
+      title: "Cap undo",
+      guests: [staff(ids.employee)],
+      newGuests: [{ email: "capundo@outside.example", name: "" }],
+    });
+    const result = await moved(cookie, made, { planned: made.start, start: at("11-11", "09:00"), scope: "all" });
+    const fill = (outside: number) =>
+      rows((db) =>
+        db.insert(auditLog).values({
+          actorUserId: mover.userId,
+          category: "data",
+          action: "Scheduled meeting",
+          targetType: "meeting",
+          targetId: uuidv7(),
+          after: { sends: { outside, total: outside } },
+        }),
+      );
+    const proposed = await schedule(cookie, {
+      title: "Cap decision",
+      guests: [staff(ids.employee)],
+      newGuests: [{ email: "capdecide@outside.example", name: "" }],
+    });
+    status(
+      await answer(cookies.employee, proposed.id, {
+        partStat: "accepted",
+        proposal: { start: at("11-12", "10:00"), durationMin: 60, note: "" },
+      }),
+      201,
+    );
+    await fill(200);
+    const blocked = await undo(cookie, made.id, result.undo.previous.sequence);
+    status(blocked, 400);
+    expect(blocked.body.message).toMatch(/at most 200 emails a day/);
+    expect(await storedMeeting(made.id)).toMatchObject({ sequence: 1 });
+    expect((await entriesOf(made.id)).some((row) => row.action === "Undid meeting move")).toBe(false);
+
+    const accept = await call("post", `/meetings/${proposed.id}/attendees/${ids.employee}/proposal`, cookie).send({
+      accept: true,
+    });
+    status(accept, 400);
+    expect(accept.body.message).toMatch(/at most 200 emails a day/);
+    expect(await storedMeeting(proposed.id)).toMatchObject({ sequence: 0 });
+  });
+
+  it("sends a DECLINECOUNTER each time a proposal is declined, keeps the version, and writes audit entries without notes", async () => {
+    const made = await schedule(cookies.manager, { title: "Counter twice", guests: [staff(ids.employee)] });
+    const propose = (note: string) =>
+      answer(cookies.employee, made.id, {
+        partStat: "accepted",
+        proposal: { start: at("11-13", "10:00"), durationMin: 60, note },
+      });
+    const decline = () =>
+      call("post", `/meetings/${made.id}/attendees/${ids.employee}/proposal`, cookies.manager).send({ accept: false });
+    status(await propose("Private note one"), 201);
+    status(await decline(), 201);
+    status(await propose("Private note two"), 201);
+    status(await decline(), 201);
+    const counters = (await invitesOf(made.id)).filter((row) => row.values["meeting.action"] === "Proposal declined");
+    expect(counters).toHaveLength(2);
+    for (const row of counters) expect(fileOf(row)).toContain("METHOD:DECLINECOUNTER");
+    expect(await storedMeeting(made.id)).toMatchObject({ sequence: 0, rescheduleSequence: 0 });
+    refused(await decline(), "There is no proposal waiting from this guest.");
+    const entries = (await entriesOf(made.id)).filter((row) => row.action === "Declined proposed time");
+    expect(entries).toHaveLength(2);
+    expect(JSON.stringify(entries.map((row) => [row.before, row.after]))).not.toMatch(/Private note|Counter twice|@/);
+  });
+
+  it("allows at most 100 occurrences of a series changed on their own", async () => {
+    const start = at("11-10");
+    const made = await schedule(cookies.manager, { title: "Many changes", recurrence: "weekly", start });
+    await rows((db) =>
+      db
+        .update(meetings)
+        .set({
+          exceptions: Array.from({ length: 100 }, (_, i) => {
+            const planned = addDays(start, 7 * (i + 1));
+            return { planned, start: planned.replace("09:00", "11:00") };
+          }),
+        })
+        .where(eq(meetings.id, made.id)),
+    );
+    const planned = addDays(start, 7 * 101);
+    const response = await call("post", `/meetings/${made.id}/reschedule`, cookies.manager).send({
+      planned,
+      start: planned.replace("09:00", "10:00"),
+      durationMin: 60,
+      scope: "this",
+    });
+    status(response, 400);
+    expect(response.body.message).toMatch(/at most 100 occurrences/);
+    expect((await storedMeeting(made.id)).exceptions).toHaveLength(100);
+    expect((await entriesOf(made.id)).some((row) => row.action === "Moved meeting")).toBe(false);
+  });
+
   it("answers every one of several moves and an undo sent at once: no second pool connection inside a transaction", async () => {
     const made = await Promise.all(
       [0, 1, 2, 3, 4].map((i) => schedule(cookies.manager, { title: `Burst ${i}`, guests: [staff(ids.employee)] })),
