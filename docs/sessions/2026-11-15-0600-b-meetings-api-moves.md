@@ -510,3 +510,39 @@ Three findings, each confirmed by a skeptic: one blocking and two should fix. Al
 - Review round 3 of PR #35 is fixed (above): an overlapping "this and following", an exception put out of the calendar's reach, and a series change that would leave an occurrence already held at a date still ahead are refused; a split and undo with exceptions is tested at route level.
 - **Next:** a fresh security-reviewer pass on the round 1 fixes (the start bound, the conflict query, the window rule); then mark the PR ready, wait for `verify` and `e2e`, and self-merge under the CLAUDE.md rule. Then part 3, the web on the API.
 - **Open for the owner:** the questions under "For the owner" above, also in ADR 0051.
+
+## Final checks (orchestrating session, merged head `3f6f7a6`)
+- **Merge of main.** `bb3e81f` (platform admin part 1, PR #34) merged in as `3f6f7a6`. One conflict, in docs/blueprint-delta.md: both rows kept, this one first.
+- **STATUS and BRANCHES** updated in `0f3e4e3`: the PR #35 entry, the part 2 owner questions and residual risks, PR #34 recorded as merged, and the platform part 3 branch.
+- **Full checks** through the lock, with the CI database variables (this worktree has no local env file), all exit 0: `pnpm lint`, `pnpm typecheck`, `pnpm test` (shared 667, api 72, web 33, db 11, providers 11) and `pnpm test:api` (api 465, db 45, providers 2).
+- **Not run locally:** Playwright, because no screen changed. CI's `verify` and `e2e` run the demo and api-mode suites.
+
+## Final review of PR #35 (head `0f3e4e3`)
+Three should-fix findings on correctness, each confirmed by a skeptic. All three are fixed, with two cheap notes. Owner asleep, so each choice is the safest one and is recorded in ADR 0051 "Part 2" ("Final review of PR #35", safest options 4 to 6, "For the owner (part 2)", residual risks) and in the part 2 row of docs/blueprint-delta.md.
+
+### Fixes
+- **"All events" from an occurrence moved on its own** (`packages/shared/src/meetings/moves.ts`): rule 4's shift kept that occurrence at its own time, so it stayed put while the series moved, and the conflict check looked at a slot it did not hold. `moveProblem` now refuses "all" when `planned` names a live exception with its own start or length (`changedOnItsOwn`): 400 "This occurrence was changed on its own. Choose This event, or move another occurrence to move all events.", nothing written. "This and following" from such an occurrence was checked and is not refused: the split drops the exception at `planned`, so the new series starts at the new time and length, the slot the conflict check names.
+- **Undo of "this event"** (`MeetingMoves.undoPlans`): its series REQUEST now passes `resendExceptions: true`, as every other series REQUEST does. The restored occurrence's REQUEST goes only when the re-sends do not already carry its RECURRENCE-ID, so one Outbox version is never planned twice and the caps count it once.
+- **Held occurrences on every series REQUEST** (`editProblem`, `undoneSeriesProblem`): `leftBehindProblem` now runs on every edit of a series that changes a field and on every undo, "this event" included, with round 3's choice kept (refused until the held occurrence's planned slot ends). `leftBehindProblem` takes the message's last sentence: "Edit the series after that date." for an edit that changes no time, "Move the occurrence back with This event instead." for an undo of "this event".
+- **Notes:** `MeetingSends.plan` deduplicates the colleague ids before `activeMembers`; the conflict query (`meetingsSharing`, now exported for its test) reads a series only while its `until` is not before the day, unless it has exceptions, which can be moved past `until`.
+
+### Decisions
+- **Refuse, not carry along:** making "all" move the dragged occurrence to the new time would change rule 4's shift; refusing writes nothing wrong and leaves This event and This and following.
+- **The length counts too:** a resized-only exception would keep its old length while the series and the conflict check took the new one, so it is refused as well. The message says "changed", as the other exception messages do.
+- **"Following" is not refused:** it has no such flaw (above). Its old-UID override past the new UNTIL is the stray-override risk every split carries, now named in the residual risks.
+- **One held-occurrence rule for every series REQUEST,** whether or not invites are on, as round 3's rule is; a change of nothing still writes nothing and is never refused.
+- **The conflict query is narrowed** rather than its docstring corrected: `until` and the day are both local dates, compared as the shared rule compares them, and series with exceptions stay in.
+
+### Tests added
+- packages/shared `meeting-moves`: "all" from a moved and from a resized-only occurrence refused; "all" from another occurrence, "this event" and "this and following" from it taken, the split's dragged occurrence found at the new time by `meetingOccurrences` and named by `movedOccurrenceKey`; an undo of "this event" refused while one is held early, taken once that date passes and with nothing held. `meeting-changes`: a title, place, notes and reminder edit refused while one is held early; taken after the date, with nothing held, with an exception still ahead, on a one-off and with no change.
+- `apps/api/test/meetings-moves.int.test.ts`, now 30 cases: "all" from an occurrence moved on its own refused with the row, the Outbox and the audit log unchanged, and "this and following" from it starting at the new time; an undo of "this event" re-sending a second exception at the undo's SEQUENCE, and, after that exception is moved again and undone, it goes once (audit `sends` totals 3 and 2); the held-occurrence case extended with a place and a title edit and an undo of "this event" refused, and a place edit taken once nothing is held; the narrowed conflict query read directly (open, ending that day and moved past its end read, ended not) with the move's warning unchanged.
+
+### Docs
+- ADR 0051: the move refusals, conflicts "Which meetings", undo check 5 and its sends, "Series exceptions sent again", a "Final review of PR #35" section, safest options 4 to 6, "Kept as meetings.md says", "For the owner (part 2)" (the held-occurrence question now covers every series edit and undo; a new one on "all" from a moved occurrence), residual risks (the held-occurrence one widened, a new one for "all", the wrong "as before the move" line removed, splits named under stray overrides) and the test count.
+- The blueprint-delta part 2 row, meetings.md ("Moves refused", "Undo", "An undo also sends", "Series exceptions") and api-contract.md (`PATCH /meetings/:id`, `POST /meetings/:id/reschedule`, the undo row and "Undo answers").
+
+### Checks run (this round)
+- Integration `meetings-moves`: 30 of 30; `meetings`: 32 of 32. `apps/api` unit `meeting-undo`: 2 of 2.
+- packages/shared `vitest run`: 55 files, 669 tests passed.
+- `pnpm -s typecheck`: 6 of 6, and web forced past the cache: passed. `pnpm -s lint`: 6 of 6, with Prettier clean.
+- Not run: Playwright and `next build` (no screen changed, and forbidden on this laptop).
