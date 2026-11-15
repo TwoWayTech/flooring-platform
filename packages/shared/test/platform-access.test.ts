@@ -3,6 +3,7 @@ import { enabledModules, type ModuleOverride, type PlanModules } from "../src/pe
 import { ALL_PERMISSION_KEYS, isPermissionKey, permissionDef, type PermissionKey } from "../src/permissions/catalog";
 import {
   ACCESS_LIMIT_MESSAGE,
+  ACCESS_NO_PLAN_MESSAGE,
   accessDiff,
   accessPatchProblem,
   ceilingRowsFor,
@@ -16,8 +17,17 @@ import {
   type AccessState,
   type ModuleOverrideChange,
 } from "../src/platform/access-patch";
-import { isPlatformAdminRole, PLATFORM_ADMIN_ROLES } from "../src/platform/admin-roles";
+import {
+  isPlatformAdminRole,
+  mayChangeCompanyAccess,
+  PLATFORM_ADMIN_ROLES,
+  PLATFORM_DEFAULT_WRITE_ROLES,
+  seesAllSupportGrants,
+  seesAuditNetwork,
+  seesSupportReason,
+} from "../src/platform/admin-roles";
 import { inModuleOrder, isModuleKey, PRODUCT_MODULES, type ModuleKey, type ProductKey } from "../src/products";
+import type { PlatformAdminRole } from "../src/types/platform";
 
 const FLOORING: ProductKey[] = ["flooring"];
 const HR: ProductKey[] = ["hr"];
@@ -44,7 +54,7 @@ const PROTECTED_MISSING = {
     "A company always keeps the Users, Security roles and Audit log permissions, so it can manage its own people.",
 };
 const LIMIT_RANGE = { status: 400, message: "Enter a whole number from 1 to 100,000." };
-const NO_PLAN = { status: 422, message: "This company is on a trial with no plan, so it has no limits to change." };
+const NO_PLAN = { status: 422, message: ACCESS_NO_PLAN_MESSAGE };
 
 /** The overrides a company holds after a save applies its changes to the stored rows. */
 function applied(stored: readonly ModuleOverride[], changes: readonly ModuleOverrideChange[]): ModuleOverride[] {
@@ -220,6 +230,11 @@ describe("accessPatchProblem (platform-admin spec, Validations)", () => {
     const textLimit: AccessPatchInput = JSON.parse('{"branchLimit": "5"}');
     expect(accessPatchProblem(PAID, nullLimit)).toEqual(LIMIT_RANGE);
     expect(accessPatchProblem(PAID, textLimit)).toEqual(LIMIT_RANGE);
+  });
+
+  it("says the company has no plan, without naming its status (PR #34 final review notes)", () => {
+    expect(ACCESS_NO_PLAN_MESSAGE).toBe("This company has no plan, so it has no limits to change.");
+    expect(ACCESS_NO_PLAN_MESSAGE.toLowerCase()).not.toContain("trial");
   });
 
   it("refuses limits with 422 when no subscription row holds them, never by creating one", () => {
@@ -469,6 +484,49 @@ describe("isPlatformAdminRole (platform-admin spec, Who uses it; review A4)", ()
   it("denies any other stored value", () => {
     for (const role of ["billing", "admin", "", "Owner", "owner ", "support\n"])
       expect(isPlatformAdminRole(role)).toBe(false);
+  });
+});
+
+describe("platform role rules (platform-admin spec, Who may call what (part 3); ADR 0053)", () => {
+  const UNKNOWN_ROLE = "billing" as PlatformAdminRole;
+  const owner = { role: "owner" as const, userId: "admin-owner" };
+  const support = { role: "support" as const, userId: "admin-support" };
+
+  it("lets only the owner role write by default, from the one shared list", () => {
+    expect(PLATFORM_DEFAULT_WRITE_ROLES).toEqual(["owner"]);
+    expect(mayChangeCompanyAccess("owner")).toBe(true);
+    expect(mayChangeCompanyAccess("support")).toBe(false);
+    expect(mayChangeCompanyAccess(UNKNOWN_ROLE)).toBe(false);
+  });
+
+  it("shows the audit log's addresses and devices to the owner role only", () => {
+    expect(seesAuditNetwork("owner")).toBe(true);
+    expect(seesAuditNetwork("support")).toBe(false);
+    expect(seesAuditNetwork(UNKNOWN_ROLE)).toBe(false);
+  });
+
+  it("shows every admin's support requests to the owner role only", () => {
+    expect(seesAllSupportGrants("owner")).toBe(true);
+    expect(seesAllSupportGrants("support")).toBe(false);
+    expect(seesAllSupportGrants(UNKNOWN_ROLE)).toBe(false);
+  });
+
+  it("lets the owner role read any support reason, including one with no requester", () => {
+    for (const requester of ["admin-owner", "admin-support", "someone-else", null]) {
+      expect(seesSupportReason(owner, requester)).toBe(true);
+    }
+  });
+
+  it("lets the support role read only its own support reasons", () => {
+    expect(seesSupportReason(support, "admin-support")).toBe(true);
+    expect(seesSupportReason(support, "admin-owner")).toBe(false);
+    expect(seesSupportReason(support, "ADMIN-SUPPORT")).toBe(false);
+  });
+
+  it("never counts a missing or empty requester as the viewer (deny by default)", () => {
+    expect(seesSupportReason(support, null)).toBe(false);
+    expect(seesSupportReason({ role: "support", userId: "" }, "")).toBe(false);
+    expect(seesSupportReason({ role: UNKNOWN_ROLE, userId: "admin-x" }, "admin-y")).toBe(false);
   });
 });
 
