@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { companyPhase, type LifecycleFacts, type LifecycleSubscription } from "../src/permissions/company-lifecycle";
+import {
+  companyEverPaid,
+  companyPhase,
+  type LifecycleFacts,
+  type LifecycleSubscription,
+} from "../src/permissions/company-lifecycle";
 
 const DAY = 86_400_000;
 const now = new Date("2026-11-13T12:00:00Z");
@@ -95,5 +100,17 @@ describe("companyPhase (owner decisions 2026-11-13)", () => {
     expect(
       companyPhase(facts({ status: "cancelled", statusChangedAt: daysAgo(60), subscriptions: [deletedPaid] }), now),
     ).toBe("read_only");
+  });
+});
+
+describe("companyEverPaid (platform-admin spec part 2, statusAfter check 5; CS-0)", () => {
+  it("counts any paid row, deleted ones included, and no trial or free cancelled row", () => {
+    expect(companyEverPaid([])).toBe(false);
+    expect(companyEverPaid([sub({ status: "trial", price: "0" })])).toBe(false);
+    expect(companyEverPaid([sub({ status: "cancelled", price: "0.00" })])).toBe(false);
+    expect(companyEverPaid([sub({ status: "cancelled", price: "12.00" })])).toBe(true);
+    expect(companyEverPaid([sub({ deleted: true })])).toBe(true);
+    expect(companyEverPaid([sub({ status: "past_due", price: "0.00" })])).toBe(true);
+    expect(companyEverPaid([sub({ price: "0.00" })])).toBe(true);
   });
 });

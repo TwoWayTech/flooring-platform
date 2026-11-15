@@ -1,13 +1,20 @@
+import { featureOn, FEATURES, type FeatureRegister } from "../features";
 import { ALL_PERMISSION_KEYS } from "../permissions/catalog";
+import type { LifecycleStatus } from "../permissions/company-lifecycle";
+import { MODULES } from "../products";
 import type {
   PlatformAuditAction,
   PlatformAuditActor,
   PlatformAuditDetails,
   PlatformAuditLimitChange,
+  PlatformAuditPlanChange,
   PlatformAuditView,
 } from "../types/platform";
-import { seesAuditNetwork, seesSupportReason, type SupportReasonViewer } from "./admin-roles";
-import { SUPPORT_REASON } from "./support-grants";
+import { isAccessLimit } from "./access-patch";
+import { ADMIN_REASON } from "./admin-reason";
+import { seesAdminReason, seesAuditNetwork, seesSupportReason, type SupportReasonViewer } from "./admin-roles";
+import { isLifecycleStatus } from "./company-status";
+import { isPlanProduct, PLAN_CHANGE_FIELDS, PLAN_KEY, PLAN_NAME, PLAN_PRICE, type PlanChangeField } from "./plans";
 
 /*
  * The platform audit log as the console reads it (docs/specs/platform-admin.md, "GET
@@ -20,9 +27,9 @@ import { SUPPORT_REASON } from "./support-grants";
 export type PlatformAuditActorKind = "platform_admin" | "company_user" | "system";
 
 /**
- * Who makes each action (spec "The six actions"). The actor kind comes from the action, never from
- * today's `platform_admins` rows, so a company Owner who later becomes a platform admin still shows
- * as the company's Owner on an approval.
+ * Who makes each action (spec "The six actions"; "Audit (part 2)" adds seven, all by a platform
+ * admin). The actor kind comes from the action, never from today's `platform_admins` rows, so a
+ * company Owner who later becomes a platform admin still shows as the company's Owner on an approval.
  */
 export const PLATFORM_AUDIT_ACTOR: Readonly<Record<PlatformAuditAction, PlatformAuditActorKind>> = {
   "company.access_changed": "platform_admin",
@@ -31,12 +38,19 @@ export const PLATFORM_AUDIT_ACTOR: Readonly<Record<PlatformAuditAction, Platform
   "support.revoked": "company_user",
   "company.migration_failed": "system",
   "company.migration_recovered": "system",
+  "company.suspended": "platform_admin",
+  "company.reinstated": "platform_admin",
+  "company.cancelled": "platform_admin",
+  "plan.created": "platform_admin",
+  "plan.changed": "platform_admin",
+  "plan.retired": "platform_admin",
+  "plan.restored": "platform_admin",
 };
 
-/** The six actions, in the order of `PLATFORM_AUDIT_ACTOR` (the one copy of the list). */
+/** The thirteen actions, in the order of `PLATFORM_AUDIT_ACTOR` (the one copy of the list). */
 export const PLATFORM_AUDIT_ACTIONS = Object.keys(PLATFORM_AUDIT_ACTOR) as readonly PlatformAuditAction[];
 
-/** Whether a stored or requested action is one of the six. */
+/** Whether a stored or requested action is one of the thirteen. */
 export function isPlatformAuditAction(value: string): value is PlatformAuditAction {
   return PLATFORM_AUDIT_ACTIONS.some((action) => action === value);
 }
@@ -48,6 +62,31 @@ export function isPlatformAuditAction(value: string): value is PlatformAuditActi
 export const PLATFORM_ADMIN_AUDIT_ACTIONS: readonly PlatformAuditAction[] = PLATFORM_AUDIT_ACTIONS.filter(
   (action) => PLATFORM_AUDIT_ACTOR[action] === "platform_admin",
 );
+
+/**
+ * The seven plan and status actions, which belong to the `admin.billing` switch (spec "Audit (part
+ * 2)", The filter and the switch).
+ */
+export const BILLING_AUDIT_ACTIONS: readonly PlatformAuditAction[] = [
+  "company.suspended",
+  "company.reinstated",
+  "company.cancelled",
+  "plan.created",
+  "plan.changed",
+  "plan.retired",
+  "plan.restored",
+];
+
+/**
+ * Whether the audit log offers and accepts this action as a filter (spec "Audit (part 2)"; CLAUDE.md
+ * rule 13): every action but the seven, and those only while `admin.billing` is on. The web's Action
+ * filter, the demo and the API's `action` check all call it, per call, so a switch flipped at run
+ * time counts. Stored rows of the seven still list and render while it is off: they are history
+ * (owner question 47).
+ */
+export function platformAuditActionOn(action: PlatformAuditAction, register: FeatureRegister = FEATURES): boolean {
+  return !BILLING_AUDIT_ACTIONS.includes(action) || featureOn("admin.billing", register);
+}
 
 /** The name an admin's entries and requests show once the admin's user row is gone. */
 export const FORMER_ADMIN_NAME = "Former admin";
@@ -250,7 +289,7 @@ function supportRequestedDetails(before: unknown, after: unknown): PlatformAudit
   if (before !== null && before !== undefined) return hidden();
   if (!isPlainRecord(after) || !hasExactKeys(after, ["reason", "expiresAt"])) return hidden();
   const { reason, expiresAt } = after;
-  if (typeof reason !== "string" || reason.length < 1 || reason.length > SUPPORT_REASON.max) return hidden();
+  if (typeof reason !== "string" || reason.length < 1 || reason.length > ADMIN_REASON.max) return hidden();
   if (!isIsoMoment(expiresAt)) return hidden();
   return { kind: "support_requested", reason, expiresAt: new Date(expiresAt).toISOString() };
 }
@@ -265,14 +304,157 @@ function supportDecidedDetails(
   return empty(before) && empty(after) ? { kind: "support_decided", decision } : hidden();
 }
 
+/** A stored reason: a string of 1 to 500 characters, or null where the API's SQL narrowed it away. */
+function isAuditReason(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length >= 1 && value.length <= ADMIN_REASON.max);
+}
+
+/** The status each status action may write; anything else hides the entry. */
+const STATUS_TARGETS: Readonly<Record<StatusAuditAction, readonly LifecycleStatus[]>> = {
+  "company.suspended": ["suspended"],
+  "company.reinstated": ["active", "trial"],
+  "company.cancelled": ["cancelled"],
+};
+
+type StatusAuditAction = "company.suspended" | "company.reinstated" | "company.cancelled";
+
+/**
+ * `company.suspended`, `.reinstated` and `.cancelled` (spec "Audit (part 2)"): `before` exactly
+ * `{ status, statusChangedAt }` and `after` exactly `{ status, statusChangedAt, reason }`, with
+ * statuses among the five, a real change to a status the action writes, ISO moments and a reason
+ * of 1 to 500 characters or null. Else hidden.
+ */
+function statusChangedDetails(action: StatusAuditAction, before: unknown, after: unknown): PlatformAuditDetails {
+  if (!isPlainRecord(before) || !hasExactKeys(before, ["status", "statusChangedAt"])) return hidden();
+  if (!isPlainRecord(after) || !hasExactKeys(after, ["status", "statusChangedAt", "reason"])) return hidden();
+  const from = before.status;
+  const to = after.status;
+  if (!isLifecycleStatus(from) || !isLifecycleStatus(to) || from === to) return hidden();
+  if (!STATUS_TARGETS[action].includes(to)) return hidden();
+  if (!isIsoMoment(before.statusChangedAt) || !isIsoMoment(after.statusChangedAt)) return hidden();
+  if (!isAuditReason(after.reason)) return hidden();
+  return { kind: "status_changed", from, to, reason: after.reason };
+}
+
+/** A plan's stored name: 1 to 80 characters, not only spaces. */
+function isPlanNameText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length >= PLAN_NAME.min && value.length <= PLAN_NAME.max;
+}
+
+function isPlanPriceText(value: unknown): value is string {
+  return typeof value === "string" && PLAN_PRICE.test(value);
+}
+
+/** A plan limit as stored: a whole number from 1 to 100,000. */
+function isPlanLimit(value: unknown): value is number {
+  return typeof value === "number" && isAccessLimit(value);
+}
+
+/** A plan's module list: up to one per module, each a key by pattern, so a retired module still shows. */
+function isPlanModuleList(value: unknown): value is string[] {
+  return isListOf(value, MODULES.length, isAccessKey);
+}
+
+const PLAN_CREATED_KEYS = [
+  "key",
+  "name",
+  "product",
+  "monthlyPrice",
+  "yearlyPrice",
+  "modules",
+  "maxUsers",
+  "maxBranches",
+  "reason",
+] as const;
+
+/**
+ * `plan.created` (spec "Audit (part 2)"): no `before`, and `after` exactly the plan's fields and the
+ * reason, each by the plan rules' patterns, with at least one module. Else hidden.
+ */
+function planCreatedDetails(before: unknown, after: unknown): PlatformAuditDetails {
+  if (before !== null && before !== undefined) return hidden();
+  if (!isPlainRecord(after) || !hasExactKeys(after, PLAN_CREATED_KEYS)) return hidden();
+  const { key, name, product, monthlyPrice, yearlyPrice, modules, maxUsers, maxBranches, reason } = after;
+  if (typeof key !== "string" || !PLAN_KEY.test(key) || !isPlanNameText(name) || !isPlanProduct(product)) {
+    return hidden();
+  }
+  if (!isPlanPriceText(monthlyPrice) || !isPlanPriceText(yearlyPrice)) return hidden();
+  if (!isPlanModuleList(modules) || modules.length === 0) return hidden();
+  if (!isPlanLimit(maxUsers) || !isPlanLimit(maxBranches) || !isAuditReason(reason)) return hidden();
+  return {
+    kind: "plan_created",
+    key,
+    name,
+    product,
+    monthlyPrice,
+    yearlyPrice,
+    modules: [...modules],
+    maxUsers,
+    maxBranches,
+    reason,
+  };
+}
+
+function isPlanChangeField(value: string): value is PlanChangeField {
+  return PLAN_CHANGE_FIELDS.some((field) => field === value);
+}
+
+/** One changed field with its old and new value, each by its rule, or null when either doesn't fit. */
+function planChange(field: PlanChangeField, from: unknown, to: unknown): PlatformAuditPlanChange | null {
+  switch (field) {
+    case "name":
+      return isPlanNameText(from) && isPlanNameText(to) ? { field, from, to } : null;
+    case "monthlyPrice":
+    case "yearlyPrice":
+      return isPlanPriceText(from) && isPlanPriceText(to) ? { field, from, to } : null;
+    case "modules":
+      return isPlanModuleList(from) && isPlanModuleList(to) ? { field, from: [...from], to: [...to] } : null;
+    case "maxUsers":
+    case "maxBranches":
+      // The old side is null when the plan had no limits row; a change always sets a number.
+      return (from === null || isPlanLimit(from)) && isPlanLimit(to) ? { field, from, to } : null;
+  }
+}
+
+/**
+ * `plan.changed` (spec "Audit (part 2)"): `before` holds one or more changeable fields and nothing
+ * else, `after` exactly the same fields plus the reason, each value by its rule. The changes come in
+ * `PLAN_CHANGE_FIELDS` order. Else hidden.
+ */
+function planChangedDetails(before: unknown, after: unknown): PlatformAuditDetails {
+  if (!isPlainRecord(before) || !isPlainRecord(after)) return hidden();
+  const fields = Object.keys(before);
+  if (fields.length === 0 || !fields.every(isPlanChangeField)) return hidden();
+  if (!hasExactKeys(after, [...fields, "reason"]) || !isAuditReason(after.reason)) return hidden();
+  const changes: PlatformAuditPlanChange[] = [];
+  for (const field of PLAN_CHANGE_FIELDS) {
+    if (!Object.hasOwn(before, field)) continue;
+    const change = planChange(field, before[field], after[field]);
+    if (!change) return hidden();
+    changes.push(change);
+  }
+  return { kind: "plan_changed", changes, reason: after.reason };
+}
+
+/**
+ * `plan.retired` and `plan.restored` (spec "Audit (part 2)"): `before` exactly `{ active }` and
+ * `after` exactly `{ active, reason }`, with `active` flipping the way the action says. Else hidden.
+ */
+function planActiveDetails(active: boolean, before: unknown, after: unknown): PlatformAuditDetails {
+  if (!isPlainRecord(before) || !hasExactKeys(before, ["active"]) || before.active !== !active) return hidden();
+  if (!isPlainRecord(after) || !hasExactKeys(after, ["active", "reason"]) || after.active !== active) return hidden();
+  return isAuditReason(after.reason) ? { kind: "plan_active", active, reason: after.reason } : hidden();
+}
+
 /**
  * What an audit entry may show (docs/specs/platform-admin.md, "Redaction (deny by default)"):
  * - `company.migration_failed`: every row, whatever its shape, shows only `after.code`, and only
  *   when it is an error code. Rows written before part 3 hold the driver's text in `after.error`,
  *   which is never read, so they show `code: null`. `before` is never read.
  * - `company.migration_recovered`: only `after.version`, and only when it is a migration tag.
- * - `company.access_changed`, `support.requested`, `support.approved`, `support.revoked`: only when
- *   `before` and `after` fit the action's allow-list exactly, else hidden.
+ * - `company.access_changed`, `support.requested`, `support.approved`, `support.revoked`, and the
+ *   seven plan and status actions of part 2: only when `before` and `after` fit the action's
+ *   allow-list exactly, else hidden.
  * - any other action: hidden.
  * The API narrows the same fields in SQL first; this is the second layer, and the demo's only one.
  */
@@ -298,8 +480,33 @@ export function platformAuditDetails(action: string, before: unknown, after: unk
       return supportDecidedDetails("approved", before, after);
     case "support.revoked":
       return supportDecidedDetails("revoked", before, after);
+    case "company.suspended":
+    case "company.reinstated":
+    case "company.cancelled":
+      return statusChangedDetails(action, before, after);
+    case "plan.created":
+      return planCreatedDetails(before, after);
+    case "plan.changed":
+      return planChangedDetails(before, after);
+    case "plan.retired":
+      return planActiveDetails(false, before, after);
+    case "plan.restored":
+      return planActiveDetails(true, before, after);
     default:
       return hidden();
+  }
+}
+
+/** The details with an admin's reason taken out, for a viewer who may not read it. Other kinds are unchanged. */
+function withoutReason(details: PlatformAuditDetails): PlatformAuditDetails {
+  switch (details.kind) {
+    case "status_changed":
+    case "plan_created":
+    case "plan_changed":
+    case "plan_active":
+      return { ...details, reason: null };
+    default:
+      return details;
   }
 }
 
@@ -331,12 +538,15 @@ export interface PlatformAuditRow {
  * - the actor from the action (`platformAuditActor`), so company people are never identified;
  * - `details` from `platformAuditDetails`, and hidden on another admin's `support.requested` entry
  *   unless the viewer sees every reason (`seesSupportReason`);
+ * - on the plan and status entries, `reason: null` unless the viewer may read it (`seesAdminReason`:
+ *   the owner role, or the author). The API's SQL nulls it first; this is the second layer;
  * - `network` only for a role that sees addresses (`seesAuditNetwork`) and only on a platform
  *   admin's own entry; the key is absent otherwise.
  */
 export function platformAuditView(row: PlatformAuditRow, viewer: SupportReasonViewer): PlatformAuditView {
   const actor = platformAuditActor(row.action, row.actorUserId, row.actorName);
   const reasonHidden = row.action === "support.requested" && !seesSupportReason(viewer, row.actorUserId);
+  const details = reasonHidden ? hidden() : platformAuditDetails(row.action, row.before, row.after);
   const view: PlatformAuditView = {
     id: row.id,
     at: row.at instanceof Date ? row.at.toISOString() : row.at,
@@ -345,7 +555,7 @@ export function platformAuditView(row: PlatformAuditRow, viewer: SupportReasonVi
     actor,
     targetType: auditTargetType(row.targetType),
     targetId: auditTargetId(row.targetId),
-    details: reasonHidden ? hidden() : platformAuditDetails(row.action, row.before, row.after),
+    details: seesAdminReason(viewer, row.actorUserId) ? details : withoutReason(details),
   };
   if (seesAuditNetwork(viewer.role) && actor.kind === "platform_admin") {
     view.network = { ip: row.ip, userAgent: row.userAgent };

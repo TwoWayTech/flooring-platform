@@ -65,6 +65,16 @@ function wasPaid(subscription: LifecycleSubscription): boolean {
   return subscription.status === "cancelled" && new Decimal(subscription.price).greaterThan(0);
 }
 
+/**
+ * Whether the company ever paid (blueprint p29, p40): any subscription row, deleted ones included,
+ * that is `active` or `past_due`, or `cancelled` with a price above zero. `companyPhase` uses it for
+ * the suspended and cancelled ladders, and the console's reinstate uses it to choose `active` over
+ * `trial` (docs/specs/platform-admin.md, part 2, `statusAfter` check 5).
+ */
+export function companyEverPaid(subscriptions: readonly LifecycleSubscription[]): boolean {
+  return subscriptions.some(wasPaid);
+}
+
 /** One live subscription's phase, from the end of its period. */
 function subscriptionPhase(subscription: LifecycleSubscription, now: Date): CompanyPhase {
   const end = subscription.currentPeriodEnd;
@@ -138,7 +148,7 @@ export function countedSubscriptions(facts: LifecycleFacts): readonly LifecycleS
  * company paid once.
  */
 export function companyPhase(facts: LifecycleFacts, now: Date = new Date()): CompanyPhase {
-  const everPaid = facts.subscriptions.some(wasPaid);
+  const everPaid = companyEverPaid(facts.subscriptions);
   const counted = countedSubscriptions(facts);
   const fromSubscriptions =
     counted.length === 0

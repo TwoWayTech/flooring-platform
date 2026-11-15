@@ -493,12 +493,20 @@ export const FEATURES = {
     screens: ["/settings/billing"],
   },
   "admin.access": {
-    title: "Platform admin: plans, modules and ceilings",
+    title: "Platform admin: companies, modules and ceilings",
     product: "both",
     module: "platform",
     status: "demo",
     enabled: true,
     screens: ["/admin", "/admin/*"],
+  },
+  "admin.billing": {
+    title: "Platform admin: plans and company status",
+    product: "both",
+    module: "platform",
+    status: "demo",
+    enabled: true,
+    screens: ["/admin/plans", "/admin/companies/*/status"],
   },
   "auth.mfa": {
     title: "Sign-in code step",

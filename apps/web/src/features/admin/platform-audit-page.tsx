@@ -39,13 +39,14 @@ type AuditFilters = Pick<PlatformAuditQuery, "companyId" | "action">;
 /** The one toast a failed older page shows, so a new load or new filters can take it away. */
 const OLDER_FAILED_TOAST = "platform-audit-older-failed";
 
-/** The console's formats for counts and moments in the audit log. */
+/** The console's formats for counts, prices and moments in the audit log. */
 function useAuditFormat(): AuditColumnFormat {
   const settings = useNumberSettings();
   const formatDate = useFormatDate();
   return useMemo(
     () => ({
       count: (value: number) => formatNumber(value, "count", settings),
+      money: (value: string) => formatNumber(value, "money", settings),
       date: (iso: string) => formatDate(iso, true),
       dateTime: (iso: string) => formatDate(iso, true),
     }),
