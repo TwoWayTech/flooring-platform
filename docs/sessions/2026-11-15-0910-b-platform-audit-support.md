@@ -285,9 +285,16 @@ Docs: the spec (Older entries as built, who gets the alert, the test mapping) an
 | `pnpm -s typecheck --force` (lock) | 6 of 6 tasks passed |
 | demo build, then `tests/e2e/admin.spec.ts --project=flooring` on one worker (lock); ports 3000 and 4000 free before and after | 2 passed |
 
+### Re-review of the fix commit
+A fresh security-reviewer read `8ed71f3..a32e7a3`: PASS, no blocking issue. The recipient filter is the same role rule as the guard, `/platform/me` and the support lock, so no real admin is dropped and the alert's content is unchanged. The `live` ref turns off only on unmount, and the demo now checks the body before the company, as the API does. Two notes:
+- `setLoading(false)` was skipped once the entries had gone; harmless today, but it would leave the button stuck if the route were ever kept hidden with React `<Activity>`. Taken: it is now unconditional (one line in `platform-audit-page.tsx`; web unit tests 60 passed, web lint and typecheck clean).
+- No render test wires `AuditEntries`' `live` ref to unmount; only the pure `runOlderAuditLoad` is tested (STATUS follow-up).
+
+Full checks on `a32e7a3`, through the lock: `pnpm lint`, `pnpm typecheck`, `pnpm test` (shared 744, web 60, api 72, db 18, providers 11), `pnpm test:api` (api 487, db 48, providers 2) and `pnpm test:hooks`, all exit 0.
+
 ## Left
-- **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time; the full `pnpm lint` passed in review round 1); then mark ready and wait for `verify` and `e2e` on the head.
-- **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.
+- **Done before ready (orchestrating session):** merged main (`8ddf7fa`, meetings part 2) at `07d860b`, with one conflict in docs/blueprint-delta.md (both rows kept); the full `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api` and `pnpm test:hooks` on `8ed71f3` (shared 744, web 58, api 72, db 18, providers 11; api 487, db 48, providers 2), and again after the final review fixes; the fresh security, correctness and packages/db reviewers (section above), a fresh security re-review of the fix commit `a32e7a3`, each summary posted with `gh pr review 36 --comment --body-file`; then ready, and `verify` and `e2e` on the head before the self-merge.
+- **STATUS and BRANCHES:** updated by the orchestrating session in `8ed71f3` (PR #35 merged, this PR and PR #37, the follow-ups part 3 closed, part 3's residual risks and owner questions, the `toCsv` formula-cell follow-up).
 - **Not checked by hand:** the support role's read-only access page and the api-mode request with the step-up. Both are covered by `platform-support.spec.ts`, which passed twice in a row.
 - **Doubtful or open:**
   - the console's copy says the Owner approves "in Settings", but the web has no Owner screen for support access until part 4;

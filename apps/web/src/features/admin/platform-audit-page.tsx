@@ -134,7 +134,7 @@ function AuditEntries({ filters }: { filters: AuditFilters }) {
       });
     } finally {
       inFlight.current = false;
-      if (live.current) setLoading(false);
+      setLoading(false);
     }
   }
 

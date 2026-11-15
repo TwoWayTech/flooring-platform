@@ -162,6 +162,14 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - The seat limit is checked only on invite: disabling and re-enabling someone gets round a lowered limit. The branch limit is stored, not enforced, until Settings → Locations moves to the API.
   - The api-mode company shell still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it.
   - The companies list costs about ten small control queries per company; batch them before the company count grows.
+- **PR #36 final review notes (none blocking):**
+  - `last_error` holds drizzle's "Failed query: <sql>" wrapper, cut at 500 characters, not the driver's reason (only the SQLSTATE survives, through the cause chain). Build it from the innermost cause's message; keep it out of the alert and the audit row (pre-existing).
+  - The maintenance-only fallback writes no audit row and doesn't retry; a transient failure (40001, 40P01) inside the failure transaction loses `last_error` and the code. Retry once, or write a code-only row after the fallback (owner question).
+  - The re-check under the support-request lock accepts any admin role, not the route's write roles; the two are the same today. Pass the route's roles in if they ever differ.
+  - Platform admins on one browser share a saved table view, and the audit filters go into the URL.
+  - The support dialog spots a 409 or 429 by its message text; use the error code.
+  - `recorded` is false when the claimed status changed mid-run, even though the failure transaction committed.
+  - No render test wires the audit page's `live` ref to unmount; only the pure `runOlderAuditLoad` is tested.
 - **Platform admin part 3 residual risks (ADR 0053, "Residual risks"):**
   - Old `company.migration_failed` rows still hold the error text in the control database; only the console redacts it. The CLI and the fallback's log line print it in the one case where it couldn't be saved.
   - `errorCode` is the newest recorded failure's; `last_error` has no timestamp.
