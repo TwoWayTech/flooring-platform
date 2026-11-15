@@ -53,7 +53,9 @@ const ownOrReports: Filter = (item: { employeeId: string }, { user, scope }, db)
 
 /**
  * How each collection narrows for "own" and "branch" scope (blueprint "Data scope"). Collections
- * without an entry are company-wide reference data.
+ * without an entry are company-wide reference data. Meetings are never read through here: the store
+ * reads them by the shared meeting rules (`visibleMeetings` in meeting-sight.ts, ADR 0051 "Part 3"),
+ * and `applyScope` gives none.
  */
 const FILTERS: Partial<Record<CollectionName, Filter>> = {
   quotes: byRep,
@@ -76,10 +78,6 @@ const FILTERS: Partial<Record<CollectionName, Filter>> = {
   contractLines: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
   changeOrders: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
   contractBillings: (item: { contractId: string }, subject, db) => contractInScope(item.contractId, subject, db),
-  meetings: (item: { attendees: { id: string }[]; private: boolean; ownerUserId: string }, { user, scope }) =>
-    scope !== "own" && !item.private
-      ? true
-      : item.ownerUserId === user.id || item.attendees.some((a) => a.id === user.id),
 };
 
 /** The records of a collection the subject may see. */
@@ -91,7 +89,8 @@ export function applyScope<K extends CollectionName>(
 ): Collections[K] {
   const filter = FILTERS[name];
   if (name === "inAppNotifications" || name === "outboxMessages") return [] as unknown as Collections[K];
-  if (name === "meetings") return (items as never[]).filter((item) => filter!(item, subject, db)) as Collections[K];
+  // Meetings are read only by the shared meeting rules (`visibleMeetings`), so this path denies them.
+  if (name === "meetings") return [] as unknown as Collections[K];
   if (!filter || subject.scope === "all") return items;
   return (items as never[]).filter((item) => filter(item, subject, db)) as Collections[K];
 }
