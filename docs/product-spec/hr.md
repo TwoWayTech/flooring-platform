@@ -47,6 +47,7 @@ Data scope, from `applyScope`:
 - `clockEntries` use `byEmployee` at `own` and `branch` scope.
 - `employees` and `timeOffPolicies` have no filter.
 - Scopes by role: Owner, Accountant, Purchasing and HR manager `all`; Manager and Warehouse `branch`; Sales, Installer and Employee `own`.
+- In the real build, the details of pay-sensitive audit entries follow the same person rule (`seesPersonRecords`) for holders of `hr.employee.view_sensitive`. The Owner sees all of them, and the demo shows them only at scope `all` (owner decision 2026-11-15; "Events and audit entries").
 
 ## Workflows and status rules
 
@@ -305,6 +306,8 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 
 19. **Commission in a run.** `lineFor`, `pay-actions.ts`. The person's statements with `status === "approved"` and `payPeriodId` null or this period are summed on `payable`. Paid statements do not join.
 
+    **Real build (owner decision 2026-11-15, ADR 0048):** approval stores on the statement the employee the rep's sign-in is linked to then (`commission_statements.employee_id`). The run pays the amount the approval posted to that employee, so re-linking the sign-in later never moves it. A statement stored without one falls back to the rep's link today (`paidEmployee`). The pay-period review lists approved, unpaid statements that no run will pay (`strandedCommission`), judged on the same employee: there is none, its record was removed, it is a 1099 contractor, or the person has left.
+
 20. **Leave by date.** `leaveByDate`, `packages/shared/src/hr/pay.ts`. A request's hours are divided equally over every calendar day from start to end, using JavaScript numbers. A request is unpaid when `policy?.paid === false || r.kind === "unpaid"`.
 
 21. **Holidays.** `federalHolidays`, `packages/shared/src/us-pack/holidays.ts`, seeds the ten federal holidays for 2026 and 2027 into `settings.hr.holidays`. Holidays appear on HR Home and on Settings, HR. `grossPay` does not read them.
@@ -326,7 +329,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `email`, `phone` | string | |
 | `hiredAt` | date | |
 | `status` | `active`, `on_leave`, `terminated` | |
-| `managerId` | string or null | Another employee |
+| `managerId` | string or null | Another employee. In the real build every change is also kept, dated, in `employee_manager_history`, so commission overrides follow the manager on each line's day (ADR 0048) |
 | `externalId` | string, optional | Set by import |
 | `flsaStatus` | `non_exempt`, `exempt`, `not_applicable` | Forced to `not_applicable` for 1099 |
 | `exemptionBasis` | `executive`, `administrative`, `professional`, `outside_sales`, null | |
@@ -498,6 +501,8 @@ Audit entries are written through `ctx.audit`.
 | `Changed hr` | settings | `DemoStore.updateSettings("hr", ...)` |
 
 Not audited: `saveTimesheet`, `clockIn`, `clockOut` and `setPayExclusion`.
+
+**Real build (ADR 0047; owner decision 2026-11-15, ADR 0048 "Audit visibility"):** the API audits bonuses (`Added bonus`, `Voided bonus`) and exclusions (`Left out of pay period`, `Brought back into pay period`). These entries are pay-sensitive like commission reasons. Every audit viewer sees the row, but its before and after read "Hidden: pay details" unless the viewer is the Owner, or holds `hr.employee.view_sensitive` and the person the entry is about (the bonus's employee, or the excluded employee) is inside their data scope by `seesPersonRecords`. An entry whose person can't be found needs scope `all`. The demo writes none of these four entries.
 
 ## Emails
 

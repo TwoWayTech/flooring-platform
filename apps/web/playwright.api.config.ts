@@ -32,6 +32,11 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: LOCAL,
+    // The browser runs on the seeded company's calendar (Summit, America/Denver), like its staff.
+    // The web client's `today()` is still the browser's day, so in a UTC browser between midnight
+    // UTC and midnight in Denver a form's default date is the server's tomorrow, and the API
+    // refuses it as "in the future" (STATUS follow-up: the company's day on the client).
+    timezoneId: "America/Denver",
     trace: "retain-on-failure",
     channel: process.env.CI ? undefined : "chrome",
   },
