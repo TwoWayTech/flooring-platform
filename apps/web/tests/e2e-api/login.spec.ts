@@ -96,8 +96,14 @@ test.describe("real sign-in with MFA (api mode)", () => {
     await page.getByLabel("Authenticator code").fill(totpCode(secret));
     await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByText("Roles updated for Priya Natarajan")).toBeVisible();
-    // Put Priya back, so the next run starts from the seed.
+    // Put Priya back, so the next run and the specs after this one (meetings.spec.ts signs her in as
+    // Sales) start from the seed. Wait for the server's answer: the first change's toast may still
+    // show, and a test that ends first closes the page before the change is sent.
+    const restored = page.waitForResponse(
+      (r) => r.request().method() === "PATCH" && new URL(r.url()).pathname.startsWith("/api-proxy/users/"),
+    );
     await setRoles(/^Accountant/, /^Sales/, nextCode(secret));
+    expect((await restored).ok()).toBe(true);
     await expect(page.getByText("Roles updated for Priya Natarajan").last()).toBeVisible();
   });
 
