@@ -175,6 +175,7 @@ Heavy commands went one at a time through the scratchpad lock. Integration tests
   - Demo e2e, from a fresh demo build: `meetings`, `meetings-invites`, `states` and `a11y` (flooring) gave 143 passed, the new series test included. Flow 6 passed (1), and the HR meetings spec passed (1).
   - Api e2e (plan 8.5, on the throwaway database on 5433, neither re-created nor reseeded): the meetings spec 2 passed, the new series test included; the full api suite 19 passed.
   - **The new api test is a real repro:** the page from before the fix was put back for one run (a fresh api-mode web build, then only that test), and the test failed at "the drawer shows 11:00 AM" after "All events". The file was then restored, so the web `.next` in the worktree is that build until the next e2e script rebuilds it. Ports 3000 and 4000 were free before and after every run.
+- **Review round 2 fix (commit 16):** apps/web `vitest run` on `demo-meetings`, `demo-meetings-switches`, `meeting-screens` and `meetings-api`: 4 files, 34 tests passed. apps/web `typecheck` exit 0, and `eslint` on the two changed files exit 0, both through the lock. Prettier clean. No e2e run: no screen and no behaviour changed.
 - **Not run yet:** the full checks (plan 8.3: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api`), at the review step.
 
 ## Reviews
@@ -183,6 +184,10 @@ Heavy commands went one at a time through the scratchpad lock. Integration tests
   - **The finding:** in api mode the drawer closed after a series move made from it with "All events" or "This and following", and after their Undo. `wrote()` only starts the screens' re-read, and `onMoved` then set the drawer's key at once. React rendered that before the re-read answered, so the page looked for the moved occurrence in the read from before the move. That read has neither an "all" shift's new planned time nor a split's new id. After an Undo it still has the shifted series, or the original with its `until`. `occurrenceAt` gave null, and the "gone" rule closed the drawer for good. The demo hid it, because DemoStore's re-read resolves in microtasks before React renders. The tests hid it too: they moved only one-offs and "This event" occurrences, whose key the old read still matches.
   - **The fix:** the drawer state is a `DrawerTarget` (`current-occurrence.ts`), holding the key it follows, the occurrence it showed (`was`) and the read on screen when the write answered (`against`). `followMove` sets it on a move or an Undo. `drawerOccurrence` shows `was` while the read is still `against`, then the occurrence at the key, and closes only when a newer read has neither. The page keeps the shown read in a ref, updated after each render. A toast's Undo, run minutes later from an older render's closure, then compares against the read shown at that time, not the one from when the move was made. The reviewer's other option, a pending key that switches once found, was not taken. Without telling reads apart, a whole-period "all" shift would match the old read at once and show the wrong occurrence until the next read.
   - **No deviation from meetings.md:** this is the approved "the drawer follows its occurrence", now as built in api mode. ADR 0051 "Part 3" (the drawer bullet, safest option 16, the tests list), the delta row's (10) and meetings.md's Part 3 drawer line say so.
+
+- **Review round 2** (correctness). One should-fix finding, confirmed by a skeptic, and fixed in commit 16:
+  - **The finding:** splitting the demo's meeting actions into `meeting-actions.ts` and `meeting-moves.ts` copied the private helper `auditTime` into both, which breaks the CLAUDE.md Style rule "no duplicated logic". Both copies write meeting starts into the same audit log, so one changed alone would mix two time formats.
+  - **The fix:** `meeting-actions.ts` exports `auditTime`, with a JSDoc, and `meeting-moves.ts` imports it next to the other helpers it takes from there. No behaviour change, so no new test, and no doc beyond this log: the audit text is as before.
 
 ## Residual risks
 Also in ADR 0051 "Residual risks (part 3)".
@@ -223,7 +228,8 @@ Part 3 is built, tested and documented on `feat/meetings-web-api` (draft PR #37)
 | 12 | `12b40ef` | test(web): the step-up spec waits until Priya's roles are put back |
 | 13 | `a9ab07d` | docs(meetings): ADR 0051 part 3, delta, contract, meetings and notifications specs as built |
 | 14 | `a37be29` | fix(web): the meeting drawer waits for the re-read after a series move or its Undo (review round 1) |
-| 15 | this commit | docs(meetings): the drawer waiting for the re-read, as built (review round 1) |
+| 15 | `492b7f9` | docs(meetings): the drawer waiting for the re-read, as built (review round 1) |
+| 16 | this commit | refactor(web): one audit time helper for the demo's meetings (review round 2) |
 
 Docs in commit 13:
 - ADR 0051: the "Part 3 (2026-11-15)" section (the ApiClient, who is looking, what the screens offer and why it is safe, re-reading, the demo store, the API change, the company's day, 22 safest options, kept, deferred, owner questions, residual risks R1 to R16, consequences); the title and status; the undo checks reordered in "Part 2"; "Later parts" marks part 3 done; the part 2 residual risks part 3 closes are removed, and part 1's "Api mode" risk is brought up to date.

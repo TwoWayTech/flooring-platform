@@ -33,6 +33,7 @@ import {
 import type { MeetingMove, MeetingUndo } from "../contract";
 import { DemoRuleError } from "./admin-rules";
 import {
+  auditTime,
   calendarOn,
   changeable,
   GUEST_GONE,
@@ -95,8 +96,6 @@ const SCOPE_WORDS: Record<MoveScope, string> = {
   following: "this and following",
   all: "all events",
 };
-
-const auditTime = (start: string) => start.replace("T", " ");
 
 /**
  * Moves or resizes a meeting, or one or more of a series' occurrences (meetings.md rule 4 and the

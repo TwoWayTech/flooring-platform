@@ -144,7 +144,11 @@ function meetingSettings(ctx: ActionContext): MeetingSettings {
   };
 }
 
-const auditTime = (start: string) => start.replace("T", " ");
+/**
+ * A meeting's wall-clock start as the demo's audit log writes it ("2026-11-16 09:00"), one format
+ * for every meeting entry: create, edit, move, Undo and proposal decisions.
+ */
+export const auditTime = (start: string): string => start.replace("T", " ");
 
 /**
  * The Meetings page's data (`MeetingsData`; ADR 0051 "Part 3"): every meeting the reader may see,
