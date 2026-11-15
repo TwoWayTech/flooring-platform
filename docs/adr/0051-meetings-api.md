@@ -1,6 +1,6 @@
 # ADR 0051: Meetings on the API, part 1 (calendar, guests, invites, answers, requests, calendar files and reminders)
 
-- **Status:** proposed, 2026-11-15. This was written during a workflow run while the owner was asleep. The run relayed a rule: follow meetings.md as the approved behaviour, deviate only in the safer direction and record each deviation in docs/blueprint-delta.md, and defer what can't be done safely. docs/STATUS.md has the queue paused until the owner says so, so PR #33 stays a draft. This ADR becomes accepted when the owner confirms it.
+- **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15, putting meetings first, and was asleep during the build. The rule for that run: follow meetings.md as the approved behaviour, deviate only in the safer direction and record each deviation in docs/blueprint-delta.md, and defer what can't be done safely. The safer deviations and the questions under "For the owner" are open for the owner's review.
 - **Context:**
   - docs/real-build-plan.md row 14, "Meetings, invites and .ics": spec meetings.md, depends on module 5 (the notifications core), week 18 in the schedule.
   - meetings.md describes the demo: a calendar in both products, guests from one search or by email, an Outbox row and `.ics` per guest (ADR 0021), answers and proposals, requests, reminders and Settings → Meetings.
@@ -286,7 +286,7 @@
   - the index migration.
 
 ## For the owner
-- **The go-ahead:** the queue is paused per STATUS, and this run's go-ahead came through the workflow. PR #33 stays a draft until the owner confirms.
+- **The go-ahead:** the owner restarted the queue on 2026-11-15 with meetings first (STATUS, "Owner answers (2026-11-15)"). PR #33 self-merges under the CLAUDE.md rule once its reviews are clean.
 - **Before real email** (ADR 0021): import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web before `EMAIL_PROVIDER=resend` sends meeting invites. Also import a PUBLISH without ORGANIZER, the file a reader who may not read guests' addresses gets, on its own and over the REQUEST of the same meeting.
 - **Questions:**
   - Should a staff guest's own "Add to my calendar" file name the organiser's address? Part 1 leaves it out unless they may change the meeting, as the meeting's guest list does, although their emailed invite carries it.

@@ -3,8 +3,8 @@
 Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meetings.md, depends on module 5; week 18 in the schedule). Part 1 of 3. Branch `feat/meetings-api-core`, from `origin/main` at `0aba18e`, in its own worktree (`../flooring-platform-meetings`), because another build runs in the main checkout on `feat/hr-pay-reasons-and-history`. Draft PR #33.
 
 ## Prompt
-- A workflow run while the owner is asleep. The instruction it relays: follow docs/product-spec/meetings.md as the approved behaviour. Deviate only in the safer direction (less data exposure, deny by default, input and volume limits, refusing what can't be done correctly), and record each deviation in docs/blueprint-delta.md. Defer what can't be done safely; don't invent it. No change to existing tables and no new dependency.
-- docs/STATUS.md says the queue is paused until the owner says so. This run's go-ahead came through the workflow, so the PR stays a draft until the owner confirms it.
+- The owner restarted the queue on 2026-11-15 ("go"), meetings first, and is asleep. The rule for open points: follow docs/product-spec/meetings.md as the approved behaviour. Deviate only in the safer direction (less data exposure, deny by default, input and volume limits, refusing what can't be done correctly), and record each deviation in docs/blueprint-delta.md. Defer what can't be done safely; don't invent it. No change to existing tables and no new dependency.
+- An earlier version of this log said the queue was paused and the PR would stay a draft until the owner confirmed. That was wrong: the owner gave the go-ahead directly, and STATUS records it since PR #32. The PR self-merges under the CLAUDE.md rule once its reviews are clean.
 - Inputs: five reader reports, a first plan and a critic's review of it. They sit in the session scratchpad, not in the repo; this log is the corrected plan.
 - Scope: shared rules, the API routes, emailed .ics, reminders, the Summit seed, tests and docs. The web does not change, and the demo keeps working.
 
