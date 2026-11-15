@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BellRing, CalendarPlus, ChevronLeft, ChevronRight, Globe, Repeat } from "lucide-react";
-import { addDays, meetingOccurrences, mondayOf, type Meeting, type OccurrenceKey } from "@workspace/shared";
+import { addDays, meetingOccurrences, mondayOf, type Meeting } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -15,7 +15,14 @@ import { useCan } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
-import { keyOf, occurrenceAt } from "./current-occurrence";
+import {
+  drawerOccurrence,
+  drawerOn,
+  followMove,
+  keyOf,
+  type DrawerTarget,
+  type MeetingsRead,
+} from "./current-occurrence";
 import { MeetingAnswers, RequestMeetingDialog } from "./meeting-answers";
 import { meetingOffers, meetingRights } from "./meeting-rights";
 import { NewMeetingDialog, RECURRENCE } from "./new-meeting-dialog";
@@ -73,19 +80,27 @@ export function MeetingsPage() {
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState(today);
   // The drawer holds the occurrence's key, not a copy, so it always shows the meeting as last read.
-  const [open, setOpen] = useState<OccurrenceKey | null>(null);
+  const [open, setOpen] = useState<DrawerTarget | null>(null);
   const [creating, setCreating] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
+  // The read on screen, for a move's or an Undo's answer: the screens' re-read after that write has
+  // only started then, so the drawer waits for a newer read before it looks for where it moved to.
+  const shownRead = useRef<MeetingsRead | null>(null);
   const { reschedule, dialog } = useReschedule({
-    onMoved: (from, to) => setOpen((o) => (o && o.meetingId === from.meetingId && o.planned === from.planned ? to : o)),
+    onMoved: (from, to) => setOpen((o) => followMove(o, from, to, shownRead.current)),
   });
   const data = useApiQuery((client) => client.meetingsData(), [], { keepDataOnError: true });
+  useEffect(() => {
+    shownRead.current = data.data ?? null;
+  }, [data.data]);
   const viewer = useMeetingViewer(data.data?.viewerUserId ?? "");
-  const current = open && data.data ? occurrenceAt(data.data.meetings, open) : null;
-  // Close the drawer once its occurrence is gone (moved away by someone else, cancelled or removed),
-  // so it never offers a move or a cancel against it, and a meeting that comes back stays closed.
-  // Set while rendering, as react.dev "You might not need an effect" adjusts state on new data.
-  if (open !== null && data.status === "ready" && current === null) setOpen(null);
+  const drawer = data.status === "ready" ? drawerOccurrence(data.data, open) : { occurrence: null, target: open };
+  const current = drawer.occurrence;
+  // The drawer settles on the occurrence it moved to, or closes once its occurrence is gone (moved
+  // away by someone else, cancelled or removed), so it never offers a move or a cancel against it,
+  // and a meeting that comes back stays closed (ADR 0051 "Part 3", safest option 16). Set while
+  // rendering, as react.dev "You might not need an effect" adjusts state on new data.
+  if (drawer.target !== open) setOpen(drawer.target);
   if (!can("meetings.meeting.view")) return <NoAccess />;
   const rights = (meeting: Meeting) => meetingRights(viewer, meeting);
   const offers = meetingOffers(can("meetings.meeting.create"), data.data?.colleagues.length ?? 0);
@@ -167,7 +182,7 @@ export function MeetingsPage() {
             today={today}
             canMove={(meeting) => rights(meeting).change}
             canCreate={offers.create}
-            onOpen={(o) => setOpen(keyOf(o))}
+            onOpen={(o) => setOpen(drawerOn(keyOf(o)))}
             onMove={reschedule}
             onCreate={(start) => offers.create && setCreating(start)}
             dayLabel={shortDay}
@@ -192,7 +207,7 @@ export function MeetingsPage() {
                     <button
                       key={`${o.meeting.id}-${o.planned}`}
                       type="button"
-                      onClick={() => setOpen(keyOf(o))}
+                      onClick={() => setOpen(drawerOn(keyOf(o)))}
                       className="bg-surface hover:bg-raised truncate rounded-sm px-1 text-left"
                     >
                       {timeOf(o.start)} {o.meeting.title}
@@ -214,7 +229,7 @@ export function MeetingsPage() {
                       <li key={`${o.meeting.id}-${o.planned}`}>
                         <button
                           type="button"
-                          onClick={() => setOpen(keyOf(o))}
+                          onClick={() => setOpen(drawerOn(keyOf(o)))}
                           className="hover:bg-raised flex w-full gap-3 rounded-sm px-2 py-1.5 text-left text-sm"
                         >
                           <span className="w-20 shrink-0 tabular-nums">{timeOf(o.start)}</span>

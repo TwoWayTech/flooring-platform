@@ -236,6 +236,34 @@ test.describe("meetings on the shared rules (ADR 0051 part 3)", () => {
     await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
   });
 
+  test("the drawer follows a series moved with All events or This and following, and back on Undo", async ({
+    page,
+  }) => {
+    const title = `Series follow ${Date.now().toString(36)}`;
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    await schedule(page, { title, date: nextWeekday(1, 2), start: "10:00", weekly: true });
+    // The second occurrence, which every scope may move.
+    await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Agenda" }).click();
+    await page
+      .getByRole("button", { name: new RegExp(title) })
+      .nth(1)
+      .click();
+    const drawer = page.getByRole("dialog", { name: title });
+    await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
+    for (const scope of ["All events", "This and following events"]) {
+      await drawer.getByLabel("Start").fill("11:00");
+      await drawer.getByRole("button", { name: "Move meeting" }).click();
+      const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
+      await ask.getByLabel(scope).check();
+      await ask.getByRole("button", { name: "Move" }).click();
+      await expect(page.getByText(`${title} moved`).last()).toBeVisible();
+      await expect(drawer.getByText(/11:00 AM/)).toBeVisible();
+      await page.getByRole("button", { name: "Undo" }).click();
+      await expect(page.getByText("Move undone").last()).toBeVisible();
+      await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
+    }
+  });
+
   test("someone who may not change a meeting gets no move or edit controls", async ({ page }) => {
     const title = `Controls check ${Date.now().toString(36)}`;
     await signInAs(page, SUMMIT_OWNER, "/meetings");

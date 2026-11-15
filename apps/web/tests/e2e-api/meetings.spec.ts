@@ -175,4 +175,63 @@ test.describe("meetings (api mode)", () => {
       await priyaContext.close();
     }
   });
+
+  // The drawer follows its occurrence (meetings.md Part 3; ADR 0051 "Part 3", safest option 16): on
+  // the API the re-read after a move answers later than the move, so the drawer must wait for it
+  // rather than close on the read from before, where the moved occurrence is not yet.
+  test("the drawer follows a series moved with All events or This and following, and back on Undo", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const run = Date.now().toString(36);
+    const title = `API series ${run}`;
+    const { day, weeksAhead } = mondayForRun(run);
+    const made: string[] = [];
+    try {
+      await signInAs(page, MANAGER_EMAIL);
+      await openWeek(page, 0);
+      await page.getByRole("button", { name: "New meeting" }).click();
+      const form = page.getByRole("dialog", { name: "New meeting" });
+      await form.getByLabel("Title").fill(title);
+      await form.getByLabel("Date").fill(day);
+      await form.getByLabel("Start").fill("10:00");
+      await form.getByLabel("Repeats").click();
+      await page.getByRole("option", { name: "Every week" }).click();
+      made.push(await schedule(page));
+      await expect(page.getByText(`Meeting ${title} scheduled`)).toBeVisible();
+
+      // The second occurrence, which every scope may move.
+      await openWeek(page, weeksAhead + 1);
+      await inGrid(page, title).first().click();
+      const drawer = page.getByRole("dialog", { name: title });
+      await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
+      for (const scope of ["All events", "This and following events"]) {
+        const moved = page.waitForResponse(
+          (r) =>
+            r.request().method() === "POST" &&
+            /^\/api-proxy\/meetings\/[^/]+\/reschedule$/.test(new URL(r.url()).pathname),
+        );
+        await drawer.getByLabel("Start").fill("11:00");
+        await drawer.getByRole("button", { name: "Move meeting" }).click();
+        const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
+        await ask.getByLabel(scope).check();
+        await ask.getByRole("button", { name: "Move" }).click();
+        const answer = (await (await moved).json()) as { undo: { createdIds: string[] } };
+        made.push(...answer.undo.createdIds);
+        await expect(page.getByText(`${title} moved`).last()).toBeVisible();
+        await expect(drawer.getByText(/11:00 AM/)).toBeVisible();
+        await page.getByRole("button", { name: "Undo" }).click();
+        await expect(page.getByText("Move undone").last()).toBeVisible();
+        await expect(drawer.getByText(/10:00 AM/)).toBeVisible();
+      }
+
+      // Cleanup through the product.
+      await drawer.getByRole("button", { name: "Cancel meeting" }).click();
+      await expect(page.getByText("Meeting cancelled")).toBeVisible();
+      await expect(drawer).toHaveCount(0);
+    } finally {
+      // A run stopped midway cancels what it made; one already cancelled or removed by Undo is fine.
+      for (const id of made) await page.request.post(`/api-proxy/meetings/${id}/cancel`).catch(() => undefined);
+    }
+  });
 });

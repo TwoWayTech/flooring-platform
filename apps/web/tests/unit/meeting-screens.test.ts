@@ -9,7 +9,14 @@ import {
   type MeetingViewer,
 } from "@workspace/shared";
 import { conflictWarning } from "@/features/meetings/conflict-warning";
-import { keyOf, movedKey, occurrenceAt } from "@/features/meetings/current-occurrence";
+import {
+  drawerOccurrence,
+  drawerOn,
+  followMove,
+  keyOf,
+  movedKey,
+  occurrenceAt,
+} from "@/features/meetings/current-occurrence";
 import { meetingOffers, meetingRights, type MeetingSwitches } from "@/features/meetings/meeting-rights";
 import { scopeChoices } from "@/features/meetings/scope-choices";
 import type { MeetingMove, MeetingUndo } from "@/lib/api/contract";
@@ -141,6 +148,82 @@ describe("meetings screens (ADR 0051 part 3)", () => {
     });
     // A one-off always moves as all events, whatever the screen asked.
     expect(movedKey(move("this", "m1"), undo(), meeting())).toEqual({ meetingId: "m1", planned: "2026-11-23T11:00" });
+  });
+
+  it("keeps the drawer on its occurrence until the read after a series move or its Undo answers, then follows it", () => {
+    // The screens' re-read starts when the write answers, so the read on screen then is still the
+    // one from before the move: it has neither an "all" shift's new times nor a split's new series.
+    const week2 = { meetingId: "s1", planned: "2026-11-23T09:00" };
+    const move = (scope: MeetingMove["scope"]): MeetingMove => ({
+      meetingId: "s1",
+      planned: week2.planned,
+      start: "2026-11-23T11:00",
+      durationMin: 60,
+      scope,
+    });
+    const before = { meetings: [series()] };
+    const opened = drawerOn(week2);
+    expect(drawerOccurrence(before, opened)).toEqual({
+      occurrence: { meeting: before.meetings[0], planned: week2.planned, start: week2.planned, durationMin: 60 },
+      target: opened,
+    });
+
+    // All events: the moved occurrence is planned at its new time, which the read before never has.
+    const toAll = movedKey(move("all"), undo(), series());
+    expect(occurrenceAt(before.meetings, toAll)).toBeNull();
+    const moving = followMove(opened, week2, toAll, before);
+    expect(drawerOccurrence(before, moving)).toEqual({
+      occurrence: drawerOccurrence(before, opened).occurrence,
+      target: moving,
+    });
+    const shifted = { meetings: [series({ start: "2026-11-16T11:00", sequence: 1 })] };
+    const afterAll = drawerOccurrence(shifted, moving);
+    expect(afterAll.occurrence).toMatchObject({ planned: "2026-11-23T11:00", start: "2026-11-23T11:00" });
+    expect(afterAll.target).toEqual(drawerOn(toAll));
+
+    // Its Undo heads back to the planned time the shifted read no longer has.
+    expect(occurrenceAt(shifted.meetings, week2)).toBeNull();
+    const undoingAll = followMove(afterAll.target, toAll, week2, shifted);
+    expect(drawerOccurrence(shifted, undoingAll).occurrence).toMatchObject({ start: "2026-11-23T11:00" });
+    const restored = { meetings: [series({ sequence: 2 })] };
+    expect(drawerOccurrence(restored, undoingAll)).toMatchObject({
+      occurrence: { planned: week2.planned, start: week2.planned },
+      target: drawerOn(week2),
+    });
+
+    // This and following: the drawer lands on the new series, the first id the server created.
+    const toSplit = movedKey(move("following"), undo(["s2"]), series());
+    const splitting = followMove(opened, week2, toSplit, before);
+    expect(drawerOccurrence(before, splitting).occurrence).toMatchObject({
+      meeting: { id: "s1" },
+      start: week2.planned,
+    });
+    const split = { meetings: [series({ until: "2026-11-22" }), series({ id: "s2", start: "2026-11-23T11:00" })] };
+    expect(occurrenceAt(split.meetings, week2)).toBeNull();
+    const afterSplit = drawerOccurrence(split, splitting);
+    expect(afterSplit.occurrence).toMatchObject({ meeting: { id: "s2" }, start: "2026-11-23T11:00" });
+    expect(afterSplit.target).toEqual(drawerOn(toSplit));
+
+    // Its Undo removes the split, and the drawer goes back to the original series.
+    const undoingSplit = followMove(afterSplit.target, toSplit, week2, split);
+    expect(drawerOccurrence(split, undoingSplit).occurrence).toMatchObject({ meeting: { id: "s2" } });
+    expect(drawerOccurrence(restored, undoingSplit)).toMatchObject({
+      occurrence: { meeting: { id: "s1" }, start: week2.planned },
+      target: drawerOn(week2),
+    });
+
+    // A newer read without the occurrence closes the drawer, waiting or not, so it never offers a
+    // move against something gone; a move of any other occurrence leaves the drawer where it is.
+    expect(drawerOccurrence({ meetings: [series({ until: "2026-11-22" })] }, splitting)).toEqual({
+      occurrence: null,
+      target: null,
+    });
+    expect(drawerOccurrence({ meetings: [] }, opened)).toEqual({ occurrence: null, target: null });
+    const elsewhere = { meetingId: "s1", planned: "2026-11-30T09:00" };
+    expect(followMove(opened, elsewhere, toAll, before)).toBe(opened);
+    expect(followMove(null, week2, toAll, before)).toBeNull();
+    // A move made from the occurrence still shown while waiting is followed too.
+    expect(followMove(moving, week2, toSplit, before)).toEqual({ key: toSplit, was: week2, against: before });
   });
 
   it("offers change, removal and decisions only as the shared rules allow on the shaped meeting, and nothing of guests with invites off", () => {
