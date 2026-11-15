@@ -269,17 +269,28 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 
 14. **UID.** `crypto.randomUUID()` at creation, never changed. The new series from a "following" split gets a new UID and `sequence: 0`.
 
-15. **Calendar file.** `meetingIcs` in `calendar/ics.ts` writes one VEVENT per file. Lines end in CRLF and fold at 75 octets (`foldLine`). `PRODID:-//Flooring Suite//Demo//EN`. DTSTART and DTEND are local with TZID. DTSTAMP is UTC. REQUEST files carry one VALARM with `TRIGGER:-PT<reminderMin>M`. Other methods carry none. A file with RECURRENCE-ID has no RRULE.
+15. **Calendar file.** `meetingIcs` in `calendar/ics.ts` writes one VEVENT per file.
+    - Lines end in CRLF and fold at 75 octets (`foldLine`).
+    - The demo writes `PRODID:-//Flooring Suite//Demo//EN`; the API passes `-//Platform//Meetings//EN`.
+    - DTSTART and DTEND are local with TZID, and DTSTAMP is UTC. DTEND is the start instant plus the length. When its local time is one the clock shows twice and the end is the later of the two, DTEND is written in UTC.
+    - REQUEST files carry one VALARM with `TRIGGER:-PT<reminderMin>M`. Other methods carry none.
+    - A file with RECURRENCE-ID has no RRULE.
+    - Every text value is escaped and stripped of control characters, a lone CR included.
+    - A CN loses control characters, has `"` turned into `'`, and is cut at 100 characters.
+    - ATTENDEE and ORGANIZER lines are written only for an address that passes `validGuestEmail` (`meetings/email.ts`).
+    - A zone with no VTIMEZONE block throws.
+
+    The writer is shared, so these hardening rules (ADR 0051) apply to the demo's files too.
 
 16. **RRULE.** `recurrenceRule` in `calendar/ics.ts`.
 
     ```text
     weekly    RRULE:FREQ=WEEKLY
     biweekly  RRULE:FREQ=WEEKLY;INTERVAL=2
-    monthly   RRULE:FREQ=MONTHLY;BYDAY=<ceil(day/7)><weekday>
+    monthly   RRULE:FREQ=MONTHLY;BYDAY=<min(ceil(day/7), 4)><weekday>
     ```
 
-    With an end date, `;UNTIL=<endOfDayUtc(until, timeZone)>` is added.
+    With an end date, `;UNTIL=<endOfDayUtc(until, timeZone)>` is added. The monthly week is `monthlyWeekOf` in `operations/meetings.ts`, the same cap at 4 as rule 2. A monthly series that starts after day 28 starts its RRULE at its second occurrence and lists the first as an RDATE. One that ends before its second occurrence gets no RRULE (ADR 0051).
 
 17. **Outbox row identity.** The invite's version is `` `${opts.sequence}-${opts.method}-${ctx.now}-${opts.recurrenceId ?? ""}` ``. `ctx.now` has minute precision (`nowStamp` in `store.ts`), so two identical sends in one minute write one row.
 
@@ -462,7 +473,7 @@ Reminders:
 
 Moves and conflicts:
 
-- `recurrenceProblem` is checked only at creation. A monthly series moved to day 29 to 31 gets `BYDAY=5..` in its RRULE, while `nextMonthSameWeekday` caps the week at 4.
+- `recurrenceProblem` is checked only at creation in the demo; the API also checks it when an edit changes the start. A monthly series moved to day 29 to 31 keeps a fourth-week RRULE with its first date as an RDATE, matching `nextMonthSameWeekday` (rule 16).
 - "This and following" from the first occurrence leaves the old series with `until` before its `start`. It shows no occurrences and still gets an update.
 - Undo removes a split-off series without sending its guests a cancellation.
 - Conflicts are checked only on a move, only warn, cover only the moved occurrence on its own day, and are not checked at creation.
@@ -480,9 +491,79 @@ Permissions and answers:
 Other:
 
 - A cancelled meeting disappears from the calendar. Its rows stay in the Outbox.
-- `timezoneBlock` in `calendar/ics.ts` has seven US zones. Any other TZID gets the New York block under its own name.
+- `timezoneBlock` in `calendar/ics.ts` has seven US zones. A file can't be written for any other zone (rule 15). Every zone the demo's Localization offers is one of the seven.
 - Times are not converted between zones (ADR 0018).
 - A lead saved from a meeting has no Lead label in the customer list (U-52).
 - With `newGuestHandling: contact`, the picker preselects the first customer, so an unchanged form saves the guest under it.
 - The store does not check that a new guest's email is unique. The picker hides the Add option for an address it already knows.
-- `docs/api-contract.md` has no rows for these calls. The contract is `apps/web/src/lib/api/contract.ts`.
+- `docs/api-contract.md` lists these calls under "Domain actions". The API's routes are under "Meetings (real build, ADR 0051)". The typed contract is `apps/web/src/lib/api/contract.ts`.
+
+## Real build (ADR 0051)
+
+Part 1 of Meetings is on the API:
+- the calendar, guests, invites, answers, requests and the calendar file;
+- reminders;
+- the Summit seed.
+
+Moves, Undo and proposal decisions come in part 2, and the screens move to the API in part 3. Until then the screens run on DemoStore as described above. The routes are in docs/api-contract.md, "Meetings (real build, ADR 0051)".
+
+The API follows this spec. Where it differs, it is in the safer direction, and each difference is a row in docs/blueprint-delta.md:
+
+- **Who may change a meeting.** Editing, cancelling and removing a guest need `meetings.meeting.edit`, sight of the meeting, sight of every customer, supplier and contact on it, and either being its organiser or holding a scope wider than own on a meeting that is not private (`canChangeMeeting`). That closes "anyone with `meetings.meeting.edit` who can see a meeting can change it" (Who uses it). The guest rule binds the organiser too: a change emails every guest with the changer as the Outbox actor, and the Outbox shows its actor the guest's name, address and file, so someone who reads a guest only as "Customer" can't change the meeting. Some of Summit's seeded meetings have an organiser who can't read their customer; on the API someone who can read every guest changes those. Someone who sees the meeting but may not change it gets 403.
+- **Private meetings** are hidden from everyone not on them, the Owner included: in the calendar, in the calendar file, and in the Outbox, where someone else's row of a private meeting is redacted whatever the reader holds. A removed guest no longer sees one.
+- **What a reader sees** (`meetingForViewer`):
+  - Other guests' addresses, and a hidden guest list, are shown only to the organiser and to those who may change the meeting (the drawer rule above shows a hidden list to any edit holder). The "Add to my calendar" file follows the same rule: it has an ORGANIZER line, with the organiser's address, only for those readers.
+  - Other guests' notes and proposals go to the organiser only.
+  - A customer, supplier or contact the reader can't read is "Customer", "Supplier", "Customer contact" or "Supplier contact", with no address.
+- **Hidden guest list** is forced on with any guest who is not staff. Rule 9 forces it only for email guests. A calendar file lists only its recipient whenever any guest is not staff, even on a seeded meeting stored with an open list.
+- **Owned by the server:**
+  - the organiser, added as accepted;
+  - every guest's name, address and answer: only who the guest is is read from the request;
+  - `allowProposals`: the setting, and only when the organiser holds `meetings.meeting.edit`, for requests too;
+  - a request's length and place;
+  - the time zone, which is the company's (`tenants.time_zone`). A company outside the seven US zones gets 409.
+- **Limits:**
+  - title up to 200 characters and place up to 200, each on one line;
+  - notes up to 4000, a guest's name up to 100, a reply note up to 500;
+  - 15 to 1440 whole minutes on create, edit and proposals;
+  - a reminder of 10, 15, 30 or 60;
+  - at most 50 guests and 20 email guests a meeting, and 50 outside addresses per person a day;
+  - at most 200 emails to people outside the company and 500 meeting emails in all per person a day, every send counted, so the same guests can't be mailed again and again; an action over a limit is refused and changes nothing;
+  - a stricter address check than rule 12;
+  - "No reply yet" is refused as an answer.
+- **Switches:** with `meetings.invites` off, guests are refused; the guest picker, guest removal and answers are 404; and nothing is sent, reminders included. `meetings.requests` needs `meetings.invites`.
+- **Times** are stored as instants and shown in the meeting's zone. A start the clocks skip is refused; a time the clock shows twice is the earlier one.
+- **Edits:**
+  - A new start is checked against the zone and rule 3 only when it changes, so the seeded "Monthly safety talk" that starts on the 30th can still be retitled.
+  - A series with occurrences moved on their own refuses a new start or length until part 2 can send those occurrences again.
+- **Cancelled meetings:**
+  - cancel works once;
+  - answers, guest removal and edits on a cancelled meeting are refused, which closes the "do not check for a cancelled meeting" limit;
+  - a cancelled meeting has no calendar file (404), and no REQUEST is ever sent for one.
+- **Answers:**
+  - only a staff guest who is not the organiser answers;
+  - a proposal is a pending Maybe;
+  - each answer from each guest is its own notice to the organiser.
+- **Invites:**
+  - The `.ics` goes with the email as a `text/calendar` attachment.
+  - A REQUEST says STATUS:TENTATIVE while a request waits. That closes the CONFIRMED-on-tentative limit for the API's sends.
+  - A colleague who is no longer an active member gets no invite, reminder or notice.
+  - Each send is its own Outbox row, so rule 17's one-minute merge is gone.
+- **Reminders** close the "Reminders" limits above:
+  - a reminder is a scheduled Outbox row for the next occurrence, raised again after every create, edit, cancel, guest removal and answer that decides a request;
+  - it goes to staff guests who are still members, never the organiser;
+  - a worker sends it on time, and one not sent by the occurrence's start is dropped;
+  - later occurrences get theirs when a change re-syncs the meeting (a sweeper is part 4);
+  - the seeded meetings have none until changed.
+- **Audit:** a private meeting's target is "Private meeting", and no entry holds emails, notes or titles. An email guest is "Email guest".
+- **New guests** are never saved as contacts or leads: rule 11 is deferred on the API, and `newGuestHandling` is ignored.
+- **Settings → Meetings** stays on DemoStore. The API reads the stored group, or 15 minutes, proposals off and the list hidden where a value is missing.
+
+Kept as this spec says:
+- a move does not reset answers (part 2 follows the sends table);
+- reminders go to staff guests only;
+- `meeting.when` has no zone, and RSVP stays TRUE;
+- the organiser gets no notice of someone else's change;
+- a cancelled request sends CANCEL to its guest;
+- a significant edit resets the organiser's answer too;
+- `GET /meetings` has no date window.

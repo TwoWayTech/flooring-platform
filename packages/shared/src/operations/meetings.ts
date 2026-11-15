@@ -11,20 +11,32 @@ export interface MeetingOccurrence {
 }
 
 /**
+ * The week of the month a monthly series repeats in (meetings.md rule 2): the week of its date,
+ * with a fifth week moved to the fourth, which every month has. The calendar file's BYDAY uses the
+ * same number (ADR 0051), so a series that starts in a fifth week still matches the app.
+ */
+export function monthlyWeekOf(iso: string): number {
+  return Math.min(Math.ceil(Number(iso.slice(8, 10)) / 7), 4);
+}
+
+/**
  * The same weekday in the same week of the next month, the way offices book monthly meetings
  * ("the second Thursday"), so a series never lands on a weekend. A fifth-week date moves to the
  * fourth week, which every month has.
  */
 function nextMonthSameWeekday(iso: string): string {
   const date = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  const week = Math.min(Math.ceil(date.getUTCDate() / 7), 4);
+  const week = monthlyWeekOf(iso);
   const first = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
   const firstMatch = (date.getUTCDay() - first.getUTCDay() + 7) % 7;
   return addDays(first.toISOString().slice(0, 10), firstMatch + (week - 1) * 7) + iso.slice(10);
 }
 
-/** The step from one occurrence to the next, or null for a one-off meeting. */
-function next(start: string, recurrence: Meeting["recurrence"]): string | null {
+/**
+ * The planned start after this one, or null for a one-off meeting (meetings.md rule 2). The
+ * calendar file uses it too, so its RRULE and the app's occurrences agree (ADR 0051).
+ */
+export function nextPlannedStart(start: string, recurrence: Meeting["recurrence"]): string | null {
   if (recurrence === "weekly") return addDays(start, 7);
   if (recurrence === "biweekly") return addDays(start, 14);
   if (recurrence === "monthly") return nextMonthSameWeekday(start);
@@ -43,7 +55,7 @@ export function meetingOccurrences(meetings: readonly Meeting[], from: string, t
     for (
       let planned: string | null = meeting.start;
       planned && planned.slice(0, 10) <= addDays(to, 31) && (!meeting.until || planned.slice(0, 10) <= meeting.until);
-      planned = next(planned, meeting.recurrence)
+      planned = nextPlannedStart(planned, meeting.recurrence)
     ) {
       const moved = meeting.exceptions?.find((e) => e.planned === planned);
       if (moved?.cancelled) continue;

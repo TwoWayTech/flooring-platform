@@ -12,7 +12,7 @@ Every variable the apps read, with the local default. Put real values in a local
 | `CONTROL_DATABASE_URL` | api, db scripts | `postgres://postgres:postgres@localhost:5432/control` | The control database |
 | `TENANT_DB_ADMIN_URL` | db scripts | `postgres://postgres:postgres@localhost:5432/postgres` | A superuser login on the server that holds company databases (`DB_PROVIDER=postgres`) |
 | `CONNECTION_ENCRYPTION_KEY` | api, db scripts | generate one | 32 random bytes in base64: `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`. Encrypts company connection strings with AES-256-GCM |
-| `JOBS_ENABLED` | api | `true` | Whether this instance runs background workers (pg-boss, ADR 0032). Every instance can queue jobs. Set `false` on instances that only serve requests |
+| `JOBS_ENABLED` | api | `true` | Whether this instance runs background workers (pg-boss, ADR 0032). Every instance can queue jobs. Set `false` on instances that only serve requests. At least one instance must run workers, or no email is sent. A meeting reminder not sent by the meeting's start is dropped (ADR 0051) |
 | `JOBS_POLL_SECONDS` | api | `2` | How often idle workers look for jobs, 0.5 to 60 seconds |
 | `TENANT_POOL_CACHE` | api | `20` | How many company database pools one API instance keeps open. The least recently used pool is closed when another company needs one. Each pool holds up to 3 connections, so the total stays below the server limit (P9, ADR 0030) |
 | `DB_PROVIDER` | api, db scripts | `postgres` | `neon`, `postgres` or `noop` |
@@ -23,7 +23,7 @@ Every variable the apps read, with the local default. Put real values in a local
 | `AUTH_ALLOWED_HOSTS` | api | `localhost:*` outside production | Comma-separated web hosts that serve sign-in. Verification links and origin checks use them (ADR 0029). In production it is required and must list exact hosts: the API refuses to start with a wildcard, because the forwarded host is trusted and a shared wildcard such as `*.vercel.app` would let another site receive our links |
 | `SEED_USER_PASSWORD` | db scripts | empty | Password `pnpm db:seed` gives every seeded user, at least 12 characters. Unset: the seeded users get no password. Only new credentials get it; it never changes an existing one |
 | `E2E_USER_PASSWORD` | web api-mode e2e | `SEED_USER_PASSWORD` | Password the api-mode Playwright tests sign in with |
-| `EMAIL_PROVIDER` | api | `memory` | `resend` or `memory`. `memory` sends nothing (locally, verification links stay in the API's memory) |
+| `EMAIL_PROVIDER` | api | `memory` | `resend` or `memory`. `memory` sends nothing (locally, verification links stay in the API's memory). Before `resend` sends meeting invites, import one REQUEST and one PUBLISH `.ics` by hand into Google Calendar and Outlook on the web (ADR 0021, ADR 0051) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | `EMAIL_PROVIDER=resend` | empty | `EMAIL_FROM` must be on a verified domain |
 
 P8 part 2 adds two variables (ADR 0029, part 2):

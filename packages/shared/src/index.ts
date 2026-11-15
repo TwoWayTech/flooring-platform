@@ -40,6 +40,8 @@ export * from "./features";
 export * from "./business-report";
 export * from "./sales-lines";
 export * from "./calendar/ics";
+export * from "./calendar/zones";
+export * from "./meetings";
 export * from "./cost-sharing";
 export * from "./expenses";
 export * from "./journal";

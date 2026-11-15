@@ -16,6 +16,7 @@ import { AccessModule } from "./core/access/access.module";
 import { RequestPipelineModule } from "./core/request-pipeline.module";
 import { TenancyModule } from "./core/tenancy/tenancy.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
+import { MeetingsModule } from "./modules/meetings/meetings.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { PurchasingModule } from "./modules/purchasing/purchasing.module";
 import { SalesModule } from "./modules/sales/sales.module";
@@ -56,6 +57,7 @@ export class AppModule {
         FinanceModule,
         ContractsModule,
         HrModule,
+        MeetingsModule,
         ...extraModules,
       ],
       controllers: [HealthController],
