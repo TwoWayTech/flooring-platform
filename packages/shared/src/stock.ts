@@ -29,7 +29,10 @@ export function isBoxed(product: Pick<Product, "category" | "sqFtPerCarton" | "w
  * Boxed stock on hand per product: the sum of its ledger movements (plan section 2.1), at one
  * warehouse or, without one, across all of them. Movements never touch showrooms (plan A-1).
  */
-export function boxedStock(movements: readonly StockMovement[], locationId?: string | null): Map<string, Dec> {
+export function boxedStock(
+  movements: readonly Pick<StockMovement, "productId" | "locationId" | "quantity">[],
+  locationId?: string | null,
+): Map<string, Dec> {
   const totals = new Map<string, Dec>();
   for (const m of movements) {
     if (locationId && m.locationId !== locationId) continue;
@@ -54,7 +57,7 @@ export function rollsAt(rolls: readonly Roll[], locationId?: string | null): Rol
 }
 
 /** The warehouses of a company, in their order; showrooms are left out. */
-export function warehousesOf(locations: readonly Location[]): Location[] {
+export function warehousesOf<T extends Pick<Location, "kind">>(locations: readonly T[]): T[] {
   return locations.filter((l) => l.kind === "warehouse");
 }
 

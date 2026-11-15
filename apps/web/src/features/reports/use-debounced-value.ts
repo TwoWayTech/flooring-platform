@@ -1,0 +1,16 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+/**
+ * The value once it has stopped changing for `ms` milliseconds, so typing in a search box asks the
+ * API once when the person pauses, not once per key.
+ */
+export function useDebouncedValue<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}

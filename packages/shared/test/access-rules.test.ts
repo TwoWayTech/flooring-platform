@@ -174,6 +174,7 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
   paymentMethod: "a method",
   paymentPrefix: "a document number prefix",
   lastPaymentAt: "a date",
+  paymentsTo: "a date bound of the Payments received report (ADR 0055)",
   supplierPaymentId: "an id",
   showRatesToEmployees: "a setting flag",
   showPayToEmployees: "a setting flag",

@@ -27,6 +27,13 @@ export const EXPENSE_CATEGORIES = (Object.keys(EXPENSE_CATEGORY_LABELS) as Expen
 /** What an expense costs: amount plus tax, because US sales tax on a purchase is part of its cost (ADR 0023). */
 export const expenseCost = (e: Pick<Expense, "amount" | "tax">): Dec => dec(e.amount).plus(e.tax);
 
+/**
+ * Expenses without the payroll months, for a person without pay sight (ADR 0041; ADR 0055 S3): the
+ * reports drop them before any figure is computed, so no total can give pay away.
+ */
+export const withoutPayroll = <T extends Pick<Expense, "category">>(expenses: readonly T[]): T[] =>
+  expenses.filter((e) => e.category !== "payroll");
+
 /** Whether an expense counts as a cost: confirmed, and not money passed on to the state (ADR 0023). */
 export const countsAsCost = (e: Pick<Expense, "status" | "category">) =>
   e.status === "confirmed" && e.category !== "sales_tax_payment";

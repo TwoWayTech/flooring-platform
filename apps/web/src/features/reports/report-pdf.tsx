@@ -1,6 +1,5 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { DOCUMENT_TOKENS, formatNumber, type NumberSettings } from "@workspace/shared";
-import type { Report } from "./report-model";
+import { DOCUMENT_TOKENS, formatNumber, type NumberSettings, type Report } from "@workspace/shared";
 
 const { ink, muted, hairline } = DOCUMENT_TOKENS;
 const styles = StyleSheet.create({

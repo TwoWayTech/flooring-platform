@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   businessReport,
   dec,
+  DEFAULT_SHARED_COSTS,
   dueRecurringDrafts,
   expenseJournal,
   expenseProblem,
@@ -43,6 +44,7 @@ const dataOf = (f: CompanyFixtures, patch: Partial<BusinessData> = {}): Business
   users: f.users,
   employees: f.employees,
   locations: f.locations,
+  productCategories: f.products,
   products: f.products,
   rolls: f.rolls,
   stockMovements: f.stockMovements,
@@ -58,7 +60,7 @@ const everything = {
   salesRepId: null,
   supplierId: null,
 };
-const showAll = { margin: true, people: true, stock: true };
+const showAll = { margin: true, payroll: true, people: true, stock: true };
 
 const expense = (patch: Partial<Expense> = {}): Expense =>
   ({
@@ -169,6 +171,11 @@ describe("shared costs (spec F1, ADR 0023)", () => {
     expect(weightsFor([loc("a")], settings, new Map([["a", 500n]])).rule).toBe("revenue");
   });
 
+  it("splits by revenue share when a company has no settings yet (ADR 0023)", () => {
+    expect(DEFAULT_SHARED_COSTS).toEqual({ rule: "revenue", fixedPct: {} });
+    expect(weightsFor([loc("a"), loc("b")], DEFAULT_SHARED_COSTS, new Map([["a", 300n]])).rule).toBe("revenue");
+  });
+
   it("refuses fixed percentages that do not total 100", () => {
     expect(fixedPctProblem({ rule: "fixed", fixedPct: { a: "60", b: "30" } }, [loc("a"), loc("b")])).toMatch(/90/);
     expect(fixedPctProblem({ rule: "fixed", fixedPct: { a: "60", b: "40" } }, [loc("a"), loc("b")])).toBeNull();
@@ -268,7 +275,10 @@ describe.each([
   });
 
   it("expenses add up the same by category, vendor and location", () => {
-    const totals = ["expense_category", "expense_vendor", "expense_location"].map((k) => section(k).total!.values.cost);
+    const totals = ["expense_category", "expense_vendor", "expense_location"].map(
+      (k) => section(k).total!.values.amount,
+    );
+    expect(totals[0]).toBeDefined();
     expect(new Set(totals).size).toBe(1);
   });
 
@@ -281,12 +291,14 @@ describe.each([
     const limited = businessReport(
       dataOf(f),
       { ...period, ...everything },
-      { margin: false, people: false, stock: false },
+      { margin: false, payroll: false, people: false, stock: false },
     );
     const keys = limited.sections.map((s) => s.key);
     expect(keys).not.toContain("locations");
     expect(keys).not.toContain("people");
     expect(keys).not.toContain("stock");
+    // Purchases are at order cost, which needs the product-cost key (ADR 0055 S5).
+    expect(keys).not.toContain("purchases");
     expect(limited.sections[0]!.rows.map((r) => r.id)).not.toContain("gross");
   });
 
