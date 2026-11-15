@@ -341,3 +341,23 @@ Then lint, typecheck and tests through the lock, and the security-reviewer and s
   - meetings: the colleagues case is extended. A member who only creates meetings and one whose view tick was removed are left out. The engine is asked about the narrowed set only. The list equals weighing every active member one by one, and `membersAccess` for many people equals each person's answer alone (someone never set up included).
   - notifications: `within` and `deferJobs` queue no job until `queueSends`, and `queueSends` stops at the first failure, with the rows left for Retry.
 - Docs: ADR 0051 (Reminders, Core changes, My meetings, Residual risks "A jobs outage", Consequences). api-contract is unchanged, because no response changed.
+
+## Final checks (`b1e918b`, orchestrating session)
+- Merged `origin/main` (PR #32, `253058a`) in `8fb6cb8`. The only conflict was in docs/blueprint-delta.md, where both rows were kept.
+- Fresh final reviews:
+  - On `387fa6b`: security PASS and schema PASS. Two should-fix findings were fixed in `b1e918b`.
+  - On `b1e918b`: security PASS. Its notes are STATUS follow-ups.
+- `pnpm lint`: pass.
+- `pnpm typecheck`: pass.
+- `pnpm test`: pass.
+  - shared: 568
+  - api: 64
+  - web: 16
+  - db: 11
+  - providers: 11
+- `pnpm test:api`: pass.
+  - api: 420
+  - db: 45
+  - providers: 2
+- Run in this worktree with the CI database variables, because the worktree has no env file.
+- Next: mark ready, wait for `verify` and `e2e` green, self-merge, then part 2 (moves, undo, proposals and conflicts) from the updated main.

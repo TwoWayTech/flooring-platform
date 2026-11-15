@@ -142,6 +142,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - `playwright.api.config.ts` now runs the browser in America/Denver.
   - Fix: in api mode, work out `today()` in the company's time zone, once the client has the zone.
 - **Meetings before real email (ADR 0051, "For the owner"):** before `EMAIL_PROVIDER=resend` sends meeting invites, import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web (ADR 0021). Also import a PUBLISH without ORGANIZER, on its own and over the REQUEST of the same meeting.
+- **PR #33 final review notes (none blocking):**
+  - "Meeting answered" and "meeting requested" still queue inside `notify`, so a jobs outage loses the in-app note, and an accepted request waits twice. Move them onto `deferJobs` and `queueSends` like the invites.
+  - The audit log still shows who is on a private meeting (the guest ids in before and after).
+  - A linked guest the reader can't read still shows its record id and answer.
+  - `GET /meetings` and `GET /me/meetings` load every meeting the company ever had. Add a date window before companies have years of meetings.
+  - A guest whose customer, supplier or contact record is later soft-deleted would leave the meeting unchangeable (latent).
+  - Invites name the organiser's sign-in address to outside guests.
 - **Meetings residual risks (ADR 0051):**
   - Outside guests can't answer yet; their replies reach the organiser's mailbox, where nothing reads them.
   - A failed reminder re-sync leaves no reminder (logged).
@@ -284,7 +291,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
     - own-row SQL filter cases;
     - a lint fixture for the `JobTenants` rule.
   - Check whether Resend replays an earlier error for a reused idempotency key, with the first staging send.
-  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran.
+  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran. It must cover `scheduled` meeting reminder rows with no job too: since PR #33, reminders are queued after the commit, so a jobs outage leaves them `scheduled` with no job (ADR 0051, "A jobs outage").
   - Validate the sender settings with Zod when Settings → Email saves them.
   - The bounce webhook (`bounced`).
   - Attachments through StorageProvider.
