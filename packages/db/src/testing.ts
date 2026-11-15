@@ -189,6 +189,20 @@ export interface StandingSnapshot {
   subscriptions: { id: string; currentPeriodStart: Date; currentPeriodEnd: Date }[];
 }
 
+/** The one company the standing helpers may change: the seeded Summit Floor Co. (ADR 0054, safest option 17). */
+const STANDING_TEST_SLUG = "summit";
+
+/**
+ * Throws unless the slug is the seeded Summit's, so a standing helper never changes a real
+ * company's maintenance flag, periods or support grants (ADR 0054, safest option 17). An unknown company
+ * (no slug) is refused too.
+ */
+function refuseOtherCompanies(helper: string, slug: string | undefined): void {
+  if (slug !== STANDING_TEST_SLUG) {
+    throw new Error(`${helper} only touches the seeded company with the slug ${STANDING_TEST_SLUG}.`);
+  }
+}
+
 async function tenantIdOf(db: ControlDb, slug: string): Promise<string> {
   const [found] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug));
   if (!found) throw new Error(`No company with the slug ${slug}.`);
@@ -197,9 +211,10 @@ async function tenantIdOf(db: ControlDb, slug: string): Promise<string> {
 
 /**
  * Reads the facts company standing is made of (maintenance flag and the live rows' period dates),
- * so a test can put them back. Tests only: never point it at a real company.
+ * so a test can put them back. Tests only: it refuses any slug but `summit`.
  */
 export async function readStandingFacts(controlUrl: string, slug: string): Promise<StandingSnapshot> {
+  refuseOtherCompanies("readStandingFacts", slug);
   const handle = openControlDb(controlUrl, { max: 1 });
   try {
     const tenantId = await tenantIdOf(handle.db, slug);
@@ -229,11 +244,17 @@ export async function readStandingFacts(controlUrl: string, slug: string): Promi
 
 /**
  * Puts the facts of `readStandingFacts` back in one transaction. It never changes the company's
- * status, so `status_changed_at` and its trigger are untouched. Tests only: never point it at a real company.
+ * status, so `status_changed_at` and its trigger are untouched. Tests only: it refuses a snapshot
+ * of any company but Summit, and changes only that company's rows.
  */
 export async function restoreStandingFacts(controlUrl: string, snapshot: StandingSnapshot): Promise<void> {
   const handle = openControlDb(controlUrl, { max: 1 });
   try {
+    const [owner] = await handle.db
+      .select({ slug: tenants.slug })
+      .from(tenants)
+      .where(eq(tenants.id, snapshot.tenantId));
+    refuseOtherCompanies("restoreStandingFacts", owner?.slug);
     await handle.db.transaction(async (tx) => {
       await tx
         .update(tenants)
@@ -243,7 +264,7 @@ export async function restoreStandingFacts(controlUrl: string, snapshot: Standin
         await tx
           .update(tenantSubscriptions)
           .set({ currentPeriodStart: row.currentPeriodStart, currentPeriodEnd: row.currentPeriodEnd })
-          .where(eq(tenantSubscriptions.id, row.id));
+          .where(and(eq(tenantSubscriptions.id, row.id), eq(tenantSubscriptions.tenantId, snapshot.tenantId)));
       }
     });
   } finally {
@@ -251,8 +272,9 @@ export async function restoreStandingFacts(controlUrl: string, snapshot: Standin
   }
 }
 
-/** Turns maintenance on for a company with the reason `move`, or off with null. Tests only: never point it at a real company. */
+/** Turns maintenance on for a company with the reason `move`, or off with null. Tests only: it refuses any slug but `summit`. */
 export async function setMaintenance(controlUrl: string, slug: string, reason: "move" | null): Promise<void> {
+  refuseOtherCompanies("setMaintenance", slug);
   const handle = openControlDb(controlUrl, { max: 1 });
   try {
     const tenantId = await tenantIdOf(handle.db, slug);
@@ -267,9 +289,10 @@ export async function setMaintenance(controlUrl: string, slug: string, reason: "
 
 /**
  * Gives every live subscription row of a company a period of 30 days ending at `end`, so a test
- * reaches payment overdue, read only or locked by moving the end. Tests only: never point it at a real company.
+ * reaches payment overdue, read only or locked by moving the end. Tests only: it refuses any slug but `summit`.
  */
 export async function setPeriodEnd(controlUrl: string, slug: string, end: Date): Promise<void> {
+  refuseOtherCompanies("setPeriodEnd", slug);
   const handle = openControlDb(controlUrl, { max: 1 });
   try {
     const tenantId = await tenantIdOf(handle.db, slug);
@@ -303,12 +326,13 @@ export async function ensureTestSupportAgent(controlUrl: string): Promise<string
 
 /**
  * Inserts a pending support request by the test agent for a company, as a platform admin's request
- * would be. Returns the grant's id. Tests only: never point it at a real company.
+ * would be. Returns the grant's id. Tests only: it refuses any slug but `summit`.
  */
 export async function insertSupportGrant(
   controlUrl: string,
   input: { slug: string; reason: string; hours: number },
 ): Promise<string> {
+  refuseOtherCompanies("insertSupportGrant", input.slug);
   const agentId = await ensureTestSupportAgent(controlUrl);
   const handle = openControlDb(controlUrl, { max: 1 });
   try {
@@ -349,7 +373,7 @@ export async function removeTestSupportAgent(controlUrl: string): Promise<void> 
  * 30 days starting now, the seed's own shape. Tests only.
  */
 export async function clearTestStanding(controlUrl: string, slug: string): Promise<string[]> {
-  if (slug !== "summit") throw new Error("clearTestStanding only touches the seeded company with the slug summit.");
+  refuseOtherCompanies("clearTestStanding", slug);
   const changed: string[] = [];
   const snapshot = await readStandingFacts(controlUrl, slug);
   if (snapshot.maintenanceMode && snapshot.maintenanceReason === "move") {

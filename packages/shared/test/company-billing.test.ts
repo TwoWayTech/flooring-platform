@@ -111,6 +111,27 @@ describe("ownerBillingNotice (spec part 4, The Owner's notice)", () => {
     });
   });
 
+  it("names the paid row's end, not a later trial's, when a plan lapsed beside an ended trial", () => {
+    const paidEnd = inDays(-20);
+    const trialEnd = inDays(-5);
+    const input = facts({
+      subscriptions: [
+        row({ currentPeriodEnd: paidEnd }),
+        row({ status: "trial", price: "0", currentPeriodEnd: trialEnd }),
+      ],
+    });
+    const lockedFrom = plus(trialEnd, 30);
+    expect(notice(input)).toEqual({
+      kind: "read_only",
+      reason: "payment_lapsed",
+      since: iso(paidEnd),
+      lockedFrom: iso(lockedFrom),
+    });
+    expect(companyPhase(input, now)).toBe("read_only");
+    expect(companyPhase(input, new Date(lockedFrom.getTime() - 1))).toBe("read_only");
+    expect(companyPhase(input, lockedFrom)).toBe("locked");
+  });
+
   it("says the trial ended", () => {
     const end = inDays(-5);
     const input = facts({

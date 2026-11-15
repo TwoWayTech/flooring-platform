@@ -1017,7 +1017,7 @@ type ReadOnlyReason = "suspended" | "cancelled" | "payment_lapsed" | "trial_ende
   6. the database is read only: `database`;
   7. otherwise: `account`.
 
-  `since` is the latest counted row's end for `payment_lapsed` and `trial_ended`, and null otherwise.
+  `since` is the latest counted `active` or `past_due` row's end for `payment_lapsed`, so a trial that ended later is never named as the plan's period; the latest counted row's end for `trial_ended`, where every counted row is a trial; and null otherwise. In a read-only phase every paid row has ended, so `payment_lapsed` always has one; with none, `since` is null and the copy says the period has ended without a date.
 - **Locked:** null. The route is refused before it runs.
 
 **The dates** (`phaseDates` in `packages/shared/src/permissions/lifecycle-dates.ts`):
@@ -1260,6 +1260,8 @@ In `apps/api/eslint.config.js`, not in core:
 - **`src/modules/billing/company-standing.*`:** also no TenantContext ("The standing route never sees a TenantContext (ADR 0054).").
 - **The check:** two temporary probe files, expected to give 2 and 3 errors, deleted after.
 
+In `apps/web/eslint.config.mjs` (final review): `src/**` may not import `@workspace/db/testing` or `@workspace/db/seed`, as `apps/api` already refuses `@workspace/db/testing`; `tests/**` may. The `src/**` block repeats the fixture pattern, because flat config replaces a rule's options, and `src/lib/api/demo/**` may load fixtures but not those two. Checked with temporary probes: one under `src/features` gave 3 errors (testing, seed and a fixture), one under `src/lib/api/demo` gave 1 (testing), one under `tests/` gave none. The probes were deleted.
+
 ### Safer than the outline (part 4)
 Each is recorded in docs/blueprint-delta.md and ADR 0054.
 1. **Standing reveals only TenantGuard's view, the same for every member:** five words, nothing about billing, and no Owner flag.
@@ -1288,6 +1290,7 @@ Each is recorded in docs/blueprint-delta.md and ADR 0054.
 17. **The api-mode e2e touches only Summit's maintenance flag and period dates.**
     - It snapshots them, restores them, and checks them equal afterwards.
     - Global setup moves a stale or crashed Summit toward full use only, logs what it changed, and refuses any other company.
+    - Every standing helper in `packages/db/src/testing.ts` that names a company (`readStandingFacts`, `setMaintenance`, `setPeriodEnd`, `insertSupportGrant`, `clearTestStanding`) refuses any slug but `summit`, and `restoreStandingFacts` refuses another company's snapshot (final review).
     - The test requester is a user who can't sign in.
 
 ### As built (part 4)
@@ -1334,7 +1337,6 @@ Done in the build's docs stage:
   - refusals coalesce to one standing read in flight and one trailing.
 - **A database that control says is `ready` but can't be used.** Standing reads `full`, so there is no overlay, and company routes fail with their own errors and the screens' error cards. As built (S-15), a stored connection string that can't be decrypted gives 500 `internal_error` (logged as "Unknown encrypted value format"), not 503 `company_unavailable`: existing TenantConnectionService behaviour, unchanged here. A 500 isn't a standing code, so there is no loop.
 - **Refusals carry no `Cache-Control: no-store`.** Only the 200 answers of both new routes send it. A refusal holds no company data.
-- **`since` for `payment_lapsed`** is the latest counted row's end. With a mixed set (a paid row lapsed 20 days ago and a trial that ended 5 days ago), "Your plan's period ended on" names the trial's end. The lock date is exact either way.
 - **Read-only support decisions.** The Owner can't end an approval while the company is read only (question 26). Grants open nothing yet.
 - **Self-approval.** A person who is both a platform admin and the company's Owner can approve their own request (question 33).
 - **Dates use the browser's time zone,** as elsewhere. The demo's period ends at midnight UTC, so in US time zones its end shows as the day before.
@@ -1401,7 +1403,7 @@ Done in the build's docs stage:
 
 **Shared rules**
 
-56. `companyStandingState` follows TenantGuard's order over all 16 combinations, and an unknown, missing or malformed wire state reads `unavailable`. `phaseDates` gives the exact moment for every case in the dates table: one millisecond before it, the phase is still the earlier one. Over 500 seeded fact sets it agrees with `companyPhase`, the phase never steps up, and it is constant after the horizon. No notice text contains "until we restore".
+56. `companyStandingState` follows TenantGuard's order over all 16 combinations, and an unknown, missing or malformed wire state reads `unavailable`. `phaseDates` gives the exact moment for every case in the dates table: one millisecond before it, the phase is still the earlier one. Over 500 seeded fact sets it agrees with `companyPhase`, the phase never steps up, and it is constant after the horizon. With a paid row that lapsed 20 days ago and a trial that ended 5 days ago, the notice is `payment_lapsed` with `since` the paid row's end and `lockedFrom` the trial's end plus 30 days, the moment `companyPhase` turns `locked`. No notice text contains "until we restore".
 
 **Web**
 
@@ -1434,9 +1436,9 @@ Done in the build's docs stage:
 **As built, the criteria are covered by:**
 - 40 to 46: `apps/api/test/company-standing.int.test.ts` (21 tests: 40 is S-1 to S-6, 41 is S-7 to S-14, 42 is S-15 and S-16, 43 is S-19, 44 is S-17, 45 is S-18, 46 is S-20 and S-21), the unit `apps/api/test/company-standing-guard.test.ts` (7), the session-only map in `apps/api/test/isolation.int.test.ts`, and the lint probe (2 and 3 `no-restricted-imports` errors, then deleted). The helpers are in `apps/api/test/support/company-facts.ts`.
 - 47 to 55: `apps/api/test/billing.int.test.ts` (20 tests: 47 is B-2, 48 is B-3, 49 is B-4, 50 is B-5a to B-5h with B-12 checked in the helper on every Owner read, 51 is B-6, 52 is B-7 and B-8, 53 is B-9 and B-11, 54 is B-1 and B-10, 55 is the two B-13 tests). The isolation, permissions, users, platform and platform-support suites pass unchanged (15, 25, 17, 19 and 10).
-- 56: `packages/shared/test/company-standing.test.ts` (8), `lifecycle-dates.test.ts` (35), `company-billing.test.ts` (45) and `support-grants.test.ts` (31); `company-lifecycle.test.ts` passes unchanged (7).
+- 56: `packages/shared/test/company-standing.test.ts` (8), `lifecycle-dates.test.ts` (35), `company-billing.test.ts` (46) and `support-grants.test.ts` (31); `company-lifecycle.test.ts` passes unchanged (7).
 - 57, and the page rule in 62: `apps/web/tests/unit/company-standing.test.tsx` (41).
-- 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts` (2 tests), with its state helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/standing-test-helpers.int.test.ts` (4), and `tests/e2e-api/global-setup.ts`.
+- 58 to 61, and 62 in api mode: `apps/web/tests/e2e-api/company-standing.spec.ts` (2 tests), with its state helpers in `packages/db/src/testing.ts`, tested by `packages/db/test/standing-test-helpers.int.test.ts` (5, one checking that every helper taking a slug refuses any company but Summit, as `restoreStandingFacts` does for another company's snapshot), and `tests/e2e-api/global-setup.ts`.
 - 62 in the demo, and 63: `apps/web/tests/e2e/billing.spec.ts` (3 Flooring tests and 1 `@hr`), `/settings/billing` in `tests/e2e/screens.ts` for both hosts (axe in both themes, the console check, 375 px), and `apps/web/tests/unit/demo-billing-support.test.ts` (7, the end of a month in UTC among them).
 
 ## Parts 2 to 4 (outline, not built here)

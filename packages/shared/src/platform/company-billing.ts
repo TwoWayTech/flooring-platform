@@ -137,8 +137,25 @@ export function ownerBillingNotice({ facts, databaseReadOnly, now }: BillingNoti
   const counted = countedSubscriptions(facts);
   if (phase === "full") return fullUseNotice(facts, counted, databaseReadOnly, now);
   const reason = readOnlyReason(facts, counted, databaseReadOnly);
-  const since = reason === "payment_lapsed" || reason === "trial_ended" ? latestEnd(counted) : null;
-  return { kind: "read_only", reason, since, lockedFrom: isoOrNull(phaseDates(facts, now).lockedFrom) };
+  return {
+    kind: "read_only",
+    reason,
+    since: readOnlySince(reason, counted),
+    lockedFrom: isoOrNull(phaseDates(facts, now).lockedFrom),
+  };
+}
+
+/**
+ * The day a read-only notice says the access ended (spec part 4, "The Owner's notice"): for
+ * `payment_lapsed` the latest counted paid row's end, so a trial that ended later is never named as
+ * "your plan's period"; for `trial_ended`, where every counted row is a trial, the latest counted
+ * row's end; null for any other reason. In a read-only phase every paid row has ended; with none,
+ * it is null and the copy says the period has ended without a date.
+ */
+function readOnlySince(reason: ReadOnlyReason, counted: readonly LifecycleSubscription[]): string | null {
+  if (reason === "payment_lapsed") return latestEnd(counted.filter(isPaidRow));
+  if (reason === "trial_ended") return latestEnd(counted);
+  return null;
 }
 
 /**

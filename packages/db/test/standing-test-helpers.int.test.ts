@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { NoopProvisioner } from "@workspace/providers";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openControlDb } from "../src";
 import { supportAccessGrants, tenantSubscriptions, tenants, user } from "../src/control";
@@ -61,9 +61,36 @@ describe("standing test helpers", () => {
     expect(await readStandingFacts(url, "summit")).toEqual(before);
   });
 
+  it("refuses every slug-taking helper, and a snapshot, for any company but summit", async () => {
+    const before = await readStandingFacts(url, "summit");
+    const calls: (() => Promise<unknown>)[] = [
+      () => readStandingFacts(url, "harbor"),
+      () => setMaintenance(url, "harbor", "move"),
+      () => setPeriodEnd(url, "harbor", new Date(Date.now() - 20 * DAY)),
+      () => insertSupportGrant(url, { slug: "harbor", reason: "Checking roles", hours: 2 }),
+      () => restoreStandingFacts(url, { ...before, tenantId: randomUUID() }),
+    ];
+    for (const call of calls)
+      await expect(call()).rejects.toThrow(/only touches the seeded company with the slug summit/);
+    expect(await readStandingFacts(url, "summit")).toEqual(before);
+  });
+
   it("clears a leftover move maintenance and ended rows, and leaves a migration failure alone", async () => {
     const control = openControlDb(url, { max: 1 });
+    const statuses = async () => ({
+      company: await control.db
+        .select({ status: tenants.status, statusChangedAt: tenants.statusChangedAt })
+        .from(tenants)
+        .where(eq(tenants.slug, "summit")),
+      rows: await control.db
+        .select({ id: tenantSubscriptions.id, status: tenantSubscriptions.status })
+        .from(tenantSubscriptions)
+        .orderBy(asc(tenantSubscriptions.id)),
+    });
     try {
+      const statusesBefore = await statuses();
+      expect(statusesBefore.company).toHaveLength(1);
+      expect(statusesBefore.rows.length).toBeGreaterThan(0);
       await setMaintenance(url, "summit", "move");
       await setPeriodEnd(url, "summit", new Date(Date.now() - 3 * DAY));
       const changed = await clearTestStanding(url, "summit");
@@ -80,8 +107,7 @@ describe("standing test helpers", () => {
       expect(await clearTestStanding(url, "summit")).toEqual([]);
       expect((await readStandingFacts(url, "summit")).maintenanceMode).toBe(true);
       await setMaintenance(url, "summit", null);
-      const rows = await control.db.select().from(tenantSubscriptions);
-      expect(rows.every((row) => row.status !== "cancelled")).toBe(true);
+      expect(await statuses()).toEqual(statusesBefore);
     } finally {
       await control.close();
     }
