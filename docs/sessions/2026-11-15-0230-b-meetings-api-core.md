@@ -1,6 +1,6 @@
 # Session 2026-11-15 02:30, B (Claude): meetings on the API, part 1 (core, invites, .ics, reminders)
 
-Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meetings.md, depends on module 5; week 18 in the schedule). Part 1 of 3. Branch `feat/meetings-api-core`, from `origin/main` at `0aba18e`, in its own worktree (`../flooring-platform-meetings`), because another build runs in the main checkout on `feat/hr-pay-reasons-and-history`. Draft PR (link added below once opened).
+Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meetings.md, depends on module 5; week 18 in the schedule). Part 1 of 3. Branch `feat/meetings-api-core`, from `origin/main` at `0aba18e`, in its own worktree (`../flooring-platform-meetings`), because another build runs in the main checkout on `feat/hr-pay-reasons-and-history`. Draft PR #33.
 
 ## Prompt
 - A workflow run while the owner is asleep. The instruction it relays: follow docs/product-spec/meetings.md as the approved behaviour. Deviate only in the safer direction (less data exposure, deny by default, input and volume limits, refusing what can't be done correctly), and record each deviation in docs/blueprint-delta.md. Defer what can't be done safely; don't invent it. No change to existing tables and no new dependency.
