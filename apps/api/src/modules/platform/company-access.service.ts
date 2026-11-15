@@ -7,7 +7,6 @@ import {
 } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
 import {
-  planLimits,
   tenantModuleOverrides,
   tenantPermissionCeiling,
   tenantSubscriptions,
@@ -33,7 +32,7 @@ import {
 } from "@workspace/shared";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { AccessService } from "../../core/access/access.service";
-import { PlanLimits } from "../../core/access/plan-limits";
+import { PlanLimits, type SubscriptionLimitRow } from "../../core/access/plan-limits";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantDirectory } from "../../core/tenancy/tenant-directory";
 import type { PlatformActor } from "./platform-admin.guard";
@@ -45,15 +44,6 @@ interface LimitRowChange {
   subscriptionId: string;
   userLimitOverride: number | null;
   branchLimitOverride: number | null;
-}
-
-/** A subscription row that is not deleted, with its plan's limits (null when the plan has none). */
-interface LimitRow {
-  id: string;
-  userLimitOverride: number | null;
-  branchLimitOverride: number | null;
-  maxUsers: number | null;
-  maxBranches: number | null;
 }
 
 /** The API answer for a refusal from `accessPatchProblem`: 400 `invalid_request` or 422 `rule_broken`. */
@@ -96,7 +86,7 @@ export class CompanyAccessService {
         .where(and(eq(tenants.id, companyId), isNull(tenants.deletedAt)))
         .for("update");
       if (!locked) throw companyNotFound();
-      const limitRows = await this.limitRowsOf(tx, companyId);
+      const limitRows = await this.limits.rowsOf(companyId, tx);
       const problem = accessPatchProblem({ products: company.products, hasSubscription: limitRows.length > 0 }, patch);
       if (problem) throw refusal(problem);
       const before = await this.stateOf(tx, companyId, locked.status, company.products);
@@ -222,12 +212,13 @@ export class CompanyAccessService {
   /**
    * Limits (spec "What a save does", Limits; review A2): written to every subscription row that is
    * not deleted, cancelled ones included, because the company's limit is the largest across those
-   * rows (`PlanLimits`). A row whose plan already gives the number gets null, so an unchanged save
-   * pins nothing. No row is ever created: `accessPatchProblem` refuses limits with none (422).
+   * rows. The rows come from `PlanLimits.rowsOf`, the same rows `limitsOf` reads. A row whose plan
+   * already gives the number gets null, so an unchanged save pins nothing. No row is ever created:
+   * `accessPatchProblem` refuses limits with none (422).
    */
   private async writeLimits(
     tx: ControlDb,
-    rows: readonly LimitRow[],
+    rows: readonly SubscriptionLimitRow[],
     patch: AccessPatchInput,
     now: Date,
   ): Promise<LimitRowChange[]> {
@@ -259,20 +250,5 @@ export class CompanyAccessService {
       changes.push(change);
     }
     return changes;
-  }
-
-  /** The company's subscription rows that are not deleted, with their plans' limits. */
-  private async limitRowsOf(tx: ControlDb, companyId: string): Promise<LimitRow[]> {
-    return tx
-      .select({
-        id: tenantSubscriptions.id,
-        userLimitOverride: tenantSubscriptions.userLimitOverride,
-        branchLimitOverride: tenantSubscriptions.branchLimitOverride,
-        maxUsers: planLimits.maxUsers,
-        maxBranches: planLimits.maxBranches,
-      })
-      .from(tenantSubscriptions)
-      .leftJoin(planLimits, and(eq(planLimits.planId, tenantSubscriptions.planId), isNull(planLimits.deletedAt)))
-      .where(and(eq(tenantSubscriptions.tenantId, companyId), isNull(tenantSubscriptions.deletedAt)));
   }
 }

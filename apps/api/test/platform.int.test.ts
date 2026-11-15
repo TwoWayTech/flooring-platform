@@ -24,6 +24,7 @@ import {
   type PlatformCompany,
   type PlatformCompanySummary,
   type PlatformDirectory,
+  type ProductKey,
 } from "@workspace/shared";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import request from "supertest";
@@ -52,6 +53,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
   let owner = { email: "", cookie: "", secret: "", userId: "" };
   let support = { email: "", cookie: "", secret: "", userId: "" };
   let flooringProductId = "";
+  let hrProductId = "";
 
   /** A request as the web app's proxy sends it, from the test browser. */
   function call(method: HttpMethod, path: string, cookie?: string) {
@@ -133,10 +135,10 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
       .orderBy(desc(platformAuditLog.at));
   }
 
-  /** A company with no database of its own, on Flooring Suite, as provisioning would leave it. */
-  async function flooringCompany(slug: string): Promise<string> {
+  /** A company with no database of its own, on one product (Flooring Suite by default), as provisioning leaves it. */
+  async function companyOn(slug: string, productId = flooringProductId): Promise<string> {
     const id = await harness.addCompany(`${slug}${Date.now()}`);
-    await harness.control.db.insert(tenantProducts).values({ tenantId: id, productId: flooringProductId });
+    await harness.control.db.insert(tenantProducts).values({ tenantId: id, productId });
     return id;
   }
 
@@ -148,11 +150,10 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
 
   beforeAll(async () => {
     await harness.start();
-    const [flooring] = await harness.control.db
-      .select({ id: products.id })
-      .from(products)
-      .where(eq(products.key, "flooring"));
-    flooringProductId = flooring.id;
+    const productId = async (key: ProductKey) =>
+      (await harness.control.db.select({ id: products.id }).from(products).where(eq(products.key, key)))[0].id;
+    flooringProductId = await productId("flooring");
+    hrProductId = await productId("hr");
     owner = await enrolled(await adminEmail("owner"));
     support = await enrolled(await adminEmail("support"));
   }, 120_000);
@@ -273,7 +274,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
     expect((await call("get", `/platform/companies/${uuidv7()}`, owner.cookie).expect(404)).body.code).toBe(
       "not_found",
     );
-    const gone = await flooringCompany("gone");
+    const gone = await companyOn("gone");
     await harness.control.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.id, gone));
     await call("get", `/platform/companies/${gone}`, owner.cookie).expect(404);
     await stepUp(owner);
@@ -319,8 +320,33 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
     expect((await patchAccess(SUMMIT_ID, { plan: "free" })).status).toBe(400);
   });
 
+  it("refuses a module or key outside the company's products, and a key of a hidden module, writing nothing", async () => {
+    await stepUp(owner);
+    const hrOnly = await companyOn("hronly", hrProductId);
+    const cases: [string, object, string][] = [
+      [hrOnly, { modules: ["platform", "hr", "core"] }, "The Core module isn't offered to this company."],
+      [
+        hrOnly,
+        { ceiling: [...PROTECTED_CEILING_KEYS, "customers.customer.view"] },
+        "customers.customer.view is outside this company's products.",
+      ],
+      // Installation is hidden while its switch is off (rule 18), so its keys are refused for Summit.
+      [
+        SUMMIT_ID,
+        { ceiling: [...(await summitCeiling()), "installation.job.view"] },
+        "installation.job.view is outside this company's products.",
+      ],
+    ];
+    for (const [id, body, message] of cases) {
+      const response = await patchAccess(id, body);
+      expect({ body, status: response.status, message: response.body.message }).toEqual({ body, status: 400, message });
+    }
+    expect((await company(hrOnly)).modules).toEqual([...PRODUCT_MODULES.hr]);
+    expect((await auditRows("company.access_changed")).filter((row) => row.tenantId === hrOnly)).toEqual([]);
+  });
+
   it("refuses limits for a trial with no plan (422) and never creates a subscription row", async () => {
-    const trial = await flooringCompany("trial");
+    const trial = await companyOn("trial");
     await stepUp(owner);
     const response = await patchAccess(trial, { userLimit: 5 });
     expect([response.status, response.body.code]).toEqual([422, "rule_broken"]);
@@ -428,7 +454,7 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
   });
 
   it("makes a new user limit the effective one with an active row and a cancelled row on a bigger plan, never a deleted row", async () => {
-    const id = await flooringCompany("limits");
+    const id = await companyOn("limits");
     const plan = async (key: string, maxUsers: number, maxBranches: number) => {
       const [row] = await harness.control.db
         .insert(plans)
@@ -492,8 +518,8 @@ describe("platform console API (P11 part 1, needs the local PostgreSQL)", () => 
   });
 
   it("answers and saves for a company whose database failed or is in maintenance, without the error text", async () => {
-    const failed = await flooringCompany("failed");
-    const maintenance = await flooringCompany("maintenance");
+    const failed = await companyOn("failed");
+    const maintenance = await companyOn("maintenance");
     await harness.control.db.insert(tenantDatabases).values([
       {
         tenantId: failed,
