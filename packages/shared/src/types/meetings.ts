@@ -83,3 +83,32 @@ export interface MeetingResponse {
   at: string;
   stale: boolean;
 }
+
+/**
+ * A person or record the guest picker offers (GET /meeting-guests, ADR 0051). Staff come with no
+ * address, because the server resolves a colleague's address itself; customers, suppliers and
+ * their people are listed only for a viewer who may see them.
+ */
+export interface GuestOption {
+  kind: Exclude<Attendee["kind"], "external">;
+  id: string;
+  name: string;
+  email: string;
+}
+
+/** One of the person's own meetings on My meetings, with its next occurrence (ADR 0051). */
+export interface MyMeeting {
+  meeting: Meeting;
+  next: { start: string; durationMin: number; planned: string };
+}
+
+/**
+ * What My meetings shows (GET /me/meetings, ADR 0051): who is looking, so screens compare ids the
+ * server uses, their coming meetings, and the colleagues they may ask to meet, which is empty when
+ * they can't send a request.
+ */
+export interface MyMeetings {
+  viewerUserId: string;
+  meetings: MyMeeting[];
+  colleagues: { id: string; name: string }[];
+}
