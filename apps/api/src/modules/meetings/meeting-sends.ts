@@ -33,7 +33,10 @@ export interface InviteOptions {
   only?: Attendee;
   /** The occurrence an "occurrence" send is about. */
   occurrence?: OccurrenceTime;
-  /** The series' time or rule changed, so its surviving exceptions are sent again (ADR 0051 "Part 2"). */
+  /**
+   * The series changed something its file carries (time, rule, title, place, notes or reminder), so
+   * its surviving exceptions are sent again (ADR 0051 "Series exceptions sent again").
+   */
   resendExceptions?: boolean;
 }
 

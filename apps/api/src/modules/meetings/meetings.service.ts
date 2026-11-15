@@ -230,8 +230,9 @@ export class MeetingsService {
    * sends table; ADR 0051). Only someone who may change it (`canChangeMeeting`, 403 otherwise), and
    * never a cancelled one. A change of nothing writes nothing. A change of start, length or place
    * raises SEQUENCE and asks every guest again; every guest gets an "Updated" invite either way. A
-   * series' occurrences moved on their own shift with a new start, and after a new start or length
-   * the ones that have not ended are sent again (ADR 0051 "Part 2", ADR 0021).
+   * series' occurrences moved on their own shift with a new start, and after any edit the ones that
+   * have not ended are sent again, since each carries the title, place, notes, time and reminder it
+   * was sent with (ADR 0051 "Series exceptions sent again", ADR 0021).
    */
   async update(tenant: TenantContext, actor: Actor, id: string, sent: MeetingPatch): Promise<Meeting> {
     // Compared as stored, so a title or place sent with spaces around it is no change of its own.
@@ -265,9 +266,12 @@ export class MeetingsService {
         .where(eq(meetings.id, id));
       if (edit.significant) await resetAnswers(tx, id, now);
       const saved = await loadedIn(tx, id);
-      const timing = moved || edit.changed.includes("durationMin");
+      // Every field an edit changes is in the file each moved occurrence was sent with (SUMMARY,
+      // LOCATION, DESCRIPTION, DTSTART/DTEND, VALARM), and an override replaces its occurrence whole
+      // (RFC 5545 RECURRENCE-ID), so a series' surviving exceptions go again after any edit, not only
+      // a timing one (ADR 0051 "Series exceptions sent again"; review round 2 of PR #35).
       const planned = await this.sends.plan(tx, "edit", saved.meeting, saved.row.updatedAt, {
-        resendExceptions: timing,
+        resendExceptions: true,
       });
       const sends = await checkSends(tx, userId, dayStart, planned.sends);
       await auditMeeting(this.auditLog, tenant, actor, tx, {

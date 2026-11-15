@@ -123,10 +123,12 @@ export function sendPlan(
 const MINUTE_MS = 60_000;
 
 /**
- * The series' occurrences moved on their own, sent again after the series' time or rule changed
- * (ADR 0021 and 0051 "Part 2"; meetings.md "Differences from ADR 0021" lists them as not sent, and
- * this closes it). A calendar drops a series' overrides when its DTSTART, DTEND or RRULE changes, or
- * keeps them under RECURRENCE-IDs that no longer match, so each surviving exception gets one copy of
+ * The series' occurrences moved on their own, sent again after the series changed anything its file
+ * carries (ADR 0021 and 0051 "Series exceptions sent again"; meetings.md "Differences from ADR 0021"
+ * lists them as not sent, and this closes it). A calendar drops a series' overrides when its DTSTART,
+ * DTEND or RRULE changes, or keeps them under RECURRENCE-IDs that no longer match; and an override
+ * replaces its occurrence whole (RFC 5545 RECURRENCE-ID), so after a title, place, notes or reminder
+ * edit it would keep the old ones (review round 2 of PR #35). Each surviving exception gets one copy of
  * every series REQUEST, at the series' SEQUENCE, with its own RECURRENCE-ID (the planned time as
  * the series now has it) and its own time and length. Only exceptions whose occurrence has not ended
  * by `now` are sent, which bounds what guests receive; one marked cancelled is skipped (nothing

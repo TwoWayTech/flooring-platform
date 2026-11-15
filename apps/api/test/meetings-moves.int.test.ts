@@ -448,6 +448,41 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     expect(files.some((file) => file.includes(stamp(past.replace("09:00", "10:00"))))).toBe(false);
   });
 
+  it("sends an occurrence moved on its own again after a place, title, notes or reminder edit of its series", async () => {
+    // Review round 2 of PR #35: an override replaces its occurrence whole, so it must carry the edit.
+    const made = await schedule(cookies.manager, {
+      title: "Floor walk",
+      recurrence: "weekly",
+      guests: [staff(ids.employee)],
+    });
+    await moved(cookies.manager, made, { planned: at("11-17"), start: at("11-18", "10:00"), durationMin: 30 });
+    const copies = async () =>
+      (await invitesOf(made.id))
+        .map(fileOf)
+        .filter((file) => file.includes(`RECURRENCE-ID;TZID=America/Chicago:${YEAR}1117T090000`));
+    // The move raised SEQUENCE to 1 and the new place to 2; the other edits keep it.
+    const edits: [Record<string, unknown>, string][] = [
+      [{ location: "Bay 4" }, "LOCATION:Bay 4"],
+      [{ title: "Floor walk east" }, "SUMMARY:Floor walk east"],
+      [{ notes: "Bring the moisture meter" }, "DESCRIPTION:Bring the moisture meter"],
+      [{ reminderMin: 30 }, "TRIGGER:-PT30M"],
+    ];
+    for (const [patch, line] of edits) {
+      const before = (await copies()).length;
+      status(await call("patch", `/meetings/${made.id}`, cookies.manager).send(patch), 200);
+      const after = await copies();
+      expect(after).toHaveLength(before + 1);
+      const [latest, ...more] = after.filter((file) => file.includes(line));
+      expect(more).toEqual([]);
+      expect(latest).toContain(`DTSTART;TZID=America/Chicago:${YEAR}1118T100000`);
+      expect(latest).toContain("SEQUENCE:2");
+      expect(latest).not.toContain("RRULE:FREQ=WEEKLY");
+    }
+    expect((await storedMeeting(made.id)).exceptions).toEqual([
+      { planned: at("11-17"), start: at("11-18", "10:00"), durationMin: 30 },
+    ]);
+  });
+
   it("refuses what can't be moved correctly, and writes nothing", async () => {
     const series = await schedule(cookies.manager, { title: "Refusals", recurrence: "weekly" });
     const refuse = (body: Record<string, unknown>, message: RegExp) =>
