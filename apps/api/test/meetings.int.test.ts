@@ -8,6 +8,7 @@ import {
   rolePermissions,
   roles,
   settings,
+  userProfiles,
 } from "@workspace/db/company";
 import { tenantModuleOverrides, user } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
@@ -598,6 +599,32 @@ describe("meetings (needs the local PostgreSQL)", () => {
     }, "the expired reminder to be cancelled");
     expect(row!.sentAt).toBeNull();
     expect(harness.outbox.sent.some((m) => m.to.includes("late@example.test"))).toBe(false);
+  });
+
+  it("caps outside addresses at 50 a person a day, counting an address once, and writes to no colleague who left", async () => {
+    const outside = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({ email: `${prefix}${i}@outside.example`, name: "" }));
+    await schedule(cookies.warehouse, { title: "Batch A", newGuests: outside("a", 20) });
+    await schedule(cookies.warehouse, { title: "Batch B", newGuests: outside("b", 20) });
+    refused(
+      await call("post", "/meetings", cookies.warehouse).send(meetingBody({ newGuests: outside("c", 11) })),
+      "You can invite at most 50 people from outside the company a day. Try again tomorrow.",
+    );
+    // Addresses already invited today count once, so 10 new ones reach exactly 50.
+    await schedule(cookies.warehouse, { title: "Batch C", newGuests: [...outside("c", 10), ...outside("a", 10)] });
+
+    const departed = await member(["employee"], "Dee Departed");
+    const made = await schedule(cookies.manager, {
+      title: "Handover",
+      guests: [staff(departed.userId), staff(ids.employee)],
+    });
+    await rows((db) =>
+      db.update(userProfiles).set({ status: "disabled" }).where(eq(userProfiles.userId, departed.userId)),
+    );
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Handover notes" }), 200);
+    const updated = (await outboxOf(made.id)).filter((row) => row.values["meeting.action"] === "Updated");
+    expect(updated.map((row) => row.recipientId)).toEqual([ids.employee]);
+    expect((await waitingReminders(made.id)).map((row) => row.recipientId)).toEqual([ids.employee]);
   });
 
   it("offers guests the person may invite: colleagues without addresses, and only the customers they may read", async () => {

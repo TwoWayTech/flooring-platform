@@ -17,8 +17,9 @@ import {
 } from "@workspace/shared";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { NotificationService } from "../../core/notifications/notification.service";
+import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { MEETING_SOURCE, organiserOf, type MeetingPerson } from "./meetings-common";
+import { activeMembers, MEETING_SOURCE, organiserOf, type MeetingPerson } from "./meetings-common";
 
 /** Where a meeting's in-app notes open. */
 const MEETINGS_HREF = "/meetings";
@@ -36,14 +37,28 @@ export class MeetingSends {
 
   constructor(
     @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
+    private readonly tenancy: TenantConnectionService,
     private readonly notifications: NotificationService,
   ) {}
+
+  /**
+   * Which of these people can still be written to: anyone outside the company, and colleagues who
+   * are still active members. A colleague who left or was disabled gets no more meeting email,
+   * since it would carry the company's titles, places and notes (ADR 0051 "Sends").
+   */
+  private async reachable(tenant: TenantContext, people: readonly Attendee[]): Promise<(guest: Attendee) => boolean> {
+    const staffIds = people.filter((guest) => guest.kind === "staff").map((guest) => guest.id);
+    const db = await this.tenancy.db(tenant);
+    const active = new Set((await activeMembers(db, this.control.db, staffIds)).map((member) => member.id));
+    return (guest) => guest.kind !== "staff" || active.has(guest.id);
+  }
 
   /**
    * One invite and one calendar file per guest for an action (shared `sendPlan`): the organiser
    * never gets one, and with `meetings.invites` off nothing goes. `stamp` is the meeting's
    * committed `updated_at`, so DTSTAMP follows commit order and the Outbox version is exact to the
-   * millisecond (ADR 0051; RFC 5546 section 2.1.5). A private meeting's rows are restricted.
+   * millisecond (ADR 0051; RFC 5546 section 2.1.5). A private meeting's rows are restricted, and a
+   * colleague who is no longer an active member is skipped.
    */
   async invites(
     tenant: TenantContext,
@@ -56,7 +71,11 @@ export class MeetingSends {
     const plan = sendPlan(kind, meeting, { invitesOn: featureOn("meetings.invites"), removed });
     if (plan.length === 0) return;
     const organiser = await organiserOf(this.control.db, meeting.ownerUserId);
-    for (const send of plan) {
+    const reachable = await this.reachable(
+      tenant,
+      plan.map((send) => send.recipient),
+    );
+    for (const send of plan.filter((planned) => reachable(planned.recipient))) {
       try {
         const text = meetingIcs(sendIcsInput(send, meeting, organiser, stamp));
         const guest = send.recipient;
@@ -94,7 +113,8 @@ export class MeetingSends {
   ): Promise<void> {
     if (!outcome.event) return;
     try {
-      const organiser = await organiserOf(this.control.db, meeting.ownerUserId);
+      const [organiser] = await activeMembers(await this.tenancy.db(tenant), this.control.db, [meeting.ownerUserId]);
+      if (!organiser) return;
       const word = outcome.event === "meeting.proposed" ? "proposed a new time" : outcome.partStat;
       await this.notifications.notify(tenant, actorUserId, {
         event: outcome.event,

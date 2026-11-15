@@ -213,7 +213,9 @@ export class MeetingsService {
    * never a cancelled one. A change of nothing writes nothing. A change of start, length or place
    * raises SEQUENCE and asks every guest again; every guest gets an "Updated" invite either way.
    */
-  async update(tenant: TenantContext, actor: Actor, id: string, patch: MeetingPatch): Promise<Meeting> {
+  async update(tenant: TenantContext, actor: Actor, id: string, sent: MeetingPatch): Promise<Meeting> {
+    // Compared as stored, so a title or place sent with spaces around it is no change of its own.
+    const patch: MeetingPatch = { ...sent, title: sent.title?.trim(), location: sent.location?.trim() };
     const db = await this.tenancy.db(tenant);
     const result = await db.transaction(async (tx) => {
       const before = await this.lockChangeable(tx, actor.access, id);

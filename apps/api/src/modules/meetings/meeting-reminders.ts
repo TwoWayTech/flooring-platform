@@ -1,12 +1,14 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import type { ControlDb, DbHandle } from "@workspace/db";
 import { featureOn, meetingWhenText, nextReminder, reminderRecipients } from "@workspace/shared";
 import { v7 as uuidv7 } from "uuid";
+import { CONTROL_DB } from "../../core/database/control-db";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow } from "../hr/hr-common";
 import { attendeesOf, meetingOf } from "./meeting-records";
-import { lockMeeting, MEETING_SOURCE } from "./meetings-common";
+import { activeMembers, lockMeeting, MEETING_SOURCE } from "./meetings-common";
 
 /**
  * A meeting's reminder as Outbox rows (meetings.md rule 10; ADR 0051 "Reminders"; ADR 0032: a
@@ -19,6 +21,7 @@ export class MeetingReminders {
   private readonly logger = new Logger("Meetings");
 
   constructor(
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
     private readonly tenancy: TenantConnectionService,
     private readonly notifications: NotificationService,
   ) {}
@@ -31,9 +34,10 @@ export class MeetingReminders {
    * at once leave exactly one set of rows. Each set has a version of its own, so a re-sync is never
    * swallowed by the row of a set it cancelled (critic B1).
    *
-   * The reminder goes to the staff guests but the organiser, by email only (spec rule 10), held
-   * until `reminderMin` before the next occurrence and dropped if not sent by its start. None is
-   * raised for a cancelled meeting, a request still waiting, or while `meetings.invites` is off.
+   * The reminder goes to the staff guests but the organiser who are still active members, by email
+   * only (spec rule 10), held until `reminderMin` before the next occurrence and dropped if not sent
+   * by its start. None is raised for a cancelled meeting, a request still waiting, or while
+   * `meetings.invites` is off.
    * There is no actor, so a re-sync by someone else drops nobody. Later occurrences of a series get
    * theirs when a change re-syncs it; a sweeper for them is Part 4 (ADR 0051 "Deferred").
    */
@@ -48,7 +52,13 @@ export class MeetingReminders {
         if (!featureOn("meetings.invites")) return;
         const { meeting } = meetingOf(row, await attendeesOf(tx, [row.id]));
         const reminder = nextReminder(meeting, await databaseNow(tx));
-        const to = reminderRecipients(meeting);
+        const guests = reminderRecipients(meeting);
+        const active = await activeMembers(
+          tx,
+          this.control.db,
+          guests.map((guest) => guest.id),
+        );
+        const to = guests.filter((guest) => active.some((member) => member.id === guest.id));
         if (!reminder || to.length === 0) return;
         await this.notifications.notify(
           tenant,
