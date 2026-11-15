@@ -562,6 +562,7 @@ When a company's migration fails:
 **The command's line** (`packages/db/scripts/migrate.ts`):
 - **In maintenance:** "Company {id} is in maintenance mode; {n} platform admin(s) {emailed, or NOT emailed (EMAIL_PROVIDER is memory)}."
 - **Otherwise:** "Company {id} is NOT in maintenance mode{ and its read-only database still serves reads}: turn it on by hand (tenants.maintenance_mode, reason migration_failed); {n} platform admin(s) {…}." The bracketed clause appears only for a read-only database.
+- **When the alert itself fails** (as built, review round 1): the line is still printed, ending "0 platform admin(s) NOT emailed (the alert failed).", and the alert's error is logged after it. Both writes failing usually means the control database is unreachable, so the alert fails on its first query too; this line is then the only place that says the company is NOT in maintenance mode. The wording lives in `packages/db/scripts/migrate-report.ts`.
 
 ### ApiClient (part 3)
 - **`listPlatformAudit(query)`:** sends `GET /platform/audit` with only the fields that are set. A `companyId` or `before` that is not a UUID (a demo slug, for example) is never sent; the answer is then `{ entries: [], nextCursor: null }`.
@@ -719,14 +720,14 @@ Settled while building, all in ADR 0053.
 - **`MigrationStoppedError`** exposes `code` and `recorded` and keeps the original error as `cause`.
 - **The fallback's log line** uses the write error's own message, which for a database error can include the failed query's values and so the migration text. That happens only when the failure couldn't be recorded, when the CLI prints the text anyway.
 - **The demo cursor** is looked up among all entries, whatever the filters, as the API does.
-- **The web's unit tests** compile JSX in `apps/web/vitest.config.ts` (`oxc`), because tsconfig's `jsx: "preserve"` kept vitest from importing `.tsx` files. No dependency was added.
+- **The web's unit tests** compile JSX in `apps/web/vitest.config.ts` (`oxc`), because tsconfig's `jsx: "preserve"` kept vitest from importing `.tsx` files. No dependency was added. They run `tests/unit/**/*.test.{ts,tsx}`, and tsconfig includes `tests/**/*.tsx`, so a test can write JSX.
 - **The companies list is wider:** at 1440 px it scrolls sideways inside its table because of the two new columns; the page doesn't.
 - **"Approves it in Settings":** the panel and the toast keep the spec's words, but the web has no Owner screen for support access yet (the API's `GET /support-grants`, approve and revoke exist). Part 4 builds it.
 
 ### Edge cases and known limits (part 3)
 - **Old rows still hold the text** in the control database: any SQL user, backup or dump sees it. Only the console is redacted (owner question 13).
 - **`errorCode` is the newest recorded failure's.** `last_error` has no timestamp. Before part 3, a failure's audit row was written in a separate step after `last_error`, so if that step failed, the code shown can belong to an earlier failure. From part 3 on, the two are written together.
-- **Only when both the transaction and the fallback fail,** which in practice means the control database is unreachable, does a read-only database keep serving reads on a half-migrated schema. A claimed database stays `migrating`, so it can't be used. The alert, if it can be sent, and the CLI say so.
+- **Only when both the transaction and the fallback fail,** which in practice means the control database is unreachable, does a read-only database keep serving reads on a half-migrated schema. A claimed database stays `migrating`, so it can't be used. The alert, if it can be sent, and the CLI say so; the CLI says so even when the alert fails.
 - **A move's maintenance turned off by hand:** a read-only database whose migration failed during a move then serves its half-migrated schema, because the failure kept the move's reason (unchanged from today).
 - **The CLI prints the error text when it couldn't be saved,** so in that one case the text can reach a CI or deploy log.
 - **No index on `platform_audit_log.at`.** The unfiltered viewer sorts the whole table for each page, which is fine at today's size (owner question 14).
@@ -801,10 +802,10 @@ Settled while building, all in ADR 0053.
 
 **As built, the criteria are covered by:**
 - 19 and 20: `apps/api/test/platform.int.test.ts` (the 401, 403 and 404 loops and the metadata test pick up the new routes; at least 8 routes and 4 controllers) and `apps/api/test/isolation.int.test.ts`.
-- 21 to 27: `apps/api/test/platform-audit.int.test.ts` (8 tests), `packages/shared/test/platform-audit.test.ts` (43) and `apps/web/tests/unit/platform-audit.test.ts` (18).
+- 21 to 27: `apps/api/test/platform-audit.int.test.ts` (8 tests; the paging test pages one company at limits 1 to 4, so page boundaries fall between two entries with the same `at` and between two entries 1 µs apart), `packages/shared/test/platform-audit.test.ts` (43) and `apps/web/tests/unit/platform-audit.test.tsx` (18).
 - 28 to 32: `apps/api/test/platform-support.int.test.ts` (10 tests; the race and the re-check wait on `pg_stat_activity` lock waiters) and `packages/shared/test/support-grants.test.ts` (25).
-- 33: `apps/api/test/platform.int.test.ts`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests) and `packages/db/test/platform-alerts.test.ts`.
-- 37: `apps/web/tests/e2e-api/platform-support.spec.ts`. 38: `apps/web/tests/e2e/admin.spec.ts`, with /admin/audit and the Support tab in `tests/e2e/screens.ts` (axe and console) and the 375 px loop in `tests/e2e/responsive.spec.ts`; the no-op save in `apps/web/tests/unit/demo-platform.test.ts`. 39: `apps/web/tests/unit/platform-audit.test.ts` (the locks) and `apps/web/tests/unit/platform-console.test.ts` (`saveProblem` before the step-up).
+- 33: `apps/api/test/platform.int.test.ts`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests), `packages/db/test/platform-alerts.test.ts` and `packages/db/test/migrate-report.test.ts` (the CLI line, including a failed alert).
+- 37: `apps/web/tests/e2e-api/platform-support.spec.ts`. 38: `apps/web/tests/e2e/admin.spec.ts`, with /admin/audit and the Support tab in `tests/e2e/screens.ts` (axe and console) and the 375 px loop in `tests/e2e/responsive.spec.ts`; the no-op save in `apps/web/tests/unit/demo-platform.test.ts`. 39: `apps/web/tests/unit/platform-audit.test.tsx` (the locks) and `apps/web/tests/unit/platform-console.test.ts` (`saveProblem` before the step-up).
 
 ## Parts 2 to 4 (outline, not built here)
 

@@ -199,8 +199,25 @@ Heavy runs went through the scratchpad lock, one at a time; logs are in the scra
 
 Prettier ignores `*.md` in this repository (`.prettierignore`), so the docs stage has no formatter run.
 
+## Review round 1 (three findings, each confirmed by a skeptic)
+1. **Web lint failed** (`react/no-children-prop`) on `createElement(PlatformRoleProvider, { role: "owner", children: … })` in the web's `platform-audit` unit test, so CI's `fast` and `verify` would have gone red. Stage 3's "web lint clean" did not hold for the head: the line came in with that same commit. Fix: the file is now `tests/unit/platform-audit.test.tsx` and writes the provider in JSX; `apps/web/vitest.config.ts` runs `tests/unit/**/*.test.{ts,tsx}`; `apps/web/tsconfig.json` includes `tests/**/*.tsx`, so `tsc` still checks the file. Passing the child as `createElement`'s third argument would have needed the provider's props changed, since `children` is required.
+2. **The CLI line was lost when the alert failed.** `onFailure` awaited the alert before printing, and when both writes fail the control database is usually unreachable, so the alert throws on its first query and the operator never read "NOT in maintenance mode" (spec, "Edge cases and known limits (part 3)"; AC34). Fix: the new `packages/db/scripts/migrate-report.ts` (`alertPhrase`, `failureLine`, `reportMigrationFailure`) prints the line in a `finally`, ending "0 platform admin(s) NOT emailed (the alert failed)" when the alert threw, and lets the alert's error propagate, so migrateAllCompanies still logs it after the line. New unit `packages/db/test/migrate-report.test.ts` (4 cases, one with a throwing alert). `MigrationStoppedError`'s message is unchanged.
+3. **The paging test never put a page boundary between same-`at` or same-millisecond entries.** Fix: it now pages company a at limits 1, 2, 3 and 4. A limit of 1 splits the two rows with the same `at` and the two rows 1 µs apart. Checked by mutation, each reverted: a cursor on `at` alone, and one cut to milliseconds, both now fail the test at limit 1, where they passed before.
+
+Docs: the spec (the CLI line when the alert fails, the edge case, the test mapping), ADR 0053 (the CLI, the cursor's test, the vitest and tsconfig change, the paths and tests), and the delta row (safest option 12, the smaller vitest choice).
+
+| Command | Result |
+| --- | --- |
+| `eslint tests/unit/platform-audit.test.tsx vitest.config.ts` in apps/web; Prettier on the touched files | clean |
+| web vitest on `platform-audit.test.tsx`, then the whole web unit suite | 18 passed; 54 passed in 7 files |
+| db vitest unit on `migrate-report` and `platform-alerts`, then the whole db unit project | 7 passed; 18 passed in 5 files |
+| API integration `platform-audit.int.test.ts` (lock) | 8 passed |
+| the same test against an `at`-only cursor, then a millisecond-cut cursor (lock; the service file restored after) | failed at limit 1 both times, as it should |
+| `pnpm lint` (lock), whole repository | exit 0; web, api and db fresh, shared, providers and ui from turbo's cache; Prettier clean |
+| `pnpm -s typecheck --force` (lock) | 6 of 6 tasks passed |
+
 ## Left
-- **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm lint`, `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time); then mark ready and wait for `verify` and `e2e` on the head.
+- **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time; the full `pnpm lint` passed in review round 1); then mark ready and wait for `verify` and `e2e` on the head.
 - **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.
 - **Not checked by hand:** the support role's read-only access page and the api-mode request with the step-up. Both are covered by `platform-support.spec.ts`, which passed twice in a row.
 - **Doubtful or open:**
