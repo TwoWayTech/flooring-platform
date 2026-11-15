@@ -57,6 +57,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { seededUserId } from "./control";
 import { seedId, type DemoCompany } from "./fixtures";
 import { seedHr } from "./hr";
+import { seedMeetings } from "./meetings";
 import { userOf, utc } from "./values";
 
 /** Settings groups as stored: branding lives in the control database, tax rules and county rates in their own tables. */
@@ -1214,7 +1215,7 @@ async function seedWaivers(tx: CompanyDb, { fixtures }: DemoCompany): Promise<vo
  * numbering, roles, user profiles, the supplier directory, the catalog and stock (inventory part 1),
  * purchase orders with their receipts (purchasing part 1), expenses (P12 part 2), bills and
  * supplier payments (P12 part 3), contracts with their billings (contracts parts 1 and 2), and HR
- * people, timesheets and time off (HR part 1).
+ * people, timesheets and time off (HR part 1), and meetings with their guests (meetings part 1).
  * Business records arrive module by module (docs/real-build-plan.md), each with its own seed.
  */
 export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promise<void> {
@@ -1232,5 +1233,6 @@ export async function seedCompany(company: CompanyDb, demo: DemoCompany): Promis
     await seedContractBillings(tx, demo);
     await seedWaivers(tx, demo);
     await seedHr(tx, demo);
+    await seedMeetings(tx, demo);
   });
 }
