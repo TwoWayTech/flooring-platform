@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { MANAGER_EMAIL, nextCode, OWNER_EMAIL, seedPassword, signInAs, totpCode } from "./accounts";
+import { MANAGER_EMAIL, nextCode, OWNER_EMAIL, signInAndEnrolOwner, signInAs } from "./accounts";
 import {
   allowSeededCeilingKey,
   removePlatformAdmin,
@@ -17,24 +17,6 @@ const SUMMIT = "Summit Floor Co.";
 
 /** The control database the API uses (global-setup.ts checks it is set). */
 const CONTROL_URL = process.env.CONTROL_DATABASE_URL ?? "";
-
-/** Signs the seeded owner in and enrols an authenticator app, which the platform guard requires. */
-async function signInAndEnrol(page: Page): Promise<string> {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
-  await page.getByLabel("Password").fill(seedPassword());
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByLabel("Confirm your password").fill(seedPassword());
-  await page.getByRole("button", { name: "Continue" }).click();
-  const secret = (await page.getByTestId("mfa-setup-key").getAttribute("data-key")) ?? "";
-  expect(secret).toMatch(/^[A-Z2-7]+=*$/);
-  await page.getByLabel("Code from the app").fill(totpCode(secret));
-  await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
-  await page.getByLabel("I have saved my backup codes").check();
-  await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-  return secret;
-}
 
 /** The "Permissions in effect" number the preview shows for the chosen role. */
 async function permissionsInEffect(page: Page): Promise<number> {
@@ -67,7 +49,7 @@ test.describe("platform admin console (api mode)", () => {
   test("an admin lists companies, opens Summit, unticks a permission and saves it after a step-up", async ({
     page,
   }) => {
-    const secret = await signInAndEnrol(page);
+    const secret = await signInAndEnrolOwner(page);
 
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Companies" })).toBeVisible();

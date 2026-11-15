@@ -1,4 +1,4 @@
-import { removePlatformAdmin, resetAuthState } from "@workspace/db/testing";
+import { removePlatformAdmin, removeSupportGrants, resetAuthState } from "@workspace/db/testing";
 import { OWNER_EMAIL, SEEDED_EMAILS } from "./accounts";
 
 /**
@@ -12,4 +12,6 @@ export default async function globalSetup(): Promise<void> {
   await resetAuthState(url, SEEDED_EMAILS);
   // A run that crashed may have left its platform admin behind (platform-admin.spec.ts).
   await removePlatformAdmin(url, OWNER_EMAIL);
+  // ...and its support requests, which the open-grant and 24-hour limits would count (platform-support.spec.ts).
+  await removeSupportGrants(url, OWNER_EMAIL);
 }
