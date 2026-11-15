@@ -144,6 +144,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
   limits: "plan limits",
   userLimit: "plan seats",
   branchLimit: "plan branches",
+  userLimitOverride: "a platform admin's seat override on a subscription row",
+  branchLimitOverride: "a platform admin's branch override on a subscription row",
   annualUseLimitHours: "time-off hours",
   salaryHoursPerWeek: "working hours",
   grossPay: "payroll amounts; payroll routes need hr.payroll.view",

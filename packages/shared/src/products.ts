@@ -47,6 +47,11 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   hr: "HR Suite",
 };
 
+/** Whether a string names a module, so input from a request can be checked before it is trusted. */
+export function isModuleKey(value: string): value is ModuleKey {
+  return MODULES.some((m) => m.key === value);
+}
+
 /** Returns the module metadata for a key. */
 export function moduleInfo(key: ModuleKey): ModuleInfo {
   const found = MODULES.find((m) => m.key === key);

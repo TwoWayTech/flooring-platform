@@ -70,3 +70,5 @@ export * from "./us-pack/cities";
 export * from "./us-pack/address-search";
 export * from "./catalog-labels";
 export * from "./import";
+export * from "./platform/admin-roles";
+export * from "./platform/access-patch";
