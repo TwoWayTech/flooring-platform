@@ -557,7 +557,7 @@ Purchasing, Warehouse, HR manager, Installer and Employee open no report. With H
 17. **S17. Every cost-of-goods figure also needs `inventory.product.view_sensitive`** (blueprint p27: "Reports showing cost or margin require the matching permission").
 18. **S18. Profit and loss shows Cost of goods, Gross margin, Margin and Net income only with the margin rule;** otherwise Month, Revenue and Expenses.
 
-Also settled while building: the screen never sends a pick the server no longer lists (it reads as all); while any report reloads (the Business report and the three hub reports alike) its last figures stay dimmed and marked busy and the export buttons wait, so an export always matches its filters; a refusal for a whole-company report shows as a notice with "Show my reports".
+Also settled while building: the screen never sends a pick the server no longer lists (it reads as all); while any report reloads (the Business report and the three hub reports alike) its last figures stay dimmed and marked busy and the export buttons wait, so an export always matches its filters; a refusal for a whole-company report shows as a notice with "Show my reports"; the Business report's Custom dates are checked on the screen by the same rule as S8, so a pair the API would refuse is explained beside the dates ("Choose a period of 366 days or less.", "The start date must be on or before the end date.", "Enter a date.", "Enter a real date.") and never sent, and the last figures stay; a refused filter that reaches the server shows as a notice in its words, with no Try again.
 
 ### Known limits this build closes
 - **Data scope differs between reports:** closed (S1, S2).
