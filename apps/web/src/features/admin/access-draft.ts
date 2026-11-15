@@ -1,13 +1,16 @@
 import {
   ACCESS_LIMIT_MESSAGE,
+  accessPatchProblem,
   isAccessLimit,
   offeredKeys,
   offeredModules,
+  PROTECTED_CEILING_KEYS,
   type ModuleKey,
   type PermissionKey,
   type PlatformAccessPatch,
   type PlatformCompany,
 } from "@workspace/shared";
+import type { CellLock } from "@/features/settings/roles/permission-matrix";
 
 /**
  * What the access editor holds while the platform admin changes a company. Modules and keys are
@@ -25,8 +28,9 @@ export type LimitField = "userLimit" | "branchLimit";
 
 /**
  * Whether the company has a plan to hold its limits. Limits live on its subscription rows, so a
- * trial with no plan has none, and the API refuses to set them rather than create a row, which
- * would end the trial for good (docs/specs/platform-admin.md, "Validations"; ADR 0033).
+ * company with no subscription row that is not deleted has none, and the API refuses to set them
+ * rather than create a row, which would end a fresh trial for good (docs/specs/platform-admin.md,
+ * "Validations"; ADR 0033).
  */
 export function hasPlan(company: PlatformCompany): boolean {
   return company.subscriptions.length > 0;
@@ -90,4 +94,27 @@ export function accessChanges(company: PlatformCompany, draft: AccessDraft): Pla
     }
   }
   return Object.keys(patch).length === 0 ? null : patch;
+}
+
+/**
+ * Why a ceiling box is locked on the console's access page, or null when it can be changed
+ * (docs/specs/platform-admin.md, part 3, "Screens"):
+ * - `read_only` for a role that may not change access, on every box;
+ * - `protected` for a protected key that is ticked (spec "Validations": every company keeps the
+ *   users, roles and audit keys). Only unticking is locked: a company whose ceiling lacks one can
+ *   still tick it back, so no company is trapped by the lock.
+ */
+export function ceilingLock(key: PermissionKey, draftCeiling: readonly PermissionKey[], readOnly: boolean): CellLock {
+  if (readOnly) return "read_only";
+  const protectedKey = (PROTECTED_CEILING_KEYS as readonly string[]).includes(key);
+  return protectedKey && draftCeiling.includes(key) ? "protected" : null;
+}
+
+/**
+ * Why a save would be refused, with the API's shared check and message, or null (spec part 3,
+ * "Company access for the owner role": checked before the step-up, so a refused change never costs
+ * an authenticator code).
+ */
+export function saveProblem(company: PlatformCompany, patch: PlatformAccessPatch): string | null {
+  return accessPatchProblem({ products: company.products, hasSubscription: hasPlan(company) }, patch)?.message ?? null;
 }

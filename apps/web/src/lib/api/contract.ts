@@ -78,9 +78,13 @@ import type {
   ImportRequest,
   PlannedRow,
   PlatformAccessPatch,
+  PlatformAuditQuery,
+  PlatformAuditResult,
   PlatformCompany,
   PlatformCompanySummary,
   PlatformDirectory,
+  PlatformSupportGrant,
+  SupportRequestInput,
 } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
@@ -731,6 +735,23 @@ export interface ApiClient {
   updatePlatformCompanyAccess(companyId: string, patch: PlatformAccessPatch): Promise<PlatformCompany>;
   /** A company's roles, users and branding as the console may see them (restricted from the API). */
   getPlatformDirectory(companyId: string): Promise<ConsoleDirectory>;
+  /**
+   * One page of the platform audit log, newest first (docs/specs/platform-admin.md, part 3, "GET
+   * /platform/audit"). Any platform admin may read it. Every entry has passed the shared redaction,
+   * so it shows no company data and no database error text; reads are not audited.
+   */
+  listPlatformAudit(query: PlatformAuditQuery): Promise<PlatformAuditResult>;
+  /**
+   * A company's support-access requests, newest first (spec "GET /platform/support-grants"): every
+   * admin's for the owner role, only the caller's own for the support role. The status is derived.
+   */
+  listPlatformSupportGrants(companyId: string): Promise<PlatformSupportGrant[]>;
+  /**
+   * Asks a company's Owner for read-only support access (spec "POST /platform/support-grants"). In
+   * api mode it follows a step-up. Refused while the caller's own request for the company is open
+   * (409) and after 10 requests in 24 hours (429); recorded in the platform audit log.
+   */
+  requestSupportAccess(input: SupportRequestInput): Promise<{ id: string }>;
   /** Closes the company the store has open: the platform admin's pages act as the platform, not a company user. */
   closeCompany(): void;
 

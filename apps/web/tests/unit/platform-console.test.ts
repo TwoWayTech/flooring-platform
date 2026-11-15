@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCESS_NO_PLAN_MESSAGE,
   accessPatchProblem,
   offeredKeys,
   offeredModules,
@@ -9,7 +10,7 @@ import {
   type PlatformAccessPatch,
   type PlatformCompany,
 } from "@workspace/shared";
-import { accessChanges, draftOf, hasPlan, limitProblem } from "@/features/admin/access-draft";
+import { accessChanges, draftOf, hasPlan, limitProblem, saveProblem } from "@/features/admin/access-draft";
 import type { ApiClient } from "@/lib/api/contract";
 import { demoDetail, demoSubscription, demoSummary, withAccess } from "@/lib/api/demo/platform-console";
 import { API_METHODS } from "@/lib/api/http/api-methods";
@@ -194,10 +195,22 @@ describe("access draft", () => {
     expect(limitProblem("0", 3)).toBe(refused?.message);
   });
 
-  it("treats a company with no subscription row as a trial with no plan", () => {
+  it("treats a company with no subscription row as a company with no plan", () => {
     expect(hasPlan(company())).toBe(true);
     expect(hasPlan(company({ subscriptions: [], userLimit: null, branchLimit: null }))).toBe(false);
     expect(draftOf(company({ userLimit: null }))).toMatchObject({ userLimit: "" });
+  });
+
+  it("refuses a save before the step-up with the API's own message", () => {
+    const keys = offeredKeys(["flooring"]);
+    const withoutUsers = keys.filter((key) => key !== "settings.users.manage");
+    expect(saveProblem(company(), { ceiling: withoutUsers })).toBe(
+      accessPatchProblem({ products: ["flooring"], hasSubscription: true }, { ceiling: withoutUsers })?.message,
+    );
+    expect(saveProblem(company(), { ceiling: withoutUsers })).toMatch(/always keeps the Users/);
+    expect(saveProblem(company(), { ceiling: keys.filter((key) => key !== "retail.sample.view") })).toBeNull();
+    expect(saveProblem(company({ subscriptions: [] }), { userLimit: 5 })).toBe(ACCESS_NO_PLAN_MESSAGE);
+    expect(ACCESS_NO_PLAN_MESSAGE).not.toMatch(/trial/i);
   });
 });
 
