@@ -7,8 +7,11 @@ export const OWNER_EMAIL = "dana.whitfield@summitfloor.example";
 /** Summit's store manager: can see Settings → Users but not change it; the role needs no MFA. */
 export const MANAGER_EMAIL = "luis.ortega@summitfloor.example";
 
+/** Summit's sales rep: holds meetings create and edit at own scope; the role needs no MFA. */
+export const SALES_EMAIL = "priya.natarajan@summitfloor.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
-export const SEEDED_EMAILS = [OWNER_EMAIL, MANAGER_EMAIL] as const;
+export const SEEDED_EMAILS = [OWNER_EMAIL, MANAGER_EMAIL, SALES_EMAIL] as const;
 
 /** The password `pnpm db:seed` gave the seeded users. */
 export function seedPassword(): string {

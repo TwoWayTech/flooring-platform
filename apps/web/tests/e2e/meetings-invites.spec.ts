@@ -2,6 +2,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { signInAs, SUMMIT_OWNER, skipIfFeatureOff, type Persona } from "./helpers";
 
 const BRI: Persona = { companyId: "summit", userId: "sm-usr-14", roleKey: "employee" };
+const SUMMIT_MANAGER: Persona = { companyId: "summit", userId: "sm-usr-02", roleKey: "manager" };
+
+/** Opens a seeded meeting from the Agenda view (the next 30 days), whatever day of the week it falls on. */
+async function openSeeded(page: Page, name: string | RegExp) {
+  await page.getByRole("group", { name: "Calendar view" }).getByRole("button", { name: "Agenda" }).click();
+  await page.getByRole("button", { name }).first().click();
+}
 
 async function newMeeting(page: Page, title: string) {
   await signInAs(page, SUMMIT_OWNER, "/meetings");
@@ -94,18 +101,7 @@ test.describe("Meeting guests and invites (spec E)", () => {
 
   test("cancelling sends a cancellation", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
-    const meeting = page.getByRole("button", { name: /New build walkthrough/ });
-    if (
-      !(await meeting
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      await page.getByRole("button", { name: "Next week" }).click();
-    await page
-      .getByRole("button", { name: /New build walkthrough/ })
-      .first()
-      .click();
+    await openSeeded(page, /New build walkthrough/);
     await page.getByRole("button", { name: "Cancel meeting" }).click();
     await expect(page.getByText("Meeting cancelled")).toBeVisible();
     await page.goto("/settings/outbox");
@@ -114,15 +110,7 @@ test.describe("Meeting guests and invites (spec E)", () => {
 
   test("Edit details renames a meeting and sends guests the update", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
-    const meeting = page.getByRole("button", { name: /New build walkthrough/ });
-    if (
-      !(await meeting
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      await page.getByRole("button", { name: "Next week" }).click();
-    await meeting.first().click();
+    await openSeeded(page, /New build walkthrough/);
     await page.getByRole("button", { name: "Edit details" }).click();
     const dialog = page.getByRole("dialog", { name: "Edit meeting" });
     await dialog.getByLabel("Title").fill("New build site walk");
@@ -157,21 +145,38 @@ test.describe("Meeting guests and invites (spec E)", () => {
   test("the seeded request waits for an answer", async ({ page }) => {
     skipIfFeatureOff("meetings.requests");
     await signInAs(page, SUMMIT_OWNER, "/meetings");
-    const request = page.getByRole("button", { name: /Review my goals/ });
-    if (
-      !(await request
-        .first()
-        .isVisible()
-        .catch(() => false))
-    )
-      await page.getByRole("button", { name: "Next week" }).click();
-    await page
-      .getByRole("button", { name: /Review my goals/ })
-      .first()
-      .click();
+    await openSeeded(page, /Review my goals/);
     await expect(page.getByText("Waiting for an answer.")).toBeVisible();
     await page.getByRole("button", { name: "Accept", exact: true }).click();
     await expect(page.getByRole("dialog").getByText("Your answer: Accepted")).toBeVisible();
+  });
+
+  test("only the organiser is offered a proposed time to decide", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/outbox");
+    await page
+      .getByRole("row", { name: /Riley Chen/ })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "Propose a new time" }).click();
+    await page.getByLabel("Start").fill("16:15");
+    await page.getByRole("button", { name: "Send proposal" }).click();
+    await expect(page.getByText("Riley Chen: Proposal sent")).toBeVisible();
+    await signInAs(page, SUMMIT_MANAGER, "/meetings");
+    await openSeeded(page, /New build walkthrough/);
+    const drawer = page.getByRole("dialog", { name: "New build walkthrough" });
+    await expect(drawer.getByRole("button", { name: "Edit details" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Accept time" })).toHaveCount(0);
+  });
+
+  test("My meetings lists the person's next meetings and offers Request when there is someone to ask", async ({
+    page,
+  }) => {
+    skipIfFeatureOff("hr.portal");
+    await signInAs(page, BRI, "/my/meetings");
+    const item = page.getByRole("listitem").filter({ hasText: "Install walkthrough: Mazie Kutch" });
+    await expect(item).toBeVisible();
+    await expect(item).toContainText(/ at \d{2}:\d{2}$/);
+    await expect(page.getByRole("button", { name: "Request a meeting" })).toBeVisible();
   });
 
   test("Settings → Meetings sets what happens to new guests", async ({ page }) => {
