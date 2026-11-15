@@ -147,7 +147,7 @@ Reports come from the documents, not the ledger, as the spec says. The gate is p
 7. **S7. Stripped at the source:** hidden figures are not computed, so they are absent from rows, values, totals and drill records. The interceptor stays as a second net, and the expense column id `cost` becomes `amount`.
 8. **S8. Bounds:** report days in 1900 to 2999; a Business report period of at most 366 days; the four hub presets only; drill lists capped at 200 per row, saying "Showing the latest 200 of N records." (the spec stopped silently).
 9. **S9. One read-only, repeatable-read snapshot per request.**
-10. **S10. Strict queries:** an unknown parameter is refused before anything else, a repeated one with its field's message; ids and categories are checked against what exists; locations must be live (warehouses for the hub reports); `?companyId=` is refused.
+10. **S10. Strict queries:** an unknown parameter is refused before anything else, a repeated one with its field's message; locations must be live (warehouses for the hub reports); product categories, expense categories and payment methods must be in their lists; salesperson and vendor ids must be UUIDs, and an unknown one matches no records rather than being refused (see Residual risks); `?companyId=` is refused.
 11. **S11. `Cache-Control: private, no-store`** on every report answer.
 12. **S12. Write-off `at` and goods receipt `receivedAt` are read as company days.** A correctness fix more than a safety one; it closes the STATUS follow-up for reports.
 13. **S13. Flooring Suite only, module `core`.**
@@ -226,6 +226,7 @@ Also in docs/product-spec/reports.md, "Real build (ADR 0055)", and the session l
 - **Shared empty options.** `EMPTY_REPORT_OPTIONS` is frozen at the top level only, and both clients return that one object; a screen that changed its lists would change them for everyone. No screen does.
 - **Drill links** (`href`) still point at the web routes as before; not checked in api mode.
 - **Test clock.** R-EQ and R-GATE work out the company's today in the test, so a run that crosses Denver midnight could flake.
+- **Salesperson and vendor filters are checked only as UUIDs** (S10), not against the company's reps or suppliers: an unknown id matches no records and its sections come back empty, with a 200. Nothing leaks, because the tenant comes from the session, the Business report needs data scope `all`, and the screen sends only ids from the options. Refusing an unknown id (400 with the salesperson or vendor message) would need a check inside the snapshot and the same in the demo.
 
 ## Consequences
 - **No schema, dependency or core change:** no table, column, index or migration, no dependency, and nothing in core/auth or core/tenancy (`@RequireProduct()` is used from the module side). `features.ts` and docs/FEATURES.md are unchanged. Reports write nothing: no audit row, no Outbox row.
