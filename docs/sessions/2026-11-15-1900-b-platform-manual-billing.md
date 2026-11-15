@@ -102,7 +102,7 @@ These are numbers 34 to 47 in docs/specs/platform-admin.md, "Waiting for the own
 47. **Audit history while `admin.billing` is off:** the seven actions' rows stay listed, and only the filter stops offering them (taken). Should their rows be hidden too?
 
 ## Outcome
-Draft PR #40 (`feat/platform-manual-billing` into `main`). Every stage is committed and pushed. The stage commits carry `[skip ci]`; the head commit that marks the PR ready must not, so `verify` and `e2e` run on it.
+PR #40 (`feat/platform-manual-billing` into `main`). Every stage is committed and pushed; main was merged in, and the full checks, the api-mode e2e and a fresh final review ran on that head ("Finish" below). The stage commits carry `[skip ci]`; the head commit that marks the PR ready must not, so `verify` and `e2e` run on it.
 
 | Stage | Commit | What |
 | --- | --- | --- |
@@ -188,9 +188,16 @@ Heavy runs went through the scratchpad lock, one at a time across both builds; l
   - the plan step-up label: the spec said "Save plan {name}" for every plan, while `plan-dialog.tsx` shows "Create plan {name}" for a new plan and "Save plan {name}" for an edit. The code's wording is the clearer one, so the spec now says both. This is a wording fix, not a change in behaviour or safety, so no delta row.
 - **Checks:** shared vitest `company-status.test.ts` 46 passed; the bounds check empty. Docs only, so no typecheck, lint or browser run. No test pins the step-up label; an api-mode check of "Create plan {name} needs a fresh code" is a small follow-up.
 
+## Finish (orchestrating session)
+- **Merge with main:** `git merge origin/main` at `5751e92` (PR #39, reports, `0b2633a`). One conflict, in docs/blueprint-delta.md: both rows kept, this one on top. `contract.ts`, `api-methods.ts`, `demo/store.ts`, `packages/shared/src/index.ts` and docs/api-contract.md merged on their own with both blocks.
+- **Full checks on `5751e92`** (through the lock): `pnpm lint`, `pnpm typecheck`, `pnpm test` (shared 1009, web 209, api 96, db 18, providers 11), `pnpm test:api` (api 591, db 59, providers 2), `pnpm test:hooks`: all exit 0.
+- **Api-mode e2e on `5751e92`** (`api-e2e.sh final`, local Postgres): the whole suite 26 passed (reports' spec included), then `platform-billing.spec.ts` alone 1 passed; Summit back to `active`; ports 3000 and 4000 free.
+- **Final review:** a fresh security-reviewer, a correctness reviewer and a schema-reviewer on `git diff 0b2633a...5751e92`, read-only, with a skeptic for anything above a note. Nothing blocking and nothing to fix; ten notes, recorded in docs/STATUS.md under "PR #40 final review notes".
+- **STATUS and BRANCHES:** PR #39 merged (`0b2633a`), this PR's Done entry, notes, residual risks, the shared destructive-button contrast follow-up, the flaky purchasing phone test seen on PR #39's CI, owner questions 34 to 47, and the import branch.
+
 ## Left
-- **For the orchestrating session:** STATUS and BRANCHES (the PR #40 Done entry, the part 2 residual risks and owner questions 34 to 47 under Blockers, the follow-ups below, the branch row); the full local run (`pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:api`, `pnpm test:hooks`) with per-package counts for this log and the PR body; `/review`; a fresh security-reviewer and a fresh schema-reviewer (packages/db test helpers and the bounds), with both summaries posted on the PR; then ready, `verify` and `e2e` green on a head commit without `[skip ci]`, and the self-merge under the CLAUDE.md rule.
-- **The PR body:** bring it up to date before ready (checks with counts; the look by eye, with the screenshots in the scratchpad's `platform2/logs/look`, which are not committed).
+- **For the orchestrating session:** done ("Finish" above): STATUS and BRANCHES, the full local run and the final review.
+- **The PR body:** updated with the checks and counts before ready.
 - **Follow-ups for STATUS:**
   - the shared destructive button style in packages/ui fails AA contrast (`components/reason-dialog.tsx`, invoices, purchasing, contracts, `import-history.tsx`);
   - the access PATCH has neither an actor re-check under a lock nor a stale-save check (question 11);
@@ -199,4 +206,4 @@ Heavy runs went through the scratchpad lock, one at a time across both builds; l
   - the SQL reason narrowing isn't tested on its own (the shared view hides the reason again);
   - each local api-mode e2e run adds four `platform_audit_log` rows.
 - **Not run locally:** the whole Flooring demo project; CI's `e2e` job runs it before the merge.
-- **Merging with `feat/reports-api`:** both add a delta top row, STATUS and BRANCHES entries, and blocks in `contract.ts`, `api-methods.ts`, `store.ts`, `packages/shared/src/index.ts` and docs/api-contract.md. Whichever lands second keeps both, puts its own delta row on top, and re-runs the typecheck, the web unit tests and both e2e projects.
+- **Merging with `feat/reports-api`:** done at `5751e92` (one conflict, the delta; both rows kept).
