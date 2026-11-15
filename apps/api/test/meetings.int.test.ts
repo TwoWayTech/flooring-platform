@@ -10,7 +10,7 @@ import {
   settings,
   userProfiles,
 } from "@workspace/db/company";
-import { tenantModuleOverrides, user } from "@workspace/db/control";
+import { tenantModuleOverrides, tenants, user } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import { FEATURES, type Attendee, type FeatureKey, type Meeting, type MyMeetings } from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
@@ -75,8 +75,11 @@ describe("meetings (needs the local PostgreSQL)", () => {
     expect(response.body).toEqual({ code: "invalid_request", message });
   }
 
-  async function rows<T>(read: (db: Awaited<ReturnType<typeof harness.companyDb>>["db"]) => Promise<T>): Promise<T> {
-    const handle = await harness.companyDb(company.id);
+  async function rows<T>(
+    read: (db: Awaited<ReturnType<typeof harness.companyDb>>["db"]) => Promise<T>,
+    companyId = company.id,
+  ): Promise<T> {
+    const handle = await harness.companyDb(companyId);
     try {
       return await read(handle.db);
     } finally {
@@ -641,5 +644,169 @@ describe("meetings (needs the local PostgreSQL)", () => {
     expect((forWarehouse.body as { kind: string }[]).some((o) => o.kind === "customer")).toBe(false);
     const guestRows = await rows((db) => db.select().from(meetingAttendees));
     expect(guestRows.every((row) => row.partyType !== "external" || row.partyId === null)).toBe(true);
+  });
+
+  it("keeps one company's meetings out of reach of another company's people", async () => {
+    const other = await harness.provisionCompany("meetother");
+    const outsider = await enrolled(await harness.addUser({ companyIds: [other.id], roles: ["owner"] }));
+    const made = await schedule(cookies.manager, { title: "Tenancy probe", guests: [staff(ids.employee)] });
+    const listed = await call("get", "/meetings", outsider);
+    status(listed, 200);
+    expect((listed.body as Meeting[]).some((m) => m.id === made.id || m.title === "Tenancy probe")).toBe(false);
+    status(await call("get", `/meetings/${made.id}/calendar.ics`, outsider), 404);
+    status(await call("patch", `/meetings/${made.id}`, outsider).send({ title: "Mine" }), 404);
+    status(await call("post", `/meetings/${made.id}/cancel`, outsider), 404);
+    status(await call("delete", `/meetings/${made.id}/attendees/${ids.employee}`, outsider), 404);
+    status(
+      await call("post", `/meetings/${made.id}/response`, outsider).send({
+        partStat: "accepted",
+        note: "",
+        proposal: null,
+      }),
+      404,
+    );
+    // A colleague of ours is not a guest there either.
+    status(await call("post", "/meetings", outsider).send(meetingBody({ guests: [staff(ids.employee)] })), 404);
+  });
+
+  it("applies data scope: an own-scope colleague neither sees nor changes another's meeting; a wider scope may", async () => {
+    const made = await schedule(cookies.sales, { title: "Dock layout" });
+    const ownList = await call("get", "/meetings", cookies.sales2);
+    expect((ownList.body as Meeting[]).some((m) => m.id === made.id)).toBe(false);
+    status(await call("patch", `/meetings/${made.id}`, cookies.sales2).send({ title: "Hijack" }), 404);
+    status(await call("post", `/meetings/${made.id}/cancel`, cookies.sales2), 404);
+    const managerList = await call("get", "/meetings", cookies.manager);
+    expect((managerList.body as Meeting[]).some((m) => m.id === made.id)).toBe(true);
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Dock layout v2" }), 200);
+    // The organiser may always change their own meeting.
+    status(await call("patch", `/meetings/${made.id}`, cookies.sales).send({ notes: "Bring a tape" }), 200);
+    const [entry] = await rows((db) =>
+      db
+        .select()
+        .from(auditLog)
+        .where(and(eq(auditLog.action, "Edited meeting"), eq(auditLog.targetId, made.id))),
+    );
+    expect(entry).toBeDefined();
+    expect(JSON.stringify(entry)).not.toContain("Bring a tape");
+  });
+
+  it("answers the one error body for a malformed request, and writes an audit row for each change", async () => {
+    refused(
+      await call("post", "/meetings", cookies.sales).send(meetingBody({ recurrence: "yearly" })),
+      "Choose how the meeting repeats.",
+    );
+    const bad = await call("post", "/meetings", cookies.sales).send({ title: 7 });
+    status(bad, 400);
+    expect(Object.keys(bad.body).sort()).toEqual(["code", "message"]);
+    const made = await schedule(cookies.manager, { title: "Audit trail", guests: [staff(ids.employee)] });
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ location: "Warehouse" }), 200);
+    status(
+      await call("post", `/meetings/${made.id}/response`, cookies.employee).send({
+        partStat: "tentative",
+        note: "Maybe",
+        proposal: null,
+      }),
+      201,
+    );
+    status(await call("post", `/meetings/${made.id}/cancel`, cookies.manager), 201);
+    const actions = (await rows((db) => db.select().from(auditLog).where(eq(auditLog.targetId, made.id)))).map(
+      (row) => row.action,
+    );
+    expect(actions.sort()).toEqual(["Answered meeting", "Cancelled meeting", "Edited meeting", "Scheduled meeting"]);
+  });
+
+  it("sends a new invite each time a guest is told again, and one reply notice per answer", async () => {
+    const made = await schedule(cookies.manager, { title: "Version check", guests: [staff(ids.employee)] });
+    for (const partStat of ["accepted", "declined", "accepted"]) {
+      status(
+        await call("post", `/meetings/${made.id}/response`, cookies.employee).send({
+          partStat,
+          note: "",
+          proposal: null,
+        }),
+        201,
+      );
+    }
+    const replies = (await outboxOf(made.id)).filter((row) => row.eventKey === "meeting.reply");
+    expect(replies).toHaveLength(3);
+    expect(new Set(replies.map((row) => row.dedupeKey)).size).toBe(3);
+
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ start: at("11-10", "13:00") }), 200);
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ location: "Lot B" }), 200);
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Version check 2" }), 200);
+    const updates = (await outboxOf(made.id)).filter((row) => row.values["meeting.action"] === "Updated");
+    expect(updates).toHaveLength(3);
+    expect(new Set(updates.map((row) => row.dedupeKey)).size).toBe(3);
+    // Start, length and place raise SEQUENCE; a title edit keeps it (meetings.md "Sends").
+    const sequences = updates.map((row) => /SEQUENCE:(\d+)/.exec(row.attachments[0]?.text ?? "")?.[1]).sort();
+    expect(sequences).toEqual(["1", "2", "2"]);
+    expect(updates.every((row) => (row.attachments[0]?.text ?? "").includes("METHOD:REQUEST"))).toBe(true);
+  });
+
+  it("leaves one waiting reminder per guest after repeated edits, and the old ones cancelled", async () => {
+    const made = await schedule(cookies.manager, { title: "Reminder churn", guests: [staff(ids.employee)] });
+    for (const reminderMin of [30, 60, 15]) {
+      status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ reminderMin }), 200);
+    }
+    const reminders = (await outboxOf(made.id)).filter((row) => row.eventKey === "meeting.reminder");
+    expect(reminders.filter((row) => row.status === "scheduled")).toHaveLength(1);
+    expect(reminders.filter((row) => row.status === "cancelled").length).toBe(reminders.length - 1);
+    expect(new Set(reminders.map((row) => row.dedupeKey)).size).toBe(reminders.length);
+    expect((await waitingReminders(made.id))[0]!.scheduledFor).toEqual(new Date(`${YEAR}-11-10T14:45:00.000Z`));
+    // Taking the only guest off leaves no reminder.
+    status(await call("delete", `/meetings/${made.id}/attendees/${ids.employee}`, cookies.manager), 200);
+    expect(await waitingReminders(made.id)).toEqual([]);
+  });
+
+  it("refuses a start or length change on a series with moved occurrences, but takes a title edit", async () => {
+    const made = await schedule(cookies.manager, { title: "Weekly crew", recurrence: "weekly" });
+    await rows((db) =>
+      db
+        .update(meetings)
+        .set({ exceptions: [{ date: `${YEAR}-11-17`, action: "cancelled" }] as never })
+        .where(eq(meetings.id, made.id)),
+    );
+    const message = "Some occurrences of this series were changed on their own, so its time can't be edited yet.";
+    refused(
+      await call("patch", `/meetings/${made.id}`, cookies.manager).send({ start: at("11-10", "10:00") }),
+      message,
+    );
+    refused(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ durationMin: 90 }), message);
+    status(await call("patch", `/meetings/${made.id}`, cookies.manager).send({ title: "Weekly crew sync" }), 200);
+  });
+
+  it("lets the organiser retitle Summit's seeded monthly meeting", async () => {
+    const [summit] = (await harness.control.db.select().from(tenants)).filter((t) => /summit/i.test(t.name));
+    const [monthly] = await rows(
+      (db) => db.select().from(meetings).where(eq(meetings.recurrence, "monthly")),
+      summit!.id,
+    );
+    expect(monthly).toBeDefined();
+    const [organiser] = await harness.control.db.select().from(user).where(eq(user.id, monthly!.ownerUserId));
+    const cookie = await enrolled(organiser!.email);
+    const edited = await call("patch", `/meetings/${monthly!.id}`, cookie).send({
+      title: "Monthly safety talk (bay 2)",
+    });
+    status(edited, 200);
+    expect(edited.body).toMatchObject({ title: "Monthly safety talk (bay 2)", sequence: 0 });
+  });
+
+  it("refuses customer guests in an HR Suite company, which has no customers", async () => {
+    const hrSuite = await harness.provisionCompany("meethr", ["hr"]);
+    const cookie = await enrolled(await harness.addUser({ companyIds: [hrSuite.id], roles: ["owner"] }));
+    status(
+      await call("post", "/meetings", cookie).send(meetingBody({ guests: [{ kind: "customer", id: customerId }] })),
+      404,
+    );
+    status(await call("post", "/meetings", cookie).send(meetingBody({ title: "HR standup" })), 201);
+  });
+
+  it("answers 409 when the company's time zone has no calendar block", async () => {
+    const odd = await harness.provisionCompany("meetzone");
+    await harness.control.db.update(tenants).set({ timeZone: "Europe/Paris" }).where(eq(tenants.id, odd.id));
+    const cookie = await enrolled(await harness.addUser({ companyIds: [odd.id], roles: ["owner"] }));
+    const response = await call("post", "/meetings", cookie).send(meetingBody());
+    status(response, 409);
+    expect(response.body.code).toBe("time_zone_unsupported");
   });
 });
