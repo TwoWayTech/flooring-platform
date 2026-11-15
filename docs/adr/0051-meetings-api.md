@@ -1,6 +1,7 @@
-# ADR 0051: Meetings on the API, part 1 (calendar, guests, invites, answers, requests, calendar files and reminders)
+# ADR 0051: Meetings on the API, parts 1 and 2 (calendar, guests, invites, answers, requests, calendar files and reminders; moves, undo, proposal decisions and conflicts)
 
 - **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15, putting meetings first, and was asleep during the build. The rule for that run: follow meetings.md as the approved behaviour, deviate only in the safer direction and record each deviation in docs/blueprint-delta.md, and defer what can't be done safely. The safer deviations and the questions under "For the owner" are open for the owner's review.
+- **Part 2** (moves, undo, proposal decisions and conflicts) was added on 2026-11-15 under the same rule, on branch `feat/meetings-api-moves` (PR #35). It is the section "Part 2 (2026-11-15)" below. Where it changes a part 1 decision, the part 1 text says so.
 - **Context:**
   - docs/real-build-plan.md row 14, "Meetings, invites and .ics": spec meetings.md, depends on module 5 (the notifications core), week 18 in the schedule.
   - meetings.md describes the demo: a calendar in both products, guests from one search or by email, an Outbox row and `.ics` per guest (ADR 0021), answers and proposals, requests, reminders and Settings → Meetings.
@@ -29,7 +30,7 @@
   - `POST /meetings`, `PATCH /meetings/:id`, `POST /meetings/:id/cancel` and `DELETE /meetings/:id/attendees/:attendeeId`;
   - `POST /meetings/:id/response` and `POST /meeting-requests`.
 - **Not in part 1:**
-  - `rescheduleMeeting`, `undoReschedule` and `decideProposal` come in part 2;
+  - `rescheduleMeeting`, `undoReschedule` and `decideProposal` come in part 2 (now on the API: "Part 2" below);
   - `simulateReply` stays a demo presenter tool, and there is no delete route (`meetings.meeting.delete` stays unused, as in the demo).
 - **Every route:**
   - takes the company only from the verified session, through `TenantConnectionService`;
@@ -72,7 +73,7 @@
   - the wire and the shared rules keep the spec's local `YYYY-MM-DDTHH:mm`;
   - `exceptions` and a proposal's `start` stay local, inside jsonb.
 - **Conversions:**
-  - **Strict, for what a person types:** a time in the spring-forward gap is refused, and a time the clock shows twice means the earlier instant (RFC 5545 section 3.3.5). Years outside 1900 to 2999 are malformed.
+  - **Strict, for what a person types:** a time in the spring-forward gap is refused, and a time the clock shows twice means the earlier instant (RFC 5545 section 3.3.5). Years outside 1900 to 2999 are malformed. Since review round 1 of PR #35 a start a person types must also lie from a year before the company's today to three years after it (Part 2, "Start bound").
   - **Lenient, for occurrences a rule derives:** a time in the gap uses the offset from before the gap, as calendars do.
   - An edit that does not change the start keeps the stored instant.
 
@@ -110,6 +111,7 @@
   - every answer is logged in `meeting_responses` (method `reply` or `counter`, with the SEQUENCE it was made against). A staff answer passes the current SEQUENCE, so it is never stale (rule 7);
   - on a tentative request, Accept confirms it and Decline cancels it, each with SEQUENCE + 1.
 - **Exceptions:** an edit moves a series' start or length but not its exceptions. The exceptions would stay keyed to the old planned times, and guests' calendars would keep the overrides under their old RECURRENCE-IDs (ADR 0021; critic H). Until part 2 moves the exceptions with the series and sends them again, a series with exceptions refuses a start or length change; a title, place or notes edit still works.
+  - **Lifted in part 2:** the exceptions now shift with a new start and are sent again, and a new start that would take one off the series is refused ("Part 2", "Series exceptions sent again").
 
 ### Invites and calendar files (`meetings/sends.ts`, `calendar/ics.ts`)
 - **`sendPlan`** covers the part 1 rows of meetings.md "What each action sends": schedule, edit (significant or not), cancel and remove a guest.
@@ -224,7 +226,7 @@
   - starts are stored with the strict conversion, and the seed stops on a time the zone can't show.
 - No responses, Outbox rows or reminders are seeded. The monthly safety talk that starts on the 30th is kept as the fixture has it.
 
-## Safest options taken (also in docs/blueprint-delta.md)
+## Safest options taken in part 1 (also in docs/blueprint-delta.md)
 1. **Who may change a meeting:** the organiser, or someone with a scope wider than own on a meeting that is not private, and in both cases only someone who can read every customer, supplier and contact on it (`canChangeMeeting`). The spec lets any edit holder who sees it, and the organiser always.
 2. **Private meetings** are hidden from everyone not on them, the Owner included, also in `GET /outbox`: subject, body and `.ics` are redacted whatever the reader holds.
 3. **What a reader sees:** addresses, a hidden guest list, other guests' notes and proposals, and customers or suppliers the reader can't read are blanked, as under "Who sees and who changes a meeting". The calendar file names the organiser's address only to those who may read guests' addresses.
@@ -234,7 +236,7 @@
 7. **Switch dependencies:** with `meetings.invites` off, guests are refused (400), the guest routes are 404 and nothing is sent, reminders included. Requests need `meetings.invites`.
 8. **Owned by the server:** the organiser, the zone (409 outside the seven), `allowProposals` (the setting and the organiser's edit key, for requests too), a request's length and place, and every guest field.
 9. **DST:** a start the clocks skip is refused on create, edit, request and proposal. A time shown twice means the earlier one.
-10. **Exceptions:** a series with exceptions refuses a start or length edit until part 2.
+10. **Exceptions:** a series with exceptions refuses a start or length edit until part 2. Part 2 lifts this (its safest option 5).
 11. **Cancelled meetings:** cancel works once. An answer, a guest removal or an edit on a cancelled meeting is refused. Its calendar file is 404.
 12. **Reminder expiry:** a reminder is never sent after its occurrence starts, by the worker or by Retry.
 13. **Correct files:**
@@ -253,7 +255,7 @@
 18. **Settings defaults** when none are stored: proposals off and the guest list hidden. New guests are never saved.
 19. **Files list only their recipient** whenever any guest is not staff, even on a seeded meeting stored with an open list, and no REQUEST goes out for a cancelled meeting.
 
-## Kept as meetings.md says (not safety)
+## Kept as meetings.md says (not safety), part 1
 - A move does not reset answers. Part 2 follows the sends table, which stands as written.
 - Reminders go to staff guests only (rule 10).
 - `meeting.when` has no zone, and RSVP stays TRUE.
@@ -262,7 +264,7 @@
 - A significant edit resets the organiser's answer too.
 - `GET /meetings` has no date window, and branch scope sees every meeting that is not private.
 
-## Deferred, not invented
+## Deferred, not invented (part 1)
 - **Saving new guests as contacts or leads** (rule 11): guests stay guests, and `newGuestHandling` is ignored. A customer record would come into Sales without its own keys and audit, and rule 11's lead defaults would need the owner.
 - **Settings → Meetings on the API.** The server reads the stored group, with the safe defaults above.
 - **Replies from people outside the company:** there is no inbound mail and no signed reply link, so email guests stay "No reply yet".
@@ -271,20 +273,263 @@
 - **Indexes** on the guest's party and a unique guest per meeting: a migration later.
 - **Adding a guest to an existing meeting** (meetings.md known gap U-50): not in the spec's calls.
 
+## Part 2 (2026-11-15): moves, undo, proposal decisions and conflicts
+
+- **Context:**
+  - meetings.md "Move or resize", "Propose a new time", rules 4, 5 and 13, the sends table and "Differences from ADR 0021";
+  - the critic of the earlier plan: B3 (undo rebuilt from the server's own record), D (the undo's removal audited), H (what a split copies) and M (the body's meeting id);
+  - the plan and log: docs/sessions/2026-11-15-0600-b-meetings-api-moves.md.
+- The web does not change (part 3). Part 2 reuses part 1's rules (`canChangeMeeting`, `meetingForViewer`, `sendPlan`, the reminder re-sync with deferred queueing, the daily caps and `partySight`) and does not copy them.
+
+### Routes and checks
+- **Routes** (docs/api-contract.md, "Meetings (real build, ADR 0051)"):
+  - `POST /meetings/:id/reschedule` (`rescheduleMeeting`);
+  - `POST /meetings/:id/reschedule/undo` (`undoReschedule`);
+  - `POST /meetings/:id/attendees/:attendeeId/proposal` (`decideProposal`);
+  - and a changed `PATCH /meetings/:id`.
+- **Keys and switches:**
+  - each route needs `meetings.meeting.edit` and the switch `meetings.calendar` (404 when off), in module `meetings` (403 `module_not_enabled` without it);
+  - deciding a proposal also needs `meetings.invites` (404 when off);
+  - a move and an undo work with `meetings.invites` off and send nothing.
+- **Scope:** every route takes the meeting through `lockChangeable`: 404 when the caller can't see it, 403 when they see it but may not change it (`canChangeMeeting`, part 1). The company comes only from the session, and `:id` and `:attendeeId` are UUIDs.
+- **Bodies** are strict:
+  - a move takes `{ meetingId?, planned, start, durationMin, scope }`. A `meetingId` that is not `:id` is 400 (critic M);
+  - an undo takes only `{ sequence }`: the SEQUENCE the screen saw before its move (`undo.previous.sequence`). A copy of the meeting in the body is 400;
+  - a decision takes `{ accept }`.
+- **Every write is part 1's:**
+  - it locks the meeting, applies the shared rule, plans its sends from the state it commits, checks the daily caps under the person's lock and writes its audit entries, all in one transaction on one connection;
+  - the invites and the reminder re-syncs come after the commit (`MeetingWrites.afterCommit`), and neither can fail the request;
+  - part 1's write helpers (`lockVisible`, `lockChangeable`, `loadedIn`, `checkSends`, `shaped` and `afterCommit`) moved out of `MeetingsService` into `meeting-writes.ts` unchanged, so both services use them.
+- **Lock order:** an undo of a split locks the original, then the split, then the person's sends lock. Nothing locks a split before its original (`meeting-limits.ts`), so actions never wait in a circle.
+
+### Moves (`packages/shared/src/meetings/moves.ts`)
+- **Which occurrence:** `planned` must be one of the meeting's occurrences as the series plans them (`isPlannedOccurrence`). That is a one-off's own start, or a date-time the rule reaches from `start` up to `until` that is not a cancelled exception. A one-off moves as `all` whatever the scope (rule 4).
+- **Refused with 400, writing nothing** (`moveProblem`):
+  - a cancelled meeting;
+  - a new start the clocks skip, or a length outside 15 to 1440 whole minutes (the spec checks only the 15, rule 5);
+  - a `planned` that is not an occurrence;
+  - "this and following" from the first occurrence. The old series would keep a DTSTART that RFC 5545 counts as an occurrence, so guests would see the meeting twice. The message points to All events;
+  - a shifted series start the clocks skip, or one that breaks rule 3, and a split's new start that breaks rule 3;
+  - a move whose moved occurrence would no longer be on the series (past `until`, or a monthly shift that changes the week of the month), or that takes an exception off its series;
+  - "this and following" that starts at or before the end of the last occurrence the old series keeps (`lastKeptEnd`: the nearest planned date before `planned` that was not moved on its own, and every occurrence moved on its own before it, at its own time). Otherwise both series hold the same weeks and every guest gets both (review round 3 of PR #35). The message points to a later time, This event or All events;
+  - a move that puts an occurrence moved on its own more than 31 days before its date in the series (`MOVED_EARLIER_REACH_DAYS`), by "this event" or by a shift, since the calendar, the reminders and a conflict check would no longer find it (review round 3 of PR #35);
+  - an "all" move or a split that would leave an occurrence moved on its own behind (`leftBehindProblem`, review round 3 of PR #35): one whose own time has ended while its date in the series, as the move leaves it, has not. It is not sent again, so guests' calendars would show that date as a plain occurrence the app does not have. Both series of a split are checked, and the check runs on the database clock of the move;
+  - an "all" move from an occurrence changed on its own: a live exception at `planned` with its own start or length (`changedOnItsOwn`, final review of PR #35). Rule 4's shift moves that exception's planned time but keeps its own time and length, so the dragged occurrence would stay where it was while the rest of the series moved, and the conflict check would look at a slot it does not hold. The message points to This event, or to moving another occurrence. "This and following" from such an occurrence is taken: the split drops the exception at `planned` from both series, so the new series starts at the new time and length, the slot the conflict check names;
+  - a "this event" move that would give the series more than 100 exceptions (`MEETING_LIMITS.exceptionsMax`);
+  - a new start outside the start bound (below, "Start bound").
+- **What is saved** (`movedMeetings`, the sends table):
+  - the original takes SEQUENCE + 1. `rescheduleSequence` is kept for "this event" and set to the new SEQUENCE for "all" and "this and following";
+  - the original's stored instant is kept unless its start changed;
+  - a split inserts the new series: a new id and UID, SEQUENCE 0, `rescheduleSequence` 0, the same organiser and the mover as `created_by`;
+  - the split copies the live guest rows with their answers, an email guest under a new row id and each answer's SEQUENCE as 0. `meeting_responses` rows are not copied;
+  - the copied email guests count against the mover's 50 outside addresses a day;
+  - answers and proposals are never reset (kept as the spec says).
+- **What is sent:**
+  - "this event": an `occurrence` REQUEST "Updated", with the RECURRENCE-ID and the occurrence's own time, at the new SEQUENCE;
+  - "all", or a one-off: an `edit` REQUEST "Updated";
+  - a split: one `edit` REQUEST per series, the old one with its trimmed UNTIL and the new one under its new UID;
+  - after "all" and a split, each series' surviving exceptions again (below);
+  - reminders are re-synced for the original and the new series.
+- **The answer** is `{ meetings, conflicts, undo: { previous, createdIds } }`. Each meeting, and `previous`, is shaped for the mover by `meetingForViewer`.
+
+### Conflicts and "Busy" (`occurrenceConflicts`, `conflictForViewer`, `meeting-conflicts.ts`)
+- **When:** on a move only, as a warning (rule 13), worked out in the move's transaction from the state it commits. Never at creation, on PATCH or on an accepted proposal.
+- **Which meetings:** only those that share a colleague, customer, supplier or contact with the moved one, found by kind and id in one query on `meeting_attendees` joined to `meetings`. Email guests never match. Cancelled meetings and occurrences are left out. Since review round 1 of PR #35 the query also reads only meetings that can hold an occurrence on the moved day (`storedStartBounds`): a series that starts before the day's end plus the 31 days an occurrence moved earlier is still found from, and a one-off that starts on the day, each bound a day wider in UTC. That changes no result; it stops a check reading every meeting a guest was ever on. Since the final review of PR #35 a series is read only while its `until` is not before the day (both local dates, compared as the shared rule compares them), unless it has occurrences moved on their own, since one can be moved past that date.
+- **How occurrences are found:** `meetingOccurrences` works each series out from the window: its planned dates there are counted from the start (`plannedBetween`), and its exceptions are checked on their own against the rule (`onSeriesRule`), never walked from the first date. It finds exactly what the walk found, an occurrence moved earlier by up to 31 days included (`MOVED_EARLIER_REACH_DAYS`). The cost grows with the window, not with the age of the series, so My meetings and the reminders gain too.
+- **Which occurrences:** those on the new start's day that overlap the moved occurrence. Only the occurrence the move produced is skipped, so another occurrence of the same series counts. The meeting never warns about itself after an "all" or split move; the demo compares the key from before the move and does.
+- **What a row shows** (`{ name, title, start }`):
+  - the guest's name as the mover reads it on the moved meeting, and the other occurrence's start;
+  - the other meeting's title only when the mover sees that meeting (`seesMeeting`) and sees that guest on it (`meetingForViewer`, so a hidden list hides them);
+  - otherwise the title is "Busy" (`BUSY_TITLE`), and nothing else of that meeting is given: no id, guests, place, notes or private flag.
+
+### Undo, rebuilt from the server's own entry (critic B3; `undoProblem`, `undoneMeeting`, `meeting-undo.ts`)
+- **The record:** the "Moved meeting" entry keeps what undo needs, in times only:
+  - before: `{ planned, sequence, series: { start, startsAt, durationMin, until, exceptions } }`, where `startsAt` is the stored instant;
+  - after: `{ start, durationMin, scope, sequence, createdIds, sends }`.
+- **The checks,** in one transaction after `lockChangeable`:
+  1. The meeting's newest audit entry, by time and then id, must be "Moved meeting" and read back through a strict Zod schema, and the meeting must not be cancelled. Otherwise 409 `meeting_changed`. Every change to a meeting writes an entry under its lock, so this means nothing changed since the move, and the guests' answers are those the move left.
+  2. The entry's actor must be the caller: 403 "Only the person who moved this meeting can undo the move."
+  3. The entry must be at most 5 minutes old by the database clock (`UNDO_WINDOW_MINUTES`; entries are stamped with `clock_timestamp()`): 409 `undo_expired`.
+  4. The current SEQUENCE must be the one the move saved, and the body's `sequence` the one before it: 409 `meeting_changed`. So a toast for an older move can't undo a newer one.
+  5. No undo may leave an occurrence moved on its own behind (`undoneSeriesProblem`, the same `leftBehindProblem` as a move, on the database clock): otherwise 400 `invalid_request`, and nothing is written (review round 3 of PR #35). Since the final review of PR #35 this covers undoing "this event" too, because it sends a series REQUEST; its message points to moving the occurrence back with This event, which sends none.
+  6. A series the move split off is locked after the original. It must be live, not cancelled, at SEQUENCE 0 and changeable by the caller, with this move's "Split meeting series" by the caller as its newest entry. Otherwise 409 `meeting_changed`, also when the caller can no longer change it.
+- **The restored state** comes only from the record: the stored instant, the length, `until` and the exceptions, with SEQUENCE + 1 and `rescheduleSequence` set to it (sends table). The guests are untouched.
+- **A split-off series** is soft-deleted with its guest rows and cancelled at SEQUENCE 1. Its waiting reminders are cancelled: `MeetingReminders.sync` on a deleted meeting only cancels its rows.
+- **What is sent:**
+  - an `edit` REQUEST to every guest at the new SEQUENCE (sends table);
+  - the restored series' surviving exceptions again, after every undo: since the final review of PR #35 also after undoing "this event", so no undo sends a series-only REQUEST;
+  - after undoing "this event", that occurrence again at its restored time (the earlier exception's, or the series'), so the override the move sent is taken back. When an earlier exception there is already among the re-sends it goes once, since the two would be one Outbox version;
+  - a CANCEL with STATUS:CANCELLED to every guest of a removed split (RFC 5546 section 3.2.5);
+  - the original's reminder is re-synced.
+- **A second undo** finds "Undid meeting move" as the newest entry and gets 409 `meeting_changed`.
+
+### Proposal decisions (`packages/shared/src/meetings/proposals.ts`, `canDecideProposal`)
+- **Who:** only the organiser, and only when they may change the meeting (`canDecideProposal`). Anyone else gets 403 "Only the organiser can decide a proposed time." The spec's action checks the key only and leaves the organiser rule to the screen. Other readers never see other guests' proposals (`meetingForViewer`).
+- **Refused:** a guest not on this meeting is 404. With no pending proposal from that guest, on a series, or on a cancelled meeting, the answer is 400. Accepting also needs the proposed start to exist on the clock, lie inside the start bound and last 15 to 1440 minutes.
+- **Accept** (sends table):
+  - the meeting takes the proposed start and length, with SEQUENCE + 1 and `rescheduleSequence` set to it;
+  - every answer is reset, the organiser's included; the proposal becomes `accepted`, and every other proposal is cleared;
+  - an `edit` REQUEST goes to every guest, and the reminder is re-synced.
+- **Decline:**
+  - the proposal becomes `declined`, and nothing else changes;
+  - a DECLINECOUNTER with no STATUS and no VALARM, listing only the proposer, goes to the proposer only, at the unchanged SEQUENCE, unless they are no longer an active member;
+  - the meeting's `updated_at` moves, so each decline is its own Outbox row and DTSTAMP follows commit order.
+- **A pending proposal survives a move** (kept as the spec says) and can still be accepted afterwards.
+
+### Series exceptions sent again (ADR 0021), lifting part 1's refusal
+- **When:** after a series changes anything the file of an exception carries: DTSTART, DTEND, RRULE or UNTIL, and also SUMMARY, LOCATION, DESCRIPTION or the VALARM. That is an "all" move, both series of a split, any PATCH of a series (start, length, place, title, notes or reminder), and every undo (since the final review of PR #35 also of "this event").
+  - A calendar drops or strands a series' overrides when its time or rule changes. An override also replaces its occurrence whole (RFC 5545 RECURRENCE-ID), so after a title, place or notes edit it would keep the old ones (review round 2 of PR #35).
+- **What** (`exceptionResends`): each surviving exception that has not ended gets one copy of every series REQUEST, with:
+  - the series' new SEQUENCE;
+  - its own RECURRENCE-ID, the planned time as the series now has it;
+  - its own time and length.
+  - Each RECURRENCE-ID is its own Outbox row, because the invite's version holds it. A colleague's in-app note comes once, with the series' own invite.
+- **Not sent:** an exception that has ended (`hasEnded`, the one bound both this and the refusals below use), which bounds what guests receive, and one marked cancelled (nothing writes one).
+- **Refused instead of sent wrong** (review round 3 of PR #35): a change of a series' time or rule (an "all" move, either series of a split, a start or length edit, an undo of "all" or a split) that would leave an exception that has ended at a date in the series still ahead. A guest's calendar drops the override with the old time or rule and gets no new one, so it would show that date as a plain occurrence. The change is taken once that date's slot has ended. Since the final review of PR #35 the same holds for every change that sends a series REQUEST: any PATCH of a series (a place, title, notes or reminder edit too) and an undo of "this event", because a calendar that replaces the whole set on a series-only REQUEST drops the override then as well.
+- **PATCH:** a series' exceptions now shift with a new start (`shiftedSeries`, the same `moveOccurrence` rule as an "all" move). A new start that would take one off the series is refused (`shiftedSeriesProblem`), and so, since review round 3 of PR #35, is a new start or length that would put one more than 31 days before its date or leave one behind.
+
+### Audit (part 2)
+- `Moved meeting` on the original: the move record above, plus `after.sends`.
+- `Split meeting series` on the new series (new): null → `{ from, start }`.
+- `Undid meeting move`: `{ start }` → `{ start, sends }`.
+- `Removed split meeting series` on the removed series (new): `{ start }` → `{ sends }`.
+- `Accepted proposed time`: `{ start }` → `{ start, sends }`.
+- `Declined proposed time` (new; meetings.md leaves declining unaudited): `{ guest }` → `{ sends }`. The guest is named as in `Removed meeting guest` (`guestAuditName`): "Email guest" for an email guest, and only by kind on a private meeting.
+- The action strings are `MEETING_AUDIT_ACTIONS`, named once because undo matches on them. No entry holds titles, emails or notes. The target label is the title, or "Private meeting", as in part 1.
+
+### Limits (part 2)
+- **The daily caps** (part 1) count every email of a move, an undo, a decision and an edit: the re-sent exceptions and the CANCELs to a removed split's guests included. An action over a cap is 400 `invalid_request` and writes nothing.
+- **At most 100 exceptions per series.** It bounds the jsonb column, the move record and the re-sends.
+- **Start bound** (review round 1 of PR #35; `typedStartProblem`, `MEETING_LIMITS.startDaysBack` and `startDaysAhead`): a start a person types must lie from 366 days before the company's today (`tenants.time_zone`) to 1096 days after it, by local date. Otherwise 400 "Choose a start from one year ago up to three years ahead.", and nothing is written.
+  - It applies on create, on an edit that changes the start, on a request, on a proposal in an answer, on accepting a proposal (checked again at that moment) and to a move's new start.
+  - It does not apply to a start a rule derives: a series shifted by an "all" move keeps its old first date, an undo restores the server's record, and a series that began long ago keeps running, takes edits that leave its start alone, and moves through any occurrence inside the bound.
+  - A year back lets a past occurrence be put right; three years ahead covers any booking the screens offer.
+
+### Review round 1 of PR #35 (2026-11-15)
+- **Blocking, availability:** a move's conflict check walked every series that shared a guest, week by week from its first date, inside the move's transaction. Nothing bounded the dates (any year from 1900 to 2999 was taken), so a person with create and edit could make series dated 1900 and move a one-off to 2999 again and again: about 16 seconds of the shared Node process per request, measured, holding a pooled connection and the meeting's lock. Part 1's My meetings and reminders walked the same way. Fixed three ways, none of which changes a result: occurrences are worked out from the window ("How occurrences are found" above); the conflict query reads only meetings near the day; and typed starts are bounded ("Start bound", a safer-direction change in the blueprint delta). Tests: an oracle in `packages/shared/test/meetings.test.ts` that compares the window rule with the old walk on generated series, timing tests for 200 series from 1900 against a day in 2999 (shared) and 600 against a move three years out (integration), and the bound on every route.
+- **Undo of a split:** `lockSplit` refusing had no test. Now one integration case answers on, edits (a title, so SEQUENCE stays 0 and only the last entry shows it) and cancels the split-off series, and each undo answers 409 `meeting_changed` with both series as they were, nothing sent and no undo entry.
+- **No duplicated reset:** the "ask again" reset (rule 6) is `ASKED_AGAIN` in `changes.ts`. The shared `askedAgain` spreads it on a guest for an edit and for `acceptedProposal`, and `resetAnswers` in `meeting-writes.ts` writes it to every live guest row for both services.
+
+### Review round 2 of PR #35 (2026-11-15)
+- **Should fix, correctness:** a title, place, notes or reminder PATCH of a series re-sent only the series REQUEST, because exceptions went again only after a timing change. Each occurrence moved on its own sits in a guest's calendar as its own RECURRENCE-ID override, carrying the SUMMARY, LOCATION, DESCRIPTION and VALARM it was sent with, and RFC 5545 has an override replace its occurrence whole. So after moving one occurrence with "this event" and then changing the place, the guest's calendar probably kept the old place for that week. A calendar that replaces the whole set on a series-only REQUEST would instead drop the override, and the occurrence would show at its planned time.
+- **Fixed:** every PATCH of a series sends its surviving exceptions again (`resendExceptions: true` in `MeetingsService.update`), since every field an edit can change is in the file. The re-sends go to the same guests with the same content as the series invite, so nothing new is exposed. They count against the daily caps, so an edit of a series with many exceptions and guests may be refused rather than half sent.
+- **Test:** `meetings-moves.int.test.ts` moves one occurrence with "this event", then edits the place, title, notes and reminder in turn. Each edit adds exactly one RECURRENCE-ID file per guest, carrying the new value, the occurrence's own time and SEQUENCE 2, and the exception stays stored.
+
+### Review round 3 of PR #35 (2026-11-15)
+- **Blocking, correctness:** rule 4's shift moves each exception's planned time but keeps its own time, and the check only asked whether the shifted planned time was still on the rule. So an "all" move or a start edit could tie an occurrence already held to a date still ahead: a Friday series whose last Friday was held an hour late, moved to Mondays, made that held occurrence the one for tomorrow's Monday. The app showed no meeting tomorrow, no reminder went, and `exceptionResends` sent nothing for the held occurrence, so every guest's calendar got a plain Monday instance from the new series file. The same held when a shift put an exception's own time more than 31 days before its planned date: the calendar, the reminders and the conflict check no longer found it.
+- **Fixed by refusing** (the safer direction; re-sending a past-dated override instead would change the sends):
+  - `strandedException` (an "all" move, the shifted exceptions of a split, and PATCH through `shiftedSeriesProblem`) also refuses an exception beyond the 31-day reach and one left behind (`leftBehindProblem`: own time ended by the database clock, its planned slot not);
+  - the same left-behind check runs on the old series of a split (its UNTIL changes), on a length-only edit of a series (its DTEND changes; part 1 refused it, part 2 had lifted that) and on an undo of "all" or a split (`undoneSeriesProblem`, 400). These are the other changes of a series' time or rule after which exceptions are sent again, so the same occurrence would be lost the same way;
+  - "this event" may not move an occurrence more than 31 days earlier, which the reach limit already hid before.
+- **Should fix, correctness:** a "this and following" move could start the new series before the old one's last kept occurrence, so both series held the same weeks and every guest got both, for years with a far `planned`. meetings.md rule 4 only says the new series starts at the new time. Now refused when the new start is at or before the end of the last occurrence the old series keeps (`lastKeptEnd`, walking back over planned dates moved on their own with `previousPlannedStart`, so it costs at most one step more than the exceptions).
+- **Should fix, tests:** no route test split or undid a series with occurrences moved on their own. Now one integration case moves an earlier and a later occurrence on their own, splits between them and undoes the split: each exception stays on its series (the later one shifted), each is re-sent under its own UID, and the undo restores the start, `until` and both exceptions from the audit entry and sends both again at the new SEQUENCE.
+- **Tests:** packages/shared `meeting-moves` and `meeting-changes` (the walk back, the overlapping split, the reach, left behind on each route and its undo, all with a fixed database clock `NOW`); `meetings-moves.int.test.ts`, now 27 cases (the split with exceptions and its undo, and a PATCH start, a PATCH length, an "all" move and an undo refused with nothing written), and two refusals of an overlapping split in the refusals case.
+
+### Final review of PR #35 (2026-11-15)
+- **Should fix, correctness: "all" from an occurrence moved on its own.** Rule 4's shift moves every exception's `planned` but keeps its own start and length. Dragged from such an occurrence, an "all" move shifted that exception's key to the new start while its own time stayed put: a Thursday series whose 26 November was moved to Friday 10:00, dragged with All events to Saturday 10:00, moved to Saturdays but kept that occurrence on the Friday and sent it there again. `movedOccurrenceKey` named Saturday 10:00, so the conflict check looked at a slot the series did not hold and skipped the one it did.
+  - **Fixed by refusing** (the safest option; moving the occurrence with the series would change what rule 4's shift does): `moveProblem` refuses "all" when `planned` names a live exception with its own start or length (`changedOnItsOwn`). The length counts too: a resized-only occurrence would keep its old length while the series and the conflict check took the new one. 400 "This occurrence was changed on its own. Choose This event, or move another occurrence to move all events.", nothing written. The wording says "changed", as every other message about exceptions does, since a length alone counts.
+  - **"This and following" from such an occurrence was checked and is not refused:** the split keeps the exceptions before `planned` on the old series and shifts those after it onto the new one, and drops the one at `planned`, so the dragged occurrence becomes the new series' first at the new time and length. That is the slot `movedOccurrenceKey` and the conflict check name. Its override under the old UID is past the old series' new UNTIL, the stray-override risk every split already carries (residual risks).
+- **Should fix, correctness: an undo of "this event" sent a series-only REQUEST.** It sent the series REQUEST at the new SEQUENCE without the surviving exceptions, the only series REQUEST in part 2 to do so; the move it undid had sent no series REQUEST at all. In a calendar that replaces the whole set on a series-only REQUEST, every other override was dropped, so an occurrence moved earlier went back to its planned time in guests' calendars while the app still showed it moved. The residual risk "as before the move" was wrong.
+  - **Fixed:** the undo's series REQUEST passes `resendExceptions: true`, as every other series REQUEST does. The restored occurrence's own REQUEST goes only when the re-sends do not already carry its RECURRENCE-ID (an earlier exception there), so one Outbox version is never planned twice and the daily caps count it once.
+- **Should fix, correctness: the held-occurrence refusal missed series REQUESTs that change no time.** Round 3 refused only changes of a series' time or rule. A place, title, notes or reminder PATCH also sends a series REQUEST, and `exceptionResends` skips an exception whose own time has ended, so an occurrence held early (next Friday's held on Monday) was dropped in a calendar that replaces the set, and its planned Friday came back as a plain occurrence. An undo of "this event" reached the same through the fix above.
+  - **Fixed with round 3's choice, extended:** `editProblem` runs `leftBehindProblem` on every edit of a series that changes a field (a change of nothing still writes nothing), and `undoneSeriesProblem` on every undo. The refusal lasts until that date's slot ends, as in round 3. The messages end "Edit the series after that date." for an edit that changes no time, and "Move the occurrence back with This event instead." for an undo of "this event". Re-sending a past-dated override instead stays a question for the owner.
+- **Notes applied:** `MeetingSends.plan` looks each colleague up once, however many exceptions go to them; the conflict query reads a series only while its `until` is not before the day, unless it has exceptions (one can be moved past `until`), with a test that reads the ids directly and checks the warning is unchanged.
+- **Tests:** packages/shared `meeting-moves` ("all" from an occurrence moved or only resized refused, "all" from another occurrence, "this event" and "this and following" from it taken, the split's dragged occurrence found at the new time; an undo of "this event" refused while one is held early, and taken once the date passes or with nothing held) and `meeting-changes` (a title, place, notes and reminder edit refused while one is held early; taken after the date, with nothing held, on a one-off and with no change). `meetings-moves.int.test.ts`, now 30 cases: "all" from an occurrence moved on its own refused with the row, Outbox and audit unchanged and "this and following" from it starting at the new time; an undo of "this event" re-sending a second exception at the undo's SEQUENCE, and the restored occurrence going once when an earlier exception covers it (the audit `sends` of 3 and 2); the held-occurrence case extended with a place and a title edit and an undo of "this event" refused, and a place edit taken once nothing is held; and the conflict query narrowed.
+
+### Safest options taken in part 2 (also in docs/blueprint-delta.md)
+1. **Who may move, undo or decide:** someone who may change the meeting (`canChangeMeeting`), as for edits in part 1. The spec's actions check `meetings.meeting.edit` only. Deciding a proposal also needs the organiser: the spec's own screen rule, now enforced on the server.
+2. **Undo is rebuilt on the server from its own "Moved meeting" entry**, never from the client's copy (critic B3). It is allowed only when:
+   - the move is the last change to the meeting, and to its split;
+   - the caller is the person who moved it and may still change it;
+   - the move is at most 5 minutes old by the database clock. The spec has no window, and its toast lasts seconds, so 5 minutes is the tightest bound that survives a slow network and a paused toast;
+   - the SEQUENCE the screen saw matches.
+   - The body is strictly `{ sequence }`.
+3. **Conflicts show a meeting the mover can't see, or can't see that guest on, as "Busy":** the guest's name and the start only, with no title, guests, place, notes or id. The spec's warning names any meeting's title, private ones included.
+4. **Moves that can't be done correctly are refused:** a `planned` that is not an occurrence; "this and following" from the first occurrence; a shifted series start the clocks skip, or one that breaks rule 3, and a split's new start that breaks rule 3; a move that takes the moved occurrence or an exception off its series; a cancelled meeting; a length outside 15 to 1440 minutes. The demo moves whatever it is given. Since review round 3 of PR #35 also: "this and following" that starts at or before the end of the old series' last kept occurrence (rule 4 lets the two series overlap); a move or edit that puts an exception more than 31 days before its date in the series; and a change of a series' time or rule (an "all" move, either series of a split, a start or length edit, an undo of "all" or a split) that would leave an exception already held at a date still ahead. Since the final review of PR #35 also: an "all" move from an occurrence changed on its own (it would stay at its own time and length); and the held-exception refusal covers every change that sends a series REQUEST, so any edit of a series and any undo, "this event" included.
+5. **Surviving exceptions are sent again** after a series' time or rule changes, which lifts part 1's refusal of a series time edit, and after any other edit of a series (place, title, notes or reminder), since each override carries those too (review round 2 of PR #35), and after every undo, "this event" included (final review of PR #35). meetings.md "Differences from ADR 0021" lists them as not sent. Only exceptions that have not ended are sent, and a shift that would take one off its series is refused, as is any series change that would leave an ended one at a date still ahead (review round 3 and the final review of PR #35).
+6. **An undo also sends:**
+   - a CANCEL to the guests of the split-off series it removes, which closes the spec's "Undo removes a split-off series without sending its guests a cancellation";
+   - after undoing "this event", that occurrence at its restored time, once, with the series' other surviving exceptions (final review of PR #35).
+   - Otherwise guests' calendars keep a meeting or an override that no longer exists. The sends-table rows themselves are unchanged.
+7. **New audit entries** (CLAUDE.md rule 10): "Split meeting series", "Removed split meeting series" and "Declined proposed time". meetings.md leaves declining unaudited. The entries hold times only.
+8. **The daily caps count every send** of a move, an undo and a decision. The copied email guests of a split count against the mover's daily outside addresses.
+9. **At most 100 exceptions per series.**
+10. **Strict bodies:** a move's `meetingId`, if sent, must equal `:id`; an undo reads nothing but `sequence`.
+11. **Decisions are refused on a cancelled meeting** (closing the spec's "`decideProposal` does not check for a cancelled meeting"), on a series, and when the proposed start no longer exists on the clock.
+12. **An undo of a split answers 409** whenever the split-off series changed since the move or the caller may no longer change it, so it never removes a series someone else has since changed.
+13. **A start a person types is bounded** (review round 1 of PR #35): from a year before the company's today to three years after it, on create, edit, request, proposal, accepting one and a move. meetings.md sets no bound. Without it, series dated 1900 and a move to 2999 made the conflict check walk centuries of dates while holding the meeting's lock.
+
+### Kept as meetings.md says in part 2 (not safety)
+- **A move does not reset answers or clear a pending proposal.** "This event" keeps `rescheduleSequence`; "all", "this and following" and undo set it to the new SEQUENCE; a split copies its guests' answers.
+- **The sends-table rows** for moves, undo, accept and decline stand as written.
+- **Accepting a proposal** resets every answer, the organiser's included.
+- **The shift is measured from `planned`** (rule 4), also for "this and following" from an occurrence moved on its own before ("All events" from one is refused, final review of PR #35). A one-off moves as `all` whatever the scope.
+- **Conflicts** only warn, only on a move, and only for the moved occurrence on its own day.
+- **A moved request** gets a file, TENTATIVE while it waits (part 1).
+
+### Deferred in part 2, not invented
+- **Cancelling one occurrence:** the spec does not offer it.
+- **Conflicts at creation or on PATCH:** not in the spec.
+- **The web** (part 3, under "Later parts").
+
+### For the owner (part 2)
+- Is 5 minutes the right undo window, and should someone else who may change the meeting be able to undo a colleague's move? Part 2 allows only the mover.
+- Should an undone split's guests get a CANCEL? Part 2 sends one.
+- Should past exceptions be sent again after a series move? Part 2 sends only those that have not ended.
+- Should a place, title, notes or reminder edit of a series send its surviving exceptions again? Part 2 does, so a moved occurrence does not keep the old place or title. It costs one email per guest per surviving exception.
+- Should a "Busy" conflict show its start? Part 2 shows it, as free/busy time.
+- Should "this and following" from the first occurrence be read as All events rather than refused? Part 2 refuses it.
+- Should a series change that would leave an occurrence already held at a date still ahead send that occurrence again (a past-dated override) instead of being refused until the date passes? Part 2 refuses it (review round 3 of PR #35), and since the final review of PR #35 the refusal covers every series edit (a place, title, notes or reminder edit too) and every undo, "this event" included. That can hold back any change to the series for up to the length of the shift, or up to 31 days for an occurrence held early.
+- Should "All events" dragged from an occurrence moved on its own carry that occurrence to the new time and length, instead of being refused? Part 2 refuses it (final review of PR #35); "This event" and "This and following" from it work, and so does "All events" from any other occurrence.
+- Should "this and following" be allowed to start before the old series' last kept occurrence ends, as rule 4 reads? Part 2 refuses it, so the two series never hold the same weeks.
+- Is 100 exceptions per series right?
+- Should declining a proposal stay audited? Part 2 audits it; the spec does not.
+- An undo or decision over a daily cap is 400 `invalid_request`, as part 1's actions are. The spec names no status.
+- Is a start bound of one year back and three years ahead right? A series that began more than a year ago can no longer have its first date edited; it moves through an occurrence instead.
+- ADR 0021 notes that Outlook discards answers when SEQUENCE rises, while the spec keeps answers on a move. The spec stands. Revisit it?
+
+### Residual risks (part 2)
+- **Calendars may keep stray overrides:** after an "all" move, a split (the old series' overrides past its new UNTIL, the dragged occurrence's included) or an undo, a guest's calendar may keep an override under a RECURRENCE-ID that is no longer an instance (Google). No valid message can cancel it.
+- **Ended exceptions are not sent again,** so a calendar that drops a series' overrides on an update may show a past moved occurrence at its series time. Since review round 3 of PR #35 that series time is always past too: a change that would leave it ahead is refused.
+- **A held occurrence can hold a series back:** while an occurrence moved on its own has taken place and its date in the series is still ahead, the series can't be edited at all (time, length, rule, title, place, notes or reminder) and every undo is refused, "this event" included, until that date's slot ends (at most the length of the shift for a held-late occurrence, and up to 31 days for one held early; final review of PR #35). "This event" moves still work.
+- **"All events" can't start from an occurrence moved on its own:** the mover drags another occurrence, or moves that one with "This event" (final review of PR #35). Until part 3 the screens don't say so before the drop.
+- **The daily caps can block a move or an edit:** a series with many exceptions and guests sends one REQUEST per guest per surviving exception, after a move and after any edit (review round 2 of PR #35). At 50 guests, the 500 meeting emails a day allow about nine, so moving or editing such a series is refused on a busy day rather than half sent.
+- **Undo is short:** it is offered for 5 minutes, to the mover only, and only for the meeting's last change. Anything later is a new move.
+- **Undo relies on every change being audited under the meeting's lock.** A future write path that changes a meeting without an entry would not be seen by check 1. The SEQUENCE check still catches any change that raises it.
+- **"Busy" still says something:** the mover already reads the guest on the moved meeting, and learns that the guest is booked at that start, and how many of their meetings overlap it.
+- **The demo keeps its own copies** of conflicts and moves (`attendeeConflicts`, `rescheduleMeeting`), with self-warnings and private titles, until part 3 moves DemoStore onto the shared rules (the same overlap part 1 accepted, critic K).
+- **A proposal decided on the API** is not seen by the screens until part 3.
+- **The start bound is on the API only:** the demo's screens take any start until part 3 moves DemoStore onto the shared rules.
+- **An occurrence moved earlier by more than 31 days** is not found on its new day, by the calendar or by a conflict check, as before: the window rule keeps the walk's reach (`MOVED_EARLIER_REACH_DAYS`). Since review round 3 of PR #35 no move or edit can make one; only a row written by hand could hold one.
+
+### Consequences (part 2)
+- **No schema or dependency change:** no table, column, index or migration changes, and no dependency. A split inserts a `meetings` row and copies `meeting_attendees` rows; an undo soft-deletes them.
+- **The move record's strict reader** (`parseMoveRecord`) is in `apps/api/src/modules/meetings/meeting-undo.ts`, not in packages/shared as the plan had it, because packages/shared has no Zod dependency and none may be added.
+- **Occurrence checks** are worked out from the rule, never walked: `onSeriesRule` decides whether a date is a series' occurrence directly, weekly or monthly, and `meetingOccurrences` counts a series' dates in the window from its start (review round 1 of PR #35). The first build held the meeting's lock for about two seconds on a worst-case move check; after `dd91811` the conflict walk still could for many seconds.
+- **`MeetingSends`:** `plan` takes an options object (`only`, `occurrence`, `resendExceptions`; part 1's `removed` is now `only`), and `invites` takes a list of plans and queues their jobs once.
+- **Tests:**
+  - packages/shared: new `meeting-moves` and `meeting-proposals`; `meeting-changes`, `meeting-sends` and `ics` extended (a DECLINECOUNTER file, and a RECURRENCE-ID file for the first occurrence of a series that starts after day 28);
+  - `apps/api/test/meeting-undo.test.ts`: the move record read back, and anything else refused;
+  - packages/shared `meetings`: the window rule against the old walk (an oracle on generated series), a monthly series' far dates, and 200 series from 1900 against a day in 2999; `meeting-input`, `meeting-changes`, `meeting-moves` and `meeting-proposals`: the start bound (review round 1 of PR #35);
+  - `apps/api/test/meetings-moves.int.test.ts`, 30 cases (three added in review round 1 of PR #35: the start bound on every route, conflicts three years out with 600 series from 1900 sharing a guest, and undo refused after the split-off series was answered, edited or cancelled; one in round 2: an occurrence moved on its own sent again after a place, title, notes and reminder edit; two in round 3: a split and its undo with occurrences moved on their own, and changes that would leave a held occurrence behind refused; three in the final review: "all" from an occurrence moved on its own refused, an undo of "this event" re-sending the other exceptions once each, and the conflict query reading no ended series without exceptions): access, switches and bodies; tenancy and scope; each scope's sends, sequences and reminders; the split and its audit; exceptions sent again, ended ones not; the refusals; the daily caps on a move, an undo and a decision; invites off; conflicts and "Busy"; undo by the mover within five minutes by the database clock, only the last move, and refused after an edit, an answer or a cancel; decisions only by the organiser who may change the meeting, DECLINECOUNTER each time, none to a proposer who left; the 100-exception cap; several moves and an undo at once;
+  - `apps/api/test/meetings.int.test.ts`: part 1's exceptions refusal became "shifts and re-sends the exceptions; refuses a monthly week shift";
+  - the `isolation` and `permissions` route inventories pick the new routes up.
+  - There are no Playwright tests, because no screen changed.
+
 ## Later parts
-- **Part 2** (`feat/meetings-api-moves`):
-  - `POST /meetings/:id/reschedule`, with conflicts that show meetings the person can't see as "Busy";
-  - `POST /meetings/:id/reschedule/undo`, rebuilt on the server from the last "Moved meeting" audit entry rather than trusting the client's copy (critic B3);
-  - `POST /meetings/:id/attendees/:attendeeId/proposal` (`decideProposal`, DECLINECOUNTER);
-  - surviving exceptions sent again, which lifts the exceptions refusal.
+- **Part 2** (`feat/meetings-api-moves`, PR #35): done, under "Part 2 (2026-11-15)" above.
 - **Part 3** (`feat/meetings-web-api`):
   - the meetings methods join `API_METHODS`;
   - the screens take the viewer id from the server (`GET /auth/context`, `viewerUserId`);
   - the New meeting dialog stops sending the organiser as a guest;
   - drag, Reschedule, Edit, Cancel and Remove are gated on `canChangeMeeting` (critic B5);
+  - Undo sends `{ sequence: undo.previous.sequence }` to `/meetings/:id/reschedule/undo`, and the toast handles 403 and 409;
+  - the conflict warning renders "Busy" rows;
+  - "This and following events" is hidden on a series' first occurrence;
+  - Accept time and Decline time show only to an organiser who may change the meeting;
   - Request is hidden when `colleagues` is empty;
   - Settings → Meetings and "Save under customer" are hidden in api mode;
-  - DemoStore moves onto the shared rules;
+  - DemoStore moves onto the shared rules, its own conflicts and moves included;
   - an e2e-api spec is added.
 - **Part 4** (later, with the owner):
   - Settings → Meetings on the API;
@@ -294,7 +539,7 @@
   - iMIP;
   - the index migration.
 
-## For the owner
+## For the owner (part 1)
 - **The go-ahead:** the owner restarted the queue on 2026-11-15 with meetings first (STATUS, "Owner answers (2026-11-15)"). PR #33 self-merges under the CLAUDE.md rule once its reviews are clean.
 - **Before real email** (ADR 0021): import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web before `EMAIL_PROVIDER=resend` sends meeting invites. Also import a PUBLISH without ORGANIZER, the file a reader who may not read guests' addresses gets, on its own and over the REQUEST of the same meeting.
 - **Questions:**
@@ -305,7 +550,7 @@
   - Should RSVP be FALSE for guests outside the company until replies can be read?
   - Should `meeting.when` name the zone?
 
-## Residual risks
+## Residual risks (part 1)
 - **Who is on a private meeting shows in the Outbox:** a holder of `settings.outbox.view` (the Owner by default) still sees the recipient, status and dates of a private meeting's rows; only subject, body and `.ics` are hidden. The recipients say who was invited.
 - **Sends after the commit:** SEQUENCE can rise while one guest's row was not written (a failure is caught and logged). A row that was written and failed can be sent again with Retry, but a row never written has to wait for the next change. A transaction that holds every invite for 50 guests was ruled out: a pg-boss outage would hold the meeting's lock and a company connection for up to ten seconds per guest.
 - **A jobs outage** (final review of PR #33):
@@ -317,7 +562,7 @@
   - later occurrences and the seeded meetings have none until part 4 or a change;
   - with no instance running workers nothing is sent, and late reminders are dropped.
 - **Outside guests can't answer**, and with RSVP=TRUE their calendar's reply goes to the organiser's mailbox, where nothing reads it.
-- **A proposal can be sent but not decided** on the API until part 2. The screens don't use the API until part 3.
+- **A proposal can be sent but not decided** on the API until part 2, which adds the decision. The screens don't use the API until part 3.
 - **A linked guest with no address** gets a failed row on every send, and the actor gets a notice, as in the demo.
 - **Branch scope sees every meeting that is not private**, from any branch, as in the spec. Narrowing it needs a branch on meetings and the owner.
 - **The calendar file sits inline** in the Outbox row, readable by anyone who may read that row unredacted.
@@ -328,7 +573,7 @@
 - **A company outside the seven zones** can't book meetings on the API at all (409).
 - **Api mode before part 3:** Settings → Meetings, the bell, the Outbox and Simulate reply run on DemoStore, so they don't show what the API wrote.
 
-## Consequences
+## Consequences (part 1)
 - **No schema or dependency change:** no table, column, index or migration changes, and no dependency is added. RFC 5545 is written by hand in `packages/shared/src/calendar/ics.ts`, with `Intl` for the zones.
 - **The demo's calendar files changed** with the shared writer, in the ways listed under "File hardening". The seeded invite fixture is unchanged, and its regeneration test passes.
 - **Tests:**

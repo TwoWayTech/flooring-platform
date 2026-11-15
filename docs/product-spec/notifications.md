@@ -441,9 +441,9 @@ The five `meeting.*` events keep their keys, templates and recipients. On the AP
 
 | Event key | Version in the dedupe key | Channels | Notes |
 | --- | --- | --- | --- |
-| `meeting.invite` | `<sequence>-<method>-<recurrenceId>-<the meeting's updated_at in ms>` | Email with the `.ics`; in-app for staff | One row per guest, never the organiser. Sent after the change commits, each guest on its own. None while `meetings.invites` is off |
-| `meeting.reminder` | `<sequence>-reminder-<planned occurrence>-<a new UUID v7>` | Email only, as meetings.md has it | Scheduled for `reminderMin` before the next occurrence, expires at its start. Staff guests who are still members, never the organiser, with no actor. Cancelled and raised again after every change |
+| `meeting.invite` | `<sequence>-<method>-<recurrenceId>-<the meeting's updated_at in ms>` | Email with the `.ics`; in-app for staff | One row per guest, never the organiser. Sent after the change commits, each guest on its own. None while `meetings.invites` is off. Part 2: a REQUEST about one occurrence carries its RECURRENCE-ID and own time, so each occurrence is its own row; after a series' time, rule, title, place, notes or reminder changes, each occurrence moved on its own that has not ended is sent again, by email only (the colleague's in-app note comes once, with the series' invite); a declined proposal is a DECLINECOUNTER, "Proposal declined", to the proposer only; an undo that removes a split-off series sends its guests a CANCEL |
+| `meeting.reminder` | `<sequence>-reminder-<planned occurrence>-<a new UUID v7>` | Email only, as meetings.md has it | Scheduled for `reminderMin` before the next occurrence, expires at its start. Staff guests who are still members, never the organiser, with no actor. Cancelled and raised again after every change, a move, an undo and an accepted proposal included; a series an undo removes only has its rows cancelled |
 | `meeting.reply`, `meeting.proposed` | The `meeting_responses` row id | Email, in-app | To the organiser, one per answer |
 | `meeting.requested` | `request` | Email, in-app | To the person asked |
 
-Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none.
+Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none. Part 2 adds no event: moves, undo and proposal decisions send through `meeting.invite`, and every send counts against the daily meeting email limits.

@@ -1,10 +1,15 @@
 import { MEETINGS_PRODID, type IcsInput } from "../calendar/ics";
+import { zonedToInstantLenient } from "../calendar/zones";
 import type { Attendee, Meeting, OutboxRecipient } from "../types";
 import { isOrganiser } from "./access";
 import { validGuestEmail } from "./email";
 
-/** The Part 1 actions that send calendar files (meetings.md "What each action sends"). */
-export type MeetingSendKind = "schedule" | "edit" | "cancel" | "remove";
+/**
+ * The actions that send calendar files (meetings.md "What each action sends"): part 1's, plus an
+ * occurrence moved on its own and a declined proposal (part 2). Moving a series, undoing a move and
+ * accepting a proposal send as `edit`; the series an undo removes is told as `cancel`.
+ */
+export type MeetingSendKind = "schedule" | "edit" | "cancel" | "remove" | "occurrence" | "declineCounter";
 
 /** The words `meeting.action` takes in an invite (meetings.md "Emails"). */
 export type MeetingInviteAction = "Invitation" | "Updated" | "Cancelled" | "Removed" | "Proposal declined";
@@ -14,6 +19,8 @@ const ACTION: Record<MeetingSendKind, MeetingInviteAction> = {
   edit: "Updated",
   cancel: "Cancelled",
   remove: "Removed",
+  occurrence: "Updated",
+  declineCounter: "Proposal declined",
 };
 
 /** The Outbox recipient kind of each guest kind (meetings.md "Attendee", `RECIPIENT_KIND`). */
@@ -26,10 +33,18 @@ export const OUTBOX_RECIPIENT_KIND: Readonly<Record<Attendee["kind"], OutboxReci
   external: "guest",
 };
 
+/** One occurrence of a series as its own invite names it: RECURRENCE-ID and the occurrence's own time and length. */
+export interface OccurrenceTime {
+  /** The date-time the series planned the occurrence for (RECURRENCE-ID). */
+  recurrenceId: string;
+  start: string;
+  durationMin: number;
+}
+
 /** One invite to one guest: the calendar file it carries and the notice that goes with it. */
 export interface MeetingSend {
   recipient: Attendee;
-  method: "REQUEST" | "CANCEL";
+  method: "REQUEST" | "CANCEL" | "DECLINECOUNTER";
   status: "CONFIRMED" | "TENTATIVE" | "CANCELLED" | undefined;
   /** The guests the file lists: only the recipient with a hidden list, and never one without a valid address. */
   listed: Attendee[];
@@ -37,22 +52,40 @@ export interface MeetingSend {
   action: MeetingInviteAction;
   /** Staff guests also get an in-app note (meetings.md "Events and audit entries"). */
   inApp: boolean;
+  /** Set when the file is about one occurrence of a series (RFC 5545 RECURRENCE-ID). */
+  recurrenceId?: string;
+  /** The occurrence's own start and length, with `recurrenceId`. */
+  start?: string;
+  durationMin?: number;
 }
 
-/** The STATUS a file carries for each action; a REQUEST is TENTATIVE while a request waits (ADR 0051 "Correct files"). */
+/** The iTIP method of each action (RFC 5546 section 1.4). */
+function methodFor(kind: MeetingSendKind): MeetingSend["method"] {
+  if (kind === "cancel" || kind === "remove") return "CANCEL";
+  return kind === "declineCounter" ? "DECLINECOUNTER" : "REQUEST";
+}
+
+/**
+ * The STATUS a file carries for each action; a REQUEST is TENTATIVE while a request waits (ADR 0051
+ * "Correct files"). A removal and a declined proposal carry none (meetings.md sends table).
+ */
 function statusFor(kind: MeetingSendKind, meeting: Meeting): MeetingSend["status"] {
-  if (kind === "remove") return undefined;
+  if (kind === "remove" || kind === "declineCounter") return undefined;
   if (kind === "cancel") return "CANCELLED";
   return meeting.status === "tentative" ? "TENTATIVE" : "CONFIRMED";
 }
 
 /**
- * The invites one action sends, one per guest (meetings.md "What each action sends", the Part 1
- * rows; ADR 0051). `meeting` is the meeting after the action.
+ * The invites one action sends, one per guest (meetings.md "What each action sends"; ADR 0051).
+ * `meeting` is the meeting after the action.
  * - schedule: REQUEST at SEQUENCE 0 to every guest;
- * - edit: REQUEST "Updated" to every guest at the SEQUENCE after the edit (raised only when significant);
+ * - edit: REQUEST "Updated" to every guest at the SEQUENCE after the edit (raised only when
+ *   significant); also a series move, an undo and an accepted proposal;
+ * - occurrence: REQUEST "Updated" to every guest for one occurrence (`occurrence`), with its
+ *   RECURRENCE-ID and its own time ("Move this event");
  * - cancel: CANCEL with STATUS:CANCELLED to every guest;
- * - remove: CANCEL with no STATUS to `removed` only, listing only them.
+ * - remove: CANCEL with no STATUS to `only` (the removed guest), listing only them;
+ * - declineCounter: DECLINECOUNTER with no STATUS to `only` (the proposer), listing only them.
  * The organiser never gets one (rule 9's `sendToGuests`), and with `meetings.invites` off nothing
  * is sent at all. A REQUEST is never sent for a meeting that is already cancelled, so a schedule or
  * edit raced by a cancel can't put it back in anyone's calendar (review of PR #33).
@@ -63,14 +96,16 @@ function statusFor(kind: MeetingSendKind, meeting: Meeting): MeetingSend["status
 export function sendPlan(
   kind: MeetingSendKind,
   meeting: Meeting,
-  opts: { invitesOn: boolean; removed?: Attendee },
+  opts: { invitesOn: boolean; only?: Attendee; occurrence?: OccurrenceTime },
 ): MeetingSend[] {
   if (!opts.invitesOn) return [];
-  const method = kind === "cancel" || kind === "remove" ? "CANCEL" : "REQUEST";
-  if (method === "REQUEST" && meeting.status === "cancelled") return [];
-  const recipients = kind === "remove" ? (opts.removed ? [opts.removed] : []) : meeting.attendees;
-  const onlyRecipient =
-    meeting.hideGuestList || kind === "remove" || meeting.attendees.some((guest) => guest.kind !== "staff");
+  const method = methodFor(kind);
+  if (method !== "CANCEL" && meeting.status === "cancelled") return [];
+  if (kind === "occurrence" && !opts.occurrence) return [];
+  const toOne = kind === "remove" || kind === "declineCounter";
+  const recipients = toOne ? (opts.only ? [opts.only] : []) : meeting.attendees;
+  const onlyRecipient = meeting.hideGuestList || toOne || meeting.attendees.some((guest) => guest.kind !== "staff");
+  const occurrence = kind === "occurrence" ? opts.occurrence : undefined;
   return recipients
     .filter((guest) => !(guest.kind === "staff" && isOrganiser(meeting, guest.id)))
     .map((guest) => ({
@@ -81,7 +116,47 @@ export function sendPlan(
       sequence: meeting.sequence,
       action: ACTION[kind],
       inApp: guest.kind === "staff",
+      ...(occurrence ?? {}),
     }));
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * Whether a meeting's time slot, a local start and a length in its zone, has ended by `now`. Text
+ * that names no instant counts as ended. It is the bound `exceptionResends` sends by, and the one a
+ * series change is checked against, so the two never disagree (`leftBehindProblem`).
+ */
+export function hasEnded(start: string, durationMin: number, zone: string, now: Date): boolean {
+  const startsAt = zonedToInstantLenient(start, zone);
+  return !startsAt || startsAt.getTime() + durationMin * MINUTE_MS <= now.getTime();
+}
+
+/**
+ * The series' occurrences moved on their own, sent again after the series changed anything its file
+ * carries (ADR 0021 and 0051 "Series exceptions sent again"; meetings.md "Differences from ADR 0021"
+ * lists them as not sent, and this closes it). A calendar drops a series' overrides when its DTSTART,
+ * DTEND or RRULE changes, or keeps them under RECURRENCE-IDs that no longer match; and an override
+ * replaces its occurrence whole (RFC 5545 RECURRENCE-ID), so after a title, place, notes or reminder
+ * edit it would keep the old ones (review round 2 of PR #35). Each surviving exception gets one copy of
+ * every series REQUEST, at the series' SEQUENCE, with its own RECURRENCE-ID (the planned time as
+ * the series now has it) and its own time and length. Only exceptions whose occurrence has not ended
+ * by `now` are sent (`hasEnded`), which bounds what guests receive; any change that sends a series
+ * REQUEST while an ended one sits at a planned time still ahead is refused before this runs
+ * (`leftBehindProblem`, review round 3 and the final review of PR #35). One marked cancelled is
+ * skipped (nothing writes one yet). A CANCEL has no copies. A colleague's in-app note comes once,
+ * with the series' own invite, not once per copy.
+ */
+export function exceptionResends(meeting: Meeting, seriesSends: readonly MeetingSend[], now: Date): MeetingSend[] {
+  if (meeting.recurrence === "none") return [];
+  const requests = seriesSends.filter((send) => send.method === "REQUEST" && send.recurrenceId === undefined);
+  return meeting.exceptions.flatMap((exception) => {
+    if (exception.cancelled) return [];
+    const start = exception.start ?? exception.planned;
+    const durationMin = exception.durationMin ?? meeting.durationMin;
+    if (hasEnded(start, durationMin, meeting.timeZone, now)) return [];
+    return requests.map((send) => ({ ...send, inApp: false, recurrenceId: exception.planned, start, durationMin }));
+  });
 }
 
 /** How many emails an action sends, as the daily limits count them (ADR 0051 "Volume limits"). */
@@ -112,6 +187,9 @@ export function sendIcsInput(
     organizer,
     attendees: send.listed,
     status: send.status,
+    recurrenceId: send.recurrenceId,
+    start: send.start,
+    durationMin: send.durationMin,
     prodId: MEETINGS_PRODID,
   };
 }
@@ -146,12 +224,15 @@ export function icsFileName(title: string): string {
   return `${base || "meeting"}.ics`;
 }
 
-/** The template values of an invite (meetings.md "Emails" and rule 7: the SEQUENCE it was sent with). */
+/**
+ * The template values of an invite (meetings.md "Emails" and rule 7: the SEQUENCE it was sent with).
+ * An invite about one occurrence gives that occurrence's own time.
+ */
 export function inviteValues(send: MeetingSend, meeting: Meeting, organizerName: string): Record<string, string> {
   return {
     "meeting.action": send.action,
     "meeting.title": meeting.title,
-    "meeting.when": meetingWhenText(meeting.start),
+    "meeting.when": meetingWhenText(send.start ?? meeting.start),
     "meeting.location": meeting.location,
     "meeting.organiser": organizerName,
     "meeting.sequence": String(send.sequence),

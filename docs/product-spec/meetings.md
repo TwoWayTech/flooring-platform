@@ -500,12 +500,11 @@ Other:
 
 ## Real build (ADR 0051)
 
-Part 1 of Meetings is on the API:
-- the calendar, guests, invites, answers, requests and the calendar file;
-- reminders;
-- the Summit seed.
+Parts 1 and 2 of Meetings are on the API:
+- part 1: the calendar, guests, invites, answers, requests and the calendar file; reminders; the Summit seed;
+- part 2: moves and resizes, Undo, proposal decisions and conflicts.
 
-Moves, Undo and proposal decisions come in part 2, and the screens move to the API in part 3. Until then the screens run on DemoStore as described above. The routes are in docs/api-contract.md, "Meetings (real build, ADR 0051)".
+The screens move to the API in part 3. Until then the screens run on DemoStore as described above. The routes are in docs/api-contract.md, "Meetings (real build, ADR 0051)".
 
 The API follows this spec. Where it differs, it is in the safer direction, and each difference is a row in docs/blueprint-delta.md:
 
@@ -535,7 +534,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Times** are stored as instants and shown in the meeting's zone. A start the clocks skip is refused; a time the clock shows twice is the earlier one.
 - **Edits:**
   - A new start is checked against the zone and rule 3 only when it changes, so the seeded "Monthly safety talk" that starts on the 30th can still be retitled.
-  - A series with occurrences moved on their own refuses a new start or length until part 2 can send those occurrences again.
+  - On a series, the occurrences moved on their own shift with a new start, as on an "all" move (rule 4), and are sent again after any edit (below, "Series exceptions"). A new start that would take one off the series is refused. Part 1 refused any new start or length on such a series.
 - **Cancelled meetings:**
   - cancel works once;
   - answers, guest removal and edits on a cancelled meeting are refused, which closes the "do not check for a cancelled meeting" limit;
@@ -550,7 +549,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
   - A colleague who is no longer an active member gets no invite, reminder or notice.
   - Each send is its own Outbox row, so rule 17's one-minute merge is gone.
 - **Reminders** close the "Reminders" limits above:
-  - a reminder is a scheduled Outbox row for the next occurrence, raised again after every create, edit, cancel, guest removal and answer that decides a request;
+  - a reminder is a scheduled Outbox row for the next occurrence, raised again after every create, edit, cancel, guest removal, answer that decides a request, move, undo and accepted proposal;
   - it goes to staff guests who are still members, never the organiser;
   - a worker sends it on time, and one not sent by the occurrence's start is dropped;
   - later occurrences get theirs when a change re-syncs the meeting (a sweeper is part 4);
@@ -559,8 +558,34 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **New guests** are never saved as contacts or leads: rule 11 is deferred on the API, and `newGuestHandling` is ignored.
 - **Settings → Meetings** stays on DemoStore. The API reads the stored group, or 15 minutes, proposals off and the list hidden where a value is missing.
 
+Part 2 (ADR 0051 "Part 2"), also safer than this spec where it differs, each in the part 2 row of docs/blueprint-delta.md:
+
+- **Who may move, undo or decide.** A move and an undo need someone who may change the meeting (`canChangeMeeting`), not only `meetings.meeting.edit` ("Who uses it"). Deciding a proposal also needs the organiser: the screen rule in "Who uses it", enforced on the server (403 otherwise).
+- **Moves refused** because they can't be done correctly (400, nothing changes):
+  - a cancelled meeting, a start the clocks skip, and a length outside 15 to 1440 minutes (rule 5 checks only the 15);
+  - a planned time that is not one of the meeting's occurrences;
+  - "This and following" from the first occurrence, which closes the limit under "Moves and conflicts": the person is pointed to All events;
+  - a shifted series start the clocks skip or one that breaks rule 3, and a new series' start that breaks rule 3;
+  - a move that takes the moved occurrence, or an occurrence moved on its own, off the series (past `until`, or a monthly shift that changes the week of the month);
+  - "This and following" that starts at or before the end of the last occurrence the old series keeps. Rule 4 says only that the new series starts at the new time, so both series could hold the same weeks and every guest would get both (review round 3 of PR #35);
+  - a move or edit that puts an occurrence moved on its own more than 31 days before its date in the series, where the calendar, the reminders and the conflict check no longer find it (review round 3 of PR #35);
+  - a change of a series' time or rule (an "all" move, either series of a split, a start or length edit, an undo of "all" or a split) while an occurrence moved on its own has already taken place and its date in the series, as the change leaves it, is still ahead. That occurrence is not sent again, so guests' calendars would show a meeting on that date that the calendar here does not have. The change is taken once that date has passed, and "This event" moves still work (review round 3 of PR #35). Since the final review of PR #35 this covers every change that sends the series again: any edit of a series (a place, title, notes or reminder edit too) and an undo of "This event";
+  - "All events" dragged from an occurrence moved on its own. Rule 4's shift moves its planned time but keeps its own time and length, so it would stay where it was while the series moved (final review of PR #35). "This event" and "This and following" from it work;
+  - more than 100 occurrences of one series moved on their own.
+- **A split** ("this and following") inserts the new series with the same organiser and copies the guests with their answers; an email guest gets a new row, and the copied email guests count against the mover's 50 outside addresses a day.
+- **Conflicts** (rule 13) skip only the occurrence the move produced, so a meeting never warns about itself after an "all" or split move, and match guests by kind and id. The other meeting's title is shown only to a mover who sees that meeting and sees that guest on it. Anything else reads "Busy", with only the guest's name and the start: no title, guests, place or notes. That closes "a warning can name the title of a private meeting the viewer cannot see".
+- **Undo** is rebuilt on the server from the "Moved meeting" audit entry, never from the screen's copy, which only names the SEQUENCE it saw. Only the person who moved the meeting may undo it, only while the move is still the meeting's last change, and only for 5 minutes by the database clock (this spec sets no window; the toast lasts seconds). Otherwise 403, or 409 `meeting_changed` or `undo_expired`. Any undo, "This event" included, is also refused (400) when the restored series would have an occurrence already held at a date still ahead, as a move or an edit is.
+- **An undo also sends** a CANCEL to the guests of a split-off series it removes, which closes "Undo removes a split-off series without sending its guests a cancellation", and, after undoing "This event", that occurrence again at its restored time, with the series' other surviving occurrences moved on their own (final review of PR #35).
+- **Series exceptions** that have not ended are sent again, each with its own RECURRENCE-ID and time, after a series changes anything its calendar file carries: an "all" move, both series of a split, any edit of a series (start, length, place, title, notes or reminder), and every undo. A moved occurrence's file replaces that occurrence whole in a guest's calendar, so without it the occurrence would keep its old place or title (review round 2 of PR #35). That closes "surviving exceptions are not sent again" under "Differences from ADR 0021".
+- **Proposal decisions** are refused on a cancelled meeting, which closes the `decideProposal` part of "do not check for a cancelled meeting", on a series, and when the proposed start no longer exists on the clock. Declining sends the proposer a DECLINECOUNTER and is audited as `Declined proposed time`, which this spec leaves unaudited ("Events and audit entries").
+- **New audit entries:** `Split meeting series` and `Removed split meeting series` on the series a split inserts and an undo removes. The move entry holds times only, as every meetings entry holds no emails, notes or titles.
+- **Limits:** the daily email limits count every send of a move, an undo and a decision.
+- **Start bound** (review round 1 of PR #35): a start a person types, on create, edit, request, proposal, accepting a proposal and a move, must lie from a year before the company's today to three years after it. This spec sets no bound. A start a rule derives is not bounded, so a series that began long ago keeps running and moves through any occurrence inside the bound. The occurrences themselves follow this spec unchanged; the API works them out from the window it looks at rather than from a series' first date.
+
+Kept as this spec says in part 2: a move does not reset answers or clear a pending proposal; the sends-table rows stand; accepting a proposal resets every answer, the organiser's included; the shift is measured from `planned` ("All events" from an occurrence moved on its own is refused); conflicts only warn, only on a move, only for the moved occurrence on its day.
+
 Kept as this spec says:
-- a move does not reset answers (part 2 follows the sends table);
+- a move does not reset answers (part 2 follows the sends table, and keeps it);
 - reminders go to staff guests only;
 - `meeting.when` has no zone, and RSVP stays TRUE;
 - the organiser gets no notice of someone else's change;

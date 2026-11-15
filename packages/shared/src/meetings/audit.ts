@@ -1,6 +1,21 @@
 import type { Attendee, Meeting } from "../types";
 import { EMAIL_GUEST_NAME, HIDDEN_PARTY_NAME } from "./access";
 
+/**
+ * The audit actions of part 2 (meetings.md "Events and audit entries"; ADR 0051 "Part 2"). Undo reads
+ * a meeting's last entry and matches on these words, so they are named once here. "Split meeting
+ * series", "Removed split meeting series" and "Declined proposed time" are new: a split inserts a
+ * business record and an undo deletes one (CLAUDE.md rule 10), and a decline sends an email.
+ */
+export const MEETING_AUDIT_ACTIONS = {
+  moved: "Moved meeting",
+  split: "Split meeting series",
+  undone: "Undid meeting move",
+  splitRemoved: "Removed split meeting series",
+  proposalAccepted: "Accepted proposed time",
+  proposalDeclined: "Declined proposed time",
+} as const;
+
 /** What the audit log calls a private meeting, so its subject never reaches readers of the log (ADR 0051 "Audit"). */
 export const PRIVATE_MEETING_LABEL = "Private meeting";
 

@@ -79,6 +79,21 @@ export function canChangeMeeting(
 }
 
 /**
+ * Whether a viewer may accept or decline a guest's proposed time (meetings.md "Propose a new time";
+ * ADR 0051 "Part 2"): the organiser, and only when they may change the meeting. The spec's action
+ * checks `meetings.meeting.edit` only and leaves the organiser rule to the screen ("Permissions and
+ * answers"); the server enforces both, so a colleague who may change the meeting can't decide a
+ * proposal they were never shown (`meetingForViewer` gives proposals to the organiser only).
+ */
+export function canDecideProposal(
+  viewer: MeetingViewer,
+  meeting: Meeting,
+  seesParty: (attendee: Attendee) => boolean,
+): boolean {
+  return isOrganiser(meeting, viewer.userId) && canChangeMeeting(viewer, meeting, seesParty);
+}
+
+/**
  * Whether a viewer reads other guests' addresses, the organiser's included, and a hidden guest list:
  * the organiser and anyone who may change the meeting (ADR 0051 "What a viewer sees", narrower than
  * meetings.md line 55). The calendar file's ORGANIZER address follows the same rule, so the file
