@@ -32,9 +32,10 @@ import {
   type CompanySettings,
   type PermissionKey,
   SENSITIVE,
-  businessReport,
-  reportVisibility,
   type BusinessFilters,
+  type PaymentsReportQuery,
+  type PnlQuery,
+  type SalesByCategoryQuery,
   type CommissionPlan,
   type Meeting,
   type MyMeetings,
@@ -244,6 +245,14 @@ import {
   voidBilling,
 } from "./contract-actions";
 import { raiseRecurringDrafts, reviewExpense, saveExpense, saveRecurringExpense, voidExpense } from "./expense-actions";
+import {
+  demoBusinessReport,
+  demoPaymentsReport,
+  demoPnlReport,
+  demoReportOptions,
+  demoSalesByCategoryReport,
+  type ReportViewer,
+} from "./report-actions";
 import { sampleDatabase } from "./sample-database";
 import {
   importOverview,
@@ -1119,38 +1128,34 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => saveRecurringExpense(ctx, input));
   }
 
+  // Reports (ADR 0055): the same shared rules and refusals as the API.
   async businessReport(filters: BusinessFilters) {
     const db = this.open();
     await this.assertCan(db, ["reports.financial.view"]);
-    // The same visibility rule as the API (ADR 0055): pay sight, the cost keys and the contracts fact.
-    const { access } = await this.granter(db);
-    const show = reportVisibility(access, { hasContractInvoices: db.list("invoices").some((i) => !!i.contractId) });
-    return businessReport(
-      {
-        invoices: db.list("invoices"),
-        payments: db.list("payments"),
-        adjustments: db.list("invoiceAdjustments"),
-        refunds: db.list("refunds"),
-        expenses: db.list("expenses"),
-        bills: db.list("bills"),
-        supplierPayments: db.list("supplierPayments"),
-        receipts: db.list("receipts"),
-        purchaseOrders: db.list("purchaseOrders"),
-        suppliers: db.list("suppliers"),
-        users: db.list("users"),
-        employees: db.list("employees"),
-        locations: db.list("locations"),
-        productCategories: db.list("products"),
-        products: db.list("products"),
-        rolls: db.list("rolls"),
-        stockMovements: db.list("stockMovements"),
-        payPeriods: db.list("payPeriods"),
-        settings: db.settings,
-        today: this.todayIso,
-      },
-      filters,
-      show,
-    );
+    return demoBusinessReport(db, await this.reportViewer(db), filters);
+  }
+
+  async reportOptions() {
+    const db = this.open();
+    return demoReportOptions(db, await this.reportViewer(db));
+  }
+
+  async pnlReport(query: PnlQuery) {
+    const db = this.open();
+    await this.assertCan(db, ["reports.financial.view"]);
+    return demoPnlReport(db, await this.reportViewer(db), query);
+  }
+
+  async salesByCategoryReport(query: SalesByCategoryQuery) {
+    const db = this.open();
+    await this.assertCan(db, ["reports.sales.view"]);
+    return demoSalesByCategoryReport(db, await this.reportViewer(db), query);
+  }
+
+  async paymentsReport(query: PaymentsReportQuery) {
+    const db = this.open();
+    await this.assertCan(db, ["reports.financial.view"]);
+    return demoPaymentsReport(db, await this.reportViewer(db), query);
   }
 
   // Meetings follow the shared rules the API uses (ADR 0051 "Part 3"); what stays demo-only is in
@@ -1775,6 +1780,11 @@ export class DemoStore implements ApiClient {
 
   private subject(db: CompanyDb) {
     return scopeSubject(db, this.viewer!);
+  }
+
+  /** Who asks for a report (ADR 0055): effective access, whose records count as theirs, and today. */
+  private async reportViewer(db: CompanyDb): Promise<ReportViewer> {
+    return { access: (await this.granter(db)).access, subject: this.subject(db), today: this.todayIso };
   }
 
   /** The signed-in viewer's effective access in the open company. */

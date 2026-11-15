@@ -53,6 +53,9 @@ import type {
   User,
 } from "@workspace/shared";
 import { featureOn, hoursToWire, timesheetFromWire } from "@workspace/shared";
+// Reports (ADR 0055) keep their own imports.
+import { EMPTY_REPORT_OPTIONS, type BusinessReport, type Report, type ReportOptions } from "@workspace/shared";
+import { businessReportPath, hubReportPath } from "./report-paths";
 import type { SessionContext } from "@/lib/session/api-context";
 import { HttpApiError } from "./transport";
 import type {
@@ -243,6 +246,27 @@ export const API_METHODS: HttpRoutes = {
       ? http.request<RecurringExpense>("PUT", `/recurring-expenses/${id}`, body)
       : http.request<RecurringExpense>("POST", "/recurring-expenses", body);
   },
+  // Reports (ADR 0055). The server answers only what the person may see; a report they may not open
+  // never shows, because reportOptions lists only what they may open.
+  reportOptions: (http) => async () => {
+    try {
+      return await http.request<ReportOptions>("GET", "/reports/options");
+    } catch (failure) {
+      // No report key (403 forbidden) or the hub switched off (404): no reports, so the page says so.
+      // Anything else (MFA, a suspended company, the wrong product) surfaces as it does elsewhere.
+      if (
+        failure instanceof HttpApiError &&
+        ((failure.status === 403 && failure.code === "forbidden") || failure.status === 404)
+      )
+        return EMPTY_REPORT_OPTIONS;
+      throw failure;
+    }
+  },
+  businessReport: (http) => (filters) => http.request<BusinessReport>("GET", businessReportPath(filters)),
+  pnlReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/pnl", query)),
+  salesByCategoryReport: (http) => (query) =>
+    http.request<Report>("GET", hubReportPath("/reports/sales-by-category", query)),
+  paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
   enterBill: (http) => async (poId, input, files) =>
     http.request<Bill>("POST", `/purchase-orders/${poId}/bills`, { ...input, files: await encodeFiles(files) }),
   recordSupplierPayment: (http) => async (input, files) =>
