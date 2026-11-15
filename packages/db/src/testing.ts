@@ -1,9 +1,12 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import { openControlDb, type ControlDb } from "./client";
 import {
   authAttempts,
   passkey,
+  planLimits,
+  planModules,
   platformAdmins,
+  plans,
   rateLimit,
   session,
   supportAccessGrants,
@@ -400,4 +403,91 @@ export async function clearTestStanding(controlUrl: string, slug: string): Promi
     changed.push(`${rows.length} ended subscription row(s) given a new 30-day period`);
   }
   return changed;
+}
+
+/** What a test needs to know about a company's status: the stored text and when it last changed. */
+export interface StatusFacts {
+  tenantId: string;
+  status: string;
+  statusChangedAt: Date;
+}
+
+/**
+ * Reads a company's stored status and its `status_changed_at`, and changes nothing. Tests only: it
+ * refuses any slug but `summit` (docs/specs/platform-admin.md, part 2).
+ */
+export async function readStatusFacts(controlUrl: string, slug: string): Promise<StatusFacts> {
+  refuseOtherCompanies("readStatusFacts", slug);
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const [row] = await handle.db
+      .select({ tenantId: tenants.id, status: tenants.status, statusChangedAt: tenants.statusChangedAt })
+      .from(tenants)
+      .where(eq(tenants.slug, slug));
+    if (!row) throw new Error(`No company with the slug ${slug}.`);
+    return row;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Puts the seeded Summit Floor Co. back in use after a run that crashed between a suspend or a
+ * cancel and its reinstate: a `suspended` or `cancelled` status becomes `active` by a plain update
+ * (the control trigger stamps `status_changed_at` itself and stays on), and `trial`, `active` and
+ * `past_due` are left alone. It never touches a subscription row, refuses any other slug and
+ * returns what it changed. Tests only.
+ */
+export async function clearTestStatus(controlUrl: string, slug: string): Promise<string[]> {
+  refuseOtherCompanies("clearTestStatus", slug);
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const [row] = await handle.db
+      .select({ id: tenants.id, status: tenants.status })
+      .from(tenants)
+      .where(eq(tenants.slug, slug));
+    if (!row) throw new Error(`No company with the slug ${slug}.`);
+    if (row.status !== "suspended" && row.status !== "cancelled") return [];
+    await handle.db.update(tenants).set({ status: "active" }).where(eq(tenants.id, row.id));
+    return [`status ${row.status} set back to active`];
+  } finally {
+    await handle.close();
+  }
+}
+
+/** The key prefix of every plan a browser test creates; `removeTestPlans` touches no other key. */
+const TEST_PLAN_KEY_PREFIX = "e2e-";
+
+/**
+ * Hard-deletes the plans a browser test created (keys starting `e2e-`) with their module and
+ * limit rows, in one transaction. A plan that any subscription row names, deleted rows included,
+ * is never removed: the call throws first and removes nothing. The audit rows stay (the log is
+ * append-only). Returns the keys removed. Tests only.
+ */
+export async function removeTestPlans(controlUrl: string): Promise<string[]> {
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    return await handle.db.transaction(async (tx) => {
+      const found = await tx
+        .select({ id: plans.id, key: plans.key })
+        .from(plans)
+        .where(like(plans.key, `${TEST_PLAN_KEY_PREFIX}%`));
+      if (found.length === 0) return [];
+      const ids = found.map((plan) => plan.id);
+      const used = await tx
+        .select({ planId: tenantSubscriptions.planId })
+        .from(tenantSubscriptions)
+        .where(inArray(tenantSubscriptions.planId, ids));
+      if (used.length > 0) {
+        const keys = found.filter((plan) => used.some((row) => row.planId === plan.id)).map((plan) => plan.key);
+        throw new Error(`A test plan is named by a subscription and is not removed: ${keys.join(", ")}.`);
+      }
+      await tx.delete(planLimits).where(inArray(planLimits.planId, ids));
+      await tx.delete(planModules).where(inArray(planModules.planId, ids));
+      await tx.delete(plans).where(inArray(plans.id, ids));
+      return found.map((plan) => plan.key);
+    });
+  } finally {
+    await handle.close();
+  }
 }

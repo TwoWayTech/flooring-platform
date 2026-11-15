@@ -1,7 +1,9 @@
 import {
   clearTestStanding,
+  clearTestStatus,
   removePlatformAdmin,
   removeSupportGrants,
+  removeTestPlans,
   removeTestSupportAgent,
   resetAuthState,
 } from "@workspace/db/testing";
@@ -25,4 +27,9 @@ export default async function globalSetup(): Promise<void> {
   // A crashed run may have left Summit in maintenance or past its period; only toward full use, and logged.
   const changed = await clearTestStanding(url, "summit");
   if (changed.length > 0) console.info(`global-setup: Summit's standing was reset: ${changed.join("; ")}.`);
+  // ...and a suspended or cancelled Summit, or an `e2e-` plan, left by platform-billing.spec.ts; toward full use only.
+  const statusChanged = await clearTestStatus(url, "summit");
+  if (statusChanged.length > 0) console.info(`global-setup: Summit's status was reset: ${statusChanged.join("; ")}.`);
+  const plansRemoved = await removeTestPlans(url);
+  if (plansRemoved.length > 0) console.info(`global-setup: test plans were removed: ${plansRemoved.join(", ")}.`);
 }
