@@ -324,3 +324,20 @@ Then lint, typecheck and tests through the lock, and the security-reviewer and s
 - RFC 5546 lists ORGANIZER for a PUBLISH, so the owner gate now also imports a PUBLISH without ORGANIZER, alone and over the REQUEST of the same meeting.
 - Tests: a unit test of `seesGuestAddresses`; integration asserts Warehouse's and a staff guest's files have no `mailto:` or ORGANIZER, and the organiser's and the Owner's files name the organiser. Both integration tests fail with the old line put back.
 - Ran (through the lock): shared `meeting-access` and `ics` tests (40 passed); `test/meetings.int.test.ts` (31 passed); typecheck and lint of `@workspace/shared` and `api` (4 tasks passed); Prettier on the changed files.
+
+## Final review (fresh reviewer of PR #33; both findings confirmed by a skeptic)
+- **Fixed (should_fix): My meetings flooded the company pool.**
+  - `colleagues` gave every active member to `AccessService.membersAccess`, which ran three company queries per person in one `Promise.all`. Every Employee holds `meetings.meeting.create`, so most loads of `GET /me/meetings` queued about three queries per member on the three-connection pool.
+  - Candidates are now chosen in SQL by the view key, as `holdersOf` does. That query moved to `roleHolders` in `hr/hr-common.ts`, which both use.
+  - Every default role ticks `meetings.meeting.view`, so the SQL step alone leaves almost everyone in. `membersAccess` therefore now reads everyone's roles in three queries (`rolesOf` takes many ids; `resolve` uses it for one). The engine and the result are unchanged.
+  - **For the reviewer:** this touches `core/access/access.service.ts`, the path every request's permissions take, so it needs the security-reviewer.
+- **Fixed (should_fix): a jobs outage held the meeting's lock.**
+  - Reminder sync queued its pg-boss jobs inside the transaction that holds the meeting's lock, and JobsService waits up to 10 seconds when pg-boss has not started. The invites after the commit also waited 10 seconds per guest.
+  - `notify(..., { within })` now writes the rows and returns their jobs in `NotifyResult.unqueued`. `NotificationService.queueSends` queues them after the commit and stops at the first failure.
+  - The invite loop writes every guest's row (`deferJobs`), then queues once. If the invites found jobs down, the reminder sync writes its rows without queueing.
+  - Rows left with no job wait for Retry or the sweeper. Other callers of `notify` pass no options and behave as before.
+- Tests:
+  - meetings: a jobs outage case. One queueing is tried per change, the meeting is not locked while it is tried (checked with `for update nowait`; it fails when the queueing is put back inside the transaction), every invite and reminder row is written, and Retry queues a row left with no job.
+  - meetings: the colleagues case is extended. A member who only creates meetings and one whose view tick was removed are left out. The engine is asked about the narrowed set only. The list equals weighing every active member one by one, and `membersAccess` for many people equals each person's answer alone (someone never set up included).
+  - notifications: `within` and `deferJobs` queue no job until `queueSends`, and `queueSends` stops at the first failure, with the rows left for Retry.
+- Docs: ADR 0051 (Reminders, Core changes, My meetings, Residual risks "A jobs outage", Consequences). api-contract is unchanged, because no response changed.

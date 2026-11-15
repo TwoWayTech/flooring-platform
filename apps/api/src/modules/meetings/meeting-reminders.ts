@@ -3,7 +3,7 @@ import type { ControlDb, DbHandle } from "@workspace/db";
 import { featureOn, meetingWhenText, nextReminder, reminderRecipients } from "@workspace/shared";
 import { v7 as uuidv7 } from "uuid";
 import { CONTROL_DB } from "../../core/database/control-db";
-import { NotificationService } from "../../core/notifications/notification.service";
+import { NotificationService, type UnqueuedSend } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { databaseNow } from "../hr/hr-common";
@@ -40,16 +40,21 @@ export class MeetingReminders {
    * `meetings.invites` is off.
    * There is no actor, so a re-sync by someone else drops nobody. Later occurrences of a series get
    * theirs when a change re-syncs it; a sweeper for them is Part 4 (ADR 0051 "Deferred").
+   *
+   * The rows' send jobs are queued only after the transaction commits, so a jobs outage never holds
+   * the company connection or the meeting's lock while JobsService waits (final review of PR #33).
+   * `jobsDown` says this request already found background jobs unavailable (its invites did): the
+   * rows are then written with no job at all, for Retry or the sweeper, rather than wait again.
    */
-  async sync(tenant: TenantContext, meetingId: string): Promise<void> {
+  async sync(tenant: TenantContext, meetingId: string, jobsDown = false): Promise<void> {
     const source = { type: MEETING_SOURCE, id: meetingId };
     try {
       await this.notifications.cancelScheduled(tenant, "meeting.reminder", source);
       const db = await this.tenancy.db(tenant);
-      await db.transaction(async (tx) => {
+      const unqueued = await db.transaction(async (tx): Promise<UnqueuedSend[]> => {
         const row = await lockMeeting(tx, meetingId);
         await this.notifications.cancelScheduled(tenant, "meeting.reminder", source, tx);
-        if (!featureOn("meetings.invites")) return;
+        if (!featureOn("meetings.invites")) return [];
         const { meeting } = meetingOf(row, await attendeesOf(tx, [row.id]));
         const reminder = nextReminder(meeting, await databaseNow(tx));
         const guests = reminderRecipients(meeting);
@@ -59,8 +64,8 @@ export class MeetingReminders {
           guests.map((guest) => guest.id),
         );
         const to = guests.filter((guest) => active.some((member) => member.id === guest.id));
-        if (!reminder || to.length === 0) return;
-        await this.notifications.notify(
+        if (!reminder || to.length === 0) return [];
+        const written = await this.notifications.notify(
           tenant,
           null,
           {
@@ -77,9 +82,11 @@ export class MeetingReminders {
             scheduledFor: reminder.scheduledFor,
             expiresAt: reminder.expiresAt,
           },
-          tx,
+          { within: tx },
         );
+        return written.unqueued;
       });
+      if (!jobsDown) await this.notifications.queueSends(tenant, unqueued);
     } catch {
       this.logger.warn("A meeting changed, but its reminder could not be updated.");
     }

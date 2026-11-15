@@ -26,9 +26,13 @@ import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { NotificationService } from "../src/core/notifications/notification.service";
+import { AccessService } from "../src/core/access/access.service";
+import { JobsService } from "../src/core/jobs/jobs.service";
+import { NotificationService, SEND_QUEUE } from "../src/core/notifications/notification.service";
 import { TenantContext } from "../src/core/tenancy/tenant-context";
+import { MeetingReminders } from "../src/modules/meetings/meeting-reminders";
 import { MeetingSends } from "../src/modules/meetings/meeting-sends";
+import { activeMembers } from "../src/modules/meetings/meetings-common";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 /** Waits until a check passes, for work the job worker does in the background. */
@@ -150,6 +154,17 @@ describe("meetings (needs the local PostgreSQL)", () => {
   }
 
   const staff = (id: string) => ({ kind: "staff", id });
+
+  /** The company as a background job sees it, for calling the services directly. */
+  const jobTenant = () =>
+    TenantContext.forJob({
+      id: company.id,
+      status: "trial",
+      products: ["flooring"],
+      maintenanceMode: false,
+      phase: "full",
+      databaseStatus: "ready",
+    });
 
   async function schedule(cookie: string, over: Record<string, unknown> = {}): Promise<Meeting> {
     const made = await call("post", "/meetings", cookie).send(meetingBody(over));
@@ -611,16 +626,8 @@ describe("meetings (needs the local PostgreSQL)", () => {
   });
 
   it("never sends a reminder after it expired: the send job cancels it", async () => {
-    const tenant = TenantContext.forJob({
-      id: company.id,
-      status: "trial",
-      products: ["flooring"],
-      maintenanceMode: false,
-      phase: "full",
-      databaseStatus: "ready",
-    });
     const sourceId = uuidv7();
-    const result = await harness.app.get(NotificationService).notify(tenant, null, {
+    const result = await harness.app.get(NotificationService).notify(jobTenant(), null, {
       event: "meeting.reminder",
       source: { type: "meeting", id: sourceId },
       version: "late",
@@ -934,9 +941,9 @@ describe("meetings (needs the local PostgreSQL)", () => {
     const made = await schedule(cookies.manager, { title: "Sturdy edit", guests: [staff(ids.employee)] });
     const notifications = harness.app.get(NotificationService);
     const real = notifications.notify.bind(notifications);
-    const failing = vi.spyOn(notifications, "notify").mockImplementation(async (tenant, actor, input, within) => {
+    const failing = vi.spyOn(notifications, "notify").mockImplementation(async (tenant, actor, input, options) => {
       if (input.event === "meeting.invite") throw new Error("The Outbox is down.");
-      return real(tenant, actor, input, within);
+      return real(tenant, actor, input, options);
     });
     try {
       const edited = await call("patch", `/meetings/${made.id}`, cookies.manager).send({ reminderMin: 60 });
@@ -958,6 +965,73 @@ describe("meetings (needs the local PostgreSQL)", () => {
     }
     const [stored] = await rows((db) => db.select().from(meetings).where(eq(meetings.id, made.id)));
     expect(stored).toMatchObject({ title: "Sturdy edit", reminderMin: 60 });
+  });
+
+  it("holds no meeting lock while background jobs are down, and waits on the outage once per change (final review of PR #33)", async () => {
+    const jobs = harness.app.get(JobsService);
+    const real = jobs.send.bind(jobs);
+    const handle = await harness.companyDb(company.id);
+    /** Each queueing of this company's rows: which row, and whether its meeting was locked meanwhile. */
+    const tries: { messageId: string; meetingLocked: boolean }[] = [];
+    const down = vi.spyOn(jobs, "send").mockImplementation(async (queue, data, options) => {
+      const job = data as { companyId?: string; messageId?: string };
+      if (queue !== SEND_QUEUE || job.companyId !== company.id || !job.messageId) return real(queue, data, options);
+      const [row] = await handle.db
+        .select({ sourceId: outboxMessages.sourceId })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.id, job.messageId));
+      let meetingLocked = false;
+      try {
+        await handle.db.transaction(async (tx) => {
+          await tx
+            .select({ id: meetings.id })
+            .from(meetings)
+            .where(eq(meetings.id, row!.sourceId))
+            .for("update", { noWait: true });
+        });
+      } catch {
+        meetingLocked = true;
+      }
+      tries.push({ messageId: job.messageId, meetingLocked });
+      throw new Error("Background jobs are not available right now.");
+    });
+    const triesFor = async (meetingId: string, event: string) => {
+      const ids = new Set((await outboxOf(meetingId)).filter((row) => row.eventKey === event).map((row) => row.id));
+      return tries.filter((attempt) => ids.has(attempt.messageId));
+    };
+    try {
+      const made = await schedule(cookies.manager, {
+        title: "Jobs down",
+        guests: [staff(ids.employee), staff(ids.warehouse), staff(ids.sales2)],
+      });
+      // Every guest's invite and reminder is written; one failed queueing stops the rest.
+      const outbox = await outboxOf(made.id);
+      const invites = outbox.filter((row) => row.eventKey === "meeting.invite");
+      expect(invites.map((row) => row.status)).toEqual(["queued", "queued", "queued"]);
+      expect(await waitingReminders(made.id)).toHaveLength(3);
+      expect(await triesFor(made.id, "meeting.invite")).toHaveLength(1);
+      expect(await triesFor(made.id, "meeting.reminder")).toEqual([]);
+
+      // A re-sync on its own queues its reminders after its transaction committed, and stops at the first failure.
+      const reminders = harness.app.get(MeetingReminders);
+      await reminders.sync(jobTenant(), made.id);
+      expect(await waitingReminders(made.id)).toHaveLength(3);
+      const reminderTries = await triesFor(made.id, "meeting.reminder");
+      expect(reminderTries).toHaveLength(1);
+      expect(reminderTries[0]!.meetingLocked).toBe(false);
+
+      down.mockRestore();
+      // A row left with no job waits for Retry, which queues it. (Earlier tests keep the worker busy, so the send isn't awaited.)
+      const queued = vi.spyOn(jobs, "send");
+      await harness.app.get(NotificationService).retry(jobTenant(), invites[0]!.id);
+      expect(
+        queued.mock.calls.filter(([, data]) => (data as { messageId?: string }).messageId === invites[0]!.id),
+      ).toHaveLength(1);
+      queued.mockRestore();
+    } finally {
+      down.mockRestore();
+      await handle.close();
+    }
   });
 
   it("takes an email guest off by its row id with a CANCEL to them alone, and refuses the organiser and anyone not on it", async () => {
@@ -1116,9 +1190,40 @@ describe("meetings (needs the local PostgreSQL)", () => {
     const viewer = await member(["meetview"], "Vic Viewer");
     const left = await member(["employee"], "Lee Left");
     await rows((db) => db.update(userProfiles).set({ status: "disabled" }).where(eq(userProfiles.userId, left.userId)));
+    // Two who may not read meetings: one only creates them, one had the view tick taken off.
+    await rows(async (db) => {
+      const [creates] = await db
+        .insert(roles)
+        .values({ key: "meetcreate", name: "meetcreate", dataScope: "own" })
+        .returning();
+      await db.insert(rolePermissions).values(
+        ["meetings.meeting.create", "hr.portal.view"].map((permissionKey) => ({
+          roleId: creates!.id,
+          permissionKey,
+        })),
+      );
+      const [untick] = await db
+        .insert(roles)
+        .values({ key: "meetgone", name: "meetgone", dataScope: "all" })
+        .returning();
+      await db.insert(rolePermissions).values({
+        roleId: untick!.id,
+        permissionKey: "meetings.meeting.view",
+        deletedAt: new Date(),
+      });
+    });
+    const creator = await member(["meetcreate"], "Cy Creator");
+    const unticked = await member(["meetgone"], "Gus Gone");
 
+    const access = harness.app.get(AccessService);
+    const asked = vi.spyOn(access, "membersAccess");
     const mine = await call("get", "/me/meetings", cookies.sales);
     status(mine, 200);
+    // The engine is asked about those whose roles tick the view key only, all at once.
+    expect(asked).toHaveBeenCalledTimes(1);
+    const weighed = asked.mock.calls[0]![1];
+    asked.mockRestore();
+    for (const out of [ids.sales, creator.userId, unticked.userId, left.userId]) expect(weighed).not.toContain(out);
     const colleagues = (mine.body as MyMeetings).colleagues;
     const listed = colleagues.map((c) => c.id);
     expect(listed).toEqual(
@@ -1126,9 +1231,38 @@ describe("meetings (needs the local PostgreSQL)", () => {
     );
     expect(listed).not.toContain(ids.sales);
     expect(listed).not.toContain(left.userId);
+    expect(listed).not.toContain(creator.userId);
+    expect(listed).not.toContain(unticked.userId);
     // Nora holds no meetings key, so nobody may ask her; and a colleague comes with a name only.
     expect(colleagues.some((c) => c.name === "Nora None")).toBe(false);
     expect(colleagues.every((c) => Object.keys(c).sort().join() === "id,name")).toBe(true);
+
+    // The same colleagues as weighing every active member one by one through the engine.
+    const everyone = (await rows((db) => activeMembers(db, harness.control.db))).filter((m) => m.id !== ids.sales);
+    const oneByOne = await Promise.all(
+      everyone.map(async (m) => (await access.membersAccess(jobTenant(), [m.id]))[0]!),
+    );
+    const expected = everyone.filter(
+      (m, i) => !oneByOne[i]!.disabled && oneByOne[i]!.permissions.has("meetings.meeting.view"),
+    );
+    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
+    expect([...colleagues].sort(byId)).toEqual(expected.map(({ id, name }) => ({ id, name })).sort(byId));
+    // And the engine's answer for many people at once is its answer for each alone, for someone never set up too.
+    const stranger = uuidv7();
+    const many = await access.membersAccess(jobTenant(), [...everyone.map((m) => m.id), left.userId, stranger]);
+    const alone = await Promise.all(
+      [...everyone.map((m) => m.id), left.userId, stranger].map(
+        async (id) => (await access.membersAccess(jobTenant(), [id]))[0]!,
+      ),
+    );
+    const shape = (a: (typeof many)[number]) => ({
+      ...a,
+      permissions: [...a.permissions].sort(),
+      roleNames: [...a.roleNames].sort(),
+    });
+    expect(many.map(shape)).toEqual(alone.map(shape));
+    expect(many.at(-2)).toMatchObject({ disabled: true });
+    expect(many.at(-1)).toMatchObject({ disabled: true, permissions: new Set(), roleNames: [] });
 
     // Without meetings.meeting.create there is nobody to ask.
     const viewOnly = await call("get", "/me/meetings", await harness.signIn(viewer.email));

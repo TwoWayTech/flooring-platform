@@ -17,7 +17,7 @@ import {
   type ReplyOutcome,
 } from "@workspace/shared";
 import { CONTROL_DB } from "../../core/database/control-db";
-import { NotificationService } from "../../core/notifications/notification.service";
+import { NotificationService, type UnqueuedSend } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { activeMembers, MEETING_SOURCE, organiserOf, type MeetingPerson } from "./meetings-common";
@@ -85,30 +85,41 @@ export class MeetingSends {
 
   /**
    * Writes the planned invites to the Outbox, after the action committed. A private meeting's rows
-   * are restricted. It never throws: each guest's row has its own catch.
+   * are restricted. Every guest's row is written first, then the send jobs are queued, stopping at
+   * the first failure (`queueSends`), so a jobs outage costs the request one wait, not one per guest
+   * (final review of PR #33); the rows left with no job wait for Retry. It never throws: each guest's
+   * row has its own catch. Answers whether background jobs were found unavailable.
    */
-  async invites(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<void> {
+  async invites(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<boolean> {
     const { meeting, stamp, organiser } = planned;
+    const unqueued: UnqueuedSend[] = [];
     for (const send of planned.sends) {
       try {
         const text = meetingIcs(sendIcsInput(send, meeting, organiser, stamp));
         const guest = send.recipient;
-        await this.notifications.notify(tenant, actorUserId, {
-          event: "meeting.invite",
-          source: { type: MEETING_SOURCE, id: meeting.id },
-          version: inviteVersion(send, stamp),
-          to: [{ kind: OUTBOX_RECIPIENT_KIND[guest.kind], id: guest.id, name: guest.name, email: guest.email }],
-          inApp: send.inApp
-            ? [{ userId: guest.id, title: `${send.action}: ${meeting.title}`, href: MEETINGS_HREF }]
-            : [],
-          values: inviteValues(send, meeting, organiser.name),
-          attachments: [{ kind: "ics", fileName: icsFileName(meeting.title), text }],
-          restricted: meeting.private,
-        });
+        const written = await this.notifications.notify(
+          tenant,
+          actorUserId,
+          {
+            event: "meeting.invite",
+            source: { type: MEETING_SOURCE, id: meeting.id },
+            version: inviteVersion(send, stamp),
+            to: [{ kind: OUTBOX_RECIPIENT_KIND[guest.kind], id: guest.id, name: guest.name, email: guest.email }],
+            inApp: send.inApp
+              ? [{ userId: guest.id, title: `${send.action}: ${meeting.title}`, href: MEETINGS_HREF }]
+              : [],
+            values: inviteValues(send, meeting, organiser.name),
+            attachments: [{ kind: "ics", fileName: icsFileName(meeting.title), text }],
+            restricted: meeting.private,
+          },
+          { deferJobs: true },
+        );
+        unqueued.push(...written.unqueued);
       } catch {
         this.logger.warn("A meeting changed, but one guest's invite could not be written to the Outbox.");
       }
     }
+    return !(await this.notifications.queueSends(tenant, unqueued));
   }
 
   /**

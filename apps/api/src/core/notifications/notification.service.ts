@@ -109,11 +109,36 @@ export interface NotifyInput {
   expiresAt?: Date;
 }
 
+/** A row `notify` wrote whose send job is left for its caller to queue (`NotificationService.queueSends`). */
+export interface UnqueuedSend {
+  messageId: string;
+  /** When the job may start: the row's scheduled time, or null to send at once. */
+  startAfter: Date | null;
+}
+
+/** How `notify` writes and queues. */
+export interface NotifyOptions {
+  /**
+   * The caller's transaction of the same company, for rows that must change together with the
+   * caller's other writes under its locks, such as a meeting's reminders (ADR 0051): they commit or
+   * roll back with it, and no second connection is taken while it holds one. No job is queued in
+   * it, as if `deferJobs` were set, so a jobs outage never holds its connection or its locks.
+   */
+  within?: CompanyDb;
+  /**
+   * Leaves the send jobs to the caller: the rows are written and come back in `unqueued`, for
+   * `queueSends` once they are committed (final review of PR #33).
+   */
+  deferJobs?: boolean;
+}
+
 /** What notify wrote. */
 export interface NotifyResult {
   queued: string[];
   failed: string[];
   inApp: number;
+  /** The rows among `queued` whose jobs are left to the caller (`NotifyOptions`); empty otherwise. */
+  unqueued: UnqueuedSend[];
 }
 
 /**
@@ -150,21 +175,19 @@ export class NotificationService implements OnApplicationBootstrap {
    * Raises an event (spec "Raising an event"): stops when the feature or the event's rule is off,
    * skips the actor, writes one Outbox row per new recipient (dedupe key, spec rule 3) with the
    * subject and body rendered now (snapshots), marks a bad address failed and tells the actor
-   * (rules 4, 5), writes in-app notes, then queues each sendable row.
-   *
-   * `within` is the caller's transaction of the same company, for rows that must change together
-   * with the caller's other writes under its locks, such as a meeting's reminders (ADR 0051): they
-   * commit or roll back with it, and no second connection is taken while it holds one. A job queued
-   * before the commit finds its row once it is visible, or retries (`sendJob`).
+   * (rules 4, 5), writes in-app notes, then queues each sendable row, or leaves its job to the
+   * caller (`NotifyOptions`).
    */
   async notify(
     tenant: TenantContext,
     actorUserId: string | null,
     input: NotifyInput,
-    within?: CompanyDb,
+    options: NotifyOptions = {},
   ): Promise<NotifyResult> {
-    const result: NotifyResult = { queued: [], failed: [], inApp: 0 };
+    const result: NotifyResult = { queued: [], failed: [], inApp: 0, unqueued: [] };
     if (!featureOn("settings.notifications")) return result;
+    const { within } = options;
+    const deferJobs = Boolean(within) || options.deferJobs === true;
     const db = within ?? (await this.tenancy.db(tenant));
     const rule = effectiveRule(input.event, await this.rulesFor(db, input.event));
     if (!rule.enabled) return result;
@@ -186,7 +209,8 @@ export class NotificationService implements OnApplicationBootstrap {
             );
         } else {
           result.queued.push(row.id);
-          await this.queue(tenant.companyId, row.id, row.scheduledFor);
+          if (deferJobs) result.unqueued.push({ messageId: row.id, startAfter: row.scheduledFor });
+          else await this.queue(tenant.companyId, row.id, row.scheduledFor);
         }
       }
     }
@@ -198,6 +222,26 @@ export class NotificationService implements OnApplicationBootstrap {
       }
     }
     return result;
+  }
+
+  /**
+   * Queues the send jobs `notify` left to its caller (`NotifyResult.unqueued`), once their rows are
+   * committed, in order. It stops at the first failure, most often background jobs being down
+   * (JobsService waits up to 10 seconds for pg-boss to start), so an outage costs one wait, not one
+   * per row. The rows not queued stay queued or scheduled with no job, for Retry or the sweeper
+   * (STATUS), as a failed queueing leaves a row today. It never throws, and answers whether every
+   * job was queued, so the caller can skip queueing anything else for the same request.
+   */
+  async queueSends(tenant: TenantContext, sends: readonly UnqueuedSend[]): Promise<boolean> {
+    for (const send of sends) {
+      try {
+        await this.queue(tenant.companyId, send.messageId, send.startAfter);
+      } catch {
+        this.logger.warn("Background jobs are not available, so Outbox messages wait for Retry.");
+        return false;
+      }
+    }
+    return true;
   }
 
   /** The Outbox as this reader may see it, newest first (spec "Who can see which Outbox row"). */
@@ -300,8 +344,8 @@ export class NotificationService implements OnApplicationBootstrap {
   /**
    * Cancels every scheduled row one event raised for one source, such as a meeting's waiting
    * reminders before they are raised again (ADR 0051 "Reminders"). A row already being sent, or
-   * sent, is left as it is. `within` is the caller's transaction, as for `notify`. Returns how many
-   * rows it cancelled.
+   * sent, is left as it is. `within` is the caller's transaction, as for `NotifyOptions`. Returns
+   * how many rows it cancelled.
    */
   async cancelScheduled(
     tenant: TenantContext,

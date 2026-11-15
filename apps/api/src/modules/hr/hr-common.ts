@@ -219,6 +219,26 @@ export async function holdersOf(
   key: PermissionKey,
   employee: Pick<Employee, "id" | "managerId" | "email">,
 ): Promise<Recipient[]> {
+  const candidates = await access.membersAccess(tenant, await roleHolders(db, key));
+  const allowed: string[] = [];
+  for (const member of candidates) {
+    if (member.disabled || !member.permissions.has(key)) continue;
+    const own = await viewerEmployeeId(db, member.userId);
+    if (own === employee.id || !seesPersonRecords(member.dataScope, own, employee)) continue;
+    allowed.push(member.userId);
+  }
+  // A member whose sign-in email is the employee's counts as that person too (`selfCheck`).
+  const email = employee.email.trim().toLowerCase();
+  return (await people(control, allowed)).filter((person) => !email || person.email.trim().toLowerCase() !== email);
+}
+
+/**
+ * The active members holding a role that ticks `key`: candidates only, chosen in SQL so a list of
+ * people is narrowed before their access is worked out. Whether `key` is effective for them (role
+ * permissions ∩ company ceiling ∩ enabled modules, CLAUDE.md rule 4) is still for
+ * `AccessService.membersAccess` to say; a member none of whose roles ticks it can never hold it.
+ */
+export async function roleHolders(db: CompanyDb, key: PermissionKey): Promise<string[]> {
   const rows = await db
     .selectDistinct({ userId: userRoles.userId })
     .from(userRoles)
@@ -233,20 +253,7 @@ export async function holdersOf(
         isNull(userProfiles.deletedAt),
       ),
     );
-  const candidates = await access.membersAccess(
-    tenant,
-    rows.map((row) => row.userId),
-  );
-  const allowed: string[] = [];
-  for (const member of candidates) {
-    if (member.disabled || !member.permissions.has(key)) continue;
-    const own = await viewerEmployeeId(db, member.userId);
-    if (own === employee.id || !seesPersonRecords(member.dataScope, own, employee)) continue;
-    allowed.push(member.userId);
-  }
-  // A member whose sign-in email is the employee's counts as that person too (`selfCheck`).
-  const email = employee.email.trim().toLowerCase();
-  return (await people(control, allowed)).filter((person) => !email || person.email.trim().toLowerCase() !== email);
+  return rows.map((row) => row.userId);
 }
 
 /** The active member linked to an employee, or null; a person with no sign-in gets no message. */

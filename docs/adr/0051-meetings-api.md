@@ -150,6 +150,7 @@
 - **A reminder is a `scheduled` Outbox row** held until its time and sent by a pg-boss job (ADR 0032, notifications.md rule 13). The blueprint's `reminders` table is not built.
 - **`MeetingReminders.sync`** runs after every change that can move, add, drop or end a reminder: create, edit, cancel, remove a guest, and an answer that confirms or cancels a request (critic B6).
   - First it cancels the waiting reminder rows with their own statement. Then, in a transaction that holds the meeting's row lock, it cancels them again and raises the next reminder from the meeting as it now stands, so two re-syncs at once leave one set of rows.
+  - The rows' send jobs are queued only after that transaction commits (final review of PR #33). JobsService waits up to 10 seconds for pg-boss to start, so queueing under the lock would hold the meeting's lock and a company connection through a jobs outage, and three such writes would stall the company's three-connection pool.
   - Each set has a fresh version, so a re-sync is never swallowed by the dedupe key of a set it cancelled (critic B1).
   - If anything fails, the meeting has no reminder rather than a wrong one, and a warning is logged without names.
 - **The next reminder** is `reminderMin` before the first occurrence whose reminder time is still ahead, counted in real minutes from that occurrence's instant. None is raised for a cancelled meeting, a request still waiting, or while `meetings.invites` is off.
@@ -162,9 +163,15 @@
 - **A worker is needed:** at least one instance with `JOBS_ENABLED=true` (docs/environment.md).
 
 ### Core changes (shared with other modules)
-- **`NotificationService.notify(tenant, actor, input, within?)`:** an optional transaction of the same company. Reminder rows are written under the meeting's lock without taking a second connection from the three-connection company pool, which could hang. A job queued before that commit finds its row once it is visible, or retries.
+- **`NotificationService.notify(tenant, actor, input, options?)`:**
+  - `options.within` is a transaction of the same company. Reminder rows are written under the meeting's lock without taking a second connection from the three-connection company pool, which could hang. No job is queued inside it: the rows come back in `NotifyResult.unqueued` (final review of PR #33).
+  - `options.deferJobs` leaves the jobs to the caller in the same way without a transaction. The invite loop uses it.
+  - With no options, `notify` queues each row at once and throws when queueing fails, as before. Every other caller is unchanged.
+- **`queueSends(tenant, unqueued)`** queues those jobs after the commit, in order. It stops at the first failure, so a jobs outage costs one wait (up to 10 seconds), not one per row. It never throws, and returns whether every job was queued. A row it did not queue stays `queued` or `scheduled` with no job, as a failed queueing always left it (Retry, or the sweeper in STATUS).
 - **`cancelScheduled(tenant, event, source, within?)`** cancels one source's scheduled rows of one event. A row already sending or sent is left alone.
 - **`NotifyInput.expiresAt`** and the expiring claim (above). **`sendJob`** passes the attachments on.
+- **`AccessService.membersAccess`** reads everyone's roles in three company queries, whatever the number of people, instead of three per person. `resolve` uses the same reader for one person. The engine (`resolveAccess`) and the result are unchanged (final review of PR #33).
+- **`roleHolders(db, key)`** (`hr/hr-common.ts`, moved out of `holdersOf`) gives the active members whose roles tick a key. They are candidates only: whether the key is effective is still for `membersAccess` to say.
 - **`visibleOutboxRow`** redacts a restricted row whose source is a meeting (a private meeting's invite, reminder or notice) for every reader not involved, holders of `hr.employee.view` and the Owner included (critic A4). Recipient, status and dates stay visible, as on any redacted row. Other modules' restricted rows keep the ADR 0032 rule.
 
 ### Limits (shared `MEETING_LIMITS`; meetings.md sets none)
@@ -200,6 +207,8 @@
 - **`GET /me/meetings`** returns `MyMeetings`: `{ viewerUserId, meetings: [{ meeting, next }], colleagues }`.
   - `meetings` holds the meetings the person organises or is a staff guest on, not cancelled. Each comes with its next occurrence on or after today in the meeting's zone, up to 366 days ahead, soonest first, shaped by `meetingForViewer`. A series shows its next date, not its first.
   - `colleagues` holds active members who hold `meetings.meeting.view`, never the person, as `{ id, name }`. It is filled only when the person holds `meetings.meeting.create` and `meetings.requests` and `meetings.invites` are on.
+    - Every Employee holds `meetings.meeting.create`, so this runs on most loads of My meetings (final review of PR #33). The members whose roles tick `meetings.meeting.view` are chosen in SQL first (`roleHolders`). The shared engine then decides for those only, reading all their roles at once (`membersAccess`).
+    - So one load costs a fixed number of company queries, not about three per member queued on the three-connection pool. Who is listed is unchanged: a member none of whose roles ticks the key can never hold it.
   - `viewerUserId` lets the screens compare the ids the server uses (part 3).
   - It needs `hr.portal.view` (meetings.md "Open My meetings"), not `meetings.meeting.view`, because it shows only meetings the person is on.
 - **`GET /meeting-guests`** returns `GuestOption[]`:
@@ -299,6 +308,10 @@
 ## Residual risks
 - **Who is on a private meeting shows in the Outbox:** a holder of `settings.outbox.view` (the Owner by default) still sees the recipient, status and dates of a private meeting's rows; only subject, body and `.ics` are hidden. The recipients say who was invited.
 - **Sends after the commit:** SEQUENCE can rise while one guest's row was not written (a failure is caught and logged). A row that was written and failed can be sent again with Retry, but a row never written has to wait for the next change. A transaction that holds every invite for 50 guests was ruled out: a pg-boss outage would hold the meeting's lock and a company connection for up to ten seconds per guest.
+- **A jobs outage** (final review of PR #33):
+  - Every guest's invite row is written first, then the jobs are queued, stopping at the first failure. If the invites found jobs down, the reminder rows are written and none of their jobs is queued. So a change waits on the outage once, about ten seconds, and holds no lock or company connection while it waits.
+  - The rows left with no job are sent only by Retry or the planned sweeper. A `queued` invite can be retried at once.
+  - A `scheduled` reminder can be retried only once its time has come, and it expires when the occurrence starts. Until the sweeper exists, a reminder whose job was never queued is lost unless someone retries it in that window, or a later change re-syncs the meeting.
 - **Reminders:**
   - a re-sync that fails leaves the meeting with no reminder (logged);
   - later occurrences and the seeded meetings have none until part 4 or a change;
@@ -321,7 +334,14 @@
 - **Tests:**
   - unit tests in packages/shared: `zones`, `ics`, `meeting-access`, `-input`, `-changes`, `-sends` and `-reminders`;
   - `apps/api/test/notification-rules.test.ts` covers the attachments and the private-meeting redaction;
-  - `apps/api/test/meetings.int.test.ts` has 25 cases: access and switches, tenancy, data scope, private meetings in `/outbox`, create, edit, cancel, remove, answers, requests, versions, reminders, expiry, caps, the HR Suite and the 409, and from the review of PR #33: six requests at once all answered, nobody changing a meeting with a customer they can't read (the organiser included) and `/outbox` not showing it, the 200 outside emails cap on schedule, edit and cancel, and a committed change answered and re-synced when its invites fail while a failed plan writes nothing;
+  - `apps/api/test/meetings.int.test.ts` has 32 cases: access and switches, tenancy, data scope, private meetings in `/outbox`, create, edit, cancel, remove, answers, requests, versions, reminders, expiry, caps, the HR Suite and the 409. The reviews of PR #33 added:
+    - six requests at once, all answered;
+    - nobody changing a meeting with a customer they can't read (the organiser included), and `/outbox` not showing it;
+    - the 200 outside emails cap on schedule, edit and cancel;
+    - a committed change answered and re-synced when its invites fail, while a failed plan writes nothing;
+    - the refusal paths, the colleagues list, supplier guests and the calendar file's ORGANIZER line;
+    - from the final review: a jobs outage, where one queueing is tried per change, no meeting lock is held while it is tried, every row is written, and Retry queues a row left with no job; and colleagues that match weighing every member one by one, with a member who only creates meetings and one whose view tick was removed left out, and `membersAccess` for many people giving each person's answer alone;
+  - `apps/api/test/notifications.int.test.ts` covers `within` and `deferJobs` (no job until `queueSends`, after the commit) and `queueSends` stopping at the first failure, with the rows left for Retry;
   - `packages/db/test/seed.int.test.ts` has a meetings case.
   - There are no Playwright tests, because no screen changed.
 - **Unchanged `settings.meetings` module:** the feature sits in module `platform` while its key `settings.meetings.manage` is in module `meetings` (`features.ts`, `catalog.ts`). It is unchanged here.

@@ -53,7 +53,7 @@ import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { databaseNow } from "../hr/hr-common";
+import { databaseNow, roleHolders } from "../hr/hr-common";
 import { notFound, refuse } from "../sales/sales-common";
 import { guestOptions, resolveGuests, type PickedGuest } from "./meeting-guests";
 import { companyDayStart, dailyEmailsProblem, dayStartOf, outsideInviteProblem, SENDS_ENTRY } from "./meeting-limits";
@@ -603,13 +603,16 @@ export class MeetingsService {
   /**
    * After a change committed: its invites, then the reminder re-sync. Neither throws (each catches
    * and logs its own failure), and the re-sync runs whatever happened to the invites, so a
-   * committed change never answers 500 and never keeps a reminder of the meeting as it was.
+   * committed change never answers 500 and never keeps a reminder of the meeting as it was. When
+   * the invites found background jobs down, the reminder is written without queueing its job, so
+   * the request waits on the outage once (final review of PR #33).
    */
   private async afterCommit(tenant: TenantContext, actorUserId: string, planned: PlannedInvites): Promise<void> {
+    let jobsDown = false;
     try {
-      await this.sends.invites(tenant, actorUserId, planned);
+      jobsDown = await this.sends.invites(tenant, actorUserId, planned);
     } finally {
-      await this.reminders.sync(tenant, planned.meeting.id);
+      await this.reminders.sync(tenant, planned.meeting.id, jobsDown);
     }
   }
 
@@ -663,6 +666,8 @@ export class MeetingsService {
   /**
    * The colleagues My meetings offers to ask (ADR 0051): active members who may read meetings,
    * never the person, and none unless the person may create one and requests can be answered.
+   * The members whose roles tick `meetings.meeting.view` are chosen in SQL first, and the shared
+   * engine then decides for those only, with everyone's roles read at once (final review of PR #33).
    */
   private async colleagues(
     tenant: TenantContext,
@@ -675,7 +680,8 @@ export class MeetingsService {
       !featureOn("meetings.invites")
     )
       return [];
-    const members = (await activeMembers(db, this.control.db)).filter((member) => member.id !== access.userId);
+    const candidates = (await roleHolders(db, "meetings.meeting.view")).filter((id) => id !== access.userId);
+    const members = await activeMembers(db, this.control.db, candidates);
     const holders = await this.access.membersAccess(
       tenant,
       members.map((member) => member.id),
