@@ -1,6 +1,11 @@
 import { ForbiddenException, NotFoundException, UnauthorizedException, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { FEATURES, type PlatformAdminRole } from "@workspace/shared";
+import {
+  FEATURES,
+  PLATFORM_ADMIN_ROLES,
+  PLATFORM_DEFAULT_WRITE_ROLES,
+  type PlatformAdminRole,
+} from "@workspace/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthSession } from "../src/core/auth/session.service";
 import type { StepUpService } from "../src/core/auth/step-up.service";
@@ -117,16 +122,22 @@ describe("PlatformAdminGuard (docs/specs/platform-admin.md, the platform guard; 
     }
   });
 
-  it("lets only the owner role write where the route names no roles, before any step-up", async () => {
-    const support = guardFor("support");
-    expect(await refusal(support.guard.canActivate(contextFor(requestFor("PATCH"), "write")))).toEqual({
-      status: 403,
-      body: { code: "forbidden", message: PLATFORM_REFUSALS.owner_only },
-    });
-    expect(support.steps.require).not.toHaveBeenCalled();
-    const owner = guardFor("owner");
-    expect(await owner.guard.canActivate(contextFor(requestFor("PATCH"), "write"))).toBe(true);
-    expect(owner.steps.require).toHaveBeenCalledWith(SESSION);
+  it("lets only the shared default write roles (the owner role) write where the route names no roles, before any step-up", async () => {
+    expect(PLATFORM_DEFAULT_WRITE_ROLES).toEqual(["owner"]);
+    for (const role of PLATFORM_ADMIN_ROLES) {
+      const { guard, steps } = guardFor(role);
+      const context = contextFor(requestFor("PATCH"), "write");
+      if (PLATFORM_DEFAULT_WRITE_ROLES.includes(role)) {
+        expect(await guard.canActivate(context)).toBe(true);
+        expect(steps.require).toHaveBeenCalledWith(SESSION);
+      } else {
+        expect(await refusal(guard.canActivate(context))).toEqual({
+          status: 403,
+          body: { code: "forbidden", message: PLATFORM_REFUSALS.owner_only },
+        });
+        expect(steps.require).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it("needs a fresh step-up for every write, the support request included", async () => {

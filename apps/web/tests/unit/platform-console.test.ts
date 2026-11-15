@@ -59,7 +59,7 @@ function company(overrides: Partial<PlatformCompany> = {}): PlatformCompany {
     userLimit: 16,
     branchLimit: 3,
     members: 9,
-    database: { status: "ready", schemaVersion: "0007", hasError: false },
+    database: { status: "ready", schemaVersion: "0007", hasError: false, errorCode: null },
     legalName: "Summit Floor Co. LLC",
     timeZone: "America/Denver",
     region: "us",
@@ -229,7 +229,7 @@ describe("demo console", () => {
       phase: "full",
       members: 9,
       userLimit: 16,
-      database: { status: null, schemaVersion: null, hasError: false },
+      database: { status: null, schemaVersion: null, hasError: false, errorCode: null },
     });
     const detail = demoDetail(demoCompany(), facts, "2026-12-15");
     expect(hasPlan(detail)).toBe(true);

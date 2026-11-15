@@ -68,7 +68,7 @@ export function demoSummary(company: Company, facts: DemoCompanyFacts): Platform
     userLimit: company.userLimit,
     branchLimit: company.branchLimit,
     members: facts.members,
-    database: { status: null, schemaVersion: null, hasError: false },
+    database: { status: null, schemaVersion: null, hasError: false, errorCode: null },
   };
 }
 

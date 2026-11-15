@@ -40,6 +40,11 @@ export interface PlatformDatabaseStatus {
   status: CompanyDatabaseState | null;
   schemaVersion: string | null;
   hasError: boolean;
+  /**
+   * The SQLSTATE of the newest recorded migration failure, only while `hasError`; never text
+   * (spec "Database errors and maintenance"; ADR 0053). Null otherwise, or when none was recorded.
+   */
+  errorCode: string | null;
 }
 
 /**
