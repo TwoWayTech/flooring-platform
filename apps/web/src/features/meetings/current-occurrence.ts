@@ -1,6 +1,7 @@
 import {
   effectiveScope,
   isPlannedOccurrence,
+  movedOccurrenceKey,
   type Meeting,
   type MeetingOccurrence,
   type OccurrenceKey,
@@ -37,16 +38,18 @@ export function occurrenceAt(meetings: readonly Meeting[], key: OccurrenceKey): 
 }
 
 /**
- * The occurrence a move produced, so the drawer follows it (meetings.md rule 4, as the shared
- * `movedOccurrenceKey` names it on the server): "this event" keeps its planned time; "all", a
- * one-off included, shifts every planned time, so the moved one is planned at its new start; "this
- * and following" lands on the new series, the first id the server created.
+ * The occurrence a move produced, so the drawer follows it (meetings.md rule 4): the shared
+ * `movedOccurrenceKey`, which the server's conflict check also uses, on the move's answer, so the
+ * drawer and the server always name the same occurrence. The split, if the move made one, is the
+ * meeting in the answer the server created.
  */
-export function movedKey(move: MeetingMove, answer: { undo: MeetingUndo }, meeting: Meeting): OccurrenceKey {
-  const scope = effectiveScope(meeting, move.scope);
-  if (scope === "this") return { meetingId: move.meetingId, planned: move.planned };
-  if (scope === "all") return { meetingId: move.meetingId, planned: move.start };
-  return { meetingId: answer.undo.createdIds[0] ?? move.meetingId, planned: move.start };
+export function movedKey(
+  move: MeetingMove,
+  answer: { meetings: readonly Meeting[]; undo: MeetingUndo },
+  meeting: Meeting,
+): OccurrenceKey {
+  const split = answer.meetings.find((m) => answer.undo.createdIds.includes(m.id)) ?? null;
+  return movedOccurrenceKey(move, { scope: effectiveScope(meeting, move.scope), original: meeting, split });
 }
 
 /** One read of the meetings. A re-read gives a new object, so the drawer tells reads apart by identity. */

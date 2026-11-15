@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   meetingForViewer,
+  movedMeetings,
+  movedOccurrenceKey,
   newAttendee,
   roleTemplate,
   type Attendee,
@@ -17,7 +19,12 @@ import {
   movedKey,
   occurrenceAt,
 } from "@/features/meetings/current-occurrence";
-import { meetingOffers, meetingRights, type MeetingSwitches } from "@/features/meetings/meeting-rights";
+import {
+  meetingOffers,
+  meetingRights,
+  offersSimulateReply,
+  type MeetingSwitches,
+} from "@/features/meetings/meeting-rights";
 import { scopeChoices } from "@/features/meetings/scope-choices";
 import type { MeetingMove, MeetingUndo } from "@/lib/api/contract";
 
@@ -83,7 +90,11 @@ const seesNoCustomer = (a: Attendee) => a.kind !== "customer";
 const shown = (m: Meeting, viewer: MeetingViewer, sight: (a: Attendee) => boolean = seesAll) =>
   meetingForViewer(m, viewer, sight);
 
-const undo = (createdIds: string[] = []): { undo: MeetingUndo } => ({ undo: { previous: meeting(), createdIds } });
+/** A move's answer as the server sends it: the moved meeting first, then the series it split off, if any. */
+const answer = (moved: Meeting, createdIds: string[] = []): { meetings: Meeting[]; undo: MeetingUndo } => ({
+  meetings: [moved, ...createdIds.map((id) => series({ id }))],
+  undo: { previous: moved, createdIds },
+});
 
 describe("meetings screens (ADR 0051 part 3)", () => {
   it("names each conflict with the other meeting's title or Busy, and its time", () => {
@@ -140,14 +151,36 @@ describe("meetings screens (ADR 0051 part 3)", () => {
       durationMin: 60,
       scope,
     });
-    expect(movedKey(move("this"), undo(), series())).toEqual({ meetingId: "s1", planned: "2026-11-23T09:00" });
-    expect(movedKey(move("all"), undo(), series())).toEqual({ meetingId: "s1", planned: "2026-11-23T11:00" });
-    expect(movedKey(move("following"), undo(["s2"]), series())).toEqual({
+    expect(movedKey(move("this"), answer(series()), series())).toEqual({
+      meetingId: "s1",
+      planned: "2026-11-23T09:00",
+    });
+    expect(movedKey(move("all"), answer(series()), series())).toEqual({ meetingId: "s1", planned: "2026-11-23T11:00" });
+    expect(movedKey(move("following"), answer(series(), ["s2"]), series())).toEqual({
       meetingId: "s2",
       planned: "2026-11-23T11:00",
     });
     // A one-off always moves as all events, whatever the screen asked.
-    expect(movedKey(move("this", "m1"), undo(), meeting())).toEqual({ meetingId: "m1", planned: "2026-11-23T11:00" });
+    expect(movedKey(move("this", "m1"), answer(meeting()), meeting())).toEqual({
+      meetingId: "m1",
+      planned: "2026-11-23T11:00",
+    });
+  });
+
+  it("names the occurrence a move produced as the server's conflict check does, for every scope", () => {
+    for (const scope of ["this", "all", "following"] as const) {
+      const move: MeetingMove = {
+        meetingId: "s1",
+        planned: "2026-11-23T09:00",
+        start: "2026-11-23T11:00",
+        durationMin: 60,
+        scope,
+      };
+      const moved = movedMeetings(series(), move, { newId: "s2", newUid: "5d1c2a3e-8f4b-4c6d-9e7a-1b2c3d4e5f60" });
+      const saved = moved.split ? [moved.original, moved.split] : [moved.original];
+      const reply = { meetings: saved, undo: { previous: series(), createdIds: moved.split ? [moved.split.id] : [] } };
+      expect(movedKey(move, reply, series())).toEqual(movedOccurrenceKey(move, moved));
+    }
   });
 
   it("keeps the drawer on its occurrence until the read after a series move or its Undo answers, then follows it", () => {
@@ -169,7 +202,7 @@ describe("meetings screens (ADR 0051 part 3)", () => {
     });
 
     // All events: the moved occurrence is planned at its new time, which the read before never has.
-    const toAll = movedKey(move("all"), undo(), series());
+    const toAll = movedKey(move("all"), answer(series()), series());
     expect(occurrenceAt(before.meetings, toAll)).toBeNull();
     const moving = followMove(opened, week2, toAll, before);
     expect(drawerOccurrence(before, moving)).toEqual({
@@ -191,8 +224,8 @@ describe("meetings screens (ADR 0051 part 3)", () => {
       target: drawerOn(week2),
     });
 
-    // This and following: the drawer lands on the new series, the first id the server created.
-    const toSplit = movedKey(move("following"), undo(["s2"]), series());
+    // This and following: the drawer lands on the new series, the meeting the server created.
+    const toSplit = movedKey(move("following"), answer(series(), ["s2"]), series());
     const splitting = followMove(opened, week2, toSplit, before);
     expect(drawerOccurrence(before, splitting).occurrence).toMatchObject({
       meeting: { id: "s1" },
@@ -288,6 +321,13 @@ describe("meetings screens (ADR 0051 part 3)", () => {
     expect(meetingOffers(true, 2, INVITES_OFF)).toEqual({ create: true, invite: false, request: false });
     expect(meetingOffers(true, 2, REQUESTS_OFF)).toEqual({ create: true, invite: true, request: false });
     expect(meetingOffers(false, 2, ON)).toEqual({ create: false, invite: false, request: false });
+  });
+
+  it("offers Simulate reply only on a meeting invite and only while invites are on, as the store takes it", () => {
+    expect(offersSimulateReply({ eventKey: "meeting.invite" }, ON)).toBe(true);
+    expect(offersSimulateReply({ eventKey: "meeting.invite" }, REQUESTS_OFF)).toBe(true);
+    expect(offersSimulateReply({ eventKey: "meeting.invite" }, INVITES_OFF)).toBe(false);
+    expect(offersSimulateReply({ eventKey: "meeting.reply" }, ON)).toBe(false);
   });
 
   it("leaves out This and following on a series' first occurrence and All events on an occurrence changed on its own, with the rule's reason", () => {

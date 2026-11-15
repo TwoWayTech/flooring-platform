@@ -6,10 +6,14 @@ import { api } from "@/lib/api";
 import type { ReplyInput } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
 import { ReplyButtons } from "./meeting-answers";
+import { offersSimulateReply } from "./meeting-rights";
 
-/** Simulate reply on a meeting invite in the Outbox (spec E): stands in for the guest's own email. */
+/**
+ * Simulate reply on a meeting invite in the Outbox (spec E): stands in for the guest's own email.
+ * Hidden with `meetings.invites` off, which the store refuses (`offersSimulateReply`).
+ */
 export function SimulateReply({ message, onDone }: { message: OutboxMessage; onDone: () => void }) {
-  const invite = message.eventKey === "meeting.invite";
+  const invite = offersSimulateReply(message);
   const meeting = useApiQuery(
     (client) => (invite ? client.get("meetings", message.sourceId) : Promise.resolve(undefined)),
     [message.sourceId, invite],

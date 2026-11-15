@@ -6,6 +6,7 @@ import {
   staffGuestOf,
   type Meeting,
   type MeetingViewer,
+  type OutboxMessage,
 } from "@workspace/shared";
 
 /** The meetings switches the screens read (docs/FEATURES.md), passed in so tests can turn them off. */
@@ -88,4 +89,17 @@ export function meetingOffers(
     invite: canCreate && switches.invites,
     request: canCreate && switches.requests && switches.invites && colleagues > 0,
   };
+}
+
+/**
+ * Whether the Outbox drawer offers Simulate reply on a message (meetings.md "Answer"; ADR 0051
+ * "Part 3", safest option 2): only on a meeting invite, and only while `meetings.invites` is on,
+ * since the store refuses every answer with it off (rule 13) and a screen never offers what the
+ * store refuses. The screen also waits until the meeting is read, and hides it on a cancelled one.
+ */
+export function offersSimulateReply(
+  message: Pick<OutboxMessage, "eventKey">,
+  switches: MeetingSwitches = meetingSwitches(),
+): boolean {
+  return message.eventKey === "meeting.invite" && switches.invites;
 }
