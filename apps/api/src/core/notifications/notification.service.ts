@@ -32,6 +32,8 @@ import type { TenantContext } from "../tenancy/tenant-context";
 import {
   addressProblem,
   dedupeKey,
+  emailAttachments,
+  EXPIRES_AT_VALUE,
   failureNotice,
   fromHeader,
   oneLine,
@@ -54,6 +56,15 @@ const REQUEUE_DELAY_MS = 30_000;
 
 /** How long a row may stay `sending` before Retry may take it back (the worker died mid-send). */
 const STUCK_SENDING_MS = 10 * 60_000;
+
+/**
+ * Whether a row is past its expiry by the database clock, the clock the claim uses (ADR 0051
+ * "Reminder expiry"). An expiry that is not a time counts as past, so a damaged one is never sent.
+ */
+const PAST_EXPIRY = (() => {
+  const expiry = sql`(${outboxMessages.values} ->> ${EXPIRES_AT_VALUE})`;
+  return sql`(case when ${expiry} is null then false when ${expiry} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$' then ${expiry}::timestamptz <= now() else true end)`;
+})();
 
 /** Rejects when a promise takes longer than `ms`, so a hung provider call cannot hold a row. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -90,6 +101,12 @@ export interface NotifyInput {
   restricted?: boolean;
   /** Holds the email until then (spec rule 13, reminders). */
   scheduledFor?: Date;
+  /**
+   * Drops the email if it has not gone by then, so it is never sent late: a meeting reminder
+   * expires when its occurrence starts (ADR 0051 "Reminder expiry"). The worker and Retry both
+   * honour it. Kept in the row's values, which readers never get, so no column is added.
+   */
+  expiresAt?: Date;
 }
 
 /** What notify wrote. */
@@ -134,11 +151,21 @@ export class NotificationService implements OnApplicationBootstrap {
    * skips the actor, writes one Outbox row per new recipient (dedupe key, spec rule 3) with the
    * subject and body rendered now (snapshots), marks a bad address failed and tells the actor
    * (rules 4, 5), writes in-app notes, then queues each sendable row.
+   *
+   * `within` is the caller's transaction of the same company, for rows that must change together
+   * with the caller's other writes under its locks, such as a meeting's reminders (ADR 0051): they
+   * commit or roll back with it, and no second connection is taken while it holds one. A job queued
+   * before the commit finds its row once it is visible, or retries (`sendJob`).
    */
-  async notify(tenant: TenantContext, actorUserId: string | null, input: NotifyInput): Promise<NotifyResult> {
+  async notify(
+    tenant: TenantContext,
+    actorUserId: string | null,
+    input: NotifyInput,
+    within?: CompanyDb,
+  ): Promise<NotifyResult> {
     const result: NotifyResult = { queued: [], failed: [], inApp: 0 };
     if (!featureOn("settings.notifications")) return result;
-    const db = await this.tenancy.db(tenant);
+    const db = within ?? (await this.tenancy.db(tenant));
     const rule = effectiveRule(input.event, await this.rulesFor(db, input.event));
     if (!rule.enabled) return result;
     const sender = await this.senderOf(db, tenant.companyId);
@@ -270,6 +297,35 @@ export class NotificationService implements OnApplicationBootstrap {
     await this.queue(tenant.companyId, row.id, row.scheduledFor);
   }
 
+  /**
+   * Cancels every scheduled row one event raised for one source, such as a meeting's waiting
+   * reminders before they are raised again (ADR 0051 "Reminders"). A row already being sent, or
+   * sent, is left as it is. `within` is the caller's transaction, as for `notify`. Returns how many
+   * rows it cancelled.
+   */
+  async cancelScheduled(
+    tenant: TenantContext,
+    event: NotificationEventKey,
+    source: { type: string; id: string },
+    within?: CompanyDb,
+  ): Promise<number> {
+    const db = within ?? (await this.tenancy.db(tenant));
+    const cancelled = await db
+      .update(outboxMessages)
+      .set({ status: "cancelled" })
+      .where(
+        and(
+          eq(outboxMessages.eventKey, event),
+          eq(outboxMessages.sourceType, source.type),
+          eq(outboxMessages.sourceId, source.id),
+          eq(outboxMessages.status, "scheduled"),
+          isNull(outboxMessages.deletedAt),
+        ),
+      )
+      .returning({ id: outboxMessages.id });
+    return cancelled.length;
+  }
+
   /** Cancels a scheduled row before it is sent (spec `cancelOutbox`). */
   async cancel(tenant: TenantContext, messageId: string): Promise<void> {
     const db = await this.tenancy.db(tenant);
@@ -320,7 +376,10 @@ export class NotificationService implements OnApplicationBootstrap {
    * read-only company (suspended, cancelled or lapsed) sends nothing, and a company in maintenance
    * or locked gets no job context at all: its rows stay queued or scheduled, and Retry (or the
    * sweeper, STATUS) sends them once it is writable. A
-   * provider failure marks the row failed and tells the actor; Retry sends it again.
+   * provider failure marks the row failed and tells the actor; Retry sends it again. A row past its
+   * expiry (`NotifyInput.expiresAt`) is cancelled by the same claim and never sent, so a reminder
+   * left waiting while no instance ran workers, or retried late, never arrives after the meeting
+   * began (ADR 0051 "Reminder expiry"). The email carries the row's .ics files (`emailAttachments`).
    */
   private async sendJob(job: Job<SendJob>): Promise<void> {
     const tenant = await this.jobTenants.contextFor(job.data.companyId);
@@ -334,7 +393,7 @@ export class NotificationService implements OnApplicationBootstrap {
     if (!exists) throw new Error("Outbox row not found yet.");
     const [row] = await db
       .update(outboxMessages)
-      .set({ status: "sending" })
+      .set({ status: sql`case when ${PAST_EXPIRY} then 'cancelled' else 'sending' end` })
       .where(
         and(
           eq(outboxMessages.id, job.data.messageId),
@@ -348,6 +407,8 @@ export class NotificationService implements OnApplicationBootstrap {
       await this.requeueIfEarly(db, job.data);
       return;
     }
+    if (row.status === "cancelled") return;
+    const files = emailAttachments(row.attachments);
     let sentId: string;
     try {
       sentId = (
@@ -358,6 +419,7 @@ export class NotificationService implements OnApplicationBootstrap {
             ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
             subject: oneLine(row.subject),
             text: row.bodyText,
+            ...(files.length > 0 ? { attachments: files } : {}),
             idempotencyKey: row.dedupeKey,
           }),
           SEND_TIMEOUT_MS,
@@ -449,7 +511,12 @@ export class NotificationService implements OnApplicationBootstrap {
     sender: { companyName: string; fromName: string; replyTo: string; signature: string },
     recipient: OutboxRecipient,
   ) {
-    const values = { "company.name": sender.companyName, ...input.values, "recipient.name": recipient.name };
+    const values = {
+      "company.name": sender.companyName,
+      ...input.values,
+      "recipient.name": recipient.name,
+      ...(input.expiresAt ? { [EXPIRES_AT_VALUE]: input.expiresAt.toISOString() } : {}),
+    };
     const problem = addressProblem(recipient.email);
     const status = problem ? "failed" : input.scheduledFor ? "scheduled" : "queued";
     const [row] = await db
