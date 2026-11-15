@@ -170,7 +170,7 @@ Module 14 of docs/real-build-plan.md ("Meetings, invites and .ics", spec meeting
     - validation and the DST gap;
     - the 50 and 20 caps per meeting and the 50-a-day cap;
     - client-sent organiser and guest fields are ignored;
-    - a customer out of scope gives 404; a customer guest in an HR Suite company is refused;
+    - a customer out of scope gives 404; a customer guest in an HR Suite company gives 404 too, since that company has no `core` module and so no customers (deny by default, nothing revealed);
     - an unsupported zone gives 409;
     - 09:00 America/Chicago in November is stored as 15:00Z;
     - one row per guest except the organiser, restricted when private, in-app for staff;
