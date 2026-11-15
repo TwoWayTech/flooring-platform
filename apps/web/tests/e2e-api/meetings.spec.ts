@@ -146,8 +146,13 @@ test.describe("meetings (api mode)", () => {
       await expect(page.getByRole("listitem").filter({ hasText: title })).toContainText(`${formatted(day)} at 16:00`);
       await expect(page.getByRole("button", { name: "Request a meeting" })).toBeVisible();
 
-      // 6. Settings → Meetings is not built on the API yet, so the page does not exist.
-      expect((await page.goto("/settings/meetings"))?.status()).toBe(404);
+      // 6. Settings → Meetings is not built on the API yet, so the server answers with the not-found
+      // page and nothing of it shows. Inside the app shell Next sends a not-found page with status 200,
+      // as it does for any unknown address there, so the check is Next's not-found marker in the page.
+      const settings = await page.goto("/settings/meetings");
+      expect(await settings?.text()).toContain("NEXT_HTTP_ERROR_FALLBACK;404");
+      await expect(page.getByText("You don't have access to this page.")).toBeVisible();
+      await expect(page.getByLabel("New guests added by email")).toHaveCount(0);
 
       // 7. Cleanup through the product: cancelling takes the meeting off the grid and closes the drawer.
       await openWeek(page, weeksAhead);
