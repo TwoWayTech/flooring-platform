@@ -1,5 +1,5 @@
 import { featureOn, pagePatternScore, type Access, type PermissionKey, type ProductKey } from "@workspace/shared";
-import { PRODUCTS } from "./index";
+import { inThisBuild, PRODUCTS } from "./index";
 
 /** A page or view and the permissions that open it; holding any one is enough. */
 interface PageRule {
@@ -66,10 +66,10 @@ export function canOpenPage(product: ProductKey, href: string, access: Access): 
   return !needed || needed.some((key) => access.permissions.has(key));
 }
 
-/** The pages of a product whose feature is on, for the effective access preview. */
+/** The pages of a product whose feature is on and that exist in this build, for the effective access preview. */
 export function pageList(product: ProductKey): { label: string; href: string; anyOf: PermissionKey[] }[] {
   const config = PRODUCTS[product];
   return [...config.menu, ...config.settings]
-    .filter((item) => item.features.some((key) => featureOn(key)))
+    .filter((item) => inThisBuild(item) && item.features.some((key) => featureOn(key)))
     .map(({ label, href, anyOf }) => ({ label, href, anyOf }));
 }

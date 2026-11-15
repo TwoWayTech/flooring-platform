@@ -1,18 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  FEATURES,
+  MEETING_REFUSALS,
   PRODUCT_ROLES,
   canChangeMeeting,
+  canDecideProposal,
+  changeRefusal,
+  changeableAsShown,
+  decidableAsShown,
   guestAuditName,
   isOnMeeting,
   meetingAuditTarget,
   meetingForViewer,
+  organiserAddressShown,
+  readsCustomerGuests,
+  readsSupplierGuests,
   seesEveryLinkedGuest,
   seesGuestAddresses,
   seesMeeting,
+  shownParty,
   staffGuestOf,
   type Attendee,
   type DefaultRoleKey,
+  type FeatureKey,
+  type FeatureRegister,
+  type Meeting,
   type MeetingViewer,
+  type ModuleKey,
+  type PermissionKey,
 } from "../src";
 import { GUEST, ORGANISER, guestRow, testMeeting, viewerAs } from "./meeting-fixtures";
 
@@ -201,5 +216,177 @@ describe("what the audit log says about meetings (ADR 0051 Audit)", () => {
     expect(guestAuditName(external, testMeeting())).toBe("Email guest");
     expect(guestAuditName(staff, privateMeeting)).toBe("Colleague");
     expect(guestAuditName(customer, privateMeeting)).toBe("Customer");
+  });
+});
+
+describe("what a screen can tell from a shaped meeting (ADR 0051 part 3)", () => {
+  type Sight = (attendee: Attendee) => boolean;
+  const staffOnly = testMeeting().attendees.filter((a) => a.kind === "staff");
+  const withSupplier = [...testMeeting().attendees, guestRow({ kind: "supplier", id: "s-1", name: "Oakhaven Timber" })];
+  /** The meetings the property runs over: open and hidden lists, private, staff only, a series. */
+  const MEETINGS: readonly [string, Meeting][] = [
+    ["one-off", testMeeting()],
+    ["hidden list", testMeeting({ hideGuestList: true })],
+    ["private", testMeeting({ private: true })],
+    ["private, hidden list", testMeeting({ private: true, hideGuestList: true })],
+    ["staff only", testMeeting({ attendees: staffOnly })],
+    ["staff only, hidden list", testMeeting({ attendees: staffOnly, hideGuestList: true })],
+    ["weekly series", testMeeting({ recurrence: "weekly", until: "2027-06-30" })],
+    ["with a supplier, hidden list", testMeeting({ attendees: withSupplier, hideGuestList: true })],
+  ];
+  /** The readers: the organiser, a staff guest and three people not on it, in every role. */
+  const VIEWERS: readonly [string, MeetingViewer][] = [ORGANISER, GUEST, "u-mgr", "u-own", "u-wh"].flatMap((id) =>
+    ROLES.map((role): [string, MeetingViewer] => [`${id} as ${role}`, viewerAs(role, id)]),
+  );
+  const SIGHTS: readonly [string, Sight][] = [
+    ["all", seesAll],
+    ["none", () => false],
+    ["customers only", (a) => a.kind === "customer" || a.kind === "customer-contact"],
+  ];
+
+  /** Every reader, sight and meeting the server would shape for that reader, with the shaped copy. */
+  function* shapedCases(meetings: readonly [string, Meeting][] = MEETINGS) {
+    for (const [label, stored] of meetings)
+      for (const [sightLabel, sight] of SIGHTS)
+        for (const [viewerLabel, viewer] of VIEWERS) {
+          if (!seesMeeting(viewer, stored)) continue;
+          const name = `${label}, ${viewerLabel}, sight ${sightLabel}`;
+          yield { name, stored, sight, viewer, shown: meetingForViewer(stored, viewer, sight) };
+        }
+  }
+
+  it("reads a customer, supplier or contact shown by kind with no address as one the reader can't read", () => {
+    for (const kind of ["customer", "supplier", "customer-contact", "supplier-contact"] as const) {
+      const linked = testMeeting({ attendees: [...testMeeting().attendees, guestRow({ kind, id: "p-1" })] });
+      const shown = meetingForViewer(linked, viewerAs("owner", ORGANISER), () => false);
+      const row = shown.attendees.find((a) => a.id === "p-1");
+      expect(row && shownParty(row), kind).toBe(false);
+    }
+  });
+
+  it("reads staff, email guests and a named linked guest as readable", () => {
+    const shown = meetingForViewer(testMeeting(), viewerAs("warehouse", "u-wh"), seesAll);
+    // The warehouse reader gets no addresses, yet every guest here is one they can read.
+    expect(shown.attendees.map((a) => a.email)).toEqual(["", "", "", ""]);
+    expect(shown.attendees.every(shownParty)).toBe(true);
+    expect(shownParty(guestRow({ kind: "customer", id: "c-2", name: "Coby Harris", email: "" }))).toBe(true);
+    expect(shownParty(guestRow({ kind: "staff", id: "u-2", name: "Customer", email: "" }))).toBe(true);
+    expect(shownParty(guestRow({ kind: "external", id: "x-2", name: "Supplier", email: "" }))).toBe(true);
+  });
+
+  it("never offers a change the server refuses: changeableAsShown on the shaped meeting implies canChangeMeeting on the stored one", () => {
+    const failClosed: [string, Meeting][] = [
+      [
+        "an organiser row with no stored address",
+        testMeeting({
+          attendees: testMeeting().attendees.map((a) => (a.id === ORGANISER ? { ...a, email: "" } : a)),
+        }),
+      ],
+      ["no organiser row", testMeeting({ attendees: testMeeting().attendees.filter((a) => a.id !== ORGANISER) })],
+      [
+        "a readable customer named like its kind with no address",
+        testMeeting({
+          attendees: [...staffOnly, guestRow({ kind: "customer", id: "c-9", name: "Customer", email: "" })],
+        }),
+      ],
+    ];
+    let offered = 0;
+    for (const { name, stored, sight, viewer, shown } of shapedCases([...MEETINGS, ...failClosed])) {
+      if (!changeableAsShown(viewer, shown)) continue;
+      offered += 1;
+      expect(canChangeMeeting(viewer, stored, sight), name).toBe(true);
+    }
+    // The property is not vacuous: the screen offers changes in many of these cases.
+    expect(offered).toBeGreaterThan(50);
+  });
+
+  it("agrees exactly with the server for everyone but the organiser, and for the organiser unless a readable linked guest is named like its kind with no address", () => {
+    for (const { name, stored, sight, viewer, shown } of shapedCases()) {
+      expect(changeableAsShown(viewer, shown), name).toBe(canChangeMeeting(viewer, stored, sight));
+    }
+    // The one place they differ, for the organiser: the screen hides a change the server would take.
+    const named = testMeeting({
+      attendees: [...staffOnly, guestRow({ kind: "customer", id: "c-9", name: "Customer", email: "" })],
+    });
+    const organiser = viewerAs("manager", ORGANISER);
+    expect(canChangeMeeting(organiser, named, seesAll)).toBe(true);
+    expect(changeableAsShown(organiser, meetingForViewer(named, organiser, seesAll))).toBe(false);
+  });
+
+  it("offers no change to a branch Manager not on a hidden-list meeting with a customer they can't read, and offers it once they can read that customer", () => {
+    const hidden = testMeeting({ hideGuestList: true });
+    const manager = viewerAs("manager", "u-mgr");
+    const unseen = meetingForViewer(hidden, manager, () => false);
+    expect(unseen.attendees).toEqual([]);
+    expect(organiserAddressShown(unseen)).toBe(false);
+    expect(changeableAsShown(manager, unseen)).toBe(false);
+    expect(canChangeMeeting(manager, hidden, () => false)).toBe(false);
+    const seen = meetingForViewer(hidden, manager, seesAll);
+    expect(organiserAddressShown(seen)).toBe(true);
+    expect(changeableAsShown(manager, seen)).toBe(true);
+    expect(canChangeMeeting(manager, hidden, seesAll)).toBe(true);
+  });
+
+  it("offers decisions only to the organiser who may change the meeting", () => {
+    for (const { name, stored, sight, viewer, shown } of shapedCases()) {
+      const offered = decidableAsShown(viewer, shown);
+      if (offered) expect(canDecideProposal(viewer, stored, sight), name).toBe(true);
+      expect(offered, name).toBe(canDecideProposal(viewer, stored, sight));
+      if (viewer.userId !== ORGANISER) expect(offered, name).toBe(false);
+    }
+    // A manager who may change it is offered the change, but not the decision.
+    const manager = viewerAs("manager", "u-mgr");
+    const shown = meetingForViewer(testMeeting(), manager, seesAll);
+    expect(changeableAsShown(manager, shown)).toBe(true);
+    expect(decidableAsShown(manager, shown)).toBe(false);
+  });
+});
+
+describe("why a change is refused (changeRefusal)", () => {
+  it("names guest sight when it is all that is missing, the organiser otherwise, and nothing when allowed", () => {
+    const seesNoCustomer = (a: Attendee) => a.kind !== "customer";
+    expect(changeRefusal(viewerAs("manager", ORGANISER), testMeeting(), seesAll)).toBeNull();
+    expect(changeRefusal(viewerAs("manager", OUTSIDER), testMeeting(), seesAll)).toBeNull();
+    expect(changeRefusal(viewerAs("manager", ORGANISER), testMeeting(), seesNoCustomer)).toBe(
+      MEETING_REFUSALS.cantSeeEveryGuest,
+    );
+    expect(changeRefusal(viewerAs("hr", OUTSIDER), testMeeting(), seesNoCustomer)).toBe(
+      MEETING_REFUSALS.cantSeeEveryGuest,
+    );
+    // An own-scope guest, a private meeting and a reader without edit are refused by the organiser rule.
+    expect(changeRefusal(viewerAs("sales", GUEST), testMeeting(), seesAll)).toBe(MEETING_REFUSALS.notOrganiser);
+    expect(changeRefusal(viewerAs("manager", GUEST), testMeeting({ private: true }), seesAll)).toBe(
+      MEETING_REFUSALS.notOrganiser,
+    );
+    expect(changeRefusal(viewerAs("warehouse", OUTSIDER), testMeeting(), seesNoCustomer)).toBe(
+      MEETING_REFUSALS.notOrganiser,
+    );
+    // The API's words, unchanged (docs/api-contract.md).
+    expect(MEETING_REFUSALS.notOrganiser).toBe("Only the organiser can change this meeting.");
+    expect(MEETING_REFUSALS.cantSeeEveryGuest).toBe(
+      "Only someone who can see every guest on this meeting can change it.",
+    );
+  });
+});
+
+describe("guest readers", () => {
+  const access = (modules: readonly ModuleKey[], keys: readonly PermissionKey[]) => ({
+    modules,
+    permissions: new Set(keys),
+  });
+  const withOff = (key: FeatureKey): FeatureRegister => ({ ...FEATURES, [key]: { ...FEATURES[key], enabled: false } });
+
+  it("reads customers only with the core module, the key and the switch, and suppliers likewise", () => {
+    const both: PermissionKey[] = ["customers.customer.view", "purchasing.supplier.view"];
+    expect(readsCustomerGuests(access(["core", "meetings"], both))).toBe(true);
+    expect(readsSupplierGuests(access(["core", "meetings"], both))).toBe(true);
+    expect(readsCustomerGuests(access(["meetings"], both))).toBe(false);
+    expect(readsSupplierGuests(access(["meetings"], both))).toBe(false);
+    expect(readsCustomerGuests(access(["core"], ["purchasing.supplier.view"]))).toBe(false);
+    expect(readsSupplierGuests(access(["core"], ["customers.customer.view"]))).toBe(false);
+    expect(readsCustomerGuests(access(["core"], both), withOff("sales.customers"))).toBe(false);
+    expect(readsSupplierGuests(access(["core"], both), withOff("sales.customers"))).toBe(true);
+    expect(readsSupplierGuests(access(["core"], both), withOff("purchasing.suppliers"))).toBe(false);
+    expect(readsCustomerGuests(access(["core"], both), withOff("purchasing.suppliers"))).toBe(true);
   });
 });

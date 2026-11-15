@@ -165,3 +165,78 @@ export function meetingForViewer(
   });
   return { ...meeting, attendees };
 }
+
+/**
+ * Whether a guest, as `meetingForViewer` shaped it, is one the reader can read. A linked guest the
+ * reader can't read is always shown by kind (`HIDDEN_PARTY_NAME`) with no address. For screens,
+ * which never get the server's `partySight`; it errs only towards "can't read" (a readable customer
+ * literally named "Customer" with no address), so it never lets a screen offer a change the server
+ * refuses (ADR 0051 "Part 3").
+ */
+export function shownParty(attendee: Attendee): boolean {
+  return !isLinkedParty(attendee) || !(attendee.name === HIDDEN_PARTY_NAME[attendee.kind] && attendee.email === "");
+}
+
+/**
+ * Whether the shaped meeting shows the organiser's address. For a reader who is not the organiser,
+ * `meetingForViewer` shows it exactly when the server found they may change the meeting
+ * (`seesGuestAddresses`); a hidden list without that leaves the organiser's row out entirely, and a
+ * missing row or a stored organiser with no address reads as "not shown", so the rule fails closed.
+ */
+export function organiserAddressShown(shown: Meeting): boolean {
+  return (staffGuestOf(shown, shown.ownerUserId)?.email ?? "") !== "";
+}
+
+/**
+ * Whether a screen may offer a change of a meeting it holds only as `meetingForViewer` shaped it
+ * (drag, resize, Reschedule, Edit details, Cancel meeting, Remove; ADR 0051 "Part 3"). It never
+ * offers what `canChangeMeeting` on the stored meeting refuses:
+ * - the organiser: `canChangeMeeting` with `shownParty`, since the organiser always gets every guest
+ *   and a guest they can't read is shown by kind with no address;
+ * - anyone else: their own keys and scope (`canChangeMeeting` with every guest readable), and the
+ *   server's own answer, the organiser's address on the list (`organiserAddressShown`).
+ * Why the second holds: for a non-organiser `meetingForViewer` sets `manages` to
+ * `canChangeMeeting(viewer, stored, sight)`. With `manages` the list is whole and the organiser's
+ * staff row, never a hidden party, keeps its address; without it that address is blanked, or the row
+ * is filtered out under a hidden list. So the organiser's address is shown exactly when the server
+ * would allow the change, given a stored organiser address, which every control user has.
+ */
+export function changeableAsShown(viewer: MeetingViewer, shown: Meeting): boolean {
+  if (isOrganiser(shown, viewer.userId)) return canChangeMeeting(viewer, shown, shownParty);
+  return canChangeMeeting(viewer, shown, () => true) && organiserAddressShown(shown);
+}
+
+/**
+ * Whether a screen may offer Accept time and Decline time on a shaped meeting: the organiser, when
+ * `changeableAsShown` allows it, as `canDecideProposal` does on the stored meeting (ADR 0051 "Part 3").
+ */
+export function decidableAsShown(viewer: MeetingViewer, shown: Meeting): boolean {
+  return isOrganiser(shown, viewer.userId) && changeableAsShown(viewer, shown);
+}
+
+/** The words the API and the demo refuse meetings actions with, kept in one place (ADR 0051 "Part 3"). */
+export const MEETING_REFUSALS = {
+  notOrganiser: "Only the organiser can change this meeting.",
+  cantSeeEveryGuest: "Only someone who can see every guest on this meeting can change it.",
+  organiserDecides: "Only the organiser can decide a proposed time.",
+  notAGuest: "Only a guest on this meeting can answer it.",
+  chooseColleague: "Choose who to meet with.",
+  invitesOff: "Guests can't be invited while meeting invites are switched off.",
+  zoneUnsupported:
+    "Meetings can be booked only in a US time zone, and this company's time zone is not one of them yet.",
+} as const;
+
+/**
+ * Why a reader may not change a meeting, or null when `canChangeMeeting` allows it (ADR 0051 "Who
+ * may change a meeting"): guest sight when that is all that is missing, since the change would email
+ * a guest the reader can't read with them as its Outbox actor; the organiser rule otherwise.
+ */
+export function changeRefusal(
+  viewer: MeetingViewer,
+  meeting: Meeting,
+  seesParty: (attendee: Attendee) => boolean,
+): string | null {
+  if (canChangeMeeting(viewer, meeting, seesParty)) return null;
+  const onlySight = !seesEveryLinkedGuest(meeting, seesParty) && canChangeMeeting(viewer, meeting, () => true);
+  return onlySight ? MEETING_REFUSALS.cantSeeEveryGuest : MEETING_REFUSALS.notOrganiser;
+}

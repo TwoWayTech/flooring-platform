@@ -3,12 +3,14 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { FileText } from "lucide-react";
 import { toast } from "sonner";
-import { stateName, tenure, type FileMeta, type Meeting } from "@workspace/shared";
+import { featureOn, stateName, tenure, type FileMeta } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { Field } from "@/components/field";
+import { NoAccess } from "@/components/no-access";
+import { QueryFallback } from "@/components/query-fallback";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialog";
 import { RequestMeetingDialog } from "@/features/meetings/meeting-answers";
@@ -51,50 +53,60 @@ export function MyDocumentsPage() {
   return <MyShell title="My documents">{(p) => <Documents portal={p} />}</MyShell>;
 }
 
+/**
+ * The person's coming meetings as the server lists them (GET /me/meetings): each with its next
+ * occurrence, worked out in the meeting's own zone, soonest first. Request shows only when the
+ * server names a colleague to ask (ADR 0051 "Part 3", safest option 9).
+ */
 function Meetings() {
-  const { user } = useWorkspace();
   const formatDate = useFormatDate();
   const [requesting, setRequesting] = useState(false);
-  const data = useApiQuery((client) => client.list("meetings"), []);
-  const users = useApiQuery((client) => client.list("users"), []);
-  const now = `${api.today()}T00:00`;
-  const mine = (data.data ?? [])
-    .filter((m: Meeting) => (m.ownerUserId === user.id || m.attendees.some((a) => a.id === user.id)) && m.start >= now)
-    .sort((a, b) => a.start.localeCompare(b.start));
+  const data = useApiQuery((client) => client.myMeetings(), [], { keepDataOnError: true });
+  if (data.status !== "ready") return <QueryFallback query={data} className="h-40" label="Loading your meetings" />;
+  const { meetings, colleagues } = data.data;
   return (
     <Panel
       title="Coming up"
       bodyClassName="p-0"
       actions={
-        <Button size="sm" variant="outline" onClick={() => setRequesting(true)}>
-          Request a meeting
-        </Button>
+        colleagues.length > 0 ? (
+          <Button size="sm" variant="outline" onClick={() => setRequesting(true)}>
+            Request a meeting
+          </Button>
+        ) : null
       }
     >
-      {mine.length === 0 ? (
+      {meetings.length === 0 ? (
         <p className="text-muted-foreground p-4 text-sm">No meetings coming up.</p>
       ) : (
         <ul className="divide-hairline divide-y text-sm">
-          {mine.slice(0, 20).map((m) => (
-            <li key={m.id} className="flex justify-between gap-3 px-4 py-2.5">
-              <span>{m.title}</span>
+          {meetings.slice(0, 20).map(({ meeting, next }) => (
+            <li key={meeting.id} className="flex justify-between gap-3 px-4 py-2.5">
+              <span>{meeting.title}</span>
               <span className="text-muted-foreground whitespace-nowrap">
-                {formatDate(m.start.slice(0, 10))} at {m.start.slice(11, 16)}
+                {formatDate(next.start.slice(0, 10))} at {next.start.slice(11, 16)}
               </span>
             </li>
           ))}
         </ul>
       )}
-      {requesting && users.data ? (
-        <RequestMeetingDialog users={users.data} onClose={() => setRequesting(false)} />
+      {requesting && colleagues.length > 0 ? (
+        <RequestMeetingDialog colleagues={colleagues} onClose={() => setRequesting(false)} />
       ) : null}
     </Panel>
   );
 }
 
-/** My meetings (spec C2): the person's own coming meetings. */
+/**
+ * My meetings (spec C2): the person's own coming meetings. Hidden with `meetings.calendar` off or
+ * without the meetings module, as the API refuses then (ADR 0051 "Part 3", safest option 10).
+ */
 export function MyMeetingsPage() {
-  return <MyShell title="My meetings">{() => <Meetings />}</MyShell>;
+  const { company } = useWorkspace();
+  if (!featureOn("meetings.calendar")) return <NoAccess message="This feature is switched off in this demo." />;
+  return (
+    <MyShell title="My meetings">{() => (company.modules.includes("meetings") ? <Meetings /> : <NoAccess />)}</MyShell>
+  );
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {

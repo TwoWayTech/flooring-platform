@@ -15,8 +15,8 @@ const MINUTE_MS = 60_000;
 /** The longest CN a calendar line gets; a guest's name is capped at 100 on input too (ADR 0051). */
 const CN_MAX = 100;
 
-/** The PRODID the demo writes (ADR 0021). */
-const DEMO_PRODID = "-//Flooring Suite//Demo//EN";
+/** The PRODID the demo writes (ADR 0021); exported so the demo store names it when it writes a file (ADR 0051 "Part 3"). */
+export const DEMO_PRODID = "-//Flooring Suite//Demo//EN";
 
 /** The PRODID the real build writes: product-neutral, because HR Suite sends invites too (ADR 0051). */
 export const MEETINGS_PRODID = "-//Platform//Meetings//EN";

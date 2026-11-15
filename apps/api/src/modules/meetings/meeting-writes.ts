@@ -1,12 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import type { CompanyDb } from "@workspace/db";
 import { meetingAttendees } from "@workspace/db/company";
 import {
   ASKED_AGAIN,
-  canChangeMeeting,
+  changeRefusal,
   meetingEmailCount,
   meetingForViewer,
-  seesEveryLinkedGuest,
   seesMeeting,
   type Attendee,
   type Meeting,
@@ -20,7 +19,7 @@ import { dailyEmailsProblem } from "./meeting-limits";
 import { attendeesOf, loadMeetings, meetingOf, partySight, type LoadedMeeting } from "./meeting-records";
 import { MeetingReminders } from "./meeting-reminders";
 import { MeetingSends, type PlannedInvites } from "./meeting-sends";
-import { cantSeeEveryGuest, lockMeeting, meetingViewer, notTheOrganiser, refuseIf } from "./meetings-common";
+import { lockMeeting, meetingViewer, refuseIf } from "./meetings-common";
 
 /** Whether the person reading a meeting may read a guest linked to a record (`partySight`). */
 export type PartySight = (attendee: Attendee) => boolean;
@@ -42,7 +41,9 @@ export async function lockVisible(tx: CompanyDb, access: RequestAccess, id: stri
 /**
  * Locks a meeting the person may change (`canChangeMeeting`): 404 when they can't see it, 403
  * when they see it but may not change it, including when they can't read a customer, supplier
- * or contact on it. Returns it with their sight of its linked guests.
+ * or contact on it, in the shared `changeRefusal`'s words (ADR 0051 "Who may change a meeting":
+ * guest sight when that is all that is missing, since the change would email that guest with them
+ * as its Outbox actor; the organiser rule otherwise). Returns it with their sight of its linked guests.
  */
 export async function lockChangeable(
   tx: CompanyDb,
@@ -51,12 +52,8 @@ export async function lockChangeable(
 ): Promise<{ loaded: LoadedMeeting; sight: PartySight }> {
   const loaded = await lockVisible(tx, access, id);
   const sight = await partySight(tx, access, [loaded.meeting]);
-  const viewer = meetingViewer(access);
-  if (!canChangeMeeting(viewer, loaded.meeting, sight)) {
-    const onlySightMissing =
-      !seesEveryLinkedGuest(loaded.meeting, sight) && canChangeMeeting(viewer, loaded.meeting, () => true);
-    throw onlySightMissing ? cantSeeEveryGuest() : notTheOrganiser();
-  }
+  const refusal = changeRefusal(meetingViewer(access), loaded.meeting, sight);
+  if (refusal) throw new ForbiddenException({ code: "forbidden", message: refusal });
   return { loaded, sight };
 }
 
