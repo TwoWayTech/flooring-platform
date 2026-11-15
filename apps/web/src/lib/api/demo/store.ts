@@ -36,6 +36,7 @@ import {
   type BusinessFilters,
   type CommissionPlan,
   type Meeting,
+  type MyMeetings,
   type ContractLine,
   type Employee,
   type ImportTable,
@@ -68,6 +69,7 @@ import type {
   RecurringExpenseInput,
   MeetingInput,
   MeetingRequestInput,
+  MeetingsData,
   ReplyInput,
   BillingInput,
   CertificateInput,
@@ -1068,6 +1070,28 @@ export class DemoStore implements ApiClient {
       filters,
       { margin, people, stock },
     );
+  }
+
+  /**
+   * The Meetings page's data (`MeetingsData`). Until the demo's meetings follow the shared rules
+   * (ADR 0051 "Part 3", next step), it offers nobody to invite or to ask, the safe default.
+   */
+  async meetingsData(): Promise<MeetingsData> {
+    const db = this.open();
+    await this.assertCan(db, ["meetings.meeting.view"]);
+    return {
+      viewerUserId: this.viewer!.userId,
+      meetings: await this.list("meetings"),
+      guests: [],
+      colleagues: [],
+      newGuestHandling: db.settings.meetings.newGuestHandling,
+    };
+  }
+
+  /** My meetings (`myMeetings`); empty until the demo's meetings follow the shared rules (next step). */
+  async myMeetings(): Promise<MyMeetings> {
+    await this.assertCan(this.open(), ["hr.portal.view"]);
+    return { viewerUserId: this.viewer!.userId, meetings: [], colleagues: [] };
   }
 
   async createMeeting(input: MeetingInput) {

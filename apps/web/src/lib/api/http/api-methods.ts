@@ -5,6 +5,7 @@ import type {
   CommissionPlan,
   CommissionStatement,
   TeamCommission,
+  Conflict,
   Contract,
   ContractBilling,
   ContractLine,
@@ -12,11 +13,15 @@ import type {
   Employee,
   Expense,
   GoodsReceipt,
+  GuestOption,
   InsuranceCertificate,
   Invoice,
   InvoiceAdjustment,
   LienWaiver,
   Location,
+  Meeting,
+  MeetingPatch,
+  MyMeetings,
   PayPeriod,
   PlatformAccessPatch,
   PlatformCompany,
@@ -43,7 +48,8 @@ import type {
   Transfer,
   User,
 } from "@workspace/shared";
-import { hoursToWire, timesheetFromWire } from "@workspace/shared";
+import { featureOn, hoursToWire, timesheetFromWire } from "@workspace/shared";
+import type { SessionContext } from "@/lib/session/api-context";
 import { HttpApiError } from "./transport";
 import type {
   CollectionName,
@@ -52,6 +58,8 @@ import type {
   ContractInput,
   EmployeeInput,
   ItemOf,
+  MeetingInput,
+  MeetingUndo,
   MyPortal,
   PayPeriodReview,
   StockHold,
@@ -521,7 +529,7 @@ export const API_METHODS: HttpRoutes = {
   reopenPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/reopen`),
   exportPayPeriod: (http) => (id) => http.request<PayPeriod>("POST", `/pay-periods/${id}/export`),
   // The employee portal (ADR 0049): the signed-in person's own data only, from the session. My
-  // meetings stays on the demo client until Meetings moves (the next module).
+  // meetings is `myMeetings` in the meetings block below (ADR 0051 "Part 3").
   myPortal: (http) => async () => {
     const { ownPayRate, employee, ...portal } = await http.request<MyPortalWire>("GET", "/me/portal");
     // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046). One's own
@@ -548,7 +556,168 @@ export const API_METHODS: HttpRoutes = {
   clockOut: (http) => async () => {
     await http.request<unknown>("POST", "/clock/out");
   },
+  // Meetings (ADR 0051 part 3): the Meetings page, its drawer and dialogs, and My meetings. Every
+  // write goes through `wrote`, so the screens read again. `simulateReply`, `list` and `get` of
+  // "meetings" (Simulate reply reads the demo Outbox's rows) and `updateSettings("meetings")` (the
+  // page is hidden in api mode until part 4) stay on DemoStore.
+  meetingsData: (http) => async () => {
+    // Colleagues come only when a request can be sent and answered, as GET /me/meetings gives them.
+    const asks = featureOn("meetings.requests") && featureOn("meetings.invites");
+    const [meetings, guests, mine] = await Promise.all([
+      http.request<Meeting[]>("GET", "/meetings"),
+      // Without meetings.meeting.create (403) or with meetings.invites off (404): nobody to invite.
+      seenOrOff(http.request<GuestOption[]>("GET", "/meeting-guests")),
+      asks ? orNone(http.request<MyMeetings>("GET", "/me/meetings")) : Promise.resolve(null),
+    ]);
+    // The reader's id is the server's, never the demo persona's (S15); asked for only when needed.
+    const viewerUserId = mine?.viewerUserId ?? (await http.request<SessionContext>("GET", "/auth/context")).user.id;
+    return { viewerUserId, meetings, guests, colleagues: mine?.colleagues ?? [], newGuestHandling: "none" };
+  },
+  // No portal key, the module off (403), or meetings.calendar or hr.portal off (404): nothing to show.
+  myMeetings: (http) => async () =>
+    (await orNone(http.request<MyMeetings>("GET", "/me/meetings"))) ?? {
+      viewerUserId: "",
+      meetings: [],
+      colleagues: [],
+    },
+  createMeeting: (http, _demo, changed) => (input) =>
+    wrote(changed, http.request<Meeting>("POST", "/meetings", meetingBody(input))),
+  updateMeeting: (http, _demo, changed) => (id, patch) =>
+    wrote(changed, http.request<Meeting>("PATCH", `/meetings/${encodeURIComponent(id)}`, patchBody(patch))),
+  cancelMeeting: (http, _demo, changed) => (id) =>
+    wrote(changed, http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/cancel`)),
+  removeGuest: (http, _demo, changed) => (meetingId, attendeeId) =>
+    wrote(
+      changed,
+      http.request<Meeting>(
+        "DELETE",
+        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}`,
+      ),
+    ),
+  respondToMeeting: (http, _demo, changed) => (id, reply) =>
+    wrote(
+      changed,
+      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/response`, {
+        partStat: reply.partStat,
+        note: reply.note,
+        proposal: reply.proposal
+          ? { start: reply.proposal.start, durationMin: reply.proposal.durationMin, note: reply.proposal.note }
+          : null,
+      }),
+    ),
+  decideProposal: (http, _demo, changed) => (meetingId, attendeeId, accept) =>
+    wrote(
+      changed,
+      http.request<Meeting>(
+        "POST",
+        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}/proposal`,
+        { accept },
+      ),
+    ),
+  // The server fixes a request's length and place (MEETING_REQUEST_DEFAULTS), so they are not sent.
+  requestMeeting: (http, _demo, changed) => (input) =>
+    wrote(
+      changed,
+      http.request<Meeting>("POST", "/meeting-requests", {
+        withUserId: input.withUserId,
+        title: input.title,
+        start: input.start,
+        note: input.note,
+        private: input.private,
+      }),
+    ),
+  meetingCalendarFile: (http) => (id) =>
+    http.request<{ fileName: string; text: string }>("GET", `/meetings/${encodeURIComponent(id)}/calendar.ics`),
+  rescheduleMeeting: (http, _demo, changed) => (move) =>
+    wrote(
+      changed,
+      http.request<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>(
+        "POST",
+        `/meetings/${encodeURIComponent(move.meetingId)}/reschedule`,
+        {
+          meetingId: move.meetingId,
+          planned: move.planned,
+          start: move.start,
+          durationMin: move.durationMin,
+          scope: move.scope,
+        },
+      ),
+    ),
+  // Only the SEQUENCE the screen saw: the API rebuilds the meeting from its own record (critic B3).
+  undoReschedule: (http, _demo, changed) => (undo) =>
+    wrote(
+      changed,
+      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(undo.previous.id)}/reschedule/undo`, {
+        sequence: undo.previous.sequence,
+      }),
+    ),
 };
+
+/**
+ * A new meeting as the API takes it (ADR 0051 "Part 3"): only what the server reads. A picked guest
+ * travels as its kind and id and a new guest as an address and a name, so no name, address, answer
+ * or "save under customer" a screen holds is ever sent; the server resolves who each guest is and
+ * adds the organiser itself.
+ */
+function meetingBody(input: MeetingInput) {
+  return {
+    title: input.title,
+    start: input.start,
+    durationMin: input.durationMin,
+    location: input.location,
+    notes: input.notes,
+    recurrence: input.recurrence,
+    reminderMin: input.reminderMin,
+    private: input.private,
+    hideGuestList: input.hideGuestList,
+    guests: input.guests.map(({ kind, id }) => ({ kind, id })),
+    newGuests: input.newGuests.map(({ email, name }) => ({ email, name })),
+  };
+}
+
+/** An edit as the API takes it (meetings.md rule 6): only the patch's six fields, and only those the screen set. */
+function patchBody(patch: MeetingPatch): MeetingPatch {
+  const body: MeetingPatch = {};
+  if (patch.title !== undefined) body.title = patch.title;
+  if (patch.notes !== undefined) body.notes = patch.notes;
+  if (patch.location !== undefined) body.location = patch.location;
+  if (patch.start !== undefined) body.start = patch.start;
+  if (patch.durationMin !== undefined) body.durationMin = patch.durationMin;
+  if (patch.reminderMin !== undefined) body.reminderMin = patch.reminderMin;
+  return body;
+}
+
+/** Statuses that mean the server answered and the screen may be stale (S2): a refusal reads the meeting again. */
+const ANSWERED_REFUSALS = new Set([400, 403, 404, 409]);
+
+/**
+ * A routed meetings write (ADR 0051 "Part 3"): the screens read again after it succeeds, and after
+ * the server refuses it, since a refusal often means the screen showed something stale. A request
+ * that never reached the server, a 401, a 429 or a server failure triggers no re-read.
+ */
+async function wrote<T>(changed: () => void, request: Promise<T>): Promise<T> {
+  try {
+    const saved = await request;
+    changed();
+    return saved;
+  } catch (failure) {
+    if (failure instanceof HttpApiError && ANSWERED_REFUSALS.has(failure.status)) changed();
+    throw failure;
+  }
+}
+
+/**
+ * An answer the person may not have: 403 (no key, or the module off) or 404 (a switched-off
+ * feature) is null, so the caller falls back. A network error or a server failure still throws.
+ */
+async function orNone<T>(request: Promise<T>): Promise<T | null> {
+  try {
+    return await request;
+  } catch (failure) {
+    if (failure instanceof HttpApiError && (failure.status === 403 || failure.status === 404)) return null;
+    throw failure;
+  }
+}
 
 /**
  * The portal as the API sends it: timesheet hours as decimal strings, and the record without the
