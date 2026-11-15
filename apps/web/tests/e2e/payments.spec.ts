@@ -105,9 +105,12 @@ test.describe("customer payments (spec Appendix A)", () => {
     await expect(table.locator("tbody tr").first()).toBeVisible();
     await page.getByLabel("Method").click();
     await page.getByRole("option", { name: "Check" }).click();
-    const methods = await table.locator("tbody tr td:nth-child(5)").allTextContents();
+    // The report is asked for again with the new filter (ADR 0055), so wait for its rows to arrive.
+    const cells = table.locator("tbody tr td:nth-child(5)");
+    await expect.poll(async () => [...new Set(await cells.allTextContents())]).toEqual(["Check"]);
+    await expect(table).not.toHaveAttribute("aria-busy", "true");
+    const methods = await cells.allTextContents();
     expect(methods.length).toBeGreaterThan(0);
-    expect(new Set(methods)).toEqual(new Set(["Check"]));
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export CSV" }).click();
     const csv = readFileSync(await (await download).path(), "utf8");

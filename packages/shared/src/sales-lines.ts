@@ -17,7 +17,9 @@ export type SalesLine = Pick<DocLine, "productId" | "quantity" | "unitPrice" | "
  * lines, so it counts as one line for its subtotal and cost. Without this, revenue and margin
  * would ignore the credit while profit by location, which reads the subtotal, subtracts it.
  */
-export function salesLines(invoice: Invoice): readonly SalesLine[] {
+export function salesLines(
+  invoice: Pick<Invoice, "subtotal" | "cost"> & { lines: readonly SalesLine[] },
+): readonly SalesLine[] {
   if (invoice.lines.length > 0 || dec(invoice.subtotal).isZero()) return invoice.lines;
   return [{ category: CREDIT_NOTE_CATEGORY, quantity: "1", unitPrice: invoice.subtotal, unitCost: invoice.cost }];
 }

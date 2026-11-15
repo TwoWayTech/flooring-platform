@@ -9,27 +9,31 @@ import {
   dec,
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
+  type BusinessFilters,
   type BusinessReport,
   type BusinessRow,
   type BusinessSection,
-  type Location,
+  type ReportOptions,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
-import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { Segmented } from "@workspace/ui/components/segmented";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
+import { cn } from "@workspace/ui/lib/utils";
 import { downloadText } from "@/components/data-table/csv";
-import { QueryFallback } from "@/components/query-fallback";
 import { ScrollRegion } from "@/components/scroll-region";
-import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
+import { CustomDates } from "./custom-dates";
+import { customPeriod, editCustomPeriod } from "./custom-period";
+import { shownAnswer, type KeyedAnswer } from "./report-answer";
+import { ReportFallback } from "./report-fallback";
 
 const ALL = "all";
 type Preset = "month" | "last_month" | "quarter" | "ytd" | "custom";
@@ -196,55 +200,71 @@ function toCsvText(report: BusinessReport): string {
   return lines.map((l) => l.map(quote).join(",")).join("\n");
 }
 
-/** The business report (spec F2): one report with sections, comparison, filters, drill-down and matching exports. */
-export function BusinessReportView({ locations }: { locations: readonly Location[] }) {
-  const can = useCan();
+/**
+ * The business report (spec F2): one report with sections, comparison, filters, drill-down and
+ * matching exports. It covers the whole company, so the server opens it only for data scope `all`
+ * (ADR 0055 S1). The location, salesperson and vendor choices come from `options`, so only ids the
+ * server knows are sent, and sections the person may not see are not in the answer at all (S7).
+ * While a new answer loads the last sections stay dimmed and the exports wait, so a CSV or PDF
+ * always matches the dates it prints. Custom dates the server would refuse (S8) are explained
+ * beside the inputs and never sent, so the last figures stay.
+ */
+export function BusinessReportView({ options, onRefresh }: { options: ReportOptions; onRefresh: () => void }) {
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
   const today = api.today();
   const [preset, setPreset] = useState<Preset>("last_month");
-  const [customFrom, setFrom] = useState(`${today.slice(0, 4)}-01-01`);
-  const [customTo, setTo] = useState(today);
+  const [custom, setCustom] = useState(() => customPeriod({ from: `${today.slice(0, 4)}-01-01`, to: today }));
   const [locationIds, setLocations] = useState<string[]>([]);
   const [productCategory, setCategory] = useState(ALL);
   const [expenseCategory, setExpenseCategory] = useState(ALL);
   const [salesRepId, setRep] = useState(ALL);
   const [supplierId, setSupplier] = useState(ALL);
   const [drill, setDrill] = useState<{ title: string; row: BusinessRow } | null>(null);
-  const range = preset === "custom" ? { from: customFrom, to: customTo } : rangeFor(preset, today);
-  const options = useApiQuery(async (client) => {
-    const [users, suppliers, invoices] = await Promise.all([
-      client.list("users"),
-      client.list("suppliers"),
-      client.list("invoices"),
-    ]);
-    const reps = new Set(invoices.map((i) => i.salesRepId));
-    return { reps: users.filter((u) => reps.has(u.id)), suppliers };
-  }, []);
-  const report = useApiQuery(
-    (client) =>
-      client.businessReport({
-        ...range,
-        locationIds,
-        productCategory: productCategory === ALL ? null : productCategory,
-        expenseCategory: expenseCategory === ALL ? null : expenseCategory,
-        salesRepId: salesRepId === ALL ? null : salesRepId,
-        supplierId: supplierId === ALL ? null : supplierId,
-      }),
-    [range.from, range.to, locationIds.join(), productCategory, expenseCategory, salesRepId, supplierId],
+  // Custom dates the API would refuse (ADR 0055 S8) are explained beside the inputs and never sent:
+  // the report stays on the last pair that worked, so a typo never wipes the figures.
+  const range = preset === "custom" ? custom.applied : rangeFor(preset, today);
+  // Only choices the server still lists are sent, so a stale pick reads as "all" instead of a refusal.
+  const listed = (id: string, choices: readonly { id: string }[]) => choices.some((c) => c.id === id);
+  const locations = locationIds.filter((id) => listed(id, options.locations));
+  const rep = listed(salesRepId, options.salespeople) ? salesRepId : null;
+  const vendor = listed(supplierId, options.vendors) ? supplierId : null;
+  const params: BusinessFilters = {
+    ...range,
+    locationIds: locations,
+    productCategory: productCategory === ALL ? null : productCategory,
+    expenseCategory: expenseCategory === ALL ? null : expenseCategory,
+    salesRepId: rep,
+    supplierId: vendor,
+  };
+  const request = JSON.stringify(params);
+  const query = useApiQuery(
+    async (client): Promise<KeyedAnswer<BusinessReport>> => ({
+      reportKey: "business",
+      request,
+      report: await client.businessReport(params),
+    }),
+    [request],
   );
+  // While a new answer loads the last sections stay, dimmed, and the exports wait (ADR 0055 "Also safer").
+  const { report, busy } = shownAnswer(query.data, "business", request);
   const filters = `${formatDate(range.from)} to ${formatDate(range.to)}, compared with the same length before`;
   const stem = `business-report-${today}`;
 
+  function exportCsv() {
+    if (!report || busy) return;
+    downloadText(`${stem}.csv`, toCsvText(report));
+  }
+
   async function exportPdf() {
-    if (!report.data) return;
+    if (!report || busy) return;
     const [{ pdf }, { BusinessReportPdf }] = await Promise.all([
       import("@react-pdf/renderer"),
       import("./business-report-pdf"),
     ]);
     saveBlob(
       await pdf(
-        <BusinessReportPdf report={report.data} company={company.name} filters={filters} settings={settings.numbers} />,
+        <BusinessReportPdf report={report} company={company.name} filters={filters} settings={settings.numbers} />,
       ).toBlob(),
       `${stem}.pdf`,
     );
@@ -256,18 +276,13 @@ export function BusinessReportView({ locations }: { locations: readonly Location
       <Panel
         title="Business report"
         actions={
-          can("reports.financial.export") ? (
+          options.exports.includes("business") ? (
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!report.data}
-                onClick={() => report.data && downloadText(`${stem}.csv`, toCsvText(report.data))}
-              >
+              <Button variant="outline" size="sm" disabled={!report || busy} onClick={exportCsv}>
                 <Download />
                 Export CSV
               </Button>
-              <Button variant="outline" size="sm" disabled={!report.data} onClick={() => void exportPdf()}>
+              <Button variant="outline" size="sm" disabled={!report || busy} onClick={() => void exportPdf()}>
                 <FileDown />
                 Export PDF
               </Button>
@@ -279,10 +294,7 @@ export function BusinessReportView({ locations }: { locations: readonly Location
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Pick label="Period" value={preset} onChange={setPreset} options={PRESETS} />
             {preset === "custom" ? (
-              <>
-                <Input type="date" aria-label="From" value={customFrom} onChange={(e) => setFrom(e.target.value)} />
-                <Input type="date" aria-label="To" value={customTo} onChange={(e) => setTo(e.target.value)} />
-              </>
+              <CustomDates period={custom} onChange={(change) => setCustom((c) => editCustomPeriod(c, change))} />
             ) : null}
             <Pick
               label="Product category"
@@ -301,27 +313,27 @@ export function BusinessReportView({ locations }: { locations: readonly Location
             />
             <Pick
               label="Salesperson"
-              value={salesRepId}
+              value={rep ?? ALL}
               onChange={setRep}
-              options={[[ALL, "All salespeople"], ...(options.data?.reps ?? []).map((u) => [u.id, u.name] as const)]}
+              options={[[ALL, "All salespeople"], ...options.salespeople.map((u) => [u.id, u.name] as const)]}
             />
             <Pick
               label="Vendor"
-              value={supplierId}
+              value={vendor ?? ALL}
               onChange={setSupplier}
-              options={[[ALL, "All vendors"], ...(options.data?.suppliers ?? []).map((s) => [s.id, s.name] as const)]}
+              options={[[ALL, "All vendors"], ...options.vendors.map((s) => [s.id, s.name] as const)]}
             />
           </div>
-          {locations.length > 0 ? (
+          {options.locations.length > 0 ? (
             <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
               <legend className="text-muted-foreground mb-1 text-xs">Locations (none ticked means all)</legend>
-              {locations.map((l) => (
+              {options.locations.map((l) => (
                 <label key={l.id} className="flex items-center gap-2">
                   <Checkbox
                     aria-label={l.name}
-                    checked={locationIds.includes(l.id)}
+                    checked={locations.includes(l.id)}
                     onCheckedChange={(on) =>
-                      setLocations(on ? [...locationIds, l.id] : locationIds.filter((x) => x !== l.id))
+                      setLocations(on ? [...locations, l.id] : locations.filter((x) => x !== l.id))
                     }
                   />
                   {l.name}
@@ -332,16 +344,23 @@ export function BusinessReportView({ locations }: { locations: readonly Location
           <p className="text-muted-foreground text-sm">{filters}.</p>
         </div>
       </Panel>
-      {report.status !== "ready" ? (
-        <QueryFallback query={report} className="h-96" label="Loading the business report" />
+      {report ? (
+        <div
+          role="group"
+          aria-label="Business report figures"
+          aria-busy={busy || undefined}
+          className={cn("flex min-w-0 flex-col gap-6", busy && "opacity-60")}
+        >
+          {report.sections.map((section) => (
+            <ReportSection
+              key={section.key}
+              section={section}
+              onOpen={(row) => setDrill({ title: section.title, row })}
+            />
+          ))}
+        </div>
       ) : (
-        report.data.sections.map((section) => (
-          <ReportSection
-            key={section.key}
-            section={section}
-            onOpen={(row) => setDrill({ title: section.title, row })}
-          />
-        ))
+        <ReportFallback query={query} className="h-96" label="Loading the business report" onRefresh={onRefresh} />
       )}
       <Sheet open={!!drill} onOpenChange={(o) => !o && setDrill(null)}>
         <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-md">
@@ -351,11 +370,17 @@ export function BusinessReportView({ locations }: { locations: readonly Location
                 <SheetTitle>{drill.row.label}</SheetTitle>
                 <SheetDescription>{drill.title}: the records behind this figure.</SheetDescription>
               </SheetHeader>
+              {drill.row.recordCount !== undefined ? (
+                <p className="text-muted-foreground px-4 text-sm">
+                  Showing the latest <Num kind="count" value={String(drill.row.records.length)} /> of{" "}
+                  <Num kind="count" value={String(drill.row.recordCount)} /> records.
+                </p>
+              ) : null}
               <ul className="divide-hairline flex flex-col divide-y px-4 pb-6 text-sm">
                 {drill.row.records.length === 0 ? (
                   <li className="text-muted-foreground py-2">This figure is worked out from other lines.</li>
                 ) : null}
-                {drill.row.records.slice(0, 200).map((r, i) => (
+                {drill.row.records.map((r, i) => (
                   <li key={`${r.label}-${i}`} className="flex justify-between gap-3 py-2">
                     <span>
                       {r.href ? (

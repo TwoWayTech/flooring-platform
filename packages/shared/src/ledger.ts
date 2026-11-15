@@ -36,13 +36,16 @@ export interface InvoiceLedger {
   locked: boolean;
 }
 
+/** The invoice fields a ledger reads, so callers may pass narrow rows (reports, ADR 0055). */
+export type LedgerInvoice = Pick<Invoice, "id" | "total" | "voidedAt" | "isReturn" | "dueAt" | "depositPct">;
+
 /** Payments, credits and write-offs that touch invoices, grouped once for many ledgers. */
 export interface LedgerDocs {
-  payments: readonly Payment[];
-  adjustments: readonly InvoiceAdjustment[];
+  payments: readonly Pick<Payment, "invoiceId" | "status" | "amount" | "date" | "kind">[];
+  adjustments: readonly Pick<InvoiceAdjustment, "invoiceId" | "kind" | "amount" | "at">[];
 }
 
-const confirmed = (p: Payment) => p.status === "confirmed";
+const confirmed = (p: Pick<Payment, "status">) => p.status === "confirmed";
 
 /**
  * The ledger of one invoice (spec Appendix A): balance = total − confirmed payments − applied
@@ -50,7 +53,7 @@ const confirmed = (p: Payment) => p.status === "confirmed";
  * notes owe nothing. `depositPct` comes from the quote the invoice was made from.
  */
 export function invoiceLedger(
-  invoice: Invoice,
+  invoice: LedgerInvoice,
   docs: LedgerDocs,
   today: string,
   depositPct: string = invoice.depositPct ?? "0",
@@ -102,7 +105,12 @@ function latest(dates: readonly (string | null)[]): string | null {
   );
 }
 
-function stateOf(invoice: Invoice, balance: Dec, settled: Dec, overpaid: Dec): InvoiceState {
+function stateOf(
+  invoice: Pick<Invoice, "voidedAt" | "isReturn">,
+  balance: Dec,
+  settled: Dec,
+  overpaid: Dec,
+): InvoiceState {
   if (invoice.voidedAt) return "void";
   if (invoice.isReturn) return "return";
   if (overpaid.gt(0)) return "overpaid";
@@ -111,7 +119,11 @@ function stateOf(invoice: Invoice, balance: Dec, settled: Dec, overpaid: Dec): I
 }
 
 /** Ledgers of many invoices at once, keyed by invoice id, grouping payments and adjustments a single time. */
-export function ledgerIndex(invoices: readonly Invoice[], docs: LedgerDocs, today: string): Map<string, InvoiceLedger> {
+export function ledgerIndex(
+  invoices: readonly LedgerInvoice[],
+  docs: LedgerDocs,
+  today: string,
+): Map<string, InvoiceLedger> {
   const payments = groupBy(docs.payments, (p) => p.invoiceId);
   const adjustments = groupBy(docs.adjustments, (a) => a.invoiceId);
   return new Map(

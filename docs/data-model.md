@@ -273,6 +273,7 @@ Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to 
 | Commission lines | `commissionLines` | `packages/shared/src/hr/commission-plans.ts` |
 | Journal lines | `expenseJournal`, `billPaymentJournal` | `packages/shared/src/journal.ts` |
 | Business report | `businessReport` | `packages/shared/src/business-report.ts` |
+| Profit and loss, Sales by category, Payments received | `pnlReport`, `salesByCategoryReport`, `paymentsReport` | `packages/shared/src/reports/hub-reports.ts` |
 | Next document number | `nextNumber` (highest existing number plus one) | `packages/shared/src/operations/quotes.ts` |
 
 ## Changes this demo introduced

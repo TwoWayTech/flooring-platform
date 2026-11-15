@@ -176,7 +176,10 @@ export function receiptStock(
 }
 
 /** Value of the good units on some receipts, at the PO's costs: what may be billed for them. */
-export function receivedValue(po: PurchaseOrder, receipts: readonly GoodsReceipt[]): Dec {
+export function receivedValue(
+  po: { lines: readonly Pick<PoLine, "id" | "unitCost">[] },
+  receipts: readonly { lines: readonly Pick<ReceiptLine, "poLineId" | "received">[] }[],
+): Dec {
   return sum(
     receipts.flatMap((r) =>
       r.lines.map((l) => roundMoney(dec(l.received).times(po.lines.find((x) => x.id === l.poLineId)?.unitCost ?? 0))),
@@ -216,8 +219,16 @@ export interface BillLedger {
   daysOverdue: number;
 }
 
+/** The bill fields a bill's ledger reads, so callers may pass narrow rows (reports, ADR 0055). */
+export type LedgerBill = Pick<Bill, "id" | "total" | "dueAt">;
+
+/** The supplier payment fields a bill's ledger reads: its status and how it was split over bills. */
+export type LedgerSupplierPayment = Pick<SupplierPayment, "status"> & {
+  allocations: readonly Pick<SupplierPayment["allocations"][number], "billId" | "amount">[];
+};
+
 /** A bill's ledger: total − confirmed allocations, never below zero; overdue past its due date. */
-export function billLedger(bill: Bill, payments: readonly SupplierPayment[], today: string): BillLedger {
+export function billLedger(bill: LedgerBill, payments: readonly LedgerSupplierPayment[], today: string): BillLedger {
   const paid = sum(
     payments
       .filter((p) => p.status === "confirmed")
@@ -373,8 +384,8 @@ export function payablesSummary(bills: readonly Bill[], ledgers: ReadonlyMap<str
 
 /** Every bill's ledger at once, keyed by bill id. */
 export function billLedgerIndex(
-  bills: readonly Bill[],
-  payments: readonly SupplierPayment[],
+  bills: readonly LedgerBill[],
+  payments: readonly LedgerSupplierPayment[],
   today: string,
 ): Map<string, BillLedger> {
   return new Map(bills.map((b) => [b.id, billLedger(b, payments, today)]));

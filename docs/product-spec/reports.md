@@ -497,8 +497,8 @@ Report PDFs print with `apps/web/src/features/reports/report-pdf.tsx`, landscape
 
 ## Edge cases and known limits
 
-- **Data scope differs between reports.** The Business report uses `db.list`, so it shows the whole company even to a Manager with branch scope. The other three use `client.list`, which applies data scope to invoices, payments and customers. A Sales user sees Sales by category for their own invoices only.
-- **Profit and loss mixes scopes.** For a branch-scoped Manager, invoices are the branch's and expenses are the company's. The warehouse filter also leaves expenses alone.
+- **Data scope differs between reports.** The Business report uses `db.list`, so it shows the whole company even to a Manager with branch scope. The other three use `client.list`, which applies data scope to invoices, payments and customers. A Sales user sees Sales by category for their own invoices only. (Closed on the API, ADR 0055: the Business report and P&L need data scope `all`; the other two apply data scope on the server.)
+- **Profit and loss mixes scopes.** For a branch-scoped Manager, invoices are the branch's and expenses are the company's. The warehouse filter also leaves expenses alone. (Closed on the API, ADR 0055: Profit and loss needs data scope `all`, so its invoices and expenses are both the company's. The warehouse filter still leaves expenses alone.)
 - **Sections hidden from a person still count.** The Accountant has no People costs section, but Operating expenses and Net profit include those costs.
 - **Product category filter reaches only the top of the Summary.** Profit by location and the Revenue sections ignore it, so their totals stop matching Summary revenue when it is on. Drill lists keep the whole invoice's amount.
 - **Filters do not reach every section.** Location, Vendor and Expense category filters skip some sections (rule 22), and the report prints no note saying which. ADR 0023 asked for one.
@@ -514,6 +514,72 @@ Report PDFs print with `apps/web/src/features/reports/report-pdf.tsx`, landscape
 - **"Received but not billed" prints a literal dollar sign** and the raw value (`purchasesSection`). It does not follow Settings for number format.
 - **Sales by category and the Business report label services differently.** Rule 15 versus rule 24.
 - **Exports are checked on the screen only.** The data is already in the browser.
-- **Drill lists stop at 200 records** with no message.
+- **Drill lists stop at 200 records** with no message. (Closed on the API, ADR 0055: the server caps them at 200 per row, newest first, and the sheet says "Showing the latest 200 of N records.")
 - **Could not determine from the code.** How a Business report PDF section taller than one page prints. Each section is `wrap={false}`, and no PDF was rendered for this document.
 - **Differences from ADR 0023.** The "Profit before shared costs" column and the note on sections a filter does not reach were not built.
+
+## Real build (ADR 0055)
+
+The four reports are on the API, built overnight on `feat/reports-api` (PR #39) under the owner's rule: this spec is the approved behaviour, and the build differs from it only in the safer direction. Each difference is listed below, in ADR 0055 and in the 2026-11-15 reports row of docs/blueprint-delta.md.
+
+- **Routes:** `GET /reports/options`, `/reports/business`, `/reports/pnl`, `/reports/sales-by-category` and `/reports/payments`; see docs/api-contract.md, "Reports (real build, ADR 0055)". In api mode the page reads only through `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport` and `paymentsReport`.
+- **One calculation:** the API and the demo run the same shared functions. `pnlReport`, `salesByCategoryReport` and `paymentsReport` moved from `report-model.ts` to `packages/shared/src/reports/hub-reports.ts`, and the visibility, access, day, range and drill-cap rules live beside them in `packages/shared/src/reports/`.
+- **The demo** follows the same rules, messages and scope since this build (S16). The text above describes the demo as written on 2026-11-10; where this section differs, this section is what both modes do.
+
+### Who sees what, as built
+
+| Role (scope) | Business report | Profit and loss | Sales by category | Payments received | Export buttons |
+| --- | --- | --- | --- | --- | --- |
+| Owner (all) | All 12 sections | All columns | Company, with Cost and Margin | Company | All four |
+| Accountant (all) | Every section but People costs; Operating expenses and net still include people costs | All columns | Company, with Cost and Margin | Company | All four |
+| Manager (branch) | Refused, hidden | Refused, hidden | Branch or own invoices, with Cost and Margin | Payments on branch or own invoices | Sales by category only |
+| Sales (own) | No key | No key | Own invoices, no Cost or Margin | No key | None |
+
+Purchasing, Warehouse, HR manager, Installer and Employee open no report. With HR switched off nobody sees people costs; with Contracts switched off while contract invoices exist nobody sees cost-of-goods figures (below).
+
+### Safer than this spec
+1. **S1. The Business report and Profit and loss need data scope `all`.** Anyone else is refused with "This report covers the whole company.", even with `reports.financial.view`, and the page doesn't list them. A branch's share of a company-wide cost would give away the other branches' revenue, most sections have no branch version, and a branch manager could work out one person's pay at a small showroom. (Spec: "Open the Business report" and "Open Profit and loss" for the Manager.)
+2. **S2. Sales by category and Payments received apply data scope on the server,** with the sales routes' rules: own invoices by rep, branch invoices by the invoice's branch, or all. Payments received names only the customers the person may see; any other reads with an empty name.
+3. **S3. Pay sight is `hr.payroll.view`,** and People costs also need `hr.employee.view_sensitive`. Without pay sight, payroll expenses and pay periods are left out of every figure, and the report says so: "Operating expenses, excluding people costs", "Net profit, before people costs and income tax", the Summary note "People costs are left out, because your access doesn't include pay periods.", Profit by location's note "Direct expenses leave out people costs.", and the P&L headers "Expenses, excluding payroll" and "Net income, before payroll". An Owner of a company with HR off has no pay sight.
+4. **S4. Cost-of-goods figures also need `contracts.contract.view_sensitive` while the company has a live contract invoice,** because that invoice's cost is the contract's estimated cost share. With Contracts off, nobody sees them while contract invoices exist. No default role changes while Contracts is on.
+5. **S5. Purchases by supplier needs `inventory.product.view_sensitive`,** like the order unit costs it adds up.
+6. **S6. Sales by category's Cost and Margin need the full margin rule** (S4 and S17 included), not only `inventory.product.view_sensitive`, and are left out of the totals too.
+7. **S7. Hidden figures are never worked out,** so they are missing from rows, values, totals and drill lists, not blanked. The revenue sections no longer carry a margin value behind a hidden column. The expense sections' money column id is `amount` (its header is still "Cost").
+8. **S8. Bounds.** A report day is a real `yyyy-MM-dd` from 1900 to 2999. A Business report period is at most 366 days, counted inclusively ("Choose a period of 366 days or less."). The other three take only their four presets. Drill lists hold the latest 200 records per row, and the sheet says "Showing the latest 200 of N records.".
+9. **S9. One snapshot:** every figure of one report comes from the same moment, and the read can't write.
+10. **S10. Strict filters:** anything the report doesn't take is refused ("This report can't be filtered that way."); every location must be live and a hub warehouse a live warehouse; every product category, expense category and payment method must come from its list. A salesperson or vendor id only has to be a UUID: one that names nobody matches no records, so its sections come back empty rather than refused (the screen sends only ids the options list).
+11. **S11. No caching:** answers are marked `private, no-store`.
+12. **S12. Write-offs and goods receipts count on the company's day** in its time zone, not the UTC day. A write-off at 20:30 in Denver on 31 October counts in October.
+13. **S13. Flooring Suite only, with the `core` module.**
+14. **S14. The four reports that are off have no route,** and the page no longer lists them; their builders stay as rule 25 says. Bringing one back needs an API route first.
+15. **S15. No export route.** CSV and PDF are still built in the browser from the same answer, and the buttons follow the server's list. A future server export must check the export key on the server.
+16. **S16. The demo follows S1 to S18.** A View as Manager no longer sees the Business report or P&L.
+17. **S17. Every cost-of-goods figure also needs `inventory.product.view_sensitive`** (blueprint p27: "Reports showing cost or margin require the matching permission").
+18. **S18. Profit and loss shows Cost of goods, Gross margin, Margin and Net income only with the margin rule;** otherwise Month, Revenue and Expenses.
+
+Also settled while building: the screen never sends a pick the server no longer lists (it reads as all); while any report reloads (the Business report and the three hub reports alike) its last figures stay dimmed and marked busy and the export buttons wait, so an export always matches its filters; a refusal for a whole-company report shows as a notice with "Show my reports"; the Business report's Custom dates are checked on the screen by the same rule as S8, so a pair the API would refuse is explained beside the dates ("Choose a period of 366 days or less.", "The start date must be on or before the end date.", "Enter a date.", "Enter a real date.") and never sent, and the last figures stay; a refused filter that reaches the server shows as a notice in its words, with no Try again.
+
+### Known limits this build closes
+- **Data scope differs between reports:** closed (S1, S2).
+- **Profit and loss mixes scopes:** closed (S1). The warehouse filter still leaves expenses alone.
+- **Drill lists stop at 200 records with no message:** closed (S8).
+- **Write-offs and receipts on UTC days** (the PR #18 follow-up in docs/STATUS.md): closed for reports (S12). Payment `recordedAt` and `voidedAt` aren't read by reports; that follow-up stays open for commissions.
+
+### Known limits kept
+- Sections hidden from a person still count (for pay-sight holders: the Accountant's Operating expenses include people costs).
+- The product category filter reaches only the top of the Summary; filters skip some sections without a note; a filtered Business report doesn't say so on its exports; the Sales tax payment expense category empties the Expenses sections.
+- Costs that never reach net profit, contract retainage, pay periods landing in their end month, a short range picking the other payroll source, balances using today's void state, `earliest` including void invoices, "Still owed" going negative, the literal "$" in "Received but not billed", and the two service labels.
+- Exports are checked on the screen only: the data is already in the browser (S15).
+- Reports come from the documents, not the ledger.
+- The "Profit before shared costs" column and the filter note asked for by ADR 0023 are still not built.
+
+### Waiting for the owner
+1. A branch Business report and P&L for Managers (S1): it needs its own spec.
+2. Pay sight (S3): right that with HR off nobody sees people costs? And should the Summary without pay sight stop at gross profit instead of showing labelled figures without people costs?
+3. Contracts (S4): accept that with Contracts off nobody, the Owner included, sees cost-of-goods figures while contract invoices exist?
+4. Confirm the product-cost key for cost figures (S17) and the P&L's margin columns (S18).
+5. The 366-day cap (S8), or two years for year-over-year?
+6. Screen-checked exports (S15) until Excel and emailed reports.
+7. Should `GET /ledger/trial-balance` hide the Cost of Goods Sold and Wages accounts the same way (P13)?
+8. Migrations: freezing shared-cost shares at period close (`expense_allocations`), and date indexes on invoices, expenses and payments.
+9. Keep or delete the removed reports' web builders (S14).

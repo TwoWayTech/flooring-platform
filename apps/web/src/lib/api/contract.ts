@@ -4,6 +4,11 @@ import type {
   Roll,
   StockMovement,
   BusinessReport,
+  PaymentsReportQuery,
+  PnlQuery,
+  Report,
+  ReportOptions,
+  SalesByCategoryQuery,
   Expense,
   RecurringExpense,
   Attendee,
@@ -878,8 +883,18 @@ export interface ApiClient {
   voidExpense(id: string, reason: string): Promise<Expense>;
   /** Adds or edits a recurring expense. */
   saveRecurringExpense(input: RecurringExpenseInput): Promise<RecurringExpense>;
-  /** The business report (spec F2), computed from the company's whole record. */
+  /** The business report (spec F2) for the whole company; data scope `all` only (ADR 0055). */
   businessReport(filters: BusinessFilters): Promise<BusinessReport>;
+  // Reports (ADR 0055): the server decides which reports a person may open, applies data scope and strips
+  // what the role may not see; CSV and PDF are built from these answers.
+  /** Which reports this person may open and export, and the pickers' choices (GET /reports/options). */
+  reportOptions(): Promise<ReportOptions>;
+  /** Profit and loss by month (rule 24), for data scope `all` only. */
+  pnlReport(query: PnlQuery): Promise<Report>;
+  /** Sales by category within the person's data scope (rule 24). */
+  salesByCategoryReport(query: SalesByCategoryQuery): Promise<Report>;
+  /** Confirmed payments by payment date within the person's data scope (rule 24). */
+  paymentsReport(query: PaymentsReportQuery): Promise<Report>;
   /** The Meetings page's data (`MeetingsData`). Needs meetings.meeting.view. */
   meetingsData(): Promise<MeetingsData>;
   /** My meetings (GET /me/meetings): the reader's coming meetings with their next occurrence, and whom they may ask to meet. Needs hr.portal.view. */

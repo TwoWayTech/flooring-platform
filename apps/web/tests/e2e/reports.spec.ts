@@ -31,4 +31,20 @@ test.describe("reports hub", () => {
     await expect(page.getByRole("columnheader", { name: "Revenue" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Cost" })).toHaveCount(0);
   });
+
+  test("View as Manager sees Sales by category and Payments received, not the Business report or P&L", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports");
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Manager");
+    await page.getByRole("option", { name: "View as Manager" }).click();
+    const nav = page.getByRole("navigation", { name: "Reports" }).getByRole("button");
+    await expect(nav).toHaveText(["Sales by category", "Payments received"]);
+    await page.goto("/reports?report=pnl");
+    await expect(
+      page.getByRole("navigation", { name: "Reports" }).getByRole("button", { name: "Sales by category" }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("columnheader", { name: "Net income" })).toHaveCount(0);
+  });
 });
