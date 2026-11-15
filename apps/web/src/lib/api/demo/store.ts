@@ -121,6 +121,15 @@ import { demoAuditAsSeen } from "./audit-view";
 import { demoAuditPage, type DemoPlatformAuditRow } from "./platform-audit";
 import { demoAccessDiff, demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
 import { demoGrants, demoGrantViews, demoRequestRefusal, type DemoSupportGrant } from "./platform-support";
+// Platform admin part 4 (ADR 0054) keeps its own imports, so the lists above stay as they are.
+import {
+  BILLING_OWNER_ONLY_MESSAGE,
+  SUPPORT_CLOSED_MESSAGES,
+  SUPPORT_OWNER_ONLY_MESSAGE,
+  type SupportGrantStep,
+} from "@workspace/shared";
+import { demoBilling, demoStanding } from "./company-standing";
+import { demoGrantDecision, demoOwnerGrantViews } from "./platform-support";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -415,8 +424,9 @@ export class DemoStore implements ApiClient {
    * A support-access request in the demo (docs/specs/platform-admin.md, part 3, "Demo mode"): the
    * shared field check, then the company must exist, then the shared limits, in the API's order
    * ("Refusal order": the body's 400 before the 404, 409 and 429). The grant and its
-   * `support.requested` row are kept in this browser. No step-up, like the demo's access save, and
-   * no Owner screen approves it, so it stays pending until it expires.
+   * `support.requested` row are kept in this browser. No step-up, like the demo's access save. The
+   * company's Owner approves or revokes it in Settings → Users (part 4); otherwise it stays pending
+   * until it expires.
    */
   async requestSupportAccess(input: SupportRequestInput) {
     const problem = supportRequestInputProblem(input);
@@ -450,6 +460,73 @@ export class DemoStore implements ApiClient {
     });
     this.emit();
     return { id: grant.id };
+  }
+
+  // Platform admin part 4: company standing, billing and support access (docs/specs/platform-admin.md,
+  // part 4, "Demo mode"). The same Owner rule and messages as the API; the demo has no life cycle.
+  async getCompanyStanding() {
+    return demoStanding();
+  }
+
+  /** The Owner's billing: the switch first, then the Owner, as on the API (spec part 4, "GET /billing"). */
+  async getCompanyBilling() {
+    if (!featureOn("settings.billing")) throw new DemoRuleError("This feature is switched off.");
+    const db = this.open();
+    if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(BILLING_OWNER_ONLY_MESSAGE);
+    const company = await this.platformCompany(db.companyId);
+    if (!company) throw new DemoRuleError("That company does not exist.");
+    return demoBilling(company, this.todayIso);
+  }
+
+  /** The open company's support requests for its Owner (spec part 4, "GET /support-grants"). */
+  async listSupportGrants() {
+    const db = await this.supportOwner();
+    return demoOwnerGrantViews(this.storedList(PLATFORM_SUPPORT_KEY), db.companyId, new Date());
+  }
+
+  async approveSupportGrant(grantId: string) {
+    await this.decideSupportGrant(grantId, "approve");
+  }
+
+  async revokeSupportGrant(grantId: string) {
+    await this.decideSupportGrant(grantId, "revoke");
+  }
+
+  /** The open company, once its viewer is checked to be its Owner, as the support routes check. */
+  private async supportOwner(): Promise<CompanyDb> {
+    const db = this.open();
+    if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(SUPPORT_OWNER_ONLY_MESSAGE);
+    return db;
+  }
+
+  /**
+   * The Owner approves or revokes a support request (spec part 4, "Demo mode"): the shared decision
+   * rule and closed-grant messages, then the API's two log rows, the company's security entry and the
+   * console's `support.approved` or `support.revoked` row. The step-up dialog still asks for six
+   * digits, which the demo doesn't check, like the console's save.
+   */
+  private async decideSupportGrant(grantId: string, step: SupportGrantStep) {
+    const db = await this.supportOwner();
+    const decision = demoGrantDecision(this.storedList(PLATFORM_SUPPORT_KEY), db.companyId, grantId, step, new Date());
+    if ("refusal" in decision) throw new DemoRuleError(SUPPORT_CLOSED_MESSAGES[step]);
+    writeStored(PLATFORM_SUPPORT_KEY, decision.grants);
+    this.appendAudit(db, {
+      category: "security",
+      action: step === "approve" ? "Approved support access" : "Revoked support access",
+      target: "Support access",
+      before: null,
+      after: null,
+    });
+    this.appendPlatformAudit({
+      tenantId: db.companyId,
+      companyName: decision.grant.companyName,
+      action: step === "approve" ? "support.approved" : "support.revoked",
+      targetType: "support_access_grant",
+      targetId: decision.grant.id,
+      before: null,
+      after: null,
+    });
+    this.emit();
   }
 
   async getPlatformDirectory(companyId: string) {

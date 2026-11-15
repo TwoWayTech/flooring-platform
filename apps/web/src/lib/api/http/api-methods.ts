@@ -62,6 +62,16 @@ import type {
   TimesheetUploadResult,
 } from "../contract";
 import type { HttpRoutes } from "./router";
+// Platform admin part 4 (ADR 0054) keeps its own imports, so the lists above stay as they are.
+import {
+  companyStandingFromWire,
+  SUPPORT_CLOSED_MESSAGES,
+  type CompanyBilling,
+  type CompanySupportGrant,
+  type SupportGrantStep,
+} from "@workspace/shared";
+import { ApiError } from "../errors";
+import type { HttpTransport } from "./transport";
 
 /**
  * Collections the real API lists through `list`, with their endpoints (docs/api-contract.md).
@@ -161,6 +171,14 @@ export const API_METHODS: HttpRoutes = {
       : [],
   requestSupportAccess: (http) => (input) =>
     http.request<{ id: string }>("POST", "/platform/support-grants", supportRequestBody(input)),
+  // Platform admin part 4 (docs/specs/platform-admin.md, "ApiClient (part 4)"). The company is the session's;
+  // nothing names it. A grant id that is not a UUID names no grant, so it is never sent.
+  getCompanyStanding: (http) => async () =>
+    companyStandingFromWire(await http.request<unknown>("GET", "/company/standing")),
+  getCompanyBilling: (http) => () => http.request<CompanyBilling>("GET", "/billing"),
+  listSupportGrants: (http) => () => http.request<CompanySupportGrant[]>("GET", "/support-grants"),
+  approveSupportGrant: (http) => (grantId) => supportGrantDecision(http, grantId, "approve"),
+  revokeSupportGrant: (http) => (grantId) => supportGrantDecision(http, grantId, "revoke"),
   inventoryData: (http) => async () => {
     const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
       seen(http.request<Product[]>("GET", "/products")),
@@ -721,4 +739,14 @@ async function encodeFiles(files: readonly File[]): Promise<{ name: string; data
 /** An id the API made (a UUID); a draft from the screen or a demo record has another kind of id. */
 function isSaved(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
+ * The Owner's decision on a support grant (spec part 4, "ApiClient (part 4)"). An id that isn't a
+ * UUID names no grant on the API, so nothing is sent and the call fails with the API's own words
+ * for a closed grant.
+ */
+async function supportGrantDecision(http: HttpTransport, grantId: string, step: SupportGrantStep): Promise<void> {
+  if (!isSaved(grantId)) throw new ApiError(SUPPORT_CLOSED_MESSAGES[step]);
+  await http.request<void>("POST", `/support-grants/${encodeURIComponent(grantId)}/${step}`);
 }

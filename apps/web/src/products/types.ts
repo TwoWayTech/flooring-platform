@@ -14,6 +14,8 @@ export interface MenuItem {
   /** Settings pages only: the group on the settings home and one sentence saying what it controls. */
   group?: SettingsGroup;
   description?: string;
+  /** Only the company's Owner sees the item and opens the page; `anyOf` is then empty (ADR 0054). */
+  ownerOnly?: boolean;
 }
 
 /** What a product host shows: its name, menus and the branding used before a company is picked. */

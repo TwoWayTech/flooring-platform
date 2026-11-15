@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Receipt,
   Building2,
+  CreditCard,
   Database,
   FileUp,
   FileText,
@@ -48,6 +49,18 @@ export const SETTINGS_MENU: MenuItem[] = [
     features: ["settings.company"],
     group: "company",
     description: "Legal name, EIN, contact details and the address printed on documents.",
+  },
+  {
+    // The Owner's read-only billing (docs/specs/platform-admin.md, part 4; ADR 0054): no permission
+    // key opens it, so a role can never be given it.
+    label: "Billing",
+    href: "/settings/billing",
+    icon: CreditCard,
+    anyOf: [],
+    ownerOnly: true,
+    features: ["settings.billing"],
+    group: "company",
+    description: "Your plan, its current period and its limits. Read only, for the Owner.",
   },
   {
     label: "Branding",
