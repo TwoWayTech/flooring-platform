@@ -147,7 +147,7 @@ A save is one control transaction, which locks the company row first (`SELECT â€
   - A fresh trial's plan gives every module.
   - Hidden modules and modules outside the products keep their stored rows.
 - **Ceiling** (blueprint role rule 3). For each key of the offered, visible modules, `allowed` is whether the list holds it. A row is written only when it changes, and a missing row counts as not allowed. Keys of hidden modules keep their stored rows. Roles keep their ticks: an unticked key is inactive, and ticking it again restores it.
-- **Limits.** They are written to the override columns of every subscription row that is not deleted, cancelled ones included, because the limit is the largest across those rows (`plan-limits.ts`).
+- **Limits.** They are written to the override columns of every subscription row that is not deleted, cancelled ones included, because the limit is the largest across those rows. The save and the limit reader take those rows from one query, `PlanLimits.rowsOf` in `plan-limits.ts`.
   - A row whose plan already gives that number gets null, so an unchanged save pins nothing.
   - No subscription row is ever created. Any row, even a deleted one, ends a fresh trial for good (ADR 0033).
 - **Effect at once.** Guards read modules, the ceiling and limits on every request, with no cache.
@@ -291,7 +291,7 @@ As built:
 
     A company user who opens /admin is sent to /. The Data import and Connect a database pages are not found.
 
-    As built, `apps/web/tests/e2e-api/platform-admin.spec.ts` covers sign-in and enrolment, Summit in the list, unticking `retail.sample.view`, a wrong step-up code, the save, the toast and the reload. The key is put back through the database, not the UI (review A6). The gate's answers, a company user sent to / among them, have unit tests (`tests/unit/platform-console.test.ts`); the not-found data pages have no automated test yet.
+    As built, `apps/web/tests/e2e-api/platform-admin.spec.ts` covers sign-in and enrolment, Summit in the list, unticking `retail.sample.view`, a wrong step-up code, the save, the toast and the reload. It then opens the Data import and Connect a database pages, which answer 404 with the not-found page. A second test signs the seeded manager in and checks that /admin redirects to /. The key is put back through the database, not the UI (review A6). The gate's answers also have unit tests (`tests/unit/platform-console.test.ts`).
 18. The demo-mode admin and import Playwright specs keep passing; CI's `e2e` check runs them. The import spec was not edited. The admin spec gained one assertion, that the console's "since" date reads "MMM d, yyyy" (review round 1), and was otherwise unchanged.
 
 ## Parts 2 to 4 (outline, not built here)

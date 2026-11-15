@@ -62,7 +62,7 @@ This is the plan re-checked against the review and the code on `253058a`. The dr
 
 ### 2. API refactors in core/access (no behaviour change; call these out for the security reviewer)
 - **`AccessService`:** new public `companyModules(companyId, status, products)` and `companyCeiling(companyId)`. The private `modulesOf` and `ceilingOf` delegate to them, so the console shows exactly what the guards enforce.
-- **`core/access/plan-limits.ts`:** a `PlanLimits` provider, registered and exported in `AccessModule`. Its `limitsOf(companyId)` returns `{ userLimit, branchLimit }`.
+- **`core/access/plan-limits.ts`:** a `PlanLimits` provider, registered and exported in `AccessModule`. Its `limitsOf(companyId)` returns `{ userLimit, branchLimit }`. As built (review round 3), its query is `rowsOf(companyId)`, which the console's save also uses, so the rows written and the rows read come from one query.
   - The query and the "largest limit" rule are moved unchanged from `UsersService.userLimit`, which now calls it.
   - The branch limit uses the same rule over `branch_limit_override ?? plan_limits.max_branches`.
 
@@ -280,6 +280,8 @@ Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #
 | this commit | Docs | ADR 0052, the delta row, api-contract, ADR 0030 and 0034 notes, the product spec's "Real build (ADR 0052)", the users spec's "Support access", data-model, the `admin.access` note, the spec's as-built notes |
 | review round 1 | Refactor | No duplicated helpers (no behaviour change): `inModuleOrder` exported from `packages/shared/src/products.ts` and used by the shared diff, `offeredModules` and the companies service; `isAccessLimit` and `ACCESS_LIMIT_MESSAGE` exported from `access-patch.ts` and used by the console's `limitProblem`; the company facts and the data import pages use `useFormatDate` instead of their own "MMM d, yyyy" copies |
 | review round 2 | Docs | The spec's acceptance criterion 18 and "No step-up in the demo", and ADR 0052, now say the demo admin spec gained one date-format assertion (the import spec was not edited); ADR 0052 gives 48 shared cases, not 46 |
+| `07887a9` (review round 3) | Refactor, API tests | `PlanLimits.rowsOf` is the one query of subscription limit rows: `limitsOf` reduces it and `CompanyAccessService` writes to it, replacing its own copy (no behaviour change); `platform.int.test.ts` sends a foreign module and a foreign key to an HR-only company and an Installation key to Summit (acceptance criterion 8 at the API), each 400 with the spec's message and no audit row |
+| review round 3 | e2e, Docs | `platform-admin.spec.ts` checks the api-mode import and database pages answer 404 with the not-found page, and that the seeded manager is redirected from /admin to / (criterion 17); ADR 0052, the delta row and the spec's as-built notes updated |
 
 ## Decisions taken during the build (all recorded in ADR 0052 and the delta row)
 - **Shared:** `accessPatchProblem` takes raw strings, so an unknown name gets the spec's own message; an unknown module name reads "The {name} module isn't offered to this company."; `moduleOverridesFor` takes the stored override rows and returns only real writes; `userLimitOverride` and `branchLimitOverride` are not sensitive fields (seat and branch counts).
@@ -310,12 +312,12 @@ Part 1 is built, tested and documented on `feat/platform-access-api` (draft PR #
 - Docs stage: `vitest run test/features.test.ts` in packages/shared (the register and `features.ts` in sync), 7 passed; `prettier --check` on the changed docs.
 - Review round 1 (duplicated helpers): shared `platform-access.test.ts` 48 passed and the shared suite 47 files, 516 tests; web `platform-console.test.ts` 17 passed and the web unit suite 5 files, 33 tests; api `platform.int.test.ts` 17 passed and `platform-admin-guard.test.ts` 6 passed; `pnpm -s typecheck` 6 of 6; `pnpm -s lint` 6 of 6 and Prettier clean; a demo-mode web build, then Playwright `admin.spec.ts` and `import.spec.ts` on the flooring project, 7 passed (the admin test now checks the "since" date reads "MMM d, yyyy").
 - Review round 2 (docs only): shared `vitest run test/platform-access.test.ts` 48 passed; `prettier --check` on the three changed docs, clean. No code changed, so typecheck and lint were not rerun.
+- Review round 3: api integration `platform.int.test.ts` and `users.int.test.ts`, 35 passed (18 and 17); `pnpm -s typecheck` 6 of 6 (after typing the test's product key); `pnpm -s lint` 6 of 6 and Prettier clean; the api build and an api-mode web build, then Playwright `login.spec.ts`, `users.spec.ts` and `platform-admin.spec.ts`, 11 passed, 0 failed, in 16.1 s. Ports 3000 and 4000 were free afterwards.
 
 ## Left
 - **Rebase on main.** Meetings PR #33 merged as `1de1e0c` while this branch was built. It changes `apps/api/src/core/access/access.service.ts` (the same file as the refactor here, so expect a conflict), `apps/api/src/app.module.ts`, `docs/api-contract.md`, `docs/data-model.md`, docs/blueprint-delta.md (both add a row at the top: keep both, this one first) and the shared index. Rerun the api typecheck and the integration files after it.
 - **Not run on this branch:** the full `pnpm lint`, `pnpm test`, `pnpm test:api` and the demo-mode Playwright suite (the admin, import, a11y and console specs). CI's `verify` and `e2e` run them once the PR is ready.
 - **Reviews:** `/review`, then a fresh security-reviewer (permissions, tenancy-adjacent and auth-adjacent work). Point it at the core/access refactor, the lint block, the guard order and the `:id` exception.
-- **Untested:** the not-found import and database pages in api mode, and a company user sent to / by the real layout (the gate's answers have unit tests).
 - **Follow-ups:** pass the admin's role to the access page so a support admin can't edit; the list's per-company queries; the audit IP behind the proxy (core/auth); an append-only trigger for `platform_audit_log` (a migration); the `users.int.test.ts` comment "until the admin host exists (P17)"; the shared comment in `access-patch.ts` that quotes the closed edge case by its old name.
 - **STATUS and BRANCHES** are for the orchestrating session: the ADR 0052 reservation, the owner questions and the follow-ups.
 - **Owner questions** (spec, "Waiting for the owner"; ADR 0052, "For the owner"):

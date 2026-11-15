@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { nextCode, OWNER_EMAIL, seedPassword, totpCode } from "./accounts";
+import { MANAGER_EMAIL, nextCode, OWNER_EMAIL, seedPassword, signInAs, totpCode } from "./accounts";
 import {
   removePlatformAdmin,
   resetAuthState,
@@ -91,5 +91,23 @@ test.describe("platform admin console (api mode)", () => {
 
     await page.reload();
     await expect(page.getByRole("checkbox", { name: BOX })).not.toBeChecked();
+
+    // Import and the database page have not moved to the API, so in api mode they are not found,
+    // not just missing from the tabs (spec "Screens"; review A7).
+    for (const view of ["import", "database"]) {
+      const response = await page.goto(`/admin/companies/${tenantId}/${view}`);
+      expect({ view, status: response?.status() }).toEqual({ view, status: 404 });
+      await expect(page.getByText("This page could not be found.")).toBeVisible();
+    }
+  });
+
+  test("a company user who is not a platform admin is sent from /admin to /", async ({ page }) => {
+    await signInAs(page, MANAGER_EMAIL);
+    const response = await page.goto("/admin");
+    // The layout's redirect, before the home page sends a persona on to its own home.
+    expect(response?.request().redirectedFrom()?.url()).toMatch(/\/admin$/);
+    expect(new URL(response?.url() ?? "about:blank").pathname).toBe("/");
+    await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Companies" })).toHaveCount(0);
   });
 });
