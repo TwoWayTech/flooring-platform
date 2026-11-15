@@ -78,6 +78,12 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       .set("Cookie", cookie);
   }
 
+  /** How many send jobs a spied JobsService was asked to queue for these rows. */
+  const sendJobsFor = (spy: { mock: { calls: [string, object, ...unknown[]][] } }, ids: readonly string[]) =>
+    spy.mock.calls.filter(
+      ([queue, data]) => queue === SEND_QUEUE && ids.includes((data as { messageId?: string }).messageId ?? ""),
+    ).length;
+
   async function rowsOf(sourceId: string) {
     const handle = await harness.companyDb(company.id);
     try {
@@ -357,6 +363,83 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     }
     const bad = await call("post", "/notifications/read", other).send({ ids: ["not-an-id"] });
     expect(bad.status).toBe(400);
+  });
+
+  it("queues no job inside the caller's transaction: the rows come back unqueued, for queueSends after the commit (final review of PR #33)", async () => {
+    const sourceId = uuidv7();
+    const jobs = vi.spyOn(harness.app.get(JobsService), "send");
+    const jobsFor = (ids: readonly string[]) => sendJobsFor(jobs, ids);
+    const handle = await harness.companyDb(company.id);
+    try {
+      const result = await handle.db.transaction(async (tx) => {
+        const written = await service().notify(
+          tenant,
+          null,
+          quoteSent(sourceId, "within@example.test", { scheduledFor: new Date(Date.now() + 1_000) }),
+          { within: tx },
+        );
+        expect(jobsFor(written.queued)).toBe(0);
+        return written;
+      });
+      expect(result.unqueued).toEqual([{ messageId: result.queued[0], startAfter: expect.any(Date) }]);
+      expect(jobsFor(result.queued)).toBe(0);
+      expect((await rowsOf(sourceId))[0]!.status).toBe("scheduled");
+      expect(await service().queueSends(tenant, result.unqueued)).toBe(true);
+      expect(jobsFor(result.queued)).toBe(1);
+      await eventually(async () => ((await rowsOf(sourceId))[0]?.status === "sent" ? true : undefined), "the send");
+
+      // Without a transaction, `deferJobs` leaves the jobs to the caller the same way; the default queues at once.
+      const deferred = await service().notify(tenant, null, quoteSent(uuidv7(), "deferred@example.test"), {
+        deferJobs: true,
+      });
+      expect(deferred.unqueued.map((send) => send.messageId)).toEqual(deferred.queued);
+      expect(jobsFor(deferred.queued)).toBe(0);
+      const now = await service().notify(tenant, null, quoteSent(uuidv7(), "now@example.test"));
+      expect(now.unqueued).toEqual([]);
+      expect(jobsFor(now.queued)).toBe(1);
+    } finally {
+      jobs.mockRestore();
+      await handle.close();
+    }
+  });
+
+  it("stops queueing at the first failure, so a jobs outage costs one wait; the rows left wait for Retry (final review of PR #33)", async () => {
+    const sourceId = uuidv7();
+    const result = await service().notify(
+      tenant,
+      null,
+      {
+        ...quoteSent(sourceId, "one@example.test"),
+        to: ["one", "two", "three"].map((name) => ({
+          kind: "customer" as const,
+          id: `customer-${name}-${sourceId}`,
+          name,
+          email: `${name}@example.test`,
+        })),
+      },
+      { deferJobs: true },
+    );
+    expect(result.unqueued).toHaveLength(3);
+    const ids = result.queued;
+    const jobService = harness.app.get(JobsService);
+    const real = jobService.send.bind(jobService);
+    const jobs = vi.spyOn(jobService, "send").mockImplementation(async (queue, data, options) => {
+      if (queue === SEND_QUEUE && ids.includes((data as { messageId?: string }).messageId ?? ""))
+        throw new Error("Background jobs are not available right now.");
+      return real(queue, data, options);
+    });
+    try {
+      expect(await service().queueSends(tenant, result.unqueued)).toBe(false);
+      expect(sendJobsFor(jobs, ids)).toBe(1);
+    } finally {
+      jobs.mockRestore();
+    }
+    expect((await rowsOf(sourceId)).map((row) => row.status)).toEqual(["queued", "queued", "queued"]);
+    await service().retry(tenant, ids[2]!);
+    await eventually(
+      async () => ((await rowsOf(sourceId)).find((row) => row.id === ids[2])?.status === "sent" ? true : undefined),
+      "the retried send",
+    );
   });
 
   it("sends a row once even when two jobs are queued for it (PR #9 re-review)", async () => {

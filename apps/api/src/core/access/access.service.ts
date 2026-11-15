@@ -46,6 +46,14 @@ export interface RequestAccess {
   mfaRequired: boolean;
 }
 
+/** What a person holds in the company, as `rolesOf` reads it for the shared engine. */
+interface HeldRoles {
+  roles: RoleLike[];
+  names: string[];
+  branchId: string | null;
+  disabled: boolean;
+}
+
 /**
  * Works out a person's access in their open company with the shared engine (`resolveAccess` in
  * packages/shared, spec rules 1 to 3): their roles and role permissions from the company
@@ -62,32 +70,31 @@ export class AccessService {
   /** The access of the request's person in the request's company. */
   async resolve(tenant: TenantContext): Promise<RequestAccess> {
     const [held, ceiling, modules] = await Promise.all([
-      this.rolesOf(tenant, tenant.userId),
+      this.rolesOf(tenant, [tenant.userId]),
       this.ceilingOf(tenant.companyId),
       this.modulesOf(tenant),
     ]);
-    return this.accessOf(tenant.userId, held, ceiling, modules);
+    return this.accessOf(tenant.userId, held.get(tenant.userId)!, ceiling, modules);
   }
 
   /**
    * The effective access of other members of the request's company, by the same engine, for
    * choosing who is told about a record (HR notifications to approvers; security review of PR #25).
-   * It never authorises the request itself: that is `resolve` in PermissionGuard.
+   * It never authorises the request itself: that is `resolve` in PermissionGuard. Everyone's roles
+   * are read in three company queries whatever their number, so a list of members never queues a
+   * few queries per person on the company's small pool (final review of PR #33).
    */
   async membersAccess(tenant: TenantContext, userIds: readonly string[]): Promise<RequestAccess[]> {
     if (userIds.length === 0) return [];
-    const [ceiling, modules] = await Promise.all([this.ceilingOf(tenant.companyId), this.modulesOf(tenant)]);
-    return Promise.all(
-      userIds.map(async (userId) => this.accessOf(userId, await this.rolesOf(tenant, userId), ceiling, modules)),
-    );
+    const [held, ceiling, modules] = await Promise.all([
+      this.rolesOf(tenant, userIds),
+      this.ceilingOf(tenant.companyId),
+      this.modulesOf(tenant),
+    ]);
+    return userIds.map((userId) => this.accessOf(userId, held.get(userId)!, ceiling, modules));
   }
 
-  private accessOf(
-    userId: string,
-    held: Awaited<ReturnType<AccessService["rolesOf"]>>,
-    ceiling: PermissionKey[],
-    modules: ModuleKey[],
-  ): RequestAccess {
+  private accessOf(userId: string, held: HeldRoles, ceiling: PermissionKey[], modules: ModuleKey[]): RequestAccess {
     const access = resolveAccess(held.roles, held.disabled ? [] : ceiling, modules);
     return {
       permissions: access.permissions,
@@ -103,45 +110,55 @@ export class AccessService {
     };
   }
 
-  private async rolesOf(tenant: TenantContext, userId: string) {
+  /**
+   * Each person's roles with their permissions, role names, branch and status in the request's
+   * company, in three queries for any number of people, keyed by user id; every id asked for is in it.
+   */
+  private async rolesOf(tenant: TenantContext, userIds: readonly string[]): Promise<Map<string, HeldRoles>> {
     const db = await this.tenancy.db(tenant);
-    const [profile] = await db
-      .select({ branchId: userProfiles.branchId, status: userProfiles.status })
+    const ids = [...new Set(userIds)];
+    const profiles = await db
+      .select({ userId: userProfiles.userId, branchId: userProfiles.branchId, status: userProfiles.status })
       .from(userProfiles)
-      .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
+      .where(and(inArray(userProfiles.userId, ids), isNull(userProfiles.deletedAt)));
     const roleRows = await db
-      .select({ id: roles.id, name: roles.name, dataScope: roles.dataScope, owner: roles.owner })
+      .select({
+        userId: userRoles.userId,
+        id: roles.id,
+        name: roles.name,
+        dataScope: roles.dataScope,
+        owner: roles.owner,
+      })
       .from(userRoles)
       .innerJoin(roles, eq(roles.id, userRoles.roleId))
-      .where(and(eq(userRoles.userId, userId), isNull(userRoles.deletedAt), isNull(roles.deletedAt)));
+      .where(and(inArray(userRoles.userId, ids), isNull(userRoles.deletedAt), isNull(roles.deletedAt)));
+    const roleIds = [...new Set(roleRows.map((role) => role.id))];
     const keys =
-      roleRows.length === 0
+      roleIds.length === 0
         ? []
         : await db
             .select({ roleId: rolePermissions.roleId, key: rolePermissions.permissionKey })
             .from(rolePermissions)
-            .where(
-              and(
-                inArray(
-                  rolePermissions.roleId,
-                  roleRows.map((role) => role.id),
-                ),
-                isNull(rolePermissions.deletedAt),
-              ),
-            );
-    const held: RoleLike[] = roleRows.map((role) => ({
-      id: role.id,
-      dataScope: role.dataScope,
-      owner: role.owner,
-      permissions: keys.filter((row) => row.roleId === role.id).map((row) => row.key as PermissionKey),
-    }));
-    return {
-      roles: held,
-      names: roleRows.map((role) => role.name),
-      branchId: profile?.branchId ?? null,
-      // No profile means the person was never set up in this company, which counts as disabled.
-      disabled: !profile || profile.status === "disabled",
-    };
+            .where(and(inArray(rolePermissions.roleId, roleIds), isNull(rolePermissions.deletedAt)));
+    return new Map(
+      ids.map((userId) => {
+        const profile = profiles.find((row) => row.userId === userId);
+        const mine = roleRows.filter((role) => role.userId === userId);
+        const held: HeldRoles = {
+          roles: mine.map((role) => ({
+            id: role.id,
+            dataScope: role.dataScope,
+            owner: role.owner,
+            permissions: keys.filter((row) => row.roleId === role.id).map((row) => row.key as PermissionKey),
+          })),
+          names: mine.map((role) => role.name),
+          branchId: profile?.branchId ?? null,
+          // No profile means the person was never set up in this company, which counts as disabled.
+          disabled: !profile || profile.status === "disabled",
+        };
+        return [userId, held];
+      }),
+    );
   }
 
   private async ceilingOf(companyId: string): Promise<PermissionKey[]> {

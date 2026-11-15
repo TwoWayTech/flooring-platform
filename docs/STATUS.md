@@ -1,11 +1,11 @@
 # Status: real build
 
 - **Phase:** week 1 of docs/real-build-plan.md. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) in PR #21 (`881712f`); inventory part 2 (issue and cut, roll quick invoice, commission split, ADR 0043) in PR #22 (`069ccb3`); contracts part 1 (register, change orders, waivers, insurance, ADR 0044) in PR #23 (`59ce102`); contracts part 2 (billings and retainage, ADR 0045) in PR #24 (`2e0a846`); HR part 1 (people, timesheets, time off, ADR 0046) in PR #25 (`57664d9`); HR part 2 (pay periods, bonuses, contractor payments, ADR 0047) in PR #26 (`ba3902d`); commissions (ADR 0048) in PR #27 (`b7c2163`); the employee portal (ADR 0049) in PR #28 (`b792f54`); the California pay rules switch (ADR 0050) in PR #29 (`f9b18a9`); commission audit visibility (ADR 0048) in PR #30 (`e2ff2ae`). **The owner restarted the queue on 2026-11-15** (B, unattended overnight run): the owner's answers on pay audit scope, the dated manager history and the paid employee in PR #32 (`feat/hr-pay-reasons-and-history`, ADR 0048); meetings next, in its own worktree.
+- **In progress:** the owner's second work queue (2026-11-13). Task 1 merged in PR #10 (`a1b0840`), task 2 in PR #11 (`2ddf5bc`); task 3 in PR #12 (`2d483de`); task 4 in PR #13 (`a66a49d`); task 5 part 1 (sales) in PR #14 (`2dcb6e8`); task 5 part 2 (invoices and payments) in PR #15 (`f8b0ef4`); task 6 part 1 (the ledger) in PR #16 (`328ca36`); the invoice-day fix in PR #18 (`82535cd`); the Vercel and guard decisions in PR #17 (`9b6cbd0`); accounting settings (ADR 0040) in PR #19 (`157f8ae`). The owner's queue of 2026-11-14 follows (Owner decisions, Queue): P12 part 2 (expenses, ADR 0041) in PR #20 (`1ba1019`); P12 part 3 (bills, supplier payments, stock postings, ADR 0042) in PR #21 (`881712f`); inventory part 2 (issue and cut, roll quick invoice, commission split, ADR 0043) in PR #22 (`069ccb3`); contracts part 1 (register, change orders, waivers, insurance, ADR 0044) in PR #23 (`59ce102`); contracts part 2 (billings and retainage, ADR 0045) in PR #24 (`2e0a846`); HR part 1 (people, timesheets, time off, ADR 0046) in PR #25 (`57664d9`); HR part 2 (pay periods, bonuses, contractor payments, ADR 0047) in PR #26 (`ba3902d`); commissions (ADR 0048) in PR #27 (`b7c2163`); the employee portal (ADR 0049) in PR #28 (`b792f54`); the California pay rules switch (ADR 0050) in PR #29 (`f9b18a9`); commission audit visibility (ADR 0048) in PR #30 (`e2ff2ae`). **The owner restarted the queue on 2026-11-15** (B, unattended overnight run): the owner's answers on pay audit scope, the dated manager history and the paid employee in PR #32 (`253058a`, ADR 0048); meetings part 1 on the API (core, invites, `.ics`, reminders) in PR #33 (`feat/meetings-api-core`, ADR 0051); then meetings parts 2 and 3, and platform admin and manual billing.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`), PR #20 (`1ba1019`), PR #21 (`881712f`), PR #22 (`069ccb3`), PR #23 (`59ce102`), PR #24 (`2e0a846`), PR #25 (`57664d9`), PR #26 (`ba3902d`), PR #27 (`b7c2163`), PR #28 (`b792f54`), PR #29 (`f9b18a9`) and PR #30 (`e2ff2ae`). The owner merged PR #17 (`9b6cbd0`).
-- **Last session log:** docs/sessions/2026-11-15-0120-b-pay-reasons-manager-history.md
+- **Last session log:** docs/sessions/2026-11-15-0230-b-meetings-api-core.md
 
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
@@ -27,7 +27,8 @@
 - **Owner answers (2026-11-15):** bonus and pay-run exclusion reasons are hidden from anyone without pay access, like commission reasons; pay viewers see plan terms and pay-sensitive audit details only within their own data scope, and only the Owner sees every rep; both schema changes approved: a dated manager history and the paid employee stored on each commission statement (migrations 0005 and 0006). A stored `carry_out` was not approved. Then the queue restarts in this order: meetings; platform admin and manual billing; reports; import; cross-module api-mode e2e flows; the whole-product check (ADR 0048, "Owner answers, 2026-11-15").
 
 ## Done
-- [x] Owner answers on pay audit and manager history, PR #32 (`feat/hr-pay-reasons-and-history`, ADR 0048 "Owner answers, 2026-11-15"): "Added bonus", "Voided bonus", "Left out of pay period" and "Brought back into pay period" are pay-sensitive; pay-sensitive audit details show to the Owner, or to a pay-key holder only for people in their data scope (plan terms need scope `all`); `employee_manager_history` (company migration 0005, backfilled) so overrides go to the manager on the line's company day, and the self-made manager check judges each line's day; `commission_statements.employee_id` stored at approval and paid by the run and the stranded list; foreign-key indexes (migration 0006); a wider Owner-only re-link guard.
+- [x] Meetings part 1 on the API, PR #33 (`feat/meetings-api-core`, ADR 0051). Routes: `GET /meetings`, `GET /meeting-guests`, `GET /me/meetings`, create, edit, cancel, remove a guest, answer, `POST /meeting-requests` and `GET /meetings/:id/calendar.ics`. Invites and replies go out as Outbox email with hand-written RFC 5545 `.ics`. Reminders are scheduled Outbox rows. Private meetings are hidden from everyone not on them, the Owner included. Guest addresses and linked customer and supplier names are shown only to those who may read them. Daily outside-email caps. Summit's meetings are seeded. No schema change and no new dependency. The screens still run on DemoStore until part 3.
+- [x] Owner answers on pay audit and manager history, merged to main in PR #32 (`253058a`, ADR 0048 "Owner answers, 2026-11-15"): "Added bonus", "Voided bonus", "Left out of pay period" and "Brought back into pay period" are pay-sensitive; pay-sensitive audit details show to the Owner, or to a pay-key holder only for people in their data scope (plan terms need scope `all`); `employee_manager_history` (company migration 0005, backfilled) so overrides go to the manager on the line's company day, and the self-made manager check judges each line's day; `commission_statements.employee_id` stored at approval and paid by the run and the stranded list; foreign-key indexes (migration 0006); a wider Owner-only re-link guard.
 - [x] California pay rules switch, merged to main in PR #29 (`f9b18a9`, ADR 0050): `hr.payroll.california`, off by default; with it off everyone is paid on the federal weekly rule; the California refusal checks stay on (owner decision); pending-review and off notes on the HR screens and the pay-period review.
 - [x] Employee portal, merged to main in PR #28 (`b792f54`, ADR 0049): `GET /me/portal` for the session's own person, profile edits, plan signing on the terms read, the clock switch, one's own documents; owner decisions (own rate by the setting alone, HR signing hint, one sign-in per employee with migration 0004).
 - [x] Commission audit visibility, merged to main in PR #30 (`e2ff2ae`, owner decision 2026-11-14, ADR 0048 "Audit visibility"): audit entries with plan terms or an adjustment or reversal-decision reason show their before and after only to the Owner and holders of `hr.employee.view_sensitive`; others keep the row with "Hidden: pay details" (API, CSV export, demo). The adjustment reason field says "Don't type amounts here." Closes the PR #27 fourth-review note on plan terms and reasons in the audit log. Waiting for the security review.
@@ -117,7 +118,7 @@
 
 ## Next three tasks
 Owner order of 2026-11-15 (the queue restarted). Each task gets its own branch from an up-to-date main and self-merges under the CLAUDE.md rule.
-1. **Meetings** (then My meetings moves off the demo client): part 1, core, invites, `.ics` and reminders, on `feat/meetings-api-core` (worktree, in progress); part 2, moves, undo, proposals and conflicts; part 3, the web on the API with api-mode e2e. Contacts and leads as guests and Settings → Meetings wait for the owner.
+1. **Meetings** (then My meetings moves off the demo client): part 1 in PR #33. Part 2: moves (reschedule), undo, deciding proposals and conflicts. Part 3: the web on the API, with api-mode e2e. Part 4 (later occurrences' reminders, contacts and leads as guests, Settings → Meetings on the API) waits for the owner (ADR 0051, "Later parts").
 2. **Platform admin and manual billing.**
 3. **Reports**, then **import**, then **cross-module e2e flows**, then the **whole-product check** (owner order of 2026-11-14).
 
@@ -140,6 +141,19 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - CI hit this: PR #32's `verify` ran at 01:44 UTC, and `expenses.spec.ts` failed. It would fail on main too, every day from 00:00 to 07:00 UTC.
   - `playwright.api.config.ts` now runs the browser in America/Denver.
   - Fix: in api mode, work out `today()` in the company's time zone, once the client has the zone.
+- **Meetings before real email (ADR 0051, "For the owner"):** before `EMAIL_PROVIDER=resend` sends meeting invites, import one REQUEST and one PUBLISH file by hand into Google Calendar and Outlook on the web (ADR 0021). Also import a PUBLISH without ORGANIZER, on its own and over the REQUEST of the same meeting.
+- **PR #33 final review notes (none blocking):**
+  - "Meeting answered" and "meeting requested" still queue inside `notify`, so a jobs outage loses the in-app note, and an accepted request waits twice. Move them onto `deferJobs` and `queueSends` like the invites.
+  - The audit log still shows who is on a private meeting (the guest ids in before and after).
+  - A linked guest the reader can't read still shows its record id and answer.
+  - `GET /meetings` and `GET /me/meetings` load every meeting the company ever had. Add a date window before companies have years of meetings.
+  - A guest whose customer, supplier or contact record is later soft-deleted would leave the meeting unchangeable (latent).
+  - Invites name the organiser's sign-in address to outside guests.
+- **Meetings residual risks (ADR 0051):**
+  - Outside guests can't answer yet; their replies reach the organiser's mailbox, where nothing reads them.
+  - A failed reminder re-sync leaves no reminder (logged).
+  - Later occurrences of a series get no reminder until part 4.
+  - The daily caps are per person.
 - **API test log noise:** "Do not know how to serialize a BigInt" is logged during `pnpm test:api` on main (seen 2026-11-15, Part A checks); tests still pass. Find the logger call that gets a bigint and send it as a string.
 - **Commission carry-out column:** the carry is derived from each person's whole history (ADR 0048, PR #27 first review); store `carry_out` on `commission_statements` at approval when a migration is next allowed, so an approved month's carry is frozen like its payable.
 - **Required check on a paid GitHub plan:** when the repository moves to a paid GitHub plan, make `verify` (which runs the isolation suite) a required check on `main`. GitHub Free cannot enforce it on a private repository, so until then the CLAUDE.md self-merge rule is the guard (owner decision, 2026-11-13).
@@ -277,7 +291,7 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
     - own-row SQL filter cases;
     - a lint fixture for the `JobTenants` rule.
   - Check whether Resend replays an earlier error for a reused idempotency key, with the first staging send.
-  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran.
+  - A sweeper that queues `queued` rows with no job: queueing failed, or the company was read-only when the worker ran. It must cover `scheduled` meeting reminder rows with no job too: since PR #33, reminders are queued after the commit, so a jobs outage leaves them `scheduled` with no job (ADR 0051, "A jobs outage").
   - Validate the sender settings with Zod when Settings → Email saves them.
   - The bounce webhook (`bounced`).
   - Attachments through StorageProvider.
@@ -291,6 +305,13 @@ Also open for B (week 2): the passkey screens and QR code. They must call `/veri
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Owner questions (PR #33, meetings; ADR 0051, "For the owner"):**
+  - Should a staff guest's own calendar file name the organiser's address?
+  - Are these caps right: 20 email guests per meeting, and per person a day 50 outside addresses, 200 outside emails and 500 meeting emails? Should inviting outside addresses need a key or a setting?
+  - May an organiser who can no longer read a meeting's customer still cancel it? Part 1 refuses.
+  - Should the Owner, as Outbox admin, see the recipients and status of a private meeting's rows?
+  - Should RSVP be FALSE for outside guests until their replies can be read?
+  - Should `meeting.when` name the zone?
 - **Owner questions (PR #32, commissions):**
   - **Pay viewers at scope `all`:** your answer said pay viewers see plan terms only within their data scope and only the Owner sees every rep. A pay-key holder at scope `all` who is not the Owner, such as the default HR manager, still sees every rep's pay-sensitive audit entries, because HR → Commissions already shows that person every plan, statement and reason. Is that right, or should the audit log show every rep to the Owner alone?
   - **Self-made override lines:** a month carrying an override its own person earned as a manager they set themselves is refused until someone else sets that same manager again, and nothing in the app drops such a line. Is a way to waive them wanted?

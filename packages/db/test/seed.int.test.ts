@@ -33,6 +33,9 @@ import {
   insuranceCertificates,
   insuranceCoverages,
   lienWaivers,
+  meetingAttendees,
+  meetingResponses,
+  meetings,
   customers,
   goodsReceipts,
   invoiceLines,
@@ -381,6 +384,42 @@ describe("test company seed", () => {
       expect(entries.filter((entry) => entry.sourceType === "commission_statement")).toEqual([]);
     } finally {
       await company.close();
+    }
+  });
+
+  it("seeds meetings with their guests, staff by their sign-in ids, starts as instants (meetings, part 1)", async () => {
+    const { fixtures } = loadDemoCompany("summit");
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    const control = openControlDb(scratch[0].url, { max: 1 });
+    try {
+      const rows = await company.db.select().from(meetings);
+      expect(rows).toHaveLength(fixtures.meetings.length);
+      expect(rows.length).toBeGreaterThan(0);
+      const guests = await company.db.select().from(meetingAttendees);
+      expect(guests).toHaveLength(fixtures.meetings.reduce((sum, m) => sum + m.attendees.length, 0));
+      expect(guests.every((g) => rows.some((m) => m.id === g.meetingId))).toBe(true);
+      // Staff guests and organisers are control users, so they match the people who sign in (critic A3).
+      const users = new Set((await control.db.select({ id: user.id }).from(user)).map((u) => u.id));
+      expect(guests.filter((g) => g.partyType === "staff").every((g) => users.has(g.partyId!))).toBe(true);
+      expect(rows.every((m) => users.has(m.ownerUserId))).toBe(true);
+      const riley = guests.find((g) => g.name === "Riley Chen")!;
+      expect(riley).toMatchObject({ partyType: "external", partyId: null });
+      // 14:00 in Denver on 2026-10-02 is daylight time, UTC-6.
+      const huddle = rows.find((m) => m.title === "Weekly sales huddle")!;
+      expect(huddle.start.toISOString()).toBe("2026-10-02T20:00:00.000Z");
+      expect(huddle).toMatchObject({ recurrence: "weekly", timeZone: "America/Denver", status: "confirmed" });
+      // The day-30 monthly safety talk is kept as the fixture has it; its calendar file lists the 30th as an RDATE.
+      const safety = rows.find((m) => m.title === "Monthly safety talk")!;
+      expect(safety).toMatchObject({
+        recurrence: "monthly",
+        uid: fixtures.meetings.find((m) => m.title === "Monthly safety talk")!.uid,
+      });
+      expect(safety.start.toISOString()).toBe("2026-09-30T19:00:00.000Z");
+      expect(rows.find((m) => m.kind === "request")).toMatchObject({ status: "tentative", title: "Review my goals" });
+      expect(await company.db.select().from(meetingResponses)).toEqual([]);
+    } finally {
+      await company.close();
+      await control.close();
     }
   });
 

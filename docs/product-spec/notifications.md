@@ -64,6 +64,8 @@ const mine = (m: OutboxMessage) =>
 
 Recipient, status and dates stay visible on a redacted row. With the default roles, only the Owner holds `settings.outbox.view`, and the Owner also holds `hr.employee.view`, so redaction only applies to a custom role that has the first without the second.
 
+In the real build, a restricted row whose source is a meeting is a private meeting's invite, reminder or notice. Such a row is redacted for every reader it does not involve, `hr.employee.view` and the Owner included, because a private meeting is hidden from everyone not on it (meetings.md; ADR 0051).
+
 `ctx.actor` is the signed-in user even during View as role, so "mine" means the real person.
 
 The generic `list` returns an empty array for `outboxMessages` and `inAppNotifications` (`applyScope` in `apps/web/src/lib/api/demo/scope.ts`), so only the calls above can read them. `notificationRules` has no scope filter. The generic `save` refuses all three (`SAVE_PERMISSIONS` in `permission-rules.ts`).
@@ -176,6 +178,10 @@ Subject, body, attachments and values are stored on the row as a snapshot. Editi
 12. **People who can approve.** `usersWith` in `notification-actions.ts`: active users holding a role whose `permissions` include the key. It reads role permissions only, without the company ceiling or enabled modules.
 
 13. **Reminders.** `scheduledFor` holds a row until its time. `releaseScheduled` turns a row to `sent` when `row.scheduledFor <= ctx.now`. Only `meeting.reminder` uses it.
+    In the real build:
+    - a pg-boss job sends the row at its time (ADR 0032);
+    - a row may also carry an expiry (`NotifyInput.expiresAt`; a meeting reminder expires at its occurrence's start), and a worker or Retry that claims it later cancels it instead of sending it;
+    - meetings cancel a meeting's waiting reminder rows and raise the next one after every change (ADR 0051).
 
 14. **Bell badge.** `Notifications` in `notifications.tsx`: `total = items.length + unread.length`, where `items` is the attention list. The Updates list shows the newest 8. Mark all read covers every unread row, including those beyond the 8. Opening an update marks it read.
 
@@ -250,7 +256,7 @@ One row per event, only once a company changes it. The seed has none.
 | `kind` | `pdf`, `ics` | |
 | `fileName` | string | |
 | `href` | string, optional | Where a PDF opens. It is a link to the live document, not a stored file. |
-| `text` | string, optional | An `.ics` file's text, stored inline. |
+| `text` | string, optional | An `.ics` file's text, stored inline. The real build emails it as a UTF-8 `text/calendar; method=<METHOD>` attachment (ADR 0051). |
 
 ### InAppNotification (`inAppNotifications`)
 
@@ -424,7 +430,20 @@ Behaviour to carry into the real build:
 - `payment.to_verify` uses `<number>-<amount>` as its source id. A second pending payment of the same amount on the same document is deduplicated if email is on. The in-app note is still written.
 - `invoice.sent` and `po.sent` have no version, so a repeat send would write nothing. The invoice action refuses a second send anyway.
 - `quote.sent` uses `quote.sentAt` as its version, and that date is set only the first time, so sending a quote again writes no new row.
-- Reminders turn to `sent` only when a company is opened, because the demo has no worker. Rows are not cancelled when the meeting moves or is cancelled.
+- Reminders turn to `sent` only when a company is opened, because the demo has no worker. Rows are not cancelled when the meeting moves or is cancelled. The real build cancels and raises them again on every change, and drops one not sent by the meeting's start (rule 13, ADR 0051).
 - Dates in variables are stored as `YYYY-MM-DD`, or as `YYYY-MM-DD at HH:mm` for meetings. The catalogue's samples show friendlier formats.
 - With `settings.notifications` off, nothing is written. With only `settings.outbox` off, rows are still written and the pages and bell link are hidden.
 - `docs/api-contract.md` has no rows for these calls. The contract is `apps/web/src/lib/api/contract.ts`.
+
+## Real build: meetings (ADR 0051)
+
+The five `meeting.*` events keep their keys, templates and recipients. On the API:
+
+| Event key | Version in the dedupe key | Channels | Notes |
+| --- | --- | --- | --- |
+| `meeting.invite` | `<sequence>-<method>-<recurrenceId>-<the meeting's updated_at in ms>` | Email with the `.ics`; in-app for staff | One row per guest, never the organiser. Sent after the change commits, each guest on its own. None while `meetings.invites` is off |
+| `meeting.reminder` | `<sequence>-reminder-<planned occurrence>-<a new UUID v7>` | Email only, as meetings.md has it | Scheduled for `reminderMin` before the next occurrence, expires at its start. Staff guests who are still members, never the organiser, with no actor. Cancelled and raised again after every change |
+| `meeting.reply`, `meeting.proposed` | The `meeting_responses` row id | Email, in-app | To the organiser, one per answer |
+| `meeting.requested` | `request` | Email, in-app | To the person asked |
+
+Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none.
