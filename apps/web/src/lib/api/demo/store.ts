@@ -413,15 +413,16 @@ export class DemoStore implements ApiClient {
 
   /**
    * A support-access request in the demo (docs/specs/platform-admin.md, part 3, "Demo mode"): the
-   * company must exist, then the shared field check and the shared limits, in the API's order. The
-   * grant and its `support.requested` row are kept in this browser. No step-up, like the demo's
-   * access save, and no Owner screen approves it, so it stays pending until it expires.
+   * shared field check, then the company must exist, then the shared limits, in the API's order
+   * ("Refusal order": the body's 400 before the 404, 409 and 429). The grant and its
+   * `support.requested` row are kept in this browser. No step-up, like the demo's access save, and
+   * no Owner screen approves it, so it stays pending until it expires.
    */
   async requestSupportAccess(input: SupportRequestInput) {
-    const company = await this.platformCompany(input.companyId);
-    if (!company) throw new DemoRuleError("That company does not exist.");
     const problem = supportRequestInputProblem(input);
     if (problem) throw new DemoRuleError(problem);
+    const company = await this.platformCompany(input.companyId);
+    if (!company) throw new DemoRuleError("That company does not exist.");
     const stored = this.storedList(PLATFORM_SUPPORT_KEY);
     const now = new Date();
     const refusal = demoRequestRefusal(stored, company.id, now);

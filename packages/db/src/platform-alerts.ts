@@ -1,16 +1,28 @@
 import type { EmailProvider } from "@workspace/providers";
-import { and, eq, isNull } from "drizzle-orm";
+import { PLATFORM_ADMIN_ROLES } from "@workspace/shared";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { ControlDb } from "./client";
 import { platformAdmins, tenants, user } from "./control";
 import type { CompanyMigrationFailure } from "./migrate";
 
-/** The email addresses of every active platform admin. */
+/**
+ * The email addresses of every active platform admin. Only the roles the console, the guard and the
+ * lock accept count (packages/shared `PLATFORM_ADMIN_ROLES`; docs/specs/platform-admin.md, "Who uses
+ * it"): `platform_admins.role` is free text, so a row with any other role is no admin and gets no
+ * alert (deny by default).
+ */
 async function platformAdminEmails(control: ControlDb): Promise<string[]> {
   const rows = await control
     .select({ email: user.email })
     .from(platformAdmins)
     .innerJoin(user, eq(user.id, platformAdmins.userId))
-    .where(and(eq(platformAdmins.active, true), isNull(platformAdmins.deletedAt)));
+    .where(
+      and(
+        eq(platformAdmins.active, true),
+        isNull(platformAdmins.deletedAt),
+        inArray(platformAdmins.role, [...PLATFORM_ADMIN_ROLES]),
+      ),
+    );
   return rows.map((row) => row.email);
 }
 
@@ -18,10 +30,10 @@ async function platformAdminEmails(control: ControlDb): Promise<string[]> {
 export type MigrationFailureStanding = "maintenance" | "serving_reads" | "unavailable";
 
 /**
- * Where a failed company stands (docs/specs/platform-admin.md, "How pnpm db:migrate handles a
- * failure"; ADR 0053): in maintenance mode; out of it with a read-only database that still serves
- * reads on a half-migrated schema; or out of it with a database marked as not ready, so nobody can
- * open the company.
+ * Where a failed company stands (docs/specs/platform-admin.md, "pnpm db:migrate when a company
+ * fails (packages/db)"; ADR 0053): in maintenance mode; out of it with a read-only database that
+ * still serves reads on a half-migrated schema; or out of it with a database marked as not ready,
+ * so nobody can open the company.
  */
 export function failureStanding(
   failure: Pick<CompanyMigrationFailure, "maintenance" | "readOnly">,
@@ -49,11 +61,12 @@ function standingLines(name: string, standing: MigrationFailureStanding): string
 }
 
 /**
- * Emails every active platform admin that a company's migration failed and where the company
- * stands now (owner decision, 2026-11-13; ADR 0053): in maintenance mode, or NOT, with what to do
- * by hand. One email per admin, so no admin sees another's address. The email carries only the
- * error code: the full text can quote company data, so it stays in tenant_databases.last_error,
- * or, when it could not be saved there, only in the output of pnpm db:migrate (PR #10 review).
+ * Emails every active platform admin with a known role that a company's migration failed and
+ * where the company stands now (owner decision, 2026-11-13; ADR 0053): in maintenance mode, or NOT,
+ * with what to do by hand. One email per admin, so no admin sees another's address. The email
+ * carries only the error code: the full text can quote company data, so it stays in
+ * tenant_databases.last_error, or, when it could not be saved there, only in the output of
+ * pnpm db:migrate (PR #10 review).
  */
 export async function alertMigrationFailure(
   control: ControlDb,

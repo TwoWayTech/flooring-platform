@@ -50,9 +50,9 @@ export interface CompanyMigrationResult {
 
 /**
  * A company whose migration failed, as the platform admins' alert and the migrate script name it
- * (docs/specs/platform-admin.md, "How pnpm db:migrate handles a failure"; ADR 0053). It never holds
- * the error text: the driver's message can quote a company's own rows, so it stays in
- * tenant_databases.last_error.
+ * (docs/specs/platform-admin.md, "pnpm db:migrate when a company fails (packages/db)"; ADR 0053).
+ * It never holds the error text: the driver's message can quote a company's own rows, so it stays
+ * in tenant_databases.last_error.
  */
 export interface CompanyMigrationFailure {
   tenantId: string;

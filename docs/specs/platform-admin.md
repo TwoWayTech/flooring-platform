@@ -549,6 +549,8 @@ When a company's migration fails:
 
 **The alert email** (`platform-alerts.ts`) says where the company stands. `failureStanding` gives `maintenance`; `serving_reads` when the company is not in maintenance and its database is read-only; and `unavailable` otherwise.
 
+- **Who gets it** (as built, final review): every active, non-deleted platform admin whose role is one of the shared `PLATFORM_ADMIN_ROLES`, the roles the console, the guard and the lock accept. A row with any other role is no admin and gets no email.
+
 | Standing | Subject | First line |
 | --- | --- | --- |
 | `maintenance` | "Migration failed: {name} is in maintenance mode" (unchanged) | As today: "The company database of {name} failed to migrate, so the company is in maintenance mode." and the line after it |
@@ -597,7 +599,7 @@ When a company's migration fails:
   - **Empty:** "No platform changes recorded yet.", or "No entries for these filters." with a filter set (as built).
   - **Search** (as built): the table's search box filters the entries already loaded; the filters above it ask the server.
   - **Older entries:** a "Load older entries" button while there is a next page. A failure shows a toast with Try again.
-    - As built (review round 2): one older page loads at a time, and the button and Try again share that guard. A new load, or new filters, take the failure toast away. An answer for a cursor that another load already moved past is dropped, and the table shows each entry id once, so a late Try again never adds a page twice (`apps/web/src/features/admin/audit-paging.ts`).
+    - As built (review round 2): one older page loads at a time, and the button and Try again share that guard. A new load, or new filters, take the failure toast away. A load still running when the filters change, or the page closes, then shows no toast and changes nothing (final review; `runOlderAuditLoad`). An answer for a cursor that another load already moved past is dropped, and the table shows each entry id once, so a late Try again never adds a page twice (`apps/web/src/features/admin/audit-paging.ts`).
     - When the newest page is read again and now ends at another entry, the older pages are set aside and paging starts again below it, so no entry is skipped (safer option 23).
   - **No "Export CSV"** (see "Safer than the outline (part 3)").
 - **Support tab (/admin/companies/:id/support).** The company tabs read Access, Support, then the demo-only Data import and Connect a database.
@@ -804,9 +806,9 @@ Settled while building, all in ADR 0053.
 
 **As built, the criteria are covered by:**
 - 19 and 20: `apps/api/test/platform.int.test.ts` (the 401, 403 and 404 loops and the metadata test pick up the new routes; at least 8 routes and 4 controllers) and `apps/api/test/isolation.int.test.ts`.
-- 21 to 27: `apps/api/test/platform-audit.int.test.ts` (8 tests; the paging test pages one company at limits 1 to 4, so page boundaries fall between two entries with the same `at` and between two entries 1 µs apart), `packages/shared/test/platform-audit.test.ts` (43) and `apps/web/tests/unit/platform-audit.test.tsx` (22; four of them page the console's older entries with repeated, late and overlapping answers and a moved newest page).
+- 21 to 27: `apps/api/test/platform-audit.int.test.ts` (8 tests; the paging test pages one company at limits 1 to 4, so page boundaries fall between two entries with the same `at` and between two entries 1 µs apart), `packages/shared/test/platform-audit.test.ts` (43) and `apps/web/tests/unit/platform-audit.test.tsx` (24; four of them page the console's older entries with repeated, late and overlapping answers and a moved newest page, and two show that an answer after the filters change shows no toast and adds nothing).
 - 28 to 32: `apps/api/test/platform-support.int.test.ts` (10 tests; the race and the re-check wait on `pg_stat_activity` lock waiters) and `packages/shared/test/support-grants.test.ts` (25).
-- 33: `apps/api/test/platform.int.test.ts`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests), `packages/db/test/platform-alerts.test.ts` and `packages/db/test/migrate-report.test.ts` (the CLI line, including a failed alert).
+- 33: `apps/api/test/platform-audit.int.test.ts` (the newest failure code while `last_error` is set, never the text), with the labels in `apps/web/tests/unit/platform-audit.test.tsx`. 34 to 36: `packages/db/test/provision-tenant.int.test.ts` (17 tests), `packages/db/test/platform-alerts.test.ts` and `packages/db/test/migrate-report.test.ts` (the CLI line, including a failed alert).
 - 37: `apps/web/tests/e2e-api/platform-support.spec.ts`. 38: `apps/web/tests/e2e/admin.spec.ts`, with /admin/audit and the Support tab in `tests/e2e/screens.ts` (axe and console) and the 375 px loop in `tests/e2e/responsive.spec.ts`; the no-op save in `apps/web/tests/unit/demo-platform.test.ts`. 39: `apps/web/tests/unit/platform-audit.test.tsx` (the locks) and `apps/web/tests/unit/platform-console.test.ts` (`saveProblem` before the step-up).
 
 ## Parts 2 to 4 (outline, not built here)

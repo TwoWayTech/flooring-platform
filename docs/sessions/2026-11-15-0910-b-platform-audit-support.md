@@ -245,6 +245,46 @@ Docs: the spec ("Older entries", as built, and the test mapping), ADR 0053 (the 
 | `pnpm run typecheck` in apps/api (lock; `test/` is included) | exit 0 |
 | `eslint test/platform-support.int.test.ts` in apps/api (lock); Prettier on it | clean |
 
+## Final review (fresh reviewers)
+Three fresh read-only reviewers read the branch at 8ed71f3. None found a blocking issue:
+- **security-reviewer:** PASS, with 6 notes.
+- **correctness:** 1 confirmed should_fix and 7 notes.
+- **packages/db:** 1 should_fix, refuted by the skeptic because it is the spec's design, and 1 note.
+
+**Fixed:**
+1. **A stale older-page toast after the filters change** (the should_fix). `AuditEntries` is keyed by the filters, and its cleanup dismissed the failure toast. But a "Load older entries" still in flight kept running, and when it failed it showed the toast again over the new filters (or after leaving the page). Its Try again held the unmounted entries' closure.
+   - **Fix:** a `live` ref, set false in the existing cleanup effect, and the new pure `runOlderAuditLoad` in `apps/web/src/features/admin/audit-paging.ts`. An answer after unmount adds no page and shows no toast. `loading` is set only while live, and a Try again from unmounted entries does nothing.
+   - **Tests:** 2 new unit cases in `tests/unit/platform-audit.test.tsx` (now 24): a live failure shows its toast and a live answer adds its page; after leaving, neither does anything.
+2. **Alerts only to known admin roles** (the packages/db note, safest option). `platformAdminEmails` selected every active, non-deleted `platform_admins` row whatever its role. It now also filters with `inArray(role, PLATFORM_ADMIN_ROLES)` from packages/shared, which packages/db already depends on, so no dependency was added.
+   - **Test:** the alert case in `packages/db/test/provision-tenant.int.test.ts` now has an owner-role recipient and an active row set to `billing` with plain SQL, which gets no email.
+   - **Checked by mutation:** without the filter the case fails, because the `billing` row is emailed. The file was restored after.
+3. **Small notes:**
+   - the demo's `requestSupportAccess` now checks the fields before the company, as the API's refusal order says, and `demo-platform.test.ts` checks it;
+   - the spec maps AC33 to `apps/api/test/platform-audit.int.test.ts` (and the web labels), not `platform.int.test.ts`;
+   - the JSDoc in `packages/db/src/migrate.ts` now names the real heading, "pnpm db:migrate when a company fails (packages/db)". So do the same stale references in `platform-alerts.ts` and `scripts/migrate.ts`;
+   - the comment in `tests/e2e-api/platform-admin.spec.ts` now says that `platform-support.spec.ts` only checks the "View sample checkout" box is disabled.
+
+Docs: the spec (Older entries as built, who gets the alert, the test mapping) and ADR 0053 (the older pages, the alert's recipients). STATUS and BRANCHES are left to the orchestrating session.
+
+**Left as follow-ups (not changed here):**
+- `last_error` holds drizzle's "Failed query" wrapper rather than the driver's reason (pre-existing);
+- the maintenance-only fallback writes no audit row and has no retry (owner question 17);
+- the lock's re-check uses the accepted roles, which equal the route's roles today;
+- one browser's saved table view is shared between the admins who use it, and the filters are not kept in the URL;
+- the recorded IP is the immediate peer;
+- the support dialog tells 409 and 429 apart by message text;
+- `recorded` is false when the claimed status changed mid-run.
+
+| Command | Result |
+| --- | --- |
+| `pnpm --filter web exec vitest run` | 60 passed in 7 files |
+| `pnpm --filter @workspace/db test` | 18 passed in 5 files |
+| db integration `provision-tenant.int.test.ts` (lock) | 17 passed |
+| the alert case with the role filter removed (lock; `platform-alerts.ts` restored after) | failed, as it should |
+| `pnpm -s lint` (lock) | exit 0; 6 of 6 tasks (4 from turbo's cache); Prettier clean |
+| `pnpm -s typecheck --force` (lock) | 6 of 6 tasks passed |
+| demo build, then `tests/e2e/admin.spec.ts --project=flooring` on one worker (lock); ports 3000 and 4000 free before and after | 2 passed |
+
 ## Left
 - **Before ready:** `/review`; a fresh security-reviewer (platform authorization, the audit redaction, the support-reason rule, the limits and the lock, the maintenance timing in migrate.ts) and a fresh schema-reviewer (packages/db: migrate.ts, platform-alerts.ts, testing.ts; no schema change), each summary posted with `gh pr review 36 --comment --body-file <file>`; the full `pnpm test` and `pnpm test:api` run (not done yet; every touched integration file ran one at a time; the full `pnpm lint` passed in review round 1); then mark ready and wait for `verify` and `e2e` on the head.
 - **For the orchestrating session:** docs/STATUS.md and docs/BRANCHES.md (record PR #34 as merged, the part 3 line and queue, remove the fixed follow-ups, add part 3's residual risks and owner questions, and add the `toCsv` formula-cell follow-up). This branch did not edit them.

@@ -12,7 +12,7 @@ const LOCAL_SENDER = "no-reply@localhost";
  * decision, 2026-11-13); the script then exits with an error. It says whether the company is in
  * maintenance mode, and what to do by hand when it is not, even when the alert itself fails, and
  * prints the error text only when it could not be saved to tenant_databases.last_error
- * (docs/specs/platform-admin.md, "How pnpm db:migrate handles a failure"; ADR 0053).
+ * (docs/specs/platform-admin.md, "pnpm db:migrate when a company fails (packages/db)"; ADR 0053).
  */
 async function main(): Promise<void> {
   const env = scriptEnv();

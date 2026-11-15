@@ -10,7 +10,10 @@ import {
   type CeilingRowSnapshot,
 } from "@workspace/db/testing";
 
-/** The permission this spec unticks: no other api spec uses "View sample checkout". */
+/**
+ * The permission this spec unticks and puts back. No other api spec changes "View sample checkout":
+ * platform-support.spec.ts only checks that its box is disabled for the support role.
+ */
 const KEY = "retail.sample.view";
 const BOX = "View sample checkout";
 const SUMMIT = "Summit Floor Co.";

@@ -553,16 +553,28 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
     }
   });
 
-  it("emails every active platform admin, one email each, with only the code and where the company stands (owner decision 2026-11-13; ADR 0053)", async () => {
+  it("emails every active platform admin with a known role, one email each, with only the code and where the company stands (owner decision 2026-11-13; ADR 0053)", async () => {
     const failed = await provision(company(`alrt${run}`));
     const handle = openControlDb(control.url, { max: 1 });
     try {
-      const admins = [`admin-a-${run}@example.test`, `admin-b-${run}@example.test`, `admin-c-${run}@example.test`];
+      const admins = [
+        `admin-a-${run}@example.test`,
+        `admin-b-${run}@example.test`,
+        `admin-c-${run}@example.test`,
+        `admin-d-${run}@example.test`,
+      ];
+      const ids: string[] = [];
       for (const [index, email] of admins.entries()) {
         const id = uuidv7();
+        ids.push(id);
         await handle.db.insert(user).values({ id, name: "Platform Admin", email });
-        await handle.db.insert(platformAdmins).values({ userId: id, role: "support", active: index < 2 });
+        await handle.db
+          .insert(platformAdmins)
+          .values({ userId: id, role: index === 0 ? "owner" : "support", active: index !== 2 });
       }
+      // An active row with a role the console doesn't accept is no admin, so it gets no alert. The
+      // column is free text, so the test writes the unknown role with plain SQL.
+      await handle.db.execute(sql`update platform_admins set role = 'billing' where user_id = ${ids[3]}`);
       const alert = async (standing: Pick<CompanyMigrationFailure, "recorded" | "maintenance" | "readOnly">) => {
         const email = new MemoryEmailProvider();
         const count = await alertMigrationFailure(handle.db, email, "alerts@example.test", {
@@ -576,6 +588,7 @@ describe("provisionTenant (P9, needs the local PostgreSQL)", () => {
       expect(count).toBeGreaterThanOrEqual(2);
       expect(sent.map((message) => message.to)).toEqual(expect.arrayContaining([[admins[0]], [admins[1]]]));
       expect(sent.flatMap((message) => message.to)).not.toContain(admins[2]);
+      expect(sent.flatMap((message) => message.to)).not.toContain(admins[3]);
       expect(sent[0].subject).toMatch(/is in maintenance mode$/);
       expect(sent[0].text).toContain("42P01");
       expect(sent[0].text).toContain("tenant_databases.last_error");

@@ -5,13 +5,14 @@ import {
   SUPPORT_OPEN_MESSAGE,
   type PermissionKey,
   type PlatformAuditDetails,
+  type PlatformAuditResult,
   type PlatformAuditView,
   type PlatformDatabaseStatus,
 } from "@workspace/shared";
 import { ceilingLock } from "@/features/admin/access-draft";
 import { auditColumns } from "@/features/admin/audit-columns";
 import { auditActionLabel, auditActorText, auditDetailsText, type AuditFormat } from "@/features/admin/audit-labels";
-import { appendOlderAuditPage, auditRows, olderAuditCursor } from "@/features/admin/audit-paging";
+import { appendOlderAuditPage, auditRows, olderAuditCursor, runOlderAuditLoad } from "@/features/admin/audit-paging";
 import { databaseErrorText, databaseText } from "@/features/admin/database-labels";
 import { PlatformRoleProvider, usePlatformRole } from "@/features/admin/platform-role";
 import type { ApiClient } from "@/lib/api/contract";
@@ -255,6 +256,54 @@ describe("older audit pages on the screen", () => {
     const next = appendOlderAuditPage(reread, older, "f", demoAuditPage(grown, { limit: 2, before: "f" }));
     expect(ids(auditRows(reread, next))).toEqual(["g", "f", "e", "d"]);
     expect(olderAuditCursor(reread, next)).toBe("d");
+  });
+
+  /** One load whose answer the test settles by hand, and what it did on the screen. */
+  function pendingLoad() {
+    let live = true;
+    let settle: { resolve: (page: PlatformAuditResult) => void; reject: (failure: Error) => void } | null = null;
+    const added: PlatformAuditResult[] = [];
+    const toasts: string[] = [];
+    const run = runOlderAuditLoad({
+      read: () =>
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+      live: () => live,
+      add: (older) => added.push(older),
+      fail: (message) => toasts.push(message),
+    });
+    const leave = () => {
+      live = false;
+    };
+    return { run, added, toasts, leave, answer: () => settle! };
+  }
+
+  it("shows a failure toast, or adds the page, while the entries are still on screen", async () => {
+    const failing = pendingLoad();
+    failing.answer().reject(new Error("The API did not answer."));
+    await failing.run;
+    expect(failing.toasts).toEqual(["The API did not answer."]);
+    const loading = pendingLoad();
+    loading.answer().resolve(page("e"));
+    await loading.run;
+    expect(ids(loading.added[0]!.entries)).toEqual(["d", "c"]);
+    expect(loading.toasts).toEqual([]);
+  });
+
+  it("shows no toast and adds nothing when the answer comes after new filters or leaving the page", async () => {
+    const failing = pendingLoad();
+    failing.leave();
+    failing.answer().reject(new Error("The API did not answer."));
+    await failing.run;
+    expect(failing.toasts).toEqual([]);
+    expect(failing.added).toEqual([]);
+    const loading = pendingLoad();
+    loading.leave();
+    loading.answer().resolve(page("e"));
+    await loading.run;
+    expect(loading.added).toEqual([]);
+    expect(loading.toasts).toEqual([]);
   });
 });
 

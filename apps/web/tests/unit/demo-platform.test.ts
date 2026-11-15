@@ -94,6 +94,10 @@ describe("demo platform console (part 3)", () => {
     await expect(store.requestSupportAccess({ companyId: "nowhere", reason: REASON, hours: 2 })).rejects.toThrow(
       "That company does not exist.",
     );
+    // The body is checked before the company, as the API answers 400 before 404 ("Refusal order").
+    await expect(store.requestSupportAccess({ companyId: "nowhere", reason: " short ", hours: 2 })).rejects.toThrow(
+      SUPPORT_REASON_MESSAGE,
+    );
     await expect(store.requestSupportAccess({ companyId: "summit", reason: " short ", hours: 2 })).rejects.toThrow(
       SUPPORT_REASON_MESSAGE,
     );

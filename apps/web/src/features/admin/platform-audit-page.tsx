@@ -21,7 +21,13 @@ import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { auditColumns, type AuditColumnFormat } from "./audit-columns";
 import { AUDIT_ACTION_LABELS } from "./audit-labels";
-import { appendOlderAuditPage, auditRows, olderAuditCursor, type OlderAuditPages } from "./audit-paging";
+import {
+  appendOlderAuditPage,
+  auditRows,
+  olderAuditCursor,
+  runOlderAuditLoad,
+  type OlderAuditPages,
+} from "./audit-paging";
 import { usePlatformRole } from "./platform-role";
 
 /** The Select value that stands for "no filter"; never a company id or an action. */
@@ -80,7 +86,8 @@ function FilterSelect({ id, label, value, allLabel, options, onChange }: FilterS
 
 /**
  * The entries for one choice of filters: the newest page, then older pages on request, one load
- * at a time. It is keyed by the filters, so changing one starts again from the newest entries.
+ * at a time. It is keyed by the filters, so changing one starts again from the newest entries, and a
+ * load still running for the old filters then changes nothing.
  */
 function AuditEntries({ filters }: { filters: AuditFilters }) {
   const role = usePlatformRole();
@@ -91,8 +98,16 @@ function AuditEntries({ filters }: { filters: AuditFilters }) {
   const [loading, setLoading] = useState(false);
   // The button and a failed load's Try again share this guard, so only one older page loads at a time.
   const inFlight = useRef(false);
+  // False once these entries leave the screen, so a load still running then changes nothing.
+  const live = useRef(true);
   // A Try again belongs to these filters: it goes when they change or the page closes.
-  useEffect(() => () => void toast.dismiss(OLDER_FAILED_TOAST), []);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+      toast.dismiss(OLDER_FAILED_TOAST);
+    };
+  }, []);
 
   if (first.status !== "ready") return <QueryFallback query={first} className="h-96" label="Loading audit log" />;
   const newest = first.data;
@@ -101,22 +116,25 @@ function AuditEntries({ filters }: { filters: AuditFilters }) {
   const filtered = filters.companyId !== undefined || filters.action !== undefined;
 
   async function loadOlder(before: string) {
-    if (inFlight.current) return;
+    if (!live.current || inFlight.current) return;
     inFlight.current = true;
     setLoading(true);
     toast.dismiss(OLDER_FAILED_TOAST);
     try {
-      const page = await api.listPlatformAudit({ ...filters, before });
-      // An answer for a cursor another load already moved past is dropped, never added twice.
-      setOlder((previous) => appendOlderAuditPage(newest, previous, before, page));
-    } catch (failure) {
-      toast.error(failure instanceof Error ? failure.message : "Older entries did not load.", {
-        id: OLDER_FAILED_TOAST,
-        action: { label: "Try again", onClick: () => void loadOlder(before) },
+      await runOlderAuditLoad({
+        read: () => api.listPlatformAudit({ ...filters, before }),
+        live: () => live.current,
+        // An answer for a cursor another load already moved past is dropped, never added twice.
+        add: (page) => setOlder((previous) => appendOlderAuditPage(newest, previous, before, page)),
+        fail: (message) =>
+          toast.error(message, {
+            id: OLDER_FAILED_TOAST,
+            action: { label: "Try again", onClick: () => void loadOlder(before) },
+          }),
       });
     } finally {
       inFlight.current = false;
-      setLoading(false);
+      if (live.current) setLoading(false);
     }
   }
 

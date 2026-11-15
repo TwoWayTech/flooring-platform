@@ -58,3 +58,32 @@ export function appendOlderAuditPage(
     nextCursor: page.nextCursor,
   };
 }
+
+/** What one older-page load needs: how to read the page and what to do with its answer. */
+export interface OlderAuditLoad {
+  /** Reads the older page. */
+  read: () => Promise<PlatformAuditResult>;
+  /** Whether the entries that asked are still on screen (the same filters, the page still open). */
+  live: () => boolean;
+  /** Adds the page below the ones shown. */
+  add: (page: PlatformAuditResult) => void;
+  /** Shows why the page did not load, with a Try again. */
+  fail: (message: string) => void;
+}
+
+/**
+ * Runs one older-page load (docs/specs/platform-admin.md, "Screens (part 3)", Older entries). The
+ * entries are keyed by the filters, so new filters, or leaving the page, end them while a load may
+ * still be running. An answer that arrives after that does nothing: no page is added, and no
+ * failure toast, with a Try again for the old filters, appears over the new ones.
+ */
+export async function runOlderAuditLoad({ read, live, add, fail }: OlderAuditLoad): Promise<void> {
+  let page: PlatformAuditResult;
+  try {
+    page = await read();
+  } catch (failure) {
+    if (live()) fail(failure instanceof Error ? failure.message : "Older entries did not load.");
+    return;
+  }
+  if (live()) add(page);
+}
