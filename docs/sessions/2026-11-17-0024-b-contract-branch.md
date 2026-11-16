@@ -107,6 +107,31 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **`contractBody`'s JSDoc already cites ADR 0044's new section,** "The web leaves a new contract's branch to the API", which stage 4 adds (critic item M1: never cite a STATUS bullet the PR deletes).
 - **No other place sends a contract's branch.** `saveContract` is called only from the contract form, renew has no body, and `api-methods.ts` names `branchId` nowhere after the fix.
 
+#### Stage 3 (F5 back from `fixme`)
+- **The kit still fits.** `kit.ts` and `checks.ts` export what F5 imports (`waitForAnswer`, `flowTest`, `choose`, `readAs`, `postAs`, …), `onCleanup` still takes `(label, () => Promise<APIResponse>)`, and B1 didn't change the settling rule ("any 400 or 409 is done"). B1's F1 clean-ups post inline, as before, so F5's `voidLeftBilling` is the plan's own.
+- **`sentBody.catch(() => undefined)` is kept (critic item M2),** though B1's new `waitForRequest` in F1 has none. The plan's version is the safer one; F1's is a nit for STATUS.
+- **A race in F5's own waits, found by the throwaway stop runs and fixed in F5.**
+  - **What happened.** Two of the first four stop throwaways, `b4-f5-stop-release` and `b4-f5-stop-drop`, stopped early with "The contract page was not given billing N's invoice.", in steps 2 and 4. The clean-ups did the right thing both times.
+  - **The cause, from the `drop` run's trace.** A write's re-read sends 24 GETs at once to the app ("Mark completed"'s, in the trace). Over HTTP/1.1 the browser runs only six at a time, so the rest queue. The contract page sends one `GET /invoices`, and two other readers on the page send one each. "Mark completed" hides once the page's own loader has all its answers, but the other two readers' answers can land later.
+    - In the `drop` run, one of "Mark completed"'s three reads (260 rows, without the release invoice) got its answer at about 10173 ms. That is just after step 4 armed its wait, at about 10170 ms, and the click came about 55 ms later.
+    - The kit's `waitForAnswer` takes any matching answer after it is armed, so it took that one.
+    - The trace's per-request `time` leaves out the queueing, so on its face that read looked finished at about 10000 ms. A `response.text()` call at 10173.9 ms shows when its answer actually arrived.
+  - **Not a product bug.** The screen shows the new billing and its invoice once its own re-read lands. Only the test's choice of answer was wrong.
+  - **The fix: `nextInvoicesRead(page)`, local to F5,** for the two invoice re-reads (steps 2 and 4).
+    - It records the `GET /invoices` requests the page sends after the wait is armed, and resolves to the first answer to one of them.
+    - The contract page reads only on opening and after a write (`use-api.ts`: on mount, when its inputs change, and on `api.subscribe`). So between arming and the click nothing else is sent, and the first read sent after arming is the write's own re-read.
+  - **Why not in the kit.** `waitForAnswer` is used by every flow, and some arm after the read may already be on its way (after a `goto`). A kit-wide "sent after arming" rule would need every call checked, and the plan keeps the kit unchanged for F5 (M2). F4's one re-read wait (`/me/portal`) is armed after `openMyPortal` has its answer and with no earlier write, so no re-read can be queued when it arms. This goes to STATUS as a follow-up.
+  - **The proof, deterministic** (the `make-f5-race.py` throwaway):
+    - Before step 4's waits are armed, the page sends its own `GET /invoices`. Its answer is fetched at once, so it predates the release, but it is handed to the page only once the release POST has been sent.
+    - With step 4's old `waitForAnswer`, the run fails with exactly "The contract page was not given billing 2's invoice." (`b4-f5-race-old`).
+    - With `nextInvoicesRead`, it passes (`b4-f5-race-new`).
+  - **Re-run on the final F5:** runs 1 and 2 again (`b4-f5-c`, `b4-f5-d`), all four stop throwaways again (`b4-f5-stop2*`), and the whole suite.
+- **The optional runs were done:**
+  - stops after step 3 (`paid`) and after the release posted (`release`);
+  - the S1 check (`drop`: "Only the latest billing can be voided." taken out of the set).
+  - Each behaved as planned (Commands run). The optional pin (§6.3 run 5, the fix reverted) was not done: the red unit test and the flows log's `f5-try1` already show the bug, and it would cost two more builds on this laptop.
+- **Demo e2e was run, although the plan says it isn't needed.** The task asks for it, so I took the safer reading: the demo contract specs, `contracts.spec.ts` and `flows-batch3.spec.ts` (whose flow 5 is G3-5), on a demo build. The demo build replaces the api build, so the final suite (`b4-all-final`) builds again.
+
 ## Which test pins which path
 | Path | Pinned by |
 | --- | --- |
@@ -116,8 +141,9 @@ Planned decisions, each the safest option found. Decisions taken while building 
 | A branchless creator below scope `all` can't pick | the new `it`, step 5; mutation (b) |
 | A branchless all-scope creator picks only a live branch of this company | the new `it`, step 3 (unknown, soft-deleted and another company's ids) |
 | A new contract is saved from the screen in api mode, under the creator's branch | F5 step 1 |
-| A stopped F5 run's open billing is voided | the `b4-f5-stop` throwaway run |
-| A clean-up refused for an unexpected reason fails the run | `voidLeftBilling`; F5's finished runs |
+| A stopped F5 run's open billing is voided | the `b4-f5-stop` throwaway runs (after Billing 1, after its payment, after the release) |
+| A clean-up refused for an unexpected reason fails the run | `voidLeftBilling`; F5's finished runs; the `drop` throwaway |
+| F5 takes each new invoice from the write's own re-read, never from an earlier read still in flight | `nextInvoicesRead`; the `b4-f5-race-old` and `b4-f5-race-new` throwaway pair |
 
 ## Owner questions
 None blocks the build.
@@ -164,3 +190,20 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs
 | 2 | the same, after the fix | 3 passed |
 | 2 | `pnpm exec prettier --check` on the three changed files | clean |
 | 2 | `heavy.sh b4/checks.sh s2 web:lint web:typecheck web:test` | clean, clean, 35 files and 279 tests passed (B1's tree had 34 and 276) |
+| 3 | `heavy.sh b4/checks.sh s3 web:lint web:typecheck` (F5 as planned) | clean, clean |
+| 3 | `heavy.sh flows/api-e2e.sh b4-f5-a --build -- …/f5-contract-retainage.spec.ts` | builds 10 s (a fresh `next build`); exit 0, 1 passed, F5 9.6 s |
+| 3 | `heavy.sh flows/api-e2e.sh b4-f5-b -- …/f5-contract-retainage.spec.ts` | exit 0, 1 passed, F5 8.4 s |
+| 3 | `b4-f5-stop` (the throwaway stopped after "2. the ledger", Billing 1 posted and unpaid) | exit 1 by design: `VARIANT void <Billing 1>: 201` (status `void`), ledger delta since t0 `{}` and every named account 0.00; no clean-up problem, only the planned stop |
+| 3 | `b4-f5-stop-paid` (stopped after step 3, Billing 1 paid) | exit 1 by design: the void refused 400 "This billing has a confirmed payment, so it can't be voided." (settled); Billing 1 `posted`; no clean-up problem |
+| 3 | `b4-f5-stop-release` and `b4-f5-stop-drop` (first try) | exit 1, **not at the planned points**: "The contract page was not given billing 1's invoice." (step 2) and "… billing 2's invoice." (step 4). The clean-ups did the right thing (release voided 201, Billing 1 refused as paid, settled). The trace showed the wait race (Decisions, stage 3) |
+| 3 | `b4-f5-race-old` (an early `GET /invoices` handed to the page after the release POST was sent; step 4 on the old `waitForAnswer`) | exit 1 as expected: "The contract page was not given billing 2's invoice." from the early 262-row answer |
+| 3 | `b4-f5-race-new` (the same, on `nextInvoicesRead`) | exit 0, 1 passed, 9.7 s |
+| 3 | `heavy.sh b4/checks.sh s3b web:lint web:typecheck` (F5 with `nextInvoicesRead`) | clean, clean |
+| 3 | `b4-f5-c`, `b4-f5-d` (the final F5, twice) | exit 0 both, F5 9.4 s and 9.4 s |
+| 3 | `b4-f5-stop2` (after Billing 1) | exit 1 by design: Billing 1 voided 201, ledger delta `{}` |
+| 3 | `b4-f5-stop2-paid` (after step 3) | exit 1 by design: refused as paid (settled), no clean-up problem |
+| 3 | `b4-f5-stop2-release` (after the release posted) | exit 1 by design: the release voided 201, then Billing 1 refused "confirmed payment" (settled); the ledger keeps Billing 1's paid posting only (cash 826.00, retainage receivable 40.00, sales −800.00, sales tax −66.00) |
+| 3 | `b4-f5-stop2-drop` (S1 check: "Only the latest billing can be voided." taken out of the set; no stop) | exit 1 as expected: every step passed, then "Clean-up failed, so the flow left data behind: void Billing 1 on CTR-1023: refused for another reason: … Only the latest billing can be voided." |
+| 3 | `git status --short` after each throwaway | only F5 modified; no `zz-` file |
+| 3 | `heavy.sh flows/api-e2e.sh b4-all` (the whole api-mode suite) | exit 0 after 150 s: 37 passed, 1 skipped (B1's B5 `fixme`; no flow skipped). F1 15.9 s, F2 8.9 s, F3 4.7 s, stale-save 3.1 s, F4 4.5 s, **F5 9.3 s**, F6 11.9 s, F7 5.2 s |
+| 3 | `heavy.sh b4/e2e-demo.sh` (demo build; `--project=flooring` `contracts.spec.ts` and `flows-batch3.spec.ts`, one worker) | build 11 s; exit 0, 20 passed in 25.5 s; ports free after |
