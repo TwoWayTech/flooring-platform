@@ -22,12 +22,14 @@ import { NewerHoursNotice } from "./newer-hours-notice";
 import {
   hoursSaved,
   keepTypedHours,
+  readKey,
   saveInput,
   serverHours,
   takeSavedHours,
   typedHours,
   typeHours,
   weekHours,
+  weekLocked,
 } from "./week-hours";
 
 /**
@@ -58,8 +60,9 @@ function useActionFocus(busy: boolean, waiting: boolean) {
 /**
  * One week's hours. The saved hours arrive with every read (an upload, the clock, another tab, or
  * this form's own save makes the page read again): a form with no edits takes them, and a form
- * with edits keeps them and asks (`week-hours.ts`). Every save sends the hours the form started
- * from, so the server refuses one made from hours that changed meanwhile (ADR 0051, 2026-11-16).
+ * with edits keeps them and asks (`week-hours.ts`). Its own save's answer counts as a read. Every
+ * save sends the hours the form started from, so the server refuses one made from hours that
+ * changed meanwhile (ADR 0051, 2026-11-16).
  */
 function WeekForm({
   employee,
@@ -72,8 +75,8 @@ function WeekForm({
   sheet: Timesheet | undefined;
   headings: string[];
 }) {
-  const locked = sheet?.status === "approved" || sheet?.status === "submitted";
-  const key = `${locked}|${sheet?.days.join(",") ?? ""}`;
+  const locked = weekLocked(sheet);
+  const key = readKey(sheet);
   const [hours, setHours] = useState(() => weekHours(sheet?.days));
   const [seen, setSeen] = useState(key);
   const [busy, setBusy] = useState(false);
@@ -91,7 +94,9 @@ function WeekForm({
     // Unreachable: Save and Submit are disabled while newer hours wait for a choice.
     if (!input) throw new Error("Choose which hours to keep first.");
     const saved = await api.saveTimesheet({ employeeId: employee.id, weekStart, ...input });
-    setHours((current) => hoursSaved(current, saved.days));
+    // The answer is remembered as the last read, so a read that differs from it is never skipped.
+    setHours((current) => hoursSaved(current, input.days, saved));
+    setSeen(readKey(saved));
     return saved;
   }
 

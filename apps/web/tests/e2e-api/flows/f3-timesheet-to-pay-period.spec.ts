@@ -46,6 +46,7 @@ const HOURS = ["6.5", "7", "7.5"] as const;
 const UPLOAD = /^\/api-proxy\/timesheets\/upload$/;
 const SAVE = /^\/api-proxy\/timesheets$/;
 const SUBMIT = /^\/api-proxy\/timesheets\/[^/]+\/submit$/;
+const PORTAL = /^\/api-proxy\/me\/portal$/;
 
 /** The days a run fills in: Monday of `week` through today, or through Friday from Saturday on. */
 function daysToFill(week: string, today: string): string[] {
@@ -335,10 +336,13 @@ function sentHours(request: Request): { days: string[]; expectedDays: string[] }
  * only, which is never a future day; each value differs from the one before it, so no upload skips
  * a day as "Already these hours", and none is one of F3's `HOURS`.
  * 1. Bri's own save shows no newer-hours notice.
- * 2. One tab, draft to draft: an upload from the dialog reaches the unedited form with no reload.
- * 3. Edits kept: an upload from a second tab, then Save, is refused (409, nothing saved); the notice
+ * 2. Her own save, then a second tab puts back the hours the form held before it, ahead of the
+ *    save's re-read: the form takes them, rather than keep the saved hours as if they were still
+ *    stored (review round 1 of PR #44).
+ * 3. One tab, draft to draft: an upload from the dialog reaches the unedited form with no reload.
+ * 4. Edits kept: an upload from a second tab, then Save, is refused (409, nothing saved); the notice
  *    shows the saved hours, Save and Submit wait, focus is on "Use saved hours", which takes them.
- * 4. A clean form's Submit after a second-tab upload is refused before anything is submitted; the
+ * 5. A clean form's Submit after a second-tab upload is refused before anything is submitted; the
  *    form takes the upload, and the next Submit sends it.
  */
 flowTest.describe("flow F3: a stale timesheet save", () => {
@@ -353,7 +357,7 @@ flowTest.describe("flow F3: a stale timesheet save", () => {
       const run = runId();
       const start = companyToday();
       const week = mondayOf(start);
-      const [typed, dialogUpload, edited, tabUpload, lastUpload] = ["8", "6", "9", "5.5", "5"] as const;
+      const [typed, resaved, dialogUpload, edited, tabUpload, lastUpload] = ["8", "4", "6", "9", "5.5", "5"] as const;
       const tamara = await personas.open(HR_EMAIL, { mfa: true });
       const bri = await personas.open(EMPLOYEE_EMAIL);
       await flowTest.step("0. sweep: Bri's week back to where she can change it", () =>
@@ -391,13 +395,40 @@ flowTest.describe("flow F3: a stale timesheet save", () => {
         await expect(useSaved).toHaveCount(0);
       });
 
-      await flowTest.step("2. one tab: the dialog's upload reaches the unedited form, no reload", async () => {
+      await flowTest.step("2. her own save, then the hours before it put back ahead of the re-read", async () => {
+        // The save's re-read is held until a second tab has put Monday back to the hours the form read last.
+        const gate: { release: () => void } = { release: () => undefined };
+        const held = new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+        let reads = 0;
+        await page.route(
+          (url) => PORTAL.test(url.pathname),
+          async (route) => {
+            reads += 1;
+            await held;
+            await route.continue();
+          },
+          { times: 1 },
+        );
+        const answer = waitForAnswer<TimesheetWire>(page, "PUT", SAVE);
+        await monday.fill(resaved);
+        await save.click();
+        expect(dec((await answer).days[0]).eq(resaved), "the answer shows the hours this save wrote").toBe(true);
+        await expect.poll(() => reads, { message: "the save made the page read again" }).toBe(1);
+        await uploadElsewhere(bri.request, week, typed, run);
+        gate.release();
+        await expect(monday, "the form took the hours saved after its own").toHaveValue(typed);
+        await expect(useSaved).toHaveCount(0);
+      });
+
+      await flowTest.step("3. one tab: the dialog's upload reaches the unedited form, no reload", async () => {
         await uploadInDialog(page, { fileName: `e2e-flow-${run}-dialog.csv`, days: [week], hours: dialogUpload, run });
         await expect(monday, "the form took the upload").toHaveValue(dialogUpload);
         await expect(useSaved).toHaveCount(0);
       });
 
-      await flowTest.step("3. edits kept: a second tab's upload, then Save, is refused and asks", async () => {
+      await flowTest.step("4. edits kept: a second tab's upload, then Save, is refused and asks", async () => {
         await monday.fill(edited);
         await uploadElsewhere(bri.request, week, tabUpload, run);
         const refused = nextSave(page);
@@ -417,7 +448,7 @@ flowTest.describe("flow F3: a stale timesheet save", () => {
         await expect(save).toBeEnabled();
       });
 
-      await flowTest.step("4. a clean form's Submit after a second tab's upload submits nothing old", async () => {
+      await flowTest.step("5. a clean form's Submit after a second tab's upload submits nothing old", async () => {
         await uploadElsewhere(bri.request, week, lastUpload, run);
         const refused = nextSave(page);
         await submit.click();

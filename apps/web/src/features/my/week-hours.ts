@@ -1,4 +1,4 @@
-import { sameWeekHours } from "@workspace/shared";
+import { sameWeekHours, type Timesheet } from "@workspace/shared";
 
 /**
  * My timesheet's week form (employee-portal.md "Weekly hours"; ADR 0051, "Re-reading after every
@@ -13,6 +13,24 @@ export interface WeekHours {
 }
 
 const NO_HOURS: readonly number[] = [0, 0, 0, 0, 0, 0, 0];
+
+/** What the form needs from one read of the week, or from its own save's answer; undefined: no sheet. */
+export type WeekRead = Pick<Timesheet, "status" | "days"> | undefined;
+
+/** Whether the form only shows the week's saved hours: submitted or approved, so locked. */
+export function weekLocked(sheet: WeekRead): boolean {
+  return sheet?.status === "approved" || sheet?.status === "submitted";
+}
+
+/**
+ * One read of the week as the form remembers it: locked or not, and the saved hours. The form takes
+ * each new read once (`serverHours`), and its own save's answer counts as one (`hoursSaved`), so any
+ * later read that differs from that answer is taken or asked about, even one back at the hours the
+ * form opened with (review round 1 of PR #44).
+ */
+export function readKey(sheet: WeekRead): string {
+  return `${weekLocked(sheet)}|${sheet?.days.join(",") ?? ""}`;
+}
 
 /**
  * One day's typed text as hours: the save's own reading, so "", "." and a mistyped "7..5" are 0
@@ -59,10 +77,15 @@ export function serverHours(state: WeekHours, days: readonly number[] | undefine
   return { ...state, newer: saved };
 }
 
-/** The form after the person's own save: its saved hours become the base, and a notice for them goes. */
-export function hoursSaved(state: WeekHours, days: readonly number[]): WeekHours {
-  const settled = state.newer !== null && sameWeekHours(state.newer, days);
-  return { ...state, base: days, newer: settled ? null : state.newer };
+/**
+ * The form after the person's own save of `sent`. Its 200 means the server held exactly those hours
+ * (it wrote them, or already had them), so they become the base. The answer is then taken like any
+ * read: hours another writer saved since are taken by a form with no edits and asked about by one
+ * with edits, never made the base while the form shows other hours, so the next save can't replace
+ * them unseen (review round 1 of PR #44).
+ */
+export function hoursSaved(state: WeekHours, sent: readonly number[], answer: NonNullable<WeekRead>): WeekHours {
+  return serverHours({ ...state, base: sent }, answer.days, weekLocked(answer));
 }
 
 /** "Use saved hours": the newer saved hours replace what was typed. */
