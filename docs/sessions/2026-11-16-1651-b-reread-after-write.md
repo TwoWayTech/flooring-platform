@@ -139,7 +139,12 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **One delta row.** It covers the `PUT /timesheets` contract change and the form's new behaviour. The re-read itself carries out the plan of record (screens reflect writes, ADR 0051), so it gets no row.
 
 ### Decisions taken during the build
-(Filled in at each stage.)
+
+#### Stage 1 (the generic re-read)
+- **`API_METHODS` is checked with `satisfies HttpRoutes`, not typed `: HttpRoutes`.** The type annotation widened its keys to every ApiClient method, so `keyof typeof API_METHODS` couldn't name the routed ones. With `satisfies`, each factory is still checked against its ApiClient method, and the test's `CASES` record fails to compile when a method has no case or a case has no method. Checked: renaming one case fails `tsc` with TS2561.
+- **A file download sends what it sent before.** `blob` shares the transport's one request step (`exchange`) but keeps no JSON `Accept` header. The JSON headers and body come from a small `jsonInit`.
+- **The exhaustive test also checks that each write sends exactly one non-GET.** The plan only inferred that from "one re-read on 200".
+- **Mutation checks restore from a scratchpad copy, compared byte for byte, not with `git checkout --`.** The files under test held this stage's uncommitted work, and `git checkout` would have thrown it away.
 
 ## Owner questions
 None blocks the build.
@@ -157,3 +162,10 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b2/logs
 
 | Stage | Command | Result |
 | --- | --- | --- |
+| 0 | `gh pr create --draft …` | draft PR #44 |
+| 1 | `heavy.sh pnpm --filter web exec vitest run` on `api-rereads`, `api-router`, `meetings-api` and `imports-api`, before the fix | red as expected: 9 failed, 29 passed. Every write but the meetings and import ones gave 0 re-reads (first: `inviteUser`); the transport cases failed on the missing `withRereads` and `requestAsRead` |
+| 1 | the same four files after the fix | 38 passed |
+| 1 | `heavy.sh pnpm --filter web typecheck`, then `lint`, then `test` | clean, clean, 27 files and 247 tests passed |
+| 1 | five mutations (`b2/mut-s1.sh`): `listPayPeriods` through `request`; no re-read on success; a re-read on GET; 422 dropped; the re-read after `parse` | each failed `api-rereads` or `api-router` (1, 4, 2, 2 and 1 tests); each file restored byte for byte |
+| 1 | `heavy.sh pnpm --filter web exec tsc --noEmit` with one case renamed (`clockIn` to `clockedIn`) | exit 1, TS2561 "Did you mean to write 'clockIn'?"; file restored |
+| 1 | `pnpm exec prettier --check` on the 15 changed files | 2 needed `--write` (router, router test); clean after |
