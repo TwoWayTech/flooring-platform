@@ -3,6 +3,7 @@
 - **Status:** accepted, 2026-11-15. The owner restarted the queue on 2026-11-15, putting meetings first, and was asleep during the build. The rule for that run: follow meetings.md as the approved behaviour, deviate only in the safer direction and record each deviation in docs/blueprint-delta.md, and defer what can't be done safely. The safer deviations and the questions under "For the owner" are open for the owner's review.
 - **Part 2** (moves, undo, proposal decisions and conflicts) was added on 2026-11-15 under the same rule, on branch `feat/meetings-api-moves` (PR #35). It is the section "Part 2 (2026-11-15)" below. Where it changes a part 1 decision, the part 1 text says so.
 - **Part 3** (the web on the API: the Meetings page, its drawer and dialogs, and My meetings in api mode, and the demo store on the shared rules) was added on 2026-11-15 under the same rule, on branch `feat/meetings-web-api` (PR #37). It is the section "Part 3 (2026-11-15)" below. Its one API behaviour change is the undo check order; where it changes a part 1 or part 2 text, that text says so.
+- **2026-11-16 (STATUS B2):** every routed write makes the screens read again (the transport decides by verb), and `PUT /timesheets` refuses a save over hours changed since the form opened. It is the section "Re-reading after every write, and the timesheet stale-save check" below; it supersedes the first two bullets of part 3's "Re-reading after a write".
 - **Context:**
   - docs/real-build-plan.md row 14, "Meetings, invites and .ics": spec meetings.md, depends on module 5 (the notifications core), week 18 in the schedule.
   - meetings.md describes the demo: a calendar in both products, guests from one search or by email, an Outbox row and `.ics` per guest (ADR 0021), answers and proposals, requests, reminders and Settings → Meetings.
@@ -599,8 +600,8 @@
   - why: the page would save to DemoStore while the API reads the stored group. Part 4 builds it on the API.
 
 ### Re-reading after a write
-- `routeClient` gives every method factory a third argument, `changed`, and its `subscribe` hears both DemoStore's own changes and `changed`. Existing factories ignore it, so no other module changes.
-- **Every routed meetings write goes through `wrote`.** The screens read again after the server answered: a success, or a 400, 403, 404 or 409 refusal, since a refusal often means the screen was stale. A network failure, 401, 429 or 5xx triggers no re-read. The meetings queries keep their data when a re-read fails.
+- (Superseded 2026-11-16, see "Re-reading after every write, and the timesheet stale-save check" below.) `routeClient` gives every method factory a third argument, `changed`, and its `subscribe` hears both DemoStore's own changes and `changed`. Existing factories ignore it, so no other module changes.
+- (Superseded 2026-11-16, see below.) **Every routed meetings write goes through `wrote`.** The screens read again after the server answered: a success, or a 400, 403, 404 or 409 refusal, since a refusal often means the screen was stale. A network failure, 401, 429 or 5xx triggers no re-read. The meetings queries keep their data when a re-read fails.
 - **The newest read wins:** `useApiQuery` drops an older read that answers after a newer one (`latestRun`). This applies to every screen, and only drops answers a newer read supersedes.
 
 ### The demo store on the shared rules
@@ -740,6 +741,84 @@
   - demo e2e: seven new tests in `meetings.spec.ts` (no "This and following" on a first occurrence, no "All events" on an occurrence moved on its own, a one-off moved twice from its drawer, "Busy" for a private meeting, Undo in a move's warning from the open drawer, the drawer following a series moved with "All events" and with "This and following" and back on each Undo, and no controls for someone who may not change the meeting) and two in `meetings-invites.spec.ts` (decisions for the organiser only, and My meetings with Request). Seeded meetings are opened in the Week view, where the fixtures' whole-week shift keeps them;
   - api-mode e2e: `tests/e2e-api/meetings.spec.ts`, the manager and Priya in two browsers (schedule, "Busy", undo, propose, decide, My meetings, the hidden settings, cancel), and a second test in which the drawer follows a weekly series moved with "All events" and with "This and following" and back on each Undo, with `SALES_EMAIL` added to `accounts.ts`. `login.spec.ts`'s step-up test now waits until its revert is saved. Before, it could end first and leave Priya as Accountant, a role that needs MFA, for the specs after it.
   - Playwright now covers meetings in api mode.
+
+## Re-reading after every write, and the timesheet stale-save check (2026-11-16, STATUS B2)
+- **Status:** accepted, 2026-11-16, on branch `fix/web-reread-after-write` (PR #44). It is the first bug of the owner's queue of 2026-11-16 (STATUS "Api-mode bugs the flows found", B2). It changes part 3's "Re-reading after a write" (first two bullets superseded) and one route of ADR 0046 (`PUT /timesheets`). ADR 0058 is reserved by the paused whole-product check, so this is a dated section here rather than a new ADR. Session log docs/sessions/2026-11-16-1651-b-reread-after-write.md.
+- **Context:**
+  - Part 3 gave every method factory a `changed` argument, but only the meetings factories and the import writes (ADR 0057) wrapped their requests in `wrote`. After any other routed write, an api-mode screen kept its old read until a reload. Examples: a customer or supplier added from a picker never showed as chosen; invoice pills, Ready to cut, the PO list, the contract page and HR's queues stayed as they were; a reopened week showed Approved.
+  - **Payroll data loss:** My timesheet's week form copied the sheet's hours once and was keyed by week and status. After an upload over a draft it kept the hours it opened with, and Submit saves the form first (employee-portal.md "Weekly hours"). So it wrote the old hours over the upload and submitted them, and HR could approve and pay them. The demo had the same form bug, hidden by G3-3's reload. `PUT /timesheets` overwrote the week with no check.
+
+### The transport decides by verb (`apps/web/src/lib/api/http/transport.ts`)
+- **A GET never re-reads.** Any other request that the server answered re-reads exactly once, through `HttpTransport.withRereads(changed)`. The router builds that transport once and hands it to every factory. `HttpMethodFactory` takes `(http, demo)`, so no factory can re-read on its own or twice, and `wrote` is gone.
+- **Four POSTs only read** and go through `requestAsRead`, which never re-reads:
+  - `verifyStepUp` (`POST /auth/step-up`): it changes no company data, and the write that follows re-reads;
+  - `previewImport` (`POST /imports/check`): a dry run;
+  - `listPayPeriods` (`POST /pay-periods`): it runs inside a read (`useApiQuery` on Pay periods and HR Home), so through `request` it would loop (read, POST, re-read, POST and so on);
+  - `uploadTimesheets` with `apply: false`: the upload's dry run.
+- **Why by verb.** Putting `wrote` in every factory meant about 100 edits, and every new write would have to remember it, which is how B2 happened. A list of method names in the router fails either way: a new read loops, or B2 comes back. By verb, a new write re-reads by default.
+- **The exhaustive test** `apps/web/tests/unit/api-rereads.test.ts` covers all 146 routed methods on a shared fake API (`tests/unit/fake-api.ts`):
+  - its cases are a typed `satisfies Record<RoutedMethod, …>`, so a method added without a case fails to compile, and a runtime key check backs that up. `API_METHODS` is checked with `satisfies HttpRoutes`, so its keys are the routed ones;
+  - every read gives no re-read on 200 and on refused POSTs;
+  - every write sends exactly one non-GET and re-reads once on 200, once on 400, 403, 404, 409 and 422, and never on a network failure, 401, 429, 500 or 503;
+  - reads send no non-GET except the four named above.
+- **No coalescing.** No screen sends writes in a loop or with `Promise.all`, and no read sends a write except `listPayPeriods`. A coalescer would add timing to every test for a case that doesn't exist. Revisit if a bulk-write screen appears.
+
+### Which answers re-read
+- **Re-read:** a success, or a 400, 403, 404, 409 or 422 refusal. These mean the server answered and the screen may be stale.
+- **No re-read:**
+  - status 0 and 502 to 504 mean the server or gateway is down, so a re-read would fail too, and screens without `keepDataOnError` would drop a dialog holding input;
+  - 401 means the session is gone;
+  - 429 means try later. The support-request dialog reads again itself after its limit refusal, because its Request button depends on the limit;
+  - a 500 may or may not have committed. This stays the open PR #37 note: a retry after a 500 that did commit can duplicate the record.
+- **Timing.** The re-read fires as soon as the response is OK or refused, before the body is parsed: a 2xx whose body fails to parse has still committed.
+- **New behaviour.** Until now only meetings and import re-read after a refusal, and DemoStore never does. A refused write now re-reads every subscribed query in every api-mode module.
+  - `useApiQuery` keeps its state during a re-read, so nothing unmounts unless an answer changed or the read failed.
+  - The two editors keyed by their JSON answer (`settings/roles/roles-page.tsx`, `admin/company-access-page.tsx`) get identical answers after a refusal. Neither `Role` nor `PlatformCompany` carries a field that changes on each read, so they keep their drafts (checked in the code).
+  - `MyShell` now keeps its data when a re-read fails, because every portal write re-reads and a failed re-read must not unmount a form holding typed hours.
+
+### The screens' own re-reads
+- **Removed** (the transport covers them): the plans page's `reads` counter, with `PlanDialog.onSaved` and `PlanActiveDialog.onChanged`, and the company-access page's `data.retry` after a save, with `AccessEditor.onSaved`.
+- **Narrowed:** the support-request dialog reads again only after a 429 limit refusal (`onRefused`).
+- **Kept:** the focus counters in `support-access-panel.tsx` and `company-status-page.tsx`. They also move focus. In api mode they read once more than needed, which is harmless.
+
+### My timesheet: never save old hours over newer ones
+- **Server.** `PUT /timesheets` takes a required `expectedDays`: the seven days the form started from, as decimal strings, with seven `"0"` for a week with no sheet.
+  - It is checked by shape only (seven strings of digits with an optional decimal part, at most 12 characters). A missing or malformed one is 400 `invalid_request`, "Reload the page, then save your hours again.".
+  - After today's checks, under the existing employee lock and the sheet's `FOR UPDATE`, the service refuses when the stored days differ by value from `expectedDays` and also from `days` (`overwritesNewerHours` in `packages/shared/src/hr/timesheets.ts`). The answer is 409 `timesheet_changed` with `TIMESHEET_CHANGED_MESSAGE`. Nothing is written: no time entries, history, audit or `updated_at`.
+  - **By content, not `updated_at`.** It compares what payroll pays, so a status change never causes a false conflict, and neither `TimesheetWire` nor the shared `Timesheet` gains a field. There is no schema change.
+  - **A save of the stored hours is taken.** It writes what is already there, and it avoids false refusals on a double click or a quick Save then Submit.
+  - **Required, not optional.** An optional field would be an unchecked path for payroll hours. The web is the only client, and the body is strict. Precedents: `acknowledgePlan`'s 409 `plan_changed`, `runImport`'s `expected`, and the platform status actions' `expectedStatus`.
+  - Only the server makes "never" true. Its check covers the one-tab race (Submit before the upload's re-read lands), a second tab, a clock-out adding hours, and HR uploading for the person.
+- **Demo parity.** DemoStore's `saveTimesheet` runs the same shared check with the same words. Like every demo refusal, it doesn't emit.
+- **The form** (`features/my/week-hours.ts`, a pure model, and `my-timesheet.tsx`):
+  - It compares parsed hours only, through the save's own parse (`Number(text) || 0`), never decimal.js over typed text, which throws on `""` or `"7..5"`.
+  - A form with no edits takes newer saved hours. A form with edits keeps them and shows a notice (`newer-hours-notice.tsx`) with the saved days, "Use saved hours" or "Keep my hours". Keep my hours makes the newer hours the base, so the next save replaces them knowingly; the audit's `before` keeps them.
+  - Every save sends the form's base as `expectedDays`.
+  - The form is keyed by week only and takes server hours during render, never in an effect (the installed react-hooks lint has `set-state-in-effect`; a week-and-status key would remount the form on its own submit).
+  - Save and Submit are disabled while a request runs or while the notice waits for a choice. Upload and the week picker live in the parent and are not covered; the server check refuses any overlap that would lose hours.
+  - **Focus** moves only when a request ends or the notice comes or goes, and only when focus is on the page body or in the actions row: to "Use saved hours" while the notice shows, else back to the button that started the action, or Save.
+- **Submit still saves first** (employee-portal.md "Weekly hours"). With the check, a clean form's save writes what the server holds or is refused. Skipping it would change the spec and the audit, and a week with no sheet must still be created.
+
+### Tests that pin it
+- **Unit:** `api-rereads` and `api-router` (the transport cases, including a 200 with a body that fails to parse); `my-week-hours` (cases a to j); `demo-timesheets`; `timesheets-api` (the wire and the 409); `newer-hours-notice`; and the shared `sameWeekHours` and `overwritesNewerHours`.
+- **API:** a new `hr.int.test.ts` case. A stale save is refused with nothing written, the stored hours are taken, a week the upload created is covered, the shape is checked, and a submitted week still answers its own 400 first. Every other `PUT /timesheets` in the HR, payroll, California-pay and portal tests sends `expectedDays`.
+- **Api-mode e2e:**
+  - F2 runs again (it was `fixme` for B2 alone).
+  - F3 and F4 lost their reloads.
+  - A new F3 test, "a form opened before hours were saved elsewhere never saves them over", covers four things: Bri's own save with no notice; the dialog's upload reaching the unedited form with no reload; a second tab's upload, then Save refused with the notice and focus on "Use saved hours"; and a clean form's Submit refused before anything is submitted.
+  - A pin check (a throwaway build whose form never takes server hours) failed that test at its second step, as it should.
+- **Demo e2e:** G3-3 checks Monday holds the upload instead of reloading.
+
+### Residual risks (B2)
+- **R1 Load.** Every answered write, refusals included, re-runs every subscribed query on the page. The contract page makes about 13 GETs. That is one round per write, as the demo does after its successes.
+- **R2 No re-read after a 500** that may have committed (PR #37 note, unchanged).
+- **R3 A tab left open across the deploy** gets "Reload the page, then save your hours again." on its next save. Nothing is lost.
+- **R4 The save-then-submit window.** An upload from elsewhere that lands in the milliseconds between a Submit's save and its submit gets submitted. Those hours are newer, never older, and the approver sees them. Closing it needs a submit body, a second contract change.
+- **R5 "Keep my hours"** deliberately replaces newer saved hours. It is explicit, and audited through `before`.
+- **R6 The form's wiring is pinned only by e2e.** `apps/web` has no React Testing Library or jsdom; adding them needs the owner.
+- **R7 `"7..5"` saves as 0 hours,** as before (`Number(text) || 0`).
+- **R8 Tables draw their cells afresh whenever the page that owns them renders again.** `DataTable` passes each column's inline `cell` function to TanStack's `flexRender`, which mounts it as a component. The page builds new columns on each render, so every re-render remounts every cell, and an open row menu closes. In demo mode a write's emit re-renders at once. In api mode the re-read now lands a round trip after each write, so a row menu opened in that window closes. The first full api-mode run hit this in `login.spec.ts` (Priya's actions menu after a role change), which now waits for her row to show the change. A stable cell renderer in `DataTable` fixes it for every table; that is its own task (STATUS follow-up).
+- **R9 Demo refusals don't emit,** so the demo's parity for a stale save relies on the upload's own emit. Two demo tabs don't share data anyway.
 
 ## Later parts
 - **Part 2** (`feat/meetings-api-moves`, PR #35): done, under "Part 2 (2026-11-15)" above.

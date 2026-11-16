@@ -168,16 +168,70 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **The notice's markup test checks the `disabled=""` attribute.** Checking for the word "disabled" would not work, because the Button's classes contain `disabled:`.
 - **The API mutation guards the check, it doesn't delete it.** Deleting the `if` would leave its imports unused and fail the build for the wrong reason, so the mutation puts an always-false condition in front of the check.
 
+#### Stage 3 (e2e)
+- **The stale-save test has its own describe in the F3 file**, with its own `resetAuthAround`. Tamara enrols an authenticator at each sign-in, and that needs a person without one, while the main describe resets only before and after all its tests. It is still in the F3 file and on the serial runner (D15).
+- **F3's steps are shared helpers, not copies:**
+  - `reopenWeek` is split out of `sweep`, because the new test needs only the state reset;
+  - `uploadInDialog` serves the main test's step 2 and the new test's step 2;
+  - `uploadElsewhere` stands for the second tab: it goes through `postAs`, so the open page is not told to read again;
+  - `sendBack` serves both clean-ups, and `isSave`, `nextSave`, `SAVE` and `SUBMIT` serve both tests.
+- **Step 1 checks the request too.** `page.waitForRequest` reads the PUT body, and `expectedDays` must equal the field's opening value by value. The 409s are awaited with `page.waitForResponse`, because `waitForAnswer` rejects any answer that is not OK (as planned).
+- **The F1 blockers are labelled** "B1, STATUS follow-up." and "B3, STATUS follow-up.", so the annotations name what still blocks F1. F5's names B4 only. Both JSDoc headers say B2 is fixed and point to this log.
+- **The step-up test in `login.spec.ts` was red on the first full api-mode run (`b2-all-1`), and this branch caused it.**
+  - **The cause.** `DataTable` hands each column's inline `cell` function to TanStack's `flexRender`, which mounts it as a component. The users page builds new columns on every render, so every render remounts every cell. The step-up test opened Priya's actions menu as soon as the first change's toast showed; about 35 ms later the users re-read landed, the page rendered again, and the open menu closed. The test then waited out its 60 s. In demo mode a write's emit re-renders at once, so this never showed; in api mode the re-read now lands a round trip after the write.
+  - **The fix in the test.** Before opening the menu again, it waits for Priya's row to show "Accountant". That is the re-read's result, so it also pins B2 on the users page.
+  - **The product glitch is recorded, not fixed here.** A row menu opened within a round trip of a write closes (ADR 0051 R8, and a STATUS follow-up). A stable cell renderer in `DataTable` fixes every table, but it is shared by every screen, so it is its own task. That is the safest option for this branch.
+  - **The knock-on failures.** The failed test never put Priya back, so she stayed Accountant, a role that needs MFA, on the local api e2e database. `meetings.spec.ts` and the reports test E2E-4 then failed at her sign-in. A throwaway probe (`zz-restore-priya.spec.ts`, scratchpad copy only, removed after the run) put her back to Sales through the product, as the test's own restore does. Nothing was reseeded and no table was touched directly.
+- **The run order** follows this session's instructions: one build, F2 alone twice, F3 and F4 together, then the whole suite. The plan's pin check and demo run were kept. They took two more builds, each about 10 s with Turbopack's cache. Each build was checked to hold the branch's code: the notice's words in the web chunks, and `expectedDays` in the API bundle.
+- **The pin check** cut the render-time adjust down to `setSeen(key)`, keeping `serverHours` referenced so it still built. The new F3 test failed at step 2 ("the form took the upload": expected "6", received "8"). The file was restored from a scratchpad copy, with no diff.
+- **The F1 and F5 variants without B2's workarounds** (`b2/throwaway/make-f1-nob2.py`, `make-f5-nob2.py`) keep only B1's cost patch and B3's log (F1) and B4's body rewrite (F5). F1's three remaining reloads follow another persona's write (Grace's confirmations, D14), so they stay.
+  - Both passed with no B2 workaround. F1: the customer added from the quote builder shows as chosen, the invoice pills change after each payment and the void, and Ready to cut drops the cut row, each on the same page. F5: the contract page offers Record signature after Send for signature, and the billing, Paid, Mark completed and the release show in place.
+  - F1 and F5 register no clean-ups while they are `fixme`, so each variant run left its records on the local api e2e database (a customer, a quote, an invoice with two payments and a cut; a contract with its billings), as the flows session's variants did. CI's database is fresh.
+- **`apps/web/.next` holds the demo build after the demo run.** `api-e2e.sh --build` rebuilds before any api-mode run.
+
+## Which test pins which path
+| Path | Pinned by |
+| --- | --- |
+| Upload over an existing draft, one tab (the STATUS payroll case) | New F3 test, step 2 (api mode, CI); the pin check failed it on a form that never takes server hours; demo G3-3 (Monday) |
+| Upload into a week with no sheet | F3 main test, step 2, on CI's fresh database; model case (g) |
+| Edited form, then newer hours: the notice, the choice, focus | New F3 test, step 3; model cases (b) and (c) |
+| Clean form, stale Submit from another tab: 409, nothing submitted | New F3 test, step 4; the new `hr.int` case; `demo-timesheets.test.ts` |
+| One's own save shows no notice | New F3 test, step 1; model cases (d) and (h) |
+| A save of the stored hours is taken | The new `hr.int` case; `demo-timesheets.test.ts` |
+| Every write re-reads, and no read does | `api-rereads.test.ts`; F2, F3 and F4 on CI; the users page in `login.spec.ts` |
+| The queues, the grid and My time off update in place | F3 steps 3 and 5, F4 steps 2 and 3 |
+| Pickers, a PO draft, the order and the receipt update in place | F2 |
+
 ## Owner questions
 None blocks the build.
 
-- **Q1, CI time.** F2 and the new F3 stale-save test add about 20 to 25 s to each `verify` run. Keep them in `verify` (the open Q1 of PR #42)?
+- **Q1, CI time.** Measured locally: F2 takes 8.5 to 8.9 s and the new F3 stale-save test 2.6 s, plus its two sign-ins. The whole api-mode suite took 117 s (`b2-all-2`). Keep both in `verify` (the open Q1 of PR #42)?
 - **Q2, the save-then-submit window.** An upload from elsewhere that lands in the milliseconds between a Submit's save and its submit gets submitted. Those hours are newer, never older, and the approver sees them. Closing the window needs a submit body, which is a second contract change. Wanted?
 - **Q3, form tests.** `apps/web` has no React Testing Library or jsdom, so the form's wiring is pinned only by e2e. Add them? That is a new dependency, so it needs approval.
 - **Q4, typed hours.** A mistyped `"7..5"` still saves as 0 hours, as it does today (`Number(text) || 0`). Refuse such text on the form instead?
 - **Q5, after a 500.** The re-read is still skipped, because a 500 may or may not have committed (the PR #37 note). Re-read after a 500 too?
 
 ## For STATUS
+- **Done: B2.** Every routed write makes the screens read again: the HTTP transport decides by verb, and four POST reads go through `requestAsRead` (ADR 0051, "Re-reading after every write, and the timesheet stale-save check", 2026-11-16). My timesheet never saves old hours over newer ones: `PUT /timesheets` takes `expectedDays` and answers 409 `timesheet_changed`, the form takes newer saved hours when clean and asks when edited, and the demo does the same. PR #44, this log.
+- **"Api-mode bugs the flows found":** remove the B2 bullet.
+  - **F2 runs** since B2.
+  - **F1 stays `fixme`** for B1 (the salesperson's quote builder crash) and B3 (the Stock panel's "Short by 0.00 ft"). A throwaway variant with only those two worked around passed.
+  - **F5 stays `fixme`** for B4 (the contract form's branch id). A throwaway variant with only B4 worked around passed.
+  - B1 and B3 still block F1, and B4 blocks F5.
+- **Line 132:** "F1, F2 and F5 wait on the bugs B1 to B4" becomes "F2 runs since B2; F1 waits on B1 and B3, F5 on B4".
+- **The flows' leftovers:**
+  - "F3 a draft week for Bri" becomes "F3 a sent-back week for Bri (the stale-save test's clean-up)";
+  - "F2 (once it runs)" becomes "F2";
+  - the throwaway F1 and F5 variants of this session left their records on the local api e2e database only.
+- **Q1, verify time:** five flows now run (F2, F3, F4, F6, F7), plus the F3 stale-save test. Measured locally: F2 8.5 to 8.9 s, F3 4.3 to 4.6 s, the stale-save test 2.6 s, F4 4.2 to 4.4 s, F6 13.7 to 14.7 s and F7 4.7 s. The whole api-mode suite took 117 s.
+- **The PR #37 note,** reworded for the transport: no re-read after a 500 that may have committed, so a retry can duplicate the record.
+- **New follow-ups:**
+  - **`DataTable` remounts every cell whenever its page renders again** (`flexRender` mounts each inline `cell` as a component, and pages build new columns per render). In api mode the re-read lands a round trip after each write, so a row menu opened in that window closes. Found by `login.spec.ts`'s step-up test, which now waits for the re-read. The fix is a stable cell renderer in `DataTable`, in its own PR (ADR 0051 R8).
+  - The two focus counters (`support-access-panel.tsx`, `company-status-page.tsx`) read twice in api mode. This is harmless.
+  - **The save-then-submit window:** an upload from elsewhere landing between a Submit's save and its submit is submitted. Those hours are newer, never older (Q2).
+  - **A mistyped `"7..5"` saves as 0 hours** (`Number(x) || 0`), as before (Q4).
+  - **A tab left open across the deploy** gets "Reload the page, then save your hours again." on its next save.
+  - **Dry runs:** the demo emits after a timesheet upload's dry run, and the API doesn't. This is harmless.
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b2/logs` folder.
@@ -205,3 +259,43 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b2/logs
 | 2b | two web mutations (`b2/mut-s2b-web.sh`): the demo compare guarded off; the factory without `expectedDays` | `demo-timesheets` failed 2 of 2; `timesheets-api` failed 1 of 2; files restored byte for byte |
 | 2b | `heavy.sh b2/checks.sh s2b`: shared `test`, `typecheck`, `lint`; api `test` | shared 1,046 passed; clean; clean; api unit 17 files and 124 tests passed |
 | 2b | `pnpm exec prettier --check` on every changed TypeScript file | clean |
+| 3 | `pnpm exec prettier --check` on the changed e2e files | clean (F3 formatted with `--write` first) |
+| 3 | `heavy.sh pnpm --filter web typecheck`, then `lint` | clean, clean |
+| 3 | `heavy.sh flows/api-e2e.sh b2-f2-a --build -- …/f2-purchasing-receipt-to-payment.spec.ts` | both builds in 12 s (Turbopack cache; the notice's words in the web chunks and `expectedDays` in the API bundle confirmed); F2 passed, 8.5 s |
+| 3 | `api-e2e.sh b2-f2-b` (F2 alone again, no build) | passed, 8.9 s |
+| 3 | `api-e2e.sh b2-f3f4-a` (F3 and F4) | 3 passed: F3 4.6 s, the stale-save test 2.6 s, F4 4.4 s |
+| 3 | `api-e2e.sh b2-all-1` (the whole api-mode suite) | exit 1 after 211 s: 28 passed, 3 failed, 2 skipped (F1, F5), 2 did not run (the serial login tests after the failure). `login.spec.ts` step-up timed out at 60 s (Priya's menu closed by the users re-read); `meetings.spec.ts` and reports E2E-4 then failed at Priya's sign-in, because she was left as Accountant. Flows: F2 8.5 s, F3 4.4 s, stale-save 2.6 s, F4 4.3 s, F6 13.7 s, F7 4.7 s |
+| 3 | `api-e2e.sh b2-restore-priya` (throwaway probe) | passed; Priya's row read "Accountant" before and "Sales" after, with no reload |
+| 3 | `api-e2e.sh b2-login-a -- tests/e2e-api/login.spec.ts`, after the test fix | 6 passed, 11.4 s |
+| 3 | `api-e2e.sh b2-all-2` (the whole api-mode suite again) | exit 0 after 117 s: 33 passed, 2 skipped (F1, F5). Flows: F2 8.6 s, F3 4.3 s, stale-save 2.6 s, F4 4.2 s, F6 14.7 s, F7 4.7 s |
+| 3 | pin check: `api-e2e.sh b2-pin --build -- …/f3-timesheet-to-pay-period.spec.ts --grep "never saves"` with the form never taking server hours | failed at step 2 as intended ("the form took the upload": expected "6", received "8"); `my-timesheet.tsx` restored from the scratchpad copy, no diff |
+| 3 | `heavy.sh b2/e2e-demo.sh` (demo build; `--project=flooring` portal, flows-batch3, hr, hr-workspace, admin, admin-billing; `--project=hr` portal, hr; one worker) | flooring 34 passed (G3-3 among them), hr 6 passed |
+| 3 | `api-e2e.sh b2-f1-var --build -- …/zz-f1-nob2.spec.ts`, then `b2-f5-var` | both passed (F1 18.0 s, F5 10.1 s); the specs were deleted after and `git status` lists no `zz-` file |
+| 5 | `heavy.sh b2/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0. Lint and Prettier clean; typecheck clean; `test`: shared 1,046, web 263 (31 files), api unit 124 (17 files), db 18, providers 11; `test:api`: api 627 (35 files), db 59 (8 files), providers 2; hooks 15 |
+
+## Outcome
+B2 is fixed. The final runs above are green: the whole api-mode suite (`b2-all-2`), the demo specs and the full checks. Commits on `fix/web-reread-after-write`, each pushed:
+
+| Commit | Subject |
+| --- | --- |
+| `b6dc8a3` | docs(hr): plan for B2 and the timesheet stale-save rule in the specs |
+| `70cc728` | fix(web): every routed write makes the screens read again (B2) |
+| `64f09dd` | fix(portal): the week form's hours model and the shared stale-save rule |
+| `3d54cdc` | fix(hr): a timesheet save never overwrites hours saved since the form opened |
+| `4d417d4` | test(e2e): F2 runs, F3 and F4 drop their reloads, and a stale timesheet save is refused |
+| (this commit) | docs: B2, re-read after every write and the timesheet stale-save rule |
+
+All carry `[skip ci]`. Docs in the last commit:
+- ADR 0051: the section "Re-reading after every write, and the timesheet stale-save check (2026-11-16, STATUS B2)", with part 3's first two re-read bullets marked superseded and a header line;
+- pointers in ADR 0046 and ADR 0057;
+- docs/api-contract.md: a Conventions bullet, the `PUT /timesheets` row, the ApiClient row's path, and the meetings line;
+- one docs/blueprint-delta.md row.
+
+## Left
+- `/review`, then a fresh read-only **security-reviewer**, because payroll hours are touched (no `packages/db` change, so no schema-reviewer). Its focus:
+  - the `PUT /timesheets` check order, the lock and the stored-hours exemption;
+  - data scope unchanged, and no tenant from input;
+  - demo parity;
+  - the transport never re-reading into a loop.
+- `/handoff`: STATUS (the "For STATUS" notes above), BRANCHES and this log. That commit carries no `[skip ci]`, so CI runs. Then mark PR #44 ready, and self-merge only under the CLAUDE.md rule.
+- The `DataTable` follow-up (a stable cell renderer), in its own PR.
