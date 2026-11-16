@@ -25,7 +25,8 @@ import { PERMISSION_REFUSALS, PermissionGuard } from "../src/core/access/permiss
 import type { AuthSession } from "../src/core/auth/session.service";
 import { TENANCY_REFUSALS, TenantGuard } from "../src/core/tenancy/tenant.guard";
 import { AuthHarness, SUMMIT_ID } from "./auth-harness";
-import { decimalProblems, leaks, MUST_STRIP, MUST_STRIP_NOT_EXERCISED, strippableNames } from "./support/json-walk";
+import { decimalProblems, leaks, MUST_STRIP_NOT_EXERCISED } from "./support/json-walk";
+import { MUST_STRIP, strippableNames } from "./support/strippable";
 import {
   byCodeUnit,
   concretePath,

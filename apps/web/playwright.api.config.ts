@@ -14,6 +14,12 @@ import { defineConfig, devices } from "@playwright/test";
  * own data named with a run id, checks deltas rather than counts, and cleans up through the product,
  * so it runs again on the same database. Run them alone with `--grep @flow`, or leave them out with
  * `--grep-invert @flow`.
+ *
+ * The whole-product check's specs live in tests/e2e-api/check, tagged @check: a new company end to
+ * end, the demo script on Summit and the page × persona matrix (ADR 0058). They are opt-in and show
+ * as skipped unless WHOLE_CHECK=1. Outside CI they provision companies and reset sign-ins only on a
+ * database on this machine's port 5433. Run them with
+ * `WHOLE_CHECK=1 pnpm --filter web test:e2e:api tests/e2e-api/check`.
  */
 for (const file of ["../../.env", "../../.env.local"]) {
   if (existsSync(file)) process.loadEnvFile(file);

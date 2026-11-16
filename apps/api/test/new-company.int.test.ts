@@ -34,7 +34,7 @@ import { AuthHarness, isUuidV7, PASSWORD, SUMMIT_ID } from "./auth-harness";
 import { BOOTSTRAP_ZONE, PAY_SCHEDULE, TILE } from "./support/company-bootstrap";
 import { freshCalls, type LocalTime } from "./support/fresh-calls";
 import { acceptInvitation, invitationTokenFor, inviteProvisionedOwner, provisionedOwner } from "./support/fresh-owner";
-import { jsonNodes } from "./support/json-walk";
+import { jsonNodes } from "./support/strippable";
 import { balanceOf, entriesBySource, trialBalanceProblems } from "./support/ledger-read";
 import { MoneyApi, moneyCalls, type Answer, type Call, type QuoteLine } from "./support/money-actions";
 import {

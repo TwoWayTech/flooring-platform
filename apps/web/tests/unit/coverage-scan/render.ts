@@ -2,7 +2,7 @@ import { FEATURES } from "@workspace/shared";
 import { DEMO_ONLY, DEMO_REASONS, type DemoReasonId } from "./demo-only";
 import type { CoverageModel, ScreenCoverage } from "./model";
 import { SPEC_FEATURES } from "./spec-features";
-import { TEST_KINDS, type TestKind } from "./test-index";
+import { PARKED_SPECS, TEST_KINDS, type TestKind } from "./test-index";
 
 /**
  * Writes the coverage model out (whole-product check, ADR 0058): docs/coverage.md for people and
@@ -165,6 +165,9 @@ function gaps(model: CoverageModel, pages: readonly ScreenCoverage[]): string {
     "### Features not removed that no route serves",
     "Their switch is read by no route (PM-5), so they are demo-only, shell-only or switched in a service.",
     bullets(noRoute.map((f) => `${code(f.key)} (${FEATURES[f.key].status})`)),
+    "### Specs parked as fixme (credit nothing)",
+    "A spec skipped as a whole doesn't run, so it counts toward no page or route above until its bugs are fixed.",
+    bullets(Object.entries(PARKED_SPECS).map(([file, why]) => `${code(file)}: ${why}`)),
     "### Routes no screen calls",
     "No page reaches them through the ApiClient. Sign-in and the session (`apps/web/src/lib/session`) call `/auth/context`, `/platform/me` and the public invitation routes directly, so those show here too.",
     bullets(unused.map((r) => `${code(r.route)} (${r.requirement.level})`)),

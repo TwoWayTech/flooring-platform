@@ -5,7 +5,7 @@ import { CLIENT_LOCAL, DEMO_ONLY } from "./coverage-scan/demo-only";
 import { buildCoverage, type CoverageModel } from "./coverage-scan/model";
 import { REGENERATE, renderMarkdown, renderPageCoverage } from "./coverage-scan/render";
 import { NO_FEATURE_PAGES, SHELL_GROUP, SPEC_FEATURES, specFiles } from "./coverage-scan/spec-features";
-import { CROSS_CUTTING } from "./coverage-scan/test-index";
+import { CROSS_CUTTING, hasFixme, PARKED_SPECS } from "./coverage-scan/test-index";
 
 /**
  * The coverage list (whole-product check, ADR 0058): which pages, features and routes are on the
@@ -32,7 +32,7 @@ function whereCalled(targets: readonly string[]): string[] {
   });
 }
 
-describe("coverage list (CV-1 to CV-8)", () => {
+describe("coverage list (CV-1 to CV-9)", () => {
   it("CV-1: every method a screen reaches is on the API, reviewed as demo-only, or client-local", () => {
     const members = new Set(apiClientMembers());
     const notClient = [...model.targets.keys()].filter((target) => !members.has(target.split(":")[0] ?? ""));
@@ -95,13 +95,15 @@ describe("coverage list (CV-1 to CV-8)", () => {
     expect(groups.sort(), "every spec file has an entry, and every entry is a spec file").toEqual(specFiles().sort());
   });
 
-  it("CV-6: every API integration and api-mode e2e file is indexed to a route or page, or is cross-cutting", () => {
+  it("CV-6: every API integration and api-mode e2e file is indexed to a route or page, cross-cutting or parked", () => {
     const checked = model.tests.filter((test) => test.kind === "integration" || test.kind === "apiE2e");
     const indexed = (file: string) => {
       const test = checked.find((t) => t.file === file);
       return test !== undefined && test.routes.length + test.pages.length > 0;
     };
-    const unindexed = checked.filter((test) => !indexed(test.file) && !(test.file in CROSS_CUTTING));
+    const unindexed = checked.filter(
+      (test) => !indexed(test.file) && !(test.file in CROSS_CUTTING) && !(test.file in PARKED_SPECS),
+    );
     expect(
       unindexed.map((test) => test.file),
       "add the file to CROSS_CUTTING in coverage-scan/test-index.ts with why",
@@ -124,5 +126,18 @@ describe("coverage list (CV-1 to CV-8)", () => {
     expect(model.routes.length).toBeGreaterThanOrEqual(180);
     expect(files("integration")).toBeGreaterThanOrEqual(30);
     expect(files("apiE2e")).toBeGreaterThanOrEqual(14);
+  });
+
+  it("CV-9: a spec with a fixme test is parked as a whole, and every parked spec still has one", () => {
+    const specs = model.tests.filter((test) => test.kind === "demoE2e" || test.kind === "apiE2e");
+    const withFixme = specs.filter((test) => hasFixme(test.file)).map((test) => test.file);
+    expect(
+      withFixme.filter((file) => !(file in PARKED_SPECS)),
+      "add the file to PARKED_SPECS in coverage-scan/test-index.ts with the bugs it waits for",
+    ).toEqual([]);
+    expect(
+      Object.keys(PARKED_SPECS).filter((file) => !withFixme.includes(file)),
+      "PARKED_SPECS names a file that is gone or runs now",
+    ).toEqual([]);
   });
 });

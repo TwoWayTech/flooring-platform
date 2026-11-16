@@ -25,6 +25,12 @@ export const WAREHOUSE_EMAIL = "cole.brennan@summitfloor.example";
 /** Summit's purchasing coordinator: suppliers, purchase orders and receipts; the role needs no MFA. */
 export const PURCHASING_EMAIL = "renata.kowalski@summitfloor.example";
 
+/**
+ * Summit's installer: his own jobs and My portal; the role needs no MFA. Not in SEEDED_EMAILS: only
+ * the whole-product check's page-gate matrix signs him in, and it resets his sign-in state itself.
+ */
+export const INSTALLER_EMAIL = "marcus.bell@summitfloor.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,

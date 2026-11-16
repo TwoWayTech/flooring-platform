@@ -165,17 +165,39 @@ export function indexTests(pages: readonly string[], routes: readonly string[]):
     }),
   );
   const demoE2e = filesUnder("apps/web/tests/e2e", (path) => path.endsWith(".spec.ts")).map((file): TestFile => {
-    const literals = literalsIn(withScreenLists(file));
+    const literals = file in PARKED_SPECS ? [] : literalsIn(withScreenLists(file));
     return { file, kind: "demoE2e", pages: pagesNamed(literals, pages), routes: [], features: [] };
   });
-  const apiE2e = filesUnder("apps/web/tests/e2e-api", (path) => path.endsWith(".spec.ts")).map((file): TestFile => ({
-    file,
-    kind: "apiE2e",
-    pages: pagesNamed(literalsIn(withScreenLists(file)), pages),
-    routes: routesNamed(proxiedPaths(codeWithHelpers(file, "apps/web/tests/e2e-api/")), routesByPath),
-    features: [],
-  }));
+  const apiE2e = filesUnder("apps/web/tests/e2e-api", (path) => path.endsWith(".spec.ts")).map((file): TestFile => {
+    const parked = file in PARKED_SPECS;
+    return {
+      file,
+      kind: "apiE2e",
+      pages: parked ? [] : pagesNamed(literalsIn(withScreenLists(file)), pages),
+      routes: parked ? [] : routesNamed(proxiedPaths(codeWithHelpers(file, "apps/web/tests/e2e-api/")), routesByPath),
+      features: [],
+    };
+  });
   return [...unit, ...integration, ...demoE2e, ...apiE2e];
+}
+
+/**
+ * Spec files skipped as a whole (`fixme`) until the product bugs they name are fixed, each with
+ * why. They credit no page or route, so the coverage list never counts a test that doesn't run
+ * (MF-7). CV-9 fails on a spec with a `.fixme(` that isn't listed, and on a listed file without one.
+ */
+export const PARKED_SPECS: Readonly<Record<string, string>> = {
+  "apps/web/tests/e2e-api/flows/f1-sales-quote-to-cut.spec.ts":
+    "F1 is fixme until B1, B2 and B3 are fixed (docs/STATUS.md; the flows' session log).",
+  "apps/web/tests/e2e-api/flows/f2-purchasing-receipt-to-payment.spec.ts":
+    "F2 is fixme until B2 is fixed (docs/STATUS.md; the flows' session log).",
+  "apps/web/tests/e2e-api/flows/f5-contract-retainage.spec.ts":
+    "F5 is fixme until B4 and B2 are fixed (docs/STATUS.md; the flows' session log).",
+};
+
+/** Whether a spec file declares a test as `fixme` (outside comments): it is then parked as a whole. */
+export function hasFixme(file: string): boolean {
+  return /\.fixme\(/.test(withoutComments(readRepoFile(file)));
 }
 
 /**

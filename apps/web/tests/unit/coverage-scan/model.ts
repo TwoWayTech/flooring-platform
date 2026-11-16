@@ -18,7 +18,7 @@ import { indexTests, type TestFile, type TestKind } from "./test-index";
 /**
  * The coverage list's model (whole-product check, ADR 0058): the screen scan, the client's routing,
  * the route catalog and the test index joined into one picture, from code only. The coverage test
- * checks it (CV-1 to CV-8) and render.ts writes it out as docs/coverage.md and page-coverage.json.
+ * checks it (CV-1 to CV-9) and render.ts writes it out as docs/coverage.md and page-coverage.json.
  */
 
 /** Where a call a screen makes goes in api mode. */

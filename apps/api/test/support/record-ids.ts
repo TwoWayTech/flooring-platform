@@ -1,6 +1,6 @@
 import type { CompanyDb } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import { jsonNodes } from "./json-walk";
+import { jsonNodes } from "./strippable";
 
 /**
  * Every record id in one company database: the `id` of each row of each table whose `id` is a
