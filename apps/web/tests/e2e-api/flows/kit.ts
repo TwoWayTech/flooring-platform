@@ -5,6 +5,7 @@ import {
   type APIRequestContext,
   type APIResponse,
   type BrowserContext,
+  type Locator,
   type Page,
   type Response,
 } from "@playwright/test";
@@ -85,6 +86,41 @@ export function formatted(day: string): string {
  */
 export function shown(value: DecimalInput, kind: NumberKind): string {
   return formatNumber(value, kind, defaultNumberSettings());
+}
+
+/** A seeded product a flow sells or orders: what to search for, its SKU (shown on the picker's option) and its line description. */
+export interface SeededProduct {
+  search: string;
+  sku: string;
+  /** "Brand name", as a quote or order line describes it. */
+  line: string;
+}
+
+/** Fieldstone Sand Dune carpet (`sm-prd-0004`), 15 ft wide: two rolls at Denver Central in the seed. */
+export const FIELDSTONE: SeededProduct = {
+  search: "Fieldstone Sand Dune",
+  sku: "LO-1893",
+  line: "Loomcraft Fieldstone Sand Dune",
+};
+
+/** The LVP with an attached cork pad (`sm-prd-0062`): boxed goods, 28.50 sq ft a carton. */
+export const CORK_LVP: SeededProduct = {
+  search: "Attached Cork Pad",
+  sku: "TV-3825",
+  line: "Tidewater Vinyl Weathered Pier Sand Dune Wide Plank Rigid Core with Attached Cork Pad",
+};
+
+/** Adds `product` through the open quote's or order's Add product picker, choosing its option by SKU. */
+export async function addProduct(page: Page, product: SeededProduct): Promise<void> {
+  await page.getByRole("button", { name: "Add product", exact: true }).click();
+  await page.getByPlaceholder("Search by name, color or brand").fill(product.search);
+  await page.getByRole("option").filter({ hasText: product.sku }).click();
+}
+
+/** Opens the select `field` and picks the option named exactly `option`. */
+export async function choose(page: Page, field: Locator, option: string): Promise<void> {
+  await field.click();
+  await page.getByRole("option", { name: option, exact: true }).click();
 }
 
 /** Opens the Meetings page on the week `weeksAhead` weeks after this one. */

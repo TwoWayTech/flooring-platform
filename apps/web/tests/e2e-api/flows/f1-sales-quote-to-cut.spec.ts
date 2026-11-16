@@ -15,21 +15,29 @@ import {
 import type { StockHold } from "@/lib/api/contract";
 import { FLOW_TAG } from "../../e2e/helpers";
 import { ACCOUNTANT_EMAIL, SALES_EMAIL, WAREHOUSE_EMAIL } from "../accounts";
-import { cellUnder, expectAuditRows, expectLedgerMoved, notifications, trialBalance, type InAppNote } from "./checks";
 import {
+  cellUnder,
+  expectAuditRows,
+  expectLedgerMoved,
+  invoicePills,
+  notifications,
+  savePayment,
+  trialBalance,
+  type InAppNote,
+  type PaymentOutcome,
+} from "./checks";
+import {
+  addProduct,
   assertSameCompanyDay,
   companyToday,
+  FIELDSTONE,
   flowTest,
-  PDF_PROOF,
   resetAuthAround,
   runId,
   shown,
   waitForAnswer,
 } from "./kit";
 import { CASH, movedBy } from "./ledger";
-
-/** The carpet the flow sells (`sm-prd-0004`): two rolls at Denver Central in the seed, 15 ft wide. */
-const FIELDSTONE = { search: "Fieldstone Sand Dune", sku: "LO-1893", line: "Loomcraft Fieldstone Sand Dune" };
 
 /**
  * The product bugs that stop this flow in step 1 (session log 2026-11-16-0200, "For STATUS"). Until
@@ -62,37 +70,20 @@ const BLOCKED_BY = [
   },
 ];
 
-/** Why every payment the flow records waits: the Sales role's data scope is own (payments.service.ts). */
-const WAITS = "a payment recorded by someone whose scope is own waits for verification, whatever the amount";
+/** Every payment the flow records waits, because the Sales role's data scope is own (payments.service.ts). */
+const WAITS: PaymentOutcome = {
+  status: "pending",
+  why: "a payment recorded by someone whose scope is own waits for verification, whatever the amount",
+};
 
 /** The quote's status pill in the page header. */
 function quoteStatus(page: Page): Locator {
   return page.locator("header").getByText(/^(Draft|Pending|Accepted|Converted|Declined|Expired)$/);
 }
 
-/** The invoice's status pills in order: the leading status, then the labels beside it (ledger.ts `invoiceStatus`). */
-function invoicePills(page: Page): Locator {
-  return page.getByRole("heading", { level: 1, name: /^Invoice / }).locator("xpath=following-sibling::span[1]/span");
-}
-
 /** How many of the person's in-app notes ask to verify a payment on this invoice. */
 function toVerify(notes: readonly InAppNote[], invoiceId: string): number {
   return notes.filter((n) => n.eventKey === "payment.to_verify" && n.href === `/sales/invoices/${invoiceId}`).length;
-}
-
-/** Fills the open payment sheet with the reference and a proof, saves it and returns the API's answer. */
-async function savePayment(page: Page, reference: string): Promise<Payment> {
-  const sheet = page.getByRole("dialog", { name: /^Record (payment|deposit)$/ });
-  await sheet.getByLabel("Reference or transaction ID").fill(reference);
-  await sheet.locator('input[type="file"]').setInputFiles(PDF_PROOF);
-  const answer = waitForAnswer<Payment>(page, "POST", /^\/api-proxy\/payments$/);
-  await sheet.getByRole("button", { name: /^Save (payment|deposit)$/ }).click();
-  const payment = await answer;
-  await expect(sheet).toBeHidden();
-  expect(payment.reference).toBe(reference);
-  expect(payment.status, WAITS).toBe("pending");
-  await expect(page.getByText(`${payment.number} recorded; it waits for verification`, { exact: true })).toBeVisible();
-  return payment;
 }
 
 /** Confirms a waiting payment from Finance → Payments to verify, as the second person. */
@@ -183,9 +174,7 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         await expect(address).toBeHidden();
         await expect(page.getByLabel("Job site street")).toHaveValue(`${run} Flow St`);
 
-        await page.getByRole("button", { name: "Add product", exact: true }).click();
-        await page.getByPlaceholder("Search by name, color or brand").fill(FIELDSTONE.search);
-        await page.getByRole("option").filter({ hasText: FIELDSTONE.sku }).click();
+        await addProduct(page, FIELDSTONE);
         const quantity = page.getByLabel(`${FIELDSTONE.line} quantity`, { exact: true });
         await quantity.fill("15");
         await quantity.blur();
@@ -236,7 +225,7 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         await expect(
           page.getByRole("dialog", { name: "Record deposit" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(deposit);
-        const payment = await savePayment(page, depositRef);
+        const payment = await savePayment(page, invoice.number, depositRef, WAITS);
         expect(payment.kind).toBe("deposit");
         expect(payment.amount).toBe(deposit);
         await expect(invoicePills(page)).toHaveText(["Pending verification"]);
@@ -324,7 +313,7 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         await expect(
           page.getByRole("dialog", { name: "Record payment" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(rest);
-        const payment = await savePayment(page, finalRef);
+        const payment = await savePayment(page, invoice.number, finalRef, WAITS);
         expect(payment.kind).toBe("payment");
         expect(payment.amount).toBe(rest);
         await expect(invoicePills(page)).toHaveText(["Pending verification", "Deposit paid"]);

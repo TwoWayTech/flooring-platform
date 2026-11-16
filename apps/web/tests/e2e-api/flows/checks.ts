@@ -6,10 +6,11 @@ import type {
   NotificationEventKey,
   OutboxAttachment,
   OutboxStatus,
+  Payment,
   PayPeriod,
 } from "@workspace/shared";
 import type { PayPeriodReview } from "@/lib/api/contract";
-import { companyToday, waitForAnswer } from "./kit";
+import { companyToday, PDF_PROOF, waitForAnswer } from "./kit";
 import { ledgerDelta, ledgerMismatches, type ExpectedMoves, type TrialBalance } from "./ledger";
 
 /** Reads an `/api-proxy` route as the request's person and returns its JSON, failing with the answer's text on anything but 200. */
@@ -156,6 +157,45 @@ export async function cellUnder(table: Locator, row: Locator, header: string): P
   const index = headers.indexOf(header);
   expect(index, `a "${header}" column among: ${headers.join(" | ")}`).toBeGreaterThanOrEqual(0);
   return row.locator("th, td").nth(index);
+}
+
+/** The invoice's status pills in order: the leading status, then the labels beside it (ledger.ts `invoiceStatus`). */
+export function invoicePills(page: Page): Locator {
+  return page.getByRole("heading", { level: 1, name: /^Invoice / }).locator("xpath=following-sibling::span[1]/span");
+}
+
+/** How a recorded payment must come back: waiting for verification or counted at once, and why (the failure message). */
+export interface PaymentOutcome {
+  status: "pending" | "confirmed";
+  why: string;
+}
+
+/**
+ * Fills the open Record payment (or deposit) sheet on invoice `invoiceNumber` with the reference
+ * and a proof, saves it and returns the API's answer. The answer's status must be `outcome`'s, and
+ * the toast says the same (record-payment-sheet.tsx).
+ */
+export async function savePayment(
+  page: Page,
+  invoiceNumber: string,
+  reference: string,
+  outcome: PaymentOutcome,
+): Promise<Payment> {
+  const sheet = page.getByRole("dialog", { name: /^Record (payment|deposit)$/ });
+  await sheet.getByLabel("Reference or transaction ID").fill(reference);
+  await sheet.locator('input[type="file"]').setInputFiles(PDF_PROOF);
+  const answer = waitForAnswer<Payment>(page, "POST", /^\/api-proxy\/payments$/);
+  await sheet.getByRole("button", { name: /^Save (payment|deposit)$/ }).click();
+  const payment = await answer;
+  await expect(sheet).toBeHidden();
+  expect(payment.reference).toBe(reference);
+  expect(payment.status, outcome.why).toBe(outcome.status);
+  const toast =
+    outcome.status === "pending"
+      ? `${payment.number} recorded; it waits for verification`
+      : `${payment.number} recorded on ${invoiceNumber}`;
+  await expect(page.getByText(toast, { exact: true })).toBeVisible();
+  return payment;
 }
 
 /** The audit log shows `at` to the minute, in UTC ("2026-11-16T09:30"). */
