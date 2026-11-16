@@ -22,7 +22,6 @@ import { NewerHoursNotice } from "./newer-hours-notice";
 import {
   hoursSaved,
   keepTypedHours,
-  readKey,
   saveInput,
   serverHours,
   takeSavedHours,
@@ -58,31 +57,38 @@ function useActionFocus(busy: boolean, waiting: boolean) {
 }
 
 /**
- * One week's hours. The saved hours arrive with every read (an upload, the clock, another tab, or
- * this form's own save makes the page read again): a form with no edits takes them, and a form
- * with edits keeps them and asks (`week-hours.ts`). Its own save's answer counts as a read. Every
- * save sends the hours the form started from, so the server refuses one made from hours that
- * changed meanwhile (ADR 0051, 2026-11-16).
+ * One week's hours. The saved hours arrive with every read of the portal (an upload, the clock,
+ * another tab, or this form's own save makes the page read again), and the form takes each read
+ * once: a form with no edits takes them, and a form with edits keeps them and asks
+ * (`week-hours.ts`). Its own save's answer is taken like a read. Every save sends the hours the form
+ * started from, so the server refuses one made from hours that changed meanwhile (ADR 0051,
+ * 2026-11-16).
  */
 function WeekForm({
   employee,
   weekStart,
+  read,
   sheet,
   headings,
 }: {
   employee: Employee;
   weekStart: string;
+  /** The portal read `sheet` comes from: a new object for every answer, so reads are told apart by identity. */
+  read: MyPortal;
   sheet: Timesheet | undefined;
   headings: string[];
 }) {
   const locked = weekLocked(sheet);
-  const key = readKey(sheet);
   const [hours, setHours] = useState(() => weekHours(sheet?.days));
-  const [seen, setSeen] = useState(key);
+  const [taken, setTaken] = useState(read);
   const [busy, setBusy] = useState(false);
-  // Adjusted while rendering, not in an effect, so no frame shows hours the server no longer holds.
-  if (seen !== key) {
-    setSeen(key);
+  // Each read is taken once, while rendering rather than in an effect, so no frame shows hours the
+  // server no longer holds. By identity, not content: after the form's own save, the read from
+  // before it stays here until the save's re-read lands, and taking it again would put back the
+  // hours from before the save (review round 2 of PR #44); a new read back at those hours is still
+  // taken (review round 1).
+  if (taken !== read) {
+    setTaken(read);
     setHours((current) => serverHours(current, sheet?.days, locked));
   }
   const waiting = hours.newer !== null;
@@ -94,9 +100,7 @@ function WeekForm({
     // Unreachable: Save and Submit are disabled while newer hours wait for a choice.
     if (!input) throw new Error("Choose which hours to keep first.");
     const saved = await api.saveTimesheet({ employeeId: employee.id, weekStart, ...input });
-    // The answer is remembered as the last read, so a read that differs from it is never skipped.
     setHours((current) => hoursSaved(current, input.days, saved));
-    setSeen(readKey(saved));
     return saved;
   }
 
@@ -226,6 +230,7 @@ function Timesheets({ portal }: { portal: MyPortal }) {
           key={week}
           employee={employee}
           weekStart={week}
+          read={portal}
           sheet={sheet}
           headings={weekdayHeadings(portal.weekStartDay)}
         />

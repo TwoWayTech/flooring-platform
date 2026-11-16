@@ -186,6 +186,52 @@ function nextSave(page: Page): Promise<Response> {
 }
 
 /**
+ * Holds the page's next read of `/me/portal` until `release`, so a step can check the form between
+ * a save's answer and the save's re-read, while the read from before the save is still in the page
+ * (review rounds 1 and 2 of PR #44). `reads` counts the reads held: one once the save has made the
+ * page read again.
+ */
+async function holdPortalRead(page: Page): Promise<{ reads: () => number; release: () => void }> {
+  const gate: { release: () => void } = { release: () => undefined };
+  const held = new Promise<void>((resolve) => {
+    gate.release = resolve;
+  });
+  let reads = 0;
+  await page.route(
+    (url) => PORTAL.test(url.pathname),
+    async (route) => {
+      reads += 1;
+      await held;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  return { reads: () => reads, release: () => gate.release() };
+}
+
+/**
+ * Bri's save of Monday's `hours` on My timesheet (its Monday field and Save button), with the
+ * save's re-read held: once the save has ended, the form must still show the hours it saved, not
+ * the read from before the save (review round 2 of PR #44). Returns the save's answer and the
+ * re-read, still held.
+ */
+async function saveWithReadHeld(
+  page: Page,
+  { monday, save }: { monday: Locator; save: Locator },
+  hours: string,
+): Promise<{ answer: TimesheetWire; reread: { release: () => void } }> {
+  const reread = await holdPortalRead(page);
+  const answer = waitForAnswer<TimesheetWire>(page, "PUT", SAVE);
+  await monday.fill(hours);
+  await save.click();
+  const saved = await answer;
+  await expect.poll(reread.reads, { message: "the save made the page read again" }).toBe(1);
+  await expect(save, "the save has ended").toBeEnabled();
+  await expect(monday, "the form shows the hours it saved before the save's re-read lands").toHaveValue(hours);
+  return { answer: saved, reread };
+}
+
+/**
  * Flow F3 (mirrors demo flow G3-3; session log 2026-11-16-0200, "The seven flows"): Bri uploads this
  * week's hours from the template and submits the week, Tamara approves it from the queue, and the
  * pay period that holds it counts the hours and pays them; Tamara then reopens the week. Every
@@ -335,10 +381,12 @@ function sentHours(request: Request): { days: string[]; expectedDays: string[] }
  * which path"): My timesheet never saves the hours it opened with over hours saved since. Monday
  * only, which is never a future day; each value differs from the one before it, so no upload skips
  * a day as "Already these hours", and none is one of F3's `HOURS`.
- * 1. Bri's own save shows no newer-hours notice.
+ * 1. Bri's own save shows no newer-hours notice, and the form shows the hours it saved before and
+ *    after the save's re-read (review round 2 of PR #44).
  * 2. Her own save, then a second tab puts back the hours the form held before it, ahead of the
- *    save's re-read: the form takes them, rather than keep the saved hours as if they were still
- *    stored (review round 1 of PR #44).
+ *    save's re-read: the form shows the saved hours until that read lands, then takes the hours
+ *    put back, rather than keep the saved hours as if they were still stored (review rounds 1
+ *    and 2 of PR #44).
  * 3. One tab, draft to draft: an upload from the dialog reaches the unedited form with no reload.
  * 4. Edits kept: an upload from a second tab, then Save, is refused (409, nothing saved); the notice
  *    shows the saved hours, Save and Submit wait, focus is on "Use saved hours", which takes them.
@@ -377,47 +425,30 @@ flowTest.describe("flow F3: a stale timesheet save", () => {
         if (request.method() === "POST" && SUBMIT.test(new URL(request.url()).pathname)) submits += 1;
       });
 
-      await flowTest.step("1. Bri's own save: no notice", async () => {
+      await flowTest.step("1. Bri's own save: the saved hours stay, and no notice", async () => {
         const opened = await monday.inputValue();
         const sent = page.waitForRequest(isSave);
-        const answer = waitForAnswer<TimesheetWire>(page, "PUT", SAVE);
-        await monday.fill(typed);
-        await save.click();
+        const { answer, reread } = await saveWithReadHeld(page, { monday, save }, typed);
         const body = sentHours(await sent);
         expect(dec(body.days[0]).eq(typed), `Monday sent as ${typed}: ${body.days[0]}`).toBe(true);
         expect(
           dec(body.expectedDays[0]).eq(dec(opened || "0")),
           `the hours the form started from (${opened}) sent as expected: ${body.expectedDays[0]}`,
         ).toBe(true);
-        expect(dec((await answer).days[0]).eq(typed)).toBe(true);
+        expect(dec(answer.days[0]).eq(typed)).toBe(true);
         await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+        await expect(useSaved).toHaveCount(0);
+        reread.release();
         await expect(monday).toHaveValue(typed);
         await expect(useSaved).toHaveCount(0);
       });
 
       await flowTest.step("2. her own save, then the hours before it put back ahead of the re-read", async () => {
         // The save's re-read is held until a second tab has put Monday back to the hours the form read last.
-        const gate: { release: () => void } = { release: () => undefined };
-        const held = new Promise<void>((resolve) => {
-          gate.release = resolve;
-        });
-        let reads = 0;
-        await page.route(
-          (url) => PORTAL.test(url.pathname),
-          async (route) => {
-            reads += 1;
-            await held;
-            await route.continue();
-          },
-          { times: 1 },
-        );
-        const answer = waitForAnswer<TimesheetWire>(page, "PUT", SAVE);
-        await monday.fill(resaved);
-        await save.click();
-        expect(dec((await answer).days[0]).eq(resaved), "the answer shows the hours this save wrote").toBe(true);
-        await expect.poll(() => reads, { message: "the save made the page read again" }).toBe(1);
+        const { answer, reread } = await saveWithReadHeld(page, { monday, save }, resaved);
+        expect(dec(answer.days[0]).eq(resaved), "the answer shows the hours this save wrote").toBe(true);
         await uploadElsewhere(bri.request, week, typed, run);
-        gate.release();
+        reread.release();
         await expect(monday, "the form took the hours saved after its own").toHaveValue(typed);
         await expect(useSaved).toHaveCount(0);
       });

@@ -23,16 +23,6 @@ export function weekLocked(sheet: WeekRead): boolean {
 }
 
 /**
- * One read of the week as the form remembers it: locked or not, and the saved hours. The form takes
- * each new read once (`serverHours`), and its own save's answer counts as one (`hoursSaved`), so any
- * later read that differs from that answer is taken or asked about, even one back at the hours the
- * form opened with (review round 1 of PR #44).
- */
-export function readKey(sheet: WeekRead): string {
-  return `${weekLocked(sheet)}|${sheet?.days.join(",") ?? ""}`;
-}
-
-/**
  * One day's typed text as hours: the save's own reading, so "", "." and a mistyped "7..5" are 0
  * and "7." is 7. The form compares and saves only these numbers, never the text, because decimal.js
  * throws on half-typed hours.

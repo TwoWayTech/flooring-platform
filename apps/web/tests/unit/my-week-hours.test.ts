@@ -3,7 +3,6 @@ import {
   hoursSaved,
   keepTypedHours,
   parseHours,
-  readKey,
   saveInput,
   serverHours,
   takeSavedHours,
@@ -142,14 +141,19 @@ describe("My timesheet's week form", () => {
     expect(saveInput(keepTypedHours(editedSavedFirst))).toEqual({ days: week(9), expectedDays: week(5) });
   });
 
-  it("(l) takes a read back at the hours it opened with, after its own save", () => {
-    const opened = { status: "draft" as const, days: week(6.5) };
-    const saved = hoursSaved(typedMonday(weekHours(opened.days), "8"), week(8), answer(8));
-    // The form remembers the answer as its last read, so the read that puts the opening hours back is new to it.
-    expect(readKey(answer(8))).not.toBe(readKey(opened));
-    expect(serverHours(saved, opened.days, false)).toEqual(weekHours(week(6.5)));
+  // Review round 2 of PR #44: until the save's re-read lands, the read from before the save is still
+  // in the page. The form takes each read once, by identity (`my-timesheet.tsx`), so that old read
+  // is never taken again; a new read is taken whatever it holds, even the hours the form opened with.
+  it("(l) after its own save, shows and saves the hours it saved until a new read, and takes that read", () => {
+    const saved = hoursSaved(typedMonday(weekHours(week(6.5)), "8"), week(8), answer(8));
+    expect(typedHours(saved)).toEqual(week(8));
+    // A quick Submit then sends the saved hours as those the form started from, so it is never refused.
+    expect(saveInput(saved)).toEqual({ days: week(8), expectedDays: week(8) });
+    // The save's re-read, and any read holding the same hours, changes nothing.
+    expect(serverHours(saved, week(8), false)).toEqual(saved);
+    // A new read back at the opening hours (another writer put them back) is taken.
+    expect(serverHours(saved, week(6.5), false)).toEqual(weekHours(week(6.5)));
     // A submitted or approved answer locks the form on the saved hours.
-    expect(readKey({ status: "submitted", days: week(8) })).not.toBe(readKey(answer(8)));
     expect(hoursSaved(typedMonday(weekHours(), "9"), week(9), { status: "submitted", days: week(8) })).toEqual(
       weekHours(week(8)),
     );
