@@ -8,7 +8,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
 import { saveBlob } from "@/lib/save-blob";
-import { parseImportFile, writeTableFile } from "./import-files";
+import { parseImportFile, writeImportFile } from "./import-files";
 import type { TableFormat } from "./worker-protocol";
 
 /** A file read by the worker: its name, its table and, for a workbook, the sheet read. */
@@ -51,7 +51,7 @@ export function FileStep({
 
   async function template(format: TableFormat) {
     try {
-      const blob = await writeTableFile(templateTable(def), format, def.label);
+      const blob = await writeImportFile(templateTable(def), format, def.label);
       saveBlob(blob, `${slug(def.label)}-template.${format}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The template was not created.");

@@ -116,7 +116,15 @@ export const TIMESHEETS: KindHandler = {
         aliases: ["hours", "hours worked"],
         examples: ["8", "9.5"],
       },
-      { key: "note", label: "Note", type: "text", aliases: ["comment"], examples: ["", "Late delivery"] },
+      // The one multi-line field: a note may hold tab and line breaks (ADR 0057 S-17).
+      {
+        key: "note",
+        label: "Note",
+        type: "text",
+        multiline: true,
+        aliases: ["comment"],
+        examples: ["", "Late delivery"],
+      },
     ],
   },
 };

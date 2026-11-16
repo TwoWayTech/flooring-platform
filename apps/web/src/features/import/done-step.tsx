@@ -7,7 +7,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
 import type { ImportResult } from "@/lib/api/contract";
 import { saveBlob } from "@/lib/save-blob";
-import { writeTableFile } from "./import-files";
+import { writeImportFile } from "./import-files";
 
 /**
  * Step 5 (spec G1 step 7): the result report. Rows with errors were left out; the error report
@@ -19,7 +19,7 @@ export function DoneStep({ def, result }: { def: ImportKindDef; result: ImportRe
 
   async function downloadErrors() {
     try {
-      const blob = await writeTableFile(errorTable(def, result), "csv", "Errors");
+      const blob = await writeImportFile(errorTable(def, result), "csv", "Errors");
       saveBlob(blob, `${batch.number}-errors.csv`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The error report was not created.");

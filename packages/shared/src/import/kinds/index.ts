@@ -26,6 +26,19 @@ export const IMPORT_HANDLERS: Record<ImportKind, KindHandler> = {
   timesheets: TIMESHEETS,
 };
 
+/** Every import kind in wizard order, as a tuple the API's Zod enum takes (ADR 0057). */
+export const IMPORT_KIND_LIST = [
+  "customers",
+  "addresses",
+  "suppliers",
+  "products",
+  "stock",
+  "invoices",
+  "bills",
+  "employees",
+  "timesheets",
+] as const satisfies readonly ImportKind[];
+
 /** The definition of one import kind: its label, what it matches on and its columns. */
 export const importKind = (kind: ImportKind): ImportKindDef => IMPORT_HANDLERS[kind].def;
 

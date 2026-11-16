@@ -2,8 +2,8 @@ import { dec } from "../../money";
 import { supplierDueDate } from "../../operations/purchasing";
 import { dueDate } from "../../operations/quotes";
 import type { Bill, Customer, Invoice } from "../../types";
-import { findParty, text } from "../lookup";
-import type { KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
+import { ambiguous, findParty, text } from "../lookup";
+import type { KindContext, KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
 import type { CellProblem } from "../types";
 
 /** The line every opening invoice carries: the balance brought over, untaxed and at no cost. */
@@ -81,11 +81,16 @@ function openingInvoice(
  * due date defaults to the customer's terms. An invoice made in the app, or one that already
  * has payments or credits, is left alone: change it on the invoice instead.
  */
-function resolveInvoice(row: ParsedRow, ctx: PlanContext): RowOutcome {
+function resolveInvoice(row: ParsedRow, ctx: KindContext): RowOutcome {
   const key = text(row, "customer");
-  const customer = findParty(ctx.world.customers, key);
-  if (!customer)
+  const found = findParty(ctx.lookups.customers, key);
+  if ("none" in found)
     return { problems: [{ field: "customer", message: `No customer matches “${key}”. Import customers first.` }] };
+  if ("many" in found) {
+    const message = ambiguous(found.many, "customers", key, "Use their External ID or email.");
+    return { problems: [{ field: "customer", message }] };
+  }
+  const customer = found.one;
   const on = opening(row, ctx);
   if ("problems" in on) return on;
   const number = text(row, "number");
@@ -114,11 +119,16 @@ function resolveInvoice(row: ParsedRow, ctx: PlanContext): RowOutcome {
  * number. The due date defaults to the supplier's terms. A bill entered against a purchase order,
  * or one with supplier payments, is left alone.
  */
-function resolveBill(row: ParsedRow, ctx: PlanContext): RowOutcome {
+function resolveBill(row: ParsedRow, ctx: KindContext): RowOutcome {
   const key = text(row, "supplier");
-  const supplier = findParty(ctx.world.suppliers, key);
-  if (!supplier)
+  const found = findParty(ctx.lookups.suppliers, key);
+  if ("none" in found)
     return { problems: [{ field: "supplier", message: `No supplier matches “${key}”. Import suppliers first.` }] };
+  if ("many" in found) {
+    const message = ambiguous(found.many, "suppliers", key, "Use their External ID or email.");
+    return { problems: [{ field: "supplier", message }] };
+  }
+  const supplier = found.one;
   const on = opening(row, ctx);
   if ("problems" in on) return on;
   const number = text(row, "number");

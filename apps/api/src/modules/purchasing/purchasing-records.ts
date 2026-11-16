@@ -15,6 +15,25 @@ function stamp(value: Date): string {
   return value.toISOString().slice(0, 16);
 }
 
+/**
+ * What a supplier's audit entry keeps: everything that changes who gets orders or money, so a
+ * changed email or credit limit can be traced (PR #13 security review). No tax ID is ever stored.
+ * The supplier module's save and the import write the same shape.
+ */
+export function auditedSupplier(supplier: Omit<Supplier, "id" | "status" | "categories" | "externalId">) {
+  return {
+    name: supplier.name,
+    type: supplier.type,
+    terms: supplier.terms,
+    creditLimit: supplier.creditLimit,
+    email: supplier.email,
+    phone: supplier.phone,
+    accountNumber: supplier.accountNumber,
+    track1099: supplier.track1099,
+    w9OnFile: supplier.taxForm?.w9OnFile ?? false,
+  };
+}
+
 /** Live suppliers, by name. */
 export async function loadSuppliers(db: CompanyDb, ids?: readonly string[]): Promise<Supplier[]> {
   const rows = await db

@@ -10,6 +10,7 @@ import { BillingModule } from "./modules/billing/billing.module";
 import { ContractsModule } from "./modules/contracts/contracts.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { HrModule } from "./modules/hr/hr.module";
+import { ImportsModule } from "./modules/imports/imports.module";
 import { HealthController } from "./core/health/health.controller";
 import { JobsModule } from "./core/jobs/jobs.module";
 import { NotificationsModule } from "./core/notifications/notifications.module";
@@ -62,6 +63,7 @@ export class AppModule {
         HrModule,
         MeetingsModule,
         ReportsModule,
+        ImportsModule,
         ...extraModules,
       ],
       controllers: [HealthController],

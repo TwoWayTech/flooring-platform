@@ -1,4 +1,5 @@
 import type { ModuleKey } from "../products";
+import type { User } from "../types";
 
 /** What the import wizard can bring in (spec G1). */
 export type ImportKind =
@@ -25,6 +26,14 @@ export interface ImportField {
   unit?: "ft" | "sq ft";
   /** What the template shows in its two example rows. */
   examples: readonly [string, string];
+  /** The most characters a cell may hold after trimming: the module's own limit (ADR 0057 S-12). */
+  maxLength?: number;
+  /** Number and integer fields: the most whole digits and decimals the column stores (ADR 0057 S-12, M3). */
+  digits?: { whole: number; decimals: number };
+  /** A number must be more than 0, such as a carton's coverage or a roll's width (ADR 0057 S-18). */
+  positive?: true;
+  /** The cell may hold tab and line breaks; every other field refuses control characters (ADR 0057 S-17). */
+  multiline?: true;
 }
 
 /** A kind of import and the columns it reads. */
@@ -109,6 +118,11 @@ export interface ImportRequest {
   fileName: string;
   table: ImportTable;
   mapping: ColumnMapping;
+  /**
+   * The dry run's action per row (`planActions`, such as "ccse"). The import is refused when the
+   * records changed so that a row would now do something else (ADR 0057 S-10). The API requires it.
+   */
+  expected?: string;
 }
 
 /**
@@ -130,11 +144,38 @@ export interface ImportBatch {
   undoneBy: string | null;
 }
 
+/**
+ * An import as the history shows it: everything but the saved record versions, which never leave
+ * the store or the database (ADR 0057 S-15).
+ */
+export type ImportBatchSummary = Omit<ImportBatch, "changes">;
+
 /** A column mapping saved for the next file of the same kind (spec G1 "save the mapping"). */
 export interface ImportMapping {
   id: string;
   kind: ImportKind;
   columns: ColumnMapping;
   savedAt: string;
-  savedBy: string;
+}
+
+/**
+ * A company member an import may name, such as a customer's sales rep. The API reads them from
+ * the company's members; `branchId` is set only by the demo, for its opening invoices.
+ */
+export type ImportUser = Pick<User, "id" | "name" | "email" | "status"> & { branchId?: string };
+
+/** What the wizard opens with: the kinds the person may import, saved mappings and the history. */
+export interface ImportOverview {
+  kinds: ImportKind[];
+  mappings: ImportMapping[];
+  batches: ImportBatchSummary[];
+}
+
+/** The dry run as the wizard shows it: what each row would do and the counts. */
+export type ImportPreview = Pick<ImportPlan, "rows" | "counts">;
+
+/** A finished import: the batch for the history and every row, for the error report. */
+export interface ImportResult {
+  batch: ImportBatchSummary;
+  rows: PlannedRow[];
 }

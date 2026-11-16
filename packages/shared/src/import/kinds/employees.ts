@@ -3,8 +3,8 @@ import { timeOffBalance } from "../../hr/time-off";
 import { US_STATES } from "../../us-pack/states";
 import type { Employee, TimeOffEntry } from "../../types";
 import { fold } from "../fields";
-import { findParty, patched, text } from "../lookup";
-import type { KindHandler, ParsedRow, PlanContext, RowOutcome, RowWrite } from "../plan";
+import { ambiguous, findParty, patched, text } from "../lookup";
+import type { KindContext, KindHandler, ParsedRow, PlanContext, RowOutcome, RowWrite } from "../plan";
 
 const WORKER_TYPES: Record<Employee["workerType"], string> = { w2: "W-2 employee", "1099": "1099 contractor" };
 const PAY_TYPES: Record<Employee["payType"], string> = { hourly: "Hourly", salary: "Salary", per_job: "Per job" };
@@ -43,7 +43,7 @@ function balanceWrite(row: ParsedRow, ctx: PlanContext, employeeId: string): Row
  * employee (or earlier in the same file). Pay rate is sensitive and is shown only with
  * hr.employee.view_sensitive, like on the employee screen.
  */
-function resolveEmployee(row: ParsedRow, ctx: PlanContext): RowOutcome {
+function resolveEmployee(row: ParsedRow, ctx: KindContext): RowOutcome {
   const email = text(row, "email");
   const ext = text(row, "external_id");
   const { employees } = ctx.world;
@@ -51,9 +51,14 @@ function resolveEmployee(row: ParsedRow, ctx: PlanContext): RowOutcome {
     employees.find((e) => fold(e.email) === email) ??
     (ext ? employees.find((e) => e.externalId && fold(e.externalId) === fold(ext)) : undefined);
   const managerKey = text(row, "manager");
-  const manager = managerKey ? findParty(employees, managerKey) : undefined;
-  if (managerKey && !manager)
+  const found = managerKey ? findParty(ctx.lookups.employees, managerKey) : undefined;
+  if (found && "none" in found)
     return { problems: [{ field: "manager", message: `No employee matches “${managerKey}”.` }] };
+  if (found && "many" in found) {
+    const message = ambiguous(found.many, "employees", managerKey, "Use their External ID or email.");
+    return { problems: [{ field: "manager", message }] };
+  }
+  const manager = found && "one" in found ? found.one : undefined;
   const name = text(row, "name");
   if (!existing) {
     const employee: Employee = {
