@@ -32,7 +32,7 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
-import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
+import { customerAudit, loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** What adding a customer carries (ApiClient `NewCustomerInput`). */
 export interface NewCustomer {
@@ -92,21 +92,6 @@ function quoteAudit(
       wastePct,
     })),
     total,
-  };
-}
-
-/** What a customer's audit entry keeps. */
-function customerAudit(
-  customer: Pick<Customer, "type" | "name" | "contactName" | "email" | "phone" | "terms" | "addresses">,
-) {
-  return {
-    type: customer.type,
-    name: customer.name,
-    contactName: customer.contactName,
-    email: customer.email,
-    phone: customer.phone,
-    terms: customer.terms,
-    addresses: customer.addresses.map(({ label, street, city, state, zip }) => ({ label, street, city, state, zip })),
   };
 }
 

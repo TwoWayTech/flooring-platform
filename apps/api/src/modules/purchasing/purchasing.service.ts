@@ -48,7 +48,7 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadLocations, loadMovements, loadProducts } from "../inventory/inventory-records";
 import { companyClock } from "../sales/sales-common";
 import { lockStock } from "../inventory/stock-lock";
-import { loadContacts, loadOrders, loadReceipts, loadSuppliers } from "./purchasing-records";
+import { auditedSupplier, loadContacts, loadOrders, loadReceipts, loadSuppliers } from "./purchasing-records";
 
 /** What a supplier save carries (ApiClient `SupplierInput`); missing fields keep their value. */
 export type SupplierInput = Partial<Omit<Supplier, "id" | "status" | "categories" | "externalId">> & {
@@ -748,24 +748,6 @@ export class PurchasingService {
       this.logger.warn("A purchase order was saved, but its email could not be queued.");
     }
   }
-}
-
-/**
- * What a supplier's audit entry keeps: everything that changes who gets orders or money, so a
- * changed email or credit limit can be traced (PR #13 security review). No tax ID is ever stored.
- */
-function auditedSupplier(supplier: Omit<Supplier, "id" | "status" | "categories" | "externalId">) {
-  return {
-    name: supplier.name,
-    type: supplier.type,
-    terms: supplier.terms,
-    creditLimit: supplier.creditLimit,
-    email: supplier.email,
-    phone: supplier.phone,
-    accountNumber: supplier.accountNumber,
-    track1099: supplier.track1099,
-    w9OnFile: supplier.taxForm?.w9OnFile ?? false,
-  };
 }
 
 /**
