@@ -1,38 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { MANAGER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
-
-const DENVER = "America/Denver";
-const DAY_MS = 86_400_000;
-
-/**
- * A Monday 8 to 90 days after Denver's today, chosen by the run. Two runs (or a run stopped midway,
- * whose cleanup may come after its context closed) then rarely book the same slot. `weeksAhead` is
- * how many times "Next week" moves from this week to that Monday (ADR 0051 "Part 3", S8).
- */
-function mondayForRun(run: string): { day: string; weeksAhead: number } {
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: DENVER }).format(new Date());
-  const base = new Date(`${today}T00:00:00Z`);
-  const thisMonday = base.getTime() - ((base.getUTCDay() + 6) % 7) * DAY_MS;
-  const weeksAhead = 2 + (parseInt(run.slice(-3), 36) % 11);
-  return { day: new Date(thisMonday + weeksAhead * 7 * DAY_MS).toISOString().slice(0, 10), weeksAhead };
-}
-
-/** "Jan 5, 2027": how the company's date format (MMM d, yyyy) shows a day. */
-function formatted(day: string): string {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-/** Opens the Meetings page on the week that holds the run's Monday. */
-async function openWeek(page: Page, weeksAhead: number): Promise<void> {
-  await page.goto("/meetings");
-  await expect(page.getByRole("button", { name: "New meeting" })).toBeVisible();
-  for (let i = 0; i < weeksAhead; i += 1) await page.getByRole("button", { name: "Next week" }).click();
-}
+import { COMPANY_ZONE, formatted, mondayForRun, openWeek } from "./flows/kit";
 
 /** Clicks the button that saves a new meeting and returns the id the API gave it. */
 async function schedule(page: Page): Promise<string> {
@@ -65,7 +33,7 @@ test.describe("meetings (api mode)", () => {
     const made: { id: string; by: "manager" | "sales" }[] = [];
     const priyaContext = await browser.newContext({
       baseURL,
-      timezoneId: DENVER,
+      timezoneId: COMPANY_ZONE,
       viewport: { width: 1440, height: 900 },
     });
     const priya = await priyaContext.newPage();

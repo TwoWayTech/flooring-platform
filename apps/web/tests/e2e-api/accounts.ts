@@ -10,8 +10,32 @@ export const MANAGER_EMAIL = "luis.ortega@summitfloor.example";
 /** Summit's sales rep: holds meetings create and edit at own scope; the role needs no MFA. */
 export const SALES_EMAIL = "priya.natarajan@summitfloor.example";
 
+/** Summit's bookkeeper: confirms and voids payments, enters bills and expenses, reads the ledger; the role needs MFA. */
+export const ACCOUNTANT_EMAIL = "grace.liu@summitfloor.example";
+
+/** Summit's HR manager: decides timesheets and time off and reviews pay periods; the role needs MFA. */
+export const HR_EMAIL = "tamara.reyes@summitfloor.example";
+
+/** Summit's hourly office assistant: her own timesheet and time off at own scope; the role needs no MFA. */
+export const EMPLOYEE_EMAIL = "bri.alvarez@summitfloor.example";
+
+/** Summit's warehouse lead (branch Colorado Springs): cuts rolls for stock holds; the role needs no MFA. */
+export const WAREHOUSE_EMAIL = "cole.brennan@summitfloor.example";
+
+/** Summit's purchasing coordinator: suppliers, purchase orders and receipts; the role needs no MFA. */
+export const PURCHASING_EMAIL = "renata.kowalski@summitfloor.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
-export const SEEDED_EMAILS = [OWNER_EMAIL, MANAGER_EMAIL, SALES_EMAIL] as const;
+export const SEEDED_EMAILS = [
+  OWNER_EMAIL,
+  MANAGER_EMAIL,
+  SALES_EMAIL,
+  ACCOUNTANT_EMAIL,
+  HR_EMAIL,
+  EMPLOYEE_EMAIL,
+  WAREHOUSE_EMAIL,
+  PURCHASING_EMAIL,
+] as const;
 
 /** The password `pnpm db:seed` gave the seeded users. */
 export function seedPassword(): string {
@@ -57,8 +81,18 @@ export async function signInAs(page: Page, email: string): Promise<void> {
  * Returns the app's setup key, so a later step-up can compute the next code.
  */
 export async function signInAndEnrolOwner(page: Page): Promise<string> {
+  return signInAndEnrol(page, OWNER_EMAIL);
+}
+
+/**
+ * Signs a seeded user whose role requires MFA (Owner, Accountant, HR manager) in through the real
+ * login page and enrols an authenticator app, as the API asks at their first sign-in. Returns the
+ * app's setup key, so a later step-up can compute the next code. Run it on a user without an
+ * authenticator: global-setup.ts or the spec's own reset clears it.
+ */
+export async function signInAndEnrol(page: Page, email: string): Promise<string> {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(OWNER_EMAIL);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(seedPassword());
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByLabel("Confirm your password").fill(seedPassword());
