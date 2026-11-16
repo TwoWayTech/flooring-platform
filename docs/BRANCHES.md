@@ -5,7 +5,8 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `fix/web-stock-short-by` | B (Claude) | B3: the invoice's Stock panel reads a shortfall by value, plus the same-class sweep (main checkout) | Ready for merge once CI is green | [#45](https://github.com/TwoWayTech/flooring-platform/pull/45) | see the branch |
+| `fix/web-stock-short-by` | B (Claude) | B3: the invoice's Stock panel reads a shortfall by value, plus the same-class sweep (main checkout) | Ready; waits for CI (GitHub billing block) | [#45](https://github.com/TwoWayTech/flooring-platform/pull/45) | see the branch |
+| `fix/sales-quote-without-cost` | B (Claude) | B1: a salesperson's quote builder works without cost; margin needs product cost too (main checkout; stacked on #45) | Draft, review clean; merges after #45 once CI runs | [#46](https://github.com/TwoWayTech/flooring-platform/pull/46) | see the branch |
 | `feat/check-whole-product` | B (Claude) | The whole-product check: coverage list, money integrity, permission matrix, a fresh company and the demo script in api mode, a report (worktree `../flooring-platform-check`) | Paused at `f733829` (stages 0 to 7 done) for the owner's queue change of 2026-11-16; resumes after the bugs and the remaining screens | [#43](https://github.com/TwoWayTech/flooring-platform/pull/43) (draft) | `f733829` |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 

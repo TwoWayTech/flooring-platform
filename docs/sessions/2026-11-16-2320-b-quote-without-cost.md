@@ -221,7 +221,21 @@ B1 is fixed on the client and in shared code, with no server change. A salespers
 
 All carry `[skip ci]`. The throwaways (`zz-b1-probe.spec.ts`, `flows/zz-f1-stop.spec.ts`) were deleted and never committed.
 
+## Review round 1 (final, clean)
+- Fresh security-reviewer and correctness reviewers read this branch's own changes on top of B3 (origin/fix/web-stock-short-by...55135ee). Neither raised anything above a note, so no skeptic pass was needed.
+- **Notes kept for later:**
+  - The docs say the server costs every line from the catalog or the saved line; a new line without either gets 0 (wording).
+  - No test checks that a salesperson's `PUT /quotes/:id` answer comes back without cost; B6 blocks that re-save today.
+  - The R1 case where the shell grants margin while the server withholds cost is covered only by the null-cost check.
+  - `quoteLineFor` is typed `DocLine` while in api mode `unitCost` may be undefined; the null check covers it.
+  - F1's JSDoc says any stopped run is fully undone; a late stop leaves more.
+  - The stop-after-3 throwaway proved the voids; the final-payment reject never ran.
+  - The `pageerror` DecimalError check probably cannot fail.
+  - The both-keys margin rule has a quote-specific name, which B5 will need to reuse (rename then).
+
 ## Left
 - **The orchestrator's part:** `/review`; a fresh read-only security-reviewer (CLAUDE.md: cost, margin and a permission rule), focused on the PR body's "Security-review focus"; STATUS and BRANCHES from "For STATUS" above; the handoff commit without `[skip ci]`.
 - **The merge waits for PR #45** (B3), which waits for GitHub Actions. When #45 merges, `origin/main` is merged into this branch, then the PR is marked ready and self-merges under the CLAUDE.md rule once `verify` and `e2e` are green.
 - **Next in the queue:** B4 (a branch-assigned user can't save a contract; security review), then B5 (the orchestrator's placement; the owner may move it, Q2). B6 has no place yet: the owner decides (Q6).
+- **Handoff (2026-11-17 00:30):** STATUS and BRANCHES applied from "For STATUS" by the orchestrator. GitHub Actions is blocked by billing, so PR #46 stays a draft until #45 merges and origin/main is merged in.
+- **Next prompt:** "B4, the next task of the owner's queue of 2026-11-16: on `fix/contracts-branch-from-session` (stacked on #46 while CI is blocked by billing), build the final plan (the contract form sends no branch, the server's `newBranch` decides; API tests that no one files a contract under another branch; F5 back from `fixme`), with a security review, and merge after #45 and #46 once CI runs."
