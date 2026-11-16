@@ -3,7 +3,7 @@
 - **Person:** B (Claude), unattended, under the orchestrating session.
 - **Branch:** `feat/check-whole-product`, from `origin/main` at `67fc1de` (import part 1, PR #41, merged; reports #39 and platform admin part 2 #40 before it).
 - **Worktree:** `/Users/sarah/dev/flooring-platform-check`. The main checkout belongs to another task (the cross-module flows, PR #42), so nothing here is edited, built or run there.
-- **Draft PR:** opened at the end of stage 0 (see "Outcome").
+- **Draft PR:** #43, https://github.com/TwoWayTech/flooring-platform/pull/43 (opened at the end of stage 0).
 
 ## Prompt
 - **The owner's queue** (owner, 2026-11-14 and 2026-11-15; STATUS "Owner decisions"), in this order:
@@ -125,6 +125,21 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 | 20 | `turbo-hash.sh` restores the file with `git checkout --` | Safer: it restores from a byte copy, so it also works for files not yet committed (`docs/coverage.md` at stage 5) and never discards an uncommitted edit. It checks `git status --short` is the same after as before | Stage 5 runs it as planned |
 | 21 | F-b ("Turbo doesn't rerun web unit tests on a packages/shared-only change") | Proved at stage 0 with `turbo-hash.sh`:<br>- `apps/web/tests/unit/api-router.test.ts` changes the `web#test` hash;<br>- `packages/shared/src/features.ts` does **not** change it;<br>- `docs/FEATURES.md` does **not** change `@workspace/shared#test`'s hash | Stage 5's `turbo.json` inputs must turn the last two into "changed" |
 | 22 | Fetch and `gh pr view` from the main checkout (stage 0, step 1) | The fetch ran in this worktree, which shares the repository's object store. The main checkout belongs to the flows task | Every later stage works in this worktree only |
+| 23 | Stage 1: the oracle is `expectedRefusal(route, roleKey, company)` | `expectedOutcome(route, role, company)` in `support/route-oracle.ts`, returning `"pass"` or the refusal code | Later stages (PM-7's "roles the oracle lets through") call `expectedOutcome` |
+| 24 | Stage 1 files: `support/{sign-in,route-catalog,route-oracle,route-lists}.ts` | Also `support/switches.ts` (`withModuleOff`, `withFeaturesOff`), shared by PM-4, PM-5 and the later stages. `sign-in.ts` delegates to the platform tests' `enrolled` and `stepUp` instead of a third copy | The older copies of `withModuleOff`/`withFeatureOff` in `reports.int.test.ts` stay (S-10) and join the follow-up list of copies |
+| 25 | `.prettierignore` gets the snapshot JSON at stage 5 | Added at stage 1 for `apps/api/test/__snapshots__/*.json`, because `route-requirements.json` is committed now and `prettier --check .` (in `pnpm lint`) would fail on it | Stage 5 adds the two web JSON files |
+| 26 | `DOCUMENT_WRITES` classes: reversal, state change only, refused once posted, attachment, not a money document | A sixth class, **"adds a document"**: a new document or posting against the record, which itself is not edited (a PO's bill or receipt, an invoice from a quote or a roll, apply-credit, write-off, a contract's billing, retainage release, change order, lien waiver or renewal, a hold's issue) | 14 of the 85 entries. Forcing them into "state change only" would misdescribe them; MI-7 reads the class |
+| 27 | PM-5 records "gating" or "shaping" | A third effect, **"any-of"**: `GET /employees` and `GET /time-off-policies` call `requireAnyFeature`, so they are hidden only when every one of their switches is off. PM-5 finds that by turning off what was read, then whatever the next answer reads, until the route is hidden | The snapshot's `features` column shows `any-of` for those two routes |
+| 28 | `SWITCH_READ_IN_SERVICE`: switch read in a service after a nil-UUID 404 | Also a route whose switch is read first, but whose missing record answers the same bare 404 as a switched-off feature (`POST /outbox/:id/retry`), so a flip can't show it | Two entries: `GET /files/:id` (service) and `POST /outbox/:id/retry` (F-i) |
+| 29 | `features` in `route-requirements.json` come from PM-5 (tier B) | When tier B is off, PM-5 doesn't run, so the snapshot test compares every column but `features` against the committed file. Proved with one run at `TIER_B_DEFAULT = false` (12 passed, 2 skipped), restored after | If stage 8's gate turns tier B off, regenerate the file with `WHOLE_CHECK=1 … -u` |
+| 30 | PM-1(e): every write declares a non-`.view` key | Safer reading: a write whose keys include any `.view` key, or that has no key at all (`@AnyCompanyMember`), must be in `WRITE_WITH_VIEW_KEY` | 11 entries |
+| 31 | PM-1(b)–(f) over "every company route" | (b), (d), (e) and (f) cover company routes only; (c) covers every route. The 20 session-only routes are behind `PlatformAdminGuard` or answer for themselves, not `PermissionGuard` | — |
+| 32 | M2 (`@RequireModule("contracts")` removed) must fail PM-4 | Without a change it wouldn't: PM-4 loops over the declared modules, so contracts would just drop out. PM-4 now also asserts that every business module whose keys some route asks for is declared on some route | M2 fails PM-1(b), PM-4 and `route-requirements.json` |
+| 33 | Every reviewed list has a reason per entry | Each list also has a stale-entry check: an entry whose route no longer needs it fails | — |
+| 34 | `route-role-matrix.txt`: one line per route with the roles per product | As planned, roles that pass only; the refusal codes are compared with the oracle in PM-2, not snapshotted. JSON has no comment line, so `route-requirements.json` carries the header as its `note` field | — |
+| 35 | `QUERY_FOR` used by PM-5 | Left empty at stage 1: every GET read its switch before any query parsing, so PM-5 needed none | Stage 2 fills it for PM-7 |
+| 36 | "About 2,500 pairs" | 183 company routes × 12 default roles = 2,196 pairs, plus 183 wrong-host checks. The catalog has 207 routes: 183 company, 20 session-only, 4 public | — |
+| 37 | Run time about 60–75 s with stage 2, 30 s more for `WHOLE_CHECK` | Stage 1 alone: about 20 s by default and 31 s with `WHOLE_CHECK=1` | Stage 8 measures again with stage 2's sweep in |
 
 ## Decisions and why
 1. **SH-1 fallback (stage 0).** Import has merged and flows is still a draft, so this branch builds every stage except 7. Why: it is the plan's fallback (section 0). DS and PGM reuse `flows/kit.ts`, and copying the kit would duplicate code (CLAUDE.md, style). The report marks DS and PGM "waiting for PR #42". A later commit, or a small follow-up PR if this one has merged, adds them once #42 merges.
@@ -140,6 +155,12 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
    - Why: helpers in this branch provision and drop databases, so a wrong URL is the worst case.
 8. **CI on main isn't running (F-g): recorded, not fixed.** The fix is a `.github`, merge-guard or repository-setting change, all outside this branch's scope and the owner's to make (S-9). Stage 8's gate uses ready-PR verify runs. This PR's own squash merge will carry `[skip ci]` too, so the orchestrating session should know before merging #42 and this PR.
 9. **`mutate.sh` restores from byte copies and reports NO-TARGET instead of passing quietly.** It never commits, and it checks `git status` after each mutation. Why: a mutation whose `sed` matches nothing would "pass" and prove nothing. M7 and M10 target files that stages 5 and 6 create, so stage 8 checks those two patterns first.
+10. **Stage 1: the oracle never reads the API's decision code, but it does read the catalog's declarations.** The catalog reads each route through the guards' own readers (`permissionRequirement`, `accessLevel`, `requiredProduct`), so the oracle and the guards see the same declared keys and modules. The decision itself (product, undeclared, module, keys) is rebuilt from packages/shared only. Why: S-4. The declarations are pinned by the two snapshots, so a changed key fails there (M1) even though PM-2 agrees.
+11. **`sign-in.ts` reuses the platform tests' sign-in.** Why: a third copy of `enrolled` would be duplicated logic (CLAUDE.md, style); delegating keeps one implementation and gives the check a neutral name.
+12. **Session cookies are cached per person in the matrix.** Why: enrolling an authenticator twice for the same person would fail, and PM-3 full and PM-4 both need the Owner.
+13. **The sixth `DOCUMENT_WRITES` class and the `any-of` effect** (rows 26 and 27). Why: the safer reading is the accurate one; a list that misdescribes a write would mislead MI-7 and the report.
+14. **F-h, F-i and F-j are recorded, not fixed.** F-h touches users and roles (auth and permissions) and F-j is a permission-catalog question, both outside the tiny-fix exception. F-i (a bare 404's words) is outside those areas and tiny, but the safest option for a tests-only branch is no product change for a wording problem. Proposed STATUS lines below.
+15. **`TIER_B_DEFAULT` stays `true` at stage 1.** Why: the gate in stage 8 decides with measured times; the fallback for the snapshot is already proved.
 
 ## Findings
 - **F-g (new, CI): `verify` hasn't run on main since 2026-11-14, and neither has the Merge log workflow.**
@@ -154,6 +175,22 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
     - a repository setting so squash commits take the PR title and description, not the commit list;
     - stage commits without `[skip ci]`, which costs `fast` runs;
     - or a merge-guard change allowing `--body-file` on `gh pr merge`.
+
+- **Stage 1 results (route matrix).**
+  - **PM-2:** the real `TenantGuard` → `PermissionGuard` chain agrees with the shared-engine oracle on all 2,196 pairs (183 company routes × 9 flooring and 3 HR default roles), and refuses an HR Suite company on the Flooring Suite host on all 183 routes (`product_not_enabled`).
+  - **PM-3:** over HTTP, the refusal code and words match the oracle for every role (lite: both Employees; `WHOLE_CHECK=1`: all 12 roles). No company route answers 5xx to `{}` with the nil UUID for any role, and no write answers 2xx to `{}` except `POST /notifications/read` (own notes, reviewed).
+  - **PM-4:** turning core, contracts, hr or meetings off refuses every route that declares it with `module_not_enabled`; the no-module controls (`GET /users`, `/roles`, `/audit`, `/imports`) still answer. In an HR Suite company, every route of a Flooring Suite module answers `module_not_enabled` and every reports route `product_not_enabled`.
+  - **PM-5:** of 183 company routes, 161 are hidden by one switch, 2 only by all of theirs together (`any-of`), 2 are traced by hand, and 18 read no switch (6 by design: the ledger ×3, accounting settings ×2, locations; 12 are F-h). No route reads a removed feature.
+  - **F-e confirmed:** retail, wholesale and installation have permission keys but no routes (PM-4 asserts it by name).
+  - **F-d does not occur today:** PM-1(b) proves every route with no `@RequireModule` declares only `platform` keys (always on) or is any-member, so a module switched off never meets a no-module route that needs it.
+  - **In-handler rules the matrix can't see (SH-4, for the report):** `requireCompanyWide` (ledger, accounting, expenses), `requireCompanyWidePayroll` (pay periods, pay items), `assertOwner` (support grants), 14 reads of `access.isOwner` in 10 module files, 19 `selfCheck` calls (separation of duties) in 8 files, `scopeAllows` in 3 files, `requireAnyFeature` (GET /employees, GET /time-off-policies), and the import's per-kind checks. Any-member routes that narrow inside: `GET /outbox`, `GET /billing`, `GET /support-grants`, `GET /locations`, `GET /notifications`.
+- **F-h (new, rule 13): Settings → Users, Security roles, Audit log and Support access answer with their switch off.**
+  - **Evidence:** PM-5 traces no `featureOn` on 12 routes: `GET /users`, `PATCH /users/:id`, `POST /users/invite`, `GET /roles`, `POST /roles`, `PUT /roles/:id`, `DELETE /roles/:id`, `POST /roles/:id/reset`, `GET /audit`, `GET /support-grants`, `POST /support-grants/:id/approve` and `/revoke`. The register has `settings.users`, `settings.roles` and `settings.audit` (the support-access panel sits on Settings → Users).
+  - **Effect:** switching one off hides the screen but not the API (CLAUDE.md rule 13). All three are on today, so nothing is exposed now.
+  - **Not fixed:** users and roles are auth and permissions code.
+- **F-i (new, API contract): a missing outbox message answers a bare 404.** `POST /outbox/:id/retry` for an id that doesn't exist answers `{ code: "not_found", message: "Not Found" }` (`NotificationService.rowFor` throws `new NotFoundException()`), not words for the person (docs/api-contract.md, ErrorBody). It is also the same answer a switched-off feature gives, so PM-5 can't tell them apart (traced by hand instead).
+- **F-j (new, permissions): the outbox's writes need only a view key.** `POST /outbox/:id/retry` and `/cancel` require `settings.outbox.view`; the catalog has no `settings.outbox.manage`. Only the Owner holds it by default, but a custom role given "view the outbox" could resend or cancel email. Owner question Q10.
+- **Observation (no STATUS line): `POST /pay-periods` opens a period with `hr.payroll.view`.** The controller also requires company-wide payroll access, the call is safe to repeat and posts nothing (hr.md "Who uses it"). Reviewed in `WRITE_WITH_VIEW_KEY`; mentioned under Q10.
 
 ## Owner questions
 From the plan (section 12), unchanged:
@@ -177,9 +214,15 @@ From the plan (section 12), unchanged:
 New at stage 0:
 - **Q9, CI on main (F-g):** which fix (repository squash-message setting, no `[skip ci]` on stage commits, or `--body-file` in the merge guard)? And should main get one manual verify run now, to cover PRs #32 to #41?
 
+- **Q10, permissions (F-j):** should the outbox get a `settings.outbox.manage` key for retry and cancel, so seeing the outbox and acting on it can be given separately? And is `hr.payroll.view` the intended key for opening a pay period (`POST /pay-periods`)?
+
 ## For STATUS
 Proposed lines; the orchestrating session decides and edits STATUS.
 - **Follow-up (CI, F-g):** push-triggered CI and the Merge log workflow haven't run on main since `e2ff2ae`/`bd9155d` (2026-11-14). Each squash merge's body carries the branch's `[skip ci]` subjects, and GitHub then skips the push run. Ten merges (PRs #32 to #41) have had no verify on main and no merge-log entry. Owner question Q9 (whole-product check session log).
+
+- **Follow-up (rule 13, F-h):** `GET/PATCH /users`, `POST /users/invite`, the five `/roles` routes, `GET /audit` and the three `/support-grants` routes read no feature switch, although `settings.users`, `settings.roles` and `settings.audit` are in the register; switching one off would hide the screen but not the API. Either read the switch in those routes, or mark those features as always on in the register. Found by the route matrix's PM-5 (whole-product check session log).
+- **Follow-up (API contract, F-i):** `POST /outbox/:id/retry` answers a missing message with a bare `{ code: "not_found", message: "Not Found" }` (`NotificationService.rowFor`), not words for the person, and indistinguishable from a switched-off feature. Give it `notFound("message")`-style words.
+- **Owner question (permissions, F-j, Q10):** the outbox's retry and cancel need only `settings.outbox.view`; should there be a `settings.outbox.manage`?
 
 ## Commands run
 | Stage | Command | Result |
@@ -192,8 +235,21 @@ Proposed lines; the orchestrating session decides and edits STATUS.
 | 0 | `heavy.sh check/api-e2e.sh check` | e2e env ok (:5433), container ready, ports free, exit 0 |
 | 0 | `check/turbo-hash.sh` on `apps/web/tests/unit/api-router.test.ts`, `packages/shared/src/features.ts`, and `docs/FEATURES.md` (`@workspace/shared#test`) | changed; unchanged; unchanged (F-b). `git status` clean after each |
 | 0 | `bash -n` on the seven scratch scripts | all parse |
+| 1 | `heavy.sh check/int.sh pm-u0 apps/api test/route-matrix.int.test.ts -u` (first run, empty lists) | 7 failed, 7 passed, 18 s; the two snapshots written. The failures listed every route the reviewed lists needed; PM-2 matched the oracle on the first run |
+| 1 | `heavy.sh check/int.sh pm-u1 … -u` (lists filled) | 14 passed, 20 s |
+| 1 | `heavy.sh check/int.sh pm-tierb-off …` with `TIER_B_DEFAULT = false` (temporary, restored from a byte copy) | 12 passed, 2 skipped (PM-3, PM-5), 12 s: the snapshot fallback works |
+| 1 | `heavy.sh pnpm --filter api lint`; `heavy.sh pnpm --filter api typecheck` | exit 0 (eslint confirmed it lints the six new files); exit 0 |
+| 1 | `pnpm exec prettier --check` on the new files, then `prettier --check .` | clean |
+| 1 | `heavy.sh check/int.sh pm-u apps/api test/route-matrix.int.test.ts -u` | 15 passed, 19.8 s |
+| 1 | `heavy.sh check/int.sh pm-a …`, then `pm-b` | 15 passed each, 20.3 s and 19.9 s |
+| 1 | `WHOLE_CHECK=1 heavy.sh check/int.sh pm-full …` | 15 passed, 31.0 s (PM-3 over all 12 roles) |
+| 1 | `heavy.sh check/int.sh perm-iso apps/api test/permissions.int.test.ts test/isolation.int.test.ts` | 2 files, 40 passed, 10.3 s |
+| 1 | `heavy.sh check/int.sh pm-c …` after the last edits to the lists' reason texts; `heavy.sh pnpm --filter api lint`; `prettier --check .` | 15 passed, 19 s; exit 0; clean |
+| 1 | `check/scope.sh` | scope ok: nothing under `apps/web/src`, `apps/api/src`, `packages/shared/src`, `packages/db/src`, `.github`, `CLAUDE.md`, `.claude` or dependency files |
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 
 ## Outcome
-Stage 0 is done: this log is committed and pushed, and the draft PR is open. The next step is stage 1, the route catalog and the guard matrix.
+- **Stage 0** is done: this log is committed and pushed, and draft PR #43 is open.
+- **Stage 1** is done: the route catalog, the oracle, the reviewed lists and `route-matrix.int.test.ts` (PM-1 to PM-5), with the snapshots `apps/api/test/__snapshots__/route-requirements.json` and `route-role-matrix.txt`. 15 tests pass in about 20 s, or 31 s with `WHOLE_CHECK=1`. Findings F-h, F-i and F-j are new.
+- **Next:** stage 2, the Summit sweep (PM-6, PM-7, MI-DEC), in the same file and harness.

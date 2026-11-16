@@ -1,0 +1,2846 @@
+{
+  "note": "guard decisions only; see docs/whole-product-check.md for in-handler rules",
+  "routes": {
+    "DELETE /meetings/:id/attendees/:attendeeId": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating",
+        "meetings.invites": "gating"
+      }
+    },
+    "DELETE /roles/:id": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.roles.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /audit": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.audit.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /auth/context": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /billing": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.billing": "gating"
+      }
+    },
+    "GET /bills": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.bill.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "GET /bonuses": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "GET /change-orders": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "GET /clock-entries": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.clock": "gating",
+        "hr.timesheets": "gating"
+      }
+    },
+    "GET /commission-totals": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.commission.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating",
+        "sales.team": "gating"
+      }
+    },
+    "GET /commissions": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "GET /company/standing": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /contract-billings": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.billing.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "GET /contract-lines": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "GET /contractor-payments": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "GET /contracts": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "GET /customers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "customers.customer.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.customers": "gating"
+      }
+    },
+    "GET /employees": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.view",
+        "hr.timesheet.view",
+        "hr.pto.view",
+        "settings.hr.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "any-of",
+        "hr.time-off": "any-of",
+        "hr.timesheets": "any-of",
+        "settings.hr": "any-of"
+      }
+    },
+    "GET /expenses": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "GET /files/:id": {
+      "level": "company",
+      "product": null,
+      "module": "platform",
+      "anyOf": [
+        "sales.payment.view",
+        "sales.payment.approve",
+        "sales.payment.refund",
+        "finance.expense.view",
+        "purchasing.bill.view",
+        "purchasing.payment.record",
+        "purchasing.payment.approve",
+        "contracts.contract.view",
+        "hr.employee.view",
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /health": {
+      "level": "public",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /imports": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.import.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.import": "gating"
+      }
+    },
+    "GET /insurance-certificates": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.compliance.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.compliance": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "GET /invoice-adjustments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "GET /invoices": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "GET /ledger/period-close": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "reports.financial.view",
+        "settings.company.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /ledger/trial-balance": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "reports.financial.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /lien-waivers": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.compliance.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.compliance": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "GET /locations": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /me/meetings": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.portal": "gating",
+        "meetings.calendar": "gating",
+        "meetings.invites": "shaping",
+        "meetings.requests": "shaping"
+      }
+    },
+    "GET /me/portal": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "shaping",
+        "hr.portal": "gating"
+      }
+    },
+    "GET /meeting-guests": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.create"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating",
+        "meetings.invites": "gating"
+      }
+    },
+    "GET /meetings": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "GET /meetings/:id/calendar.ics": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "GET /notifications": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "shell.notifications": "gating"
+      }
+    },
+    "GET /outbox": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.outbox": "gating"
+      }
+    },
+    "GET /pay-periods": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "GET /pay-periods/:id/review": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "GET /payments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.view",
+        "sales.payment.approve"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "GET /platform/audit": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/companies": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/companies/:id": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/companies/:id/directory": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/companies/:id/status": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/me": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/plans": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /platform/support-grants": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /products": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.product.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.products": "gating"
+      }
+    },
+    "GET /pto-requests": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "GET /public/branding": {
+      "level": "public",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /public/invitations/:token": {
+      "level": "public",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "GET /purchase-orders": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "GET /quotes": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.quote.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.quotes": "gating"
+      }
+    },
+    "GET /receipts": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "GET /recurring-expenses": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "GET /refunds": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.view",
+        "sales.payment.refund"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "GET /reports/business": {
+      "level": "company",
+      "product": "flooring",
+      "module": "core",
+      "anyOf": [
+        "reports.financial.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "reports.business": "gating",
+        "reports.hub": "gating"
+      }
+    },
+    "GET /reports/options": {
+      "level": "company",
+      "product": "flooring",
+      "module": "core",
+      "anyOf": [
+        "reports.sales.view",
+        "reports.financial.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "reports.hub": "gating"
+      }
+    },
+    "GET /reports/payments": {
+      "level": "company",
+      "product": "flooring",
+      "module": "core",
+      "anyOf": [
+        "reports.financial.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "reports.hub": "gating",
+        "reports.payments": "gating"
+      }
+    },
+    "GET /reports/pnl": {
+      "level": "company",
+      "product": "flooring",
+      "module": "core",
+      "anyOf": [
+        "reports.financial.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "reports.hub": "gating",
+        "reports.pnl": "gating"
+      }
+    },
+    "GET /reports/sales-by-category": {
+      "level": "company",
+      "product": "flooring",
+      "module": "core",
+      "anyOf": [
+        "reports.sales.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "reports.hub": "gating",
+        "reports.sales-category": "gating"
+      }
+    },
+    "GET /reservations": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.product.view",
+        "inventory.roll.view",
+        "sales.invoice.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "GET /roles": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.roles.view",
+        "settings.roles.manage",
+        "settings.users.view",
+        "settings.users.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /rolls": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.roll.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.rolls": "gating"
+      }
+    },
+    "GET /settings/accounting": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.payments.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /stock-holds": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.roll.view",
+        "inventory.product.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.reservations": "gating"
+      }
+    },
+    "GET /stock-movements": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.product.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.products": "gating"
+      }
+    },
+    "GET /supplier-contacts": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "GET /supplier-payments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.bill.view",
+        "purchasing.payment.record",
+        "purchasing.payment.approve"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "GET /suppliers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": {
+        "creditLimit": [
+          "inventory.product.view_sensitive",
+          "purchasing.bill.view"
+        ]
+      },
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "GET /support-grants": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "GET /time-off-entries": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "GET /time-off-policies": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.view",
+        "hr.employee.view",
+        "settings.hr.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "any-of",
+        "settings.hr": "any-of"
+      }
+    },
+    "GET /timesheets": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    },
+    "GET /transfers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.transfer.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.transfers": "gating"
+      }
+    },
+    "GET /users": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.users.view",
+        "settings.users.manage"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "PATCH /me/employee": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.portal": "gating"
+      }
+    },
+    "PATCH /meetings/:id": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "PATCH /platform/companies/:id/access": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "PATCH /platform/plans/:id": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "PATCH /rolls/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.roll.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.rolls": "gating"
+      }
+    },
+    "PATCH /users/:id": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.users.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /auth/step-up": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /bonuses": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /bonuses/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /change-orders/:id/decision": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.change_order.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /clock/in": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.clock": "gating",
+        "hr.portal": "gating",
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /clock/out": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.clock": "gating",
+        "hr.portal": "gating",
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /commission-adjustments": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.adjust"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "POST /commission-assignments": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "POST /commission-assignments/:id/acknowledge": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.portal.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating",
+        "hr.portal": "gating"
+      }
+    },
+    "POST /commission-plans": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "POST /commission-reversals/decide": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "POST /commission-statements/approve": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "POST /contract-billings/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.billing.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contractor-payments": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /contractor-payments/:id/pay": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.export"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /contractor-payments/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /contracts": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/billings": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.billing.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/change-orders": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.change_order.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/close": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/complete": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/files": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/lien-waivers": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.compliance.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.compliance": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/recall": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/renew": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/retainage-releases": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.billing.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.billing": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/send": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/sign": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /contracts/:id/terminate": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "POST /customers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "customers.customer.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.customers": "gating"
+      }
+    },
+    "POST /employees": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "gating"
+      }
+    },
+    "POST /employees/:id/checklist/:itemId": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "gating"
+      }
+    },
+    "POST /employees/:id/documents": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "gating"
+      }
+    },
+    "POST /employees/:id/offboarding": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "gating"
+      }
+    },
+    "POST /expenses": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "POST /expenses/:id/review": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "POST /expenses/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "POST /imports": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.import.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.import": "gating"
+      }
+    },
+    "POST /imports/:id/undo": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.import.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.import": "gating"
+      }
+    },
+    "POST /imports/check": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.import.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.import": "gating"
+      }
+    },
+    "POST /invoices/:id/apply-credit": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.apply_credit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /invoices/:id/credit-notes": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "POST /invoices/:id/sent": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.edit",
+        "sales.invoice.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "POST /invoices/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "POST /invoices/:id/write-off": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.write_off"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /ledger/period-close": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.company.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /meeting-requests": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating",
+        "meetings.invites": "gating",
+        "meetings.requests": "gating"
+      }
+    },
+    "POST /meetings": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "POST /meetings/:id/attendees/:attendeeId/proposal": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating",
+        "meetings.invites": "gating"
+      }
+    },
+    "POST /meetings/:id/cancel": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "POST /meetings/:id/reschedule": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "POST /meetings/:id/reschedule/undo": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating"
+      }
+    },
+    "POST /meetings/:id/response": {
+      "level": "company",
+      "product": null,
+      "module": "meetings",
+      "anyOf": [
+        "meetings.meeting.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "meetings.calendar": "gating",
+        "meetings.invites": "gating"
+      }
+    },
+    "POST /notifications/read": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "shell.notifications": "gating"
+      }
+    },
+    "POST /outbox/:id/cancel": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.outbox.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.outbox": "gating"
+      }
+    },
+    "POST /outbox/:id/retry": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.outbox.view"
+      ],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.outbox": "shaping"
+      }
+    },
+    "POST /pay-periods": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.view"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /pay-periods/:id/approve": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /pay-periods/:id/exclusions": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /pay-periods/:id/export": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.export"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /pay-periods/:id/reopen": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.payroll.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.pay-periods": "gating"
+      }
+    },
+    "POST /payments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.record"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /payments/:id/files": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.record"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /payments/:id/review": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /payments/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /platform/companies/:id/cancel": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/companies/:id/reinstate": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/companies/:id/suspend": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/plans": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/plans/:id/restore": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/plans/:id/retire": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /platform/support-grants": {
+      "level": "session",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /pto-requests": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.request",
+        "hr.pto.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "POST /pto-requests/:id/cancel": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.request",
+        "hr.pto.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "POST /pto-requests/:id/decision": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "POST /public/invitations/accept": {
+      "level": "public",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": false,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": null
+    },
+    "POST /purchase-orders": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /purchase-orders/:id/bills": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.bill.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /purchase-orders/:id/cancel": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /purchase-orders/:id/order": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /purchase-orders/:id/receipts": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.order.receive"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /quotes": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.quote.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.quotes": "gating"
+      }
+    },
+    "POST /quotes/:id/invoice": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating"
+      }
+    },
+    "POST /quotes/:id/status": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.quote.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.quotes": "gating"
+      }
+    },
+    "POST /recurring-expenses": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "POST /refunds": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.payment.refund"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "POST /reservations/:id/issue": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.roll.cut"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.reservations": "gating"
+      }
+    },
+    "POST /roles": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.roles.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /roles/:id/reset": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.roles.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /rolls/:id/invoice": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.invoice.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.reservations": "gating",
+        "inventory.rolls": "gating",
+        "sales.invoices": "gating"
+      }
+    },
+    "POST /stock/corrections": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.stock.correct"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.stock-correction": "gating"
+      }
+    },
+    "POST /supplier-contacts": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "POST /supplier-contacts/:id/status": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "POST /supplier-payments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.payment.record"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /supplier-payments/:id/review": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.payment.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /supplier-payments/:id/void": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.payment.void"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.orders": "gating"
+      }
+    },
+    "POST /suppliers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": {
+        "creditLimit": [
+          "inventory.product.view_sensitive",
+          "purchasing.bill.view"
+        ]
+      },
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "POST /suppliers/:id/status": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": {
+        "creditLimit": [
+          "inventory.product.view_sensitive",
+          "purchasing.bill.view"
+        ]
+      },
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "POST /support-grants/:id/approve": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /support-grants/:id/revoke": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "POST /time-off-adjustments": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.pto.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.time-off": "gating"
+      }
+    },
+    "POST /time-off-policies": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "settings.hr.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.hr": "gating"
+      }
+    },
+    "POST /timesheets/:id/reopen": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /timesheets/:id/submit": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.edit",
+        "hr.timesheet.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /timesheets/decisions": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /timesheets/upload": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.edit",
+        "hr.timesheet.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    },
+    "POST /transfers": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.transfer.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.transfers": "gating"
+      }
+    },
+    "POST /transfers/:id/receive": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "inventory.transfer.receive"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.transfers": "gating"
+      }
+    },
+    "POST /users/invite": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.users.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "PUT /commission-plans/:id": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.commission.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.commissions": "gating"
+      }
+    },
+    "PUT /contracts/:id": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.contract.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.register": "gating"
+      }
+    },
+    "PUT /contracts/:id/insurance-certificate": {
+      "level": "company",
+      "product": null,
+      "module": "contracts",
+      "anyOf": [
+        "contracts.compliance.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "contracts.compliance": "gating",
+        "contracts.register": "gating"
+      }
+    },
+    "PUT /customers/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "customers.customer.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.customers": "gating"
+      }
+    },
+    "PUT /employees/:id": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.employee.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.employees": "gating"
+      }
+    },
+    "PUT /expenses/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "PUT /imports/mappings/:kind": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.import.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.import": "gating"
+      }
+    },
+    "PUT /invoices/:id/commission-split": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "hr.commission.manage",
+        "sales.invoice.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.invoices": "gating",
+        "sales.team": "gating"
+      }
+    },
+    "PUT /quotes/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "sales.quote.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.quotes": "gating"
+      }
+    },
+    "PUT /recurring-expenses/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "finance.expense.create"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "PUT /roles/:id": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.roles.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "PUT /settings/accounting": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.payments.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {}
+    },
+    "PUT /supplier-contacts/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "PUT /suppliers/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "purchasing.supplier.edit"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": {
+        "creditLimit": [
+          "inventory.product.view_sensitive",
+          "purchasing.bill.view"
+        ]
+      },
+      "features": {
+        "purchasing.suppliers": "gating"
+      }
+    },
+    "PUT /time-off-policies/:id": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "settings.hr.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.hr": "gating"
+      }
+    },
+    "PUT /timesheets": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "hr.timesheet.edit",
+        "hr.timesheet.approve"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "hr.timesheets": "gating"
+      }
+    }
+  }
+}

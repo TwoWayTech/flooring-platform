@@ -11,3 +11,4 @@ test-results
 **/next-env.d.ts
 .claude
 *.md
+apps/api/test/__snapshots__/*.json
