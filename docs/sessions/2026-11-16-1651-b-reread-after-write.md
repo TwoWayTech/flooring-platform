@@ -150,6 +150,24 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **`TIMESHEET_CHANGED_MESSAGE` sits next to `overwritesNewerHours`** in `packages/shared/src/hr/timesheets.ts`, so the API and the demo refuse in the same words.
 - **The model's typed-text filter moved from the screen into `typeHours`.** It is the same `/[^\d.]/g`, so the screen will keep no copy.
 
+#### Stage 2b (the stale-save check, server and client together)
+- **The API tests were written in this session, not by the test-writer subagent.** feature.md step 4 hands them to that subagent, but this session can't spawn one. They follow the plan's list.
+- **One `NO_HOURS` for the API tests.** `apps/api/test/support/timesheet-week.ts` holds the seven `"0"` that `hr.int`, `payroll.int`, `california-pay.int` and `portal.int` send as `expectedDays`, so no file keeps its own copy.
+- **Every direct `PUT /timesheets` in the HR tests sends `expectedDays`.** That is 10 in `hr.int`, 2 in `payroll.int`, 1 in `california-pay.int` and 1 in `portal.int`. `saveWeek` reads the stored week through `GET /timesheets` with the same cookie, as planned.
+- **The new `hr.int` case:**
+  - It uses weeks 18 and 19, which no other case in the file touches.
+  - It uploads as Wes himself (`own`), with the email read from `GET /employees`, because a later case changes his email.
+  - Beyond the plan, it checks that a plain string as `expectedDays` gets the reload words (400), and that a well-formed `"25"` gets 409, not 400, because the check is by shape only.
+- **The notice sits above the day fields.** Its days use the same 4- or 7-column grid as the fields, so each saved day sits over its typed one. The numbers go through `<Num kind="quantity">`, which shows two decimals, as the total does.
+  - It follows the app's warning note: `text-warning-ink bg-warning/14`, the warning icon and a sentence.
+  - One line explains both choices: "Use saved hours drops your changes. Keep my hours replaces the saved hours when you save."
+- **When focus moves.**
+  - Focus moves only when `busy` or the notice changes, never on the first render, so opening the page doesn't move it.
+  - When the notice closes and nothing was clicked, focus goes to the first button in the actions row (Save) instead of staying on the page body.
+- **The focus hook's refs are named `…Ref`.** The installed React Compiler lint rules refuse ref access through an object a hook returns ("Cannot access refs during render").
+- **The notice's markup test checks the `disabled=""` attribute.** Checking for the word "disabled" would not work, because the Button's classes contain `disabled:`.
+- **The API mutation guards the check, it doesn't delete it.** Deleting the `if` would leave its imports unused and fail the build for the wrong reason, so the mutation puts an always-false condition in front of the check.
+
 ## Owner questions
 None blocks the build.
 
@@ -178,3 +196,12 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b2/logs
 | 2a | three model mutations (`b2/mut-s2a.sh`, `b2/mut-dec.py`): a clean form keeps its old hours; `typedHours` through decimal.js; rule 3 keeps the notice | each failed the model test: (a), (g) and (j); (j) with `DecimalError`; (i). Each file restored byte for byte. (A first try of the decimal.js mutation used `require`, which ESM doesn't have, so it was redone with an import.) |
 | 2a | `heavy.sh b2/checks.sh s2a`: shared `test`, `typecheck`, `lint`; web `lint`, `typecheck` | shared 70 files and 1,046 tests passed; the rest clean |
 | 2a | `pnpm exec prettier --check` on the 4 changed files | clean |
+| 2b | `heavy.sh b2/checks.sh s2b`: api `typecheck`, `lint` | clean |
+| 2b | `heavy.sh pnpm --filter api exec vitest run --project integration test/hr.int.test.ts test/portal.int.test.ts test/payroll.int.test.ts test/california-pay.int.test.ts` (local PostgreSQL on 5432, already up) | 4 files, 85 tests passed |
+| 2b | two API mutations (`b2/mut-s2b-api.sh`): the compare guarded off; the "days equal stored" exemption dropped | each failed the new `hr.int` case (1 of 45); files restored byte for byte |
+| 2b | `heavy.sh pnpm --filter web exec vitest run` on `timesheets-api`, `demo-timesheets`, `api-rereads` | 3 files, 11 tests passed |
+| 2b | `newer-hours-notice.test.tsx` | first run: the expected numbers were "7.5" while `<Num>` shows "7.50"; then the `disabled` check matched the Button's classes. Both expectations fixed |
+| 2b | `heavy.sh b2/checks.sh s2b`: web `lint`, `typecheck`, `test` | lint first refused ref access through the focus hook's returned object (3 errors). After renaming the refs: clean, clean, 31 files and 263 tests passed |
+| 2b | two web mutations (`b2/mut-s2b-web.sh`): the demo compare guarded off; the factory without `expectedDays` | `demo-timesheets` failed 2 of 2; `timesheets-api` failed 1 of 2; files restored byte for byte |
+| 2b | `heavy.sh b2/checks.sh s2b`: shared `test`, `typecheck`, `lint`; api `test` | shared 1,046 passed; clean; clean; api unit 17 files and 124 tests passed |
+| 2b | `pnpm exec prettier --check` on every changed TypeScript file | clean |

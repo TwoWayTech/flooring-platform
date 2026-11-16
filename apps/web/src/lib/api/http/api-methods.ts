@@ -601,6 +601,7 @@ export const API_METHODS = {
         employeeId: input.employeeId,
         weekStart: input.weekStart,
         days: hoursToWire(input.days),
+        expectedDays: hoursToWire(input.expectedDays),
       }),
     ),
   submitTimesheet: (http) => async (id) =>

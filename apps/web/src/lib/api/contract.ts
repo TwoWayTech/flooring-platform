@@ -127,6 +127,12 @@ export interface TimesheetInput {
   employeeId: string;
   weekStart: string;
   days: number[];
+  /**
+   * The hours the form started from (zeros for a week with no sheet). A save is refused when the
+   * stored week has changed from them meanwhile, unless it sends the stored hours (hr.md "Create or
+   * edit hours"; ADR 0051, 2026-11-16).
+   */
+  expectedDays: number[];
 }
 
 /** What a template upload would do, or did: each row, with its errors. */

@@ -12,7 +12,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { addDays, PRODUCT_HEADER, workweekStartOf } from "@workspace/shared";
+import { addDays, PRODUCT_HEADER, TIMESHEET_CHANGED_MESSAGE, workweekStartOf } from "@workspace/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
@@ -20,6 +20,7 @@ import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 import { withCaliforniaRules } from "./california-switch";
+import { NO_HOURS } from "./support/timesheet-week";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -215,15 +216,32 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     return created.body;
   }
 
+  /**
+   * Saves a week as a form would: from `expected`, or else from the week's stored hours as this
+   * sign-in reads them (seven zeros with no sheet), so the stale-save check passes (ADR 0051, 2026-11-16).
+   */
   async function saveWeek(
     cookie: string,
     employeeId: string,
     weekStart: string,
     days: readonly (number | string)[],
+    expected?: readonly string[],
   ): Promise<SheetBody> {
-    const saved = await call("put", "/timesheets", cookie).send({ employeeId, weekStart, days: days.map(String) });
+    const expectedDays = expected ?? (await storedWeek(cookie, employeeId, weekStart));
+    const saved = await call("put", "/timesheets", cookie).send({
+      employeeId,
+      weekStart,
+      days: days.map(String),
+      expectedDays,
+    });
     status(saved, 200);
     return saved.body;
+  }
+
+  /** A week's stored hours as this sign-in reads them, or seven zeros when it has no sheet. */
+  async function storedWeek(cookie: string, employeeId: string, weekStart: string): Promise<readonly string[]> {
+    const sheet = (await sheetsOf(cookie)).find((s) => s.employeeId === employeeId && s.weekStart === weekStart);
+    return sheet?.days ?? NO_HOURS;
   }
 
   async function submit(cookie: string, sheetId: string): Promise<SheetBody> {
@@ -669,6 +687,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       employeeId: nia.id,
       weekStart: week(7),
       days: hours(8, 8, 8, 8, 8, 0, 0),
+      expectedDays: NO_HOURS,
     });
     status(filed, 400);
     expect(filed.body.message).toContain("does not use timesheets");
@@ -689,12 +708,15 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       [{ weekStart: addDays(w, 1) }, "first day of the company's workweek"],
       [{ weekStart: week(-1) }, "future week"],
       [{ note: "x" }, ""],
+      // A tab opened before the form sent the hours it started from (ADR 0051, 2026-11-16).
+      [{ expectedDays: undefined }, "Reload the page, then save your hours again."],
     ];
     for (const [over, message] of bad) {
       const refused = await call("put", "/timesheets", cookies.wes).send({
         employeeId: ids.wes,
         weekStart: w,
         days: hours(8, 8, 8, 8, 8, 0, 0),
+        expectedDays: NO_HOURS,
         ...over,
       });
       status(refused, 400);
@@ -702,7 +724,12 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       expect(refused.body.message).toContain(message);
     }
     // Someone else's week needs approve and scope: Wes holds neither, the manager is out of scope for Olive.
-    const theirs = { employeeId: ids.olive, weekStart: week(6), days: hours(8, 8, 8, 8, 8, 0, 0) };
+    const theirs = {
+      employeeId: ids.olive,
+      weekStart: week(6),
+      days: hours(8, 8, 8, 8, 8, 0, 0),
+      expectedDays: NO_HOURS,
+    };
     status(await call("put", "/timesheets", cookies.wes).send(theirs), 404);
     status(await call("put", "/timesheets", cookies.mgr).send(theirs), 404);
     const oliveSheet = await saveWeek(cookies.hr, ids.olive, week(6), theirs.days);
@@ -715,6 +742,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       employeeId: ids.wes,
       weekStart: w,
       days: hours(1, 1, 1, 1, 1, 0, 0),
+      expectedDays: NO_HOURS,
     });
     status(locked, 400);
     expect(locked.body.message).toContain("waits for approval");
@@ -743,6 +771,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       employeeId: ids.wes,
       weekStart: week(1),
       days: hours(1, 1, 1, 1, 1, 0, 0),
+      expectedDays: NO_HOURS,
     });
     status(locked, 400);
     expect(locked.body.message).toContain("locked");
@@ -931,6 +960,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       employeeId: lena.body.id,
       weekStart: week(1),
       days: hours(8, 8, 8, 8, 8, 0, 0),
+      expectedDays: NO_HOURS,
     });
     status(refused, 409);
     expect(refused.body.code).toBe("settings_missing");
@@ -1356,6 +1386,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         employeeId: abe.id,
         weekStart: w,
         days: hours(8, 8, 8, 8, 8, 0, 0),
+        expectedDays: NO_HOURS,
       }),
       404,
     );
@@ -1852,6 +1883,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         employeeId: ids.wes,
         weekStart: w,
         days: hours(8, 8, 8, 8, 8, 0, 0),
+        expectedDays: NO_HOURS,
       });
       status(saved, 400);
       expect(saved.body.message).toContain("approved pay period");
@@ -2114,6 +2146,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
         employeeId: ids.olive,
         weekStart: week(23),
         days: hours(8, 8, 8, 8, 8, 0, 0),
+        expectedDays: NO_HOURS,
       }),
       call("post", "/pto-requests", unlinked).send({
         employeeId: ids.olive,
@@ -2143,6 +2176,7 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
       employeeId: report.id,
       weekStart: week(23),
       days: hours(4, 4, 4, 4, 4, 0, 0),
+      expectedDays: NO_HOURS,
     });
     expect(dead.status).toBe(404);
   });
@@ -2155,6 +2189,72 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(audits[0]!.before).toBeNull();
     expect(audits[1]!.before).toEqual({ days: hours(8, 8, 8, 8, 8, 0, 0) });
     expect(audits[1]!.after).toEqual({ days: hours(7.5, 8, 8, 8, 8, 0, 0) });
+  });
+
+  it("never saves over hours changed since the form opened, and takes a save of the stored hours", async () => {
+    const w = week(18);
+    const opened = hours(8, 8, 8, 8, 8, 0, 0);
+    const uploaded = hours(8, 6, 8, 8, 8, 0, 0);
+    const typed = hours(9, 9, 9, 9, 9, 0, 0);
+    const email = ((await call("get", "/employees", cookies.hr)).body as EmployeeBody[]).find(
+      (e) => e.id === ids.wes,
+    )!.email;
+    const put = (days: readonly string[], expectedDays: unknown) =>
+      call("put", "/timesheets", cookies.wes).send({ employeeId: ids.wes, weekStart: w, days, expectedDays });
+    const sheetNow = async () => (await sheetsOf(cookies.wes)).find((s) => s.weekStart === w)!;
+
+    // Wes saves his week, then an upload (his own, from another tab) changes Tuesday.
+    const sheet = await saveWeek(cookies.wes, ids.wes, w, opened, NO_HOURS);
+    status(await upload(cookies.wes, [[email, addDays(w, 1), "6"]], true, true), 201);
+    const before = await sheetNow();
+    expect(before.days).toEqual(uploaded);
+    const savesBefore = await auditOf("Saved timesheet hours", sheet.id);
+
+    // His form still shows what it opened with: saving other hours from it is refused, and nothing is written.
+    const stale = await put(typed, opened);
+    status(stale, 409);
+    expect(stale.body).toMatchObject({ code: "timesheet_changed", message: TIMESHEET_CHANGED_MESSAGE });
+    expect(await sheetNow()).toEqual(before);
+    expect(await auditOf("Saved timesheet hours", sheet.id)).toHaveLength(savesBefore.length);
+
+    // Sending exactly the stored hours writes nothing new, so it is taken whatever the form started from.
+    status(await put(uploaded, opened), 200);
+    // A form opened after the upload saves over it.
+    const fresh = await put(typed, uploaded);
+    status(fresh, 200);
+    expect(fresh.body.days).toEqual(typed);
+
+    // A week the upload created: a form opened before it, from seven zeros, can't save other hours over it.
+    const other = week(19);
+    status(await upload(cookies.wes, [[email, other, "7"]], true, true), 201);
+    status(
+      await call("put", "/timesheets", cookies.wes).send({
+        employeeId: ids.wes,
+        weekStart: other,
+        days: opened,
+        expectedDays: NO_HOURS,
+      }),
+      409,
+    );
+    expect((await sheetsOf(cookies.wes)).find((s) => s.weekStart === other)!.days).toEqual(hours(7, 0, 0, 0, 0, 0, 0));
+
+    // The hours the form started from are checked by shape only, with words for a tab opened before them.
+    for (const expectedDays of [undefined, hours(0, 0, 0, 0, 0, 0), ["8 h", "0", "0", "0", "0", "0", "0"], "0"]) {
+      const refused = await put(opened, expectedDays);
+      status(refused, 400);
+      expect(refused.body).toMatchObject({
+        code: "invalid_request",
+        message: "Reload the page, then save your hours again.",
+      });
+    }
+    // A well-formed value no week could hold is no 400: it differs from the stored hours, so 409.
+    status(await put(opened, hours(25, 0, 0, 0, 0, 0, 0)), 409);
+
+    // A submitted week still gives its own refusal first.
+    await submit(cookies.wes, sheet.id);
+    const waiting = await put(opened, NO_HOURS);
+    status(waiting, 400);
+    expect(waiting.body.message).toContain("waits for approval");
   });
 
   it("closes a punch into a submitted week without adding its hours, with a note and an audit reason", async () => {

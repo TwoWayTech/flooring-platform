@@ -11,15 +11,30 @@ import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-con
 import { DAY, requireFeature } from "../sales/sales-common";
 import { TimesheetsService } from "./timesheets.service";
 
+/** The words for a save without the hours its form started from, or with malformed ones: a tab opened before them. */
+const RELOAD = "Reload the page, then save your hours again.";
+
 /**
  * A week of hours: seven decimal strings such as "7.5" from the company's workweek day (hr.md
  * rules 5 and 6; CLAUDE.md rule 6). The service checks 0 to 24 and two decimals (ADR 0046).
+ * `expectedDays` are the hours the form started from (seven "0" for a week with no sheet), checked
+ * here by shape only; the service compares them by value with the stored week and refuses a save
+ * over newer hours (hr.md "Create or edit hours"; ADR 0051, 2026-11-16).
  */
 const TIMESHEET = z
   .object({
     employeeId: z.uuid(),
     weekStart: DAY,
     days: z.array(z.string().max(12, "Enter hours as a number, such as 8 or 7.5.")).length(7, "A week has seven days."),
+    expectedDays: z
+      .array(
+        z
+          .string()
+          .max(12, RELOAD)
+          .regex(/^\d+(\.\d+)?$/, RELOAD),
+        { error: RELOAD },
+      )
+      .length(7, RELOAD),
   })
   .strict();
 

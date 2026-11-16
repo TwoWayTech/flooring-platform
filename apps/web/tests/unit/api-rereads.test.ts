@@ -161,7 +161,9 @@ const CASES = {
   setChecklistItem: write((c) => c.setChecklistItem(ID, "onboarding", ID, true)),
   startOffboarding: write((c) => c.startOffboarding(ID)),
   addEmployeeDocuments: write((c) => c.addEmployeeDocuments(ID, [])),
-  saveTimesheet: write((c) => c.saveTimesheet({ employeeId: ID, weekStart: "2026-11-16", days: ZEROS })),
+  saveTimesheet: write((c) =>
+    c.saveTimesheet({ employeeId: ID, weekStart: "2026-11-16", days: ZEROS, expectedDays: ZEROS }),
+  ),
   submitTimesheet: write((c) => c.submitTimesheet(ID)),
   decideTimesheets: write((c) => c.decideTimesheets([ID], { action: "approve" })),
   reopenTimesheet: write((c) => c.reopenTimesheet(ID, "A reason")),
