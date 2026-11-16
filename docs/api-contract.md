@@ -551,6 +551,60 @@ Flooring Suite only and module `core`: an HR Suite company gets 403 `product_not
 - **Removed reports:** sales tax by jurisdiction, inventory valuation and the two aging reports have no route.
 - **The web client** routes `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport` and `paymentsReport` (`API_METHODS`). It sends only the filters that are set, never a company id, and reads a 403 `forbidden` or a 404 on `GET /reports/options` as no reports (`EMPTY_REPORT_OPTIONS`); any other failure surfaces as elsewhere.
 
+## Data import, part 1 (real build, ADR 0057)
+
+Customers, customer addresses, suppliers and products. Both products, no class-level module: `settings.import.*` is in the always-on `platform` module, and each request's kind is checked against its own module. Every route needs `settings.import.manage`, answers 404 while `settings.import` is off, and carries `Cache-Control: private, no-store`. The behaviour is docs/product-spec/import.md, with the differences in its "Real build (ADR 0057)" section.
+
+| Route | Status | Does |
+| --- | --- | --- |
+| `GET /imports` | 200 | `ImportOverview` `{ kinds, mappings, batches }`: the kinds this person may import here, in wizard order (none for an HR Suite company); the saved column choices of those kinds only; the newest 200 imports as `ImportBatchSummary` |
+| `POST /imports/check` | 200 | The dry run. Body `ImportRequest` → `ImportPreview` `{ rows, counts }`. Writes nothing and makes no audit entry |
+| `POST /imports` | 201 | The import, after a step-up. Body `ImportRequest` plus `expected` → `ImportResult` `{ batch, rows }` |
+| `POST /imports/:id/undo` | 201 | Undo, after a step-up. No body → `ImportBatchSummary` with `undoneAt` and `undoneBy` |
+| `PUT /imports/mappings/:kind` | 200 | Body `{ columns }` → `ImportMapping` `{ id, kind, columns, savedAt }`. Saved in place, one per kind |
+
+- **Who:** `settings.import.manage` (route guard), data scope `all`, and every key of the kind: customers `customers.customer.view`, `.create`, `.edit`; addresses `customers.customer.view`, `.edit`; suppliers `purchasing.supplier.view`, `.create`, `.edit`; products `inventory.product.view`, `.create`, `.edit`, `.view_sensitive` and `purchasing.supplier.view`. A chosen `credit_limit` column needs `customers.customer.view_sensitive` (for suppliers also `inventory.product.view_sensitive` or `purchasing.bill.view`); `cost` is a required product column, so its key is a kind key. Undo checks the batch's kind and stored mapping the same way. Saving columns needs only the kind.
+- **Switches:** `settings.import` (every route), then the records' own: `sales.customers` (customers, addresses), `purchasing.suppliers`, `inventory.products`. A kind whose switch is off is left out of `kinds` and answers 404. Stock, open invoices, bills, employees and timesheets answer 404 "This kind of import is not available." (later parts).
+- **The request** carries only the chosen columns, in field order, with every row, so row numbers hold:
+
+  ```json
+  {
+    "kind": "customers",
+    "fileName": "customers.csv",
+    "table": { "headers": ["Account Number", "Customer Name", "E-mail"], "rows": [["CUST-9001", "Maple Row Builders", "orders@maplerow.example"]] },
+    "mapping": { "external_id": "Account Number", "name": "Customer Name", "email": "E-mail", "phone": null },
+    "expected": "c"
+  }
+  ```
+
+  `mapping` names only the kind's own fields (a header or null). `expected` is the dry run's action per row (`c` create, `u` update, `s` skip, `e` error), required on the import. The server parses no file and stores none; it reads every cell again with the shared `readCell`.
+- **Limits:** 2,000 rows, 60 columns, 60 cells per row, cells of at most 1,000 characters, headers and file names of at most 200, each field's own length and digit caps, at most 60 column choices; a body of at most 100 KB (the parser's limit; the web refuses a larger one before sending); one dry run, import or Undo at a time per company; 50 imports per company in 24 hours (dry runs don't count).
+- **The company** comes only from the session. Bodies are strict: a `companyId`, or any field the import doesn't take, is a 400. A batch id from another company is not found.
+- **The import** runs in one transaction: the import lock, a 10-second lock timeout, the daily count, `SHARE ROW EXCLUSIVE` locks on the kind's tables (`lockStock` first for products), then the plan again against the records as they are. If any row's action differs from `expected`, nothing is written (409 `plan_changed`); otherwise every valid row is written, rows with errors are left out, and the batch is kept for Undo.
+- **Undo** refuses, with nothing written, when a record differs from what the import wrote, when a live record points at one the import created (foreign keys from the catalog, plus meeting guests, attachments, journal sources and outbox rows), or, for products, when stock history or a removed earlier supplier stops it. Created records are soft-deleted; updated ones get their earlier values back.
+- **Audit:** one `data` entry per record created or updated ("Imported customer", "Updated customer by import"), one per batch ("Imported customers", with the counts text), the same on Undo ("Removed imported customer", "Restored customer after undoing an import", "Undid import"), and "Saved import columns". Credit limits and costs in entries, rows' `cells`, mappings and saved columns are stripped by name for anyone without their key. `import_jobs.changes` never leaves the server.
+
+| Status | Code | Words | When |
+| --- | --- | --- | --- |
+| 400 | `invalid_request` | The body's words ("The request has a field this import doesn't take.", "Choose what to import.", "Name the file.", "Import at most 2,000 rows at a time; split the file.", "A column name or file name holds a hidden control character.", "The column choices name a field this import doesn't have.", "Check the file again before importing.", …), the mapping's and the file's ("Choose the column for Name.", "“…” is not a column of this file."), or "Nothing to import: every row is skipped or has errors." | A bad body or mapping, a malformed batch id, nothing to write |
+| 401 | `unauthenticated` | | No session |
+| 403 | `forbidden` | The permission refusal; "Importing needs company-wide data scope, because rows are matched against every record."; "Your role can't see, add and change customers, so it can't import them."; "Your role can't see credit limit, so leave the Credit limit column out." | Key, scope, kind keys, sensitive column |
+| 403 | `module_not_enabled` | "This company does not have the module for this import." | The kind's module is off (an HR Suite company) |
+| 403 | `company_read_only` | TenantGuard's words | Any route but `GET /imports` while the company is read only, the dry run included |
+| 403 | `step_up_required`, `step_up_mfa_required` | The step-up words | The import and Undo without a recent step-up |
+| 404 | `not_found` | "This kind of import is not available." or "This import no longer exists." | Switch off, a later part's kind, an unknown or deleted batch |
+| 409 | `import_running` | "Another import or undo is running for this company. Try again when it finishes." | Another dry run, import or Undo holds the lock |
+| 409 | `plan_changed` | "The records changed since you checked this file. Check it again before importing." | A row's action differs from `expected` |
+| 409 | `already_undone` | "IMP-1001 was already undone." | |
+| 409 | `import_changed` | "Maple Row Builders changed after the import, so the import cannot be undone." | A record differs from what the import wrote |
+| 409 | `import_in_use` | "… is already used by other records, so the import cannot be undone.", or the product's stock-history or earlier-supplier words | A live reference, or a product rule |
+| 409 | `import_busy` | "The records were busy, so nothing was imported. Try again in a moment." | Deadlock, serialization failure or lock timeout |
+| 409 | `import_conflict` | "A record in this file clashes with one saved at the same time, so nothing was imported. Check the file again." | A unique clash |
+| 413 | (body parser) | | A body over 100 KB |
+| 429 | `rate_limited` | "Your company has imported 50 files in the last 24 hours. Try again later." | The import only |
+
+- **The web client** routes `importOverview`, `previewImport`, `runImport`, `undoImport` and `saveImportMapping` (`API_METHODS`). It sends only the chosen columns and never a company id, refuses a body over 100,000 UTF-8 bytes before sending, sends nothing for a batch id that isn't a UUID, and reads the lists again after each write. The screens give the step-up before the import and Undo. `testDatabaseConnection` stays on the demo, and `/admin/companies/*/import` stays "not found" in api mode.
+
 ## Issuing stock, the roll quick invoice and the commission split (real build, inventory part 2, ADR 0043)
 
 | Route | Needs | Does |
@@ -622,11 +676,11 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `changePlatformCompanyStatus(companyId, input)` | `POST /platform/companies/:id/suspend`, `/reinstate` or `/cancel` | `{ expectedStatus, reason }`, plus `confirmName` for cancel only; answers the company's detail. The demo keeps the console's status in local storage (`platform-status`) and refuses with the API's messages and codes (`DemoRefusal`, read by `apiErrorCode`); a demo company's own side has no life cycle. Every part 2 method refuses with "This feature is switched off." while `admin.billing` is off. |
 | `getPlatformDirectory(id)` | `GET /platform/companies/:id/directory` | From the API: the default roles and branding, no users (`restricted: true`). The demo returns its full fixture directory (`restricted: false`). |
 | `closeCompany()` | none (session) | The platform pages close the company the store had open, so the platform admin acts as the platform. |
-| `importOverview(id)` | `GET /companies/:id/imports` | Import kinds the company's modules allow, saved column mappings and the import history. Company users need `settings.import.manage` in their own company; the platform admin may use any company. |
-| `previewImport(id, request)` | `POST /companies/:id/imports/preview` | The dry run of a parsed file and its mapping: each row's result (create, update, skip, error with problems per cell). Writes nothing. |
-| `runImport(id, request)` | `POST /companies/:id/imports` | Plans again on the server, writes the valid rows, keeps the batch (IMP-1001) with the replaced versions, audits it. Refused when nothing would be written or the file has more than 2,000 rows (demo). |
-| `undoImport(id, batchId)` | `POST /companies/:id/imports/:batchId/undo` | Removes created records and restores replaced ones; refused when any changed since or a new record is used elsewhere. Audited. |
-| `saveImportMapping(id, kind, columns)` | `PUT /companies/:id/import-mappings/:kind` | Remembers which header feeds each field for the next file. |
+| `importOverview(id)` | `GET /imports` (the session's company; `id` is never sent) | Import kinds the person may import here, saved column mappings and the import history. Company users need `settings.import.manage` in their own company; the platform admin may use any company in the demo only (ADR 0057 part 5). Real build: see "Data import, part 1 (real build, ADR 0057)". |
+| `previewImport(id, request)` | `POST /imports/check` | The dry run of a parsed file and its mapping: each row's result (create, update, skip, error with problems per cell). Writes nothing. |
+| `runImport(id, request)` | `POST /imports` | Plans again on the server, writes the valid rows, keeps the batch (IMP-1001) with the replaced versions, audits it. Refused when nothing would be written, the file has more than 2,000 rows, or a row would now do something other than the dry run showed (`expected`). Needs a step-up on the API. |
+| `undoImport(id, batchId)` | `POST /imports/:batchId/undo` | Removes created records (soft-deleted on the API) and restores replaced ones; refused when any changed since or a new record is used elsewhere. Audited. Needs a step-up on the API. |
+| `saveImportMapping(id, kind, columns)` | `PUT /imports/mappings/:kind` | Remembers which header feeds each field for the next file. |
 | `testDatabaseConnection(id, input)` | `POST /companies/:id/database/test` | Real build: a server-side worker connects with the encrypted credentials (docs/specs/data-integration.md). Demo: checks the fields and answers with a sample database; the password is never sent and nothing is stored. |
 
 ## Company and settings

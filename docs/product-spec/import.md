@@ -480,3 +480,83 @@ The error report in rule 18, and the import history in `ImportHistory` (`apps/we
 - **Demo limits.** 10 MB, 2,000 rows and the first sheet only, because the overlay lives in browser storage. Batches keep every before and after version, so large imports can reach the storage quota. `writeStored` ignores that error and the change then lives in memory only.
 - **Connect a database is simulated.** No connection, no stored host or credentials, no worker.
 - **Nine kinds, not eight.** ADR 0019 and `docs/FEATURES.md` list eight. `timesheets` was added in batch 3.
+
+## Real build (ADR 0057)
+
+Part 1 of the import is on the API, built overnight on `feat/import-api` (PR #41) under the owner's rule: this spec is the approved behaviour, and the build differs from it only in the safer direction. Each difference is listed below, in ADR 0057 and in the 2026-11-16 import row of docs/blueprint-delta.md.
+
+- **Routes:** `GET /imports`, `POST /imports/check` (the dry run), `POST /imports`, `POST /imports/:id/undo` and `PUT /imports/mappings/:kind`; see docs/api-contract.md, "Data import, part 1 (real build, ADR 0057)". In api mode the wizard and the history read and write only through `importOverview`, `previewImport`, `runImport`, `undoImport` and `saveImportMapping`. `testDatabaseConnection` stays simulated.
+- **What runs on the API:** customers, customer addresses, suppliers (with the new contact) and products: dry run, import, history, Undo and saved columns. The other five kinds answer 404 there; the demo keeps all nine.
+- **One plan:** the API and the demo run the same shared `planImport` and kinds, with the access, limit, lookup and Undo rules beside them in `packages/shared/src/import/` (`access.ts`, `limits.ts`, `lookups.ts`, `canonical.ts`, `undo.ts`). The browser parses the file as before (rules 1 and 2); only the chosen columns travel, and the server reads every cell again.
+- **The demo** follows the same rules and words since this build. The text above describes the demo as written on 2026-11-10; where this section differs, this section is what both modes do, except where it says "on the API".
+
+### Who uses it, as built
+
+| Action | Needs |
+| --- | --- |
+| Open Data import, the dry run | `settings.import.manage`, data scope `all`, and every key of the kind: customers `customers.customer.view`, `.create`, `.edit`; addresses `customers.customer.view`, `.edit`; suppliers `purchasing.supplier.view`, `.create`, `.edit`; products `inventory.product.view`, `.create`, `.edit`, `.view_sensitive`, `purchasing.supplier.view` |
+| A Credit limit column | Also `customers.customer.view_sensitive`; for suppliers, also `inventory.product.view_sensitive` or `purchasing.bill.view` |
+| Import, Undo | The same, plus a step-up (the authenticator code) |
+| Save columns | `settings.import.manage` and the kind open to the person |
+
+With the default roles only the Owner imports. The later parts' kinds need their own keys in the demo (stock `inventory.product.view` and `inventory.stock.correct`; invoices `customers.customer.view` and `sales.invoice.create`; bills `purchasing.supplier.view` and `purchasing.bill.create`; employees `hr.employee.view`, `.create`, `.edit` and `.view_sensitive`; timesheets `hr.employee.view` and `hr.timesheet.approve`). A kind whose records' switch is off (`sales.customers`, `purchasing.suppliers`, `inventory.products`, …) is hidden and refused. The platform admin's import into another company stays demo only; in api mode `/admin/companies/*/import` is "not found".
+
+### Safer than this spec
+1. **S-1. Part 1 only on the API:** customers, addresses, suppliers and products. Stock, open invoices and bills, employees and timesheets wait for later parts (below).
+2. **S-2. Company-wide data scope** (rule 4, "Who uses it"). Rows are matched against every record, and a row may set another person as sales rep. Anyone else gets "Importing needs company-wide data scope, because rows are matched against every record."
+3. **S-3. The kind's own keys** on top of `settings.import.manage` (rule 4, "Who uses it"): "Your role can't see, add and change customers, so it can't import them." The overview offers only the kinds the person may import.
+4. **S-4. Sensitive columns:** a chosen Credit limit or Cost needs the key that shows it: "Your role can't see credit limit, so leave the Credit limit column out." Undo checks the batch's columns too.
+5. **S-5. Stock history freezes a product's valuation** (rule 9, the products table): once a product has any stock movement or any roll, deleted rolls and stock in transit included, an import can't change its cost, category, selling unit, coverage or roll width, and Undo can't put them back.
+6. **S-6. Retired SKUs:** a SKU held by a deleted product, an undone import's included, is a row error ("SKU “…” belonged to a deleted product. Use another SKU."), because the SKU index covers deleted rows.
+7. **S-7. Step-up** for the import and Undo (rules 16 and 17).
+8. **S-8. Active members only** as a customer's sales rep (the customers table).
+9. **S-9. The strictest terms:** a new supplier without Terms pays on order (the suppliers table said Net 30; Pay on order is the purchasing module's default). A new customer keeps Due on receipt, never the company's default terms.
+10. **S-10. What you saw is what you get** (rule 16): the import sends the dry run's action per row and is refused, with nothing written, if any row would now do something else: "The records changed since you checked this file. Check it again before importing." All valid rows import together or none do.
+11. **S-11. Re-imports skip** (rule 7): numbers compare as numbers ("3.40" against "3.4000"), a supplier's address by its four fields, categories as a set, records by content. When a supplier's four address fields differ, the four given replace the stored address and its county goes.
+12. **S-12. Limits** (rules 1 and 5): 2,000 rows, 60 columns, cells of at most 1,000 characters, headers and file names of at most 200; each field's own length (customer and supplier names 200, External IDs 100, emails 320, phones 50, SKUs 64, product names 200, brand, collection and color 100); money at most 10 whole digits; coverage and roll width at most 10 whole digits and 3 decimals; reorder point whole; at most 50 addresses per customer; a request of at most 100 KB of chosen columns, refused by the browser before sending ("This file is too large to send in one go. Split it into smaller files and import them one by one."); one dry run, import or Undo at a time per company ("Another import or undo is running for this company. Try again when it finishes."); 50 imports per company in 24 hours ("Your company has imported 50 files in the last 24 hours. Try again later."). The browser's own 10 MB file limit stays.
+13. **S-13. More audit** ("Events and audit entries"): on the API one entry per record created, updated, removed or restored ("Imported customer", "Updated customer by import", "Removed imported customer", "Restored customer after undoing an import"), each naming the batch, besides the batch entries above; saving columns writes "Saved import columns" in both modes. A dry run still writes none.
+14. **S-14. Undo stays exact** (rule 17): on the API each record is compared with what its module reads now; references come from the database's foreign keys plus meeting guests, attachments, journal sources and outbox rows, counting live rows only; Undo is refused when a product's earlier supplier is gone ("Q's earlier supplier was removed, so the import cannot be undone."); created records are soft-deleted. The demo uses the same comparison and the product check, and keeps its text search.
+15. **S-15. Nothing leaves that needn't:** the history and the answers never carry the saved versions (`changes`), `ImportMapping.savedBy` is gone, answers are never cached, the file is never stored, only its chosen columns travel, and the templates and the error report (rules 18 and 19) put a `'` before a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return.
+16. **S-16. Ambiguous keys are refused** (rules 6 and 8): an External ID, email, name or SKU that matches more than one record is a row error ("2 customers match “…”. …"), never the first one. Emails match exactly, ignoring case only; External IDs and names still fold.
+17. **S-17. Hidden control characters are refused** (rule 5) in cells ("… has a hidden control character. Remove it and try again."), except tab and line breaks in a timesheet Note, and in headers, file names and column choices.
+18. **S-18. Product rules** (rule 9, the products table, "Validation by kind"): sq ft per carton and roll width more than 0; cartons need coverage in every category, adhesives and trims included; carpet needs a width; a price or cost converted from sq yd or cartons must still fit the column; never negative; a supplier that matches exactly one record.
+19. **S-19. Blank means blank in the chosen columns** ("Row action"): a row with nothing in any chosen column is left out as blank, in the wizard and in the timesheet upload.
+20. **S-20. Sensitive columns are never chosen automatically** (rule 3) for someone who can't use them.
+
+Also settled while building: Undo in the demo checks the import's access too; the demo hides kinds whose switch is off, for the platform admin as well; saved columns in the demo need the kind open and refuse unknown fields; `GET /imports` lists saved columns only for the kinds the person may import; if saving the columns fails after a good import, the wizard says "The import worked, but the columns were not saved." and still shows the result.
+
+### Known limits this build closes
+- **Undo does not look at every collection** and **The reference check is a text search:** closed on the API (S-14). The demo keeps its text search.
+- **A dry run can touch the in-memory contact list:** closed; the working copy copies supplier contacts.
+- **A carton price can stay per carton:** closed (S-18).
+- **Pay rate is visible in the import flow:** closed. Employees need `hr.employee.view_sensitive` as a kind key in the demo, and part 2 keeps that rule on the API.
+
+### Known limits kept
+- An External ID that matches nothing makes a new supplier; a new contact is added only to a new supplier; tax exemption and certificates are not imported.
+- The error report appears only after an import.
+- The later parts' limits (boxed stock as whole numbers, counts below reservations, `flsaStatus`, PTO without a vacation policy, submitted timesheets, opening invoices at zero cost) stay in the demo until their parts.
+- Connect a database is simulated.
+
+### Later parts
+2. **HR:** employees (with the PTO opening balance) and timesheets in the wizard, through HR's own save rules.
+3. **Opening stock:** with an opening-balance journal entry.
+4. **Open invoices and bills:** with opening events, never sales or cost of goods.
+5. **The platform-admin path:** waits for support-grant use.
+6. **Portal timesheet uploads:** already on the API.
+7. **Connect a database:** waits for docs/specs/data-integration.md.
+8. **Follow-ups:** partial SKU index, a larger body limit, `FOR SHARE` in module writers, a dry-run cap.
+
+### Waiting for the owner
+1. Add `settings.import.manage` to the keys that need MFA, or keep the step-up only (S-7)?
+2. Raise the request limit from 100 KB to 1 MB (S-12)?
+3. A partial unique SKU index (a migration), so an undone import frees its SKUs (S-6)?
+4. Opening balances (parts 3 and 4): one entry per document or a summary; the equity account; the go-live date and period; an `opening` marker; reports and commissions; the review and sign-off (blueprint p54).
+5. Opening stock only for products with no stock history?
+6. May an employee import set pay rates, and should each person need an HR confirmation (part 2)?
+7. Platform-admin imports through a support grant (part 5).
+8. Approve docs/specs/data-integration.md before any connector.
+9. Confirm S-2, S-3, S-5, S-9, the limits of S-12, S-16 (exact emails included) and S-19.
+10. Close the Undo race: module writers take a share lock on the parent and re-check that it is live.
+11. Formula escaping for every CSV export, including HR's timesheet templates and the pay-period export?
+12. Accept size, linear planning and one at a time as the bound on dry runs?
+13. Reorder point: a whole number (this spec) or sq ft for boxed goods (inventory.md), as Summit's data has?
