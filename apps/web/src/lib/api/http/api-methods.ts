@@ -815,8 +815,9 @@ function patchBody(patch: MeetingPatch): MeetingPatch {
 const ANSWERED_REFUSALS = new Set([400, 403, 404, 409]);
 
 /**
- * A routed meetings write (ADR 0051 "Part 3"): the screens read again after it succeeds, and after
- * the server refuses it, since a refusal often means the screen showed something stale. A request
+ * A routed write for meetings (ADR 0051 "Part 3") and data import (ADR 0057): the screens read again
+ * after it succeeds, and after the server refuses it, since a refusal often means the screen showed
+ * something stale. A request
  * that never reached the server, a 401, a 429 or a server failure triggers no re-read.
  */
 async function wrote<T>(changed: () => void, request: Promise<T>): Promise<T> {

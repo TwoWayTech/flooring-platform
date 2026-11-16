@@ -274,7 +274,7 @@ Collection `importBatches`. Type in `packages/shared/src/import/types.ts`.
 | `id` | string | |
 | `kind` | `ImportKind` | |
 | `columns` | `ColumnMapping` | |
-| `savedAt`, `savedBy` | string | |
+| `savedAt` | string | Who saved the columns is in the audit log ("Saved import columns"), not on the record. |
 
 ### PlannedRow
 
