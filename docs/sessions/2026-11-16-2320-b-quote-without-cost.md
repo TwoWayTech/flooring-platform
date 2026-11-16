@@ -133,7 +133,7 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **The clean-ups answer 201, not 200** as the plan wrote: the void routes are NestJS POSTs, whose default success is 201. The kit takes any 2xx as done, so nothing changes; the proof's lines say 201.
 - **The first whole-suite run (`b1-all`) still had the throwaways in the tree.** The plan runs the suite (step 4) before deleting them (step 5), while expecting only F5 and B5 skipped. It shows the planned `F1-STOP` failure and the probe, and nothing else failed; that run's own `F1-STOP-PROOF` is a second OK. The clean whole suite is `b1-all-final`, run after the full checks on a fresh build.
 - **The delta row's "Blueprint section"** says "Quote builder", as the earlier sales rows do, rather than the plan's "Sales: quotes".
-- **F1 needed no timing fix.** It passed three times with nothing patched (S8): 19.2 s next to `sales.spec` on the fresh build, 16.4 s alone on the dirty database, and 15.6 s in the whole suite.
+- **F1 needed no timing fix.** It passed four times with nothing patched (S8): 19.2 s next to `sales.spec` on the fresh build, 16.4 s alone on the dirty database, 15.6 s in the first whole suite and 17.6 s in the final one.
 
 ## Which test pins which path
 - **Crash on Add product:** `quote-without-cost.test.ts` (absent, undefined and null costs), Priya's api-mode test, F1 step 1.
@@ -154,14 +154,14 @@ None blocks the build.
 - **Q2, B5:** a salesperson's dashboard and Sales → Team fail in api mode because `GET /invoices` withholds `cost`. It is appended after B4 in the queue. Move it earlier, or fold it into the whole-product check? It changes `monthlyPnl`, `salesTotals`, `teamStats`, `bestSellersIn` and the API's P&L types, and applies the both-keys margin rule to the dashboard, so it needs a security review.
 - **Q3.** Should DemoStore strip cost like the API, so the demo meets the same missing-cost paths? Not done; it is the spec's known gap.
 - **Q4.** Should the contract types say when a field may be withheld? `Product.cost`, `DocLine.unitCost`, `Invoice.cost`, `ContractLine.estimatedCost` and `Employee.payRate` are typed as present but are stripped. That would be a typed "as received" record, for example for P13.
-- **Q5, CI time:** F1 adds about 16 to 19 s to `verify` on this Mac (19.2 s, 16.4 s and 15.6 s in B1's three runs; B3's throwaway 17.7 s; the flows session 28 s). This joins PR #42's Q1.
+- **Q5, CI time:** F1 adds about 16 to 19 s to `verify` on this Mac (19.2, 16.4, 15.6 and 17.6 s in B1's four runs; B3's throwaway 17.7 s; the flows session 28 s). The whole api-mode suite took 146 s. This joins PR #42's Q1.
 - **Q6, B6:** editing a saved quote fails in api mode. The API answers percents at `numeric(18,8)` scale, which its own percent check refuses, and its waste check compares text. Fix it on the server: accept any scale up to 8 decimals and compare waste by value? Or on the client, sending percents as typed? Queue it after B4 and B5, or earlier? It touches input validation and a permission check, so it needs a security review.
 
 ## For STATUS
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first: B3 changed it.
 
 - **"In progress" and "Next three tasks" item 1:** B1 done in PR #46; "F1 runs since B1; F5 needs B4". **Append B5 after B4** (don't reorder): "then B5 (a salesperson's dashboard and Sales → Team in api mode; security review), found in B1's audit; the owner may move it (Q2)".
-- **"Done":** a B1 entry: the PR, this log, the ADR 0037 section, one delta row, the checks with counts, the review rounds.
+- **"Done":** a B1 entry: PR #46 (stacked on #45), this log, the ADR 0037 section, one delta row, the api-contract notes, and the checks: the full checks green (shared 1,075, web 276, api unit 124, db 18 and providers 11 tests; `test:api` api 629, db 59 and providers 2; hooks 15), the whole api-mode suite 36 passed and 2 skipped (F5, B5) in 146 s, the demo regression 24 passed, and the mutations M1 to M7; then the review rounds.
 - **"Api-mode bugs the flows found":**
   - the header lists B2, B3 and B1 as fixed with their PRs, "so F1 and F2 run; F5 waits on B4";
   - remove the B1 bullet;
@@ -174,7 +174,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - the B1 bullet: "B1 fixed on the client in PR #46 (no cost sent; none ever needed)";
   - the rule-5 bullet: F1 now checks the quote request and answers, and `sales.spec` Priya's products and quotes; Bri's portal and Cole's rolls are still unchecked;
   - the clean-ups bullet: "F5 registers none (`fixme`). F1 registers three (invoice void, deposit void, final reject if waiting), proved once by a stopped throwaway run."
-- **Q1 (CI time):** F1 took 15.6 to 19.2 s locally (three runs); the whole api-mode suite took 156 s with the two throwaways in it (`b1-all`), and `b1-all-final`'s time is under "Commands run".
+- **Q1 (CI time):** F1 took 15.6 to 19.2 s locally (four runs: 19.2, 16.4, 15.6 and 17.6 s); the whole api-mode suite took 146 s (`b1-all-final`, 36 passed, 2 skipped), against 2.2 minutes for B3's 33 tests.
 - **Owner questions (PR #46, B1):** Q1 to Q6 above.
 - **New follow-ups:** typed "as received" records (Q4); the View as banner, after B5; the installation jobs move must handle a withheld `jobCost`, `laborCost` and `jobMargin`.
 - **BRANCHES:** a `fix/sales-quote-without-cost` row: "B (Claude)", "B1: a salesperson's quote builder works without cost; margin needs product cost too (main checkout; stacked on #45)", "Draft" then "Ready", the PR, "see the branch".
@@ -204,7 +204,24 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b1/logs
 | 3 | `heavy.sh bash b1/e2e-demo.sh` (demo build, `--project=flooring`, one worker; quote, quote-status, quote-warehouse, square-feet, waste, localization, invoice-lifecycle, customers-picker, dashboard) | exit 0: 24 passed in 37.9 s; ports free after |
 | 3 | `heavy.sh pnpm exec eslint` on `sales.spec.ts` and F1; `pnpm exec prettier --check` on them | clean |
 | 4 | `pnpm exec prettier --check` on the ADR, `api-contract.md`, `blueprint-delta.md` | clean |
+| 5 | `heavy.sh b1/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0 in under 4 minutes (Turborepo replayed the packages whose inputs hadn't changed). `test`: db 18, providers 11, api 124, shared 1,075, web 276. `test:api`: db 59, providers 2, api 629. Hooks 15 of 15 |
+| 5 | `heavy.sh flows/api-e2e.sh b1-all-final --build` (a fresh api build after the demo build; no throwaways) | builds in 12 s; exit 0 after 146 s: 36 passed, 2 skipped (F5 and the B5 `fixme`). F1 17.6 s; Priya 1.9 s; Luis 2.1 s |
+
+## Outcome
+B1 is fixed on the client and in shared code, with no server change. A salesperson's quote builder works in api mode without cost: new lines, saved quotes and the save's and status change's answers. A quote's margin needs both keys and a known cost. F1 runs again and passes with nothing patched. B5 is recorded with a committed `fixme` test (the dashboard), and B6 is recorded for STATUS. Every check is green: the full checks, the whole api-mode suite on a fresh build (`b1-all-final`) and the demo regression run. Commits on `fix/sales-quote-without-cost`, each pushed:
+
+| Commit | Subject |
+| --- | --- |
+| `f9627d6` | docs(sales): plan for B1 and the withheld-cost rule in the spec |
+| `61a8e55` | fix(sales): a quote builder without cost shows no margin and no longer crashes (B1) |
+| `dde3a44` | docs(sessions): B1 red runs, the fix's checks and mutations, and B6 found |
+| `4bf283f` | test(e2e): F1 runs again, a salesperson's quote builder works without cost, and B5 is recorded (B1) |
+| `9d77939` | docs: B1, a cost the server withheld is unknown on the web |
+| (this commit) | docs(sessions): B1 outcome, full checks and the final api-mode suite |
+
+All carry `[skip ci]`. The throwaways (`zz-b1-probe.spec.ts`, `flows/zz-f1-stop.spec.ts`) were deleted and never committed.
 
 ## Left
-- The full checks (`b1/full.sh`: lint, typecheck, test, `test:api`, `test:hooks`) and the whole api-mode suite on a fresh build without the throwaways (`b1-all-final`), then this log's outcome.
-- Then the orchestrator's part: `/review`, a fresh read-only security review (CLAUDE.md: cost, margin and a permission rule), STATUS and BRANCHES from "For STATUS", and the merge after PR #45.
+- **The orchestrator's part:** `/review`; a fresh read-only security-reviewer (CLAUDE.md: cost, margin and a permission rule), focused on the PR body's "Security-review focus"; STATUS and BRANCHES from "For STATUS" above; the handoff commit without `[skip ci]`.
+- **The merge waits for PR #45** (B3), which waits for GitHub Actions. When #45 merges, `origin/main` is merged into this branch, then the PR is marked ready and self-merges under the CLAUDE.md rule once `verify` and `e2e` are green.
+- **Next in the queue:** B4 (a branch-assigned user can't save a contract; security review), then B5 (the orchestrator's placement; the owner may move it, Q2). B6 has no place yet: the owner decides (Q6).
