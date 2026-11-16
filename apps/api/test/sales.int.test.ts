@@ -9,7 +9,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import request from "supertest";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -259,6 +259,51 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
         (q: { id: string }) => q.id === quote.body.id,
       ),
     ).toBe(false);
+  });
+
+  it("costs a line sent without unitCost from the catalog; the rep's answers carry no cost, the manager's do, and a sent cost is ignored (B1)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Noor Haddad" }).expect(201);
+    const sent = quoteBody(customer.body.id, warehouse, tile);
+    delete (sent.lines[0] as { unitCost?: string }).unitCost;
+    const created = await call("post", "/quotes", cookies.salesA).send(sent).expect(201);
+    expect(created.body.lines[0]).not.toHaveProperty("unitCost");
+    const liveLineCosts = async () => {
+      const handle = await harness.companyDb(company.id);
+      try {
+        // A save replaces the lines, so only the live ones count.
+        const rows = await handle.db
+          .select()
+          .from(quoteLines)
+          .where(and(eq(quoteLines.quoteId, created.body.id), isNull(quoteLines.deletedAt)));
+        return rows.map((line) => line.unitCost);
+      } finally {
+        await handle.close();
+      }
+    };
+    expect(await liveLineCosts()).toEqual(["2.1000"]);
+    const listedFor = async (cookie: string) =>
+      (await call("get", "/quotes", cookie).expect(200)).body.find((q: { id: string }) => q.id === created.body.id);
+    expect((await listedFor(cookies.salesA)).lines[0]).not.toHaveProperty("unitCost");
+    // The manager works in the quote's branch and holds product cost.
+    const managers = await listedFor(cookies.manager);
+    expect(managers.lines[0].unitCost).toBe("2.1000");
+    // A cost sent with a save is ignored. The percents go as typed: the API answers them at
+    // numeric(18,8) scale, which its own percent check refuses (B6, session log 2026-11-16-2320).
+    const lines = managers.lines.map((line: Record<string, unknown>) => ({
+      ...line,
+      wastePct: "10",
+      unitCost: "0.0001",
+    }));
+    const edited = await call("put", `/quotes/${created.body.id}`, cookies.manager)
+      .send({ ...managers, depositPct: "50", lines })
+      .expect(200);
+    expect(edited.body.lines[0].unitCost).toBe("2.1000");
+    expect(await liveLineCosts()).toEqual(["2.1000"]);
+    // The rep's status change answers the quote without cost too, as the builder takes it back.
+    const sentOut = await call("post", `/quotes/${created.body.id}/status`, cookies.salesA)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    expect(sentOut.body.lines[0]).not.toHaveProperty("unitCost");
   });
 
   it("needs sales.waste.view to change waste and sales.tax.override to change tax", async () => {

@@ -8,6 +8,7 @@ import {
   EXAMPLE_TAX_RULES,
   invoiceFromQuote,
   nextNumber,
+  quoteLineFor,
   remeasureLines,
   taxContextFor,
   type Customer,
@@ -138,5 +139,68 @@ describe("default waste (spec B3)", () => {
     expect(defaultWastePct({ category: "porcelain_tile" }, defaults)).toBe("10");
     expect(defaultWastePct({ category: "lvp" }, { ...defaults, lvp: "15" })).toBe("15");
     expect(defaultWastePct({ category: "service" }, defaults)).toBeUndefined();
+  });
+});
+
+describe("a new quote line (spec Quote builder)", () => {
+  const waste = summit.settings.localization.documents.defaultWastePct;
+  /** A catalog product with only the fields a line reads made distinct. */
+  const product = (fields: Partial<Product>): Product => ({
+    id: "p1",
+    sku: "TV-1001",
+    name: "Weathered Pier",
+    brand: "Tidewater Vinyl",
+    collection: "",
+    colorName: "",
+    swatch: "",
+    category: "lvp",
+    unit: "sq_ft",
+    price: "4.25",
+    cost: "2.10",
+    attributes: {},
+    supplierId: "s1",
+    createdAt: "2026-01-01",
+    ...fields,
+  });
+
+  it("ties a boxed material sold per sq ft to every room, with its category's waste and carton size", () => {
+    expect(quoteLineFor(product({ sqFtPerCarton: "23.64" }), "draft-1", rooms, waste)).toEqual({
+      id: "draft-1",
+      productId: "p1",
+      description: "Tidewater Vinyl Weathered Pier",
+      category: "material",
+      unit: "sq_ft",
+      quantity: "1",
+      unitPrice: "4.25",
+      unitCost: "2.10",
+      sqFtPerCarton: "23.64",
+      wastePct: waste.lvp,
+      roomIds: ["living", "hall"],
+    });
+  });
+
+  it("ties a material to no room while the quote has none", () => {
+    const line = quoteLineFor(product({ sqFtPerCarton: "23.64" }), "draft-1", [], waste);
+    expect(line).not.toHaveProperty("roomIds");
+    expect(line.wastePct).toBe(waste.lvp);
+  });
+
+  it("ties installation sold per sq ft to the rooms, with no waste, by its name and taxed as labor", () => {
+    const install = product({ category: "service", name: "LVP installation", attributes: { taxCategory: "labor" } });
+    const line = quoteLineFor(install, "draft-2", rooms, waste);
+    expect(line).toMatchObject({ description: "LVP installation", category: "labor", roomIds: ["living", "hall"] });
+    expect(line).not.toHaveProperty("wastePct");
+  });
+
+  it("gives a service sold per each one unit, tied to no room", () => {
+    const moving = product({
+      category: "service",
+      unit: "each",
+      name: "Furniture moving",
+      attributes: { taxCategory: "service" },
+    });
+    const line = quoteLineFor(moving, "draft-3", rooms, waste);
+    expect(line).toMatchObject({ quantity: "1", category: "service", unit: "each", description: "Furniture moving" });
+    expect(line).not.toHaveProperty("roomIds");
   });
 });

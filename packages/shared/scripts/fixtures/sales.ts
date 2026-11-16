@@ -1,5 +1,5 @@
 import { addDays, daysBetween, last12Months } from "../../src/dates";
-import { computeTotals, depositAmount, type DocLine, type DocumentTotals } from "../../src/documents";
+import { computeTotals, depositAmount, storedCost, type DocLine, type DocumentTotals } from "../../src/documents";
 import { dec, moneyString } from "../../src/money";
 import type {
   Address,
@@ -203,7 +203,7 @@ function buildInvoice(ctx: GenContext, inputs: SalesInputs, quote: Quote): Invoi
 }
 
 function documentAmounts(totals: DocumentTotals) {
-  return { subtotal: totals.subtotal, tax: totals.tax, total: totals.total, cost: totals.cost };
+  return { subtotal: totals.subtotal, tax: totals.tax, total: totals.total, cost: storedCost(totals) };
 }
 
 /**

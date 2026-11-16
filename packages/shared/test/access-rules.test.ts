@@ -1,15 +1,17 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ALL_PERMISSION_KEYS } from "../src/permissions/catalog";
+import { ALL_PERMISSION_KEYS, SENSITIVE, type PermissionKey } from "../src/permissions/catalog";
 import {
   enabledModules,
   planModulesOf,
   scopeAllows,
+  seesQuoteMargin,
   SENSITIVE_FIELDS,
   sensitiveKeyFor,
   separateDuties,
 } from "../src/permissions/access-rules";
+import { PRODUCT_ROLES, roleTemplate } from "../src/permissions/roles";
 
 describe("enabledModules (P10: blueprint layer 2, modules)", () => {
   it("turns on all of the product's modules while there is no subscription", () => {
@@ -116,6 +118,26 @@ describe("planModulesOf (PR #7 reviews: only a trial company gets all modules)",
       "core",
       "platform",
     ]);
+  });
+});
+
+describe("seesQuoteMargin (ADR 0037, 2026-11-16)", () => {
+  const holding =
+    (...keys: PermissionKey[]) =>
+    (key: PermissionKey) =>
+      keys.includes(key);
+
+  it("needs the margin key and the product-cost key, because margin gives the cost away", () => {
+    expect(seesQuoteMargin(holding(SENSITIVE.margin, SENSITIVE.productCost))).toBe(true);
+    expect(seesQuoteMargin(holding(SENSITIVE.margin))).toBe(false);
+    expect(seesQuoteMargin(holding(SENSITIVE.productCost))).toBe(false);
+    expect(seesQuoteMargin(holding())).toBe(false);
+  });
+
+  it.each(PRODUCT_ROLES.flooring)("changes nothing for the default %s role: it follows the margin key", (key) => {
+    const held = new Set(roleTemplate(key).permissions);
+    const has = (permission: PermissionKey) => held.has(permission);
+    expect(seesQuoteMargin(has)).toBe(held.has(SENSITIVE.margin));
   });
 });
 
