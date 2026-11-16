@@ -5,13 +5,13 @@ Every open branch, updated by /handoff. One task per branch, named `feat/<area>-
 | Branch | Owner | Purpose | Status | PR | Last commit |
 | --- | --- | --- | --- | --- | --- |
 | `demo` | both | The clickable demo, from tag `demo-v3`. Production on Vercel deploys from it (docs/deploy.md). Never merged into main | Long-lived | none | `2026f30` |
-| `feat/e2e-api-flows` | B (Claude) | Cross-module api-mode e2e flows F1 to F7 (main checkout) | Ready for merge once CI is green | [#42](https://github.com/TwoWayTech/flooring-platform/pull/42) | see the branch |
-| `feat/check-whole-product` | B (Claude) | The whole-product check: coverage list, money integrity, permission matrix, a fresh company and the demo script in api mode, a report (worktree `../flooring-platform-check`) | In progress | draft, opened at its stage 0 | see the branch |
+| `fix/web-reread-after-write` | B (Claude) | B2: every routed write makes the screens read again; My timesheet never saves old hours over newer ones (main checkout) | Ready for merge once CI is green | [#44](https://github.com/TwoWayTech/flooring-platform/pull/44) | see the branch |
+| `feat/check-whole-product` | B (Claude) | The whole-product check: coverage list, money integrity, permission matrix, a fresh company and the demo script in api mode, a report (worktree `../flooring-platform-check`) | Paused at `f733829` (stages 0 to 7 done) for the owner's queue change of 2026-11-16; resumes after the bugs and the remaining screens | [#43](https://github.com/TwoWayTech/flooring-platform/pull/43) (draft) | `f733829` |
 | `feat/auth-better-auth` | A | P8 part 1 | Merged in PR #2 (`31e2297`). The branch can be deleted | [#2](https://github.com/TwoWayTech/flooring-platform/pull/2) | `cd0115c` |
 
 Merged on 2026-11-15, self-merged by Claude under the CLAUDE.md rule: PR #32 (`feat/hr-pay-reasons-and-history`, `253058a`, the owner's answers on pay audit, manager history and the paid employee); PR #33 (`feat/meetings-api-core`, `1de1e0c`, meetings part 1 on the API); PR #34 (`feat/platform-access-api`, `bb3e81f`, platform admin part 1); PR #35 (`feat/meetings-api-moves`, `8ddf7fa`, meetings part 2); PR #36 (`feat/platform-audit-support`, `c763938`, platform admin part 3); PR #37 (`feat/meetings-web-api`, `e6b37ea`, meetings part 3); PR #38 (`feat/billing-company-standing`, `86c1689`, platform admin part 4); PR #39 (`feat/reports-api`, `0b2633a`, reports on the API); PR #40 (`feat/platform-manual-billing`, `9cb7c73`, platform admin part 2).
 
-Merged on 2026-11-16, self-merged by Claude under the CLAUDE.md rule: PR #41 (`feat/import-api`, `67fc1de`, data import on the API, part 1).
+Merged on 2026-11-16, self-merged by Claude under the CLAUDE.md rule: PR #41 (`feat/import-api`, `67fc1de`, data import on the API, part 1); PR #42 (`feat/e2e-api-flows`, `0042b89`, the cross-module api-mode flows).
 
 Merged on 2026-11-14: PR #31 (`fix/docs-handoff-2026-11-14`, `bd9155d`), the handoff after PRs #28 to #30. PR #16 (`feat/ledger-core`, `328ca36`), self-merged by Claude under the CLAUDE.md rule.
 

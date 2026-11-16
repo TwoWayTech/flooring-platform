@@ -382,12 +382,25 @@ One finding, raised by the security reviewer as blocking and confirmed by a skep
 | `8b7fb3e` | fix(portal): the week form takes each read once, told apart by identity |
 | (this commit) | docs: B2 review round 2, the week form tells reads apart by identity |
 
+## Review round 3 (final, clean)
+- Fresh security-reviewer and correctness reviewers read the whole branch at `738e0e9` (0042b89...738e0e9). Neither found anything blocking or should-fix, so no skeptic pass was needed.
+- **The security review checked:**
+  - `PUT /timesheets`: the check order, the employee and sheet locks, comparison by value, and the shape-only `expectedDays`. A 409 rolls back with no audit row.
+  - Who may save whose week is unchanged.
+  - The transport: GETs never re-read; an answered non-GET re-reads once (200, 400, 403, 404, 409, 422); 0, 401, 429 and 5xx don't.
+  - The four POST reads go through `requestAsRead`.
+  - Demo parity, and the tests asserting what they claim.
+  - It re-ran the targeted unit tests.
+- **The correctness review checked** all 146 routed methods, every `useApiQuery` reader for loops, the form model's cases, each STATUS symptom, and JSDoc. It ran 56 web unit tests, 15 shared tests and the full `hr.int.test.ts` (46 passed).
+- **Notes kept for later:**
+  - the save-then-submit window (Q2);
+  - a row menu closing on the re-read (the `DataTable` follow-up);
+  - `onRefused` also reading on the 409 open-request refusal (a second, harmless read);
+  - wording in the spec about hours from another tab;
+  - the demo saving submitted or closed weeks, which the API refuses (older than this branch);
+  - a test name ("calls nothing from a transport built without withRereads") that claims more than it checks.
+
 ## Left
-- Review rounds 1 and 2 are fixed (above). Next comes a fresh read-only reviewer pass on these fixes, if the workflow runs one. The earlier focus still applies, because payroll hours are touched (no `packages/db` change, so no schema-reviewer):
-  - the `PUT /timesheets` check order, the lock and the stored-hours exemption;
-  - data scope unchanged, and no tenant from input;
-  - demo parity;
-  - the transport never re-reading into a loop;
-  - the week form taking each portal read once, by identity.
-- `/handoff`: STATUS (the "For STATUS" notes above), BRANCHES and this log. That commit carries no `[skip ci]`, so CI runs. Then mark PR #44 ready, and self-merge only under the CLAUDE.md rule.
+- The handoff (this commit; STATUS, BRANCHES and this log) carries no `[skip ci]`, so CI runs. Then PR #44 is marked ready, waits for `verify` and `e2e`, and self-merges under the CLAUDE.md rule, with the round 3 security summary posted as its review comment.
 - The `DataTable` follow-up (a stable cell renderer), in its own PR.
+- **Next prompt:** "B3, the next task of the owner's queue of 2026-11-16: on a new branch `fix/web-stock-short-by` from an up-to-date main, make the invoice's Stock panel test `shortBy` as a decimal (`dec(r.shortBy).gt(0)`, `invoice-stock.tsx:92`) with a unit test, keep F1 `fixme` until B1 is fixed too, and self-merge under the CLAUDE.md rule."
