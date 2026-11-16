@@ -164,9 +164,14 @@ B3 is fixed, and so are the two other API decimal strings the sweep found. Every
 
 All carry `[skip ci]`.
 
+## Review round 1 (final, clean)
+- Fresh security-reviewer and correctness reviewers read the whole branch (d0e4e20...39d5a34). One should-fix candidate (the bill dialog's typed total compared as text) was refuted by its skeptic: it compares typed text, which the sweep leaves by design, and only shows a hint. It is recorded as a follow-up. Nothing else rose above a note.
+- The correctness reviewer ran the new unit tests against the old sources through a vite load hook (the repo untouched): 4 of 7 failed, each for the bug; all pass on HEAD.
+- Notes kept for later: the Cut toast's raw quantity, the markup-to-text helper in three test files, the PO PDF's float amount (Q1).
+
 ## Left
 - **The handoff** carries no `[skip ci]`, so CI runs (STATUS, BRANCHES, this log). Then PR #45 is marked ready, waits for `verify` and `e2e`, and self-merges under the CLAUDE.md rule.
   - **The review before merge:** `/review` and a fresh read-only reviewer.
-  - **Whether a security review is needed** is decided then. This branch changes no server code, permission, posting or pay rule. It touches only how the web reads three decimals it shows, one of them on an invoice and one on a commission plan.
+  - **A security-reviewer ran anyway** (review round 1, clean). This branch changes no server code, permission, posting or pay rule. It touches only how the web reads three decimals it shows, one of them on an invoice and one on a commission plan.
 - **Owner questions Q1 and Q2** above.
-- **Next prompt:** "B1, the next task of the owner's queue of 2026-11-16: on a new branch from an up-to-date main, stop a salesperson's quote builder crashing when the API withholds cost (no margin without cost, never send cost or a placeholder margin), with a security review, then turn F1 back on from `fixme` and self-merge under the CLAUDE.md rule."
+- **Next prompt:** "B1, the next task of the owner's queue of 2026-11-16: on a new branch `fix/sales-quote-without-cost` from an up-to-date main, build the final plan (the quote builder treats a withheld cost as unknown, margin null for the whole document, `quoteLineFor` in shared, F1 back from `fixme`, B5 recorded with a `fixme` test), with a security review, and self-merge under the CLAUDE.md rule."
