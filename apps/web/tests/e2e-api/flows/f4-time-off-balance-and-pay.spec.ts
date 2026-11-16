@@ -134,6 +134,8 @@ flowTest.describe("flow F4: time off to balance and pay, and back", () => {
         await expect(dialog.getByLabel("Hours", { exact: true })).toHaveValue(DAY_HOURS);
         await dialog.getByLabel("Note", { exact: true }).fill(note);
         const answer = waitForAnswer<PtoRequest>(page, "POST", /^\/api-proxy\/pto-requests$/);
+        // The request makes the page read again (ADR 0051, 2026-11-16): the read My time off then shows.
+        const reread = waitForAnswer<PortalAnswer>(page, "GET", /^\/api-proxy\/me\/portal$/);
         await dialog.getByRole("button", { name: "Send request" }).click();
         const request = await answer;
         personas.onCleanup(`cancel ${note}`, () => bri.request.post(`/api-proxy/pto-requests/${request.id}/cancel`));
@@ -142,8 +144,8 @@ flowTest.describe("flow F4: time off to balance and pay, and back", () => {
         expect(request).toMatchObject({ status: "pending", start: day, end: day, kind: "vacation", note });
         expect(dec(request.hours).eq(DAY_HOURS), `${DAY_HOURS} hours asked for, not ${request.hours}`).toBe(true);
 
-        // Loaded again (B2): the balance is as it was, with the day waiting for a decision.
-        const waiting = vacationOf(await openMyPortal(page, "/my/time-off"));
+        // On the same page, read again: the balance is as it was, with the day waiting for a decision.
+        const waiting = vacationOf(await reread);
         expect(waiting.hours).toBe(balance.hours);
         expect(dec(waiting.pending).eq(dec(balance.pending).plus(DAY_HOURS)), `waiting: ${waiting.pending}`).toBe(true);
         await expectVacationShown(page, waiting);
@@ -162,6 +164,10 @@ flowTest.describe("flow F4: time off to balance and pay, and back", () => {
         await page.getByRole("row").filter({ hasText: note }).getByRole("button", { name: "Approve" }).click();
         expect((await answer).status).toBe("approved");
         await expect(page.getByText(`Time off approved for ${EMPLOYEE_NAME}`, { exact: true })).toBeVisible();
+        // The same queue, read again after the approval, no longer offers to approve it.
+        await expect(
+          page.getByRole("row").filter({ hasText: note }).getByRole("button", { name: "Approve" }),
+        ).toHaveCount(0);
       });
 
       await flowTest.step("4. the pay period pays the day", async () => {

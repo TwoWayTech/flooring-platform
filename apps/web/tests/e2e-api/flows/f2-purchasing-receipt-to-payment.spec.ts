@@ -37,22 +37,6 @@ import { CASH } from "./ledger";
 const CARTONS_AT = "Denver Central";
 const ROLL_AT = "Colorado Springs";
 
-/**
- * The product bug that stops this flow in step 1 (session log 2026-11-16-0200, "For STATUS", B2).
- * Until it is fixed the flow is `fixme`, written to the behaviour the spec asks for; a throwaway run
- * that worked around it passed every later step (session log, stage 4).
- */
-const BLOCKED_BY = [
-  {
-    type: "issue",
-    description:
-      "api mode: only the meetings writes in api-methods.ts call `changed`, so no other write makes the screens read " +
-      "again (B2, which also stops F1). A supplier added from the order's picker never shows as chosen, so neither " +
-      "Add new contact nor Add product appears; a contact added there is not offered as the sales rep; a saved draft, " +
-      "a placed order and a receipt show on Purchasing only after a reload. STATUS follow-up.",
-  },
-];
-
 /** The id of the location the page listed under `name`. */
 function locationId(locations: readonly Location[], name: string): string {
   const found = locations.find((location) => location.name === name);
@@ -71,9 +55,9 @@ function locationId(locations: readonly Location[], name: string): string {
 flowTest.describe("flow F2: purchasing from a new supplier to its payment", () => {
   resetAuthAround([PURCHASING_EMAIL, ACCOUNTANT_EMAIL]);
 
-  flowTest.fixme(
+  flowTest(
     "a new supplier and rep in an order, the order emailed, received into two warehouses, billed and paid",
-    { tag: FLOW_TAG, annotation: BLOCKED_BY },
+    { tag: FLOW_TAG },
     async ({ personas }) => {
       flowTest.setTimeout(120_000);
       const run = runId();

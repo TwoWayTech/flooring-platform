@@ -40,9 +40,10 @@ import {
 import { CASH, movedBy } from "./ledger";
 
 /**
- * The product bugs that stop this flow in step 1 (session log 2026-11-16-0200, "For STATUS"). Until
- * they are fixed the flow is `fixme`, written to the behaviour the spec asks for; a throwaway run
- * that worked around them passed every later step (session log, stage 3).
+ * The product bugs that stop this flow in step 1 (session log 2026-11-16-0200, "For STATUS", B1 and
+ * B3; B2 is fixed, session log 2026-11-16-1651). Until they are fixed the flow is `fixme`, written
+ * to the behaviour the spec asks for; a throwaway run that worked around them passed every later
+ * step (session log 2026-11-16-0200, stage 3).
  */
 const BLOCKED_BY = [
   {
@@ -52,21 +53,13 @@ const BLOCKED_BY = [
       "argument: undefined) once the quote has a product line. The API strips `cost` and `unitCost` for anyone " +
       "without product cost (rule 5), so the line's `unitCost` is undefined when a product is added, in the saved " +
       "answer and in every saved quote, and computeTotals multiplies by it (use-quote-draft.ts lineFor; " +
-      "documents.ts). STATUS follow-up.",
-  },
-  {
-    type: "issue",
-    description:
-      "api mode: only the meetings writes in api-methods.ts call `changed`, so no other write makes the screens read " +
-      "again (routeClient; ADR 0051 'Re-reading after a write'). A customer added from the quote builder never shows " +
-      "as chosen and the job-site picker stays disabled; the invoice's status after a payment or a void, and Ready to " +
-      "cut after a cut, change only on reload. STATUS follow-up.",
+      "documents.ts). B1, STATUS follow-up.",
   },
   {
     type: "issue",
     description:
       "api mode: the invoice's Stock panel reads every held line as 'Short by 0.00 ft, not reserved', because it " +
-      'tests `shortBy !== "0"` and the API answers numeric(14,3) as "0.000" (invoice-stock.tsx). STATUS follow-up.',
+      'tests `shortBy !== "0"` and the API answers numeric(14,3) as "0.000" (invoice-stock.tsx). B3, STATUS follow-up.',
   },
 ];
 
@@ -121,7 +114,7 @@ function rowsWith(report: Report, reference: string): Record<string, string>[] {
  * scope) until the accountant confirms them; the warehouse cuts the roll; the accountant then voids
  * the deposit. The ledger, the bell, the stock, Payments received and the audit log are checked
  * after each step, all from the answers. It registers no clean-ups yet: while it is `fixme` it never
- * runs, so none could be proved. Once B1 to B3 are fixed, register what a stopped run must undo (the
+ * runs, so none could be proved. Once B1 and B3 are fixed, register what a stopped run must undo (the
  * payments, the invoice and its hold) with `personas.onCleanup`, as the other flows do.
  */
 flowTest.describe("flow F1: sales from a new customer to the cut and a voided deposit", () => {

@@ -221,8 +221,8 @@ export type PortalAnswer = Omit<MyPortal, "timesheets"> & { timesheets: Timeshee
 
 /**
  * Opens the employee portal page at `path` (My timesheet, My time off) and returns the GET /me/portal
- * answer it shows. Opening it again is a reload: in api mode a screen reads again only after a
- * meetings write (STATUS B2), so a flow loads the page afresh to see its own write.
+ * answer it shows. Opening it again is a reload, for a write made by another persona or through the
+ * API (no live updates); a screen reads again after its own writes (ADR 0051, 2026-11-16).
  */
 export async function openMyPortal(page: Page, path: string): Promise<PortalAnswer> {
   const answer = waitForAnswer<PortalAnswer>(page, "GET", /^\/api-proxy\/me\/portal$/);
