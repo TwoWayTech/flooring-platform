@@ -165,7 +165,7 @@ None blocks the build.
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Match by text, because B3 and B1 moved the lines. This PR is #47.
 
 1. **"In progress".** After "B1 in draft PR #46, `fix/sales-quote-without-cost`, stacked on #45", record B4 in PR #47 (`fix/contracts-branch-from-session`, stacked on #46).
-2. **"Done":** a new top entry: **B4, a new contract's branch is left to the API,** PR #47 (`fix/contracts-branch-from-session`, stacked on #46; this log; ADR 0044 "The web leaves a new contract's branch to the API"; no delta row). The contract form's body carries no `branchId` or `salesRepId`, so `POST /contracts` files a new contract under its creator's own branch (`newBranch`) instead of answering 400 "Invalid UUID" to DemoStore's branch id. The API is unchanged. A new integration test pins its rule: a sent branch is ignored for anyone with one, whatever their scope; a branchless creator picks a live branch of the company only with scope `all`; an edit keeps the branch. F5 runs (its local time), with two clean-ups (void the release, void Billing 1) whose refusals are checked by message. Checks: lint, typecheck, `pnpm test`, `pnpm test:api`, hooks, the api-mode suite (counts from the handoff).
+2. **"Done":** a new top entry: **B4, a new contract's branch is left to the API,** PR #47 (`fix/contracts-branch-from-session`, stacked on #46; this log; ADR 0044 "The web leaves a new contract's branch to the API"; no delta row). The contract form's body carries no `branchId` or `salesRepId`, so `POST /contracts` files a new contract under its creator's own branch (`newBranch`) instead of answering 400 "Invalid UUID" to DemoStore's branch id. The API is unchanged. A new integration test pins its rule: a sent branch is ignored for anyone with one, whatever their scope; a branchless creator picks a live branch of the company only with scope `all`; an edit keeps the branch. F5 runs (8.4 to 9.6 s locally), with two clean-ups (void the release, void Billing 1) whose refusals are checked by message, and takes each new invoice from the write's own re-read (`nextInvoicesRead`: the kit's `waitForAnswer` could take a re-read of the step before, still queued). Checks: lint and typecheck clean; `pnpm test` (shared 1,075, web 279, api unit 124, db 18, providers 11); `pnpm test:api` (api 630, db 59, providers 2); hooks 15; the whole api-mode suite 37 passed and 1 skipped (B5) in 163 s on a fresh build (`b4-all-final`); the demo contract specs 20 passed.
 3. **"Next three tasks", item 1.** B4 done in PR #47; "F5 needs B4" becomes "F5 runs since B4".
 4. **"Api-mode bugs the flows found".**
    - Remove the B4 bullet (`- **B4, nobody with a branch can save a new contract in api mode:** …`).
@@ -174,15 +174,22 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
    - In the clean-ups bullet, "F5 registers none (`fixme`)" becomes "F5 registers two (void the release, void Billing 1), each refusal checked by message (`voidLeftBilling`)"; the "any 400 is done" gap stays for the other flows. F1's part stays as B1 left it.
    - In the "Nits" bullet, drop "F5 posts a customer inline instead of `postAs`" (done).
    - The B4 part of the bullet "B1, B4 and O2 were checked on the server" stays true; add "B4 fixed on the client in PR #47 (no branch sent)".
-6. **"Flows' local runs leave data".** Add: "F5 a completed contract with two paid invoices (Billing 1 and the release) and its customer; a stopped run's open billing is voided by its clean-up".
+6. **"Flows' local runs leave data".** Add: "F5 a completed contract with two paid invoices (Billing 1 and the release) and its customer; a stopped run's open billing is voided by its clean-up". B4's own runs left, in the 5433 database:
+   - eight finished F5 contracts, each with two paid invoices and its customer (`b4-f5-a`, `-b`, `-c`, `-d`, `b4-f5-race-new`, `b4-f5-stop2-drop`, `b4-all`, `b4-all-final`);
+   - three active contracts whose Billing 1 was voided by the clean-up (`b4-f5-stop`, `b4-f5-stop2`, and the first `b4-f5-stop-release`, which stopped in step 2);
+   - two active contracts with Billing 1 paid and 40.00 retained (`b4-f5-stop-paid`, `b4-f5-stop2-paid`; R-B4-3);
+   - three completed contracts with Billing 1 paid, 40.00 retained and a voided release (the first `b4-f5-stop-drop`, `b4-f5-stop2-release`, `b4-f5-race-old`; the last took the path `b4-f5-stop2-release` logged);
+   - each run's customer.
 7. **The invite's branch, extending the existing note.** In "PR #11 security review", extend "In api mode the Users screen's branch picker still lists the demo's branches, so the API stores no branch for them until Settings → Locations moves." with: "The invite's audit row records the sent id (`"sm-br-denver"`) while the stored branch is null, and `PATCH /users/:id` drops an unknown branch the same way (`knownBranch`); such a person can't add a contract and, as a Manager, sees nothing branch-scoped (found while fixing B4)."
 8. **A new follow-up bullet,** "**R1 symptoms found while fixing B4 (for `GET /company`, queue task 2):**":
    - the Users page's Branch column is blank in api mode;
    - a new quote's "sold at" defaults to the warehouse, not the rep's showroom (`quote-page.tsx`, showroom by `user.branchId`);
    - comparisons with `user.id` and `user.defaultLocationId` read DemoStore's ids;
    - `saveQuote` still sends DemoStore's `branchId` and `salesRepId`, which the API strips.
-9. **"Blockers and open questions".** Add "Owner questions (PR #47, B4)" with Q-B4-1 and Q-B4-2. Append F5's measured time to PR #42's CI question (Q1).
+9. **"Blockers and open questions".** Add "Owner questions (PR #47, B4)" with Q-B4-1 and Q-B4-2. Append F5's measured time to PR #42's CI question (Q1): 8.4 to 9.6 s in six green runs (`b4-f5-a` to `-d`, `b4-all`, `b4-all-final`), plus the Owner's MFA sign-in; the whole api-mode suite took 150 s (`b4-all`) and 163 s (`b4-all-final`) with F5 in it, against B1's 146 s without.
 10. **BRANCHES.** Add the row `fix/contracts-branch-from-session` | B (Claude) | B4: the contract form leaves a new contract's branch to the API; F5 runs (main checkout; stacked on #46) | Draft, then "Ready for merge once CI is green" | [#47](https://github.com/TwoWayTech/flooring-platform/pull/47) | see the branch. Move B3's and B1's rows to "Merged on …" once they merge.
+11. **A new follow-up for the flows' kit** (found in B4 stage 3): `waitForAnswer` takes any matching answer after it is armed, including one to a read the page sent before (a write's re-read sends 24 GETs at once, the browser runs six at a time, so an earlier step's re-read can still be queued). F5 now uses its own `nextInvoicesRead`, which takes only a read sent after it was armed. A kit option for this, and a check of every GET wait armed right after another write, is a follow-up; F4's one re-read wait has no earlier write in flight.
+12. **"PR #42 final review notes", "Nits":** add "F1's `waitForRequest` for the quote body (B1) has no `.catch(() => undefined)`, unlike the kit's waits and F5's".
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs` folder, and api-mode runs in `flows/logs`.
@@ -216,3 +223,51 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs
 | 3 | `git status --short` after each throwaway | only F5 modified; no `zz-` file |
 | 3 | `heavy.sh flows/api-e2e.sh b4-all` (the whole api-mode suite) | exit 0 after 150 s: 37 passed, 1 skipped (B1's B5 `fixme`; no flow skipped). F1 15.9 s, F2 8.9 s, F3 4.7 s, stale-save 3.1 s, F4 4.5 s, **F5 9.3 s**, F6 11.9 s, F7 5.2 s |
 | 3 | `heavy.sh b4/e2e-demo.sh` (demo build; `--project=flooring` `contracts.spec.ts` and `flows-batch3.spec.ts`, one worker) | build 11 s; exit 0, 20 passed in 25.5 s; ports free after |
+| 4 | `pnpm exec prettier --check` on ADR 0044 and this log | clean |
+| 5 | `lsof` on 5432 (read-only) | the compose PostgreSQL is up |
+| 5 | `heavy.sh b4/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0 (lint 15 s, typecheck 7 s, test 8 s, `test:api` 3 min 15 s, hooks under 1 s). Turbo replayed only db, providers, shared and ui, which this branch doesn't touch; api and web ran fresh. `pnpm test`: shared 1,075, web 279, api unit 124, db 18, providers 11. `pnpm test:api`: api 630 (B1's 629 plus the new case), db 59, providers 2. Hooks: 15 |
+| 5 | `heavy.sh flows/api-e2e.sh b4-all-final --build` (a fresh api build after the demo build; no throwaways) | builds 12 s; exit 0 after 163 s: 37 passed, 1 skipped (B5). F1 17.3 s, F2 9.0 s, F3 4.5 s, stale-save 2.9 s, F4 4.3 s, **F5 9.5 s**, F6 13.3 s, F7 4.8 s; ports free after |
+
+## Outcome
+B4 is fixed on the client, with no server change. The contract form's body carries no `branchId` or `salesRepId`, so in api mode `POST /contracts` files a new contract under its creator's own branch, with the creator as rep. Before, it answered 400 "Invalid UUID" to DemoStore's `"sm-br-denver"`. A new integration test pins the server rule the client relies on, and three mutations of `newBranch` prove it. A red-first unit test pins the body. ADR 0044 records the decision in a dated section.
+
+F5 is back from `fixme` and passes with nothing patched. Its two clean-ups check every refusal by message, and four throwaway stop points prove them. The throwaways also found a race in F5's own invoice waits (an earlier step's re-read still queued). F5 now takes each new invoice from the write's own re-read, and a deterministic throwaway pair proves the fix.
+
+Every check is green: the full checks, the whole api-mode suite on a fresh build (`b4-all-final`) and the demo contract specs. Commits on `fix/contracts-branch-from-session`, each pushed:
+
+| Commit | Subject |
+| --- | --- |
+| `97889ed` | docs(contracts): plan for B4, the contract form sends no branch |
+| `7fef593` | test(contracts): a new contract's branch is its creator's whatever the body says |
+| `4aa5f92` | fix(contracts): the contract form sends no branch, so the API files a new contract under its creator's (B4) |
+| `c41abff` | test(e2e): F5 runs since B4, with clean-ups checked by message |
+| `d7af392` | docs(contracts): B4 in ADR 0044, the web leaves a new contract's branch to the API |
+| (this commit) | docs(sessions): B4 outcome, full checks and the final api-mode suite |
+
+All carry `[skip ci]`. The throwaways (`flows/zz-f5-stop.spec.ts` and `flows/zz-f5-race.spec.ts`, from `make-f5-stop.py` and `make-f5-race.py` in the scratchpad) were deleted after each run and never committed. Correction to `c41abff`'s message: it gives F5's first four runs as 9.4 to 9.6 s, but `b4-f5-b` took 8.4 s.
+
+## Review rounds
+Not run in this session. It can't start subagents (D7), and the plan leaves the reviews to the orchestrator in that case (§9, stage 5).
+
+The orchestrator still owes:
+- `/review`;
+- a fresh, read-only security-reviewer on this branch's own commits (`7c4003e..HEAD`), with the PR body's "Security review focus" (data scope).
+
+No schema review is needed: there is no schema or migration change.
+
+## Left
+- **The orchestrator's part:**
+  - `/review` and the security review (above), each finding fixed in its own commit;
+  - the reviewer's summary in the scratchpad's `b4/review-body.md`, to post as a PR review comment at merge;
+  - STATUS and BRANCHES from "For STATUS" above;
+  - the handoff commit without `[skip ci]`.
+- **The merge waits for PR #45 (B3) and PR #46 (B1),** which wait for GitHub Actions (blocked by billing).
+  - When they merge, `origin/main` is brought into this branch.
+  - Then the PR is marked ready, and goes in under the CLAUDE.md self-merge rule once `verify` and `e2e` are green.
+  - The branch is not deleted on that merge: in the main checkout that removes the worktree (memory note).
+- **Doubtful:**
+  - The optional pin run (§6.3 run 5, the fix reverted in a build) was not done (stage 3 decisions).
+  - The kit's `waitForAnswer` race (For STATUS 11) may touch other flows' GET waits armed right after a write. F4's doesn't; the rest weren't audited.
+- **Next prompt:**
+  - First B5, the place B1's log gave it: a salesperson's dashboard in api mode without cost, its `fixme` in `apps/web/tests/e2e-api/sales.spec.ts`.
+  - Then queue item 2, "`GET /company` first (roles, modules and permission limits, so buttons match what the API allows)". Point it at ADR 0051 R1, the extended "PR #11 security review" note on the invite's branch (Q-B4-2), and the "R1 symptoms found while fixing B4" bullet.
