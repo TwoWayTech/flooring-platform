@@ -1,7 +1,11 @@
-import { and, asc, eq, inArray, isNull, like, sql } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
+import { and, asc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
+import { decodeMemberRoles, type CompanyId, type ProductKey } from "@workspace/shared";
 import { openControlDb, type ControlDb } from "./client";
 import {
+  account,
   authAttempts,
+  member,
   passkey,
   planLimits,
   planModules,
@@ -10,13 +14,17 @@ import {
   rateLimit,
   session,
   supportAccessGrants,
+  tenantDatabases,
   tenantPermissionCeiling,
   tenantSubscriptions,
   tenants,
   twoFactor,
   user,
+  userInvitations,
 } from "./control";
-import { PostgresServerProvisioner } from "@workspace/providers";
+import { provisionTenant, type ProvisionedTenant } from "./provision-tenant";
+import { loadDemoCompany } from "./seed/fixtures";
+import { companyDatabaseName, PostgresServerProvisioner } from "@workspace/providers";
 
 /** The superuser login on the local or CI PostgreSQL. */
 export const adminUrl = process.env.TENANT_DB_ADMIN_URL ?? "postgres://postgres:postgres@localhost:5432/postgres";
@@ -490,4 +498,313 @@ export async function removeTestPlans(controlUrl: string): Promise<string[]> {
   } finally {
     await handle.close();
   }
+}
+
+/** The slug of every fresh test company: `e2efresh` and 6 to 12 lowercase letters or digits. Tests only. */
+export const FRESH_SLUG = /^e2efresh[a-z0-9]{6,12}$/;
+
+/** The Owner's email of a fresh test company, on a reserved example domain no real person uses. Tests only. */
+export const FRESH_EMAIL = /^owner\.[a-z0-9]+@fresh\.e2e\.example$/;
+
+/** How long an invitation link works: the product's 7 days (`INVITATION_DAYS` in apps/api invitation-rules.ts). */
+const TEST_INVITATION_DAYS = 7;
+
+/**
+ * The youngest company a sweep may retire. A sweep is a clean-up of runs that were killed, so a
+ * shorter threshold could retire the company of a run still going on the same database.
+ */
+const MIN_SWEEP_AGE_MS = 10 * 60_000;
+
+/** The hosts a fresh-company helper may reach: this machine only. */
+const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1"]);
+
+/** Every demo company, so the helpers can refuse each one's slug and people (compile-time complete). */
+const DEMO_COMPANIES: Record<CompanyId, true> = { summit: true, keystone: true, harbor: true };
+
+/**
+ * The local server a fresh test company lives on, always given by the caller and never read from
+ * the environment, so no helper falls back to a default database. Tests only.
+ */
+export interface FreshTestServer {
+  /** The control database the API under test uses. */
+  controlUrl: string;
+  /** A superuser login on the same local server, used only to create and drop the company's database. */
+  adminUrl: string;
+  /** The CONNECTION_ENCRYPTION_KEY the API under test decrypts company database URLs with. */
+  encryptionKey: string;
+}
+
+/** What a fresh test company is made with. */
+export interface FreshTestCompany {
+  /** Matches FRESH_SLUG. */
+  slug: string;
+  /** Matches FRESH_EMAIL. */
+  ownerEmail: string;
+  products: readonly ProductKey[];
+}
+
+/** The invented name, place and Owner of every fresh test company; the Denver zone matches the e2e browser. */
+const FRESH_COMPANY = {
+  name: "Fresh Test Floors",
+  legalName: "Fresh Test Floors LLC",
+  state: "CO",
+  city: "Denver",
+  timeZone: "America/Denver",
+  ownerName: "Avery Fresh",
+} as const;
+
+let demoNames: { slugs: ReadonlySet<string>; emails: ReadonlySet<string> } | undefined;
+
+/** The demo companies' slugs and their people's emails, read once from the fixtures the seed writes from. */
+function demoCompanyNames(): { slugs: ReadonlySet<string>; emails: ReadonlySet<string> } {
+  if (!demoNames) {
+    const ids = Object.keys(DEMO_COMPANIES) as CompanyId[];
+    const emails = ids.flatMap((id) => loadDemoCompany(id).fixtures.users.map((person) => person.email.toLowerCase()));
+    demoNames = { slugs: new Set(ids), emails: new Set(emails) };
+  }
+  return demoNames;
+}
+
+/**
+ * Throws unless a database URL is on this machine. The URL itself is never put in the message,
+ * because it holds a password. A `host` or `hostaddr` option would override the URL's host, so
+ * either one is refused too.
+ */
+function refuseRemoteDatabase(helper: string, label: string, url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${helper}: ${label} is not a database URL.`);
+  }
+  const overridden = [...parsed.searchParams.keys()].some((key) => key === "host" || key === "hostaddr");
+  if (!LOCAL_HOSTS.has(parsed.hostname) || overridden) {
+    throw new Error(`${helper} only works on a database on this machine (localhost or 127.0.0.1); ${label} is not.`);
+  }
+}
+
+/**
+ * The guard every fresh-company helper runs before it connects anywhere: plain PostgreSQL only
+ * (DB_PROVIDER unset or `postgres`), every URL on this machine, a slug and an Owner email that
+ * match the fresh patterns, and never a demo company or one of its people. Tests only.
+ */
+function refuseUnsafeFresh(
+  helper: string,
+  input: { urls: Record<string, string>; slug?: string; email?: string },
+): void {
+  const provider = process.env.DB_PROVIDER;
+  if (provider && provider !== "postgres") {
+    throw new Error(`${helper} only works with DB_PROVIDER unset or postgres.`);
+  }
+  for (const [label, url] of Object.entries(input.urls)) refuseRemoteDatabase(helper, label, url);
+  if (input.slug !== undefined) {
+    if (demoCompanyNames().slugs.has(input.slug)) {
+      throw new Error(`${helper} never touches the demo company ${input.slug}.`);
+    }
+    if (!FRESH_SLUG.test(input.slug)) throw new Error(`${helper} only touches companies whose slug matches e2efresh….`);
+  }
+  if (input.email !== undefined) {
+    const email = input.email.trim().toLowerCase();
+    if (demoCompanyNames().emails.has(email)) throw new Error(`${helper} never touches a seeded user.`);
+    if (!FRESH_EMAIL.test(email))
+      throw new Error(`${helper} only takes an Owner email like owner.<run>@fresh.e2e.example.`);
+  }
+}
+
+/** The SHA-256 of an invitation token, as `user_invitations.token_hash` stores it (`tokenHash` in apps/api invitation-rules.ts). */
+function invitationTokenHash(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+/**
+ * Provisions a fresh test company the real way (`provisionTenant` with the local server's
+ * provisioner), as the provisioning script would, with the invented "Fresh Test Floors" and its
+ * Owner "Avery Fresh". Like provisioning today, the Owner gets no password and no invitation (gap
+ * G4): `inviteTestOwner` stands in for the missing invitation. It never migrates the control
+ * database. Tests only: it refuses any slug, email, host or provider the fresh guard refuses.
+ */
+export async function provisionTestCompany(
+  server: FreshTestServer,
+  company: FreshTestCompany,
+): Promise<ProvisionedTenant> {
+  refuseUnsafeFresh("provisionTestCompany", {
+    urls: { controlUrl: server.controlUrl, adminUrl: server.adminUrl },
+    slug: company.slug,
+    email: company.ownerEmail,
+  });
+  if (!server.encryptionKey) throw new Error("provisionTestCompany needs the API's encryption key.");
+  const handle = openControlDb(server.controlUrl, { max: 1 });
+  try {
+    return await provisionTenant(
+      handle.db,
+      new PostgresServerProvisioner(server.adminUrl),
+      server.encryptionKey,
+      "postgres",
+      {
+        slug: company.slug,
+        name: FRESH_COMPANY.name,
+        legalName: FRESH_COMPANY.legalName,
+        state: FRESH_COMPANY.state,
+        city: FRESH_COMPANY.city,
+        timeZone: FRESH_COMPANY.timeZone,
+        products: company.products,
+        owner: { name: FRESH_COMPANY.ownerName, email: company.ownerEmail },
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * The user id of a fresh test company's Owner. Throws unless the company has exactly one Owner,
+ * whose email matches FRESH_EMAIL and who belongs to no other company, so a helper never acts on
+ * anyone outside the run that made the company.
+ */
+async function freshOwner(helper: string, db: ControlDb, tenantId: string): Promise<{ userId: string }> {
+  const people = await db
+    .select({ userId: member.userId, email: user.email, role: member.role })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(eq(member.organizationId, tenantId));
+  const owners = people.filter((person) => decodeMemberRoles(person.role).includes("owner"));
+  if (owners.length !== 1) throw new Error(`${helper}: a fresh test company has exactly one Owner; this one does not.`);
+  const [owner] = owners;
+  refuseUnsafeFresh(helper, { urls: {}, email: owner.email });
+  const elsewhere = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.userId, owner.userId), ne(member.organizationId, tenantId)));
+  if (elsewhere.length > 0)
+    throw new Error(`${helper}: the fresh Owner belongs to another company; nothing was changed.`);
+  return { userId: owner.userId };
+}
+
+/**
+ * Inserts the invitation that provisioning should send a fresh company's Owner and doesn't yet
+ * (gap G4; STATUS: "owner invitations at provisioning come with the platform-admin screens (P17)"):
+ * one `user_invitations` row holding only the token's SHA-256, valid for the product's 7 days, as
+ * `UsersService.invite` writes one. Returns the token for the accept link; it is never logged.
+ * The Owner then sets a password through the product's own accept page, so no helper writes a
+ * credential. Refuses when an open invitation exists. Tests only.
+ */
+export async function inviteTestOwner(controlUrl: string, slug: string): Promise<string> {
+  refuseUnsafeFresh("inviteTestOwner", { urls: { controlUrl }, slug });
+  const handle = openControlDb(controlUrl, { max: 1 });
+  try {
+    const [company] = await handle.db
+      .select({ id: tenants.id })
+      .from(tenants)
+      .where(and(eq(tenants.slug, slug), isNull(tenants.deletedAt)));
+    if (!company) throw new Error(`No live fresh company ${slug}.`);
+    const owner = await freshOwner("inviteTestOwner", handle.db, company.id);
+    const open = await handle.db
+      .select({ id: userInvitations.id })
+      .from(userInvitations)
+      .where(
+        and(
+          eq(userInvitations.tenantId, company.id),
+          eq(userInvitations.userId, owner.userId),
+          isNull(userInvitations.acceptedAt),
+          isNull(userInvitations.revokedAt),
+        ),
+      );
+    if (open.length > 0) throw new Error("The fresh Owner already has an open invitation.");
+    const token = randomBytes(32).toString("base64url");
+    await handle.db.insert(userInvitations).values({
+      tenantId: company.id,
+      userId: owner.userId,
+      tokenHash: invitationTokenHash(token),
+      expiresAt: new Date(Date.now() + TEST_INVITATION_DAYS * 86_400_000),
+      createdBy: owner.userId,
+    });
+    return token;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Retires a fresh test company so the shared e2e database stays usable: in one control
+ * transaction it sets `tenant_databases.deleted_at` (the only column `migrateAllCompanies` reads,
+ * so `pnpm db:migrate` skips the company) and `tenants.deleted_at`, revokes open invitations, and
+ * removes the Owner's session, two_factor, passkey and credential account rows; then it drops the
+ * company's database. User and member rows stay, because audit rows name them. Safe to run again,
+ * and a slug with no company only has its database dropped if there is one. Tests only.
+ */
+export async function retireTestCompany(
+  server: Pick<FreshTestServer, "controlUrl" | "adminUrl">,
+  slug: string,
+): Promise<void> {
+  refuseUnsafeFresh("retireTestCompany", { urls: { controlUrl: server.controlUrl, adminUrl: server.adminUrl }, slug });
+  const handle = openControlDb(server.controlUrl, { max: 1 });
+  try {
+    await handle.db.transaction(async (tx) => {
+      const [company] = await tx.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug));
+      if (!company) return;
+      const owner = await freshOwner("retireTestCompany", tx, company.id);
+      const now = new Date();
+      await tx
+        .update(tenantDatabases)
+        .set({ deletedAt: now })
+        .where(and(eq(tenantDatabases.tenantId, company.id), isNull(tenantDatabases.deletedAt)));
+      await tx
+        .update(tenants)
+        .set({ deletedAt: now })
+        .where(and(eq(tenants.id, company.id), isNull(tenants.deletedAt)));
+      await tx
+        .update(userInvitations)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(userInvitations.tenantId, company.id),
+            isNull(userInvitations.acceptedAt),
+            isNull(userInvitations.revokedAt),
+          ),
+        );
+      await tx.delete(session).where(eq(session.userId, owner.userId));
+      await tx.delete(twoFactor).where(eq(twoFactor.userId, owner.userId));
+      await tx.delete(passkey).where(eq(passkey.userId, owner.userId));
+      await tx.delete(account).where(and(eq(account.userId, owner.userId), eq(account.providerId, "credential")));
+    });
+  } finally {
+    await handle.close();
+  }
+  await new PostgresServerProvisioner(server.adminUrl).drop(companyDatabaseName(slug));
+}
+
+/**
+ * Retires every fresh test company older than `olderThanMs` that is still live in either
+ * `tenants` or `tenant_databases`: the leftovers of runs that were killed before their own
+ * clean-up. Slugs that start with `e2efresh` but don't match FRESH_SLUG were not made by these
+ * helpers and are left alone. Refuses a threshold under 10 minutes, so it never retires a company a
+ * run on the same database is still using. Returns the slugs retired. Tests only.
+ */
+export async function sweepTestCompanies(
+  server: Pick<FreshTestServer, "controlUrl" | "adminUrl">,
+  olderThanMs: number,
+): Promise<string[]> {
+  refuseUnsafeFresh("sweepTestCompanies", { urls: { controlUrl: server.controlUrl, adminUrl: server.adminUrl } });
+  if (!(olderThanMs >= MIN_SWEEP_AGE_MS))
+    throw new Error("sweepTestCompanies needs a threshold of 10 minutes or more.");
+  const handle = openControlDb(server.controlUrl, { max: 1 });
+  let rows: { slug: string }[];
+  try {
+    rows = await handle.db
+      .select({ slug: tenants.slug })
+      .from(tenants)
+      .leftJoin(tenantDatabases, eq(tenantDatabases.tenantId, tenants.id))
+      .where(
+        and(
+          like(tenants.slug, "e2efresh%"),
+          lt(tenants.createdAt, new Date(Date.now() - olderThanMs)),
+          or(isNull(tenants.deletedAt), and(isNotNull(tenantDatabases.id), isNull(tenantDatabases.deletedAt))),
+        ),
+      );
+  } finally {
+    await handle.close();
+  }
+  const slugs = [...new Set(rows.map((row) => row.slug))].filter((slug) => FRESH_SLUG.test(slug)).sort();
+  for (const slug of slugs) await retireTestCompany(server, slug);
+  return slugs;
 }

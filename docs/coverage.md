@@ -64,7 +64,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `hr.dashboard` | demo | `/` (mixed), `/hr` (api) | 0 | 2 | 0 | 12 | 3 |
+| `hr.dashboard` | demo | `/` (mixed), `/hr` (api) | 0 | 2 | 0 | 12 | 4 |
 | `hr.employees` | demo | `/hr/employees` (api) | 6 | 0 | 5 | 6 | 0 |
 | `hr.timesheets` | demo | `/hr/timesheets` (api) | 10 | 0 | 7 | 7 | 0 |
 | `hr.time-off` | demo | `/hr/time-off` (api) | 8 | 1 | 6 | 6 | 0 |
@@ -76,7 +76,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `settings.import` | demo | `/settings/import` (api) | 5 | 0 | 2 | 4 | 1 |
+| `settings.import` | demo | `/settings/import` (api) | 5 | 0 | 2 | 4 | 2 |
 | `settings.database` | demo | `/settings/database` (mixed) | 0 | 0 | 0 | 4 | 0 |
 
 ### `docs/product-spec/inventory.md`
@@ -115,7 +115,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `purchasing.orders` | demo | `/purchasing` (api) | 12 | 2 | 5 | 7 | 1 |
-| `purchasing.suppliers` | demo | `/purchasing` (api) | 8 | 2 | 5 | 7 | 1 |
+| `purchasing.suppliers` | demo | `/purchasing` (api) | 8 | 2 | 5 | 7 | 2 |
 
 ### `docs/product-spec/reports.md`
 
@@ -137,9 +137,9 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `sales.quotes` | demo | `/sales` (mixed), `/sales/quotes/*` (mixed), `/sales/quotes/new` (mixed) | 4 | 3 | 7 | 23 | 3 |
 | `sales.quote-availability` | demo | — | 0 | 0 | 0 | 0 | 0 |
-| `sales.invoices` | demo | `/sales` (mixed), `/sales/invoices/*` (mixed) | 9 | 4 | 7 | 15 | 3 |
+| `sales.invoices` | demo | `/sales` (mixed), `/sales/invoices/*` (mixed) | 9 | 4 | 7 | 15 | 4 |
 | `sales.payments` | demo | `/settings/payments` (mixed) | 9 | 0 | 6 | 3 | 0 |
-| `sales.customers` | demo | `/sales` (mixed) | 3 | 5 | 8 | 12 | 3 |
+| `sales.customers` | demo | `/sales` (mixed) | 3 | 5 | 8 | 12 | 4 |
 | `installation.calendar` | removed | `/installation` (mixed) | 0 | 0 | 0 | 1 | 0 |
 
 ### `docs/product-spec/settings-and-permissions.md`
@@ -173,7 +173,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `dashboard.store` | demo | `/` (mixed) | 0 | 2 | 0 | 12 | 3 |
+| `dashboard.store` | demo | `/` (mixed) | 0 | 2 | 0 | 12 | 4 |
 | `shell.company-switcher` | demo | — | 0 | 0 | 0 | 0 | 0 |
 | `shell.view-as` | demo | — | 0 | 0 | 0 | 0 | 0 |
 | `shell.command-palette` | demo | — | 0 | 0 | 0 | 0 | 0 |
@@ -187,9 +187,9 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Page | Standing | Calls on the API | Calls on DemoStore (reason) | Unit | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- |
-| `/` | mixed | `contractsData`, `hrData`, `list:invoiceAdjustments`, `list:invoices`, `list:payments`, `list:refunds`, `listCommissionStatements`, `listPayPeriods`, `listStockHolds` | `list:bills` (mixed), `list:crews` (installation), `list:customers` (mixed), `list:expenses` (mixed), `list:jobs` (installation), `list:locations` (locations), `list:products` (mixed), `list:ptoRequests` (mixed), `list:purchaseOrders` (mixed), `list:quotes` (mixed), `list:receipts` (mixed), `list:roles` (workspace), `list:rolls` (mixed), `list:stockAdjustments` (adjustments), `list:stockMovements` (mixed), `list:supplierPayments` (mixed), `list:timesheets` (mixed), `list:transfers` (mixed), `list:users` (workspace), `listMyNotifications` (outbox), `markNotificationsRead` (outbox), `whoAmI` (mixed) | `features.test.ts`, `company-standing.test.tsx` | `a11y.spec.ts`, `admin.spec.ts`, `console.spec.ts`, `contracts.spec.ts`, `hr-workspace.spec.ts`, `invoice-lifecycle.spec.ts`, `portal.spec.ts`, `presenter-guide.spec.ts`, `quote-status.spec.ts`, `responsive.spec.ts`, `states.spec.ts`, `stock.spec.ts` | `company-standing.spec.ts`, `login.spec.ts`, `platform-admin.spec.ts` |
+| `/` | mixed | `contractsData`, `hrData`, `list:invoiceAdjustments`, `list:invoices`, `list:payments`, `list:refunds`, `listCommissionStatements`, `listPayPeriods`, `listStockHolds` | `list:bills` (mixed), `list:crews` (installation), `list:customers` (mixed), `list:expenses` (mixed), `list:jobs` (installation), `list:locations` (locations), `list:products` (mixed), `list:ptoRequests` (mixed), `list:purchaseOrders` (mixed), `list:quotes` (mixed), `list:receipts` (mixed), `list:roles` (workspace), `list:rolls` (mixed), `list:stockAdjustments` (adjustments), `list:stockMovements` (mixed), `list:supplierPayments` (mixed), `list:timesheets` (mixed), `list:transfers` (mixed), `list:users` (workspace), `listMyNotifications` (outbox), `markNotificationsRead` (outbox), `whoAmI` (mixed) | `features.test.ts`, `company-standing.test.tsx` | `a11y.spec.ts`, `admin.spec.ts`, `console.spec.ts`, `contracts.spec.ts`, `hr-workspace.spec.ts`, `invoice-lifecycle.spec.ts`, `portal.spec.ts`, `presenter-guide.spec.ts`, `quote-status.spec.ts`, `responsive.spec.ts`, `states.spec.ts`, `stock.spec.ts` | `fresh-company.spec.ts`, `company-standing.spec.ts`, `login.spec.ts`, `platform-admin.spec.ts` |
 | `/[...missing]` | no data | — | — | — | — | — |
-| `/accept-invite` | no data | — | — | — | — | `users.spec.ts` |
+| `/accept-invite` | no data | — | — | — | — | `fresh-company.spec.ts`, `users.spec.ts` |
 | `/admin` | api | `listPlatformCompanies` | — | — | `a11y.spec.ts`, `admin-billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `platform-admin.spec.ts`, `platform-billing.spec.ts`, `platform-support.spec.ts` |
 | `/admin/audit` | api | `listPlatformAudit`, `listPlatformCompanies` | — | — | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `platform-billing.spec.ts`, `platform-support.spec.ts` |
 | `/admin/companies/*` | api | `getPlatformCompany`, `getPlatformDirectory`, `updatePlatformCompanyAccess`, `verifyStepUp` | — | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `import.spec.ts`, `responsive.spec.ts` | — |
@@ -212,7 +212,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/installation` | mixed | `createCustomer` | `createInvoiceFromJob` (installation), `list:crews` (installation), `list:customers` (mixed), `list:jobs` (installation), `save:jobs` (installation), `signOffJob` (installation), `startJob` (installation) | — | `installation.spec.ts` | — |
 | `/inventory` | mixed | `correctStockCount`, `createTransfer`, `inventoryData`, `issueReservation`, `list:invoiceAdjustments`, `list:invoices`, `list:payments`, `list:refunds`, `listStockHolds`, `receiveTransfer` | `list:customers` (mixed), `list:jobs` (installation), `list:ptoRequests` (mixed), `list:rolls` (mixed), `list:stockAdjustments` (adjustments), `list:supplierPayments` (mixed), `list:timesheets` (mixed), `list:users` (workspace), `recordAdjustment` (adjustments), `reviewAdjustment` (adjustments), `whoAmI` (mixed) | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `inventory.spec.ts`, `responsive.spec.ts`, `square-feet.spec.ts`, `stock.spec.ts`, `tables.spec.ts`, `warehouses.spec.ts` | `inventory.spec.ts` |
 | `/inventory/rolls/*` | mixed | `correctStockCount`, `createCustomer`, `createRollInvoice`, `inventoryData`, `issueReservation`, `listStockHolds`, `moveRoll` | `list:customers` (mixed), `list:users` (workspace), `recordAdjustment` (adjustments) | `features.test.ts` | `a11y.spec.ts`, `audit.spec.ts`, `console.spec.ts`, `inventory.spec.ts`, `localization.spec.ts`, `responsive.spec.ts`, `roles.spec.ts`, `stock.spec.ts`, `warehouses.spec.ts` | — |
-| `/login` | demo-only | — | `listCompanies` (workspace), `listCompanyDirectory` (demoTools) | `features.test.ts` | `a11y.spec.ts`, `admin.spec.ts`, `login.spec.ts` | `login.spec.ts`, `users.spec.ts` |
+| `/login` | demo-only | — | `listCompanies` (workspace), `listCompanyDirectory` (demoTools) | `features.test.ts` | `a11y.spec.ts`, `admin.spec.ts`, `login.spec.ts` | `fresh-company.spec.ts`, `login.spec.ts`, `users.spec.ts` |
 | `/meetings` | api | `cancelMeeting`, `createMeeting`, `decideProposal`, `meetingCalendarFile`, `meetingsData`, `removeGuest`, `requestMeeting`, `rescheduleMeeting`, `respondToMeeting`, `undoReschedule`, `updateMeeting` | — | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `meetings-invites.spec.ts`, `meetings.spec.ts`, `responsive.spec.ts`, `states.spec.ts` | `meetings.spec.ts` |
 | `/my` | api | `clockIn`, `clockOut`, `myPortal` | — | — | `a11y.spec.ts`, `console.spec.ts`, `portal.spec.ts`, `responsive.spec.ts` | — |
 | `/my/commission` | api | `acknowledgePlan`, `myPortal` | — | — | `portal.spec.ts` | — |
@@ -281,8 +281,8 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `DELETE /meetings/:id/attendees/:attendeeId` | company | `meetings.meeting.edit` | meetings | — | `meetings.calendar gating`, `meetings.invites gating` | `/meetings`, `/my/documents`, `/my/meetings`, `/my/payments`, `/my/profile`, `/outbox`, `/settings/notifications`, `/settings/outbox` | `meetings.int.test.ts` | — |
 | `DELETE /roles/:id` | company | `settings.roles.manage` | — | — | none | `/settings/roles` | `new-company.int.test.ts`, `users.int.test.ts` | — |
-| `GET /audit` | company | `settings.audit.view` | — | — | none | `/settings/audit` | `commissions.int.test.ts`, `new-company.int.test.ts`, `users.int.test.ts` | — |
-| `GET /auth/context` | session | — | — | — | — | `/meetings` | `auth.int.test.ts`, `isolation.int.test.ts`, `mfa.int.test.ts`, `new-company.int.test.ts`, `permissions.int.test.ts`, `platform-company-status.int.test.ts`, `stock-issue.int.test.ts` | — |
+| `GET /audit` | company | `settings.audit.view` | — | — | none | `/settings/audit` | `commissions.int.test.ts`, `new-company.int.test.ts`, `users.int.test.ts` | `fresh-company.spec.ts` |
+| `GET /auth/context` | session | — | — | — | — | `/meetings` | `auth.int.test.ts`, `isolation.int.test.ts`, `mfa.int.test.ts`, `new-company.int.test.ts`, `permissions.int.test.ts`, `platform-company-status.int.test.ts`, `stock-issue.int.test.ts` | `fresh-company.spec.ts` |
 | `GET /billing` | company | any member | — | — | `settings.billing gating` | `(app)`, `/settings/billing` | `billing.int.test.ts`, `company-standing.int.test.ts`, `new-company.int.test.ts`, `platform-company-status.int.test.ts`, `platform-plans.int.test.ts` | `company-standing.spec.ts` |
 | `GET /bills` | company | `purchasing.bill.view` | core | — | `purchasing.orders gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `GET /bonuses` | company | `hr.payroll.view` | hr | — | `hr.pay-periods gating` | — | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts` | — |
@@ -290,20 +290,20 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `GET /clock-entries` | company | `hr.timesheet.view` | hr | — | `hr.clock gating`, `hr.timesheets gating` | — | `hr.int.test.ts` | — |
 | `GET /commission-totals` | company | `sales.commission.view` | core | — | `hr.commissions gating`, `sales.team gating` | `/sales` | `commissions.int.test.ts` | — |
 | `GET /commissions` | company | `hr.commission.view` | hr | — | `hr.commissions gating` | `/`, `/hr`, `/hr/commissions` | `commissions.int.test.ts` | — |
-| `GET /company/standing` | session | — | — | — | — | `(app)` | `billing.int.test.ts`, `company-standing.int.test.ts`, `new-company.int.test.ts`, `platform-company-status.int.test.ts`, `platform-plans.int.test.ts` | `company-standing.spec.ts` |
+| `GET /company/standing` | session | — | — | — | — | `(app)` | `billing.int.test.ts`, `company-standing.int.test.ts`, `new-company.int.test.ts`, `platform-company-status.int.test.ts`, `platform-plans.int.test.ts` | `fresh-company.spec.ts`, `company-standing.spec.ts` |
 | `GET /contract-billings` | company | `contracts.billing.view` | contracts | — | `contracts.billing gating`, `contracts.register gating` | `/`, `/contracts`, `/contracts/*` | `contract-billing.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `GET /contract-lines` | company | `contracts.contract.view` | contracts | — | `contracts.register gating` | `/`, `/contracts`, `/contracts/*` | `contract-billing.int.test.ts`, `contracts.int.test.ts`, `new-company.int.test.ts` | — |
 | `GET /contractor-payments` | company | `hr.payroll.view` | hr | — | `hr.pay-periods gating` | — | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts` | — |
 | `GET /contracts` | company | `contracts.contract.view` | contracts | — | `contracts.register gating` | `/`, `/contracts`, `/contracts/*` | `contract-billing.int.test.ts`, `contracts.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform.int.test.ts` | — |
-| `GET /customers` | company | `customers.customer.view` | core | — | `sales.customers gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/sales`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `accounting.int.test.ts`, `imports.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform.int.test.ts`, `sales.int.test.ts`, `stock-issue.int.test.ts` | — |
+| `GET /customers` | company | `customers.customer.view` | core | — | `sales.customers gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/sales`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `accounting.int.test.ts`, `imports.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform.int.test.ts`, `sales.int.test.ts`, `stock-issue.int.test.ts` | `fresh-company.spec.ts` |
 | `GET /employees` | company | `hr.employee.view`, `hr.timesheet.view`, `hr.pto.view`, `settings.hr.manage` | hr | — | `hr.employees any-of`, `hr.time-off any-of`, `hr.timesheets any-of`, `settings.hr any-of` | `/`, `/hr`, `/hr/employees`, `/hr/time-off`, `/hr/timesheets`, `/my/time-off`, `/my/timesheet`, `/settings/hr` | `commissions.int.test.ts`, `hr.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts`, `portal.int.test.ts` | — |
 | `GET /expenses` | company | `finance.expense.view` | core | — | `finance.expenses gating` | `/finance` | `expenses.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `GET /files/:id` | company | `sales.payment.view`, `sales.payment.approve`, `sales.payment.refund`, `finance.expense.view`, `purchasing.bill.view`, `purchasing.payment.record`, `purchasing.payment.approve`, `contracts.contract.view`, `hr.employee.view`, `hr.portal.view` | platform | — | none | `/contracts/*`, `/finance`, `/hr/employees`, `/my/documents`, `/my/meetings`, `/my/payments`, `/my/profile`, `/purchasing`, `/sales/invoices/*` | `contracts.int.test.ts`, `expenses.int.test.ts`, `hr.int.test.ts`, `invoices.int.test.ts`, `payables.int.test.ts`, `portal.int.test.ts` | — |
 | `GET /health` | public | — | — | — | — | — | `health.int.test.ts` | — |
-| `GET /imports` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/database`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `import.spec.ts` |
+| `GET /imports` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/database`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `fresh-company.spec.ts`, `import.spec.ts` |
 | `GET /insurance-certificates` | company | `contracts.compliance.view` | contracts | — | `contracts.compliance gating`, `contracts.register gating` | `/`, `/contracts`, `/contracts/*` | `contracts.int.test.ts` | — |
 | `GET /invoice-adjustments` | company | `sales.invoice.view` | core | — | `sales.invoices gating` | `(app)`, `/`, `/inventory`, `/sales`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
-| `GET /invoices` | company | `sales.invoice.view` | core | — | `sales.invoices gating` | `(app)`, `/`, `/contracts/*`, `/finance`, `/inventory`, `/sales`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `contract-billing.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
+| `GET /invoices` | company | `sales.invoice.view` | core | — | `sales.invoices gating` | `(app)`, `/`, `/contracts/*`, `/finance`, `/inventory`, `/sales`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `contract-billing.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | `fresh-company.spec.ts` |
 | `GET /ledger/period-close` | company | `reports.financial.view`, `settings.company.manage` | core | — | none | — | `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `GET /ledger/trial-balance` | company | `reports.financial.view` | core | — | none | — | `accounting.int.test.ts`, `commissions.int.test.ts`, `contract-billing.int.test.ts`, `expenses.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `payroll.int.test.ts`, `stock-issue.int.test.ts` | — |
 | `GET /lien-waivers` | company | `contracts.compliance.view` | contracts | — | `contracts.compliance gating`, `contracts.register gating` | `/`, `/contracts`, `/contracts/*` | `contracts.int.test.ts` | — |
@@ -348,7 +348,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `GET /stock-movements` | company | `inventory.product.view` | core | — | `inventory.products gating` | `/inventory`, `/inventory/rolls/*`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `inventory.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `GET /supplier-contacts` | company | `purchasing.supplier.view` | core | — | `purchasing.suppliers gating` | `/finance`, `/purchasing` | `new-company.int.test.ts`, `purchasing.int.test.ts` | — |
 | `GET /supplier-payments` | company | `purchasing.bill.view`, `purchasing.payment.record`, `purchasing.payment.approve` | core | — | `purchasing.orders gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
-| `GET /suppliers` | company | `purchasing.supplier.view` | core | — | `purchasing.suppliers gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/purchasing` | `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `purchasing.int.test.ts` | — |
+| `GET /suppliers` | company | `purchasing.supplier.view` | core | — | `purchasing.suppliers gating` | `/`, `/contracts`, `/contracts/*`, `/finance`, `/purchasing` | `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `purchasing.int.test.ts` | `fresh-company.spec.ts` |
 | `GET /support-grants` | company | any member | — | — | none | `/settings/users` | `billing.int.test.ts`, `company-standing.int.test.ts`, `users.int.test.ts` | — |
 | `GET /time-off-entries` | company | `hr.pto.view` | hr | — | `hr.time-off gating` | `/`, `/hr`, `/hr/employees`, `/hr/time-off`, `/hr/timesheets`, `/my/time-off`, `/my/timesheet`, `/settings/hr` | `hr.int.test.ts` | — |
 | `GET /time-off-policies` | company | `hr.pto.view`, `hr.employee.view`, `settings.hr.manage` | hr | — | `hr.time-off any-of`, `settings.hr any-of` | `/`, `/hr`, `/hr/employees`, `/hr/time-off`, `/hr/timesheets`, `/my/time-off`, `/my/timesheet`, `/settings/hr` | `california-pay.int.test.ts`, `hr.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts` | — |
@@ -361,7 +361,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `PATCH /platform/plans/:id` | session | — | — | — | — | `/admin/plans` | `platform-plans.int.test.ts` | — |
 | `PATCH /rolls/:id` | company | `inventory.roll.edit` | core | — | `inventory.rolls gating` | `/inventory/rolls/*` | `inventory.int.test.ts` | — |
 | `PATCH /users/:id` | company | `settings.users.manage` | — | — | none | `/settings/users` | `users.int.test.ts` | — |
-| `POST /auth/step-up` | session | — | — | — | — | `/admin/companies/*`, `/admin/companies/*/database`, `/admin/companies/*/import`, `/admin/companies/*/status`, `/admin/companies/*/support`, `/admin/plans`, `/settings/branding`, `/settings/documents`, `/settings/expenses`, `/settings/hr`, `/settings/import`, `/settings/localization`, `/settings/locations`, `/settings/meetings`, `/settings/notifications`, `/settings/number-format`, `/settings/payments`, `/settings/roles`, `/settings/users` | `billing.int.test.ts`, `company-standing.int.test.ts`, `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform-audit.int.test.ts`, `platform-company-status.int.test.ts`, `platform-plans.int.test.ts`, `platform-support.int.test.ts`, `platform.int.test.ts`, `route-matrix.int.test.ts`, `users.int.test.ts` | `import.spec.ts` |
+| `POST /auth/step-up` | session | — | — | — | — | `/admin/companies/*`, `/admin/companies/*/database`, `/admin/companies/*/import`, `/admin/companies/*/status`, `/admin/companies/*/support`, `/admin/plans`, `/settings/branding`, `/settings/documents`, `/settings/expenses`, `/settings/hr`, `/settings/import`, `/settings/localization`, `/settings/locations`, `/settings/meetings`, `/settings/notifications`, `/settings/number-format`, `/settings/payments`, `/settings/roles`, `/settings/users` | `billing.int.test.ts`, `company-standing.int.test.ts`, `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform-audit.int.test.ts`, `platform-company-status.int.test.ts`, `platform-plans.int.test.ts`, `platform-support.int.test.ts`, `platform.int.test.ts`, `route-matrix.int.test.ts`, `users.int.test.ts` | `fresh-company.spec.ts`, `import.spec.ts` |
 | `POST /bonuses` | company | `hr.payroll.approve` | hr | — | `hr.pay-periods gating` | — | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts` | — |
 | `POST /bonuses/:id/void` | company | `hr.payroll.approve` | hr | — | `hr.pay-periods gating` | — | `new-company.int.test.ts`, `payroll.int.test.ts` | — |
 | `POST /change-orders/:id/decision` | company | `contracts.change_order.approve` | contracts | — | `contracts.billing gating`, `contracts.register gating` | `/contracts/*` | `contracts.int.test.ts` | — |
@@ -390,7 +390,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `POST /contracts/:id/send` | company | `contracts.contract.edit` | contracts | — | `contracts.register gating` | `/contracts/*` | `contract-billing.int.test.ts`, `contracts.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /contracts/:id/sign` | company | `contracts.contract.approve` | contracts | — | `contracts.register gating` | `/contracts/*` | `contract-billing.int.test.ts`, `contracts.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /contracts/:id/terminate` | company | `contracts.contract.approve` | contracts | — | `contracts.register gating` | `/contracts/*` | `contracts.int.test.ts` | — |
-| `POST /customers` | company | `customers.customer.create` | core | — | `sales.customers gating` | `/installation`, `/inventory/rolls/*`, `/sales`, `/sales/quotes/*`, `/sales/quotes/new` | `accounting.int.test.ts`, `imports.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform.int.test.ts`, `sales.int.test.ts`, `stock-issue.int.test.ts` | — |
+| `POST /customers` | company | `customers.customer.create` | core | — | `sales.customers gating` | `/installation`, `/inventory/rolls/*`, `/sales`, `/sales/quotes/*`, `/sales/quotes/new` | `accounting.int.test.ts`, `imports.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `platform.int.test.ts`, `sales.int.test.ts`, `stock-issue.int.test.ts` | `fresh-company.spec.ts` |
 | `POST /employees` | company | `hr.employee.create` | hr | — | `hr.employees gating` | `/hr/employees` | `commissions.int.test.ts`, `hr.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts`, `portal.int.test.ts` | — |
 | `POST /employees/:id/checklist/:itemId` | company | `hr.employee.edit` | hr | — | `hr.employees gating` | `/hr/employees` | `hr.int.test.ts` | — |
 | `POST /employees/:id/documents` | company | `hr.employee.edit` | hr | — | `hr.employees gating` | `/hr/employees` | `hr.int.test.ts`, `portal.int.test.ts` | — |
@@ -398,9 +398,9 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `POST /expenses` | company | `finance.expense.create` | core | — | `finance.expenses gating` | `/finance` | `expenses.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `POST /expenses/:id/review` | company | `finance.expense.approve` | core | — | `finance.expenses gating` | `/finance` | `expenses.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /expenses/:id/void` | company | `finance.expense.void` | core | — | `finance.expenses gating` | `/finance` | `expenses.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
-| `POST /imports` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `import.spec.ts` |
-| `POST /imports/:id/undo` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `import.spec.ts` |
-| `POST /imports/check` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `import.spec.ts` |
+| `POST /imports` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `fresh-company.spec.ts`, `import.spec.ts` |
+| `POST /imports/:id/undo` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `fresh-company.spec.ts`, `import.spec.ts` |
+| `POST /imports/check` | company | `settings.import.manage` | — | — | `settings.import gating` | `/admin/companies/*/database`, `/admin/companies/*/import`, `/settings/import` | `imports.int.test.ts`, `new-company.int.test.ts` | `fresh-company.spec.ts`, `import.spec.ts` |
 | `POST /invoices/:id/apply-credit` | company | `sales.payment.apply_credit` | core | — | `sales.payments gating` | `/sales/invoices/*` | `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /invoices/:id/credit-notes` | company | `sales.invoice.void` | core | — | `sales.invoices gating` | `/sales/invoices/*` | `contract-billing.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /invoices/:id/sent` | company | `sales.invoice.edit`, `sales.invoice.create` | core | — | `sales.invoices gating` | `/sales/invoices/*` | `contract-billing.int.test.ts`, `invoices.int.test.ts`, `new-company.int.test.ts` | — |
@@ -436,7 +436,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `POST /pto-requests` | company | `hr.pto.request`, `hr.pto.approve` | hr | — | `hr.time-off gating` | `/hr/time-off`, `/my/time-off` | `hr.int.test.ts`, `payroll.int.test.ts` | — |
 | `POST /pto-requests/:id/cancel` | company | `hr.pto.request`, `hr.pto.approve` | hr | — | `hr.time-off gating` | `/my/time-off` | `hr.int.test.ts` | — |
 | `POST /pto-requests/:id/decision` | company | `hr.pto.approve` | hr | — | `hr.time-off gating` | `/hr/time-off`, `/my/time-off` | `hr.int.test.ts` | — |
-| `POST /public/invitations/accept` | public | — | — | — | — | — | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `users.int.test.ts` | — |
+| `POST /public/invitations/accept` | public | — | — | — | — | — | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `users.int.test.ts` | `fresh-company.spec.ts` |
 | `POST /purchase-orders` | company | `purchasing.order.create` | core | — | `purchasing.orders gating` | `/purchasing` | `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `purchasing.int.test.ts` | — |
 | `POST /purchase-orders/:id/bills` | company | `purchasing.bill.create` | core | — | `purchasing.orders gating` | `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `POST /purchase-orders/:id/cancel` | company | `purchasing.order.create` | core | — | `purchasing.orders gating` | `/purchasing` | `new-company.int.test.ts`, `purchasing.int.test.ts` | — |
@@ -457,7 +457,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `POST /supplier-payments` | company | `purchasing.payment.record` | core | — | `purchasing.orders gating` | `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `POST /supplier-payments/:id/review` | company | `purchasing.payment.approve` | core | — | `purchasing.orders gating` | `/finance`, `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
 | `POST /supplier-payments/:id/void` | company | `purchasing.payment.void` | core | — | `purchasing.orders gating` | `/purchasing` | `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts` | — |
-| `POST /suppliers` | company | `purchasing.supplier.create` | core | — | `purchasing.suppliers gating` | `/purchasing` | `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `purchasing.int.test.ts` | — |
+| `POST /suppliers` | company | `purchasing.supplier.create` | core | — | `purchasing.suppliers gating` | `/purchasing` | `imports.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payables.int.test.ts`, `purchasing.int.test.ts` | `fresh-company.spec.ts` |
 | `POST /suppliers/:id/status` | company | `purchasing.supplier.edit` | core | — | `purchasing.suppliers gating` | `/purchasing` | — | — |
 | `POST /support-grants/:id/approve` | company | any member | — | — | none | `/settings/users` | `users.int.test.ts` | — |
 | `POST /support-grants/:id/revoke` | company | any member | — | — | none | `/settings/users` | `company-standing.int.test.ts`, `users.int.test.ts` | — |
