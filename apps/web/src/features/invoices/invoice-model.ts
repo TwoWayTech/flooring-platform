@@ -1,6 +1,7 @@
 import { format, parseISO } from "date-fns";
 import {
   cartonEquivalent,
+  dec,
   formatNumber,
   PAYMENT_METHOD_LABELS,
   lineAmount,
@@ -138,8 +139,8 @@ export function buildInvoiceModel(
     tax: fmt(invoice.tax, "money"),
     total: fmt(invoice.total, "money"),
     paid: fmt(ledger.paid, "money"),
-    credited: ledger.credited === "0.00" ? null : fmt(ledger.credited, "money"),
-    writtenOff: ledger.writtenOff === "0.00" ? null : fmt(ledger.writtenOff, "money"),
+    credited: dec(ledger.credited).isZero() ? null : fmt(ledger.credited, "money"),
+    writtenOff: dec(ledger.writtenOff).isZero() ? null : fmt(ledger.writtenOff, "money"),
     balanceDue: fmt(ledger.balance, "money"),
     paidOn: (ledger.state === "paid" || ledger.state === "overpaid") && ledger.paidAt ? date(ledger.paidAt) : null,
     voided: ledger.state === "void",
