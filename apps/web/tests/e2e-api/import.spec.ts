@@ -65,9 +65,11 @@ async function searchCustomers(page: Page, run: string): Promise<void> {
 // Data import on the real API, part 1 (docs/product-spec/import.md; ADR 0057): the Owner imports
 // customers from a CSV through the dry run, a step-up and the commit, re-imports the same file as
 // all skips, then undoes the batch. Every name, External ID and email is unique to the run, so the
-// spec can run again on the same database. What stays afterwards is the run's soft-deleted
-// customers and addresses, its undone batch and its audit rows (the log is append-only). If a step
-// fails before the Undo, afterEach undoes the batch through the API (it runs after a timeout too).
+// spec can run again on the same database. What stays afterwards is the run's two soft-deleted
+// customers (the file has no address columns), its undone batch, which counts toward the 50 imports
+// a day, the saved customers columns (one row, replaced in place by the next run) and its audit
+// rows (the log is append-only). If a step fails before the Undo, afterEach undoes the batch
+// through the API (it runs after a timeout too).
 test.describe("data import (api mode)", () => {
   const run = Date.now().toString(36);
   const csv = [
