@@ -64,7 +64,7 @@ This session is item 1, the third bug: B1. B2 and B3 are in this branch's histor
 ### Tests
 - **Shared:** a new `quote-without-cost.test.ts` (absent, undefined and null costs; mixed lines; no lines; every fixture document stripped as the API strips for Sales; `storedCost`; `invoiceFromQuote`; `quoteLineFor` with a stripped product); `quoteLineFor`'s shape in `quotes.test.ts`; `seesQuoteMargin` in `access-rules.test.ts`.
 - **Web:** `quote-summary-margin.test.tsx`, four cases (Sales without cost; both keys without cost; margin key only with cost; both keys with cost), rendered in the real `WorkspaceContext.Provider`.
-- **API:** one `sales.int.test.ts` case pinning the contract the client relies on: a line sent without `unitCost` is costed from the catalog, and the rep's POST, GET and PUT answers never carry cost while the manager's GET does. It passes before and after, because the server is unchanged.
+- **API:** one `sales.int.test.ts` case pinning the contract the client relies on: a line sent without `unitCost` is costed from the catalog; the rep's POST, GET and status-change answers never carry cost while the manager's GET does; a cost sent with a save is ignored. It passes before and after, because the server is unchanged. (The plan had the rep's PUT; B6 below stops it.)
 - **Api-mode e2e:** in `sales.spec.ts`, Priya's quote builder works with no cost in her answers and no margin; Luis sees margin; B5 as `fixme`. F1 back from `fixme`, with the rule-5 check on its quote request and answer, and three clean-ups.
 - **Mutations M1 to M7** after the fix, each failing its named test.
 
@@ -104,6 +104,30 @@ Planned decisions, each the safest option found. Decisions taken while building 
 
 ### Decisions taken during the build
 
+#### Stages 0 to 2
+- **The PR title** is the orchestrator's ("works without cost and shows no margin"), not the plan's.
+- **B6 found: a saved quote can't be saved again in api mode.** The plan's API check had the rep `PUT` the POST answer back with a sent cost. The server refused it before any B1 code ran:
+  - the API answers `depositPct` and a line's `wastePct` at the `numeric(18,8)` scale (`"50.00000000"`, `"10.00000000"`), and its own `PERCENT` check takes at most 4 decimals, so a re-save of the API's own answer gets 400 "Enter a percent such as 10." for anyone (the manager too);
+  - sent as typed (`"10"`), a salesperson's unchanged waste is compared as text with the stored `"10.00000000"` (`assertWaste`), so she gets 403 "Your role does not allow changing waste.";
+  - the manager's save with the percents as typed is taken (200).
+
+  Checked with three throwaway requests in the integration test, then removed. In the web, any Save on a saved quote sends the draft the API answered, so editing a saved quote fails in api mode. F1 never re-saves (Save as draft, then status changes), and Priya's test doesn't save, so neither meets it.
+
+  **Safest option: record it, don't fix it here.** It is a different rule (server-side input validation and the waste check), not the cost rule, and the owner asked for one small PR per bug. It goes to STATUS as B6 (Q6).
+- **The API test was rebuilt around B6.** It keeps every check B1 relies on: the rep's POST answer and her GET have no `unitCost`; the stored cost is the catalog's; the manager's GET carries it. The plan's rep `PUT` became two checks:
+  - the manager's `PUT` with `unitCost: "0.0001"` and the percents as typed is answered with the catalog cost, and the store keeps `"2.1000"` (a sent cost is ignored);
+  - the rep's status change (`POST /quotes/:id/status`, which the builder also takes back as the draft) answers without `unitCost`.
+
+  The stored-cost read counts live lines only, because a save soft-deletes the old ones.
+- **The red api-mode build set the new web unit test aside.** `next build` type-checks `tests/` too, and the test imports `ViewedDocLine`, which didn't exist yet. It sat in the scratchpad for the red build only and came back unchanged.
+- **The B5 probe on the red build:** `B5-PROBE / load-error` and `B5-PROBE /sales?view=team ok`, with no page errors.
+  - The dashboard fails as planned ("This page could not load its data.").
+  - Sales → Team doesn't fail today, but only because of R1. Its people come from `list("users")`, which the API doesn't serve yet (ADR 0034), so they are DemoStore's people. Their ids never match the API's rep ids, so `teamStats` meets no invoice and the table is empty: wrong data, not a crash. It will fail once users move to the API (the `GET /company` move) unless B5 lands first.
+  - Stage 3 settles the `fixme` test on the green probe, as plan 4.4/3 says: keep only the pages that fail, and say why Team was dropped.
+- **The fixture check skips documents without lines** (credit notes issued in the app, ADR 0025). Nothing of them is withheld, and their cost stays `"0.00"`.
+- **The web test strips `unitCost` by `delete` on a `ViewedDocLine` copy,** not by destructuring into an unused name, which lint would flag.
+- **The stop-after-3 throwaway** (`flows/zz-f1-stop.spec.ts`, never committed) names its records `madeInvoice` and `depositPayment`, because the flow already has a `deposit` amount. It stops with `if (process.env.F1_STOP !== "no") throw …`, so the steps after it still type-check and lint while it sits in the tree.
+
 ## Which test pins which path
 - **Crash on Add product:** `quote-without-cost.test.ts` (absent, undefined and null costs), Priya's api-mode test, F1 step 1.
 - **A saved quote opens:** Priya's api-mode test (a seeded quote), F1 (the page reads `GET /quotes` again after the save, B2).
@@ -124,25 +148,27 @@ None blocks the build.
 - **Q3.** Should DemoStore strip cost like the API, so the demo meets the same missing-cost paths? Not done; it is the spec's known gap.
 - **Q4.** Should the contract types say when a field may be withheld? `Product.cost`, `DocLine.unitCost`, `Invoice.cost`, `ContractLine.estimatedCost` and `Employee.payRate` are typed as present but are stripped. That would be a typed "as received" record, for example for P13.
 - **Q5, CI time:** F1 adds about 18 to 28 s to `verify` (B3's throwaway 17.7 s; the flows session 28 s); the measured value goes here. This joins PR #42's Q1.
+- **Q6, B6:** editing a saved quote fails in api mode. The API answers percents at `numeric(18,8)` scale, which its own percent check refuses, and its waste check compares text. Fix it on the server: accept any scale up to 8 decimals and compare waste by value? Or on the client, sending percents as typed? Queue it after B4 and B5, or earlier? It touches input validation and a permission check, so it needs a security review.
 
 ## For STATUS
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first: B3 changed it.
 
-- **"In progress" and "Next three tasks" item 1:** B1 done in PR #NN; "F1 runs since B1; F5 needs B4". **Append B5 after B4** (don't reorder): "then B5 (a salesperson's dashboard and Sales → Team in api mode; security review), found in B1's audit; the owner may move it (Q2)".
+- **"In progress" and "Next three tasks" item 1:** B1 done in PR #46; "F1 runs since B1; F5 needs B4". **Append B5 after B4** (don't reorder): "then B5 (a salesperson's dashboard and Sales → Team in api mode; security review), found in B1's audit; the owner may move it (Q2)".
 - **"Done":** a B1 entry: the PR, this log, the ADR 0037 section, one delta row, the checks with counts, the review rounds.
 - **"Api-mode bugs the flows found":**
   - the header lists B2, B3 and B1 as fixed with their PRs, "so F1 and F2 run; F5 waits on B4";
   - remove the B1 bullet;
-  - add **B5**: "a salesperson's dashboard (her landing page) and Sales → Team fail in api mode: `GET /invoices` leaves out `cost` without product cost (rule 5), and `monthlyPnl` (the dashboard loader), `salesTotals`, `teamStats`, `bestSellersIn` and the margin sparkline (`dashboard-page.tsx:86`) add or subtract it." Cite the probe's `B5-PROBE` result (stage 1 and stage 3 below). "The fix needs **the unknown-cost rule** (as B1's `computeTotals`) **and the both-keys rule** (`seesQuoteMargin`, ADR 0055 S17) for the margin displays gated by the margin key alone (`dashboard-page.tsx:106`, `best-sellers.tsx:61`, `:153`, `:170`, `team-table.tsx:69`, `revenue-panel.tsx:75`). It touches `monthlyPnl`, which feeds the API's P&L, so it needs its own PR and a security review. Its test is committed as `fixme` in `apps/web/tests/e2e-api/sales.spec.ts`.";
+  - add **B5** (the red build's probe: the dashboard `load-error`; Sales → Team `ok` only because its people are still DemoStore's, see "Decisions taken during the build"): "a salesperson's dashboard (her landing page) and Sales → Team fail in api mode: `GET /invoices` leaves out `cost` without product cost (rule 5), and `monthlyPnl` (the dashboard loader), `salesTotals`, `teamStats`, `bestSellersIn` and the margin sparkline (`dashboard-page.tsx:86`) add or subtract it." Cite the probe's `B5-PROBE` result (stage 1 and stage 3 below). "The fix needs **the unknown-cost rule** (as B1's `computeTotals`) **and the both-keys rule** (`seesQuoteMargin`, ADR 0055 S17) for the margin displays gated by the margin key alone (`dashboard-page.tsx:106`, `best-sellers.tsx:61`, `:153`, `:170`, `team-table.tsx:69`, `revenue-panel.tsx:75`). It touches `monthlyPnl`, which feeds the API's P&L, so it needs its own PR and a security review. Its test is committed as `fixme` in `apps/web/tests/e2e-api/sales.spec.ts`.";
+  - add **B6**: "a saved quote can't be saved again in api mode: the API answers `depositPct` and `wastePct` at `numeric(18,8)` scale (`"50.00000000"`), its own percent check takes at most 4 decimals (400 "Enter a percent such as 10." for anyone), and `assertWaste` compares waste as text, so a salesperson's unchanged waste sent as typed reads as changed (403). Found by B1's API test (session log 2026-11-16-2320). Its own PR with a security review (Q6)."
   - O2 stays;
   - add: "Cost displays gated only by the shell's `can()` (`product-drawer.tsx`, `roll-page.tsx`, `products-table.tsx`, `rolls-table.tsx`, `purchasing/order-drawer.tsx`) crash in `formatNumber(undefined)` when `can()` says yes while the server stripped the cost (R1). Not reachable for default roles; goes with the `GET /company` move."
-- **"Flows' local runs leave data":** F1 leaves per complete run a customer, a converted quote, a Partly paid invoice with a voided deposit and a confirmed final payment, and about 1 ft cut from Denver Fieldstone.
+- **"Flows' local runs leave data":** B1's red run of F1 stopped in step 1 and left a customer with a job-site address (no quote). F1 leaves per complete run a customer, a converted quote, a Partly paid invoice with a voided deposit and a confirmed final payment, and about 1 ft cut from Denver Fieldstone.
 - **PR #42 final review notes:**
-  - the B1 bullet: "B1 fixed on the client in PR #NN (no cost sent; none ever needed)";
+  - the B1 bullet: "B1 fixed on the client in PR #46 (no cost sent; none ever needed)";
   - the rule-5 bullet: F1 now checks the quote request and answers, and `sales.spec` Priya's products and quotes; Bri's portal and Cole's rolls are still unchecked;
   - the clean-ups bullet: "F5 registers none (`fixme`). F1 registers three (invoice void, deposit void, final reject if waiting), proved once by a stopped throwaway run."
 - **Q1 (CI time):** the measured F1 time and the whole api-mode suite's time (stage 3).
-- **Owner questions (PR #NN, B1):** Q1 to Q5 above.
+- **Owner questions (PR #46, B1):** Q1 to Q6 above.
 - **New follow-ups:** typed "as received" records (Q4); the View as banner, after B5; the installation jobs move must handle a withheld `jobCost`, `laborCost` and `jobMargin`.
 - **BRANCHES:** a `fix/sales-quote-without-cost` row: "B (Claude)", "B1: a salesperson's quote builder works without cost; margin needs product cost too (main checkout; stacked on #45)", "Draft" then "Ready", the PR, "see the branch".
 
@@ -152,3 +178,19 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b1/logs
 | Stage | Command | Result |
 | --- | --- | --- |
 | 0 | `docker ps`; ports 3000 and 4000 | the compose PostgreSQL on 5432 and the api e2e one on 5433 up; both ports free |
+| 0 | `gh pr create --draft …` | draft PR #46 |
+| 1 | `heavy.sh pnpm --filter @workspace/shared exec vitest run` on `quote-without-cost`, `access-rules` and `quotes`, before the fix | red as expected: 25 failed, 24 passed. `DecimalError` for absent, undefined and null costs, mixed lines and both companies' fixtures; "is not a function" for `seesQuoteMargin` (10), `quoteLineFor` (6) and `storedCost` (1); the two refusals got `DecimalError` instead of the stored-cost message. The strip check, no lines and `invoiceFromQuote`'s "260.00" passed |
+| 1 | `heavy.sh pnpm --filter web exec vitest run tests/unit/quote-summary-margin.test.tsx`, before the fix | red as expected: 3 failed, 1 passed. (a) and (b) `DecimalError` in the test's own `computeTotals`; (c) showed Margin; (d) passed |
+| 1 | `heavy.sh pnpm --filter api exec vitest run --project integration test/sales.int.test.ts` (PostgreSQL on 5432), before the fix | the plan's version failed at the rep's `PUT`: 400 "Enter a percent such as 10." (B6). Three throwaway requests then showed the rep's save with typed percents 403 (waste), the manager's 200, and the manager's raw answer 400; they were removed. The rebuilt case: 7 passed (it pins the server, which B1 doesn't change) |
+| 1 | `heavy.sh flows/api-e2e.sh b1-red --build -- sales.spec, F1, zz-b1-probe` | the web build failed at `next build`'s TypeScript step (the new web unit test imports `ViewedDocLine`); nothing ran |
+| 1 | the same, with the web unit test set aside | builds in 6 s; exit 1 after 49 s: 3 passed (the manager's quotes, Luis's margin 1.9 s, the probe), 2 failed, 1 skipped (B5). F1 failed in step 1 waiting for the Fieldstone quantity after Add product (19.1 s); Priya's test failed at the same field, with "This screen stopped working." in her page snapshot. `B5-PROBE / load-error`, `B5-PROBE /sales?view=team ok`, no `pageerror` lines |
+| 2 | the targeted shared and web tests after the fix | 3 files, 49 passed; 1 file, 4 passed |
+| 2 | `heavy.sh b1/checks.sh s2`: shared `test`, `typecheck`, `lint`; web `typecheck`, `lint`, `test`; api `typecheck`, `lint`, `test` | all exit 0: shared 71 files and 1,075 tests (the fixed-seed regeneration among them); web 34 files and 276 tests; api unit 17 files and 124 tests |
+| 2 | `heavy.sh pnpm --filter api exec vitest run --project integration test/sales.int.test.ts test/invoices.int.test.ts test/stock-issue.int.test.ts` | 3 files, 31 passed (conversion and roll invoices through `storedCost`) |
+| 2 | `pnpm exec prettier --check` on the 15 changed files | clean (4 formatted with `--write` first) |
+| 2 | `heavy.sh python3 b1/mutate.py M1 … M7` (each mutation, its test, `git checkout --` and `git diff --quiet`) | each failed its test and was restored: M1 (missing cost as `"0"`) 9 of 49, among them absent, undefined and null, mixed, both fixtures, `storedCost`'s refusal and `quoteLineFor`; M2 (a partial sum) the same 9; M3 (the margin key alone) web (c); M4 (`seesQuoteMargin` without the cost key) its first case; M5 (`storedCost` returns `"0.00"`) the two refusals; M6 (`quoteLineFor` fills `"0"`) the stripped-product case; M7 (`shownMargin` without the null checks) web (b) |
+
+## Left for stage 3
+- **Uncommitted on purpose** (plan stage 3 commits them after the green run): `apps/web/tests/e2e-api/sales.spec.ts` (Priya, Luis and the B5 `fixme` test) and `apps/web/tests/e2e-api/flows/f1-sales-quote-to-cut.spec.ts` (out of `fixme`, the rule-5 checks, three clean-ups).
+- **Throwaways, never committed:** `apps/web/tests/e2e-api/zz-b1-probe.spec.ts` and `apps/web/tests/e2e-api/flows/zz-f1-stop.spec.ts`. Delete both after stage 3, and check `git status --porcelain`.
+- The next api-mode run needs `--build`: the product code changed after the red build.
