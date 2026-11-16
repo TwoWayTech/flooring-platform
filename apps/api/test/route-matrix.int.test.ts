@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DiscoveryModule } from "@nestjs/core";
 import { ExecutionContextHost } from "@nestjs/core/internal";
+import { userProfiles } from "@workspace/db/company";
 import {
   FEATURES,
   isPermissionKey,
@@ -10,18 +11,21 @@ import {
   PRODUCT_MODULES,
   PRODUCT_ROLES,
   rolesRequireMfa,
+  SENSITIVE_FIELDS,
   type DefaultRoleKey,
   type FeatureKey,
   type ModuleKey,
   type ProductKey,
 } from "@workspace/shared";
+import { eq, isNull } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERMISSION_REFUSALS, PermissionGuard } from "../src/core/access/permission.guard";
 import type { AuthSession } from "../src/core/auth/session.service";
 import { TENANCY_REFUSALS, TenantGuard } from "../src/core/tenancy/tenant.guard";
-import { AuthHarness } from "./auth-harness";
+import { AuthHarness, SUMMIT_ID } from "./auth-harness";
+import { decimalProblems, leaks, MUST_STRIP, MUST_STRIP_NOT_EXERCISED, strippableNames } from "./support/json-walk";
 import {
   byCodeUnit,
   concretePath,
@@ -37,13 +41,19 @@ import {
   NO_MODULE_ROUTES,
   NO_SWITCH_ROUTES,
   QUERY_FOR,
+  READ_REFUSED_IN_HANDLER,
+  SCOPE_RULES,
   SWITCH_READ_IN_SERVICE,
   TIER_B_DEFAULT,
   WRITE_WITH_VIEW_KEY,
+  type ListRow,
+  type ScopeFacts,
+  type SweepViewer,
 } from "./support/route-lists";
-import { expectedOutcome, type GuardOutcome } from "./support/route-oracle";
+import { accessFor, expectedOutcome, type GuardOutcome } from "./support/route-oracle";
 import { listRoutes } from "./support/routes";
 import { enrolled } from "./support/sign-in";
+import { summitOracleCompany, summitPersonas } from "./support/summit-access";
 import { withFeaturesOff, withModuleOff } from "./support/switches";
 
 /** The feature keys `featureOn` is asked about while `current` is set (PM-5's trace). */
@@ -170,19 +180,29 @@ describe("route matrix: the guard chain against the shared engine (whole-product
   const cookies = new Map<string, string>();
 
   /**
-   * A session cookie for one person of a matrix company, signed in once and reused; roles that need
-   * MFA enrol an authenticator first (an authenticator is enrolled only once per person).
+   * A session cookie for one person, signed in once and reused; roles that need MFA enrol an
+   * authenticator first (an authenticator is enrolled only once per person).
    */
-  async function cookieFor(product: ProductKey, role: DefaultRoleKey): Promise<string> {
+  async function signedIn(email: string, role: DefaultRoleKey): Promise<string> {
+    const known = cookies.get(email);
+    if (known) return known;
+    const cookie = rolesRequireMfa([role]) ? (await enrolled(harness, email)).cookie : await harness.signIn(email);
+    cookies.set(email, cookie);
+    return cookie;
+  }
+
+  /** A session cookie for the person holding `role` in one matrix company. */
+  function cookieFor(product: ProductKey, role: DefaultRoleKey): Promise<string> {
     const person = company(product).people.get(role);
     if (!person) throw new Error(`No ${role} in the ${product} company.`);
-    const known = cookies.get(person.email);
-    if (known) return known;
-    const cookie = rolesRequireMfa([role])
-      ? (await enrolled(harness, person.email)).cookie
-      : await harness.signIn(person.email);
-    cookies.set(person.email, cookie);
-    return cookie;
+    return signedIn(person.email, role);
+  }
+
+  /** The catalog route with this name; a name no route has is a mistake in a reviewed list. */
+  function routeNamed(name: string): CatalogRoute {
+    const route = catalog.find((candidate) => candidate.name === name);
+    if (!route) throw new Error(`No route ${name} in the catalog.`);
+    return route;
   }
 
   /**
@@ -494,6 +514,208 @@ describe("route matrix: the guard chain against the shared engine (whole-product
       problems.push(...staleEntries(reviewed, ungated).map((name) => `${name}: reviewed, but a switch hides it`));
       expect(problems).toEqual([]);
     }, 180_000);
+  });
+
+  describe.runIf(TIER_B)("Summit sweep: data scope, sensitive fields and decimal strings (PM-6, PM-7, MI-DEC)", () => {
+    const summit = summitOracleCompany();
+    const personas = summitPersonas();
+    /** The seeded personas PM-6 reads as: Sales (own), Manager (Denver), Warehouse (Colorado Springs), Employee (own). */
+    const SCOPE_PERSONAS: readonly DefaultRoleKey[] = ["sales", "manager", "warehouse", "employee"];
+    /** Rule-6 problems in every body PM-7 read, one per route, field and problem with its first place, for MI-DEC. */
+    const decimals = new Map<string, string>();
+    let bodiesRead = 0;
+
+    /** A Summit persona's session cookie, signed in once (the Owner, Accountant and HR enrol MFA). */
+    function summitCookie(role: DefaultRoleKey): Promise<string> {
+      const email = personas.get(role);
+      if (!email) throw new Error(`No Summit persona holds the ${role} role.`);
+      return signedIn(email, role);
+    }
+
+    /** A list read on Summit's Flooring Suite host; anything but 200 with an array fails with the answer. */
+    async function readList(name: string, cookie: string): Promise<ListRow[]> {
+      const response = await send(routeNamed(name), cookie, "flooring", QUERY_FOR[name]);
+      if (response.status !== 200 || !Array.isArray(response.body)) {
+        const body = response.body as { code?: string };
+        throw new Error(`${name}: ${response.status} ${body.code ?? ""}, not a list`);
+      }
+      return response.body as ListRow[];
+    }
+
+    /** The ids of some rows. */
+    const idsOf = (rows: readonly ListRow[]) => new Set(rows.map((row) => String(row.id)));
+
+    /** Each user's branch and linked employee, from Summit's own user profiles (read only). */
+    async function summitProfiles() {
+      const handle = await harness.companyDb(SUMMIT_ID);
+      try {
+        const rows = await handle.db
+          .select({ userId: userProfiles.userId, branchId: userProfiles.branchId, employeeId: userProfiles.employeeId })
+          .from(userProfiles)
+          .where(isNull(userProfiles.deletedAt));
+        return new Map(rows.map((row) => [row.userId, row]));
+      } finally {
+        await handle.close();
+      }
+    }
+
+    /** What the Owner's answers and the profiles say about who owns which row (scope `all` sees everything). */
+    async function scopeFacts(ownerCookie: string, profiles: Awaited<ReturnType<typeof summitProfiles>>) {
+      const [invoices, locations, employees] = await Promise.all(
+        ["GET /invoices", "GET /locations", "GET /employees"].map((name) => readList(name, ownerCookie)),
+      );
+      const field = (row: ListRow, name: string) => (typeof row[name] === "string" ? (row[name] as string) : null);
+      const facts: ScopeFacts = {
+        invoices: new Map(
+          invoices.map((row) => [
+            String(row.id),
+            { salesRepId: field(row, "salesRepId"), branchId: field(row, "branchId") },
+          ]),
+        ),
+        userBranches: new Map([...profiles.values()].map((profile) => [profile.userId, profile.branchId])),
+        locationBranches: new Map(locations.map((row) => [String(row.id), field(row, "branchId")])),
+        managers: new Map(employees.map((row) => [String(row.id), field(row, "managerId")])),
+      };
+      return facts;
+    }
+
+    /**
+     * A test-only Manager at Colorado Springs (the Warehouse persona's branch). Every Summit sales
+     * document and every rep is at Denver, and Cole can't read them, so without this person no
+     * branch-scope reader is ever refused a document and the branch rule is only seen allowing.
+     */
+    async function springsManager(): Promise<string> {
+      const email = await harness.addUser({ companyIds: [SUMMIT_ID], roles: ["manager"] });
+      const [userId, warehouseId] = await Promise.all([
+        harness.userIdOf(email),
+        harness.userIdOf(personas.get("warehouse") ?? ""),
+      ]);
+      const handle = await harness.companyDb(SUMMIT_ID);
+      try {
+        const [warehouse] = await handle.db
+          .select({ branchId: userProfiles.branchId })
+          .from(userProfiles)
+          .where(eq(userProfiles.userId, warehouseId));
+        await handle.db
+          .update(userProfiles)
+          .set({ branchId: warehouse.branchId })
+          .where(eq(userProfiles.userId, userId));
+      } finally {
+        await handle.close();
+      }
+      return email;
+    }
+
+    it("PM-6: shows each sampled persona exactly the rows its data scope covers", async () => {
+      const ownerCookie = await summitCookie("owner");
+      const viewers = [
+        ...SCOPE_PERSONAS.map((role) => ({ label: role, role, email: personas.get(role) ?? "" })),
+        { label: "manager at Colorado Springs", role: "manager" as const, email: await springsManager() },
+      ];
+      const profiles = await summitProfiles();
+      const facts = await scopeFacts(ownerCookie, profiles);
+      const names = Object.keys(SCOPE_RULES).sort(byCodeUnit);
+      const ownerRows = new Map<string, ListRow[]>();
+      for (const name of names) ownerRows.set(name, await readList(name, ownerCookie));
+      const problems: string[] = [];
+      /** Routes where some persona's rule allows some of the Owner's rows but not all, so the sample means something. */
+      const meaningful = new Set<string>();
+      /** Routes where a branch-scope reader was refused some of the Owner's rows, so the branch rule is seen denying. */
+      const branchDenied = new Set<string>();
+      for (const { label, role, email } of viewers) {
+        const userId = await harness.userIdOf(email);
+        const access = accessFor(role, summit);
+        const profile = profiles.get(userId);
+        const viewer: SweepViewer = {
+          userId,
+          branchId: profile?.branchId ?? null,
+          employeeId: profile?.employeeId ?? null,
+          dataScope: access.dataScope,
+          permissions: access.permissions,
+        };
+        const cookie = await signedIn(email, role);
+        for (const name of names) {
+          if (expectedOutcome(routeNamed(name), role, summit) !== "pass") continue;
+          const { sees } = SCOPE_RULES[name];
+          const all = ownerRows.get(name) ?? [];
+          const expected = idsOf(all.filter((row) => sees(row, viewer, facts)));
+          const rows = await readList(name, cookie);
+          const outside = rows.filter((row) => !sees(row, viewer, facts)).map((row) => String(row.id));
+          if (outside.length > 0)
+            problems.push(`${label} ${name}: ${outside.length} rows outside the rule, e.g. ${outside[0]}`);
+          const got = idsOf(rows);
+          const missing = [...expected].filter((id) => !got.has(id));
+          if (missing.length > 0)
+            problems.push(`${label} ${name}: ${missing.length} allowed rows missing, e.g. ${missing[0]}`);
+          if (expected.size > 0 && expected.size < all.length) meaningful.add(name);
+          if (viewer.dataScope === "branch" && expected.size < all.length) branchDenied.add(name);
+        }
+      }
+      expect(problems).toEqual([]);
+      expect(names.filter((name) => !meaningful.has(name))).toEqual([]);
+      expect(names.filter((name) => !branchDenied.has(name))).toEqual([]);
+    }, 120_000);
+
+    it("PM-7: the shared SENSITIVE_FIELDS map holds every MUST_STRIP name with the same key (M4)", () => {
+      const differing = Object.entries(MUST_STRIP)
+        .filter(([name, key]) => !Object.hasOwn(SENSITIVE_FIELDS, name) || SENSITIVE_FIELDS[name] !== key)
+        .map(([name, key]) => `${name}: needs ${key}`);
+      expect(differing).toEqual([]);
+    });
+
+    it("PM-7: sends no role a sensitive field it lacks, on every list read Summit's personas may make", async () => {
+      const reads = companyRoutes.filter((route) => route.method === "GET" && !hasPathParameter(route));
+      const problems: string[] = [];
+      const refusedInHandler = new Set<string>();
+      const shownToOwner = new Set<string>();
+      for (const role of PRODUCT_ROLES.flooring) {
+        const cookie = await summitCookie(role);
+        const held = accessFor(role, summit).permissions;
+        for (const route of reads) {
+          if (expectedOutcome(route, role, summit) !== "pass") continue;
+          const response = await send(route, cookie, "flooring", QUERY_FOR[route.name]);
+          const body = response.body as { code?: string; message?: string };
+          const where = `${role} ${route.name}`;
+          if (response.status === 403 && !isGuardRefusal(response)) {
+            refusedInHandler.add(where);
+            continue;
+          }
+          if (response.status !== 200) {
+            const hint = response.status === 400 ? " (give it a minimal valid query in QUERY_FOR)" : "";
+            problems.push(`${where}: ${response.status} ${body.code ?? ""}${hint}`);
+            continue;
+          }
+          if (!String(response.headers["content-type"] ?? "").includes("application/json")) {
+            problems.push(`${where}: 200 without a JSON body, so nothing was checked`);
+            continue;
+          }
+          bodiesRead += 1;
+          for (const leak of leaks(response.body, held, route.sensitiveKeys)) {
+            problems.push(`${where}: ${leak.field} sent at ${leak.path}`);
+          }
+          for (const found of decimalProblems(response.body)) {
+            const key = `${route.name}: ${found.field} ${found.problem}`;
+            if (!decimals.has(key)) decimals.set(key, `${key} (${found.path})`);
+          }
+          if (role === "owner") for (const name of strippableNames(response.body)) shownToOwner.add(name);
+        }
+      }
+      const notShown = Object.keys(MUST_STRIP).filter((name) => !shownToOwner.has(name));
+      expect({
+        problems,
+        refusedInHandler: [...refusedInHandler].sort(byCodeUnit),
+        notShown: notShown.sort(byCodeUnit),
+      }).toEqual({
+        problems: [],
+        refusedInHandler: Object.keys(READ_REFUSED_IN_HANDLER).sort(byCodeUnit),
+        notShown: Object.keys(MUST_STRIP_NOT_EXERCISED).sort(byCodeUnit),
+      });
+    }, 180_000);
+
+    it("MI-DEC: every body PM-7 read sends money, quantities and rates as decimal strings", () => {
+      expect(bodiesRead).toBeGreaterThan(0);
+      expect([...decimals.values()].sort(byCodeUnit)).toEqual([]);
+    });
   });
 
   describe("PM-1 (g): the route-requirements snapshot", () => {

@@ -4,6 +4,15 @@
  * new route that fits none of the rules fails the matrix until it is added here with a reason, and
  * an entry whose route no longer needs it fails as stale, so the lists never drift from the code.
  */
+import {
+  featureOn,
+  PRODUCT_ROLES,
+  scopeAllows,
+  seesPersonRecords,
+  type DataScope,
+  type DefaultRoleKey,
+  type PermissionKey,
+} from "@workspace/shared";
 
 /** A route's name (`VERB /path`) and why it is an exception. */
 export type Reviewed = Readonly<Record<string, string>>;
@@ -344,5 +353,157 @@ export const EMPTY_BODY_OK: Reviewed = {
   "POST /notifications/read": "With no ids it marks the person's own unread in-app notes read; nobody else's change.",
 };
 
-/** Reads that need a query to answer at all, with a minimal valid one. */
-export const QUERY_FOR: Readonly<Record<string, string>> = {};
+/**
+ * Reads that need a query to answer at all, with a minimal valid one (SH-17). The window is
+ * Summit's last fixture year (anchor 2026-11-04), within the 366-day report limit, so the reads
+ * return data; a fresh company answers them with empty totals.
+ */
+export const QUERY_FOR: Readonly<Record<string, string>> = {
+  "GET /commission-totals": "from=2025-11-05&to=2026-11-04",
+  "GET /reports/business": "from=2025-11-05&to=2026-11-04",
+};
+
+/** Every default Flooring Suite role but the Owner, for the Owner-only reads below. */
+const NOT_OWNER: readonly DefaultRoleKey[] = PRODUCT_ROLES.flooring.filter((role) => role !== "owner");
+
+/**
+ * Reads on Summit (PM-7) that the guards let through but the handler refuses with its own 403, by
+ * `role GET /path`: rules inside handlers the guard matrix can't see (SH-4), pinned so a new one,
+ * or one that stops refusing, is reviewed.
+ */
+export const READ_REFUSED_IN_HANDLER: Reviewed = {
+  ...Object.fromEntries(
+    NOT_OWNER.map((role) => [
+      `${role} GET /billing`,
+      "Any member reaches it; BillingService.of answers only an Owner; anyone else reads 403 forbidden (ADR 0054).",
+    ]),
+  ),
+  ...Object.fromEntries(
+    NOT_OWNER.map((role) => [
+      `${role} GET /support-grants`,
+      "Any member reaches it; the support-access list is for Owners only (blueprint role rule 6).",
+    ]),
+  ),
+  "manager GET /ledger/period-close":
+    "requireCompanyWide: the books cover the whole company, and the Manager's scope is branch.",
+  "manager GET /ledger/trial-balance":
+    "requireCompanyWide: the books cover the whole company, and the Manager's scope is branch.",
+  "manager GET /reports/business": "requireWholeCompany: the Business report covers the whole company (ADR 0055 S1).",
+  "manager GET /reports/pnl": "requireWholeCompany: Profit and loss covers the whole company (ADR 0055 S1).",
+};
+
+/** The person PM-6 reads as: who they are in Summit's own records, and what the shared engine gives them. */
+export interface SweepViewer {
+  userId: string;
+  branchId: string | null;
+  /** The employee linked to their sign-in (user_profiles.employee_id), or null. */
+  employeeId: string | null;
+  dataScope: DataScope;
+  permissions: ReadonlySet<PermissionKey>;
+}
+
+/** What the Owner's answers and Summit's records say about the rows a person may see. */
+export interface ScopeFacts {
+  /** Each invoice's rep and branch, from the Owner's `GET /invoices`. */
+  invoices: ReadonlyMap<string, { salesRepId: string | null; branchId: string | null }>;
+  /** Each user's branch, from Summit's user profiles. */
+  userBranches: ReadonlyMap<string, string | null>;
+  /** Each location's branch, from the Owner's `GET /locations`. */
+  locationBranches: ReadonlyMap<string, string | null>;
+  /** Each employee's manager, from the Owner's `GET /employees`. */
+  managers: ReadonlyMap<string, string | null>;
+}
+
+/** One row of a list as the API sends it. */
+export type ListRow = Readonly<Record<string, unknown>>;
+
+/** A data-scope rule as the spec writes it, and the judge built from it with packages/shared. */
+export interface ScopeRule {
+  /** The rule (docs/api-contract.md), and the service function it was confirmed in. */
+  rule: string;
+  /** Whether the viewer may see the row. */
+  sees: (row: ListRow, viewer: SweepViewer, facts: ScopeFacts) => boolean;
+}
+
+/** A row's text field, or null when it is empty or not text. */
+function text(row: ListRow, field: string): string | null {
+  const value = row[field];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** The plain owner-and-branch rule (spec rule 4, `scopeAllows`): own by the owner, branch by the branch, or all. */
+function ownerAndBranch(viewer: SweepViewer, ownerUserId: string | null, branchId: string | null): boolean {
+  return scopeAllows(viewer.dataScope, viewer, { ownerUserId, branchId });
+}
+
+/** The HR person rule (`ownOrReports`, `seesPersonRecords`): one's own employee, direct reports at branch, all at all. */
+function ownOrReports(viewer: SweepViewer, employeeId: string | null, facts: ScopeFacts): boolean {
+  if (employeeId === null || !facts.managers.has(employeeId)) return false;
+  return seesPersonRecords(viewer.dataScope, viewer.employeeId, {
+    id: employeeId,
+    managerId: facts.managers.get(employeeId) ?? null,
+  });
+}
+
+/** The `byRep` rule of quotes, invoices and contracts: own by the rep, branch by the document's branch. */
+const byRep: ScopeRule["sees"] = (row, viewer) =>
+  ownerAndBranch(viewer, text(row, "salesRepId"), text(row, "branchId"));
+
+/**
+ * The data-scope rule of each list PM-6 samples on Summit, written from docs/api-contract.md and
+ * confirmed in the module's service. Each judge is built from the shared `scopeAllows` and
+ * `seesPersonRecords`, never from the API's own filters, so a person's rows can be checked both
+ * ways: none outside the rule, and none of the Owner's rows the rule allows missing. Meetings
+ * follow their own rules and are covered by meetings.int.test.ts.
+ */
+export const SCOPE_RULES: Readonly<Record<string, ScopeRule>> = {
+  "GET /contracts": {
+    rule: "byRep: own by the rep, branch by the contract's branch (contracts, 'Data scope'); ContractsService.list → seesContract.",
+    sees: byRep,
+  },
+  "GET /customers": {
+    rule: "Own by the rep, branch by the rep's branch (sales, 'Data scope'); SalesService.customers → seesCustomer.",
+    sees: (row, viewer, facts) => {
+      const rep = text(row, "salesRepId");
+      return ownerAndBranch(viewer, rep, rep === null ? null : (facts.userBranches.get(rep) ?? null));
+    },
+  },
+  "GET /employees": {
+    rule: "Everyone for holders of hr.employee.view with hr.employees on (the People directory); otherwise ownOrReports, work facts only (hr, GET /employees); PeopleService.list.",
+    sees: (row, viewer, facts) =>
+      (viewer.permissions.has("hr.employee.view") && featureOn("hr.employees")) ||
+      ownOrReports(viewer, text(row, "id"), facts),
+  },
+  "GET /expenses": {
+    rule: "Own by the recorder, branch by the location's branch, company-wide ones only at all; payroll months only with hr.payroll.view (finance, GET /expenses); ExpensesService.list → seesExpense, seesPayroll.",
+    sees: (row, viewer, facts) => {
+      const location = text(row, "locationId");
+      const branch = location === null ? null : (facts.locationBranches.get(location) ?? null);
+      const payrollAllowed = row.category !== "payroll" || viewer.permissions.has("hr.payroll.view");
+      return payrollAllowed && ownerAndBranch(viewer, text(row, "recordedById"), branch);
+    },
+  },
+  "GET /invoices": {
+    rule: "byRep: own by the rep, branch by the invoice's branch (sales, GET /invoices); InvoicesService.invoices → seesDocument.",
+    sees: byRep,
+  },
+  "GET /payments": {
+    rule: "Payments on invoices within scope (sales, GET /payments); InvoicesService.payments → visibleInvoiceIds.",
+    sees: (row, viewer, facts) => {
+      const invoice = facts.invoices.get(text(row, "invoiceId") ?? "");
+      return invoice !== undefined && ownerAndBranch(viewer, invoice.salesRepId, invoice.branchId);
+    },
+  },
+  "GET /pto-requests": {
+    rule: "ownOrReports by the request's employee (hr, 'Data scope'); TimeOffService.listRequests → personScope.",
+    sees: (row, viewer, facts) => ownOrReports(viewer, text(row, "employeeId"), facts),
+  },
+  "GET /quotes": {
+    rule: "byRep: own by the rep, branch by the quote's branch (sales, GET /quotes); SalesService.quotes → seesDocument.",
+    sees: byRep,
+  },
+  "GET /timesheets": {
+    rule: "ownOrReports by the sheet's employee (hr, 'Data scope'); TimesheetsService.list → personScope.",
+    sees: (row, viewer, facts) => ownOrReports(viewer, text(row, "employeeId"), facts),
+  },
+};
