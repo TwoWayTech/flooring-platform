@@ -1095,3 +1095,47 @@ describe("SR-28: an Undo never puts back what stock is valued at (ADR 0057 S-5, 
     expect(productUndoProblem(customerChange, facts(true, []))).toBeNull();
   });
 });
+
+describe("SR-29: an address file never relabels a stored address with an empty type (spec rule 7)", () => {
+  const BILLING = { id: "adr-bill", label: "billing" as const, ...ADDRESS };
+  const ctx = () =>
+    contextFor({
+      customers: [
+        customer({ id: "cus-bill", externalId: "CUST-29", addresses: [{ ...BILLING }], defaultBillingId: BILLING.id }),
+      ],
+    });
+
+  /** An addresses file under the template's headers without Address type, as a file that never had the column. */
+  function untyped(rows: Record<string, string>[]) {
+    const def = importKind("addresses");
+    const fields = def.fields.filter((f) => f.key !== "label");
+    const headers = fields.map((f) => f.label);
+    const table = { headers, rows: rows.map((r) => fields.map((f) => r[f.key] ?? "")) };
+    return { kind: "addresses" as const, fileName: "sites.csv", table, mapping: autoMap(def, headers) };
+  }
+
+  it("skips the same street and ZIP as already on file when the type column is left out", () => {
+    const result = planImport(IMPORT_HANDLERS.addresses, untyped([{ customer: "CUST-29", ...ADDRESS }]), ctx());
+    expect(result.rows.map((r) => [r.action, r.note])).toEqual([["skip", "Already on file."]]);
+    expect(result.changes).toEqual([]);
+  });
+
+  it("keeps it billing, and no default job site, with Default = yes and no type, column or cell", () => {
+    const row = { customer: "CUST-29", ...ADDRESS, default: "yes" };
+    for (const request of [untyped([row]), requestFor("addresses", [row])]) {
+      const result = planImport(IMPORT_HANDLERS.addresses, request, ctx());
+      expect(result.rows.map((r) => [r.action, r.note])).toEqual([["skip", "Already on file."]]);
+      expect(result.changes).toEqual([]);
+    }
+  });
+
+  it("still makes a new address without a type a job site, and the default job site when there is none", () => {
+    const row = { customer: "CUST-29", ...ADDRESS, street: "7 Cedar Road" };
+    const result = planImport(IMPORT_HANDLERS.addresses, untyped([row]), ctx());
+    expect(planActions(result.rows)).toBe("c");
+    const after = result.changes[0]!.after as Customer;
+    expect(after.addresses.map((a) => a.label)).toEqual(["billing", "job_site"]);
+    expect(after.defaultBillingId).toBe(BILLING.id);
+    expect(after.defaultJobSiteId).toBe(after.addresses[1]!.id);
+  });
+});

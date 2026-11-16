@@ -1,8 +1,14 @@
 import type { CompanyDb, ControlDb } from "@workspace/db";
 import type { ImportChange, ImportCollection, ImportWorld } from "@workspace/shared";
 
-/** The tables an import creates rows in, which the Undo reference check looks for links to. */
-export type ReferenceTable = "customers" | "addresses" | "suppliers" | "supplier_contacts" | "products";
+/**
+ * The tables an import creates rows in, which the Undo reference check looks for links to and
+ * whose rows Undo locks: the only table names it puts into SQL as identifiers.
+ */
+export const REFERENCE_TABLES = ["customers", "addresses", "suppliers", "supplier_contacts", "products"] as const;
+
+/** One of the tables an import creates rows in. */
+export type ReferenceTable = (typeof REFERENCE_TABLES)[number];
 
 /** One row an import created: a record, or a part of one such as a customer's address. */
 export interface ReferenceTarget {

@@ -1,6 +1,6 @@
 import type { CompanyDb } from "@workspace/db";
 import { inArray, notInArray, sql } from "drizzle-orm";
-import type { ReferenceTable, ReferenceTarget } from "./kind-store";
+import { REFERENCE_TABLES, type ReferenceTable, type ReferenceTarget } from "./kind-store";
 
 /** A link from one table's column to the records an import created. */
 interface Link {
@@ -94,6 +94,28 @@ async function firstLinked(
     if (row) return row.ref;
   }
   return null;
+}
+
+/**
+ * Locks the rows an Undo will soft-delete, `FOR UPDATE`, table by table from the fixed list and in
+ * id order (ADR 0057 api 4.6 step 5, S-14). The table locks let a foreign-key insert elsewhere (a
+ * quote, an order line) through, and its check holds `FOR KEY SHARE` on the row it names, which
+ * `FOR UPDATE` waits for: so the Undo waits for a writer still saving a link to one of these rows,
+ * at most the 10-second lock timeout (409 `import_busy`), and the reference check after it, a new
+ * READ COMMITTED statement, sees that link once it commits. Only the batch's own rows are locked,
+ * so writes naming other records never wait.
+ */
+export async function lockTargets(tx: CompanyDb, targets: readonly ReferenceTarget[]): Promise<void> {
+  for (const table of REFERENCE_TABLES) {
+    const ids = [...new Set(targets.filter((target) => target.table === table).map((target) => target.id))].sort();
+    for (const slice of chunks(ids)) {
+      await tx.execute(sql`
+        select id from ${sql.identifier(table)}
+        where ${inArray(sql`id`, slice)}
+        order by id
+        for update`);
+    }
+  }
 }
 
 /**

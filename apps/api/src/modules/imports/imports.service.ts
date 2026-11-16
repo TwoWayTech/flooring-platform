@@ -59,11 +59,23 @@ import {
   summaryOf,
   upsertMapping,
 } from "./import-records";
-import { firstReference } from "./import-references";
+import { firstReference, lockTargets } from "./import-references";
 import { changeKey, type KindStore, type ReferenceTarget } from "./kind-store";
 
 /** Committed imports a company may make in 24 hours (ADR 0057 S-12); dry runs don't count. */
 const DAILY_IMPORTS = 50;
+
+/**
+ * The rows an Undo of `change` soft-deletes, which are the reference check's targets (ADR 0057 api
+ * 4.8): the record when the import created it, and every part it created, such as a new address
+ * on an updated customer.
+ */
+function createdRows(store: KindStore, change: ImportChange): ReferenceTarget[] {
+  return [
+    ...(change.before === null ? [{ table: store.record(change.collection).table, id: change.id }] : []),
+    ...store.createdParts(change),
+  ];
+}
 
 /** The batch a dry run plans under: nothing is numbered or kept. */
 const PREVIEW = { id: "preview", number: "this import" };
@@ -244,6 +256,9 @@ export class ImportsService {
         const store = openKind(actor.access, batch.kind);
         openColumns(actor.access, batch.kind, batch.mapping);
         await store.lock(tx);
+        // Waits for a writer still saving a link to a row this Undo removes, so the check below sees it (S-14).
+        const removed = batch.changes.flatMap((change) => createdRows(store, change));
+        await lockTargets(tx, removed);
         await this.assertUnchanged(tx, store, batch.changes);
         const problem = await store.undoProblem(tx, batch.changes);
         if (problem) throw conflict("import_in_use", problem);
@@ -342,10 +357,7 @@ export class ImportsService {
    * itself wrote never count.
    */
   private async firstUsed(tx: CompanyDb, store: KindStore, changes: readonly ImportChange[]): Promise<string | null> {
-    const partsOf = (change: ImportChange): ReferenceTarget[] => [
-      ...(change.before === null ? [{ table: store.record(change.collection).table, id: change.id }] : []),
-      ...store.createdParts(change),
-    ];
+    const partsOf = (change: ImportChange) => createdRows(store, change);
     const targets = changes.flatMap(partsOf);
     const batchIds = new Set([...changes.map((change) => change.id), ...targets.map((target) => target.id)]);
     const found = await firstReference(tx, targets, batchIds);

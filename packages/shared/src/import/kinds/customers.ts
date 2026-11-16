@@ -161,9 +161,10 @@ function resolveAddress(row: ParsedRow, ctx: KindContext): RowOutcome {
   const place = rowAddress(row);
   if ("error" in place) return refuse(place.field, place.error);
   const address = place.address!;
-  const labelOf = (row.label as CustomerAddressLabel | null) ?? "job_site";
   const existing = customer.addresses.find((a) => sameAddress(a, address));
   if (!existing && customer.addresses.length >= MAX_ADDRESSES) return { problems: [TOO_MANY_ADDRESSES] };
+  // An empty Address type never relabels a stored address (spec rule 7); only a new one defaults to a job site.
+  const labelOf = (row.label as CustomerAddressLabel | null) ?? existing?.label ?? "job_site";
   const id = existing?.id ?? ctx.newId("adr");
   const entry = { ...existing, id, label: labelOf, ...address };
   const addresses = existing
