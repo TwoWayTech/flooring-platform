@@ -10,12 +10,23 @@ const namesOf = (field: ImportField) => [field.key, field.label, ...(field.alias
 /**
  * Matches the file's headers to the kind's fields (spec G1 "Map columns: auto-match by header
  * name"). A saved mapping wins where its header is in this file; otherwise a header matches a
- * field's key, label or one of its aliases. Each header feeds one field at most.
+ * field's key, label or one of its aliases. Each header feeds one field at most. A field in
+ * `skip` is never matched, not even from a saved mapping: the sensitive columns the person
+ * can't use (ADR 0057 S-20).
  */
-export function autoMap(def: ImportKindDef, headers: readonly string[], saved?: ColumnMapping): ColumnMapping {
+export function autoMap(
+  def: ImportKindDef,
+  headers: readonly string[],
+  saved?: ColumnMapping,
+  skip: ReadonlySet<string> = new Set(),
+): ColumnMapping {
   const used = new Set<string>();
   const mapping: ColumnMapping = {};
   for (const field of def.fields) {
+    if (skip.has(field.key)) {
+      mapping[field.key] = null;
+      continue;
+    }
     const remembered = saved?.[field.key];
     const header =
       remembered && headers.includes(remembered) && !used.has(remembered)

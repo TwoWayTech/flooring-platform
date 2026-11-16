@@ -2,6 +2,7 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { MAX_IMPORT_BYTES, type ImportTable } from "@workspace/shared";
+import { csvText } from "./csv-text";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol";
 
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -55,10 +56,16 @@ async function parse(file: File): Promise<WorkerResponse> {
   throw new Error("Choose a CSV or Excel file (.csv, .xlsx or .xls).");
 }
 
-/** Writes a table as CSV (with a byte-order mark so Excel reads it as UTF-8) or as an Excel workbook. */
-function write(table: string[][], format: "csv" | "xlsx", sheet: string): WorkerResponse {
+/**
+ * Writes a table as CSV (with a byte-order mark so Excel reads it as UTF-8, and formula cells
+ * escaped when asked: `csvText`) or as an Excel workbook, where SheetJS stores every cell as text
+ * and never as a formula.
+ */
+function write(request: Extract<WorkerRequest, { type: "write" }>): WorkerResponse {
+  const { table, format, sheet, escapeFormulas } = request;
   if (format === "csv") {
-    return { ok: true, type: "write", blob: new Blob(["﻿", Papa.unparse(table)], { type: "text/csv;charset=utf-8" }) };
+    const text = csvText(table, { escapeFormulas });
+    return { ok: true, type: "write", blob: new Blob([text], { type: "text/csv;charset=utf-8" }) };
   }
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(table), sheet.slice(0, 31));
@@ -69,8 +76,7 @@ function write(table: string[][], format: "csv" | "xlsx", sheet: string): Worker
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   try {
-    const response =
-      request.type === "parse" ? await parse(request.file) : write(request.table, request.format, request.sheet);
+    const response = request.type === "parse" ? await parse(request.file) : write(request);
     self.postMessage(response);
   } catch (error) {
     self.postMessage({

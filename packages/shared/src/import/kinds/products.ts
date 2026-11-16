@@ -3,8 +3,9 @@ import { dec } from "../../money";
 import { SQ_FT_PER_SQ_YD, UNIT_LABELS, type SellUnit } from "../../units";
 import type { Product, ProductCategory } from "../../types";
 import type { CellProblem } from "../types";
-import { findParty, patched, text } from "../lookup";
-import type { KindHandler, ParsedRow, PlanContext, RowOutcome } from "../plan";
+import { ambiguous, findParty, keepStored, patched, sameDecimal, text } from "../lookup";
+import { skuKey } from "../lookups";
+import type { KindContext, KindHandler, ParsedRow, RowOutcome } from "../plan";
 
 /** Imported products start with a neutral chip until someone picks a color. */
 const NEUTRAL_SWATCH = "#A39A8E";
@@ -13,10 +14,21 @@ const NEUTRAL_SWATCH = "#A39A8E";
 const FILE_UNIT_LABELS = { ...UNIT_LABELS, sq_yd: "sq yd", carton: "cartons" } as const;
 type FileUnit = keyof typeof FILE_UNIT_LABELS;
 
-/** Coverage and width the product's unit needs (spec section 4): cartons need sq ft per carton, broadloom a width. */
+/** The smallest price or cost that no longer fits numeric(14,4): eleven whole digits (ADR 0057 M3). */
+const TOO_LARGE = dec("10000000000");
+
+const refuse = (field: string, message: string): RowOutcome => ({ problems: [{ field, message }] });
+
+/** A stored coverage the plan may divide by: more than 0, else none. */
+const usableCoverage = (stored: string | undefined) => (stored && dec(stored).gt(0) ? stored : undefined);
+
+/**
+ * Coverage and width the product's unit needs (spec section 4): cartons need sq ft per carton in
+ * every category, adhesives and trims included (ADR 0057 S-18), and broadloom a width.
+ */
 function unitProblems(category: ProductCategory, unit: FileUnit, row: ParsedRow, existing?: Product): CellProblem[] {
   const problems: CellProblem[] = [];
-  if (unit === "carton" && !row.sq_ft_per_carton && !existing?.sqFtPerCarton && category !== "adhesive_trim") {
+  if (unit === "carton" && !row.sq_ft_per_carton && !usableCoverage(existing?.sqFtPerCarton)) {
     problems.push({ field: "sq_ft_per_carton", message: "Products sold by the carton need the sq ft per carton." });
   }
   if (category === "carpet" && !row.width_ft && !existing?.widthFt) {
@@ -27,7 +39,8 @@ function unitProblems(category: ProductCategory, unit: FileUnit, row: ParsedRow,
 
 /**
  * A price from a file, per the catalog's unit (spec A1, plan A-2): the catalog is per sq ft, so a
- * price per sq yd is divided by nine and a price per carton by its coverage.
+ * price per sq yd is divided by nine and a price per carton by its coverage, to at most four
+ * decimals (numeric(14,4)).
  */
 function pricePerSellUnit(price: string, unit: FileUnit, coverage: string | undefined): string {
   if (unit === "sq_yd") return dec(price).dividedBy(SQ_FT_PER_SQ_YD).toDecimalPlaces(4).toString();
@@ -35,29 +48,84 @@ function pricePerSellUnit(price: string, unit: FileUnit, coverage: string | unde
   return price;
 }
 
-/**
- * Products (spec G1): matched on SKU. The supplier must already be in the app (import suppliers
- * first). Price and cost are per sq ft for area goods, as on the product screen; a file in sq yd
- * or cartons is converted.
- */
-function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
-  const sku = text(row, "sku");
-  const existing = ctx.world.products.find((p) => p.sku.toLowerCase() === sku.toLowerCase());
-  const supplierKey = text(row, "supplier");
-  const supplier = findParty(ctx.world.suppliers, supplierKey);
-  if (!supplier) {
+/** A converted price or cost that no longer fits the column (ADR 0057 M3, S-18), or null. */
+function tooLarge(price: string, cost: string): CellProblem | null {
+  if (dec(price).gte(TOO_LARGE)) {
+    return { field: "price", message: "Price is too large once converted to a price per sq ft." };
+  }
+  if (dec(cost).gte(TOO_LARGE)) {
+    return { field: "cost", message: "Cost is too large once converted to a price per sq ft." };
+  }
+  return null;
+}
+
+/** The SKU's live product: one, none, or a refusal when case variants of it are several products (ADR 0057 S-16). */
+function matchSku(sku: string, ctx: KindContext): { product?: Product } | { problem: CellProblem } {
+  const found = ctx.lookups.productsBySku.find(sku);
+  if (found.length > 1) {
     return {
-      problems: [{ field: "supplier", message: `No supplier matches “${supplierKey}”. Import suppliers first.` }],
+      problem: { field: "sku", message: `${found.length} products have the SKU “${sku}”. Fix them in the app first.` },
     };
   }
+  return { product: found[0] };
+}
+
+/**
+ * Whether an update would change what stock was valued at (ADR 0057 S-5, M4): once a product has
+ * any stock movement or roll (stock in transit and deleted rolls included), its cost, category,
+ * selling unit, coverage and roll width stay as they are, and the row is refused.
+ */
+function stockHistoryProblem(
+  existing: Product,
+  next: { cost: string; category: ProductCategory; unit: SellUnit; coverage: string | null; width?: number },
+  ctx: KindContext,
+): CellProblem | null {
+  if (!ctx.lookups.productsWithStock.has(existing.id)) return null;
+  const costChanges = !sameDecimal(existing.cost, next.cost);
+  const otherChanges =
+    next.category !== existing.category ||
+    next.unit !== existing.unit ||
+    (next.coverage !== null && !sameDecimal(existing.sqFtPerCarton, next.coverage)) ||
+    (next.width !== undefined && next.width !== existing.widthFt);
+  if (!costChanges && !otherChanges) return null;
+  return {
+    field: costChanges ? "cost" : "unit",
+    message: `${existing.sku} has stock history, so its cost, category, selling unit, coverage and roll width stay as they are. Leave them as they are or leave the row out.`,
+  };
+}
+
+/**
+ * Products (spec G1; ADR 0057 S-18): matched on SKU. The supplier must already be in the app
+ * (import suppliers first) and match exactly one supplier. Price and cost are per sq ft for area
+ * goods, as on the product screen; a file in sq yd or cartons is converted. A new SKU that a
+ * deleted product held is refused, because SKUs stay unique across deleted products (S-6).
+ */
+function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
+  const sku = text(row, "sku");
+  const match = matchSku(sku, ctx);
+  if ("problem" in match) return { problems: [match.problem] };
+  const existing = match.product;
+  if (!existing && ctx.lookups.retiredSkus.has(skuKey(sku))) {
+    return refuse("sku", `SKU “${sku}” belonged to a deleted product. Use another SKU.`);
+  }
+  const supplierKey = text(row, "supplier");
+  const found = findParty(ctx.lookups.suppliers, supplierKey);
+  if ("none" in found) return refuse("supplier", `No supplier matches “${supplierKey}”. Import suppliers first.`);
+  if ("many" in found) {
+    return refuse("supplier", ambiguous(found.many, "suppliers", supplierKey, "Use their External ID or email."));
+  }
+  const supplier = found.one;
   const category = row.category as ProductCategory;
   const fileUnit = row.unit as FileUnit;
   const problems = unitProblems(category, fileUnit, row, existing);
   if (problems.length) return { problems };
   const unit: SellUnit = fileUnit === "sq_yd" || fileUnit === "carton" ? "sq_ft" : fileUnit;
-  const coverage = (row.sq_ft_per_carton as string | null) ?? existing?.sqFtPerCarton;
+  const coverageCell = row.sq_ft_per_carton as string | null;
+  const coverage = coverageCell ?? usableCoverage(existing?.sqFtPerCarton);
   const price = pricePerSellUnit(text(row, "price"), fileUnit, coverage);
   const cost = pricePerSellUnit(text(row, "cost"), fileUnit, coverage);
+  const size = tooLarge(price, cost);
+  if (size) return { problems: [size] };
   const width = row.width_ft ? Number(row.width_ft) : undefined;
   const reorder = row.reorder_point ? Number(row.reorder_point) : undefined;
   if (!existing) {
@@ -73,7 +141,7 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
       unit,
       price,
       cost,
-      ...(row.sq_ft_per_carton ? { sqFtPerCarton: text(row, "sq_ft_per_carton") } : {}),
+      ...(coverageCell ? { sqFtPerCarton: coverageCell } : {}),
       ...(reorder !== undefined ? { reorderPoint: reorder } : {}),
       ...(width !== undefined ? { widthFt: width } : {}),
       attributes: {},
@@ -82,6 +150,8 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
     };
     return { action: "create", label: sku, writes: [{ collection: "products", record: product }] };
   }
+  const frozen = stockHistoryProblem(existing, { cost, category, unit, coverage: coverageCell, width }, ctx);
+  if (frozen) return { problems: [frozen] };
   const next = patched(existing, {
     name: text(row, "name"),
     brand: row.brand as string | null,
@@ -89,9 +159,9 @@ function resolveProduct(row: ParsedRow, ctx: PlanContext): RowOutcome {
     colorName: row.color as string | null,
     category,
     unit,
-    price,
-    cost,
-    sqFtPerCarton: row.sq_ft_per_carton as string | null,
+    price: keepStored(existing.price, price),
+    cost: keepStored(existing.cost, cost),
+    sqFtPerCarton: keepStored(existing.sqFtPerCarton, coverageCell),
     reorderPoint: reorder,
     widthFt: width,
     supplierId: supplier.id,
@@ -117,6 +187,7 @@ export const PRODUCTS: KindHandler = {
         label: "SKU",
         type: "text",
         required: true,
+        maxLength: 64,
         aliases: ["item", "item number", "product code", "code", "part number"],
         examples: ["RW-5001", "CT-2210"],
       },
@@ -125,6 +196,7 @@ export const PRODUCTS: KindHandler = {
         label: "Name",
         type: "text",
         required: true,
+        maxLength: 200,
         aliases: ["product", "product name", "description"],
         examples: ["Harbor Oak Wide Plank", "Brushed Nickel Reducer"],
       },
@@ -132,6 +204,7 @@ export const PRODUCTS: KindHandler = {
         key: "brand",
         label: "Brand",
         type: "text",
+        maxLength: 100,
         aliases: ["manufacturer", "make"],
         examples: ["Ridgeway", "Cobalt"],
       },
@@ -139,6 +212,7 @@ export const PRODUCTS: KindHandler = {
         key: "collection",
         label: "Collection",
         type: "text",
+        maxLength: 100,
         aliases: ["series", "line"],
         examples: ["Coastline", "Profiles"],
       },
@@ -146,6 +220,7 @@ export const PRODUCTS: KindHandler = {
         key: "color",
         label: "Color",
         type: "text",
+        maxLength: 100,
         aliases: ["color name", "colour"],
         examples: ["Harbor Oak", "Brushed Nickel"],
       },
@@ -188,6 +263,8 @@ export const PRODUCTS: KindHandler = {
         label: "Sq ft per carton",
         type: "number",
         unit: "sq ft",
+        digits: { whole: 10, decimals: 3 },
+        positive: true,
         aliases: ["coverage", "sq ft per box", "sqft per carton"],
         examples: ["23.64", ""],
       },
@@ -196,6 +273,8 @@ export const PRODUCTS: KindHandler = {
         label: "Roll width (ft)",
         type: "number",
         unit: "ft",
+        digits: { whole: 10, decimals: 3 },
+        positive: true,
         aliases: ["width", "roll width"],
         examples: ["", ""],
       },
@@ -203,6 +282,7 @@ export const PRODUCTS: KindHandler = {
         key: "reorder_point",
         label: "Reorder point",
         type: "integer",
+        digits: { whole: 10, decimals: 0 },
         aliases: ["reorder", "min stock"],
         examples: ["40", "25"],
       },
@@ -211,6 +291,7 @@ export const PRODUCTS: KindHandler = {
         label: "Supplier",
         type: "text",
         required: true,
+        maxLength: 320,
         aliases: ["vendor", "supplier name", "supplier id"],
         examples: ["Ridgeway Flooring Supply", "Cobalt Trim Works"],
       },

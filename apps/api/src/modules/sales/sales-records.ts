@@ -76,6 +76,21 @@ export async function loadBranches(db: CompanyDb): Promise<Map<string, string | 
   return new Map(rows.map((row) => [row.userId, row.branchId]));
 }
 
+/** What a customer's audit entry keeps: the customer module's edit and the import write the same shape. */
+export function customerAudit(
+  customer: Pick<Customer, "type" | "name" | "contactName" | "email" | "phone" | "terms" | "addresses">,
+) {
+  return {
+    type: customer.type,
+    name: customer.name,
+    contactName: customer.contactName,
+    email: customer.email,
+    phone: customer.phone,
+    terms: customer.terms,
+    addresses: customer.addresses.map(({ label, street, city, state, zip }) => ({ label, street, city, state, zip })),
+  };
+}
+
 /** Live customers with their addresses and certificate, by name. */
 export async function loadCustomers(db: CompanyDb, ids?: readonly string[]): Promise<Customer[]> {
   const rows = await db
@@ -96,8 +111,19 @@ export async function loadCustomers(db: CompanyDb, ids?: readonly string[]): Pro
       .from(exemptionCertificates)
       .where(and(isNull(exemptionCertificates.deletedAt), inArray(exemptionCertificates.customerId, customerIds))),
   ]);
+  // Grouped once, so loading every customer stays linear when an import reads them all (ADR 0057 M7).
+  const placesOf = new Map<string, (typeof places)[number][]>();
+  for (const place of places) {
+    const list = placesOf.get(place.customerId);
+    if (list) list.push(place);
+    else placesOf.set(place.customerId, [place]);
+  }
+  const certificateOf = new Map<string, (typeof certificates)[number]>();
+  for (const certificate of certificates) {
+    if (!certificateOf.has(certificate.customerId)) certificateOf.set(certificate.customerId, certificate);
+  }
   return rows.map((row) => {
-    const certificate = certificates.find((candidate) => candidate.customerId === row.id);
+    const certificate = certificateOf.get(row.id);
     return {
       id: row.id,
       type: row.type,
@@ -105,19 +131,17 @@ export async function loadCustomers(db: CompanyDb, ids?: readonly string[]): Pro
       contactName: row.contactName,
       email: row.email,
       phone: row.phone,
-      addresses: places
-        .filter((place) => place.customerId === row.id)
-        .map((place) => ({
-          id: place.id,
-          label: place.label,
-          street: place.street,
-          city: place.city,
-          state: place.state,
-          zip: place.zip,
-          ...(place.county ? { county: place.county } : {}),
-          ...(place.lat === null ? {} : { lat: place.lat }),
-          ...(place.lng === null ? {} : { lng: place.lng }),
-        })),
+      addresses: (placesOf.get(row.id) ?? []).map((place) => ({
+        id: place.id,
+        label: place.label,
+        street: place.street,
+        city: place.city,
+        state: place.state,
+        zip: place.zip,
+        ...(place.county ? { county: place.county } : {}),
+        ...(place.lat === null ? {} : { lat: place.lat }),
+        ...(place.lng === null ? {} : { lng: place.lng }),
+      })),
       defaultBillingId: row.defaultBillingId,
       defaultJobSiteId: row.defaultJobSiteId,
       terms: row.terms,

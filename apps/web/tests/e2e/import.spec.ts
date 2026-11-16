@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
 import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, signInAsPlatformAdmin, SUMMIT_OWNER } from "./helpers";
@@ -7,11 +8,23 @@ const CUSTOMERS_CSV = [
   "CUST-9001,Maple Row Builders,orders@maplerow.example,(303) 555-0142,Net 30,25000",
   "CUST-9002,Granite Peak Homes,ap@granitepeak.example,(719) 555-0107,Net 30,15000.00",
   "CUST-9003,Bad Row Supply,not-an-email,(720) 555-0188,Net 30,lots",
+  // A cell a spreadsheet would run as a formula: the error report repeats it, escaped (ADR 0057 S-15).
+  'CUST-9004,Formula Row Supply,"=HYPERLINK(""x"")",(720) 555-0199,Net 30,1000',
 ].join("\n");
 
 /** Uploads a file to the wizard's file step. */
 async function upload(page: Page, name: string, mimeType: string, buffer: Buffer) {
   await page.getByLabel(/Choose a CSV or Excel file/).setInputFiles({ name, mimeType, buffer });
+}
+
+/**
+ * Answers the step-up that the import and its Undo ask for (ADR 0057 S-7). Any six digits pass in
+ * the demo; the real API checks the code (tests/e2e-api/import.spec.ts).
+ */
+async function confirmStepUp(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  await dialog.getByLabel("Authenticator code").fill("123456");
+  await dialog.getByRole("button", { name: "Confirm" }).click();
 }
 
 /** Opens the wizard and picks the kind, landing on the file step. */
@@ -29,7 +42,7 @@ test.describe("data import (spec G1)", () => {
       await signInAs(page, SUMMIT_OWNER, "/settings/import");
       await startImport(page, "Customers");
       await upload(page, "customers.csv", "text/csv", Buffer.from(CUSTOMERS_CSV));
-      await expect(page.getByText(/customers\.csv: 3 rows and 6 columns/)).toBeVisible();
+      await expect(page.getByText(/customers\.csv: 4 rows and 6 columns/)).toBeVisible();
       await page.getByRole("button", { name: "Next" }).click();
 
       // Headers were matched by name, aliases included.
@@ -38,15 +51,22 @@ test.describe("data import (spec G1)", () => {
       await expect(page.getByRole("combobox", { name: "Email" })).toHaveText("E-mail");
       await page.getByRole("button", { name: "Check the file" }).click();
 
-      await expect(page.getByText("Creates 2, updates 0, skips 0; 1 row has errors and is left out.")).toBeVisible();
+      await expect(page.getByText("Creates 2, updates 0, skips 0; 2 rows have errors and are left out.")).toBeVisible();
       await expect(page.getByText("Email: “not-an-email” is not an email address.")).toBeVisible();
       await expect(page.getByText("Credit limit: “lots” is not an amount. Write it like 1250.00.")).toBeVisible();
       await page.getByRole("button", { name: "Import 2 rows" }).click();
+      await confirmStepUp(page);
 
       await expect(page.getByText(/^IMP-1001 imported from customers\.csv$/)).toBeVisible();
       const download = page.waitForEvent("download");
       await page.getByRole("button", { name: "Download error report" }).click();
-      expect((await download).suggestedFilename()).toBe("IMP-1001-errors.csv");
+      const report = await download;
+      expect(report.suggestedFilename()).toBe("IMP-1001-errors.csv");
+      // The formula cell comes back as text: a leading ' and no line or cell that starts with =.
+      const text = readFileSync(await report.path(), "utf8");
+      expect(text).toContain("'=HYPERLINK");
+      expect(text.split(/\r?\n/).filter((line) => line.startsWith("="))).toEqual([]);
+      expect(text).not.toMatch(/(^|,)"?=/m);
 
       await page.goto("/sales?view=customers");
       await page.getByLabel("Search customers").fill("Maple Row");
@@ -57,6 +77,8 @@ test.describe("data import (spec G1)", () => {
       await expect(history.getByRole("row", { name: /IMP-1001.*Customers.*customers\.csv/ })).toBeVisible();
       await history.getByRole("button", { name: "Undo IMP-1001" }).click();
       await page.getByRole("dialog", { name: "Undo IMP-1001?" }).getByRole("button", { name: "Undo import" }).click();
+      await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toContainText("Undoing IMP-1001");
+      await confirmStepUp(page);
       await expect(page.getByText("IMP-1001 undone")).toBeVisible();
       await page.goto("/sales?view=customers");
       await page.getByLabel("Search customers").fill("Maple Row");
@@ -84,6 +106,7 @@ test.describe("data import (spec G1)", () => {
     await page.getByRole("option", { name: "Mail" }).click();
     await page.getByRole("button", { name: "Check the file" }).click();
     await page.getByRole("button", { name: "Import 1 row" }).click();
+    await confirmStepUp(page);
     await page.getByRole("button", { name: "Import another file" }).click();
 
     await upload(page, "customers.csv", "text/csv", Buffer.from("Client,Ref,Mail\nMaple Row Flooring,CUST-9001,"));
@@ -169,6 +192,7 @@ test.describe("data import (spec G1)", () => {
     await page.getByRole("button", { name: "Next" }).click();
     await page.getByRole("button", { name: "Check the file" }).click();
     await page.getByRole("button", { name: "Import 1 row" }).click();
+    await confirmStepUp(page);
     await expect(page.getByText(/^IMP-1001 imported from people\.csv$/)).toBeVisible();
     await page.goto("/hr/employees");
     await page.getByLabel("Search people").fill("Jordan Reyes");
