@@ -25,6 +25,9 @@ export { addDays, mondayOf };
 /** Summit's time zone: the config runs the browser here, and the company's day is the day here. */
 export const COMPANY_ZONE = "America/Denver";
 
+/** The seeded employee who signs in as EMPLOYEE_EMAIL, by the name HR screens, pay reviews and audit labels show. */
+export const EMPLOYEE_NAME = "Bri Alvarez";
+
 /**
  * A run id for a flow's own data: the time in base 36 plus two random base-36 characters, so two
  * runs (or a run and its CI retry) never share a name, reference or number.

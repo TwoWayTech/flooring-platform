@@ -8,15 +8,28 @@ import type {
   OutboxStatus,
   Payment,
   PayPeriod,
+  PayPeriodLine,
+  TimesheetWire,
 } from "@workspace/shared";
-import type { PayPeriodReview } from "@/lib/api/contract";
+import type { MyPortal, PayPeriodReview } from "@/lib/api/contract";
 import { companyToday, PDF_PROOF, waitForAnswer } from "./kit";
 import { ledgerDelta, ledgerMismatches, type ExpectedMoves, type TrialBalance } from "./ledger";
 
 /** Reads an `/api-proxy` route as the request's person and returns its JSON, failing with the answer's text on anything but 200. */
-async function readAs<T>(request: APIRequestContext, path: string): Promise<T> {
+export async function readAs<T>(request: APIRequestContext, path: string): Promise<T> {
   const response = await request.get(`/api-proxy${path}`);
   expect(response.status(), `GET ${path} answered ${response.status()}: ${await response.text()}`).toBe(200);
+  return (await response.json()) as T;
+}
+
+/**
+ * Sends a POST to an `/api-proxy` route as the request's person and returns its JSON, failing with
+ * the answer's text on anything but 201 (how the API answers a POST that worked). For a step no
+ * screen offers and for sweeping an earlier run's leftovers, never for a step a screen does.
+ */
+export async function postAs<T>(request: APIRequestContext, path: string, data?: object): Promise<T> {
+  const response = await request.post(`/api-proxy${path}`, data ? { data } : {});
+  expect(response.status(), `POST ${path} answered ${response.status()}: ${await response.text()}`).toBe(201);
   return (await response.json()) as T;
 }
 
@@ -157,6 +170,46 @@ export async function cellUnder(table: Locator, row: Locator, header: string): P
   const index = headers.indexOf(header);
   expect(index, `a "${header}" column among: ${headers.join(" | ")}`).toBeGreaterThanOrEqual(0);
   return row.locator("th, td").nth(index);
+}
+
+/**
+ * Opens Pay periods on the period holding `day` (`openPayPeriodReview`) and returns that period with
+ * the pay line of the person named `name`. Review rows carry the employee's database id, not the
+ * fixture's, so the name finds the row. Fails when no period holds the day: only a period up to
+ * today can be opened.
+ */
+export async function openPayLine(
+  page: Page,
+  day: string,
+  name: string,
+): Promise<{ period: PayPeriod; line: PayPeriodLine }> {
+  const review = await openPayPeriodReview(page, day);
+  if (!review) throw new Error(`No pay period holds ${day}.`);
+  const row = review.rows.find((r) => r.employee.name === name);
+  if (!row) throw new Error(`The pay period ${review.period.start} to ${review.period.end} has no row for ${name}.`);
+  return { period: review.period, line: row.line };
+}
+
+/** Asserts the open pay period's row for `name` shows, under each column header in `cells`, its text. */
+export async function expectPayRow(page: Page, name: string, cells: Readonly<Record<string, string>>): Promise<void> {
+  const row = page.getByRole("row").filter({ hasText: name });
+  const table = page.locator("table").filter({ has: row });
+  for (const [header, text] of Object.entries(cells))
+    await expect(await cellUnder(table, row, header)).toHaveText(text);
+}
+
+/** GET /me/portal as the API answers it: the screens' MyPortal with each week's hours as decimal strings (ADR 0046). */
+export type PortalAnswer = Omit<MyPortal, "timesheets"> & { timesheets: TimesheetWire[] };
+
+/**
+ * Opens the employee portal page at `path` (My timesheet, My time off) and returns the GET /me/portal
+ * answer it shows. Opening it again is a reload: in api mode a screen reads again only after a
+ * meetings write (STATUS B2), so a flow loads the page afresh to see its own write.
+ */
+export async function openMyPortal(page: Page, path: string): Promise<PortalAnswer> {
+  const answer = waitForAnswer<PortalAnswer>(page, "GET", /^\/api-proxy\/me\/portal$/);
+  await page.goto(path);
+  return answer;
 }
 
 /** The invoice's status pills in order: the leading status, then the labels beside it (ledger.ts `invoiceStatus`). */
