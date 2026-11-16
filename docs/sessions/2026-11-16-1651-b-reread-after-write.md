@@ -192,11 +192,14 @@ Planned decisions, each the safest option found. Decisions taken while building 
 ## Which test pins which path
 | Path | Pinned by |
 | --- | --- |
-| Upload over an existing draft, one tab (the STATUS payroll case) | New F3 test, step 2 (api mode, CI); the pin check failed it on a form that never takes server hours; demo G3-3 (Monday) |
+| Upload over an existing draft, one tab (the STATUS payroll case) | New F3 test, step 3 (step 2 before review round 1; api mode, CI); the pin check failed it on a form that never takes server hours; demo G3-3 (Monday) |
 | Upload into a week with no sheet | F3 main test, step 2, on CI's fresh database; model case (g) |
-| Edited form, then newer hours: the notice, the choice, focus | New F3 test, step 3; model cases (b) and (c) |
-| Clean form, stale Submit from another tab: 409, nothing submitted | New F3 test, step 4; the new `hr.int` case; `demo-timesheets.test.ts` |
+| Edited form, then newer hours: the notice, the choice, focus | New F3 test, step 4; model cases (b) and (c) |
+| Clean form, stale Submit from another tab: 409, nothing submitted | New F3 test, step 5; the new `hr.int` case; `demo-timesheets.test.ts` |
 | One's own save shows no notice | New F3 test, step 1; model cases (d) and (h) |
+| A save's answer shows only the hours it wrote (review round 1) | The second new `hr.int` case (another writer commits right after the save's transaction); it failed before the fix |
+| An answer that differs from the hours sent is taken like any read (review round 1) | Model case (k): a clean form takes it, an edited one asks, both orders |
+| After one's own save, a read back at the opening hours is taken, not skipped (review round 1) | New F3 test, step 2 (the save's re-read held while a second tab puts Monday back); the second pin check failed it on the old form; model case (l) |
 | A save of the stored hours is taken | The new `hr.int` case; `demo-timesheets.test.ts` |
 | Every write re-reads, and no read does | `api-rereads.test.ts`; F2, F3 and F4 on CI; the users page in `login.spec.ts` |
 | The queues, the grid and My time off update in place | F3 steps 3 and 5, F4 steps 2 and 3 |
@@ -291,8 +294,53 @@ All carry `[skip ci]`. Docs in the last commit:
 - docs/api-contract.md: a Conventions bullet, the `PUT /timesheets` row, the ApiClient row's path, and the meetings line;
 - one docs/blueprint-delta.md row.
 
+## Review round 1
+A security reviewer and a correctness reviewer each raised one `should_fix` finding, and a skeptic confirmed both. Nothing was blocking. Both findings come from the same gap: My timesheet took its own save's answer as the hours its form started from.
+
+### Findings
+1. **Security, `timesheets.service.ts` (`save`):** the answer was read after the commit, on a fresh connection outside the lock. An upload or a clock-out waiting on the same employee lock could commit its hours N in that gap. The answer then showed N, and the form made N its base while it still showed the hours Bri typed (E), with a "Saved" toast and no notice. Her next Save or Submit sent E with `expectedDays` N, the stored week equalled `expectedDays`, so E replaced N unseen, and was then submitted.
+2. **Correctness, `my-timesheet.tsx` (`save`):** the same silent overwrite from the client side. `hoursSaved(current, saved.days)` made the answer the base, and `seen` (the last read the form took) changed only on render. A second case: the form opened with A, Bri saved B, and another writer put the week back to A before her re-read landed. That read matched the old `seen` and was skipped. The form kept showing B with base B, and every Save or Submit got a 409 until a reload or a week change.
+
+### Fixes
+- **Server:** `save` returns `this.one(tx, sheetId)` from inside the transaction, so the answer is exactly what this save wrote.
+- **Client:** `hoursSaved(state, sent, answer)` makes the hours sent the base, then takes the answer through `serverHours` like any read. The form records the answer as its last read (`setSeen(readKey(saved))`). `weekLocked` and `readKey` move into `week-hours.ts`, so the render check and the save build the key the same way.
+
+### Decisions and why
+- **Both fixes, not one.** The server fix closes the first finding on this API, but the form should not depend on the answer being exact. The second case of the second finding (a read back at the opening hours being skipped) is client-only, and the server fix does not reach it. The client fix alone would close the first finding too: a clean form takes N, and an edited one asks. But an answer that matches what was written is a contract a client should be able to rely on. Both together is the safest option.
+- **The base after a 200 is the hours sent, not the answer.** A 200 means the server held exactly those hours: it wrote them, or already had them (`overwritesNewerHours` takes a save of the stored hours). Hours have at most two decimals (`hoursTextProblem`), so nothing is rounded between what is sent and what is stored.
+- **`seen` becomes the answer's key.** The answer is the read the model took last. With the server fix, it holds the same hours as those sent.
+- **`hoursSaved` lost its "settled" rule.** `serverHours` always sets `newer`, either to null or to the read, so the rule was redundant once the answer goes through it. Cases (d) and (h) still pass unchanged, apart from the new argument.
+- **Right after its own save, a form with no edits quietly takes another writer's hours.** The toast says "Saved", which is true. This is the rule for any read: nothing is lost, and the form shows what is stored. Recorded, not changed.
+- **Submit's answer and the other HR answers still read after the commit.** No form takes them as the hours it started from: a submit locks the form, which then shows the re-read. They are outside the findings, so they are left as they are.
+- **How the API test makes the race.** The other writer is a direct update of one time entry, on the same pool, run after the save's transaction resolves and before the service goes on. A spy on `TenantConnectionService.db` arms this for one transaction. There is no timing involved. The test failed before the fix: the answer held the other writer's 6 on Tuesday.
+- **How the e2e step makes the race.** `page.route` (times 1) holds the save's re-read of `/me/portal` until a second tab has put Monday back to the hours the form read last. There is no timing here either, and the form must end on those hours whichever of the answer and the re-read comes first (model cases (d), (k) and (l)). Monday's values go 8 (step 1), 4 (the save), 8 (put back), then 6 (the dialog). Each differs from the one before, so no upload is skipped as "Already these hours".
+- **The client pin check needed the old unit test too,** because `next build` type-checks `tests/unit`. The three files were copied to the scratchpad first (`b2/r1-fixed/`) and restored after. `git status` then showed only the intended changes.
+- **No new ADR and no blueprint-delta row.** The plan of record doesn't change. The details go into ADR 0051's dated section, and the contract row now says the answer is the week as this save wrote it.
+
+### Commands (review round 1)
+| Command | Result |
+| --- | --- |
+| `heavy.sh pnpm --filter api exec vitest run --project integration test/hr.int.test.ts -t "answers a save with the hours it wrote"`, before the server fix | failed as intended: the answer was `8,6,8,8,8,0,0`, expected `8,8,8,8,8,0,0` (1 failed, 45 skipped) |
+| the same file with `portal`, `payroll` and `california-pay` int tests, after the fix | 4 files, 86 passed |
+| `heavy.sh b2/checks.sh r1a api:typecheck api:lint`; `prettier --check` on both files | clean, clean, clean |
+| `heavy.sh pnpm --filter web exec vitest run tests/unit/my-week-hours.test.ts`, the new cases on the old model | failed as intended: (k) the form did not take the answer, (l) no `readKey` (2 failed, 10 passed) |
+| the same with `demo-timesheets` and `timesheets-api`, after the fix | 3 files, 16 passed |
+| `heavy.sh b2/checks.sh r1b web:typecheck web:lint`; `prettier --check` | clean, clean, clean |
+| pin check: `api-e2e.sh b2-r1-pin --build -- …/f3-timesheet-to-pay-period.spec.ts --grep "never saves"` with the old `week-hours.ts`, `my-timesheet.tsx` and unit test (the server fixed) | failed at the new step 2 as intended ("the form took the hours saved after its own": expected "8", received "4"). The first try didn't build, because the new unit test needs the new model; the old test was then swapped in too |
+| `api-e2e.sh b2-r1-f3f4 --build -- …/f3-… …/f4-…` with the fix restored | 3 passed: F3 5.1 s, stale-save 2.5 s, F4 4.4 s |
+| `heavy.sh b2/e2e-demo-r1.sh` (demo build; `--project=flooring` portal and flows-batch3, `--project=hr` portal; one worker) | flooring 16 passed (G3-3 among them), hr 1 passed |
+| `api-e2e.sh b2-r1-all --build` (the whole api-mode suite) | exit 0 after 2.0 min: 33 passed, 2 skipped (F1, F5). Flows: F2 8.7 s, F3 4.5 s, stale-save 2.7 s, F4 4.5 s, F6 13.1 s, F7 4.7 s |
+| `heavy.sh b2/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0. Lint and Prettier clean; typecheck clean; `test`: shared 1,046, web 265 (31 files), api unit 124 (17 files), db 18, providers 11; `test:api`: api 628 (35 files), db 59 (8 files), providers 2; hooks 15 |
+
+### Commits (review round 1)
+| Commit | Subject |
+| --- | --- |
+| `7ae53ec` | fix(hr): a timesheet save answers with the hours it wrote |
+| `8df47f1` | fix(portal): the week form takes its own save's answer as a read |
+| (this commit) | docs: B2 review round 1, the save's answer and the form's last read |
+
 ## Left
-- `/review`, then a fresh read-only **security-reviewer**, because payroll hours are touched (no `packages/db` change, so no schema-reviewer). Its focus:
+- Review round 1 is fixed (above). Next comes a fresh read-only reviewer pass on these two fixes, if the workflow runs one. The earlier focus still applies, because payroll hours are touched (no `packages/db` change, so no schema-reviewer):
   - the `PUT /timesheets` check order, the lock and the stored-hours exemption;
   - data scope unchanged, and no tenant from input;
   - demo parity;
