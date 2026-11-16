@@ -375,6 +375,8 @@ marginPct = revenue is zero ? 0 : (revenue - cogs) / revenue * 100
 netIncome = gross - opex
 ```
 
+`cogs` is null for a month with an invoice whose cost the viewer doesn't hold (a browser's data; CLAUDE.md rule 5), and so are `gross`, `marginPct` and `netIncome`. `pnlReport` reads stored invoices, which always carry cost, through `storedPnl`, which refuses a null (ADR 0037, 2026-11-17).
+
 `opex` uses `amount` before tax, includes payroll expenses and has no HR pay or write-offs. So this report's expenses differ from the Business report's Operating expenses.
 
 **Sales by category.** `salesByCategory` in `packages/shared/src/analytics.ts`.

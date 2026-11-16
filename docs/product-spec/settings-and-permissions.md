@@ -452,7 +452,7 @@ Formulas below are copied from the code.
    | Field | Key | Hidden by |
    | --- | --- | --- |
    | Product cost | `inventory.product.view_sensitive` | Screens, through `can(SENSITIVE.productCost)` |
-   | Sales margin | `sales.margin.view_sensitive` | Screens. A quote's margin also needs product cost (`seesQuoteMargin`), since it gives the cost away |
+   | Sales margin | `sales.margin.view_sensitive` | Screens: every margin a screen works out from cost (a quote, the dashboard, Best sellers, Sales → Team) also needs product cost (`seesMargin`), since it gives the cost away. The server's commission margin bases need the margin key only (ADR 0048; owner question) |
    | Job margin | `installation.job.view_sensitive` | Screens |
    | Credit limit | `customers.customer.view_sensitive` | Screens |
    | Pay rate | `hr.employee.view_sensitive` | `DemoStore.list`, which returns `payRate: "0.00"` |
