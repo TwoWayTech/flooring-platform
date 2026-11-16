@@ -247,20 +247,17 @@ Every check is green: the full checks, the whole api-mode suite on a fresh build
 All carry `[skip ci]`. The throwaways (`flows/zz-f5-stop.spec.ts` and `flows/zz-f5-race.spec.ts`, from `make-f5-stop.py` and `make-f5-race.py` in the scratchpad) were deleted after each run and never committed. Correction to `c41abff`'s message: it gives F5's first four runs as 9.4 to 9.6 s, but `b4-f5-b` took 8.4 s.
 
 ## Review rounds
-Not run in this session. It can't start subagents (D7), and the plan leaves the reviews to the orchestrator in that case (§9, stage 5).
-
-The orchestrator still owes:
-- `/review`;
-- a fresh, read-only security-reviewer on this branch's own commits (`7c4003e..HEAD`), with the PR body's "Security review focus" (data scope).
-
-No schema review is needed: there is no schema or migration change.
+### Round 1 (final, clean)
+The orchestrator ran it on this branch's own commits (`7c4003e..149ab66`): a fresh, read-only security-reviewer with the PR body's focus, and a correctness reviewer. Both passed with no blocking finding. No schema review: no schema or migration change.
+- **One should-fix, judged a note by both skeptics:** F5's `voidLeftBilling` checks the message only on a 400, so a 409 from the ledger (`period_closed` when the books are closed through today) passes as settled, against its own JSDoc. One skeptic refuted part of the evidence (no `ledger_account_missing` on a reversal); the other confirmed the mechanism and found no flow that reaches it today. Left as a STATUS follow-up.
+- **Notes kept for later (STATUS, "B4 follow-ups"):**
+  - `nextInvoicesRead` partly duplicates the kit's `waitForAnswer`; the kit should take the option instead.
+  - `POST /contracts` still accepts `salesRepId`, never read; the integration test never sends one.
+  - `newBranch` returns a creator's own branch without checking it is live (no API path deletes a branch yet).
+  - `beforeAll` looks up two ids twice and duplicates `setBranch`.
 
 ## Left
-- **The orchestrator's part:**
-  - `/review` and the security review (above), each finding fixed in its own commit;
-  - the reviewer's summary in the scratchpad's `b4/review-body.md`, to post as a PR review comment at merge;
-  - STATUS and BRANCHES from "For STATUS" above;
-  - the handoff commit without `[skip ci]`.
+- **The orchestrator's part:** done at handoff (review round 1 clean, its summary posted on PR #47, STATUS and BRANCHES from "For STATUS"). The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing; the merge's own push runs CI.
 - **The merge waits for PR #45 (B3) and PR #46 (B1),** which wait for GitHub Actions (blocked by billing).
   - When they merge, `origin/main` is brought into this branch.
   - Then the PR is marked ready, and goes in under the CLAUDE.md self-merge rule once `verify` and `e2e` are green.
@@ -268,6 +265,5 @@ No schema review is needed: there is no schema or migration change.
 - **Doubtful:**
   - The optional pin run (§6.3 run 5, the fix reverted in a build) was not done (stage 3 decisions).
   - The kit's `waitForAnswer` race (For STATUS 11) may touch other flows' GET waits armed right after a write. F4's doesn't; the rest weren't audited.
-- **Next prompt:**
-  - First B5, the place B1's log gave it: a salesperson's dashboard in api mode without cost, its `fixme` in `apps/web/tests/e2e-api/sales.spec.ts`.
-  - Then queue item 2, "`GET /company` first (roles, modules and permission limits, so buttons match what the API allows)". Point it at ADR 0051 R1, the extended "PR #11 security review" note on the invite's branch (Q-B4-2), and the "R1 symptoms found while fixing B4" bullet.
+- **Handoff (2026-11-17 01:25):** STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "B4 follow-ups". GitHub Actions is still blocked by billing, so PR #47 stays a draft until #45 and #46 merge and origin/main is merged in.
+- **Next prompt:** "B5, the next task of the owner's queue of 2026-11-16 (appended after B4 by the safest-option rule): on `fix/sales-dashboard-without-cost`, stacked on #47 while CI is blocked by billing, build the final plan (a salesperson's dashboard and Sales → Team in api mode without cost: the unknown-cost rule and the both-keys margin rule; its `fixme` test in `apps/web/tests/e2e-api/sales.spec.ts` back on), with a security review. Then B6 (a saved quote can be saved again in api mode), then queue item 2, `GET /company` first (point it at ADR 0051 R1, the extended PR #11 security review note on the invite's branch, Q-B4-2, and the STATUS bullet on R1 symptoms found while fixing B4)."
