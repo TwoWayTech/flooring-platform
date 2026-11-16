@@ -9,6 +9,11 @@ import { defineConfig, devices } from "@playwright/test";
  * `pnpm db:seed` with SEED_USER_PASSWORD set; then `pnpm --filter web test:e2e:api`. The tests
  * sign in with SEED_USER_PASSWORD, and global-setup.ts resets the seeded accounts' MFA first. Local values come from the root .env and .env.local when they
  * exist.
+ *
+ * The cross-module flows live in tests/e2e-api/flows, one file per flow, tagged @flow. Each makes its
+ * own data named with a run id, checks deltas rather than counts, and cleans up through the product,
+ * so it runs again on the same database. Run them alone with `--grep @flow`, or leave them out with
+ * `--grep-invert @flow`.
  */
 for (const file of ["../../.env", "../../.env.local"]) {
   if (existsSync(file)) process.loadEnvFile(file);
