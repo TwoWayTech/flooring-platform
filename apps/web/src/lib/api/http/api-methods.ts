@@ -128,8 +128,12 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
  * pull request adds its methods here, with the endpoints from docs/api-contract.md, and its
  * Playwright tests run against the API. `list` and `get` go to the API only for the collections
  * in SERVED_LISTS; the rest stay on the demo client until their module moves.
+ *
+ * Every request but a GET makes the screens read again once the server answered it (the transport;
+ * ADR 0051, "Re-reading after every write", 2026-11-16). A POST that only reads goes through
+ * `requestAsRead`. `api-rereads.test.ts` classifies every method here, by name.
  */
-export const API_METHODS: HttpRoutes = {
+export const API_METHODS = {
   list:
     (http, demo) =>
     <K extends CollectionName>(collection: K) => {
@@ -162,7 +166,8 @@ export const API_METHODS: HttpRoutes = {
   },
   resetRole: (http) => (roleId) => http.request<Role>("POST", `/roles/${roleId}/reset`),
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
-  verifyStepUp: (http) => (code) => http.request<void>("POST", "/auth/step-up", { code }),
+  // Changes no company data, and the write that follows it reads again.
+  verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
   // The platform console (docs/specs/platform-admin.md, part 1). PlatformAdminGuard decides who may
   // call these. The demo's switcher, palette and sign-in keep `listCompanies` on DemoStore.
   listPlatformCompanies: (http) => () => http.request<PlatformCompanySummary[]>("GET", "/platform/companies"),
@@ -331,21 +336,22 @@ export const API_METHODS: HttpRoutes = {
   paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
   // Data import, part 1 (ADR 0057): customers, addresses, suppliers and products on the API. The
   // company is the session's, so `companyId` is never sent; only the chosen columns travel
-  // (`importBody`); writes go through `wrote`, so the history and the record lists read again.
+  // (`importBody`); every write makes the history and the record lists read again (ADR 0051, 2026-11-16).
   // The API asks for a step-up on the commit and on Undo, which the screens give before calling.
   // `testDatabaseConnection` stays on the demo (simulated).
   importOverview: (http) => () => http.request<ImportOverview>("GET", "/imports"),
+  // The dry run writes nothing (ADR 0057), so it never makes the screens read again.
   previewImport: (http) => async (_companyId, request) =>
-    http.request<ImportPreview>("POST", "/imports/check", importBody(request)),
-  runImport: (http, _demo, changed) => async (_companyId, request) =>
-    wrote(changed, http.request<ImportResult>("POST", "/imports", importBody(request, request.expected))),
+    http.requestAsRead<ImportPreview>("POST", "/imports/check", importBody(request)),
+  runImport: (http) => async (_companyId, request) =>
+    http.request<ImportResult>("POST", "/imports", importBody(request, request.expected)),
   // A batch the API made has a UUID; any other id names no import there, so nothing is sent.
-  undoImport: (http, _demo, changed) => async (_companyId, batchId) => {
+  undoImport: (http) => async (_companyId, batchId) => {
     if (!isSaved(batchId)) throw new ApiError(IMPORT_WORDS.gone);
-    return wrote(changed, http.request<ImportBatchSummary>("POST", `/imports/${batchId}/undo`));
+    return http.request<ImportBatchSummary>("POST", `/imports/${batchId}/undo`);
   },
-  saveImportMapping: (http, _demo, changed) => async (_companyId, kind, columns) =>
-    wrote(changed, http.request<ImportMapping>("PUT", `/imports/mappings/${kind}`, { columns })),
+  saveImportMapping: (http) => async (_companyId, kind, columns) =>
+    http.request<ImportMapping>("PUT", `/imports/mappings/${kind}`, { columns }),
   enterBill: (http) => async (poId, input, files) =>
     http.request<Bill>("POST", `/purchase-orders/${poId}/bills`, { ...input, files: await encodeFiles(files) }),
   recordSupplierPayment: (http) => async (input, files) =>
@@ -595,6 +601,7 @@ export const API_METHODS: HttpRoutes = {
         employeeId: input.employeeId,
         weekStart: input.weekStart,
         days: hoursToWire(input.days),
+        expectedDays: hoursToWire(input.expectedDays),
       }),
     ),
   submitTimesheet: (http) => async (id) =>
@@ -604,13 +611,13 @@ export const API_METHODS: HttpRoutes = {
   },
   reopenTimesheet: (http) => async (id, reason) =>
     timesheetFromWire(await http.request<TimesheetWire>("POST", `/timesheets/${id}/reopen`, { reason })),
-  uploadTimesheets: (http) => (input) =>
-    http.request<TimesheetUploadResult>("POST", "/timesheets/upload", {
-      table: input.table,
-      fileName: input.fileName,
-      apply: input.apply,
-      own: input.own,
-    }),
+  uploadTimesheets: (http) => (input) => {
+    const body = { table: input.table, fileName: input.fileName, apply: input.apply, own: input.own };
+    // The dry run (`apply: false`) saves nothing, so only saving the good rows makes the screens read again.
+    return input.apply
+      ? http.request<TimesheetUploadResult>("POST", "/timesheets/upload", body)
+      : http.requestAsRead<TimesheetUploadResult>("POST", "/timesheets/upload", body);
+  },
   requestTimeOff: (http) => (input) =>
     http.request<PtoRequest>("POST", "/pto-requests", {
       employeeId: input.employeeId,
@@ -639,8 +646,9 @@ export const API_METHODS: HttpRoutes = {
   // HR part 2 (ADR 0047): pay periods. Bonuses and contractor payments have API routes but no screen yet.
   listPayPeriods: (http) => async () => {
     // Listing opens the period holding today, as the demo does (hr.md "Pay periods", Create). A
-    // company that can't write (read-only, no pay schedule yet) still lists what it has.
-    await http.request<PayPeriod>("POST", "/pay-periods", {}).catch((failure: unknown) => {
+    // company that can't write (read-only, no pay schedule yet) still lists what it has. This runs
+    // inside a read, so its POST must never make the screens read again, or the read would loop.
+    await http.requestAsRead<PayPeriod>("POST", "/pay-periods", {}).catch((failure: unknown) => {
       if (!(failure instanceof HttpApiError) || failure.status < 400 || failure.status >= 500) throw failure;
     });
     return http.request<PayPeriod[]>("GET", "/pay-periods");
@@ -681,7 +689,7 @@ export const API_METHODS: HttpRoutes = {
     await http.request<unknown>("POST", "/clock/out");
   },
   // Meetings (ADR 0051 part 3): the Meetings page, its drawer and dialogs, and My meetings. Every
-  // write goes through `wrote`, so the screens read again. `simulateReply`, `list` and `get` of
+  // write makes the screens read again (the transport; ADR 0051, 2026-11-16). `simulateReply`, `list` and `get` of
   // "meetings" (Simulate reply reads the demo Outbox's rows) and `updateSettings("meetings")` (the
   // page is hidden in api mode until part 4) stay on DemoStore.
   meetingsData: (http) => async () => {
@@ -704,78 +712,58 @@ export const API_METHODS: HttpRoutes = {
       meetings: [],
       colleagues: [],
     },
-  createMeeting: (http, _demo, changed) => (input) =>
-    wrote(changed, http.request<Meeting>("POST", "/meetings", meetingBody(input))),
-  updateMeeting: (http, _demo, changed) => (id, patch) =>
-    wrote(changed, http.request<Meeting>("PATCH", `/meetings/${encodeURIComponent(id)}`, patchBody(patch))),
-  cancelMeeting: (http, _demo, changed) => (id) =>
-    wrote(changed, http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/cancel`)),
-  removeGuest: (http, _demo, changed) => (meetingId, attendeeId) =>
-    wrote(
-      changed,
-      http.request<Meeting>(
-        "DELETE",
-        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}`,
-      ),
+  createMeeting: (http) => (input) => http.request<Meeting>("POST", "/meetings", meetingBody(input)),
+  updateMeeting: (http) => (id, patch) =>
+    http.request<Meeting>("PATCH", `/meetings/${encodeURIComponent(id)}`, patchBody(patch)),
+  cancelMeeting: (http) => (id) => http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/cancel`),
+  removeGuest: (http) => (meetingId, attendeeId) =>
+    http.request<Meeting>(
+      "DELETE",
+      `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}`,
     ),
-  respondToMeeting: (http, _demo, changed) => (id, reply) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/response`, {
-        partStat: reply.partStat,
-        note: reply.note,
-        proposal: reply.proposal
-          ? { start: reply.proposal.start, durationMin: reply.proposal.durationMin, note: reply.proposal.note }
-          : null,
-      }),
-    ),
-  decideProposal: (http, _demo, changed) => (meetingId, attendeeId, accept) =>
-    wrote(
-      changed,
-      http.request<Meeting>(
-        "POST",
-        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}/proposal`,
-        { accept },
-      ),
+  respondToMeeting: (http) => (id, reply) =>
+    http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/response`, {
+      partStat: reply.partStat,
+      note: reply.note,
+      proposal: reply.proposal
+        ? { start: reply.proposal.start, durationMin: reply.proposal.durationMin, note: reply.proposal.note }
+        : null,
+    }),
+  decideProposal: (http) => (meetingId, attendeeId, accept) =>
+    http.request<Meeting>(
+      "POST",
+      `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}/proposal`,
+      { accept },
     ),
   // The server fixes a request's length and place (MEETING_REQUEST_DEFAULTS), so they are not sent.
-  requestMeeting: (http, _demo, changed) => (input) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", "/meeting-requests", {
-        withUserId: input.withUserId,
-        title: input.title,
-        start: input.start,
-        note: input.note,
-        private: input.private,
-      }),
-    ),
+  requestMeeting: (http) => (input) =>
+    http.request<Meeting>("POST", "/meeting-requests", {
+      withUserId: input.withUserId,
+      title: input.title,
+      start: input.start,
+      note: input.note,
+      private: input.private,
+    }),
   meetingCalendarFile: (http) => (id) =>
     http.request<{ fileName: string; text: string }>("GET", `/meetings/${encodeURIComponent(id)}/calendar.ics`),
-  rescheduleMeeting: (http, _demo, changed) => (move) =>
-    wrote(
-      changed,
-      http.request<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>(
-        "POST",
-        `/meetings/${encodeURIComponent(move.meetingId)}/reschedule`,
-        {
-          meetingId: move.meetingId,
-          planned: move.planned,
-          start: move.start,
-          durationMin: move.durationMin,
-          scope: move.scope,
-        },
-      ),
+  rescheduleMeeting: (http) => (move) =>
+    http.request<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>(
+      "POST",
+      `/meetings/${encodeURIComponent(move.meetingId)}/reschedule`,
+      {
+        meetingId: move.meetingId,
+        planned: move.planned,
+        start: move.start,
+        durationMin: move.durationMin,
+        scope: move.scope,
+      },
     ),
   // Only the SEQUENCE the screen saw: the API rebuilds the meeting from its own record (critic B3).
-  undoReschedule: (http, _demo, changed) => (undo) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(undo.previous.id)}/reschedule/undo`, {
-        sequence: undo.previous.sequence,
-      }),
-    ),
-};
+  undoReschedule: (http) => (undo) =>
+    http.request<Meeting>("POST", `/meetings/${encodeURIComponent(undo.previous.id)}/reschedule/undo`, {
+      sequence: undo.previous.sequence,
+    }),
+} satisfies HttpRoutes;
 
 /**
  * A new meeting as the API takes it (ADR 0051 "Part 3"): only what the server reads. A picked guest
@@ -809,26 +797,6 @@ function patchBody(patch: MeetingPatch): MeetingPatch {
   if (patch.durationMin !== undefined) body.durationMin = patch.durationMin;
   if (patch.reminderMin !== undefined) body.reminderMin = patch.reminderMin;
   return body;
-}
-
-/** Statuses that mean the server answered and the screen may be stale (S2): a refusal reads the meeting again. */
-const ANSWERED_REFUSALS = new Set([400, 403, 404, 409]);
-
-/**
- * A routed write for meetings (ADR 0051 "Part 3") and data import (ADR 0057): the screens read again
- * after it succeeds, and after the server refuses it, since a refusal often means the screen showed
- * something stale. A request
- * that never reached the server, a 401, a 429 or a server failure triggers no re-read.
- */
-async function wrote<T>(changed: () => void, request: Promise<T>): Promise<T> {
-  try {
-    const saved = await request;
-    changed();
-    return saved;
-  } catch (failure) {
-    if (failure instanceof HttpApiError && ANSWERED_REFUSALS.has(failure.status)) changed();
-    throw failure;
-  }
 }
 
 /**

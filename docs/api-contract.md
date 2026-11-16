@@ -24,6 +24,7 @@ The tenant always comes from the session, never from a parameter, as it will on 
   | 500 | `internal_error` | Unexpected; details are logged on the server only |
 
   The web client turns all of these into `ApiError`, so screens handle them as they handle a DemoStore rule error.
+- **Re-reading after a write.** In api mode the HTTP transport tells the screens to read again after every non-GET request the server answered, a success or a 400, 403, 404, 409 or 422 refusal, once the response is OK or refused and before its body is parsed. A GET never does, and neither do a network failure, 401, 429 or 5xx. A POST that only reads goes through `requestAsRead` and never re-reads: `POST /auth/step-up`, `POST /imports/check`, `POST /pay-periods` (it runs inside a read) and the timesheet upload's dry run. A method factory can't re-read on its own (ADR 0051, 2026-11-16).
 - **Lists.** Filtered by data scope on the server. Pagination arrives when a module needs it, as `?limit=&cursor=` returning `{ items, nextCursor }`.
 - **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md).
 - **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
@@ -401,7 +402,7 @@ Module `hr`, so the same routes serve Flooring Suite companies with HR and HR Su
 | `POST /employees/:id/documents` | `hr.employee.edit` | `{ files }` base64, at most 3 per upload. Read through `GET /files/:id` with `hr.employee.view`, or with `hr.portal.view` for one's own (ADR 0049). Audited |
 | `GET /timesheets` | `hr.timesheet.view` | `TimesheetWire[]` in scope (`days` as decimal strings) |
 | `GET /clock-entries` | `hr.timesheet.view` | `ClockEntry[]`: own below scope `all` |
-| `PUT /timesheets` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | `{ employeeId, weekStart, days }`: a workweek start not in the future, valid hours, someone who uses timesheets; refused when the week is submitted or approved. Audited |
+| `PUT /timesheets` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | `{ employeeId, weekStart, days, expectedDays }`: a workweek start not in the future, valid hours, someone who uses timesheets; refused when the week is submitted or approved. `expectedDays` are the seven hours the form started from (seven `"0"` for a week with no sheet), checked by shape only; a missing or malformed one is 400 "Reload the page, then save your hours again.". When the stored week differs by value from `expectedDays` and from `days`, it answers 409 `timesheet_changed` and writes nothing (ADR 0051, 2026-11-16). The answer is the week as this save wrote it, read before the commit. Audited |
 | `POST /timesheets/:id/submit` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | Draft or sent back to submitted; tells the approvers whose access and scope cover the person, in the app. Audited |
 | `POST /timesheets/decisions` | `hr.timesheet.approve` | `{ action: "approve" \| "reject", ids, reason? }`: all or none, submitted only, never one's own; a rejection needs a reason. Emails the employee. Audited with the overtime split |
 | `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | `{ reason }`: approved to draft unless an approved or exported pay period overlaps; never one's own. Audited |
@@ -523,7 +524,7 @@ Parts 1 to 3. These routes are in module `meetings` (403 `module_not_enabled` wi
   - `meetingsData` reads `GET /meetings`, `GET /meeting-guests` (403 or 404 → no guests) and, while `meetings.requests` and `meetings.invites` are on, `GET /me/meetings` (403 or 404 → no colleagues). The reader's id is `viewerUserId` of `GET /me/meetings`, or `user.id` of `GET /auth/context` only when that gave no answer. `newGuestHandling` is always `none`;
   - `myMeetings` reads `GET /me/meetings`, and a 403 or 404 there as nothing to show;
   - `simulateReply`, and `list` and `get` of `meetings` (read only by Simulate reply on the demo Outbox's rows), stay on DemoStore, as do the Outbox and the bell. Settings → Meetings is hidden in api mode until part 4, so `updateSettings("meetings")` is never sent;
-  - after a routed write the server answered, a success or a 400, 403, 404 or 409 refusal, the screens read again; a network failure, 401, 429 or 5xx triggers no re-read.
+  - after a routed write the server answered, a success or a 400, 403, 404, 409 or 422 refusal, the screens read again; a network failure, 401, 429 or 5xx triggers no re-read (since 2026-11-16 the rule for every routed write; see Conventions).
 
 ## Reports (real build, ADR 0055)
 
@@ -809,7 +810,7 @@ Every call added by feature batch 3 (docs/specs/feature-batch-03.md), with what 
 | `startOffboarding(employeeId: string)` | `Employee` | `POST /employees/:id/offboarding` | `hr.employee.edit` | Starts offboarding: the checklist appears and the person is marked as having left (ADR 0024). |
 | `addEmployeeDocuments(employeeId: string, files: File[])` | `void` | `POST /employees/:id/documents (multipart)` | `hr.employee.edit` | Adds documents to a person's file (spec C1 People). |
 | `updateMyEmployeeProfile(patch: MyProfilePatch)` | `Employee` | `PATCH /me/employee` | `hr.portal.view`; the signed-in person, on their own record | The person's own contact details in the portal. |
-| `saveTimesheet(input: TimesheetInput)` | `Timesheet` | `PUT /timesheets/:id` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again. |
+| `saveTimesheet(input: TimesheetInput)` | `Timesheet` | `PUT /timesheets` with `expectedDays` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again. |
 | `submitTimesheet(id: string)` | `Timesheet` | `POST /timesheets/:id/submit` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Sends a sheet for approval and tells the people who can decide it (spec C2). |
 | `decideTimesheets(ids: readonly string[], decision: TimesheetDecision)` | `void` | `POST /timesheets/decisions` | `hr.timesheet.approve` | Approves or rejects submitted sheets (spec C1, ADR 0024). A rejection needs a reason and never changes the hours; nobody decides their own sheet, the same two-person idea as payments. |
 | `reopenTimesheet(id: string, reason: string)` | `Timesheet` | `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | Reopens an approved sheet with a reason, until its pay period is exported (ADR 0024). |

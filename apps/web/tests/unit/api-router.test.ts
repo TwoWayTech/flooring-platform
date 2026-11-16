@@ -57,22 +57,19 @@ describe("routeClient", () => {
     expect(await client.getCompany()).toEqual({ name: "from demo" });
   });
 
-  /** A client whose one routed write tells the screens it changed data (ADR 0051 part 3). */
+  /**
+   * A client with one routed write that only sends its request: the transport, not the factory,
+   * makes the screens read again (ADR 0051, "Re-reading after every write", 2026-11-16).
+   */
   function writingClient(demo: ReturnType<typeof fakeDemo>) {
     const http = new HttpTransport("http://api.test", fetchReturning(200, { id: "m1" }));
     return routeClient(demo as unknown as ApiClient, http, {
-      cancelMeeting: (transport, _demo, changed) => async (id) => {
-        const saved = await transport.request<Awaited<ReturnType<ApiClient["cancelMeeting"]>>>(
-          "POST",
-          `/meetings/${id}/cancel`,
-        );
-        changed();
-        return saved;
-      },
+      cancelMeeting: (transport) => (id) =>
+        transport.request<Awaited<ReturnType<ApiClient["cancelMeeting"]>>>("POST", `/meetings/${id}/cancel`),
     });
   }
 
-  it("re-reads subscribed screens after a routed write reports a change, and still passes the demo store's own changes on", async () => {
+  it("re-reads subscribed screens after a routed write, and still passes the demo store's own changes on", async () => {
     const demo = fakeDemo();
     const client = writingClient(demo);
     const heard: string[] = [];
@@ -118,5 +115,102 @@ describe("HttpTransport", () => {
       throw new TypeError("fetch failed");
     }) as unknown as typeof fetch);
     await expect(http.request("GET", "/company")).rejects.toBeInstanceOf(HttpApiError);
+  });
+});
+
+/**
+ * Which requests make the screens read again (ADR 0051, "Re-reading after every write", 2026-11-16):
+ * a write the server answered, never a read. `rereads` counts the calls to `changed`.
+ */
+describe("HttpTransport re-reads", () => {
+  function transport(fetcher: typeof fetch) {
+    let rereads = 0;
+    const http = new HttpTransport("http://api.test", fetcher).withRereads(() => rereads++);
+    return { http, rereads: () => rereads };
+  }
+
+  /** A fetch that answers `status`, and records when the answer's body is read. */
+  function answering(status: number, order: string[] = []) {
+    return (async () => {
+      const response = new Response(JSON.stringify({ code: "refused", message: "Refused." }), { status });
+      const json = response.json.bind(response);
+      response.json = async () => {
+        order.push("parsed");
+        return json();
+      };
+      return response;
+    }) as unknown as typeof fetch;
+  }
+
+  it("never re-reads after a GET, answered or refused", async () => {
+    for (const status of [200, 400, 404, 409]) {
+      const { http, rereads } = transport(answering(status));
+      await http.request("GET", "/invoices").catch(() => undefined);
+      expect(rereads(), `status ${status}`).toBe(0);
+    }
+  });
+
+  it("re-reads once after a POST, PUT, PATCH or DELETE the server saved", async () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+      const { http, rereads } = transport(answering(200));
+      await http.request(method, "/somewhere", {});
+      expect(rereads(), method).toBe(1);
+    }
+    const { http, rereads } = transport(fetchReturning(204, null));
+    await expect(http.request("DELETE", "/roles/r1")).resolves.toBeUndefined();
+    expect(rereads()).toBe(1);
+  });
+
+  it("re-reads before the answer's body is read, so a saved write whose body fails to parse still re-reads, then rejects", async () => {
+    const order: string[] = [];
+    let rereads = 0;
+    const http = new HttpTransport("http://api.test", answering(200, order)).withRereads(() => {
+      rereads++;
+      order.push("re-read");
+    });
+    await http.request("POST", "/payments", {});
+    expect(order).toEqual(["re-read", "parsed"]);
+
+    const broken = new HttpTransport(
+      "http://api.test",
+      (async () => new Response("not json", { status: 200 })) as unknown as typeof fetch,
+    ).withRereads(() => rereads++);
+    await expect(broken.request("POST", "/payments", {})).rejects.toBeInstanceOf(SyntaxError);
+    expect(rereads).toBe(2);
+  });
+
+  it("re-reads after the server refused a write (400, 403, 404, 409, 422), and still rejects in its words", async () => {
+    for (const status of [400, 403, 404, 409, 422]) {
+      const { http, rereads } = transport(answering(status));
+      await expect(http.request("POST", "/payments", {})).rejects.toMatchObject({ status, message: "Refused." });
+      expect(rereads(), `status ${status}`).toBe(1);
+    }
+  });
+
+  it("doesn't re-read when a write never reached the server, or after a 401, a 429 or a server failure", async () => {
+    const offline = transport((async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch);
+    await expect(offline.http.request("POST", "/payments", {})).rejects.toMatchObject({ status: 0 });
+    expect(offline.rereads()).toBe(0);
+    for (const status of [401, 429, 500, 503]) {
+      const { http, rereads } = transport(answering(status));
+      await expect(http.request("POST", "/payments", {})).rejects.toBeInstanceOf(HttpApiError);
+      expect(rereads(), `status ${status}`).toBe(0);
+    }
+  });
+
+  it("never re-reads after requestAsRead or a file download", async () => {
+    for (const status of [200, 400, 409, 422]) {
+      const { http, rereads } = transport(answering(status));
+      await http.requestAsRead("POST", "/imports/check", {}).catch(() => undefined);
+      await http.blob("/files/f1").catch(() => undefined);
+      expect(rereads(), `status ${status}`).toBe(0);
+    }
+  });
+
+  it("calls nothing from a transport built without withRereads", async () => {
+    const http = new HttpTransport("http://api.test", answering(200));
+    await expect(http.request("POST", "/payments", {})).resolves.toEqual({ code: "refused", message: "Refused." });
   });
 });

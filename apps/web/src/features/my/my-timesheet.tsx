@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Download, Save, Send, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { addDays, timesheetTemplate, weekdayHeadings, type Employee, type Timesheet } from "@workspace/shared";
@@ -18,32 +18,102 @@ import type { MyPortal } from "@/lib/api/contract";
 import { saveBlob } from "@/lib/save-blob";
 import { useFormatDate } from "@/lib/use-format-date";
 import { MyShell } from "./my-shell";
+import { NewerHoursNotice } from "./newer-hours-notice";
+import {
+  hoursSaved,
+  keepTypedHours,
+  saveInput,
+  serverHours,
+  takeSavedHours,
+  typedHours,
+  typeHours,
+  weekHours,
+  weekLocked,
+} from "./week-hours";
 
+/**
+ * Moves focus after a save or submit ends, or when the newer-hours notice comes or goes, but only
+ * when focus was lost (on the page body) or sits in the form's buttons, never while the person
+ * types in a day: to the notice's first button while it shows, else back to the button that
+ * started the action, or the first one (CLAUDE.md rule 15).
+ */
+function useActionFocus(busy: boolean, waiting: boolean) {
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const noticeRef = useRef<HTMLButtonElement>(null);
+  const clickedRef = useRef<HTMLButtonElement | null>(null);
+  const lastRef = useRef({ busy, waiting });
+  useEffect(() => {
+    const before = lastRef.current;
+    lastRef.current = { busy, waiting };
+    if (before.busy === busy && before.waiting === waiting) return;
+    const active = document.activeElement;
+    if (active !== document.body && !actionsRef.current?.contains(active)) return;
+    const target = waiting
+      ? noticeRef.current
+      : (clickedRef.current ?? actionsRef.current?.querySelector<HTMLButtonElement>("button") ?? null);
+    if (target?.isConnected && !target.disabled) target.focus();
+  }, [busy, waiting]);
+  return { actionsRef, noticeRef, clickedRef };
+}
+
+/**
+ * One week's hours. The saved hours arrive with every read of the portal (an upload, the clock,
+ * another tab, or this form's own save makes the page read again), and the form takes each read
+ * once: a form with no edits takes them, and a form with edits keeps them and asks
+ * (`week-hours.ts`). Its own save's answer is taken like a read. Every save sends the hours the form
+ * started from, so the server refuses one made from hours that changed meanwhile (ADR 0051,
+ * 2026-11-16).
+ */
 function WeekForm({
   employee,
   weekStart,
+  read,
   sheet,
   headings,
 }: {
   employee: Employee;
   weekStart: string;
+  /** The portal read `sheet` comes from: a new object for every answer, so reads are told apart by identity. */
+  read: MyPortal;
   sheet: Timesheet | undefined;
   headings: string[];
 }) {
-  const [days, setDays] = useState((sheet?.days ?? [0, 0, 0, 0, 0, 0, 0]).map(String));
-  const locked = sheet?.status === "approved" || sheet?.status === "submitted";
-  const numbers = days.map((d) => Number(d) || 0);
+  const locked = weekLocked(sheet);
+  const [hours, setHours] = useState(() => weekHours(sheet?.days));
+  const [taken, setTaken] = useState(read);
+  const [busy, setBusy] = useState(false);
+  // Each read is taken once, while rendering rather than in an effect, so no frame shows hours the
+  // server no longer holds. By identity, not content: after the form's own save, the read from
+  // before it stays here until the save's re-read lands, and taking it again would put back the
+  // hours from before the save (review round 2 of PR #44); a new read back at those hours is still
+  // taken (review round 1).
+  if (taken !== read) {
+    setTaken(read);
+    setHours((current) => serverHours(current, sheet?.days, locked));
+  }
+  const waiting = hours.newer !== null;
+  const { actionsRef, noticeRef, clickedRef } = useActionFocus(busy, waiting);
+  const numbers = typedHours(hours);
 
   async function save() {
-    return api.saveTimesheet({ employeeId: employee.id, weekStart, days: numbers });
+    const input = saveInput(hours);
+    // Unreachable: Save and Submit are disabled while newer hours wait for a choice.
+    if (!input) throw new Error("Choose which hours to keep first.");
+    const saved = await api.saveTimesheet({ employeeId: employee.id, weekStart, ...input });
+    setHours((current) => hoursSaved(current, input.days, saved));
+    return saved;
   }
 
-  async function run(action: () => Promise<unknown>, done: string) {
+  async function run(event: MouseEvent<HTMLButtonElement>, action: () => Promise<unknown>, done: string) {
+    clickedRef.current = event.currentTarget;
+    setBusy(true);
     try {
       await action();
       toast.success(done);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "That did not work.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -51,6 +121,16 @@ function WeekForm({
     <div className="flex flex-col gap-4">
       {sheet?.status === "rejected" ? (
         <p className="bg-danger/10 text-danger-ink rounded-md p-3 text-sm">Sent back: {sheet.rejectionReason}</p>
+      ) : null}
+      {hours.newer ? (
+        <NewerHoursNotice
+          days={hours.newer}
+          headings={headings}
+          busy={busy}
+          onUse={() => setHours(takeSavedHours)}
+          onKeep={() => setHours(keepTypedHours)}
+          firstButton={noticeRef}
+        />
       ) : null}
       <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
         {headings.map((d, i) => (
@@ -63,8 +143,11 @@ function WeekForm({
               inputMode="decimal"
               className="text-center tabular-nums"
               disabled={locked}
-              value={days[i]}
-              onChange={(e) => setDays(days.map((v, at) => (at === i ? e.target.value.replace(/[^\d.]/g, "") : v)))}
+              value={hours.typed[i]}
+              onChange={(e) => {
+                const text = e.target.value;
+                setHours((current) => typeHours(current, i, text));
+              }}
             />
           </div>
         ))}
@@ -73,17 +156,22 @@ function WeekForm({
         Total: <Num kind="quantity" value={numbers.reduce((a, b) => a + b, 0)} unit="hours" />
       </p>
       {!locked ? (
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void run(save, "Saved")}>
+        <div ref={actionsRef} className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={busy || waiting} onClick={(e) => void run(e, save, "Saved")}>
             <Save />
             Save
           </Button>
           <Button
-            onClick={() =>
-              void run(async () => {
-                const saved = await save();
-                await api.submitTimesheet(saved.id);
-              }, "Timesheet submitted")
+            disabled={busy || waiting}
+            onClick={(e) =>
+              void run(
+                e,
+                async () => {
+                  const saved = await save();
+                  await api.submitTimesheet(saved.id);
+                },
+                "Timesheet submitted",
+              )
             }
           >
             <Send />
@@ -139,9 +227,10 @@ function Timesheets({ portal }: { portal: MyPortal }) {
           </Button>
         </div>
         <WeekForm
-          key={week + (sheet?.status ?? "")}
+          key={week}
           employee={employee}
           weekStart={week}
+          read={portal}
           sheet={sheet}
           headings={weekdayHeadings(portal.weekStartDay)}
         />

@@ -90,8 +90,6 @@ function LimitInput({ field, label, draft, current, editable, readOnly, note, on
 interface AccessEditorProps {
   company: PlatformCompany;
   directory: ConsoleDirectory;
-  /** Reads the company again after a save, where the data layer does not tell screens itself. */
-  onSaved?: () => void;
 }
 
 /**
@@ -103,7 +101,7 @@ interface AccessEditorProps {
  * did. A role that may not change access (`mayChangeCompanyAccess`) sees the page read only, with
  * no Save and no step-up; the API's guard still decides.
  */
-export function AccessEditor({ company, directory, onSaved }: AccessEditorProps) {
+export function AccessEditor({ company, directory }: AccessEditorProps) {
   const readOnly = !mayChangeCompanyAccess(usePlatformRole());
   const [draft, setDraft] = useState(() => draftOf(company));
   const [confirming, setConfirming] = useState(false);
@@ -118,7 +116,6 @@ export function AccessEditor({ company, directory, onSaved }: AccessEditorProps)
       await api.updatePlatformCompanyAccess(company.id, patch);
       setConfirming(false);
       toast.success(`Access saved for ${company.name}. It applies at once.`);
-      onSaved?.();
     } catch (failure) {
       setConfirming(false);
       toast.error(failure instanceof Error ? failure.message : "Access was not saved.");

@@ -5,7 +5,9 @@ import {
   hoursProblem,
   IMPORT_HANDLERS,
   needsTimesheet,
+  overwritesNewerHours,
   planImport,
+  TIMESHEET_CHANGED_MESSAGE,
   withClockedHours,
   workweekStartOf,
   type CompanyId,
@@ -40,7 +42,11 @@ async function assertMayEdit(ctx: ActionContext, employeeId: string) {
   else await ctx.assertCan(["hr.timesheet.approve"]);
 }
 
-/** Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again. */
+/**
+ * Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again.
+ * As on the API, a save made from hours that changed since the form opened is refused, unless it
+ * sends the stored hours (hr.md "Create or edit hours"; ADR 0051, 2026-11-16).
+ */
 export async function saveTimesheet(ctx: ActionContext, input: TimesheetInput): Promise<Timesheet> {
   await assertMayEdit(ctx, input.employeeId);
   const employee = ctx.db.get("employees", input.employeeId);
@@ -52,6 +58,9 @@ export async function saveTimesheet(ctx: ActionContext, input: TimesheetInput): 
     .list("timesheets")
     .find((s) => s.employeeId === input.employeeId && s.weekStart === input.weekStart);
   if (existing?.status === "approved") throw new DemoRuleError("This week is approved, so it is locked.");
+  if (overwritesNewerHours(existing?.days ?? [0, 0, 0, 0, 0, 0, 0], input.expectedDays, input.days)) {
+    throw new DemoRuleError(TIMESHEET_CHANGED_MESSAGE);
+  }
   const sheet: Timesheet = {
     id: existing?.id ?? ctx.newId("ts"),
     employeeId: input.employeeId,

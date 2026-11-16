@@ -8,39 +8,10 @@ import {
   type ImportBatchSummary,
   type ImportRequest,
 } from "@workspace/shared";
-import type { ApiClient } from "@/lib/api/contract";
 import { ApiError } from "@/lib/api/errors";
-import { API_METHODS } from "@/lib/api/http/api-methods";
 import { importBody } from "@/lib/api/http/import-body";
-import { routeClient } from "@/lib/api/http/router";
-import { HttpApiError, HttpTransport } from "@/lib/api/http/transport";
-
-type Answer = { status: number; body?: unknown };
-
-interface Sent {
-  call: string;
-  body: unknown;
-}
-
-/**
- * The real API_METHODS over a fake fetch that records each request and answers per "METHOD path"
- * (200 with an empty object by default). The demo client is a stub, so an import method that fell
- * through to it would throw. `changes` counts the re-reads the screens were told to do.
- */
-function apiClient(answers: Record<string, Answer> = {}) {
-  const sent: Sent[] = [];
-  const fetcher = (async (url: string, init?: RequestInit) => {
-    const call = `${init?.method ?? "GET"} ${url.replace("http://api.test", "")}`;
-    sent.push({ call, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined });
-    const answer = answers[call] ?? { status: 200, body: {} };
-    return new Response(JSON.stringify(answer.body ?? {}), { status: answer.status });
-  }) as unknown as typeof fetch;
-  const demo = { subscribe: () => () => undefined } as unknown as ApiClient;
-  const client = routeClient(demo, new HttpTransport("http://api.test", fetcher), API_METHODS);
-  let changes = 0;
-  client.subscribe(() => changes++);
-  return { client, sent, changes: () => changes };
-}
+import { HttpApiError } from "@/lib/api/http/transport";
+import { fakeApi } from "./fake-api";
 
 /** The error a call rejects with, or null when it resolved. */
 async function failureOf(call: Promise<unknown>): Promise<Error | null> {
@@ -109,14 +80,14 @@ const SUMMARY: ImportBatchSummary = {
 describe("data import on the API, part 1 (ADR 0057)", () => {
   it("W-1: reads the overview from GET /imports, and nothing it sends names the company", async () => {
     const overview = { kinds: ["customers"], mappings: [], batches: [SUMMARY] };
-    const { client, sent } = apiClient({ "GET /imports": { status: 200, body: overview } });
+    const { client, sent } = fakeApi({ "GET /imports": { status: 200, body: overview } });
     expect(await client.importOverview("summit")).toEqual(overview);
     expect(sent).toEqual([{ call: "GET /imports", body: undefined }]);
     expect(JSON.stringify(sent)).not.toContain("summit");
   });
 
   it("W-2: the dry run sends exactly the kind, the file name, the chosen columns in field order with every row, and the mapping", async () => {
-    const { client, sent, changes } = apiClient({
+    const { client, sent, changes } = fakeApi({
       "POST /imports/check": { status: 200, body: { rows: [], counts: { create: 2, update: 0, skip: 0, error: 0 } } },
     });
     await client.previewImport("summit", { ...customersRequest(), expected: "cc" });
@@ -145,14 +116,14 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
 
   it("W-3: the import sends the dry run's actions, and the screens read again after a 201 and after a 409", async () => {
     const result = { batch: SUMMARY, rows: [] };
-    const done = apiClient({ "POST /imports": { status: 201, body: result } });
+    const done = fakeApi({ "POST /imports": { status: 201, body: result } });
     expect(await done.client.runImport("summit", { ...customersRequest(), expected: "cce" })).toEqual(result);
     expect(done.sent).toHaveLength(1);
     expect(done.sent[0]!.call).toBe("POST /imports");
     expect(done.sent[0]!.body).toMatchObject({ kind: "customers", mapping: FULL_MAPPING, expected: "cce" });
     expect(done.changes()).toBe(1);
 
-    const stale = apiClient({
+    const stale = fakeApi({
       "POST /imports": { status: 409, body: { code: "plan_changed", message: IMPORT_WORDS.planChanged } },
     });
     const failure = await failureOf(stale.client.runImport("summit", { ...customersRequest(), expected: "cce" }));
@@ -162,7 +133,7 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
   });
 
   it("W-4: an Undo of a batch the API never made is refused with its words, and nothing is sent", async () => {
-    const { client, sent, changes } = apiClient();
+    const { client, sent, changes } = fakeApi();
     const failure = await failureOf(client.undoImport("summit", "imp-1"));
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure?.message).toBe("This import no longer exists.");
@@ -172,7 +143,7 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
 
   it("an Undo of a saved batch is POST /imports/:id/undo with no body, and the screens read again", async () => {
     const undone = { ...SUMMARY, undoneAt: "2026-11-16T09:00:00.000Z", undoneBy: "Luis Ortega" };
-    const { client, sent, changes } = apiClient({ [`POST /imports/${BATCH_ID}/undo`]: { status: 201, body: undone } });
+    const { client, sent, changes } = fakeApi({ [`POST /imports/${BATCH_ID}/undo`]: { status: 201, body: undone } });
     expect(await client.undoImport("summit", BATCH_ID)).toEqual(undone);
     expect(sent).toEqual([{ call: `POST /imports/${BATCH_ID}/undo`, body: undefined }]);
     expect(changes()).toBe(1);
@@ -180,7 +151,7 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
 
   it("W-5: saved columns are PUT /imports/mappings/:kind with only the columns", async () => {
     const saved = { id: BATCH_ID, kind: "customers", columns: FULL_MAPPING, savedAt: "2026-11-16T08:00:00.000Z" };
-    const { client, sent, changes } = apiClient({ "PUT /imports/mappings/customers": { status: 200, body: saved } });
+    const { client, sent, changes } = fakeApi({ "PUT /imports/mappings/customers": { status: 200, body: saved } });
     expect(await client.saveImportMapping("summit", "customers", FULL_MAPPING)).toEqual(saved);
     expect(sent).toEqual([{ call: "PUT /imports/mappings/customers", body: { columns: FULL_MAPPING } }]);
     expect(changes()).toBe(1);
@@ -196,7 +167,7 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
     expect(JSON.stringify(mappedTable(importKind("customers"), heavy)).length).toBeLessThan(IMPORT_LIMITS.requestBytes);
     expect(() => importBody(heavy)).toThrow(new ApiError(IMPORT_TOO_LARGE));
 
-    const { client, sent, changes } = apiClient();
+    const { client, sent, changes } = fakeApi();
     const failure = await failureOf(client.previewImport("summit", heavy));
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure?.message).toBe(IMPORT_TOO_LARGE);
@@ -214,7 +185,7 @@ describe("data import on the API, part 1 (ADR 0057)", () => {
     expect(body.table.headers).toEqual(["Account Number", "Customer Name", "E-mail"]);
     expect(new TextEncoder().encode(JSON.stringify(body)).length).toBeLessThanOrEqual(IMPORT_LIMITS.requestBytes);
 
-    const { client, sent } = apiClient({
+    const { client, sent } = fakeApi({
       "POST /imports/check": { status: 200, body: { rows: [], counts: { create: 0, update: 0, skip: 0, error: 0 } } },
     });
     await client.previewImport("summit", request);

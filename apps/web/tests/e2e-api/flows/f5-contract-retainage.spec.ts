@@ -31,9 +31,10 @@ import {
 import { CASH } from "./ledger";
 
 /**
- * The product bugs that stop this flow in step 1 (session log 2026-11-16-0200, "For STATUS", B4 and
- * B2). Until they are fixed the flow is `fixme`, written to the behaviour the spec asks for; a
- * throwaway run that worked around them passed every later step (session log, stage 5).
+ * The product bug that stops this flow in step 1 (session log 2026-11-16-0200, "For STATUS", B4; B2
+ * is fixed, session log 2026-11-16-1651). Until it is fixed the flow is `fixme`, written to the
+ * behaviour the spec asks for; a throwaway run that worked around it passed every later step
+ * (session log 2026-11-16-0200, stage 5).
  */
 const BLOCKED_BY = [
   {
@@ -44,14 +45,6 @@ const BLOCKED_BY = [
       "a branch can save a new contract (contract-form-dialog.tsx `branchId: user.branchId`; api-methods.ts " +
       "`contractBody`). The API files a new contract under its creator's own branch anyway (contracts.service.ts " +
       "`newBranch`). B4, STATUS follow-up.",
-  },
-  {
-    type: "issue",
-    description:
-      "api mode: only the meetings writes in api-methods.ts call `changed`, so no other write makes the screens read " +
-      "again (B2, which also stops F1 and F2). After Send for signature the contract page still shows a draft, so " +
-      "Record signature never appears; a posted billing, Mark completed, a release and a payment's Paid show only " +
-      "after a reload. STATUS follow-up.",
   },
 ];
 
@@ -94,7 +87,7 @@ async function payInvoice(page: Page, invoice: Invoice, reference: string): Prom
  * payment, marks the contract completed, releases the retainage on its own invoice and takes that
  * payment too. The ledger after each posting, the contract's figures and the audit log are checked
  * from the answers the screens got. It registers no clean-ups yet: while it is `fixme` it never
- * runs, so none could be proved. Once B4 and B2 are fixed, register what a stopped run must undo
+ * runs, so none could be proved. Once B4 is fixed, register what a stopped run must undo
  * (the contract and what it billed) with `personas.onCleanup`, as the other flows do.
  */
 flowTest.describe("flow F5: contract billing with retainage, and its release", () => {

@@ -34,17 +34,15 @@ export function planActiveText(plan: Pick<PlatformPlan, "name" | "active">): { t
 interface PlanActiveDialogProps {
   plan: PlatformPlan;
   onClose: () => void;
-  /** Reads the plans again, where the data layer does not tell screens itself. */
-  onChanged: () => void;
 }
 
 /**
  * Retire or restore a plan (docs/specs/platform-admin.md, part 2, "Retire and Restore"): the reason,
  * checked with the shared rule before anything is sent, then the step-up in api mode. Neither
- * changes a company. A 409 (another admin did it first) shows its message, closes and reads the
- * plans again; any other failure brings the form back with the reason kept.
+ * changes a company. A 409 (another admin did it first) shows its message and closes, and the plans
+ * read again (ADR 0051, 2026-11-16); any other failure brings the form back with the reason kept.
  */
-export function PlanActiveDialog({ plan, onClose, onChanged }: PlanActiveDialogProps) {
+export function PlanActiveDialog({ plan, onClose }: PlanActiveDialogProps) {
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<"form" | "confirm">("form");
@@ -58,12 +56,10 @@ export function PlanActiveDialog({ plan, onClose, onChanged }: PlanActiveDialogP
       if (plan.active) await api.retirePlatformPlan(plan.id, reason.trim());
       else await api.restorePlatformPlan(plan.id, reason.trim());
       toast.success(plan.active ? "Plan retired." : "Plan restored.");
-      onChanged();
       onClose();
     } catch (failure) {
       toast.error(failure instanceof Error ? failure.message : "The plan was not changed.");
       if (apiErrorCode(failure) === "conflict") {
-        onChanged();
         onClose();
       } else {
         setStage("form");

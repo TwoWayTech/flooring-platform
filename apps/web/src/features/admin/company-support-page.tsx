@@ -117,8 +117,9 @@ export function CompanySupportPage({ companyId }: { companyId: string }) {
         <SupportRequestDialog
           company={company}
           onClose={() => setAsking(false)}
-          // The demo store tells screens about its writes; a write over HTTP does not, so read again.
-          onRequested={isDemoMode() ? () => undefined : data.retry}
+          // Every write the API answered reads again, but not a 429 limit refusal (ADR 0051, 2026-11-16),
+          // and the Request button depends on the limit; the demo's list doesn't change on a refusal.
+          onRefused={isDemoMode() ? () => undefined : data.retry}
         />
       ) : null}
     </>

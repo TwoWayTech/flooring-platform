@@ -82,7 +82,7 @@ stateDiagram-v2
 
 | Transition | Function in `apps/web/src/lib/api/demo/timesheet-actions.ts` | Guards |
 | --- | --- | --- |
-| Create or edit hours | `saveTimesheet` | Person passes `needsTimesheet`. `hoursProblem` is null. `weekStart` is not after today. Status is not `approved`. Keeps the current status, so a rejected sheet stays rejected until submitted again |
+| Create or edit hours | `saveTimesheet` | Person passes `needsTimesheet`. `hoursProblem` is null. `weekStart` is not after today. Status is not `approved`. The hours stored for the week equal the hours the form started from (`expectedDays`), or the hours being saved; otherwise refused with nothing saved (`overwritesNewerHours`, 2026-11-16). Keeps the current status, so a rejected sheet stays rejected until submitted again |
 | To `submitted` | `submitTimesheet` | Status is not `submitted` or `approved`. Clears `rejectionReason`, adds a history event, tells approvers |
 | To `approved` or `rejected` | `decideTimesheets` | Status is `submitted`. The sheet is not the decider's own. A rejection needs a reason of at least 3 characters. Hours never change |
 | `approved` to `draft` | `reopenTimesheet` | Reason of at least 3 characters. No pay period with status `approved` or `exported` overlaps the week |
