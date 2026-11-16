@@ -12,7 +12,7 @@ import {
 import type { TimesheetUploadResult } from "@/lib/api/contract";
 import { FLOW_TAG } from "../../e2e/helpers";
 import { EMPLOYEE_EMAIL, HR_EMAIL } from "../accounts";
-import { expectAuditRows, expectPayRow, openMyPortal, openPayLine, postAs, readAs } from "./checks";
+import { expectAuditRows, expectPayRow, openMyPortal, openPayLine, payAtBaseRate, postAs, readAs } from "./checks";
 import {
   assertSameCompanyDay,
   choose,
@@ -71,9 +71,12 @@ async function sweep(request: APIRequestContext, week: string, filled: number): 
     await postAs(request, `/timesheets/${sheet.id}/reopen`, { reason: "e2e flow sweep" });
   const held = (sheet?.days ?? []).slice(0, filled);
   const hours = HOURS.find((h) => held.every((value) => !dec(value).eq(h)));
+  // Only a hand edit leaves every candidate on the days to fill; the upload would then save nothing.
   if (!hours)
     throw new Error(
-      `Bri's week of ${week} holds ${HOURS.join(", ")} on the days to fill; change one by hand (risk 13).`,
+      `Bri's week of ${week} already holds each of ${HOURS.join(", ")} hours on the days to fill ` +
+        `(${held.join(", ")}), so an upload would save nothing. Sign in as Bri, put other hours (such as 8) ` +
+        `on one of those days in My timesheet, save, and run the flow again.`,
     );
   const othersWaiting = sheets.filter((s) => s.status === "submitted" && s.weekStart !== week).map((s) => s.weekStart);
   return { hours, othersWaiting };
@@ -101,11 +104,11 @@ async function openGridWeek(page: Page, week: string): Promise<void> {
 }
 
 /**
- * Flow F3 (mirrors demo flow G3-3; plan-final.md section 1): Bri uploads this week's hours from the
- * template and submits the week, Tamara approves it from the queue, and the pay period that holds
- * it counts the hours and pays them; Tamara then reopens the week. Every figure comes from the
- * answers the screens got. The week stays a draft with this run's hours, and the next run's sweep
- * picks other hours.
+ * Flow F3 (mirrors demo flow G3-3; session log 2026-11-16-0200, "The seven flows"): Bri uploads this
+ * week's hours from the template and submits the week, Tamara approves it from the queue, and the
+ * pay period that holds it counts the hours and pays them; Tamara then reopens the week. Every
+ * figure comes from the answers the screens got. The week stays a draft with this run's hours, and
+ * the next run's sweep picks other hours.
  */
 flowTest.describe("flow F3: timesheet upload to the pay period", () => {
   resetAuthAround([HR_EMAIL, EMPLOYEE_EMAIL]);
@@ -155,7 +158,8 @@ flowTest.describe("flow F3: timesheet upload to the pay period", () => {
         await expect(page.getByText(`${days.length} days of hours saved`, { exact: true })).toBeVisible();
         await expect(dialog).toBeHidden();
 
-        // Submit saves what the form holds first, so the form must hold the upload (plan, critic S2).
+        // Submit saves what the form holds first, so the form must hold the upload (session log
+        // 2026-11-16-0200, "What changed from the first plan" row 11).
         const reloaded = await openMyPortal(page, "/my/timesheet");
         for (const heading of weekdayHeadings(reloaded.weekStartDay).slice(0, days.length))
           await expect(page.getByLabel(heading, { exact: true }), `${heading} holds the upload`).toHaveValue(hours);
@@ -201,11 +205,22 @@ flowTest.describe("flow F3: timesheet upload to the pay period", () => {
         const worked = sum(sheet.days);
         const hoursPay = dec(after.straightTimePay).minus(before.straightTimePay);
         const grossPay = dec(after.grossPay).minus(before.grossPay);
+        // Each line pays its hours at its base rate, rounded once (hr.md "Business rules" 17, "Pay lines").
+        const owed = payAtBaseRate(after, "hoursWorked").minus(payAtBaseRate(before, "hoursWorked"));
         expect(
           dec(after.hoursWorked).minus(before.hoursWorked).eq(worked),
           `hours worked rose by the week's ${worked}: ${before.hoursWorked} to ${after.hoursWorked}`,
         ).toBe(true);
-        expect(hoursPay.gt(0), `hours pay rose: ${before.straightTimePay} to ${after.straightTimePay}`).toBe(true);
+        expect(
+          dec(after.overtimeHours).eq(before.overtimeHours),
+          `no overtime (at most 37.5 hours a week): ${before.overtimeHours} to ${after.overtimeHours}`,
+        ).toBe(true);
+        expect(owed.gt(0), `the hours are paid: ${after.hoursWorked} hours at ${after.baseRate}`).toBe(true);
+        expect(
+          hoursPay.eq(owed),
+          `straight-time pay rose by ${owed} (hours at ${after.baseRate}, rounded per line): ` +
+            `${before.straightTimePay} to ${after.straightTimePay}`,
+        ).toBe(true);
         expect(grossPay.eq(hoursPay), `gross pay rose by the hours pay's ${hoursPay}, not ${grossPay}`).toBe(true);
         await expectPayRow(tamara.page, EMPLOYEE_NAME, {
           Hours: shown(after.hoursWorked, "quantity"),

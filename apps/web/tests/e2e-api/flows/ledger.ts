@@ -96,7 +96,8 @@ export function resolveExpected(after: TrialBalance, expected: ExpectedMoves): R
 /**
  * Every way the books moved other than expected, in words, empty when they moved exactly as
  * expected: each expected account by exactly its amount, exactly one cash account by the `CASH`
- * amount, and every other account not at all (plan-final.md section 1, "Ledger rule").
+ * amount, and every other account not at all (the flows' ledger rule, session log 2026-11-16-0200,
+ * decision 4).
  */
 export function ledgerMismatches(before: TrialBalance, after: TrialBalance, expected: ExpectedMoves): string[] {
   const delta = ledgerDelta(before, after);

@@ -1,15 +1,18 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
-import type {
-  AuditEntry,
-  BusinessReport,
-  InAppNotification,
-  NotificationEventKey,
-  OutboxAttachment,
-  OutboxStatus,
-  Payment,
-  PayPeriod,
-  PayPeriodLine,
-  TimesheetWire,
+import {
+  dec,
+  roundMoney,
+  type AuditEntry,
+  type BusinessReport,
+  type Dec,
+  type InAppNotification,
+  type NotificationEventKey,
+  type OutboxAttachment,
+  type OutboxStatus,
+  type Payment,
+  type PayPeriod,
+  type PayPeriodLine,
+  type TimesheetWire,
 } from "@workspace/shared";
 import type { MyPortal, PayPeriodReview } from "@/lib/api/contract";
 import { companyToday, PDF_PROOF, waitForAnswer } from "./kit";
@@ -43,8 +46,8 @@ export function trialBalance(request: APIRequestContext): Promise<TrialBalance> 
 
 /**
  * Asserts the books balance and moved from `before` to `after` exactly as `expected` says, with
- * every other account unchanged (plan-final.md section 1, "Ledger rule"). The message lists the
- * whole move, so a failure shows what did post.
+ * every other account unchanged (the flows' ledger rule, session log 2026-11-16-0200, decision 4).
+ * The message lists the whole move, so a failure shows what did post.
  */
 export function expectLedgerMoved(before: TrialBalance, after: TrialBalance, expected: ExpectedMoves): void {
   expect(after.balanced, `the books don't balance: debits ${after.debit}, credits ${after.credit}`).toBe(true);
@@ -132,6 +135,9 @@ export async function openBusinessReport(page: Page): Promise<BusinessReport> {
   return report;
 }
 
+/** Any pay period's review read, `GET /pay-periods/:id/review`. */
+const ANY_REVIEW = /^\/api-proxy\/pay-periods\/[^/]+\/review$/;
+
 /**
  * Opens Pay periods on the period that holds `day` and returns its review, or null when no period
  * holds it. The page opens the `in_review` period first (pay-periods-page.tsx), so another period
@@ -140,7 +146,7 @@ export async function openBusinessReport(page: Page): Promise<BusinessReport> {
  */
 export async function openPayPeriodReview(page: Page, day: string): Promise<PayPeriodReview | null> {
   const listed = waitForAnswer<PayPeriod[]>(page, "GET", /^\/api-proxy\/pay-periods$/);
-  const shown = waitForAnswer<PayPeriodReview>(page, "GET", /^\/api-proxy\/pay-periods\/[^/]+\/review$/);
+  const shown = waitForAnswer<PayPeriodReview>(page, "GET", ANY_REVIEW);
   await page.goto("/hr/pay-periods");
   const periods = await listed;
   const opened = await shown;
@@ -148,11 +154,8 @@ export async function openPayPeriodReview(page: Page, day: string): Promise<PayP
   const target = periods[index];
   if (!target) return null;
   if (opened.period.id === target.id) return opened;
-  const answer = waitForAnswer<PayPeriodReview>(
-    page,
-    "GET",
-    new RegExp(`^/api-proxy/pay-periods/${target.id}/review$`),
-  );
+  // Any period's review: the id check below then fails if the picker opened another period.
+  const answer = waitForAnswer<PayPeriodReview>(page, "GET", ANY_REVIEW);
   await page.getByRole("combobox", { name: "Pay period" }).click();
   await page.getByRole("option").nth(index).click();
   const review = await answer;
@@ -188,6 +191,21 @@ export async function openPayLine(
   const row = review.rows.find((r) => r.employee.name === name);
   if (!row) throw new Error(`The pay period ${review.period.start} to ${review.period.end} has no row for ${name}.`);
   return { period: review.period, line: row.line };
+}
+
+/**
+ * What an hourly pay line pays for its `hours` (hours worked, or paid leave): the hours times the
+ * line's base rate, rounded to the cent once per pay line, as hr.md "Business rules" 17 ("Gross pay
+ * per person and period", "Pay lines") has `grossPay` (packages/shared/src/hr/pay.ts) do it with
+ * `roundMoney`. An hourly rate is stored to the cent (`payRate` numeric(14,2)), so the line's
+ * two-place `baseRate` is the rate the pay used; its hours are two-place too, which the flows' whole
+ * and half hours fill exactly. The API strips `baseRate` without
+ * `hr.employee.view_sensitive` (CLAUDE.md rule 5), so only a reader who holds it (Tamara) can check
+ * the pay this way.
+ */
+export function payAtBaseRate(line: PayPeriodLine, hours: "hoursWorked" | "paidLeaveHours"): Dec {
+  expect(line.baseRate, "the pay line carries its base rate (hr.employee.view_sensitive)").toBeDefined();
+  return roundMoney(dec(line[hours]).times(line.baseRate));
 }
 
 /** Asserts the open pay period's row for `name` shows, under each column header in `cells`, its text. */

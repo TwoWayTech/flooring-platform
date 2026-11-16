@@ -88,11 +88,14 @@ async function payInvoice(page: Page, invoice: Invoice, reference: string): Prom
 }
 
 /**
- * Flow F5 (mirrors demo flow G3-5; plan-final.md section 1): the Owner writes a customer contract
- * with a milestone line and 5 % retainage, sends it and records its simulated signature, posts the
- * milestone (its invoice holds the retainage back), takes the payment, marks the contract completed,
- * releases the retainage on its own invoice and takes that payment too. The ledger after each
- * posting, the contract's figures and the audit log are checked from the answers the screens got.
+ * Flow F5 (mirrors demo flow G3-5; session log 2026-11-16-0200, "The seven flows"): the Owner
+ * writes a customer contract with a milestone line and 5 % retainage, sends it and records its
+ * simulated signature, posts the milestone (its invoice holds the retainage back), takes the
+ * payment, marks the contract completed, releases the retainage on its own invoice and takes that
+ * payment too. The ledger after each posting, the contract's figures and the audit log are checked
+ * from the answers the screens got. It registers no clean-ups yet: while it is `fixme` it never
+ * runs, so none could be proved. Once B4 and B2 are fixed, register what a stopped run must undo
+ * (the contract and what it billed) with `personas.onCleanup`, as the other flows do.
  */
 flowTest.describe("flow F5: contract billing with retainage, and its release", () => {
   resetAuthAround([OWNER_EMAIL]);

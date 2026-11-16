@@ -61,11 +61,12 @@ function locationId(locations: readonly Location[], name: string): string {
 }
 
 /**
- * Flow F2 (mirrors demo flow G3-2; plan-final.md section 1): the buyer adds a new supplier and its
- * sales rep from inside a purchase order for a carton of LVP and a carpet roll, places it (the
- * order is emailed to the rep), and receives the cartons into Denver Central and the roll into
- * Colorado Springs; the accountant enters the supplier's bill and pays it. The Outbox, the stock,
- * the ledger after each posting and the audit log are checked from the answers the screens got.
+ * Flow F2 (mirrors demo flow G3-2; session log 2026-11-16-0200, "The seven flows"): the buyer adds
+ * a new supplier and its sales rep from inside a purchase order for a carton of LVP and a carpet
+ * roll, places it (the order is emailed to the rep), and receives the cartons into Denver Central
+ * and the roll into Colorado Springs; the accountant enters the supplier's bill and pays it. The
+ * Outbox, the stock, the ledger after each posting and the audit log are checked from the answers
+ * the screens got.
  */
 flowTest.describe("flow F2: purchasing from a new supplier to its payment", () => {
   resetAuthAround([PURCHASING_EMAIL, ACCOUNTANT_EMAIL]);

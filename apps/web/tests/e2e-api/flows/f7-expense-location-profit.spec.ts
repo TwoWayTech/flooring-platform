@@ -36,10 +36,11 @@ async function sectionTable(page: Page, title: string) {
 }
 
 /**
- * Flow F7 (mirrors demo flow G3-7; plan-final.md section 1): the accountant records an expense with
- * its receipt for a showroom. The ledger moves the category's account and cash by its cost, the
- * Business report takes the cost off that location's net profit and drills down to the expense, and
- * the void puts the books and the profit back. Every amount comes from the answers the screens got.
+ * Flow F7 (mirrors demo flow G3-7; session log 2026-11-16-0200, "The seven flows"): the accountant
+ * records an expense with its receipt for a showroom. The ledger moves the category's account and
+ * cash by its cost, the Business report takes the cost off that location's net profit and drills
+ * down to the expense, and the void puts the books and the profit back. Every amount comes from the
+ * answers the screens got.
  */
 flowTest.describe("flow F7: expense to location profit and back", () => {
   resetAuthAround([ACCOUNTANT_EMAIL]);

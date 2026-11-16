@@ -2,7 +2,16 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { addDays, dec, type PayPeriodLine, type PtoRequest } from "@workspace/shared";
 import { FLOW_TAG } from "../../e2e/helpers";
 import { EMPLOYEE_EMAIL, HR_EMAIL } from "../accounts";
-import { expectAuditRows, expectPayRow, openMyPortal, openPayLine, postAs, readAs, type PortalAnswer } from "./checks";
+import {
+  expectAuditRows,
+  expectPayRow,
+  openMyPortal,
+  openPayLine,
+  payAtBaseRate,
+  postAs,
+  readAs,
+  type PortalAnswer,
+} from "./checks";
 import {
   assertSameCompanyDay,
   choose,
@@ -79,11 +88,11 @@ async function sweep(request: APIRequestContext, today: string): Promise<void> {
 }
 
 /**
- * Flow F4 (mirrors demo flow G3-4; plan-final.md section 1): Bri asks for a day of Vacation,
- * Tamara approves it, the pay period pays the day and Bri's balance drops by it; Bri then cancels
- * it, which only the API offers (hr.md "To cancelled"), and the balance and the pay are back. Every
- * figure comes from the answers the screens got. A cancelled request and its two balance entries
- * (append-only) stay.
+ * Flow F4 (mirrors demo flow G3-4; session log 2026-11-16-0200, "The seven flows"): Bri asks for a
+ * day of Vacation, Tamara approves it, the pay period pays the day and Bri's balance drops by it;
+ * Bri then cancels it, which only the API offers (hr.md "To cancelled"), and the balance and the pay
+ * are back. Every figure comes from the answers the screens got. A cancelled request and its two
+ * balance entries (append-only) stay.
  */
 flowTest.describe("flow F4: time off to balance and pay, and back", () => {
   resetAuthAround([HR_EMAIL, EMPLOYEE_EMAIL]);
@@ -160,11 +169,19 @@ flowTest.describe("flow F4: time off to balance and pay, and back", () => {
         const after = (await openPayLine(tamara.page, day, EMPLOYEE_NAME)).line;
         const leavePay = dec(after.paidLeavePay).minus(before.paidLeavePay);
         const grossPay = dec(after.grossPay).minus(before.grossPay);
+        // Each line pays its leave hours at its base rate, rounded once (hr.md "Business rules" 17,
+        // "Pay lines"); with no other leave in the period that is the day's DAY_HOURS × rate.
+        const owed = payAtBaseRate(after, "paidLeaveHours").minus(payAtBaseRate(before, "paidLeaveHours"));
         expect(
           dec(after.paidLeaveHours).minus(before.paidLeaveHours).eq(DAY_HOURS),
           `paid leave hours rose by ${DAY_HOURS}: ${before.paidLeaveHours} to ${after.paidLeaveHours}`,
         ).toBe(true);
-        expect(leavePay.gt(0), `paid leave pay rose: ${before.paidLeavePay} to ${after.paidLeavePay}`).toBe(true);
+        expect(owed.gt(0), `the day is paid: ${after.paidLeaveHours} hours at ${after.baseRate}`).toBe(true);
+        expect(
+          leavePay.eq(owed),
+          `paid leave pay rose by ${owed} (leave hours at ${after.baseRate}, rounded per line): ` +
+            `${before.paidLeavePay} to ${after.paidLeavePay}`,
+        ).toBe(true);
         expect(grossPay.eq(leavePay), `gross pay rose by the leave pay's ${leavePay}, not ${grossPay}`).toBe(true);
         await expectPayRow(tamara.page, EMPLOYEE_NAME, { "Paid leave": shown(after.paidLeavePay, "money") });
       });
@@ -180,7 +197,8 @@ flowTest.describe("flow F4: time off to balance and pay, and back", () => {
       });
 
       await flowTest.step("6. Bri cancels it through the API: the balance and the pay are back", async () => {
-        // No screen cancels approved time off (hr.md "To cancelled"; plan-final.md row 8).
+        // No screen cancels approved time off (hr.md "To cancelled"; session log 2026-11-16-0200,
+        // "What changed from the first plan" row 8).
         const cancelled = await postAs<PtoRequest>(bri.request, `/pto-requests/${asked.id}/cancel`);
         expect(cancelled.status).toBe("cancelled");
         const portal = await openMyPortal(bri.page, "/my/time-off");

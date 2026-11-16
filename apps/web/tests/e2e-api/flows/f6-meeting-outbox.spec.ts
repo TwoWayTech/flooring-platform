@@ -27,7 +27,10 @@ const OUTSIDE_GUEST = "e2e-flow-guest@flows.example";
 /** The staff guest, as her answer, the drawer and her notes name her. */
 const SALES_NAME = "Priya Natarajan";
 
-/** The meeting's start, clear of `meetings.spec.ts`'s 10:00 slot (plan-final.md row 21), and how the week grid shows it. */
+/**
+ * The meeting's start, clear of `meetings.spec.ts`'s 10:00 slot (session log 2026-11-16-0200, "What
+ * changed from the first plan" row 21), and how the week grid shows it.
+ */
 const START = { typed: "14:00", shown: "2:00 PM" };
 
 /** Where every meeting note opens (apps/api `MeetingSends`), so a note is told apart by its title. */
@@ -81,12 +84,12 @@ async function sweep(request: APIRequestContext): Promise<void> {
 }
 
 /**
- * Flow F6 (reduced from demo flow G3-6; plan-final.md section 1): Luis schedules a meeting with
- * Priya and a guest from outside, and each gets an invite with a REQUEST calendar file in the
- * Outbox; Priya accepts in her drawer, and Luis gets her reply by email and in-app; Luis cancels,
- * and each guest gets a CANCEL. The Outbox and the bell are read through the API, since their
- * screens still show DemoStore's rows in api mode. A cancelled meeting, its Outbox rows, notes and
- * audit entries stay.
+ * Flow F6 (reduced from demo flow G3-6; session log 2026-11-16-0200, "The seven flows"): Luis
+ * schedules a meeting with Priya and a guest from outside, and each gets an invite with a REQUEST
+ * calendar file in the Outbox; Priya accepts in her drawer, and Luis gets her reply by email and
+ * in-app; Luis cancels, and each guest gets a CANCEL. The Outbox and the bell are read through the
+ * API, since their screens still show DemoStore's rows in api mode. A cancelled meeting, its Outbox
+ * rows, notes and audit entries stay.
  */
 flowTest.describe("flow F6: meeting invites in the Outbox, an answer and a cancel", () => {
   resetAuthAround([MANAGER_EMAIL, SALES_EMAIL]);

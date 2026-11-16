@@ -115,11 +115,14 @@ function rowsWith(report: Report, reference: string): Record<string, string>[] {
 }
 
 /**
- * Flow F1 (mirrors demo spec H flow 1 and G3 flow 1; plan-final.md section 1): a salesperson adds a
- * customer and a job site while quoting, the quote goes Draft → Pending → Accepted → invoice with a
- * roll on hold; her deposit and final payment each wait (own scope) until the accountant confirms
- * them; the warehouse cuts the roll; the accountant then voids the deposit. The ledger, the bell,
- * the stock, Payments received and the audit log are checked after each step, all from the answers.
+ * Flow F1 (mirrors demo spec H flow 1 and G3 flow 1; session log 2026-11-16-0200, "The seven
+ * flows"): a salesperson adds a customer and a job site while quoting, the quote goes Draft →
+ * Pending → Accepted → invoice with a roll on hold; her deposit and final payment each wait (own
+ * scope) until the accountant confirms them; the warehouse cuts the roll; the accountant then voids
+ * the deposit. The ledger, the bell, the stock, Payments received and the audit log are checked
+ * after each step, all from the answers. It registers no clean-ups yet: while it is `fixme` it never
+ * runs, so none could be proved. Once B1 to B3 are fixed, register what a stopped run must undo (the
+ * payments, the invoice and its hold) with `personas.onCleanup`, as the other flows do.
  */
 flowTest.describe("flow F1: sales from a new customer to the cut and a voided deposit", () => {
   resetAuthAround([ACCOUNTANT_EMAIL, SALES_EMAIL, WAREHOUSE_EMAIL]);
@@ -159,7 +162,8 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         expect(customer.name).toBe(customerName);
         await expect(page.getByLabel("Customer", { exact: true })).toHaveText(customerName);
 
-        // The job site is typed by hand: the address finder calls an outside service (plan "Left out").
+        // The job site is typed by hand: the address finder calls an outside service (session log
+        // 2026-11-16-0200, "Left out, and why").
         await page.getByLabel("Job-site address").click();
         await page.getByRole("option", { name: "Add new address" }).click();
         const address = page.getByRole("dialog", { name: "Add new address" });

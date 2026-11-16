@@ -25,8 +25,9 @@ const BEFORE = tb([
   row(null, "4900", "Other income (added by the company)", "0.00", "0.00"),
 ]);
 
-// The flows' ledger rule (plan-final.md section 1): each account moves by exactly the expected
-// amount, keyed by its unique code; cash is whichever one cash account moved; the rest stay put.
+// The flows' ledger rule (session log 2026-11-16-0200, decision 4): each account moves by exactly
+// the expected amount, keyed by its unique code; cash is whichever one cash account moved; the rest
+// stay put.
 describe("e2e flows: the ledger delta between two trial balances", () => {
   it("finds no move between equal trial balances, and expects none", () => {
     const same = tb(BEFORE.rows.map((r) => ({ ...r })));

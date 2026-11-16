@@ -7,6 +7,7 @@ import {
   type BrowserContext,
   type Locator,
   type Page,
+  type Request,
   type Response,
 } from "@playwright/test";
 import { resetAuthState } from "@workspace/db/testing";
@@ -133,46 +134,94 @@ export async function openWeek(page: Page, weeksAhead: number): Promise<void> {
   for (let i = 0; i < weeksAhead; i += 1) await page.getByRole("button", { name: "Next week" }).click();
 }
 
+/** How long `waitForAnswer` waits by default: far longer than any screen's answer takes, far shorter than a flow. */
+const ANSWER_TIMEOUT = 30_000;
+
+/** How the browser reports a request the page dropped by navigating away (Chromium, Firefox, WebKit). */
+const ABORTED = /ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i;
+
+/** A wait as its failure names it: the method, the path pattern without its anchors, and the query. */
+function describeWait(method: string, path: RegExp, query: Readonly<Record<string, string>>): string {
+  const pattern = path.source.replace(/^\^/, "").replace(/\$$/, "").replaceAll("\\/", "/");
+  const search = new URLSearchParams(query).toString();
+  return `${method} ${pattern}${search ? `?${search}` : ""}`;
+}
+
 /**
  * Arms a wait for the page's next `/api-proxy` answer to `method` on a path matching `path` (and,
  * when given, whose query holds each of `query`), and resolves to its JSON once it succeeded, or
  * rejects with the answer's text. Arm it before the action that sends the request, so the flow
  * checks what the screen was given rather than a hard-coded value. An answer whose body is gone
  * because the page navigated away from it (the previous screen's read, still in flight when a
- * `goto` starts) is passed over for the next one.
+ * `goto` starts) is passed over for the next one, and so is a matching request aborted that way.
+ * It rejects with "<METHOD> <path><query>: no answer …" after `timeout` ms (30 s by default), and
+ * also when the page closes or a matching request fails, so a failing flow stops at its step
+ * instead of waiting out the test's timeout.
  */
 export function waitForAnswer<T>(
   page: Page,
   method: string,
   path: RegExp,
   query: Readonly<Record<string, string>> = {},
+  { timeout = ANSWER_TIMEOUT }: { timeout?: number } = {},
 ): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
+  const what = describeWait(method, path, query);
+  const answer = new Promise<T>((resolve, reject) => {
     let settled = false;
-    const onResponse = (response: Response): void => {
-      const url = new URL(response.url());
-      const matches =
-        response.request().method() === method &&
+    const matches = (request: Request): boolean => {
+      const url = new URL(request.url());
+      return (
+        request.method() === method &&
         path.test(url.pathname) &&
-        Object.entries(query).every(([name, value]) => url.searchParams.get(name) === value);
-      if (settled || !matches) return;
+        Object.entries(query).every(([name, value]) => url.searchParams.get(name) === value)
+      );
+    };
+    // Settles once: stops the clock and removes every listener, so nothing outlives the wait.
+    const settle = (): boolean => {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(timer);
+      page.off("response", onResponse);
+      page.off("requestfailed", onFailed);
+      page.off("close", onClose);
+      return true;
+    };
+    const fail = (why: string): void => {
+      if (settle()) reject(new Error(`${what}: ${why}`));
+    };
+    function onResponse(response: Response): void {
+      if (settled || !matches(response.request())) return;
+      const { pathname } = new URL(response.url());
       response.text().then(
         (text) => {
-          if (settled) return;
-          settled = true;
-          page.off("response", onResponse);
+          if (!settle()) return;
           try {
             if (!response.ok()) throw new Error(`answered ${response.status()}: ${text}`);
             resolve(JSON.parse(text) as T);
           } catch (failure) {
-            reject(new Error(`${method} ${url.pathname}: ${failure instanceof Error ? failure.message : text}`));
+            reject(new Error(`${method} ${pathname}: ${failure instanceof Error ? failure.message : text}`));
           }
         },
         () => undefined,
       );
-    };
+    }
+    function onFailed(request: Request): void {
+      if (settled || !matches(request)) return;
+      const reason = request.failure()?.errorText ?? "the request failed";
+      if (!ABORTED.test(reason)) fail(reason);
+    }
+    function onClose(): void {
+      fail("no answer before the page closed");
+    }
+    const timer = setTimeout(() => fail(`no answer within ${timeout / 1000} s`), timeout);
     page.on("response", onResponse);
+    page.on("requestfailed", onFailed);
+    page.on("close", onClose);
   });
+  // A step that fails between arming the wait and awaiting it leaves the wait unawaited; its later
+  // rejection is then not an unhandled one. Whoever awaits `answer` still gets the rejection.
+  answer.catch(() => undefined);
+  return answer;
 }
 
 /** A seeded person signed in through the real login page, in a browser context the test owns. */
@@ -210,6 +259,12 @@ function cleanupSettled(status: number): boolean {
  * clean-up that fails fails a test that had passed, and is noted on one that had already failed.
  */
 export const flowTest = test.extend<{ personas: PersonaPool }>({
+  // A stuck click or page load fails its step in 15 or 30 s instead of waiting out the flow's 90 to
+  // 180 s; the api config sets neither. Set here, not by `use` in this shared module: a module loads
+  // once, so its `use` would reach only the first spec file that imports it. They reach the persona
+  // contexts too, which take the worker's context defaults.
+  actionTimeout: 15_000,
+  navigationTimeout: 30_000,
   personas: async ({ browser, baseURL }, provide, testInfo) => {
     const opened: Persona[] = [];
     const cleanups: { label: string; run: () => Promise<APIResponse> }[] = [];
@@ -249,11 +304,30 @@ export const flowTest = test.extend<{ personas: PersonaPool }>({
   },
 });
 
-/** The control database the API uses (global-setup.ts checks it is set). */
+/** The hosts of a database on this machine, as a URL's `hostname` gives them. */
+const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/** The host a database URL names, or null when it isn't a URL. */
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The control database the API uses (global-setup.ts checks it is set). Off CI it must be on this
+ * machine, since `resetAuthAround` wipes the personas' authenticators, passkeys and sessions; a URL
+ * pointing anywhere else is refused. The message never repeats the URL, which holds a password.
+ */
 function controlUrl(): string {
   const url = process.env.CONTROL_DATABASE_URL;
   if (!url) throw new Error("Set CONTROL_DATABASE_URL to the control database the API uses.");
-  return url;
+  if (process.env.CI || LOCAL_HOSTS.has(hostOf(url) ?? "")) return url;
+  throw new Error(
+    "CONTROL_DATABASE_URL must name localhost, 127.0.0.1 or ::1 outside CI: the flows reset sign-in state only on a local database.",
+  );
 }
 
 /**
