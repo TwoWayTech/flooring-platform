@@ -1,3 +1,4 @@
+import type { CompanyDb } from "@workspace/db";
 import {
   attachments,
   auditLog,
@@ -9,6 +10,8 @@ import {
   rolePermissions,
   roles,
   settings,
+  timeEntries,
+  timesheets,
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
@@ -17,7 +20,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { TenantConnectionService } from "../src/core/tenancy/tenant-connection.service";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 import { withCaliforniaRules } from "./california-switch";
 import { NO_HOURS } from "./support/timesheet-week";
@@ -2256,6 +2260,62 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     status(waiting, 400);
     expect(waiting.body.message).toContain("waits for approval");
   });
+
+  it("answers a save with the hours it wrote, even when another writer commits right after it", async () => {
+    // My timesheet takes the answer as the hours the form started from, so an answer showing another
+    // writer's hours would let the next save replace them unseen (review round 1 of PR #44).
+    const w = week(25);
+    const written = hours(8, 8, 8, 8, 8, 0, 0);
+    const raced = hours(8, 6, 8, 8, 8, 0, 0);
+    const writer = commitAfterNextTransaction(async (db) => {
+      const [sheet] = await db
+        .select({ id: timesheets.id })
+        .from(timesheets)
+        .where(and(eq(timesheets.employeeId, ids.wes), eq(timesheets.weekStart, w)));
+      await db
+        .update(timeEntries)
+        .set({ hours: "6" })
+        .where(and(eq(timeEntries.timesheetId, sheet!.id), eq(timeEntries.date, addDays(w, 1))));
+    });
+    try {
+      const saved = await saveWeek(cookies.wes, ids.wes, w, written, NO_HOURS);
+      expect(writer.ran(), "the other writer committed before the answer was sent").toBe(true);
+      expect(saved.days).toEqual(written);
+    } finally {
+      writer.restore();
+    }
+    expect((await sheetsOf(cookies.wes)).find((s) => s.weekStart === w)!.days).toEqual(raced);
+  });
+
+  /**
+   * Company databases whose next transaction is followed, once it has committed, by `write` on the
+   * same pool before the caller goes on: another writer that commits in the gap between a write and
+   * its answer, as an upload or a clock-out waiting on the same lock would.
+   */
+  function commitAfterNextTransaction(write: (db: CompanyDb) => Promise<void>) {
+    const tenancy = harness.app.get(TenantConnectionService);
+    const open = tenancy.db.bind(tenancy);
+    let ran = false;
+    const spy = vi.spyOn(tenancy, "db").mockImplementation(async (tenant) => {
+      const db = await open(tenant);
+      return new Proxy(db, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop);
+          if (prop !== "transaction") return typeof value === "function" ? value.bind(target) : value;
+          const transaction: CompanyDb["transaction"] = async (run, config) => {
+            const result = await target.transaction(run, config);
+            if (!ran) {
+              ran = true;
+              await write(target);
+            }
+            return result;
+          };
+          return transaction;
+        },
+      });
+    });
+    return { ran: () => ran, restore: () => spy.mockRestore() };
+  }
 
   it("closes a punch into a submitted week without adding its hours, with a note and an audit reason", async () => {
     const pia = await person({ name: "Pia Punch" });

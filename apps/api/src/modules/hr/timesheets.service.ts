@@ -136,7 +136,8 @@ export class TimesheetsService {
    * hours, a real workweek start that is not in the future. A submitted or approved week is
    * locked (blueprint-delta 2026-11-14: the approver must decide the hours that were sent). A save
    * made from hours that changed since the form opened is refused with nothing written (409
-   * `timesheet_changed`; blueprint-delta 2026-11-16).
+   * `timesheet_changed`; blueprint-delta 2026-11-16). The answer is read before the commit, so it
+   * shows exactly the hours this save wrote, never those of a writer that was waiting on the lock.
    */
   async save(tenant: TenantContext, actor: Actor, input: TimesheetFields): Promise<TimesheetWire> {
     const problem = hoursTextProblem(input.days);
@@ -147,7 +148,7 @@ export class TimesheetsService {
       throw refuse("Choose the first day of the company's workweek.");
     }
     if (input.weekStart > clock.day) throw refuse("Hours can't be entered for a future week.");
-    const id = await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const scope = await personScope(tx, actor.access);
       const isSelf = await selfCheck(tx, actor);
       const employee = await this.lockForEdit(tx, actor.access, scope, isSelf, input.employeeId);
@@ -185,9 +186,11 @@ export class TimesheetsService {
         before: previous ? { days: previous } : null,
         after: { days: input.days.map((h) => hoursText(h)) },
       });
-      return sheetId;
+      // Inside the transaction: My timesheet takes these hours as the ones its form started from, so
+      // after the commit an upload or a clock-out waiting on the lock could put its own hours here,
+      // and the next save would replace them unseen (ADR 0051, 2026-11-16, review round 1).
+      return this.one(tx, sheetId);
     });
-    return this.one(db, id);
   }
 
   /** Sends a sheet for approval and tells the people who decide sheets, in the app (hr.md "To submitted"). */
