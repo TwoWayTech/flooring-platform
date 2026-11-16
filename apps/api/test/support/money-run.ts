@@ -1,7 +1,11 @@
 import type { CompanyDb, DbHandle } from "@workspace/db";
+import { userProfiles } from "@workspace/db/company";
 import { cashAccountFor, type PaymentMethod } from "@workspace/shared";
+import { inArray } from "drizzle-orm";
+import { todayIn } from "../../src/modules/sales/sales-common";
 import type { AuthHarness } from "../auth-harness";
-import type { BootstrappedCompany } from "./company-bootstrap";
+import { BOOTSTRAP_ZONE, bootstrapCompany, type BootstrappedCompany } from "./company-bootstrap";
+import { acceptInvitation, inviteProvisionedOwner } from "./fresh-owner";
 import { entriesBySource, trialBalanceProblems, unbalancedEntries } from "./ledger-read";
 import { refusalOf, type Call, type MoneyApi } from "./money-actions";
 import {
@@ -14,12 +18,14 @@ import {
   type Books,
   type MoneyMemory,
 } from "./money-model";
-import type { EnrolledPerson } from "./sign-in";
+import { enrolled, type EnrolledPerson } from "./sign-in";
 
-/** The people a money run acts as. Owner and Accountant are enrolled (MFA); the rest are session cookies. */
+/** The people a money run acts as. Owner, Accountant and HR are enrolled (MFA); the rest are session cookies. */
 export interface MoneyActors {
   owner: EnrolledPerson;
   accountant: EnrolledPerson;
+  /** HR, linked to no employee, so it may approve any pay run (separation of duties). */
+  hr: EnrolledPerson;
   purchasing: string;
   /** Warehouse, placed at the first branch. */
   warehouse: string;
@@ -162,17 +168,52 @@ export class MoneyRun {
     return end;
   }
 
-  /**
-   * E3 to E12, their preconditions and E14 on the books as they stand. `extraEntries` adds the
-   * journal entries a scenario's own documents call for (contract billings, pay runs).
-   */
-  async checkAll(where: string, extraEntries: readonly string[] = []): Promise<void> {
+  /** E3 to E12, their preconditions and E14 on the books as they stand. */
+  async checkAll(where: string): Promise<void> {
     const books = await this.refresh();
     const problems = [
       ...preconditionProblems(books).map((problem) => `precondition: ${problem}`),
       ...reconcile(books, this.memory).map((m) => `${m.id}: ledger ${m.ledger}, documents ${m.documents}`),
-      ...entryProblems(await entriesBySource(this.db.db), books, this.memory, extraEntries).map((p) => `E14: ${p}`),
+      ...entryProblems(await entriesBySource(this.db.db), books, this.memory).map((p) => `E14: ${p}`),
     ];
     if (problems.length > 0) this.fail(`${where}:\n${problems.join("\n")}`);
   }
+}
+
+/**
+ * A money run on a company made for it: provisioned the real way (America/Chicago), bootstrapped
+ * with settings and products (G2, G3), its Owner signed in through the invitation provisioning
+ * should send (G4), and an Accountant, HR, Purchasing, Warehouse and Sales added; Warehouse and
+ * Sales work at the Denver branch, because a roll invoice needs its seller's branch. The caller
+ * closes `run.db` when done.
+ */
+export async function startMoneyRun(
+  harness: AuthHarness,
+  api: MoneyApi,
+  name: string,
+  seed: number,
+): Promise<MoneyRun> {
+  const company = await harness.provisionCompany(name);
+  const places = await bootstrapCompany(harness, company.id);
+  const invitation = await inviteProvisionedOwner(harness, company.id);
+  await acceptInvitation(harness, invitation.token);
+  const add = (role: string) => harness.addUser({ companyIds: [company.id], roles: [role] });
+  const owner = await enrolled(harness, invitation.email);
+  const accountant = await enrolled(harness, await add("accountant"));
+  const hr = await enrolled(harness, await add("hr"));
+  const emails = { purchasing: await add("purchasing"), warehouse: await add("warehouse"), sales: await add("sales") };
+  const db = await harness.companyDb(company.id);
+  const placed = [await harness.userIdOf(emails.warehouse), await harness.userIdOf(emails.sales)];
+  await db.db.update(userProfiles).set({ branchId: places.branches[0] }).where(inArray(userProfiles.userId, placed));
+  const actors: MoneyActors = {
+    owner,
+    accountant,
+    hr,
+    purchasing: await harness.signIn(emails.purchasing),
+    warehouse: await harness.signIn(emails.warehouse),
+    sales: await harness.signIn(emails.sales),
+  };
+  const run = new MoneyRun(harness, api, db, company.id, places, actors, todayIn(BOOTSTRAP_ZONE), seed);
+  await run.refresh();
+  return run;
 }

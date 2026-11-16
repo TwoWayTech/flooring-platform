@@ -33,6 +33,12 @@ const SUMMIT_SETTINGS = (
  */
 export const TILE_WASTE_PCT = SUMMIT_SETTINGS.localization.documents.defaultWastePct.porcelain_tile;
 
+/** Summit's pay schedule, which the bootstrapped company keeps: the frequency and the first period's start. */
+export const PAY_SCHEDULE = {
+  frequency: SUMMIT_SETTINGS.hr.payFrequency,
+  anchor: SUMMIT_SETTINGS.hr.payPeriodAnchor,
+} as const;
+
 /** What `bootstrapCompany` made, by role. */
 export interface BootstrappedCompany {
   branches: [string, string];

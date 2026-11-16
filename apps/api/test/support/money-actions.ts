@@ -155,6 +155,17 @@ export interface ExpenseInput {
   settlement: "paid" | "on_account";
 }
 
+/** A contract as the form sends it (contracts.md "The form"; ADR 0026), with one line per entry. */
+export interface ContractInput {
+  direction: "customer" | "subcontractor";
+  customerId: string | null;
+  supplierId: string | null;
+  branchId: string;
+  locationId: string;
+  retainagePct: string;
+  lines: { code: string; category: "material" | "labor"; scheduledValue: string; estimatedCost: string }[];
+}
+
 /**
  * The requests behind every money event the check drives, with bodies copied from the existing
  * integration tests and checked against the controllers' Zod schemas. Each returns a `Call`; who
@@ -399,6 +410,131 @@ export const moneyCalls = {
 
   /** PUT /settings/accounting: the company's bank accounts and which payment methods post to each. */
   accounting: (settings: AccountingSettings): Call => ({ verb: "put", path: "/settings/accounting", body: settings }),
+
+  /** POST /contracts: a project contract, as a draft. */
+  contract: (input: ContractInput): Call => ({
+    verb: "post",
+    path: "/contracts",
+    body: {
+      direction: input.direction,
+      kind: "project",
+      customerId: input.customerId,
+      supplierId: input.supplierId,
+      title: "Lobby tile",
+      scope: "Tile",
+      branchId: input.branchId,
+      locationId: input.locationId,
+      jobSite: JOB_SITE,
+      startsAt: "2026-11-01",
+      endsAt: "2027-02-01",
+      renewal: { mode: "none", noticeDays: 30 },
+      retainagePct: input.retainagePct,
+      storedRetainagePct: input.retainagePct,
+      bondInLieu: false,
+      taxTreatment: "on_billing",
+      notes: "",
+      lines: input.lines.map((line) => ({
+        ...line,
+        description: line.code,
+        billing: "percent",
+        retainagePct: null,
+        storedRetainagePct: null,
+        milestoneDueAt: null,
+      })),
+    },
+  }),
+
+  /** POST /contracts/:id/send. */
+  contractSend: (id: string): Call => ({ verb: "post", path: `/contracts/${id}/send` }),
+
+  /** POST /contracts/:id/sign: a simulated signature. */
+  contractSign: (id: string): Call => ({
+    verb: "post",
+    path: `/contracts/${id}/sign`,
+    body: { signerName: "Alex Crew", signerRole: "Owner" },
+  }),
+
+  /** POST /contracts/:id/billings: a pay application with each line's cumulative completion. */
+  contractBilling: (id: string, periodEnd: string, lines: readonly [string, string][]): Call => ({
+    verb: "post",
+    path: `/contracts/${id}/billings`,
+    body: {
+      periodEnd,
+      lines: lines.map(([contractLineId, completedToDate]) => ({
+        contractLineId,
+        completedToDate,
+        storedBalance: "0.00",
+      })),
+    },
+  }),
+
+  /** POST /contracts/:id/retainage-releases. */
+  retainageRelease: (id: string, amount: string): Call => ({
+    verb: "post",
+    path: `/contracts/${id}/retainage-releases`,
+    body: { amount },
+  }),
+
+  /** POST /contract-billings/:id/void. */
+  contractBillingVoid: (id: string): Call => ({
+    verb: "post",
+    path: `/contract-billings/${id}/void`,
+    body: { reason: "Wrong period" },
+  }),
+
+  /** PUT /timesheets: a week's hours, Monday first. */
+  timesheet: (employeeId: string, weekStart: string, days: readonly string[]): Call => ({
+    verb: "put",
+    path: "/timesheets",
+    body: { employeeId, weekStart, days },
+  }),
+
+  /** POST /timesheets/:id/submit. */
+  timesheetSubmit: (id: string): Call => ({ verb: "post", path: `/timesheets/${id}/submit` }),
+
+  /** POST /timesheets/decisions: approves submitted weeks. */
+  timesheetsApprove: (ids: readonly string[]): Call => ({
+    verb: "post",
+    path: "/timesheets/decisions",
+    body: { action: "approve", ids },
+  }),
+
+  /** POST /pay-periods: opens the pay period holding a day. */
+  payPeriodOpen: (date: string): Call => ({ verb: "post", path: "/pay-periods", body: { date } }),
+
+  /** POST /pay-periods/:id/approve. */
+  payPeriodApprove: (id: string): Call => ({ verb: "post", path: `/pay-periods/${id}/approve`, body: {} }),
+
+  /** POST /pay-periods/:id/reopen. */
+  payPeriodReopen: (id: string): Call => ({ verb: "post", path: `/pay-periods/${id}/reopen`, body: {} }),
+
+  /** POST /bonuses: a discretionary bonus paid in a period. */
+  bonus: (employeeId: string, amount: string, periodStart: string, periodEnd: string): Call => ({
+    verb: "post",
+    path: "/bonuses",
+    body: { employeeId, amount, kind: "discretionary", periodStart, periodEnd, reason: "Great month" },
+  }),
+
+  /** POST /contractor-payments: a payment to make to a 1099 contractor. */
+  contractorPayment: (employeeId: string, date: string, amount: string): Call => ({
+    verb: "post",
+    path: "/contractor-payments",
+    body: { employeeId, date, description: "Tile install", amount },
+  }),
+
+  /** POST /contractor-payments/:id/pay. */
+  contractorPay: (id: string, method: PaymentMethod): Call => ({
+    verb: "post",
+    path: `/contractor-payments/${id}/pay`,
+    body: { method },
+  }),
+
+  /** POST /contractor-payments/:id/void. */
+  contractorVoid: (id: string): Call => ({
+    verb: "post",
+    path: `/contractor-payments/${id}/void`,
+    body: { reason: "Paid twice by mistake" },
+  }),
 
   /** POST /ledger/period-close: closes the books through a day. */
   periodClose: (through: string): Call => ({

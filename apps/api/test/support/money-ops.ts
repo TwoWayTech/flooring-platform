@@ -299,13 +299,16 @@ export async function voidSupplierPayment(run: MoneyRun, paymentId: string): Pro
   run.note("supplier payment voided");
 }
 
-/** Records an expense as the Accountant; above Summit's expense threshold it waits for review (finance-expenses rule 9). */
-export async function recordExpense(run: MoneyRun, input: Omit<ExpenseInput, "date">): Promise<Expense> {
-  const expense = await run.act<Expense>(
-    201,
-    moneyCalls.expense({ ...input, date: run.today }),
-    run.actors.accountant.cookie,
-  );
+/**
+ * Records an expense as the Accountant, dated today unless another day is given; above Summit's
+ * expense threshold it waits for review (finance-expenses rule 9).
+ */
+export async function recordExpense(
+  run: MoneyRun,
+  input: Omit<ExpenseInput, "date"> & { date?: string },
+): Promise<Expense> {
+  const call = moneyCalls.expense({ ...input, date: input.date ?? run.today });
+  const expense = await run.act<Expense>(201, call, run.actors.accountant.cookie);
   if (expense.status === "confirmed")
     run.posted(expense.id, expense.settlement === "paid" ? expense.paymentMethod : null);
   run.note(
@@ -384,4 +387,12 @@ export function carpetArea(lengthFt: string): string {
 /** Whole cartons of tile, as sq ft. */
 export function tileCartons(cartons: number): string {
   return dec(TILE.sqFtPerCarton).times(cartons).toString();
+}
+
+/** Pays a contractor payment HR recorded, as the Owner (someone else must pay; ADR 0047), into the method's bank. */
+export async function payContractor(run: MoneyRun, paymentId: string, method: PaymentMethod): Promise<void> {
+  await run.act(201, moneyCalls.contractorPay(paymentId, method), run.owner);
+  run.memory.contractorPaid.add(paymentId);
+  run.posted(paymentId, method);
+  run.note("contractor payment paid");
 }

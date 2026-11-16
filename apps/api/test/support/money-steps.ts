@@ -96,10 +96,10 @@ function hasLiveNote(run: MoneyRun, invoiceId: string): boolean {
   return run.books.invoices.some((n) => n.isReturn && !n.voidedAt && n.creditForInvoiceId === invoiceId);
 }
 
-/** Holds that may be issued now: paid for, and the stock is there. */
+/** Holds that may be issued now: paid for, something reserved (a short row is refused, inventory rule 15), and the stock is there. */
 function issuable(run: MoneyRun) {
   return run.books.holds.filter((hold) => {
-    if (!hold.mayIssue) return false;
+    if (!hold.mayIssue || !dec(hold.quantity).gt(0)) return false;
     if (hold.rollId)
       return run.books.rolls.some((r) => r.id === hold.rollId && dec(r.remainingLengthFt).gte(hold.quantity));
     return boxedOnHand(run.books.movements, hold.productId, hold.locationId).gte(hold.quantity);
@@ -320,8 +320,9 @@ export const MONEY_STEPS: readonly MoneyStep[] = [
     applicable: (run) => issuable(run).length > 0,
     async run(run, _cast, rng) {
       const hold = rng.pick(issuable(run));
+      const invoice = run.books.invoices.find((candidate) => candidate.id === hold.invoiceId)!;
       await issueStock(run, hold.invoiceId);
-      return `stock issued for hold ${hold.reservationId}`;
+      return `${hold.rollId ? "roll cut" : "stock issued"} for ${invoice.number}`;
     },
     allowedRefusals: [],
   },
@@ -404,7 +405,7 @@ export const MONEY_STEPS: readonly MoneyStep[] = [
       const difference = rng.chance(0.3) ? cents(rng, dec("0.01"), dec("20.00")) : "0.00";
       const signed = rng.chance(0.5) ? difference : moneyString(dec(difference).negated());
       const bill = await enterBill(run, order.id, signed);
-      return `bill ${bill.number} of ${bill.total} on ${order.number}`;
+      return `bill of ${bill.total} on ${order.number}`;
     },
     allowedRefusals: [],
   },

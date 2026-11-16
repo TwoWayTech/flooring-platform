@@ -1,4 +1,3 @@
-import { userProfiles } from "@workspace/db/company";
 import {
   countsAsCost,
   dec,
@@ -8,20 +7,17 @@ import {
   type Dec,
   type Report,
 } from "@workspace/shared";
-import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { todayIn } from "../src/modules/sales/sales-common";
 import { AuthHarness } from "./auth-harness";
-import { BOOTSTRAP_ZONE, bootstrapCompany } from "./support/company-bootstrap";
-import { acceptInvitation, inviteProvisionedOwner } from "./support/fresh-owner";
+import { BOOTSTRAP_ZONE } from "./support/company-bootstrap";
 import { balanceOf, stateLikeColumns } from "./support/ledger-read";
 import { MoneyApi } from "./support/money-actions";
 import { rngOf } from "./support/money-model";
 import { PRELUDE_EVENTS, runPrelude } from "./support/money-prelude";
-import { MoneyRun } from "./support/money-run";
+import { startMoneyRun, type MoneyRun } from "./support/money-run";
 import { drawStep } from "./support/money-steps";
 import { STORED_STATE_COLUMNS, TIER_B_DEFAULT } from "./support/route-lists";
-import { enrolled } from "./support/sign-in";
 
 /** The long variant (tier C): five seeds of 80 random steps. */
 const WHOLE_CHECK = process.env.WHOLE_CHECK === "1";
@@ -74,36 +70,10 @@ describe("money integrity on an API-only company (whole-product check; needs the
     await harness.stop();
   });
 
-  /** A fresh company for one seed, its Owner signed in through the invitation provisioning should send, and its people. */
+  /** A fresh company for one seed (see startMoneyRun), closed after the file. */
   async function newRun(seed: number): Promise<MoneyRun> {
-    const company = await harness.provisionCompany(`money${seed}`);
-    const places = await bootstrapCompany(harness, company.id);
-    const invitation = await inviteProvisionedOwner(harness, company.id);
-    await acceptInvitation(harness, invitation.token);
-    const add = (role: string) => harness.addUser({ companyIds: [company.id], roles: [role] });
-    const [owner, accountant] = [
-      await enrolled(harness, invitation.email),
-      await enrolled(harness, await add("accountant")),
-    ];
-    const emails = {
-      purchasing: await add("purchasing"),
-      warehouse: await add("warehouse"),
-      sales: await add("sales"),
-    };
-    const db = await harness.companyDb(company.id);
-    // Warehouse and Sales work at the Denver branch: a roll invoice needs its seller's branch.
-    const placed = [await harness.userIdOf(emails.warehouse), await harness.userIdOf(emails.sales)];
-    await db.db.update(userProfiles).set({ branchId: places.branches[0] }).where(inArray(userProfiles.userId, placed));
-    const actors = {
-      owner,
-      accountant,
-      purchasing: await harness.signIn(emails.purchasing),
-      warehouse: await harness.signIn(emails.warehouse),
-      sales: await harness.signIn(emails.sales),
-    };
-    const run = new MoneyRun(harness, api, db, company.id, places, actors, todayIn(BOOTSTRAP_ZONE), seed);
+    const run = await startMoneyRun(harness, api, `money${seed}`, seed);
     runs.push(run);
-    await run.refresh();
     return run;
   }
 

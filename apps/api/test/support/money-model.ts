@@ -1,6 +1,7 @@
 import {
   billLedger,
   boxedStock,
+  maxDec,
   cashAccountFor,
   customerCredit,
   dec,
@@ -13,12 +14,15 @@ import {
   sum,
   type AccountingSettings,
   type Bill,
+  type ContractBilling,
+  type ContractorPayment,
   type Dec,
   type Expense,
   type GoodsReceipt,
   type Invoice,
   type InvoiceAdjustment,
   type LedgerKey,
+  type PayPeriod,
   type Payment,
   type Product,
   type PurchaseOrder,
@@ -90,6 +94,10 @@ export interface Books {
   movements: StockMovement[];
   rolls: Roll[];
   holds: Hold[];
+  contractBillings: ContractBilling[];
+  payPeriods: PayPeriod[];
+  /** Contractor payments still standing; a voided one leaves the list. */
+  contractorPayments: ContractorPayment[];
   accounting: AccountingSettings;
   trial: TrialBalance;
 }
@@ -109,14 +117,18 @@ export async function readBooks(api: MoneyApi, cookie: string, today: string): P
       read<SupplierPayment[]>("/supplier-payments"),
       read<Expense[]>("/expenses"),
     ]);
-  const [products, movements, rolls, holds, accounting, trial] = await Promise.all([
-    read<Product[]>("/products"),
-    read<StockMovement[]>("/stock-movements"),
-    read<Roll[]>("/rolls"),
-    read<Hold[]>("/stock-holds"),
-    read<AccountingSettings>("/settings/accounting"),
-    api.trialBalance(cookie),
-  ]);
+  const [products, movements, rolls, holds, contractBillings, payPeriods, contractorPayments, accounting, trial] =
+    await Promise.all([
+      read<Product[]>("/products"),
+      read<StockMovement[]>("/stock-movements"),
+      read<Roll[]>("/rolls"),
+      read<Hold[]>("/stock-holds"),
+      read<ContractBilling[]>("/contract-billings"),
+      read<PayPeriod[]>("/pay-periods"),
+      read<ContractorPayment[]>("/contractor-payments"),
+      read<AccountingSettings>("/settings/accounting"),
+      api.trialBalance(cookie),
+    ]);
   return {
     today,
     invoices,
@@ -132,6 +144,9 @@ export async function readBooks(api: MoneyApi, cookie: string, today: string): P
     movements,
     rolls,
     holds,
+    contractBillings,
+    payPeriods,
+    contractorPayments,
     accounting,
     trial,
   };
@@ -141,8 +156,8 @@ export async function readBooks(api: MoneyApi, cookie: string, today: string): P
  * What the model knows that no document records: which cash account each money movement posted
  * to (the method's bank at that moment, ADR 0040), which documents ever posted, and the cost the
  * model predicted for each issue and stock correction from the average cost it read just before
- * (stock movements carry no cost; SH-7). Plus the E9 rounding allowance and anything a scenario
- * expects on accounts the documents above don't explain (contracts, payroll).
+ * (stock movements carry no cost; SH-7). Plus the E9 rounding allowance, and the contractor
+ * payments that were paid, because a voided one leaves its list.
  */
 export interface MoneyMemory {
   cashAt: Map<string, LedgerKey>;
@@ -151,8 +166,7 @@ export interface MoneyMemory {
   issuedInvoices: Set<string>;
   corrections: Map<string, Dec>;
   e9Allowance: Dec;
-  /** Expected balances (debits less credits) of accounts a scenario drives, by key. */
-  scenario: Map<string, Dec>;
+  contractorPaid: Set<string>;
 }
 
 /** An empty memory, for a company with no documents. */
@@ -164,7 +178,7 @@ export function newMemory(): MoneyMemory {
     issuedInvoices: new Set(),
     corrections: new Map(),
     e9Allowance: dec(0),
-    scenario: new Map(),
+    contractorPaid: new Set(),
   };
 }
 
@@ -349,6 +363,21 @@ export function reconcile(books: Books, memory: MoneyMemory): Mismatch[] {
       documents: valuation.toFixed(2),
     });
   }
+  // E6: retainage held on posted billings, customer side and subcontract side (ADR 0045).
+  const postedBillings = books.contractBillings.filter((billing) => billing.status === "posted");
+  const held = (list: readonly ContractBilling[]) => sum(list.map((b) => dec(b.withheld).minus(b.released)));
+  const customerBillings = postedBillings.filter((billing) => billing.invoiceId);
+  const subcontractBillings = postedBillings.filter((billing) => billing.billId);
+  check("E6 Retainage Receivable", "retainage_receivable", debit("retainage_receivable"), held(customerBillings));
+  check("E6 Retainage Payable", "retainage_payable", credit("retainage_payable"), held(subcontractBillings));
+  // E11: approved pay runs accrue gross pay less the commission already accrued (ADR 0047, ADR 0048).
+  const runs = books.payPeriods.filter((period) => period.status === "approved" || period.status === "exported");
+  const runWages = sum(
+    runs.flatMap((period) => period.lines.map((l) => maxDec(dec(l.grossPay).minus(l.commissionPay || "0"), 0))),
+  );
+  check("E11 Accrued Payroll", "accrued_payroll", credit("accrued_payroll"), runWages);
+  const contractorPaid = books.contractorPayments.filter((payment) => payment.status === "paid");
+  check("E12 Contract Labor", "contract_labor", debit("contract_labor"), sum(contractorPaid.map((p) => p.amount)));
   // E10: each cash account holds exactly the cash events posted to it.
   for (const key of cashAccounts(books)) {
     const at = (id: string) => memory.cashAt.get(id) === key;
@@ -356,7 +385,7 @@ export function reconcile(books: Books, memory: MoneyMemory): Mismatch[] {
       .minus(sum(books.refunds.filter((r) => r.status === "completed" && at(r.id)).map((r) => r.amount)))
       .minus(sum(books.supplierPayments.filter((p) => p.status === "confirmed" && at(p.id)).map((p) => p.amount)))
       .minus(sum(confirmedExpenses.filter((e) => e.settlement === "paid" && at(e.id)).map(expenseCost)))
-      .plus(memory.scenario.get(key) ?? dec(0));
+      .minus(sum(contractorPaid.filter((p) => at(p.id)).map((p) => p.amount)));
     check(`E10 cash account ${key}`, key, debit(key), expected);
   }
   // E12: revenue, returns, bad debt, cost of goods, stock corrections and each expense account.
@@ -364,17 +393,14 @@ export function reconcile(books: Books, memory: MoneyMemory): Mismatch[] {
   check("E12 Sales Returns", "sales_returns", debit("sales_returns"), sum(returns.map((i) => i.subtotal)));
   const writtenOff = sum(books.adjustments.filter((a) => a.kind === "write_off").map((a) => a.amount));
   check("E12 Bad Debt", "bad_debt", debit("bad_debt"), writtenOff);
-  const cogs = issued.plus(memory.scenario.get("cost_of_goods_sold") ?? dec(0));
+  // Subcontracted work is a job cost at its gross (blueprint-delta 2026-11-14).
+  const cogs = issued.plus(sum(subcontractBillings.map((billing) => billing.gross)));
   check("E12 Cost of Goods Sold", "cost_of_goods_sold", debit("cost_of_goods_sold"), cogs);
   check("E12 Inventory Adjustments", "inventory_adjustments", debit("inventory_adjustments"), corrected.negated());
   const expenseAccounts = new Set(Object.values(EXPENSE_ACCOUNTS).filter((key) => key !== "sales_tax_payable"));
   for (const key of expenseAccounts) {
     const documents = sum(confirmedExpenses.filter((e) => EXPENSE_ACCOUNTS[e.category] === key).map(expenseCost));
-    check(`E12 expense account ${key}`, key, debit(key), documents.plus(memory.scenario.get(key) ?? dec(0)));
-  }
-  // Accounts a scenario drives (retainage, accrued payroll, contract labor, commissions).
-  for (const [key, expected] of memory.scenario) {
-    if (!explained.has(key)) check(`scenario account ${key}`, key, debit(key), expected);
+    check(`E12 expense account ${key}`, key, debit(key), key === "wages" ? documents.plus(runWages) : documents);
   }
   // Nothing else may move: every account with a balance is explained above (E2 covers the total).
   for (const row of books.trial.rows) {
@@ -435,22 +461,30 @@ export function expectedEntries(books: Books, memory: MoneyMemory): string[] {
   for (const bill of books.bills.filter((b) => b.poId)) add("bill", bill.id, "bill.entered");
   for (const [id, cost] of memory.issueCosts) if (!cost.isZero()) add("stock_issue", id, "goods.issued");
   for (const [id, value] of memory.corrections) if (!value.isZero()) add("stock_adjustment", id, "stock.adjusted");
+  for (const billing of books.contractBillings) {
+    add("contract_billing", billing.id, "contract_billing.posted");
+    if (billing.status === "void") add("contract_billing", billing.id, "contract_billing.posted.reversed");
+  }
+  const standing = new Set(books.contractorPayments.map((payment) => payment.id));
+  for (const id of memory.contractorPaid) {
+    add("contractor_payment", id, "contractor_payment.paid");
+    if (!standing.has(id)) add("contractor_payment", id, "contractor_payment.paid.reversed");
+  }
   return keys.sort();
 }
 
 /**
  * Where the journal and the documents disagree (E14): entries no document calls for, documents
  * whose entry is missing, and reversals that are not dated the day they were made or don't point
- * at the entry they undo. `extra` adds keys a scenario expects (contract billings, pay runs).
+ * at the entry they undo. A pay run's entry is keyed by its approval, not its period, so pay-run
+ * entries are left to the payroll scenario (MI-5), which checks them one by one.
  */
-export function entryProblems(
-  entries: readonly EntrySource[],
-  books: Books,
-  memory: MoneyMemory,
-  extra: readonly string[] = [],
-): string[] {
-  const expected = [...expectedEntries(books, memory), ...extra].sort();
-  const actual = entries.map(entryKey).sort();
+export function entryProblems(entries: readonly EntrySource[], books: Books, memory: MoneyMemory): string[] {
+  const expected = expectedEntries(books, memory);
+  const actual = entries
+    .filter((entry) => entry.sourceType !== "pay_period")
+    .map(entryKey)
+    .sort();
   const problems: string[] = [];
   const count = (list: readonly string[]) =>
     list.reduce((m, k) => m.set(k, (m.get(k) ?? 0) + 1), new Map<string, number>());
@@ -465,6 +499,7 @@ export function entryProblems(
     if (!original || original.sourceId !== entry.sourceId || `${original.event}.reversed` !== entry.event) {
       problems.push(`${entryKey(entry)} does not point at the entry it reverses`);
     }
+    if (entry.date !== books.today) problems.push(`${entryKey(entry)} is dated ${entry.date}, not the day it was made`);
   }
   return problems;
 }
