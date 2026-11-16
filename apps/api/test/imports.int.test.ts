@@ -1443,16 +1443,25 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     // (ADR 0057 api 4.6 steps 7 to 9); the check after the locks runs as written and is the only one that sees it.
     const service = harness.app.get(ImportsService) as unknown as {
       assertUnused: (...args: unknown[]) => Promise<void>;
+      lockRemoved: (...args: unknown[]) => Promise<void>;
     };
     const checks = vi.spyOn(service, "assertUnused").mockResolvedValueOnce(undefined);
+    const locks = vi.spyOn(service, "lockRemoved");
     try {
       refusedWith(await undo(owner, hazel.batch.id), 409, {
         code: "import_in_use",
         message: IMPORT_WORDS.inUse("Hazel Interiors"),
       });
       expect(checks).toHaveBeenCalledTimes(2);
+      expect(locks).toHaveBeenCalledTimes(1);
+      // The order is the guard: first check, then the row locks, then the check that sees the quote.
+      const [first, second] = checks.mock.invocationCallOrder;
+      const [locked] = locks.mock.invocationCallOrder;
+      expect(first).toBeLessThan(locked!);
+      expect(locked).toBeLessThan(second!);
     } finally {
       checks.mockRestore();
+      locks.mockRestore();
     }
     expect((await batchRow(co.a, hazel.batch.id))!.undoneAt).toBeNull();
     expect(await customerByExternalId("CUST-9903")).toMatchObject({ name: "Hazel Interiors" });
