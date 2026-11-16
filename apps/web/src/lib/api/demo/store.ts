@@ -58,6 +58,8 @@ import {
   type TransferInput,
   type User,
   type ColumnMapping,
+  FULL_IMPORT_HOLDER,
+  type ImportHolder,
   type ImportKind,
   type ImportRequest,
   accessPatchProblem,
@@ -2020,19 +2022,22 @@ export class DemoStore implements ApiClient {
 
   /**
    * Who imports into a company (spec G1): a user of the open company needs settings.import.manage
-   * and may import only there; with no company open the caller is the platform admin (the
-   * platform pages close it), who may import into any company.
+   * and may import only there, with their effective keys and data scope deciding the kinds and
+   * columns (ADR 0057 S-2 to S-4, View as included); with no company open the caller is the
+   * platform admin (the platform pages close it), who may import into any company.
    */
   private async importScope(companyId: CompanyId): Promise<ImportScope> {
     const company = (await this.listCompanies()).find((c) => c.id === companyId);
     if (!company) throw new DemoRuleError("This company does not exist.");
     const db = await this.db(companyId);
     let actor: ImportScope["actor"] = { userId: null, name: "Platform admin" };
+    let holder: ImportHolder = FULL_IMPORT_HOLDER;
     if (this.viewer) {
       if (this.current?.companyId !== companyId) throw new DemoRuleError("You can import only into your own company.");
       await this.assertCan(db, ["settings.import.manage"]);
       const self = db.get("users", this.viewer.userId)!;
       actor = { userId: self.id, name: self.name };
+      holder = (await this.granter(db)).access;
     }
     return {
       db,
@@ -2040,6 +2045,7 @@ export class DemoStore implements ApiClient {
       now: nowStamp(),
       actor,
       modules: company.modules,
+      holder,
       newId: (kind) => newId(companyId, kind),
       audit: (entry) => this.appendAudit(db, entry),
     };

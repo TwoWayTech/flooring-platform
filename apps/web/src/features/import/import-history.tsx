@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Undo2 } from "lucide-react";
 import { toast } from "sonner";
-import { importKind, type CompanyId, type ImportBatch } from "@workspace/shared";
+import { importKind, type CompanyId, type ImportBatchSummary } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -20,7 +20,15 @@ import { StatusPill } from "@workspace/ui/components/status-pill";
 import { api } from "@/lib/api";
 
 /** Asks before an Undo, since it removes what the import created. */
-function UndoDialog({ companyId, batch, onClose }: { companyId: CompanyId; batch: ImportBatch; onClose: () => void }) {
+function UndoDialog({
+  companyId,
+  batch,
+  onClose,
+}: {
+  companyId: CompanyId;
+  batch: ImportBatchSummary;
+  onClose: () => void;
+}) {
   const [pending, setPending] = useState(false);
   async function undo() {
     setPending(true);
@@ -66,10 +74,10 @@ export function ImportHistory({
   formatDate,
 }: {
   companyId: CompanyId;
-  batches: readonly ImportBatch[];
+  batches: readonly ImportBatchSummary[];
   formatDate: (iso: string, withTime?: boolean) => string;
 }) {
-  const [undoing, setUndoing] = useState<ImportBatch | null>(null);
+  const [undoing, setUndoing] = useState<ImportBatchSummary | null>(null);
   return (
     <Panel title="Import history" bodyClassName="p-0">
       {batches.length === 0 ? (

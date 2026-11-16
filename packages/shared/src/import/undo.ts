@@ -1,3 +1,5 @@
+import { dec } from "../money";
+import type { Product } from "../types";
 import { importKind } from "./kinds";
 import type { ImportBatch, ImportBatchSummary, ImportChange, ImportCounts, ImportKind } from "./types";
 
@@ -47,3 +49,42 @@ export const IMPORT_WORDS = {
   inUse: (name: string) => `${name} is already used by other records, so the import cannot be undone.`,
   undoneAfter: "records put back as before the import",
 } as const;
+
+/** Whether two stored decimals differ as numbers ("3.4" and "3.4000" do not); a missing value differs only from a present one. */
+function decimalChanged(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return (a ?? "") !== (b ?? "");
+  return !dec(a).eq(b);
+}
+
+/** What the API and the demo know about a product when an Undo would put it back (ADR 0057 M4, M6). */
+export interface ProductUndoFacts {
+  /** Whether the product has any stock movement or roll now, deleted rolls and stock in transit included. */
+  hasStock: (productId: string) => boolean;
+  /** Whether a supplier is still live (soft-deleted on the API, removed in the demo). */
+  supplierLive: (supplierId: string) => boolean;
+}
+
+/**
+ * Why an Undo may not put an updated product back, or null (ADR 0057 S-5, M4, M6): once the
+ * product has stock history, the cost, category, selling unit, coverage and roll width the
+ * import changed stay, because stock is valued at them; and the earlier supplier it would point
+ * to again must still be live. Created products and other records are left to the reference check.
+ */
+export function productUndoProblem(change: ImportChange, facts: ProductUndoFacts): string | null {
+  if (change.collection !== "products" || change.before === null) return null;
+  const before = change.before as Product;
+  const after = change.after as Product;
+  const valuationChanged =
+    decimalChanged(before.cost, after.cost) ||
+    before.category !== after.category ||
+    before.unit !== after.unit ||
+    decimalChanged(before.sqFtPerCarton, after.sqFtPerCarton) ||
+    before.widthFt !== after.widthFt;
+  if (valuationChanged && facts.hasStock(before.id)) {
+    return `${before.sku} has stock history now, so its cost, category, selling unit, coverage and roll width can't be put back.`;
+  }
+  if (before.supplierId && !facts.supplierLive(before.supplierId)) {
+    return `${before.sku}'s earlier supplier was removed, so the import cannot be undone.`;
+  }
+  return null;
+}

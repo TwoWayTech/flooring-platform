@@ -26,6 +26,7 @@ import {
   planActions,
   planImport,
   PRODUCT_MODULES,
+  productUndoProblem,
   readCell,
   resolveAccess,
   roleTemplate,
@@ -1050,5 +1051,47 @@ describe("SR-24 to SR-27: the plan, its fingerprint, blank rows and hidden colum
     expect(hiddenSensitiveFields("suppliers", (key) => billsOnly.has(key))).toEqual(new Set(["credit_limit"]));
     expect(hiddenSensitiveFields("suppliers", () => true)).toEqual(new Set());
     expect(hiddenSensitiveFields("addresses", () => false)).toEqual(new Set());
+  });
+});
+
+describe("SR-28: an Undo never puts back what stock is valued at (ADR 0057 S-5, M4, M6)", () => {
+  const before = product({ id: "prd-undo", sku: "LV-9", cost: "3.4000", supplierId: "sup-old" });
+  const change = (after: Partial<Product>): ImportChange => ({
+    collection: "products",
+    id: before.id,
+    before,
+    after: { ...before, ...after },
+  });
+  const facts = (withStock: boolean, liveSuppliers: readonly string[] = ["sup-old", "sup-new"]) => ({
+    hasStock: (id: string) => withStock && id === before.id,
+    supplierLive: (id: string) => liveSuppliers.includes(id),
+  });
+  const FROZEN =
+    "LV-9 has stock history now, so its cost, category, selling unit, coverage and roll width can't be put back.";
+
+  it("refuses to put back a cost, category, unit, coverage or width once the product has stock history", () => {
+    for (const after of [
+      { cost: "3.9000" },
+      { category: "carpet" as const },
+      { unit: "each" as const },
+      { sqFtPerCarton: "20.000" },
+      { widthFt: 12 },
+    ]) {
+      expect(productUndoProblem(change(after), facts(true))).toBe(FROZEN);
+      expect(productUndoProblem(change(after), facts(false))).toBeNull();
+    }
+    // The same number written another way, or a name change, is not a valuation change.
+    expect(productUndoProblem(change({ cost: "3.4", name: "Renamed" }), facts(true))).toBeNull();
+  });
+
+  it("refuses when the earlier supplier is gone, and leaves created records and other kinds to the reference check", () => {
+    expect(productUndoProblem(change({ supplierId: "sup-new" }), facts(false, ["sup-new"]))).toBe(
+      "LV-9's earlier supplier was removed, so the import cannot be undone.",
+    );
+    expect(productUndoProblem(change({ supplierId: "sup-new" }), facts(false))).toBeNull();
+    const created: ImportChange = { collection: "products", id: before.id, before: null, after: before };
+    expect(productUndoProblem(created, facts(true, []))).toBeNull();
+    const customerChange: ImportChange = { collection: "customers", id: "c-1", before: customer(), after: customer() };
+    expect(productUndoProblem(customerChange, facts(true, []))).toBeNull();
   });
 });
