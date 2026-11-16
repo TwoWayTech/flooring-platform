@@ -383,8 +383,8 @@ Rolls do not use this ledger. Their history is `Roll.cuts`.
 | `productId` | string | |
 | `rollId` | string or null | Null for boxed goods and for the short row |
 | `locationId` | string | The roll's warehouse, or the line's |
-| `quantity` | string | In the stock unit. `"0"` on a short row |
-| `shortBy` | string | `"0"` when fully held |
+| `quantity` | string | In the stock unit. Zero on a short row: `"0"` in the demo, `"0.000"` from the API |
+| `shortBy` | string | Zero when fully held: `"0"` in the demo, `"0.000"` from the API (numeric(14,3)). Read by value with `isShort` in `reservations.ts`, never compared as text (STATUS B3) |
 | `status` | `active`, `released`, `issued` | |
 | `createdAt` | string | |
 | `closedAt` | string or null | |
