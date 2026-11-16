@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import type {
   AuditEntry,
   BusinessReport,
@@ -144,6 +144,18 @@ export async function openPayPeriodReview(page: Page, day: string): Promise<PayP
   const review = await answer;
   expect(review.period.id, `the review shown is the period holding ${day}`).toBe(target.id);
   return review;
+}
+
+/**
+ * The cell of `row` under the column headed `header` in `table`, found by the header's place in the
+ * table's head rather than by a fixed index, so a column added to the screen doesn't move the check.
+ */
+export async function cellUnder(table: Locator, row: Locator, header: string): Promise<Locator> {
+  await expect(row).toBeVisible();
+  const headers = (await table.locator("thead th").allInnerTexts()).map((text) => text.trim());
+  const index = headers.indexOf(header);
+  expect(index, `a "${header}" column among: ${headers.join(" | ")}`).toBeGreaterThanOrEqual(0);
+  return row.locator("th, td").nth(index);
 }
 
 /** The audit log shows `at` to the minute, in UTC ("2026-11-16T09:30"). */
