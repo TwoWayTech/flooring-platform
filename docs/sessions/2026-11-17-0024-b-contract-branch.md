@@ -130,7 +130,16 @@ Planned decisions, each the safest option found. Decisions taken while building 
   - stops after step 3 (`paid`) and after the release posted (`release`);
   - the S1 check (`drop`: "Only the latest billing can be voided." taken out of the set).
   - Each behaved as planned (Commands run). The optional pin (§6.3 run 5, the fix reverted) was not done: the red unit test and the flows log's `f5-try1` already show the bug, and it would cost two more builds on this laptop.
-- **Demo e2e was run, although the plan says it isn't needed.** The task asks for it, so I took the safer reading: the demo contract specs, `contracts.spec.ts` and `flows-batch3.spec.ts` (whose flow 5 is G3-5), on a demo build. The demo build replaces the api build, so the final suite (`b4-all-final`) builds again.
+- **Demo e2e was run, although the plan says it isn't needed (stage 3).** The task asks for it, so I took the safer reading: the demo contract specs, `contracts.spec.ts` and `flows-batch3.spec.ts` (whose flow 5 is G3-5), on a demo build. The demo build replaces the api build, so the final suite (`b4-all-final`) builds again.
+
+#### Stage 4 (ADR 0044)
+- **The section is the plan's text** with the date filled in, appended after "Consequences". Two small additions: the "No picker" bullet names Q-B4-1, and the tests bullet names F5's file and step.
+- **The section is also noted under ADR 0044's Status line,** as ADR 0051 notes its dated amendments ("2026-11-16 (STATUS B2)"), so a reader of the header sees that the ADR was amended.
+- **Its two claims were re-checked against the code.**
+  - A new company's first Owner has no branch: `company-foundation.ts` inserts the Owner's profile with only a status.
+  - The seed gives each fixture person their branch (`seed/company.ts`, `branchId: seedId(person.branchId)`).
+- **`contractBody`'s JSDoc** (stage 2) names this section word for word, so its citation now resolves.
+- **No delta row, and no change to the spec, api-contract, FEATURES or data-model** (D6).
 
 ## Which test pins which path
 | Path | Pinned by |
