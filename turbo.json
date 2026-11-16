@@ -16,9 +16,35 @@
     "test": {
       "outputs": ["coverage/**"]
     },
+    "web#test": {
+      "outputs": ["coverage/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/coverage.md",
+        "$TURBO_ROOT$/docs/product-spec/**",
+        "$TURBO_ROOT$/docs/specs/platform-admin.md",
+        "$TURBO_ROOT$/docs/specs/settings-users-access.md",
+        "$TURBO_ROOT$/packages/shared/src/**",
+        "$TURBO_ROOT$/packages/shared/test/**",
+        "$TURBO_ROOT$/apps/api/test/**"
+      ]
+    },
+    "@workspace/shared#test": {
+      "outputs": ["coverage/**"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/FEATURES.md"]
+    },
     "test:api": {
       "cache": false,
-      "passThroughEnv": ["CONTROL_DATABASE_URL", "TENANT_DB_ADMIN_URL", "CONNECTION_ENCRYPTION_KEY", "DB_PROVIDER"]
+      "passThroughEnv": [
+        "CONTROL_DATABASE_URL",
+        "TENANT_DB_ADMIN_URL",
+        "CONNECTION_ENCRYPTION_KEY",
+        "DB_PROVIDER",
+        "WHOLE_CHECK",
+        "MONEY_SEEDS",
+        "MONEY_STEPS",
+        "MONEY_SEED"
+      ]
     }
   }
 }
