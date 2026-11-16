@@ -1,4 +1,4 @@
-import type { AccountingSettings, PaymentMethod } from "@workspace/shared";
+import { PRODUCT_HEADER, type AccountingSettings, type PaymentMethod, type ProductKey } from "@workspace/shared";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import type { AuthHarness } from "../auth-harness";
@@ -13,6 +13,11 @@ export interface Call {
   verb: Verb;
   path: string;
   body?: object;
+  /**
+   * The product the web host serves, sent as its proxy sends it (`PRODUCT_HEADER`); when left out,
+   * only a route's own `@RequireProduct` is checked (TenantGuard).
+   */
+  product?: ProductKey;
 }
 
 /** What the API answered to one call. */
@@ -54,6 +59,7 @@ export class MoneyApi {
       [call.verb](call.path)
       .set("X-Forwarded-Host", "localhost:3000")
       .set("Cookie", cookie);
+    if (call.product !== undefined) pending = pending.set(PRODUCT_HEADER, call.product);
     if (call.body !== undefined) pending = pending.send(call.body);
     const response = await pending;
     const answer: Answer = { call, status: response.status, body: response.body as unknown };

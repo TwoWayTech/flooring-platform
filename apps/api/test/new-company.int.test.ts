@@ -1,18 +1,42 @@
-import { employees, userProfiles } from "@workspace/db/company";
+import { DiscoveryModule } from "@nestjs/core";
+import { auditLog, employees, invoices, meetings, payPeriods, userProfiles } from "@workspace/db/company";
+import { userInvitations } from "@workspace/db/control";
 import {
   addDays,
   dec,
+  DEFAULT_ACCOUNTS,
   invoiceLedger,
+  planActions,
+  PRODUCT_ROLES,
+  type AuditEntry,
   type ContractBilling,
   type ContractorPayment,
+  type Customer,
+  type Employee,
+  type Expense,
+  type ImportBatchSummary,
+  type ImportPreview,
+  type ImportResult,
+  type Meeting,
   type PayPeriod,
+  type Report,
+  type ReportOptions,
+  type Role,
+  type Supplier,
+  type SupplierContact,
+  type User,
 } from "@workspace/shared";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
+import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AuthHarness } from "./auth-harness";
-import { PAY_SCHEDULE, TILE } from "./support/company-bootstrap";
-import { balanceOf, entriesBySource } from "./support/ledger-read";
-import { MoneyApi, moneyCalls, type Call } from "./support/money-actions";
+import { todayIn } from "../src/modules/sales/sales-common";
+import { AuthHarness, isUuidV7, PASSWORD, SUMMIT_ID } from "./auth-harness";
+import { BOOTSTRAP_ZONE, PAY_SCHEDULE, TILE } from "./support/company-bootstrap";
+import { freshCalls, type LocalTime } from "./support/fresh-calls";
+import { acceptInvitation, invitationTokenFor, inviteProvisionedOwner, provisionedOwner } from "./support/fresh-owner";
+import { jsonNodes } from "./support/json-walk";
+import { balanceOf, entriesBySource, trialBalanceProblems } from "./support/ledger-read";
+import { MoneyApi, moneyCalls, type Answer, type Call, type QuoteLine } from "./support/money-actions";
 import {
   enterBill,
   moveMethod,
@@ -31,7 +55,11 @@ import {
   voidSupplierPayment,
 } from "./support/money-ops";
 import { startMoneyRun, type MoneyRun } from "./support/money-run";
-import { DOCUMENT_WRITES } from "./support/route-lists";
+import { idsFound, recordIds } from "./support/record-ids";
+import { hasPathParameter, isWrite, routeCatalog } from "./support/route-catalog";
+import { DOCUMENT_WRITES, QUERY_FOR } from "./support/route-lists";
+import { enrolled, stepUp, type EnrolledPerson } from "./support/sign-in";
+import { importFile, type ImportRow } from "./support/summit-tables";
 
 /** A refusal as the API words it: status, code and message (MF-6). */
 interface Expected {
@@ -60,20 +88,28 @@ const invalid = (message: RegExp): Expected => ({ status: 400, code: "invalid_re
  * (E3 to E12) and the journal matches them (E14). MI-6 (commissions) is covered by
  * commissions.int.test.ts's trial-balance deltas: its setup can't be reused here in under 60 lines.
  */
+/**
+ * One harness for the whole file (plan SH-2): Summit is seeded once, and every company of both
+ * describes is provisioned on it. `DiscoveryModule` lets FA read the route catalog.
+ */
+const harness = new AuthHarness();
+const api = new MoneyApi(harness);
+
+beforeAll(async () => {
+  await harness.start([DiscoveryModule]);
+}, 120_000);
+
+afterAll(async () => {
+  await harness.stop();
+});
+
 describe("money scenarios on new companies (whole-product check; needs the local PostgreSQL)", () => {
-  const harness = new AuthHarness();
-  const api = new MoneyApi(harness);
   const runs: MoneyRun[] = [];
   /** Routes MI-4, MI-5 and MI-7 tried on posted records, for the coverage check at the end. */
   const tried = new Set<string>();
 
-  beforeAll(async () => {
-    await harness.start();
-  }, 120_000);
-
   afterAll(async () => {
     for (const run of runs) await run.db.close();
-    await harness.stop();
   });
 
   async function newRun(name: string): Promise<MoneyRun> {
@@ -719,3 +755,415 @@ const NOT_TRIED_HERE: Readonly<Record<string, string>> = {
   "PUT /commission-plans/:id":
     "A used plan becomes a new version; covered by commissions.int.test.ts (MI-6 not built).",
 };
+
+/** A refusal as a GAP test pins it: the exact status, code and words (SH-11: a 5xx never matches). */
+function expectRefused(answer: Answer, expected: Expected): void {
+  const body = answer.body as { code?: string; message?: string } | null;
+  expect({ status: answer.status, code: body?.code, message: body?.message }).toEqual({
+    status: expected.status,
+    code: expected.code,
+    message: expect.stringMatching(expected.message),
+  });
+}
+
+/** The 404 a record that isn't the company's gets: "This <what> no longer exists." (sales-common `notFound`). */
+const notFound = (what: string): Expected => ({
+  status: 404,
+  code: "not_found",
+  message: new RegExp(`^This ${what} no longer exists\\.$`),
+});
+
+/**
+ * The first path segments of the routes that would set a company up: its locations, products and
+ * settings (gaps G2 and G3). FA-5 pins which writes exist under them.
+ */
+const SETUP_ROOTS: ReadonlySet<string> = new Set([
+  "branches",
+  "locations",
+  "products",
+  "settings",
+  "tax-rules",
+  "warehouses",
+]);
+
+/** The money columns of a P&L row and of its totals (reports.md, Profit and loss). */
+const PNL_MONEY = ["revenue", "cogs", "grossMargin", "expenses", "netIncome"] as const;
+
+/** One of the P&L's money columns. */
+type PnlMoney = (typeof PNL_MONEY)[number];
+
+/** A P&L row's money columns, each to the cent, so `"40"` and `"40.00"` read the same. */
+function pnlFigures(row: Readonly<Record<string, string>>): Record<PnlMoney, string> {
+  const figures = PNL_MONEY.map((column) => [column, dec(row[column] ?? "0").toFixed(2)]);
+  return Object.fromEntries(figures) as Record<PnlMoney, string>;
+}
+
+/** A measure visit with no product: the one quote line a company with no catalog could offer. */
+const MEASURE_VISIT: QuoteLine = {
+  description: "Measure visit",
+  category: "service",
+  unit: "each",
+  quantity: "1",
+  unitPrice: "75.00",
+};
+
+/**
+ * A bare new company on the API (whole-product check, piece 4 (a); plan section 5.2): provisioned
+ * the real way and given nothing else, so each demo-script step the API serves runs as a new
+ * customer would meet it. A step a new company can't do yet is pinned as it behaves today, in a
+ * test titled GAP-Gn naming the STATUS entry it waits for: an exact 4xx with its code and words,
+ * never a 5xx. When someone fixes a gap, its test fails, and they replace it with the spec's
+ * behaviour. The tests run in order on one company (`freshfl`); FA-12 runs on an HR Suite one.
+ */
+describe("a bare new company on the API (whole-product check FA; needs the local PostgreSQL)", () => {
+  let company = { id: "", slug: "" };
+  let owner: EnrolledPerson;
+  let managerEmail = "";
+  let supplierId = "";
+  /** The company day, in the zone `provisionCompany` gives every company. */
+  const today = todayIn(BOOTSTRAP_ZONE);
+  /** Where the decimal sweep stood before FA, so FA's own answers are checked too (CLAUDE.md rule 6). */
+  let decimalsBefore = 0;
+  let summitIds: Set<string> | undefined;
+
+  const send = (call: Call, cookie = owner.cookie) => api.send(call, cookie);
+  const ok = <T>(status: number, call: Call, cookie = owner.cookie) => api.expect<T>(status, call, cookie);
+  const read = <T>(path: string, cookie = owner.cookie) => api.read<T>(path, cookie);
+
+  /** Checks a customers file, steps up and imports it with the dry run's actions, as the Import screen does. */
+  async function importCustomers(rows: readonly ImportRow[]): Promise<ImportResult> {
+    const file = importFile("customers", rows);
+    const preview = await ok<ImportPreview>(200, freshCalls.importCheck(file));
+    await stepUp(harness, owner);
+    return ok<ImportResult>(201, freshCalls.importCommit(file, planActions(preview.rows)));
+  }
+
+  /** Every record id in Summit's database, read once: FA writes nothing there. */
+  async function summitRecordIds(): Promise<Set<string>> {
+    if (summitIds) return summitIds;
+    const summit = await harness.companyDb(SUMMIT_ID);
+    try {
+      summitIds = await recordIds(summit.db);
+    } finally {
+      await summit.close();
+    }
+    return summitIds;
+  }
+
+  beforeAll(() => {
+    decimalsBefore = api.decimalIssues.length;
+  });
+
+  it("FA-0, GAP-G4: the provisioned Owner can't sign in and was sent no invitation; through one put in its place they set a password, enrol MFA and invite a Manager (STATUS: owner invitations at provisioning come with the platform-admin screens, P17)", async () => {
+    company = await harness.provisionCompany("freshfl");
+    const provisioned = await provisionedOwner(harness, company.id);
+    const signIn = await harness.post("/api/auth/sign-in/email").send({ email: provisioned.email, password: PASSWORD });
+    expect({ status: signIn.status, body: signIn.body as unknown }).toEqual({
+      status: 401,
+      body: { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" },
+    });
+    const invitations = await harness.control.db
+      .select({ id: userInvitations.id })
+      .from(userInvitations)
+      .where(eq(userInvitations.userId, provisioned.userId));
+    expect(invitations, "provisioning wrote no invitation").toEqual([]);
+    expect(
+      harness.outbox.sent.filter((sent) => sent.to.includes(provisioned.email)),
+      "nothing emailed",
+    ).toEqual([]);
+    // In its place, the row `UsersService.invite` would write; the Owner accepts it through the product.
+    const invitation = await inviteProvisionedOwner(harness, company.id);
+    await acceptInvitation(harness, invitation.token);
+    owner = await enrolled(harness, invitation.email);
+    const managerRole = (await read<Role[]>("/roles")).find((role) => role.key === "manager")!;
+    managerEmail = `morgan.vale.${company.slug}@example.test`;
+    const invite = freshCalls.invite("Morgan Vale", managerEmail, managerRole.id);
+    expectRefused(await send(invite), {
+      status: 403,
+      code: "step_up_required",
+      message: /^Confirm it's you with a code from your authenticator app, then try again\.$/,
+    });
+    await stepUp(harness, owner);
+    expect(await ok<User>(201, invite)).toMatchObject({
+      email: managerEmail,
+      roleIds: [managerRole.id],
+      status: "invited",
+    });
+    await acceptInvitation(harness, invitationTokenFor(harness, managerEmail));
+    await harness.signIn(managerEmail);
+    const users = await read<User[]>("/users");
+    expect(users.map((user) => [user.email, user.status]).sort()).toEqual(
+      [
+        [provisioned.email, "active"],
+        [managerEmail, "active"],
+      ].sort(),
+    );
+  }, 60_000);
+
+  it("FA-1: the session names the new company, its standing is full, and billing shows a trial with no plan", async () => {
+    const named = { id: company.id, slug: company.slug, name: "freshfl" };
+    expect(await read("/auth/context")).toMatchObject({ company: named, companies: [named], mfa: { state: "ok" } });
+    expect(await read("/company/standing")).toEqual({ state: "full" });
+    expect(await read("/billing")).toEqual({
+      status: "trial",
+      phase: "full",
+      subscriptions: [],
+      limits: { userLimit: null, branchLimit: null },
+      notice: null,
+    });
+  }, 60_000);
+
+  it("FA-2 (demo step 16): the nine default roles, the Owner's locked; a role change with a step-up is saved", async () => {
+    const roles = await read<Role[]>("/roles");
+    expect(roles.map((role) => role.key).sort()).toEqual([...PRODUCT_ROLES.flooring].sort());
+    expect(roles.filter((role) => role.owner).map((role) => role.key)).toEqual(["owner"]);
+    expect(
+      roles.filter((role) => !role.system),
+      "every role is shipped",
+    ).toEqual([]);
+    const ownerRole = roles.find((role) => role.owner)!;
+    const managerRole = roles.find((role) => role.key === "manager")!;
+    await stepUp(harness, owner);
+    expectRefused(await send(freshCalls.roleSave(ownerRole, "Everything")), {
+      status: 403,
+      code: "owner_locked",
+      message: /^The Owner role is locked\. It always holds everything in your plan\.$/,
+    });
+    const description = "Runs the showroom and the team";
+    const sorted = (role: Role) => ({ ...role, permissions: [...role.permissions].sort() });
+    const saved = await ok<Role>(200, freshCalls.roleSave(managerRole, description));
+    expect(sorted(saved)).toEqual(sorted({ ...managerRole, description }));
+    expect((await read<Role[]>("/roles")).find((role) => role.id === managerRole.id)?.description).toBe(description);
+  }, 60_000);
+
+  it("FA-3 (demo step 7): a supplier and its contact are saved, each in the audit log under the Owner", async () => {
+    supplierId = (await ok<Supplier>(201, moneyCalls.supplier("Front Range Services", "services"))).id;
+    const contact = await ok<SupplierContact>(
+      201,
+      freshCalls.supplierContact(supplierId, "Sky Ortega", "sky.ortega@example.test"),
+    );
+    expect(contact).toMatchObject({ supplierId, isPrimary: true, status: "active" });
+    const audit = await read<AuditEntry[]>("/audit");
+    expect(audit.map((entry) => [entry.action, entry.target, entry.actorName, entry.actorRole])).toEqual([
+      ["Added supplier contact", "Sky Ortega, Front Range Services", "Owner", "Owner"],
+      ["Added supplier", "Front Range Services", "Owner", "Owner"],
+      ["Changed role", "Manager", "Owner", "Owner"],
+      ["Invited user", managerEmail, "Owner", "Owner"],
+    ]);
+  }, 60_000);
+
+  it("FA-4, GAP-G2 and GAP-G3 (demo steps 2 and 3): a customer added by hand waits for Settings → Localization and tax; one imported can't be quoted, because there is no warehouse (STATUS: Settings at provisioning; Settings → Locations moves to the API)", async () => {
+    // Finding F-n: adding a customer reads the default terms from Localization, and the words name quotes.
+    expectRefused(await send(moneyCalls.customer("Avery Brook")), {
+      status: 409,
+      code: "settings_missing",
+      message: /^Finish Settings → Localization and tax before creating quotes\.$/,
+    });
+    // An import is the one way a customer comes in: on Due on receipt, with the Owner as rep (ADR 0057 S-9).
+    const result = await importCustomers([{ name: "Avery Brook", email: "avery.brook@example.test" }]);
+    expect(result.batch.counts).toEqual({ create: 1, update: 0, skip: 0, error: 0 });
+    const customers = await read<Customer[]>("/customers");
+    expect(customers.map((c) => [c.name, c.terms, c.salesRepId])).toEqual([
+      ["Avery Brook", "due_on_receipt", owner.userId],
+    ]);
+    // The quote stops at the missing warehouse (G3) before it would read the missing settings (G2).
+    expectRefused(await send(moneyCalls.quote(customers[0]!.id, uuidv7(), [MEASURE_VISIT])), {
+      status: 400,
+      code: "invalid_request",
+      message: /^Fulfil the quote from a warehouse\.$/,
+    });
+  }, 60_000);
+
+  it("FA-5, GAP-G3 (demo steps 5 and 7): no locations or products, a purchase order has nowhere to go, and no route makes a location or product but the import (STATUS: Settings → Locations moves to the API)", async () => {
+    expect(await read("/locations")).toEqual([]);
+    expect(await read("/products")).toEqual([]);
+    const tile = { productId: uuidv7(), description: "Porcelain tile", quantity: "200", unitCost: "2.1000" };
+    expectRefused(await send(moneyCalls.purchaseOrder(supplierId, uuidv7(), [tile], true)), {
+      status: 400,
+      code: "invalid_request",
+      message: /^Receive into a warehouse\.$/,
+    });
+    const catalog = routeCatalog(harness.app);
+    const setup = catalog.filter((route) => isWrite(route) && SETUP_ROOTS.has(route.path.split("/")[1] ?? ""));
+    expect(
+      setup.map((route) => route.name),
+      "the only write under the setup paths",
+    ).toEqual(["PUT /settings/accounting"]);
+    expect(catalog.map((route) => route.name)).toContain("POST /imports");
+  }, 60_000);
+
+  it("FA-6 (demo step 9): a paid expense posts at once, and the first posting makes the chart of accounts", async () => {
+    expect(await api.trialBalance(owner.cookie)).toEqual({
+      through: null,
+      rows: [],
+      debit: "0.00",
+      credit: "0.00",
+      balanced: true,
+    });
+    // With no Settings → Expenses saved, no approval is needed (`loadExpenseSettings`), so it posts now.
+    const expense = await ok<Expense>(
+      201,
+      moneyCalls.expense({
+        date: today,
+        supplierId,
+        category: "rent",
+        locationId: null,
+        amount: "40.00",
+        tax: "",
+        paymentMethod: "cash",
+        settlement: "paid",
+      }),
+    );
+    expect(expense).toMatchObject({ number: "EXP-1", status: "confirmed", amount: "40.00", tax: "0.00" });
+    const trial = await api.trialBalance(owner.cookie);
+    expect(trialBalanceProblems(trial)).toEqual([]);
+    expect(trial.rows.map((row) => row.key).sort()).toEqual(DEFAULT_ACCOUNTS.map((account) => account.key).sort());
+    expect(trial.rows.filter((row) => !dec(row.balance).isZero()).map((row) => [row.key, row.balance])).toEqual([
+      ["cash", "-40.00"],
+      ["rent", "40.00"],
+    ]);
+  }, 60_000);
+
+  it("FA-7 (demo step 11): a meeting is made, listed, and cancelled for everyone", async () => {
+    const start: LocalTime = `${addDays(today, 7)}T10:00`;
+    const made = await ok<Meeting>(201, freshCalls.meeting("Showroom walk-through", start));
+    expect(made).toMatchObject({ start, status: "confirmed", timeZone: BOOTSTRAP_ZONE, ownerUserId: owner.userId });
+    expect((await read<Meeting[]>("/meetings")).map((meeting) => meeting.id)).toEqual([made.id]);
+    expect(await ok<Meeting>(201, freshCalls.meetingCancel(made.id))).toMatchObject({
+      id: made.id,
+      status: "cancelled",
+      sequence: 1,
+    });
+    expect(await read("/meetings"), "a cancelled meeting is not listed").toEqual([]);
+  }, 60_000);
+
+  it("FA-8 (demo step 10): the reports open, and the P&L holds only the one expense", async () => {
+    expect(await read<ReportOptions>("/reports/options")).toEqual({
+      reports: ["business", "pnl", "sales", "payments"],
+      exports: ["business", "pnl", "sales", "payments"],
+      locations: [],
+      salespeople: [],
+      vendors: [{ id: supplierId, name: "Front Range Services" }],
+    });
+    const pnl = await read<Report>("/reports/pnl");
+    const month = today.slice(0, 7);
+    const zero = pnlFigures({});
+    expect(pnl.rows).toHaveLength(12);
+    expect(pnl.rows.at(-1)?.month).toBe(month);
+    expect(pnl.rows.map((row) => [row.month, pnlFigures(row)])).toEqual(
+      pnl.rows.map((row) => [
+        row.month,
+        row.month === month ? { ...zero, expenses: "40.00", netIncome: "-40.00" } : zero,
+      ]),
+    );
+    expect(pnlFigures(pnl.totals ?? {})).toEqual({ ...zero, expenses: "40.00", netIncome: "-40.00" });
+  }, 60_000);
+
+  it("FA-9 (demo step 14): a customers file is checked, imported with a step-up and undone, and the books don't move", async () => {
+    const books = await api.trialBalance(owner.cookie);
+    const result = await importCustomers([{ name: "Riley Hart", email: "riley.hart@example.test" }]);
+    expect(result.batch.counts).toEqual({ create: 1, update: 0, skip: 0, error: 0 });
+    expect((await read<Customer[]>("/customers")).map((c) => c.name).sort()).toEqual(["Avery Brook", "Riley Hart"]);
+    await stepUp(harness, owner);
+    expect(await ok<ImportBatchSummary>(201, freshCalls.importUndo(result.batch.id))).toMatchObject({
+      id: result.batch.id,
+      undoneBy: "Owner",
+    });
+    expect((await read<Customer[]>("/customers")).map((c) => c.name)).toEqual(["Avery Brook"]);
+    // Imports post nothing (ADR 0057 §2): the books are the same after the import and its undo.
+    expect(await api.trialBalance(owner.cookie)).toEqual(books);
+  }, 60_000);
+
+  it("FA-10 (demo step 19): the audit log holds every write above, by the Owner, and nothing of Summit's", async () => {
+    const db = await harness.companyDb(company.id);
+    const rows = await db.db
+      .select()
+      .from(auditLog)
+      .orderBy(asc(auditLog.at), asc(auditLog.id))
+      .finally(() => db.close());
+    expect(rows.map((row) => [row.action, row.targetLabel])).toEqual([
+      ["Invited user", managerEmail],
+      ["Changed role", "Manager"],
+      ["Added supplier", "Front Range Services"],
+      ["Added supplier contact", "Sky Ortega, Front Range Services"],
+      ["Imported customer", "Avery Brook"],
+      ["Imported customers", "IMP-1001, customers.csv"],
+      ["Recorded expense", "EXP-1, Rent"],
+      ["Scheduled meeting", "Showroom walk-through"],
+      ["Cancelled meeting", "Showroom walk-through"],
+      ["Imported customer", "Riley Hart"],
+      ["Imported customers", "IMP-1002, customers.csv"],
+      ["Removed imported customer", "Riley Hart"],
+      ["Undid import", "IMP-1002, customers.csv"],
+    ]);
+    expect([...new Set(rows.map((row) => row.actorUserId))]).toEqual([owner.userId]);
+    const summit = await summitRecordIds();
+    expect(rows.filter((row) => row.targetId !== null && summit.has(row.targetId))).toEqual([]);
+    expect(await read<AuditEntry[]>("/audit")).toHaveLength(rows.length);
+  }, 60_000);
+
+  it("FA-11, isolation: Summit's invoice, pay period and meeting are not found, and no list names a Summit record", async () => {
+    const summit = await harness.companyDb(SUMMIT_ID);
+    try {
+      const [invoice] = await summit.db.select().from(invoices).orderBy(asc(invoices.id)).limit(1);
+      const [period] = await summit.db
+        .select({ id: payPeriods.id })
+        .from(payPeriods)
+        .orderBy(asc(payPeriods.id))
+        .limit(1);
+      const [meeting] = await summit.db.select({ id: meetings.id }).from(meetings).orderBy(asc(meetings.id)).limit(1);
+      expectRefused(await send({ verb: "post", path: `/invoices/${invoice!.id}/sent` }), notFound("invoice"));
+      expect(await summit.db.select().from(invoices).where(eq(invoices.id, invoice!.id))).toEqual([invoice]);
+      expectRefused(await send(freshCalls.read(`/pay-periods/${period!.id}/review`)), notFound("pay period"));
+      expectRefused(await send(freshCalls.read(`/meetings/${meeting!.id}/calendar.ics`)), notFound("meeting"));
+    } finally {
+      await summit.close();
+    }
+    const ids = await summitRecordIds();
+    const reads = routeCatalog(harness.app).filter(
+      (route) => route.level === "company" && route.method === "GET" && !hasPathParameter(route),
+    );
+    const refused: Record<string, string> = {};
+    const named: string[] = [];
+    let own = 0;
+    for (const route of reads) {
+      const query = QUERY_FOR[route.name];
+      const answer = await send(freshCalls.read(query ? `${route.path}?${query}` : route.path));
+      if (answer.status !== 200) {
+        refused[route.name] = `${answer.status} ${(answer.body as { code?: string } | null)?.code ?? ""}`;
+        continue;
+      }
+      named.push(...idsFound(answer.body, ids).map((found) => `${route.name}: ${found}`));
+      own += [...jsonNodes(answer.body)].filter(
+        (node) => typeof node.value === "string" && isUuidV7(node.value),
+      ).length;
+    }
+    expect(refused, "every list answers on a company with nothing in it").toEqual({});
+    expect(named, "Summit records in the new company's answers").toEqual([]);
+    expect(own, "the sweep read the new company's own records").toBeGreaterThan(0);
+    expect(api.decimalIssues.slice(decimalsBefore), "money in FA's answers").toEqual([]);
+  }, 60_000);
+
+  it("FA-12, GAP-G2 (HR Suite, demo section 5): an employee is added; the pay period the screen opens waits for Settings → HR; no time-off policies (STATUS: Settings at provisioning)", async () => {
+    const hr = await harness.provisionCompany("freshhr", ["hr"]);
+    const invitation = await inviteProvisionedOwner(harness, hr.id);
+    await acceptInvitation(harness, invitation.token);
+    const hrOwner = await enrolled(harness, invitation.email);
+    const employee = await ok<Employee>(
+      201,
+      freshCalls.employee("Jordan Pike", "jordan.pike@example.test", "hr"),
+      hrOwner.cookie,
+    );
+    expect(employee).toMatchObject({ companyId: hr.id, name: "Jordan Pike", status: "active", payRate: "31.75" });
+    const listed = await ok<Employee[]>(200, freshCalls.read("/employees", "hr"), hrOwner.cookie);
+    expect(listed.map((row) => row.id)).toEqual([employee.id]);
+    expect(await ok(200, freshCalls.read("/pay-periods", "hr"), hrOwner.cookie)).toEqual([]);
+    // The web's listPayPeriods opens the current period first and lists what there is when that is refused.
+    expectRefused(await send(freshCalls.openCurrentPayPeriod("hr"), hrOwner.cookie), {
+      status: 409,
+      code: "settings_missing",
+      message: /^Choose the pay frequency in Settings → HR first\.$/,
+    });
+    expect(await ok(200, freshCalls.read("/time-off-policies", "hr"), hrOwner.cookie)).toEqual([]);
+  }, 60_000);
+});

@@ -170,6 +170,21 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 | 65 | MI-9 on its own company | As planned; MI-1's prelude also moves a method and voids back to the first bank | — |
 | 66 | Run time: money-integrity 35–45 s by default, about 3–4 min with `WHOLE_CHECK=1`; new-company about 40 s | money-integrity 13 s (MI-1 7–12 s); new-company 17 s; the two files 20 s wall together. `WHOLE_CHECK=1`: 88 s (MI-1 83 s for 5 × 108 steps) | Stage 8's gate uses these |
 | 67 | `INTEGER_KEYS` (17) | Plus `size`: an attached file's size in bytes, a whole count. PM-7 never met a file on Summit's lists | — |
+| 68 | Stage 4 files: the FA describe in `new-company.int.test.ts` | Also `support/fresh-calls.ts` (the non-money requests FA sends), `support/record-ids.ts` (`recordIds`, `idsFound`), `provisionedOwner` and `invitationTokenFor` in `support/fresh-owner.ts`, and an optional `product` on `Call` (`money-actions.ts`), so HR Suite calls carry the web's product header | One request builder per kind of call; the money calls are reused, not copied |
+| 69 | One harness per file (SH-2) | The stage-3 describe started its own harness | The harness moved to file level and is shared by both describes, with `DiscoveryModule` mounted for the route catalog: FA adds no Summit seed |
+| 70 | FA-0: the Owner's sign-in refused "with the exact 4xx code observed" | 401 `INVALID_EMAIL_OR_PASSWORD`, "Invalid email or password" (the Owner has no credential) | Pinned. FA-0 also pins `POST /users/invite` without a step-up (403 `step_up_required`), and that Settings → Users shows the Owner and the Manager active after their acceptances |
+| 71 | FA-3: `POST /customers`, `/suppliers` and `/supplier-contacts` answer 201 | `POST /customers` answers 409 `settings_missing`, "Finish Settings → Localization and tax before creating quotes.": `createCustomer` reads the default terms from Localization (finding **F-n**) | FA-3 keeps the supplier and its contact (201, in the audit log under the Owner); the customer moves to FA-4 as a GAP |
+| 72 | FA-4, GAP-G2: `POST /quotes` answers 409 `settings_missing` | A quote checks its customer, then its warehouse, before it reads the settings. A bare company can't add a customer by hand (row 71); one imported, the only way in, can't be quoted: 400 "Fulfil the quote from a warehouse." | FA-4 is titled GAP-G2 and GAP-G3 and pins both refusals in the order a new company meets them |
+| 73 | FA-5: the purchase order refused "with the exact 4xx found"; no location create, and no product create outside `/imports` | 400 "Receive into a warehouse."; the only write whose first path segment is `branches`, `locations`, `products`, `settings`, `tax-rules` or `warehouses` is `PUT /settings/accounting`; `POST /imports` exists | As found |
+| 74 | FA-6: it posts, or an exact GAP-G2 refusal | It posts at once: with no Settings → Expenses saved, no approval is needed. Before it the trial balance has no rows; after it, every one of the 29 `DEFAULT_ACCOUNTS`, with Cash −40.00, Rent 40.00 and the rest zero | Asserted exactly: the first posting makes the whole default chart |
+| 75 | FA-7: made and cancelled, or a GAP | 201 and 201 (status `cancelled`, sequence 1). `GET /meetings` lists it before the cancel and not after: it leaves cancelled meetings out | As found |
+| 76 | FA-8: the options and the P&L "answer zeros" | FA-6's expense comes first, so the P&L's 12 months are zero except this month: expenses 40.00, net income −40.00. The rows carry cents ("40.00"); the totals row doesn't ("40", "0") | Asserted to the cent; an observation, no STATUS line. The options list the four reports and, of the pickers, only the one vendor |
+| 77 | FA-9 | As planned. The customer list goes back to FA-4's one customer, and the trial balance is identical after the import and its undo | — |
+| 78 | FA-10 | 13 entries, in order, all by the Owner (the Manager wrote nothing); none targets a Summit record; `GET /audit` serves the same 13 | Read in SQL and through the API |
+| 79 | FA-11: a known Summit invoice id answers 404, and no list shows a Summit id | Also a Summit pay period (`GET /pay-periods/:id/review`) and meeting (`GET /meetings/:id/calendar.ics`), each "This … no longer exists."; Summit's invoice row is read back unchanged after the refused write. All 58 company list reads answer 200, and none names any of Summit's 6,624 record ids | FA's answers also pass the decimal sweep |
+| 80 | FA-12 | `POST /employees` 201; `GET /pay-periods` `[]`; `POST /pay-periods {}` (what the web's `listPayPeriods` sends first) 409 `settings_missing`, "Choose the pay frequency in Settings → HR first."; `GET /time-off-policies` `[]` | Titled GAP-G2 for the pay period |
+| 81 | `INTEGER_KEYS` (18) | FA's answers carry six more whole counts: an import's `create`, `update`, `skip` and `error`, an import row's `line`, and `/auth/context`'s `passkeys` (a session route the Summit sweep doesn't read) | 24 entries, each with what it counts |
+| 82 | Run time: FA about 15–20 s | FA 2.4 s (FA-0 0.9 s, FA-11 0.5 s, FA-12 0.7 s); the whole file 20 s for 19 tests | Stage 8's gate uses these |
 
 ## Decisions and why
 1. **SH-1 fallback (stage 0).** Import has merged and flows is still a draft, so this branch builds every stage except 7. Why: it is the plan's fallback (section 0). DS and PGM reuse `flows/kit.ts`, and copying the kit would duplicate code (CLAUDE.md, style). The report marks DS and PGM "waiting for PR #42". A later commit, or a small follow-up PR if this one has merged, adds them once #42 merges.
@@ -208,6 +223,14 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 30. **R3 includes write-offs** (row 58). Why: they post to an expense account the P&L leaves out, so leaving them out of the equality would make it false; with them in, it is exact and names both causes of F-a.
 31. **The replay uses `WHOLE_CHECK=1` with `MONEY_SEED`** (row 60). Why: the long run's tail is 80 steps; replaying with the default 30 would compare only a prefix.
 32. **A sanity mutation by hand at stage 3** (M5: `paymentPosting` sends the whole payment to receivables), reverted from a byte copy; nothing committed. MI-1 failed after the prelude on E3 (ledger 935.15, documents 957.22) and E4 (2.34 against 24.41). Why: a money check that can't fail proves nothing. Stage 8 still runs M1 to M10.
+33. **One harness for `new-company.int.test.ts`** (row 69). Why: SH-2; a second Summit seed in the same file would cost time and test nothing new. The money scenarios still provision a company each.
+34. **GAP tests name their STATUS entry by its words, not a line number.** Why: the orchestrating session edits STATUS, so line numbers drift; the words stay findable.
+35. **The customer and quote refusals are pinned as found, and F-n is recorded, not fixed** (rows 71 and 72). Why: the code contradicts the plan, so the safer reading pins what a new company actually meets, in order. The customer for the quote comes through the import because it is the product's only way in. F-n's fix is either other words or adding a customer on Due on receipt without settings, as the import does; either changes customer terms, which set due dates, so it is money-adjacent and not clearly a tiny fix.
+36. **FA-8 asserts the P&L holds FA-6's one expense rather than zeros** (row 76). Why: FA-6 runs first; one exact expense is a stronger check than zeros and ties the report to the posting. Figures are compared to the cent, because the totals row comes without cents.
+37. **FA-11 adds two reads by id and a sweep of every list** (row 79). Why: a refused write alone can't show a read leak. The sweep takes its routes from the route catalog, so a new list joins it with no edit; Summit's ids are read from its database, so no fixture copy can drift. The refused write is `POST /invoices/:id/sent` on Summit's first invoice, whose row is read back afterwards, so a broken guard would show as a change in Summit.
+38. **Six more `INTEGER_KEYS`** (row 81). Why: they are whole counts, listed with what each counts, as stage 3 did for `size`; leaving them out would fail FA on correct answers.
+39. **`Call.product`** (row 68). Why: FA-12 reaches the HR Suite company as its own web host does (`x-demo-product: hr`). An optional field on the shared `Call` keeps one request builder rather than a second one for HR.
+40. **A sanity mutation by hand at stage 4:** `createCustomer` stops reading Localization (Due on receipt instead), which closes F-n's gap; reverted from a byte copy, nothing committed, `git status` clean in `apps/api/src`. FA-4 failed (the customer was added) and so did FA-10 (an extra "Added customer"). Why: a GAP test must fail when its gap closes, or it pins nothing.
 
 ## Findings
 - **F-g (new, CI): `verify` hasn't run on main since 2026-11-14, and neither has the Merge log workflow.**
@@ -285,6 +308,34 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
   - A second void of a supplier payment or an expense answers "This payment can't be voided." or "This expense can't be voided.", without saying it is already voided, unlike payments ("… is already voided.") and invoices ("… is already void.").
   - `contractInvoicePosting`'s negative path (a lower cumulative billing) can't be reached through the API, which refuses such a billing (contracts.md rule 5).
 
+- **Stage 4 results (a bare new company, FA).**
+  - **FA-0 to FA-11** run in order on `freshfl`, provisioned the real way and given nothing else; **FA-12** runs on `freshhr`, an HR Suite company made the same way. Thirteen tests, 2.4 s.
+  - **What a new company can do through the API today:**
+    - its Owner, once invited, sets a password, enrols MFA and invites a Manager;
+    - billing shows a trial with no plan;
+    - roles can be changed with a step-up, and the Owner role is locked;
+    - suppliers and supplier contacts can be added;
+    - a paid expense posts, and the first posting makes the whole default chart;
+    - meetings can be made and cancelled;
+    - the reports open;
+    - customers can be imported and the import undone, with no effect on the books;
+    - every write is in its audit log, and nothing of Summit's shows;
+    - an HR Suite company can add an employee.
+  - **What it can't do, each pinned with its exact refusal (GAP tests):**
+    - **G4:** the Owner can't sign in (401 `INVALID_EMAIL_OR_PASSWORD`), because no invitation was written or sent;
+    - **G2:** a customer can't be added by hand (409 `settings_missing`; F-n), and an HR Suite company can't open a pay period (409 `settings_missing`);
+    - **G3:** there are no locations or products. A quote for an imported customer has no warehouse (400), and a purchase order has nowhere to go (400). The only setup write is `PUT /settings/accounting`.
+  - **Isolation (FA-11):** Summit's invoice, pay period and meeting answer 404 "This … no longer exists."; Summit's invoice is unchanged after the refused write; all 58 company list reads answer 200, and none names any of Summit's 6,624 record ids.
+  - **Sanity mutation (decision 40):** closing F-n's gap makes FA-4 and FA-10 fail.
+- **F-n (new, G2 and wording): a new company can't add a customer by hand, and the refusal names quotes.**
+  - **Evidence:** on a bare company, `POST /customers` answers 409 `settings_missing`, "Finish Settings → Localization and tax before creating quotes." `SalesService.createCustomer` calls `loadLocalization` for the default payment terms, and `loadLocalization` refuses with words written for quotes.
+  - **Effect:** demo step 2 stops at its first action on a new company. The same customer comes in through `POST /imports` (Due on receipt, ADR 0057 S-9), so the two ways in disagree.
+  - **Not fixed:** customer terms set due dates (money-adjacent), and the right fix is a choice: words for the customer step, or Due on receipt when Localization is missing, as the import does. Proposed STATUS line below.
+- **Observations (no STATUS line):**
+  - The P&L's totals row comes without cents ("40", "0") while its month rows carry them ("40.00"). Both are decimal strings, so rule 6 holds and the screens format them; a reader of the JSON sees two styles.
+  - On a bare company the quote stops at its warehouse before its settings, so the 409 `settings_missing` STATUS names for quotes is reached only once a warehouse exists.
+  - `GET /meetings` leaves cancelled meetings out, so a cancel can't be seen in the list, only in the audit log.
+
 ## Owner questions
 From the plan (section 12), unchanged:
 - **Q1, CI:** how should the opt-in check suites run in CI (a manual or nightly job, a longer verify timeout, or the api-mode Playwright step moved to `e2e`)? All are `.github` changes.
@@ -320,6 +371,7 @@ Proposed lines; the orchestrating session decides and edits STATUS.
 - **Follow-up (permissions, latent, F-l; for P13):** `sensitiveKeyFor` and the interceptor's `visible` read `SENSITIVE_FIELDS[field]` and `own?.[field]` on plain objects, so a field named like an `Object.prototype` member (`constructor`, `toString`, …) is matched against a function: stripped for everyone, or a 500 on the `/suppliers` routes with their own keys. No answer carries such a name today. Use `Object.hasOwn` (whole-product check session log).
 - **Follow-up (finance, F-a; Q3):** the P&L's expenses leave out purchase tax and write-offs, which the ledger and the Business report include, so the two reports differ on the same month (measured exactly by the money-integrity check's R3). The accountant decides which is right (Q3).
 - **Follow-up (rule 7, F-m):** the API accepts a part-carton quantity on a quote line for a boxed product and issues it, leaving stock a count can't record (counts take whole cartons). Round boxed lines up to whole cartons on the server too (ADR 0027), as the screens do; inventory.md:506 records the same gap for purchase orders and receipts.
+- **Follow-up (G2, F-n):** on a company with no Settings → Localization, `POST /customers` answers 409 `settings_missing` with "… before creating quotes." (`createCustomer` reads the default terms through `loadLocalization`), while the import adds the same customer on Due on receipt. Either give the step its own words, or add the customer on Due on receipt when Localization is missing, as the import does (ADR 0057 S-9). Found by the whole-product check's FA-4 (session log).
 
 ## Commands run
 | Stage | Command | Result |
@@ -365,6 +417,15 @@ Proposed lines; the orchestrating session decides and edits STATUS.
 | 3 | `WHOLE_CHECK=1 … mi-long2`, then `WHOLE_CHECK=1 MONEY_SEED=20261118 … mi-replay` | 10 passed, 87 s; replay passed, step logs differed only in reservation ids (now invoice numbers) |
 | 3 | `WHOLE_CHECK=1 … mi-long3`, then `WHOLE_CHECK=1 MONEY_SEED=20261118 … mi-replay2` (money-integrity only) | 10 passed, 88 s (MI-1 82.8 s, 5 × 108 steps); replay 4 passed, 22 s; **step logs identical** (108 lines) |
 | 3 | `heavy.sh pnpm --filter api lint`, `heavy.sh pnpm --filter api typecheck`, `prettier --check .`, `check/scope.sh` and the product-path diff against the merge base | exit 0, exit 0, clean, scope ok, empty |
+| 4 | `heavy.sh pnpm --filter api typecheck` (twice while building) | exit 0 each |
+| 4 | `heavy.sh check/int.sh fa-d0 apps/api test/new-company.int.test.ts -t "bare new company"` with a temporary answer dump to the scratchpad (removed before the commit) | 12 passed, 1 failed (Summit has no unsent invoice), 8 s. The dump showed F-n, the quote's order of checks, the whole chart on first posting and every answer FA pins |
+| 4 | `fa-d1` (pinned), then `fa-d2 --reporter=verbose` | 1 failed: six whole counts not in `INTEGER_KEYS` (row 81), 9 s; then 13 passed, 10 s |
+| 4 | `prettier --write`, `heavy.sh pnpm --filter api lint`, `heavy.sh pnpm --filter api typecheck`, `eslint --max-warnings 0` and `prettier --check` on the six changed files | clean; exit 0; exit 0; exit 0; clean |
+| 4 | `heavy.sh check/int.sh fa-a apps/api test/new-company.int.test.ts --reporter=verbose`, then `fa-b` | 19 passed each, 21 s and 20 s wall (MI-4 2.6 s, MI-5 2.2 s, MI-7 2.5 s, MI-8 1.7 s, MI-9 2.0 s; FA-0 to FA-12 2.4 s together) |
+| 4 | `heavy.sh check/int.sh rm-4 apps/api test/route-matrix.int.test.ts test/money-integrity.int.test.ts` (after the `json-walk.ts` and `money-actions.ts` edits) | 23 passed, 29 s |
+| 4 | Sanity mutation by hand: `createCustomer` without `loadLocalization`; `fa-m-g2 … -t "bare new company"`; restored from a byte copy | FA-4 and FA-10 failed as they should (8 s); `git status` clean in `apps/api/src` |
+| 4 | After a last tidy of `pnlFigures`: `heavy.sh pnpm --filter api typecheck`, `eslint --max-warnings 0` on the test file, `heavy.sh check/int.sh fa-c apps/api test/new-company.int.test.ts` | exit 0, exit 0, 19 passed, 20 s |
+| 4 | `check/scope.sh` | scope ok |
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 
@@ -373,4 +434,5 @@ The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.
 - **Stage 1** is done: the route catalog, the oracle, the reviewed lists and `route-matrix.int.test.ts` (PM-1 to PM-5), with the snapshots `apps/api/test/__snapshots__/route-requirements.json` and `route-role-matrix.txt`. 15 tests pass in about 20 s, or 31 s with `WHOLE_CHECK=1`. Findings F-h, F-i and F-j are new.
 - **Stage 2** is done: `support/json-walk.ts` (`MUST_STRIP`, `MUST_STRIP_NOT_EXERCISED`, `MONEY_KEYS`, `INTEGER_KEYS`, `OTHER_NUMBER_KEYS`, `leaks`, `decimalProblems`), `support/summit-access.ts`, the `seeded` oracle in `route-oracle.ts`, `QUERY_FOR`, `READ_REFUSED_IN_HANDLER` and `SCOPE_RULES` in `route-lists.ts`, and PM-6, PM-7 and MI-DEC in `route-matrix.int.test.ts` (tier B). 19 tests pass in about 24 s, or 37 s with `WHOLE_CHECK=1`. No leak, no scope problem; findings F-k and F-l are new.
 - **Stage 3** is done: money integrity on an API-only company (`money-integrity.int.test.ts`: MI-1, E15, MI-2, MI-3; commit 3a) and the money scenarios on new companies (`new-company.int.test.ts`: MI-4, MI-5, MI-7, MI-8, MI-9 and the MI-7 coverage check; commit 3b). 10 tests pass in 20 s wall for both files, 88 s with `WHOLE_CHECK=1`. Every equality holds exactly; F-a is measured, F-m is new. MI-6 is not built (row 63).
-- **Next:** stage 4, the bare new company on the API (FA), in `new-company.int.test.ts`.
+- **Stage 4** is done: the bare new company (`new-company.int.test.ts`, FA-0 to FA-12, on one shared harness), with `support/fresh-calls.ts` and `support/record-ids.ts`. 19 tests pass in 20 s for the file; FA takes 2.4 s. Gaps G2, G3 and G4 are pinned with exact refusals; F-n is new.
+- **Next:** stage 5, the generated coverage list, page gates, money in the UI and the Turbo inputs.
