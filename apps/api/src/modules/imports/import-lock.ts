@@ -1,5 +1,6 @@
 import { ConflictException, HttpException } from "@nestjs/common";
 import type { CompanyDb } from "@workspace/db";
+import { IMPORT_WORDS } from "@workspace/shared";
 import { sql } from "drizzle-orm";
 
 /**
@@ -48,20 +49,26 @@ export function lockNotAvailable(error: unknown): boolean {
   return databaseCode(error) === "55P03";
 }
 
+/** The operation an import transaction runs: the dry run and the import, or an Undo. */
+type ImportOperation = "import" | "undo";
+
+/** The `import_busy` words of each operation, so an Undo never says nothing was imported (ADR 0057 api 4.4). */
+const BUSY_WORDS: Readonly<Record<ImportOperation, string>> = {
+  import: "The records were busy, so nothing was imported. Try again in a moment.",
+  undo: IMPORT_WORDS.undoLocksBusy,
+};
+
 /**
  * The answer to an error inside an import or Undo transaction (ADR 0057 api 4.4): a lock wait
- * that failed is a 409 `import_busy` and a unique clash a 409 `import_conflict`, both meaning
- * nothing was written. Refusals pass as they are; anything else is rethrown for the ErrorFilter,
- * since the field rules keep data errors from reaching the database.
+ * that failed is a 409 `import_busy` in the operation's words and a unique clash a 409
+ * `import_conflict`, both meaning nothing was written. Refusals pass as they are; anything else
+ * is rethrown for the ErrorFilter, since the field rules keep data errors from reaching the database.
  */
-export function importFailure(error: unknown): unknown {
+export function importFailure(error: unknown, operation: ImportOperation = "import"): unknown {
   if (error instanceof HttpException) return error;
   const code = databaseCode(error);
   if (code && BUSY_CODES.has(code)) {
-    return new ConflictException({
-      code: "import_busy",
-      message: "The records were busy, so nothing was imported. Try again in a moment.",
-    });
+    return new ConflictException({ code: "import_busy", message: BUSY_WORDS[operation] });
   }
   if (code === "23505") {
     return new ConflictException({

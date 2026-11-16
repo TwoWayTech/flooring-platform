@@ -276,7 +276,7 @@ export class ImportsService {
         return summaryOf({ ...batch, undoneAt, undoneBy: userId }, names);
       });
     } catch (error) {
-      throw importFailure(error);
+      throw importFailure(error, "undo");
     }
   }
 

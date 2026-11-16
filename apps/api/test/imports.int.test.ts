@@ -43,7 +43,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ImportsService } from "../src/modules/imports/imports.service";
 import { loadProducts } from "../src/modules/inventory/inventory-records";
 import { loadContacts, loadSuppliers } from "../src/modules/purchasing/purchasing-records";
 import { loadCustomers } from "../src/modules/sales/sales-records";
@@ -154,12 +155,12 @@ const plankRow = (sku: string, name: string, over: Record<string, string> = {}):
 });
 
 /**
- * Data import on the API, part 1 (docs/product-spec/import.md; ADR 0057 tests I-1 to I-33): who may
+ * Data import on the API, part 1 (docs/product-spec/import.md; ADR 0057 tests I-1 to I-33 and I-32b): who may
  * import, switches and modules, the body limits, the dry run, the import with its step-up and
  * plan check, audit, Undo with its order, change, kind and reference checks, the locks, the daily
  * limit, company isolation, saved columns, and the week-19 gate on Summit's master data.
  * Companies: A and B (Flooring Suite), H (HR Suite), D (the daily limit) and G (the gate).
- * Company A commits about 30 files here; a company may commit 50 a day (I-24), so a test added
+ * Company A commits 32 files here; a company may commit 50 a day (I-24), so a test added
  * on A must keep the total under that, or it meets a 429.
  */
 describe("data import, part 1 (needs the local PostgreSQL)", () => {
@@ -1430,6 +1431,32 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     }
     await untouched();
   }, 60_000);
+
+  it("I-32b: Undo checks references again after its row locks, so a quote saved after the first check refuses it", async () => {
+    const owner = people.ownerA;
+    const hazel = await imported(
+      owner,
+      importFile("customers", [{ external_id: "CUST-9903", name: "Hazel Interiors", email: "hi@hazel.example" }]),
+    );
+    await quoteFor((await customerByExternalId("CUST-9903"))!.id);
+    // The first reference check passing once stands for a quote committed between it and the row locks
+    // (ADR 0057 api 4.6 steps 7 to 9); the check after the locks runs as written and is the only one that sees it.
+    const service = harness.app.get(ImportsService) as unknown as {
+      assertUnused: (...args: unknown[]) => Promise<void>;
+    };
+    const checks = vi.spyOn(service, "assertUnused").mockResolvedValueOnce(undefined);
+    try {
+      refusedWith(await undo(owner, hazel.batch.id), 409, {
+        code: "import_in_use",
+        message: IMPORT_WORDS.inUse("Hazel Interiors"),
+      });
+      expect(checks).toHaveBeenCalledTimes(2);
+    } finally {
+      checks.mockRestore();
+    }
+    expect((await batchRow(co.a, hazel.batch.id))!.undoneAt).toBeNull();
+    expect(await customerByExternalId("CUST-9903")).toMatchObject({ name: "Hazel Interiors" });
+  });
 
   it("I-33: an addresses file without the type column leaves a stored billing address as it is", async () => {
     const owner = people.ownerA;

@@ -49,6 +49,8 @@ export const IMPORT_WORDS = {
   inUse: (name: string) => `${name} is already used by other records, so the import cannot be undone.`,
   /** API only: the demo has no writer running beside an Undo (ADR 0057 api 4.6 step 8). */
   undoBusy: "Something is being saved for a record this import created, so nothing was undone. Try again in a moment.",
+  /** API only: an Undo whose wait for a table or the stock lock timed out, deadlocked or failed to serialize (ADR 0057 api 4.4). */
+  undoLocksBusy: "The records were busy, so nothing was undone. Try again in a moment.",
   undoneAfter: "records put back as before the import",
 } as const;
 

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
+import { IMPORT_WORDS } from "@workspace/shared";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/core/access/request-actor";
 import { IMPORT_COMMIT, IMPORT_REQUEST, MAPPING_SAVE, parseKind } from "../src/modules/imports/import-input";
@@ -113,6 +114,22 @@ describe("U-4 database failures inside an import", () => {
       expect(importFailure(dbError(code))).toBeInstanceOf(ConflictException);
       expect(answer(dbError(code)).code).toBe("import_busy");
       expect(answer(new Error("query failed", { cause: dbError(code) })).code).toBe("import_busy");
+    }
+  });
+
+  it("words import_busy by operation: nothing imported, or on an Undo nothing undone", () => {
+    const response = (error: unknown) => (importFailure(error, "undo") as ConflictException).getResponse();
+    const imported = {
+      code: "import_busy",
+      message: "The records were busy, so nothing was imported. Try again in a moment.",
+    };
+    const undone = { code: "import_busy", message: IMPORT_WORDS.undoLocksBusy };
+    expect(undone.message).toBe("The records were busy, so nothing was undone. Try again in a moment.");
+    for (const code of ["40P01", "40001", "55P03"]) {
+      expect((importFailure(dbError(code)) as ConflictException).getResponse()).toEqual(imported);
+      expect((importFailure(dbError(code), "import") as ConflictException).getResponse()).toEqual(imported);
+      expect(response(dbError(code))).toEqual(undone);
+      expect(response(new Error("query failed", { cause: dbError(code) }))).toEqual(undone);
     }
   });
 
