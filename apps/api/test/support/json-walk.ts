@@ -244,6 +244,7 @@ export const INTEGER_KEYS: Reviewed = {
   salaryHoursPerWeek:
     "The whole hours a salary covers (40, or California's; ADR 0024); the API accepts integers 1 to 60 only.",
   sequence: "A meeting's iCalendar SEQUENCE.",
+  size: "An attached file's size in bytes (proof of payment, a bill's file, a receipt).",
   userLimit: "GET /billing: how many users the plan allows.",
   version: "A version number: a commission plan's, a contract signature's or a tax rule's.",
   waitingPeriodDays: "A time-off policy's waiting period in whole days.",

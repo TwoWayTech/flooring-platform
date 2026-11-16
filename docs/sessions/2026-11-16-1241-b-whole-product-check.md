@@ -307,4 +307,5 @@ The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.
 - **Stage 0** is done: this log is committed and pushed, and draft PR #43 is open.
 - **Stage 1** is done: the route catalog, the oracle, the reviewed lists and `route-matrix.int.test.ts` (PM-1 to PM-5), with the snapshots `apps/api/test/__snapshots__/route-requirements.json` and `route-role-matrix.txt`. 15 tests pass in about 20 s, or 31 s with `WHOLE_CHECK=1`. Findings F-h, F-i and F-j are new.
 - **Stage 2** is done: `support/json-walk.ts` (`MUST_STRIP`, `MUST_STRIP_NOT_EXERCISED`, `MONEY_KEYS`, `INTEGER_KEYS`, `OTHER_NUMBER_KEYS`, `leaks`, `decimalProblems`), `support/summit-access.ts`, the `seeded` oracle in `route-oracle.ts`, `QUERY_FOR`, `READ_REFUSED_IN_HANDLER` and `SCOPE_RULES` in `route-lists.ts`, and PM-6, PM-7 and MI-DEC in `route-matrix.int.test.ts` (tier B). 19 tests pass in about 24 s, or 37 s with `WHOLE_CHECK=1`. No leak, no scope problem; findings F-k and F-l are new.
-- **Next:** stage 3, money integrity.
+- **Stage 3a** is committed: money integrity on an API-only company (`money-integrity.int.test.ts`: MI-1, E15, MI-2, MI-3) with its support files. Results, decisions and commands are written up with stage 3b below.
+- **Next:** stage 3b, the money scenarios on new companies.

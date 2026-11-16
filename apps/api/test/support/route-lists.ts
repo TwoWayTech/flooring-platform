@@ -507,3 +507,36 @@ export const SCOPE_RULES: Readonly<Record<string, ScopeRule>> = {
     sees: (row, viewer, facts) => ownOrReports(viewer, text(row, "employeeId"), facts),
   },
 };
+
+/**
+ * Columns of money tables whose names look like a stored balance or status (E15), each with why
+ * it is a recorded fact, not something the ledger derives (ADR 0013; CLAUDE.md rule 9). Balances
+ * and invoice or bill states are never stored; workflow steps a person takes (confirm, void,
+ * approve) and plain addresses are.
+ */
+export const STORED_STATE_COLUMNS: Reviewed = {
+  "commission_plans.status": "A plan's draft, active or retired life cycle, which HR chooses.",
+  "contract_billing_lines.stored_balance":
+    "Materials stored on site, a figure the pay application states (AIA style), not a ledger balance.",
+  "contract_billings.status": "Posted or void: voiding a billing is a person's act; what is owed is derived.",
+  "contractor_payments.status": "Approved or paid: recording the payment is a person's act (ADR 0047).",
+  "contracts.status": "A contract's life cycle (draft, sent, signed, …), chosen by people; billing state is derived.",
+  "employees.flsa_status": "Exempt or non-exempt under the FLSA, a fact about the job.",
+  "employees.state": "The employee's US state, part of the address.",
+  "employees.status": "Active, on leave or terminated: an HR decision.",
+  "expenses.status":
+    "Draft, pending, confirmed, rejected or voided: the two-person check's decisions (finance-expenses rule 9).",
+  "jobs.status": "An installation job's schedule state, chosen by people.",
+  "lien_waivers.state": "The US state whose statutory form the waiver uses.",
+  "lien_waivers.status": "Requested, received or superseded: whether the paper came back.",
+  "pay_period_lines.paid_leave_hours": "Hours of paid leave in the period, an input to pay, not a payment state.",
+  "pay_period_lines.paid_leave_pay": "Pay for those leave hours, a figure of the approved run.",
+  "payments_made.status":
+    "A supplier payment's pending, confirmed, rejected or voided: the two-person check (purchasing rule 25).",
+  "payments_received.status":
+    "A customer payment's pending, confirmed, rejected or voided: the two-person check (sales rule 28).",
+  "purchase_orders.status": "Draft, ordered or cancelled only; received, billed and paid are derived (spec D1).",
+  "quotes.status": "A quote's draft, sent, accepted or declined, chosen by people.",
+  "refunds.status": "Completed or voided: a person's act.",
+  "suppliers.status": "Active or inactive in the directory.",
+};
