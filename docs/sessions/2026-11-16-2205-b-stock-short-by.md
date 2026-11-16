@@ -85,7 +85,28 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **D8, no ADR and no docs/blueprint-delta.md row.** The plan of record doesn't change. The spec's `Reservation` notes say `"0"` where the API says `"0.000"`, so they get a line, and the API contract's Bodies bullet says decimals arrive at their column's scale and are compared by value.
 
 ### Decisions taken during the build
-(Filled in as the stages run.)
+
+#### Stage 1 (B3)
+- **The panel test's data.** It uses the first active roll hold in the Summit fixtures, with its invoice, paid in full through `invoiceLedger` with one confirmed payment of the total, so the panel offers Cut. The held row is that hold as the API sends it (`quantity: "40.000"`, `shortBy: "0.000"`); the short row holds nothing (`rollId: null`, `quantity: "0.000"`, `shortBy: "12.500"`). `useCan` allows everything, and `@/lib/api` is mocked to an empty client, so no DemoStore is built. `next/link` renders without a router.
+- **The row text drops the space before a comma.** ", not reserved" is its own text node after `<Num>`, so stripping tags left "12.50 ft , not reserved".
+- **The short-row test passes before the fix too.** `"12.500" !== "0"` already reads it as short. It guards the other direction, and rule 15: a short row offers no Cut.
+- **The red run failed for B3 itself:** the hold read "Short by 0.00 ft , not reserved", and the demo's audit line read "2 reserved, 1 short" for two full holds. The short-row test failed only on the space before the comma, which was then fixed in the test's helper.
+
+#### Stage 2 (the sweep)
+- **`PlanTerms` was split out first, with the text compare unchanged.** So the new test was red for the bug ("Manager override 0.0%." for a plan typed as `"0.0"`), not for a missing module. The page's markup is the same; Prettier only reflowed one JSX line, and the text is the same.
+- **A percent shows one decimal** ("2.5%"). The test's first expectation of "2.50%" was the test's error, not the product's.
+- **The invoice model keeps "hidden at zero"**: `dec(x).isZero()`, not `gt(0)`. Credit applied and write-offs are sums of positive amounts, so the two agree on every stored value, and `isZero` keeps today's meaning exactly.
+- **The interface comment for `credited` and `writtenOff` is unchanged.** A note on reading by value would only repeat the code.
+
+#### Stage 3 (F1)
+- **The throwaway copy** (`b3/throwaway/make-f1-b1only.py` in the scratchpad) turns `fixme` into a test, patches only B1 (a `"0"` cost into Priya's products and quotes answers, as the B2 session did), and keeps the committed "Reserved" check, plus a log of the status cell.
+- **It passed in api mode** (`b3-f1-var`, 17.7 s). The status cell read "Reserved". B1 is still there: Priya's answers held 120 products and 493 to 494 quote lines without cost. The copy was deleted after the run, and `git status` lists no `zz-` file.
+- **Its records stay on the local api e2e database** (a customer, a quote, an invoice with two payments, and a cut of Denver Fieldstone), as the earlier variants' did. F1 registers no clean-ups while it is `fixme`. CI seeds a fresh database.
+- **The F1 header cites this log's stage 3** for the throwaway proof.
+
+#### Stage 4 (docs)
+- **inventory.md's `Reservation` fields** now give both forms of zero (`"0"` in the demo, `"0.000"` from the API) and point to `isShort`.
+- **docs/api-contract.md's Bodies bullet** says decimal text is not canonical, so clients compare by value.
 
 ## Owner questions
 None blocks the build.
@@ -94,11 +115,58 @@ None blocks the build.
 - **Q2, the API's shortfall count.** `invoices.service.ts` counts short rows with its own `dec(draft.shortBy).gt(0)`. Switch it to the shared `isShort` in a later API PR?
 
 ## For STATUS
-(Filled in at the end.)
+- **Done: B3.** The invoice's Stock panel reads a shortfall by value: a shared `isShort` (`dec(shortBy).gt(0)`) in `packages/shared/src/reservations.ts`, used by the panel and the demo's audit line. The same-class sweep of `apps/web/src` also fixed the invoice model's "Credit applied" and "Written off" lines (`dec(x).isZero()`) and the commission plan's manager override (`dec(x).gt(0)`, in the new `PlanTerms`). PR #45, this log.
+- **"Api-mode bugs the flows found":** remove the B3 bullet. The heading becomes "B2 fixed in PR #44 and B3 in PR #45, so F2 runs; F1 waits on B1, F5 on B4".
+  - **F1 stays `fixme` for B1 only.** Its annotation names only B1. A throwaway variant with only B1 worked around passed (`b3-f1-var`, 17.7 s), with the Stock panel reading "Reserved".
+- **Line 131** (Next three tasks, item 1): "F1 needs B1 and B3" becomes "F1 needs B1".
+- **The flows' leftovers:** the B3 variant's F1 records stay on the local api e2e database: a customer, a quote, an invoice with two payments, and a cut of Denver Fieldstone. CI seeds a fresh database.
+- **New follow-ups:**
+  - **`Number()` on decimals in `apps/web/src`** (118 calls). Most compare with zero and give the right answer, but `purchasing/po-pdf.tsx` multiplies `Number(l.quantity) * Number(l.unitCost)` for a PO line's amount on the PDF, which is float money (rule 6). Owner question Q1.
+  - **The API's shortfall count** (`invoices.service.ts`, `dec(draft.shortBy).gt(0)`) could use the shared `isShort`. Owner question Q2.
+  - **Text compares left by design, all outside the bug class:**
+    - `customers-table.tsx` overdue, built by `moneyString` in the browser;
+    - the demo's `payment-actions.ts` balance and `permission-rules.ts` waste and roll length;
+    - `statement-sheet.tsx`'s typed amount.
+
+    They are listed in this log's sweep table.
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b3/logs` and `flows/logs` folders.
 
 | Stage | Command | Result |
 | --- | --- | --- |
-| 0 | `gh pr create --draft …` | (below) |
+| 0 | `gh pr create --draft …` | draft PR #45 |
+| 1 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/reservations.test.ts`, before the fix | red as expected: 1 failed (`isShort is not a function`), 9 passed |
+| 1 | `heavy.sh pnpm --filter web exec vitest run tests/unit/invoice-stock.test.tsx`, before the fix | red: 3 failed. The hold read "Short by 0.00 ft , not reserved", and the audit line read "2 reserved, 1 short" (B3); the short-row test failed on the test's own space before the comma |
+| 1 | both files after the fix (and the helper's comma fix) | shared 10 passed; web 3 passed |
+| 1 | `heavy.sh`: web `typecheck`, web `lint`, shared `typecheck` | clean, clean, clean |
+| 1 | `pnpm exec prettier --check` on the 5 changed files | 1 needed `--write` (the new test); clean after |
+| 2 | `heavy.sh pnpm --filter web exec vitest run tests/unit/decimal-zero-reads.test.tsx`, before the fixes (`PlanTerms` already split out, compare unchanged) | red: 3 failed, 1 passed. "Manager override 0.0%." for `"0.0"`; `"$0.00"` instead of null for credit `"0"`; the test's "2.50%" expectation was wrong (a percent shows "2.5%") |
+| 2 | `decimal-zero-reads` and `invoice-stock` after the fixes | 7 passed |
+| 2 | `heavy.sh`: web `typecheck`, then `lint`; `prettier --check` on the 4 changed files | clean, clean, clean |
+| 3 | `heavy.sh flows/api-e2e.sh b3-f1-var --build -- tests/e2e-api/flows/zz-f1-b1only.spec.ts` (throwaway, only B1 worked around) | both builds in 13 s; 1 passed, F1 17.7 s; the Stock panel's status cell read "Reserved"; the spec was deleted after, and `git status` lists no `zz-` file |
+| 3 | `prettier --check` on the F1 spec | clean |
+| 5 | `heavy.sh`: web `lint`, then `typecheck`, on the final tree | clean, clean |
+| 5 | `heavy.sh b3/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0 in 3 min 45 s. `test`: shared 1,047 (70 files), web 272 (33 files), api unit 124 (17 files), db 18, providers 11 (3 of the 5 tasks replayed from Turborepo's cache); `test:api`: api 628 (35 files), db 59 (8 files), providers 2; hooks 15 |
+| 5 | `heavy.sh flows/api-e2e.sh b3-all-1 --build` (the whole api-mode suite) | builds in 6 s; exit 0 after 130 s: 33 passed, 2 skipped (F1 for B1, F5 for B4). Flows: F2 9.5 s, F3 4.9 s, the stale-save test 3.1 s, F4 5.0 s, F6 12.8 s, F7 4.9 s |
+
+## Outcome
+B3 is fixed, and so are the two other API decimal strings the sweep found. Every check above is green: the full checks (`b3/full.sh`) and the whole api-mode suite (`b3-all-1`). Commits on `fix/web-stock-short-by`, each pushed:
+
+| Commit | Subject |
+| --- | --- |
+| `721b319` | docs(sessions): plan for B3, the invoice Stock panel's decimal shortfall |
+| `e489625` | fix(web): the invoice Stock panel reads a shortfall by value (B3) |
+| `bfdf30a` | fix(web): read the invoice's credit and write-off, and a plan's override, by value |
+| `3106ea1` | test(e2e): F1 waits on B1 only, now that B3 is fixed |
+| `742e647` | docs: decimals are compared by value, and a full hold's shortBy is "0.000" from the API |
+| (this commit) | docs(sessions): B3 outcome |
+
+All carry `[skip ci]`.
+
+## Left
+- **The handoff** carries no `[skip ci]`, so CI runs (STATUS, BRANCHES, this log). Then PR #45 is marked ready, waits for `verify` and `e2e`, and self-merges under the CLAUDE.md rule.
+  - **The review before merge:** `/review` and a fresh read-only reviewer.
+  - **Whether a security review is needed** is decided then. This branch changes no server code, permission, posting or pay rule. It touches only how the web reads three decimals it shows, one of them on an invoice and one on a commission plan.
+- **Owner questions Q1 and Q2** above.
+- **Next prompt:** "B1, the next task of the owner's queue of 2026-11-16: on a new branch from an up-to-date main, stop a salesperson's quote builder crashing when the API withholds cost (no margin without cost, never send cost or a placeholder margin), with a security review, then turn F1 back on from `fixme` and self-merge under the CLAUDE.md rule."
