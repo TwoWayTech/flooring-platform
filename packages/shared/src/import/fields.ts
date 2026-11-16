@@ -8,6 +8,7 @@ export type ImportCellValue = string | boolean | string[];
 export type ImportCellResult = { value: ImportCellValue | null } | { error: string };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MONEY_WHOLE_DIGITS = 10;
 const DECIMAL = /^\d+(\.\d+)?$/;
 const YES = new Set(["yes", "y", "true", "1", "x"]);
 const NO = new Set(["no", "n", "false", "0"]);
@@ -15,6 +16,9 @@ const UNIT_SPELLINGS: Record<NonNullable<ImportField["unit"]>, readonly string[]
   ft: ["ft", "feet", "foot", "'"],
   "sq ft": ["sq ft", "sqft", "sf", "ft2", "ft²"],
 };
+
+/** The whole digits of a plain decimal, leading zeros dropped: "0012.50" has 2. */
+const wholeDigits = (plain: string) => (plain.split(".")[0] ?? "").replace(/^0+/, "").length;
 
 /** Lower case with spaces, dashes and underscores folded, so "Job site", "job_site" and "JOB-SITE" match. */
 export const fold = (text: string) =>
@@ -31,6 +35,8 @@ function readMoney(raw: string): ImportCellResult {
   const plain = raw.replace(/[$,\s]/g, "");
   if (!DECIMAL.test(plain)) return { error: `“${raw}” is not an amount. Write it like 1250.00.` };
   if ((plain.split(".")[1] ?? "").length > 2) return { error: `“${raw}” has more than two decimals.` };
+  // Ten whole digits fit both numeric(14,4) prices and costs and numeric(14,2) credit limits (ADR 0057 S-12).
+  if (wholeDigits(plain) > MONEY_WHOLE_DIGITS) return { error: `“${raw}” is too large.` };
   return { value: moneyString(plain) };
 }
 
@@ -46,7 +52,36 @@ function readNumber(raw: string, field: ImportField, whole: boolean): ImportCell
     };
   }
   if (whole && !Number.isInteger(Number(digits))) return { error: `“${raw}” is not a whole number.` };
-  return { value: dec(digits).toString() };
+  return digitsProblem(raw, digits, field) ?? { value: dec(digits).toString() };
+}
+
+/**
+ * A number the column can't store (ADR 0057 S-12, M3): more whole digits or decimals than the
+ * field allows, or 0 where it must be more. Trailing zeros are not decimals: "23.640" has 2.
+ */
+function digitsProblem(raw: string, plain: string, field: ImportField): ImportCellResult | null {
+  if (field.digits) {
+    const decimals = (plain.split(".")[1] ?? "").replace(/0+$/, "").length;
+    if (wholeDigits(plain) > field.digits.whole) return { error: `“${raw}” is too large.` };
+    if (decimals > field.digits.decimals) {
+      return { error: `“${raw}” has more than ${field.digits.decimals} decimals.` };
+    }
+  }
+  if (field.positive && dec(plain).isZero()) return { error: `${field.label} must be more than 0.` };
+  return null;
+}
+
+/**
+ * Whether a cell holds a control character (U+0000 to U+001F or U+007F), which no column stores
+ * (ADR 0057 S-17). A multi-line field may hold tab, line feed and carriage return.
+ */
+function hasControl(raw: string, multiline: boolean): boolean {
+  for (let i = 0; i < raw.length; i += 1) {
+    const code = raw.charCodeAt(i);
+    const control = code <= 0x1f || code === 0x7f;
+    if (control && !(multiline && (code === 0x09 || code === 0x0a || code === 0x0d))) return true;
+  }
+  return false;
 }
 
 /** A real calendar date written 2026-03-15, 3/15/2026 or 3/15/26, as YYYY-MM-DD. */
@@ -95,11 +130,19 @@ function readList(raw: string, field: ImportField): ImportCellResult {
 
 /**
  * Reads one cell by its field's type (spec G1 "Validate: types, required fields, money and unit
- * formats"). An empty cell is null, or an error when the field is required.
+ * formats"). An empty cell is null, or an error when the field is required. The checks run in
+ * this order (ADR 0057 S-12, S-17): control characters, empty or required, length, type, then
+ * the digits and more-than-0 rules of number fields.
  */
 export function readCell(field: ImportField, text: string): ImportCellResult {
   const raw = text.trim();
+  if (hasControl(raw, field.multiline === true)) {
+    return { error: `${field.label} has a hidden control character. Remove it and try again.` };
+  }
   if (!raw) return field.required ? { error: `${field.label} is required.` } : { value: null };
+  if (field.maxLength && raw.length > field.maxLength) {
+    return { error: `${field.label} is at most ${field.maxLength} characters.` };
+  }
   switch (field.type) {
     case "email":
       return EMAIL.test(raw) ? { value: raw.toLowerCase() } : { error: `“${raw}” is not an email address.` };

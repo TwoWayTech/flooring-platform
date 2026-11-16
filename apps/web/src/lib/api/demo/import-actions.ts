@@ -229,7 +229,6 @@ export function saveImportMapping(scope: ImportScope, kind: ImportKind, columns:
     kind,
     columns,
     savedAt: scope.now,
-    savedBy: scope.actor.name,
   };
   return scope.db.put("importMappings", mapping);
 }

@@ -17,9 +17,9 @@ import type {
   TimeOffEntry,
   TimeOffPolicy,
   Timesheet,
-  User,
 } from "../types";
 import { readCell, type ImportCellValue } from "./fields";
+import { ImportLookups } from "./lookups";
 import type {
   CellProblem,
   ImportChange,
@@ -28,7 +28,9 @@ import type {
   ImportKindDef,
   ImportPlan,
   ImportRequest,
+  ImportUser,
   PlannedRow,
+  RowAction,
 } from "./types";
 
 /** The company's records an import reads and writes; the plan works on a copy. */
@@ -46,11 +48,49 @@ export interface ImportWorld {
   timeOffEntries: TimeOffEntry[];
   timeOffPolicies: readonly TimeOffPolicy[];
   locations: readonly Location[];
-  users: readonly User[];
+  users: readonly ImportUser[];
   payments: readonly Payment[];
   invoiceAdjustments: readonly InvoiceAdjustment[];
   supplierPayments: readonly SupplierPayment[];
   reservations: readonly Reservation[];
+  /** Lower-case SKUs held by deleted products, which a new product may not take (ADR 0057 S-6). The API fills it. */
+  retiredSkus?: readonly string[];
+  /**
+   * Product ids with any stock movement or roll, deleted rolls included (ADR 0057 S-5). The API
+   * fills it; without it the plan reads the world's own movements and rolls (the demo).
+   */
+  productsWithStock?: ReadonlySet<string>;
+}
+
+/** Every collection of a world, empty. */
+const EMPTY_WORLD = (): ImportWorld => ({
+  customers: [],
+  suppliers: [],
+  supplierContacts: [],
+  products: [],
+  rolls: [],
+  stockMovements: [],
+  invoices: [],
+  bills: [],
+  employees: [],
+  timesheets: [],
+  timeOffEntries: [],
+  timeOffPolicies: [],
+  locations: [],
+  users: [],
+  payments: [],
+  invoiceAdjustments: [],
+  supplierPayments: [],
+  reservations: [],
+});
+
+/**
+ * A world with only the collections a kind needs (ADR 0057): every list empty, then `parts`.
+ * The API loads only what the kind reads; a part given as undefined stays empty.
+ */
+export function emptyImportWorld(parts: Partial<ImportWorld> = {}): ImportWorld {
+  const given = Object.fromEntries(Object.entries(parts).filter(([, v]) => v !== undefined));
+  return { ...EMPTY_WORLD(), ...given };
 }
 
 /** Who imports, when, and the ids the plan may hand out. */
@@ -78,6 +118,9 @@ export interface RowWrite {
   record: { id: string };
 }
 
+/** What a kind reads while resolving a row: the plan's context and its lookups over the working copy. */
+export type KindContext = PlanContext & { lookups: ImportLookups };
+
 /** What a kind decides for one valid row: problems found against the data, or what to write. */
 export type RowOutcome =
   | { problems: CellProblem[] }
@@ -90,31 +133,31 @@ export interface KindHandler {
   labelField: string;
   /** What two rows of one file may not share (spec G1 "duplicates"), or null when repeats are fine. */
   duplicateKey: (row: ParsedRow) => string | null;
-  resolve: (row: ParsedRow, ctx: PlanContext) => RowOutcome;
+  resolve: (row: ParsedRow, ctx: KindContext) => RowOutcome;
 }
 
-/**
- * The demo's row limit for one import: the overlay lives in browser storage. A real import runs
- * on the server without it.
- */
+/** The row limit for one import, on the API and in the demo (ADR 0057 S-12). */
 export const MAX_IMPORT_ROWS = 2000;
 
 const EMPTY_COUNTS = (): ImportCounts => ({ create: 0, update: 0, skip: 0, error: 0 });
 
-/** The cells of each non-blank data row, by field key, with its row number in the file. */
+/**
+ * The cells of each data row by field key, with its row number in the file. A row with nothing in
+ * any chosen column is blank and left out, while the next row keeps its number (ADR 0057 S-19), so
+ * the demo, which gets the whole file, and the API, which gets only the chosen columns, agree.
+ */
 function readRows(def: ImportKindDef, request: ImportRequest) {
   const index = new Map(request.table.headers.map((h, i) => [h, i]));
   return request.table.rows
-    .map((cells, i) => ({ line: i + 2, cells }))
-    .filter((r) => r.cells.some((c) => c.trim() !== ""))
-    .map(({ line, cells }) => {
+    .map((cells, i) => {
       const byField: Record<string, string> = {};
       for (const field of def.fields) {
         const header = request.mapping[field.key];
         byField[field.key] = header && index.has(header) ? (cells[index.get(header)!] ?? "").trim() : "";
       }
-      return { line, cells: byField };
-    });
+      return { line: i + 2, cells: byField };
+    })
+    .filter((r) => Object.values(r.cells).some((c) => c !== ""));
 }
 
 /** Reads every cell of a row by its type; problems name the field. */
@@ -129,20 +172,13 @@ function parseRow(def: ImportKindDef, cells: Record<string, string>) {
   return { values, problems };
 }
 
-/** Puts a written record into the working copy, so later rows of the file see it. */
-function applyWrite(world: ImportWorld, write: RowWrite) {
-  const list = world[write.collection] as { id: string }[];
-  const at = list.findIndex((r) => r.id === write.record.id);
-  if (at >= 0) list[at] = write.record;
-  else list.push(write.record);
-}
-
 /** A copy of the writable collections, so planning never changes the caller's data. */
 function workingCopy(world: ImportWorld): ImportWorld {
   return {
     ...world,
     customers: [...world.customers],
     suppliers: [...world.suppliers],
+    supplierContacts: [...world.supplierContacts],
     products: [...world.products],
     rolls: [...world.rolls],
     stockMovements: [...world.stockMovements],
@@ -163,7 +199,8 @@ function workingCopy(world: ImportWorld): ImportWorld {
  */
 export function planImport(handler: KindHandler, request: ImportRequest, ctx: PlanContext): ImportPlan {
   const world = workingCopy(ctx.world);
-  const context = { ...ctx, world };
+  const lookups = new ImportLookups(world);
+  const context: KindContext = { ...ctx, world, lookups };
   const rows: PlannedRow[] = [];
   const counts = EMPTY_COUNTS();
   const firstSeen = new Map<string, number>();
@@ -184,16 +221,26 @@ export function planImport(handler: KindHandler, request: ImportRequest, ctx: Pl
     for (const write of outcome.writes) {
       const id = `${write.collection}:${write.record.id}`;
       const earlier = changes.get(id);
-      const before = earlier
-        ? earlier.before
-        : ((world[write.collection] as { id: string }[]).find((r) => r.id === write.record.id) ?? null);
+      const at = lookups.byId(write.collection).get(write.record.id);
+      const before = earlier ? earlier.before : at === undefined ? null : world[write.collection][at]!;
       changes.set(id, { collection: write.collection, id: write.record.id, before, after: write.record });
-      applyWrite(world, write);
+      lookups.put(write.collection, write.record);
     }
     rows.push({ line, action: outcome.action, label: outcome.label, cells, problems: [], note: outcome.note ?? null });
     counts[outcome.action] += 1;
   }
   return { rows, counts, changes: [...changes.values()] };
+}
+
+const ACTION_LETTERS: Record<RowAction, string> = { create: "c", update: "u", skip: "s", error: "e" };
+
+/**
+ * The dry run's fingerprint (ADR 0057 S-10): one letter per planned row, in order (c create,
+ * u update, s skip, e error). An import must plan the same string, so what the person checked is
+ * what is written.
+ */
+export function planActions(rows: readonly Pick<PlannedRow, "action">[]): string {
+  return rows.map((r) => ACTION_LETTERS[r.action]).join("");
 }
 
 /** "Creates 12, updates 3, skips 1; 2 rows have errors" (spec G1 dry run). */
