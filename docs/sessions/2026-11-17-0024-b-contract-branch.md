@@ -94,6 +94,12 @@ Planned decisions, each the safest option found. Decisions taken while building 
 
 ### Decisions taken during the build
 
+#### Stage 1 (the API integration test)
+- **A third helper, `addBranch(companyId, values)`.** The plan inserts the soft-deleted branch and the other company's branch inline, each with its own open, insert and close. One helper beside `setBranch` and `withoutBranch` keeps that code in one place (CLAUDE.md: no duplicated logic).
+- **The refusals go through a small `refused(who, body, message)` inside the case,** which checks 400 and the exact message, and `ownerCount()` counts the Owner's `GET /contracts`. Both live in the case, because no other case needs them.
+- **The optional step 6 (DemoStore's `"sm-br-denver"`) is in.** It answers 400 "Invalid UUID", the zod message the flows' `f5-try1` saw, and adds nothing. It records why the client must never send DemoStore ids.
+- **Step 1's three bodies are labelled** ("branch B sent", "null sent", "no branch key"), and step 4's check names the case, so a failure says which path broke.
+
 ## Which test pins which path
 | Path | Pinned by |
 | --- | --- |
@@ -114,18 +120,18 @@ None blocks the build.
 - **Q1 of PR #42 (CI time)** stands, now with F5 in it.
 
 ## For STATUS
-The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Match by text, because B3 and B1 moved the lines. `#<n>` is this PR.
+The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Match by text, because B3 and B1 moved the lines. This PR is #47.
 
-1. **"In progress".** After "B1 in draft PR #46, `fix/sales-quote-without-cost`, stacked on #45", record B4 in PR #<n> (`fix/contracts-branch-from-session`, stacked on #46).
-2. **"Done":** a new top entry: **B4, a new contract's branch is left to the API,** PR #<n> (`fix/contracts-branch-from-session`, stacked on #46; this log; ADR 0044 "The web leaves a new contract's branch to the API"; no delta row). The contract form's body carries no `branchId` or `salesRepId`, so `POST /contracts` files a new contract under its creator's own branch (`newBranch`) instead of answering 400 "Invalid UUID" to DemoStore's branch id. The API is unchanged. A new integration test pins its rule: a sent branch is ignored for anyone with one, whatever their scope; a branchless creator picks a live branch of the company only with scope `all`; an edit keeps the branch. F5 runs (its local time), with two clean-ups (void the release, void Billing 1) whose refusals are checked by message. Checks: lint, typecheck, `pnpm test`, `pnpm test:api`, hooks, the api-mode suite (counts from the handoff).
-3. **"Next three tasks", item 1.** B4 done in PR #<n>; "F5 needs B4" becomes "F5 runs since B4".
+1. **"In progress".** After "B1 in draft PR #46, `fix/sales-quote-without-cost`, stacked on #45", record B4 in PR #47 (`fix/contracts-branch-from-session`, stacked on #46).
+2. **"Done":** a new top entry: **B4, a new contract's branch is left to the API,** PR #47 (`fix/contracts-branch-from-session`, stacked on #46; this log; ADR 0044 "The web leaves a new contract's branch to the API"; no delta row). The contract form's body carries no `branchId` or `salesRepId`, so `POST /contracts` files a new contract under its creator's own branch (`newBranch`) instead of answering 400 "Invalid UUID" to DemoStore's branch id. The API is unchanged. A new integration test pins its rule: a sent branch is ignored for anyone with one, whatever their scope; a branchless creator picks a live branch of the company only with scope `all`; an edit keeps the branch. F5 runs (its local time), with two clean-ups (void the release, void Billing 1) whose refusals are checked by message. Checks: lint, typecheck, `pnpm test`, `pnpm test:api`, hooks, the api-mode suite (counts from the handoff).
+3. **"Next three tasks", item 1.** B4 done in PR #47; "F5 needs B4" becomes "F5 runs since B4".
 4. **"Api-mode bugs the flows found".**
    - Remove the B4 bullet (`- **B4, nobody with a branch can save a new contract in api mode:** …`).
-   - In the header, "F5 waits on B4" becomes "F5 runs since B4 (PR #<n>)".
+   - In the header, "F5 waits on B4" becomes "F5 runs since B4 (PR #47)".
 5. **"PR #42 final review notes".**
    - In the clean-ups bullet, "F5 registers none (`fixme`)" becomes "F5 registers two (void the release, void Billing 1), each refusal checked by message (`voidLeftBilling`)"; the "any 400 is done" gap stays for the other flows. F1's part stays as B1 left it.
    - In the "Nits" bullet, drop "F5 posts a customer inline instead of `postAs`" (done).
-   - The B4 part of the bullet "B1, B4 and O2 were checked on the server" stays true; add "B4 fixed on the client in PR #<n> (no branch sent)".
+   - The B4 part of the bullet "B1, B4 and O2 were checked on the server" stays true; add "B4 fixed on the client in PR #47 (no branch sent)".
 6. **"Flows' local runs leave data".** Add: "F5 a completed contract with two paid invoices (Billing 1 and the release) and its customer; a stopped run's open billing is voided by its clean-up".
 7. **The invite's branch, extending the existing note.** In "PR #11 security review", extend "In api mode the Users screen's branch picker still lists the demo's branches, so the API stores no branch for them until Settings → Locations moves." with: "The invite's audit row records the sent id (`"sm-br-denver"`) while the stored branch is null, and `PATCH /users/:id` drops an unknown branch the same way (`knownBranch`); such a person can't add a contract and, as a Manager, sees nothing branch-scoped (found while fixing B4)."
 8. **A new follow-up bullet,** "**R1 symptoms found while fixing B4 (for `GET /company`, queue task 2):**":
@@ -133,8 +139,8 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
    - a new quote's "sold at" defaults to the warehouse, not the rep's showroom (`quote-page.tsx`, showroom by `user.branchId`);
    - comparisons with `user.id` and `user.defaultLocationId` read DemoStore's ids;
    - `saveQuote` still sends DemoStore's `branchId` and `salesRepId`, which the API strips.
-9. **"Blockers and open questions".** Add "Owner questions (PR #<n>, B4)" with Q-B4-1 and Q-B4-2. Append F5's measured time to PR #42's CI question (Q1).
-10. **BRANCHES.** Add the row `fix/contracts-branch-from-session` | B (Claude) | B4: the contract form leaves a new contract's branch to the API; F5 runs (main checkout; stacked on #46) | Draft, then "Ready for merge once CI is green" | [#<n>](https://github.com/TwoWayTech/flooring-platform/pull/<n>) | see the branch. Move B3's and B1's rows to "Merged on …" once they merge.
+9. **"Blockers and open questions".** Add "Owner questions (PR #47, B4)" with Q-B4-1 and Q-B4-2. Append F5's measured time to PR #42's CI question (Q1).
+10. **BRANCHES.** Add the row `fix/contracts-branch-from-session` | B (Claude) | B4: the contract form leaves a new contract's branch to the API; F5 runs (main checkout; stacked on #46) | Draft, then "Ready for merge once CI is green" | [#47](https://github.com/TwoWayTech/flooring-platform/pull/47) | see the branch. Move B3's and B1's rows to "Merged on …" once they merge.
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs` folder, and api-mode runs in `flows/logs`.
@@ -142,3 +148,8 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs
 | Stage | Command | Result |
 | --- | --- | --- |
 | 0 | `lsof` on 5432 and 5433 (read-only) | the compose PostgreSQL on 5432 and the api e2e one on 5433 are up |
+| 0 | `gh pr create --draft …` | draft PR #47 |
+| 1 | `heavy.sh pnpm --filter api exec vitest run --project integration test/contracts.int.test.ts` (PostgreSQL on 5432) | 15 passed, the new case among them (it pins the server, which B4 doesn't change); 13 s |
+| 1 | three mutations of `newBranch` (`b4/mut-s1.sh`, the new case only): (a) a creator with a branch takes the sent one (`given ?? access.branchId`); (b) the scope check dropped (`if (!given)`); (c) an all-scope creator with a branch picks (`access.branchId && access.dataScope !== "all"`) | each failed as planned: (a) at step 1, "branch B sent" got branch B; (b) at step 5, 201 instead of 400; (c) at step 4, branch B instead of A. The service was restored byte for byte after each, and `git diff --stat -- apps/api/src` is empty |
+| 1 | `heavy.sh b4/checks.sh s1 api:lint api:typecheck` | clean, clean |
+| 1 | the same integration file again, after labelling step 4 | 15 passed |
