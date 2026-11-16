@@ -49,7 +49,7 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Change tax on a document | `sales.tax.override` | Owner, Accountant | Store: `saveQuote`. Link in `QuoteSummary` |
 | Draw rooms on the canvas | `retail.room.measure` (Retail module) | Owner, Manager, Sales | Screen only: `QuoteBuilder` |
 | Start a transfer from a short line | `inventory.transfer.create` | Owner, Manager, Warehouse | Button in `QuoteBuilder`. The transfer call has its own check, see `docs/product-spec/inventory.md` |
-| See margin on a quote | `sales.margin.view_sensitive` | Owner, Manager, Accountant | Screen only: `QuoteSummary` |
+| See margin on a quote | `sales.margin.view_sensitive` and `inventory.product.view_sensitive` | Owner, Manager, Accountant | Screen only: `QuoteSummary` through `seesQuoteMargin`; it also shows only when every line carries its cost |
 | Convert a quote to an invoice | `sales.invoice.create` | Owner, Manager, Accountant, Sales | Store: `convertQuoteToInvoice` |
 | Create an invoice for a roll cut | `sales.invoice.create` | Owner, Manager, Accountant, Sales | Store: `createRollInvoice` |
 | Open the invoice list or an invoice | `sales.invoice.view` | Owner, Manager, Accountant, Sales | Screen only: `pages.ts`, `SalesPage`, `InvoicePage` |
@@ -277,6 +277,8 @@ pctOf(v, p)    = v * p / 100
     ```
 
     The seed uses `rounding: "invoice"` for every company.
+
+    A line without `unitCost` (the API leaves it out for a viewer without product cost) has no known cost: `cost`, `margin` and `marginPct` are null for the whole document, never a partial sum or zero. Amounts, tax and total don't depend on cost. A new line keeps the product's cost as received and never fills one in (`quoteLineFor`); the server costs it from the catalog. A document being stored takes its cost through `storedCost`, which refuses a null (ADR 0037, 2026-11-16).
 14. **What is taxable.** `isLineTaxable` in `documents.ts`:
 
     ```
@@ -502,7 +504,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | `unit` | enum: sq_ft, each, step, ft, hour | |
 | `quantity` | decimal string | Billed quantity, waste included |
 | `unitPrice` | decimal string | |
-| `unitCost` | decimal string | Sensitive by screen only |
+| `unitCost` | decimal string | Sensitive by screen only in the demo. The API leaves it out without `inventory.product.view_sensitive` |
 | `wastePct` | decimal string, optional | Already inside the quantity |
 | `roomIds` | string[], optional | Rooms the line is measured from |
 | `rollId` | roll id, optional | Chosen roll on carpet lines |
