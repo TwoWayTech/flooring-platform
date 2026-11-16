@@ -10,7 +10,7 @@ import {
   PDF_PROOF,
   resetAuthAround,
   runId,
-  shownMoney,
+  shown,
   waitForAnswer,
 } from "./kit";
 import { CASH } from "./ledger";
@@ -103,7 +103,7 @@ flowTest.describe("flow F7: expense to location profit and back", () => {
         ).toBe(true);
         const profit = await sectionTable(page, "Profit by location");
         const row = profit.getByRole("row", { name: new RegExp(`^${LOCATION}`) });
-        await expect(await cellUnder(profit, row, "Net profit")).toHaveText(shownMoney(after.net));
+        await expect(await cellUnder(profit, row, "Net profit")).toHaveText(shown(after.net, "money"));
 
         const spent = await sectionTable(page, "Expenses by location");
         await spent.getByRole("button", { name: LOCATION, exact: true }).click();

@@ -9,7 +9,14 @@ import {
   type Response,
 } from "@playwright/test";
 import { resetAuthState } from "@workspace/db/testing";
-import { addDays, defaultNumberSettings, formatNumber, mondayOf, type DecimalInput } from "@workspace/shared";
+import {
+  addDays,
+  defaultNumberSettings,
+  formatNumber,
+  mondayOf,
+  type DecimalInput,
+  type NumberKind,
+} from "@workspace/shared";
 import { signInAndEnrol, signInAs } from "../accounts";
 
 export { addDays, mondayOf };
@@ -71,12 +78,13 @@ export function formatted(day: string): string {
 }
 
 /**
- * How a money amount shows on screen ("$1,234.50", "-$12.00"): through `formatNumber`, as `<Num>`
- * does. Summit's seeded number settings are the US defaults (2 decimals, a minus sign, en-US, USD),
- * and Settings is still DemoStore in api mode, so the screen formats with exactly these.
+ * How a number of `kind` shows on screen ("$1,234.50", "-$12.00", "53.00"): through `formatNumber`,
+ * as `<Num>` does, before any unit it adds. Summit's seeded number settings are the US defaults
+ * (money and quantities to 2 decimals, a minus sign, en-US, USD), and Settings is still DemoStore in
+ * api mode, so the screen formats with exactly these.
  */
-export function shownMoney(value: DecimalInput): string {
-  return formatNumber(value, "money", defaultNumberSettings());
+export function shown(value: DecimalInput, kind: NumberKind): string {
+  return formatNumber(value, kind, defaultNumberSettings());
 }
 
 /** Opens the Meetings page on the week `weeksAhead` weeks after this one. */
