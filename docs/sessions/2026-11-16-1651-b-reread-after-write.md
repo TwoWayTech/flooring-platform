@@ -197,6 +197,7 @@ Planned decisions, each the safest option found. Decisions taken while building 
 | Edited form, then newer hours: the notice, the choice, focus | New F3 test, step 4; model cases (b) and (c) |
 | Clean form, stale Submit from another tab: 409, nothing submitted | New F3 test, step 5; the new `hr.int` case; `demo-timesheets.test.ts` |
 | One's own save shows no notice | New F3 test, step 1; model cases (d) and (h) |
+| After one's own save, the form shows the saved hours until a new read, never the read from before the save (review round 2) | New F3 test, steps 1 and 2 (the save's re-read held, Monday checked once the save has ended); the third pin check failed step 1 on the round-1 form; model case (l) for the hours themselves |
 | A save's answer shows only the hours it wrote (review round 1) | The second new `hr.int` case (another writer commits right after the save's transaction); it failed before the fix |
 | An answer that differs from the hours sent is taken like any read (review round 1) | Model case (k): a clean form takes it, an edited one asks, both orders |
 | After one's own save, a read back at the opening hours is taken, not skipped (review round 1) | New F3 test, step 2 (the save's re-read held while a second tab puts Monday back); the second pin check failed it on the old form; model case (l) |
@@ -339,11 +340,54 @@ A security reviewer and a correctness reviewer each raised one `should_fix` find
 | `8df47f1` | fix(portal): the week form takes its own save's answer as a read |
 | (this commit) | docs: B2 review round 1, the save's answer and the form's last read |
 
+## Review round 2
+One finding, raised by the security reviewer as blocking and confirmed by a skeptic as `should_fix`. It was a real regression from review round 1's client fix.
+
+### Finding
+**`my-timesheet.tsx` (`save`): after every own Save, the form put back the hours from before the save.**
+- `save()` recorded the answer as the last read (`setSeen(readKey(saved))`). The `sheet` prop was still the read from before the save until the save's re-read landed, a round trip later.
+- So the next render saw that old read as new, and `serverHours` on a clean form took it. Monday showed 6.5 again next to the "Saved" toast.
+- A failed re-read (`keepDataOnError`) left it there. A Submit in that window sent 6.5 with `expectedDays` 6.5, and the server, holding 8, answered a false 409. Typing in that window showed a bogus notice holding her own old hours.
+- Model case (l) asserted the revert as correct. F3 step 2 passed either way, because the reverted value equalled the hours the second tab put back.
+
+### Fix
+- **Reads are told apart by identity, not content.** `WeekForm` gets the portal read itself (`read={portal}`) and keeps the one it took last (`taken`). It runs `serverHours` once per new read object. `useApiQuery` sets a new data object on every successful read (JSON parse in api mode; a new object literal from the demo's `myPortal`), and a failed re-read keeps the same one.
+- **`save()` only applies the answer** (`hoursSaved`). It no longer touches the last read. `readKey` is removed, as nothing else used it.
+- **Model case (l)** now checks what the model owns: after its own save, the form shows and saves the saved hours (`expectedDays` equal to them, so a quick Submit is not refused); the save's re-read changes nothing; a new read back at the opening hours is taken.
+- **F3's stale-save test.** A shared `holdPortalRead` holds the save's re-read, and `saveWithReadHeld` is used in steps 1 and 2. Once the save has ended (answer in, re-read held, Save enabled again), Monday must show the saved hours. Step 1 then releases and checks again. Step 2 then has the second tab put the old hours back, releases, and checks the form takes them.
+
+### Decisions and why
+- **The portal object, not the `sheet` object, as the identity.** A week with no sheet reads as `undefined` every time, so `undefined` cannot tell two reads apart. The portal object is new on every answer.
+- **Identity covers both rounds' cases.** It never takes the old read again (round 2), and it always takes a new one, even one back at the opening hours (round 1). Taking a read with the same hours as before is harmless: `serverHours` gives the same form, or clears a notice whose hours the typed or base hours already match.
+- **The take-each-read-once rule stays in the component, and the e2e pins it.** It is a single comparison, and the bug was in the wiring: which object is compared, and that `save()` leaves it alone. Moving it into the model would only test `===`. `apps/web` has no React Testing Library (Q3), so the F3 test is the pin. With the re-read held, the old form shows the opening hours for as long as the hold lasts, so the check cannot pass by timing.
+- **Step 1 holds its re-read too.** A check right after the toast alone would retry until the re-read landed and put the saved hours back, so it would pass on the old form.
+- **Step 2 waits for Save to be enabled, not for the toast.** Step 1's "Saved" toast may still show, and a second one would make the toast locator match two elements.
+- **If the save's re-read were taken before its answer**, a read holding hours written right after the save would set a notice that the answer then clears. This is not new, and it does not happen in practice: the re-read starts when the PUT's response arrives and needs a round trip, while the answer is already in. Recorded, not changed.
+- **No new ADR and no blueprint-delta row.** ADR 0051's dated section gets the identity rule, the third pin check and the test note.
+
+### Commands (review round 2)
+| Command | Result |
+| --- | --- |
+| `heavy.sh flows/api-e2e.sh b2-r2-pin --build -- …/f3-timesheet-to-pay-period.spec.ts --grep "never saves"`, the new test on the round-1 form | failed at step 1 as intended: "the form shows the hours it saved before the save's re-read lands", expected "8", received "5" (the opening hours) |
+| `heavy.sh pnpm --filter web exec vitest run` on `my-week-hours`, `demo-timesheets` and `timesheets-api`, after the fix | 3 files, 16 passed |
+| `heavy.sh b2/checks.sh r2 web:typecheck web:lint`; `prettier --check` on the four changed files | clean, clean, clean |
+| `api-e2e.sh b2-r2-f3f4 --build -- …/f3-… …/f4-… tests/e2e-api/portal.spec.ts` | 4 passed: F3 5.3 s, stale-save 3.0 s, F4 4.5 s, portal |
+| `api-e2e.sh b2-r2-all` (the whole api-mode suite) | exit 0 after 135 s: 33 passed, 2 skipped (F1, F5). Flows: F2 8.2 s, F3 4.8 s, stale-save 3.2 s, F4 4.8 s, F6 13.6 s, F7 5.1 s |
+| `heavy.sh b2/e2e-demo-r2.sh` (demo build; `--project=flooring` portal and flows-batch3, `--project=hr` portal; one worker) | flooring 16 passed (G3-3 among them), hr 1 passed |
+| `heavy.sh b2/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0. Lint and Prettier clean; typecheck clean; `test`: shared 1,046, web 265 (31 files), api unit 124 (17 files), db 18, providers 11; `test:api`: api 628 (35 files), db 59 (8 files), providers 2; hooks 15 |
+
+### Commits (review round 2)
+| Commit | Subject |
+| --- | --- |
+| `8b7fb3e` | fix(portal): the week form takes each read once, told apart by identity |
+| (this commit) | docs: B2 review round 2, the week form tells reads apart by identity |
+
 ## Left
-- Review round 1 is fixed (above). Next comes a fresh read-only reviewer pass on these two fixes, if the workflow runs one. The earlier focus still applies, because payroll hours are touched (no `packages/db` change, so no schema-reviewer):
+- Review rounds 1 and 2 are fixed (above). Next comes a fresh read-only reviewer pass on these fixes, if the workflow runs one. The earlier focus still applies, because payroll hours are touched (no `packages/db` change, so no schema-reviewer):
   - the `PUT /timesheets` check order, the lock and the stored-hours exemption;
   - data scope unchanged, and no tenant from input;
   - demo parity;
-  - the transport never re-reading into a loop.
+  - the transport never re-reading into a loop;
+  - the week form taking each portal read once, by identity.
 - `/handoff`: STATUS (the "For STATUS" notes above), BRANCHES and this log. That commit carries no `[skip ci]`, so CI runs. Then mark PR #44 ready, and self-merge only under the CLAUDE.md rule.
 - The `DataTable` follow-up (a stable cell renderer), in its own PR.
