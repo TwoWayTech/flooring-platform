@@ -307,10 +307,14 @@ export const flowTest = test.extend<{ personas: PersonaPool }>({
 /** The hosts of a database on this machine, as a URL's `hostname` gives them. */
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-/** The host a database URL names, or null when it isn't a URL. */
+/**
+ * The host a database URL names, or null when it isn't a URL or could connect somewhere else:
+ * postgres.js lets `?host=` override the URL's host, and a `#` changes where it reads the host.
+ */
 function hostOf(url: string): string | null {
   try {
-    return new URL(url).hostname;
+    const parsed = new URL(url);
+    return parsed.searchParams.has("host") || parsed.hash ? null : parsed.hostname;
   } catch {
     return null;
   }
@@ -320,6 +324,8 @@ function hostOf(url: string): string | null {
  * The control database the API uses (global-setup.ts checks it is set). Off CI it must be on this
  * machine, since `resetAuthAround` wipes the personas' authenticators, passkeys and sessions; a URL
  * pointing anywhere else is refused. The message never repeats the URL, which holds a password.
+ * This guards the flows' own resets only: global-setup.ts runs the suite's reset first, unguarded
+ * (a docs/STATUS.md follow-up puts one guard in packages/db's test helpers).
  */
 function controlUrl(): string {
   const url = process.env.CONTROL_DATABASE_URL;
