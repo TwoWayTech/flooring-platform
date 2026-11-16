@@ -852,8 +852,10 @@ function employeeBody(input: EmployeeInput) {
 
 /**
  * A contract as the API takes it: only the form's fields, since an edit starts from the whole
- * stored contract. The rep is always the creator on the server, and an estimated cost the person
- * can't see is left out so the stored one is kept (ADR 0044).
+ * stored contract. The rep and the branch are the server's (ADR 0044, "New contracts"): a new
+ * contract is filed under its creator's own branch and an edit keeps both, so neither is sent. In
+ * api mode the form's branch is still DemoStore's (ADR 0044, "The web leaves a new contract's
+ * branch to the API"). An estimated cost the person can't see is left out so the stored one is kept.
  */
 function contractBody(input: ContractInput) {
   return {
@@ -863,7 +865,6 @@ function contractBody(input: ContractInput) {
     supplierId: input.supplierId || null,
     title: input.title,
     scope: input.scope,
-    branchId: input.branchId || null,
     locationId: input.locationId,
     jobSite: input.jobSite,
     startsAt: input.startsAt,

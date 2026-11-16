@@ -100,6 +100,13 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **The optional step 6 (DemoStore's `"sm-br-denver"`) is in.** It answers 400 "Invalid UUID", the zod message the flows' `f5-try1` saw, and adds nothing. It records why the client must never send DemoStore ids.
 - **Step 1's three bodies are labelled** ("branch B sent", "null sent", "no branch key"), and step 4's check names the case, so a failure says which path broke.
 
+#### Stage 2 (the red unit test and the fix)
+- **The unit test checks the whole body for a create and an edit** (`toEqual` on one expected object), so a field dropped by mistake fails too, not only a branch that comes back. A readable `not.toHaveProperty("branchId")` comes first.
+- **The edit and UUID cases send API-shaped ids** (a UUID branch and a UUID rep), the shape the shell will have after `GET /company`, so D1's "no filter" is pinned for both keys.
+- **The withheld cost is an absent key,** made with `delete`, as `contracts.int.test.ts` does, because `ContractLine.estimatedCost` is typed as present.
+- **`contractBody`'s JSDoc already cites ADR 0044's new section,** "The web leaves a new contract's branch to the API", which stage 4 adds (critic item M1: never cite a STATUS bullet the PR deletes).
+- **No other place sends a contract's branch.** `saveContract` is called only from the contract form, renew has no body, and `api-methods.ts` names `branchId` nowhere after the fix.
+
 ## Which test pins which path
 | Path | Pinned by |
 | --- | --- |
@@ -153,3 +160,7 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b4/logs
 | 1 | three mutations of `newBranch` (`b4/mut-s1.sh`, the new case only): (a) a creator with a branch takes the sent one (`given ?? access.branchId`); (b) the scope check dropped (`if (!given)`); (c) an all-scope creator with a branch picks (`access.branchId && access.dataScope !== "all"`) | each failed as planned: (a) at step 1, "branch B sent" got branch B; (b) at step 5, 201 instead of 400; (c) at step 4, branch B instead of A. The service was restored byte for byte after each, and `git diff --stat -- apps/api/src` is empty |
 | 1 | `heavy.sh b4/checks.sh s1 api:lint api:typecheck` | clean, clean |
 | 1 | the same integration file again, after labelling step 4 | 15 passed |
+| 2 | `heavy.sh pnpm --filter web exec vitest run tests/unit/contracts-api.test.ts`, before the fix | red as expected: 3 failed, each at `not.toHaveProperty("branchId")` (the old `branchId: input.branchId || null` sends DemoStore's `"sm-br-denver"` for the create and the UUID for the other two; the failure message names only the key) |
+| 2 | the same, after the fix | 3 passed |
+| 2 | `pnpm exec prettier --check` on the three changed files | clean |
+| 2 | `heavy.sh b4/checks.sh s2 web:lint web:typecheck web:test` | clean, clean, 35 files and 279 tests passed (B1's tree had 34 and 276) |
