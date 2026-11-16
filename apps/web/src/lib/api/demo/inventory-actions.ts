@@ -5,6 +5,7 @@ import {
   dec,
   invoiceLedger,
   invoiceFromRoll,
+  isShort,
   mayIssue,
   nextNumber,
   nextPaymentNumber,
@@ -359,6 +360,6 @@ export async function createRollInvoice(ctx: ActionContext, input: RollInvoiceIn
 
 /** For the audit line: what a reservation plan held. */
 export function reservationSummary(reservations: readonly Reservation[]): string {
-  const short = reservations.filter((r) => r.shortBy !== "0").length;
+  const short = reservations.filter(isShort).length;
   return `${reservations.length} reserved${short ? `, ${short} short` : ""}`;
 }
