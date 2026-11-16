@@ -79,13 +79,9 @@ import type {
   MoveScope,
   MyMeetings,
   ColumnMapping,
-  ImportBatchSummary,
   ImportKind,
   ImportMapping,
-  ImportOverview,
-  ImportPreview,
   ImportRequest,
-  ImportResult,
   PlannedRow,
   PlatformAccessPatch,
   PlatformAuditQuery,
@@ -104,6 +100,8 @@ import type {
   PlatformPlanInput,
   PlatformPlanPatch,
 } from "@workspace/shared";
+// Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
+import type { ImportBatchSummary, ImportOverview, ImportPreview, ImportResult } from "@workspace/shared";
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
 export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "settings">;
@@ -819,14 +817,19 @@ export interface ApiClient {
 
   /**
    * Data import (spec G1) for a company: from Settings by a user with settings.import.manage in the
-   * open company, or from Platform admin → Company by the platform admin. Kinds follow its modules.
+   * open company, or from Platform admin → Company by the platform admin (demo only until part 5,
+   * ADR 0057). Kinds follow its modules and the person's keys (S-1 to S-3).
    */
   importOverview(companyId: CompanyId): Promise<ImportOverview>;
   /** Checks a file and returns the dry run; writes nothing. */
   previewImport(companyId: CompanyId, request: ImportRequest): Promise<ImportPreview>;
-  /** Imports the valid rows, keeps the batch for history and Undo. Audited. */
+  /**
+   * Imports the valid rows, keeps the batch for history and Undo. Audited. Refused when a row
+   * would now do something other than the dry run showed (`request.expected`, ADR 0057 S-10). The
+   * API asks for a step-up first (S-7).
+   */
   runImport(companyId: CompanyId, request: ImportRequest): Promise<ImportResult>;
-  /** Undoes an import unless its records changed or are used since. Audited. */
+  /** Undoes an import unless its records changed or are used since. Audited; a step-up first on the API (S-7). */
   undoImport(companyId: CompanyId, batchId: string): Promise<ImportBatchSummary>;
   /** Saves the column mapping for the next file of a kind. */
   saveImportMapping(companyId: CompanyId, kind: ImportKind, columns: ColumnMapping): Promise<ImportMapping>;

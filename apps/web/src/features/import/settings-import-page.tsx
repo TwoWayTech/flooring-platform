@@ -7,9 +7,9 @@ import { ImportWorkspace } from "./import-workspace";
 
 /** Settings → Data import (spec G1), for people whose role holds settings.import.manage. */
 export function SettingsImportPage() {
-  const { company } = useWorkspace();
+  const { company, access } = useWorkspace();
   const can = useCan();
   const formatDate = useFormatDate();
   if (!can("settings.import.manage")) return <NoAccess />;
-  return <ImportWorkspace companyId={company.id} formatDate={formatDate} />;
+  return <ImportWorkspace companyId={company.id} holder={access} formatDate={formatDate} />;
 }

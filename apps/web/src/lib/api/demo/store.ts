@@ -58,8 +58,6 @@ import {
   type TransferInput,
   type User,
   type ColumnMapping,
-  FULL_IMPORT_HOLDER,
-  type ImportHolder,
   type ImportKind,
   type ImportRequest,
   accessPatchProblem,
@@ -162,6 +160,8 @@ import {
 import { DemoRefusal } from "./admin-rules";
 import { DEMO_PLANS_KEY, demoFixturePlans, demoPlans, demoPlanStore, type DemoPlanEdit } from "./platform-plans";
 import { DEMO_STATUS_KEY, demoConsoleStanding, demoStatusFacts, demoStatusStore } from "./platform-status";
+// Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
+import { FULL_IMPORT_HOLDER, type ImportHolder } from "@workspace/shared";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";

@@ -17,33 +17,21 @@ import { EmptyState } from "@workspace/ui/components/empty-state";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import { StatusPill } from "@workspace/ui/components/status-pill";
+import { StepUpDialog } from "@/components/step-up-dialog";
 import { api } from "@/lib/api";
 
-/** Asks before an Undo, since it removes what the import created. */
+/** Asks before an Undo, since it removes what the import created; the step-up comes next. */
 function UndoDialog({
-  companyId,
   batch,
-  onClose,
+  onCancel,
+  onConfirm,
 }: {
-  companyId: CompanyId;
   batch: ImportBatchSummary;
-  onClose: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
 }) {
-  const [pending, setPending] = useState(false);
-  async function undo() {
-    setPending(true);
-    try {
-      await api.undoImport(companyId, batch.id);
-      toast.success(`${batch.number} undone`);
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "The import was not undone.");
-    } finally {
-      setPending(false);
-    }
-  }
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="bg-surface sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Undo {batch.number}?</DialogTitle>
@@ -52,10 +40,10 @@ function UndoDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="destructive" disabled={pending} onClick={() => void undo()}>
+          <Button variant="destructive" onClick={onConfirm}>
             Undo import
           </Button>
         </DialogFooter>
@@ -66,7 +54,8 @@ function UndoDialog({
 
 /**
  * Import history (spec G1 step 8): every import with what it did, and Undo for each one not
- * undone yet. The store refuses an Undo when the records changed or are used since.
+ * undone yet. The store refuses an Undo when the records changed or are used since. Undo asks
+ * first, then for a step-up (ADR 0057 S-7), the role editor's pattern.
  */
 export function ImportHistory({
   companyId,
@@ -78,6 +67,23 @@ export function ImportHistory({
   formatDate: (iso: string, withTime?: boolean) => string;
 }) {
   const [undoing, setUndoing] = useState<ImportBatchSummary | null>(null);
+  // The batch whose Undo waits for the step-up; kept while the dialog closes, so its words stay.
+  const [target, setTarget] = useState<ImportBatchSummary | null>(null);
+  const [stepUp, setStepUp] = useState(false);
+
+  /** The Undo itself, once the step-up passed. */
+  async function undo() {
+    if (!target) return;
+    try {
+      await api.undoImport(companyId, target.id);
+      toast.success(`${target.number} undone`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The import was not undone.");
+    } finally {
+      setStepUp(false);
+    }
+  }
+
   return (
     <Panel title="Import history" bodyClassName="p-0">
       {batches.length === 0 ? (
@@ -133,7 +139,23 @@ export function ImportHistory({
           </table>
         </div>
       )}
-      {undoing ? <UndoDialog companyId={companyId} batch={undoing} onClose={() => setUndoing(null)} /> : null}
+      {undoing ? (
+        <UndoDialog
+          batch={undoing}
+          onCancel={() => setUndoing(null)}
+          onConfirm={() => {
+            setUndoing(null);
+            setTarget(undoing);
+            setStepUp(true);
+          }}
+        />
+      ) : null}
+      <StepUpDialog
+        open={stepUp}
+        action={target ? `Undoing ${target.number}` : "Undoing an import"}
+        onOpenChange={setStepUp}
+        onConfirm={undo}
+      />
     </Panel>
   );
 }

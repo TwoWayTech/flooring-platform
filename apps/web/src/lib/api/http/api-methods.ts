@@ -90,6 +90,16 @@ import {
   type PlatformPlanInput,
   type PlatformPlanPatch,
 } from "@workspace/shared";
+// Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
+import {
+  IMPORT_WORDS,
+  type ImportBatchSummary,
+  type ImportMapping,
+  type ImportOverview,
+  type ImportPreview,
+  type ImportResult,
+} from "@workspace/shared";
+import { importBody } from "./import-body";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
@@ -319,6 +329,23 @@ export const API_METHODS: HttpRoutes = {
   salesByCategoryReport: (http) => (query) =>
     http.request<Report>("GET", hubReportPath("/reports/sales-by-category", query)),
   paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
+  // Data import, part 1 (ADR 0057): customers, addresses, suppliers and products on the API. The
+  // company is the session's, so `companyId` is never sent; only the chosen columns travel
+  // (`importBody`); writes go through `wrote`, so the history and the record lists read again.
+  // The API asks for a step-up on the commit and on Undo, which the screens give before calling.
+  // `testDatabaseConnection` stays on the demo (simulated).
+  importOverview: (http) => () => http.request<ImportOverview>("GET", "/imports"),
+  previewImport: (http) => async (_companyId, request) =>
+    http.request<ImportPreview>("POST", "/imports/check", importBody(request)),
+  runImport: (http, _demo, changed) => async (_companyId, request) =>
+    wrote(changed, http.request<ImportResult>("POST", "/imports", importBody(request, request.expected))),
+  // A batch the API made has a UUID; any other id names no import there, so nothing is sent.
+  undoImport: (http, _demo, changed) => async (_companyId, batchId) => {
+    if (!isSaved(batchId)) throw new ApiError(IMPORT_WORDS.gone);
+    return wrote(changed, http.request<ImportBatchSummary>("POST", `/imports/${batchId}/undo`));
+  },
+  saveImportMapping: (http, _demo, changed) => async (_companyId, kind, columns) =>
+    wrote(changed, http.request<ImportMapping>("PUT", `/imports/mappings/${kind}`, { columns })),
   enterBill: (http) => async (poId, input, files) =>
     http.request<Bill>("POST", `/purchase-orders/${poId}/bills`, { ...input, files: await encodeFiles(files) }),
   recordSupplierPayment: (http) => async (input, files) =>
