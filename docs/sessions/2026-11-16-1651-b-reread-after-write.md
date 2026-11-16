@@ -146,6 +146,10 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **The exhaustive test also checks that each write sends exactly one non-GET.** The plan only inferred that from "one re-read on 200".
 - **Mutation checks restore from a scratchpad copy, compared byte for byte, not with `git checkout --`.** The files under test held this stage's uncommitted work, and `git checkout` would have thrown it away.
 
+#### Stage 2a (the pure pieces, wired to nothing)
+- **`TIMESHEET_CHANGED_MESSAGE` sits next to `overwritesNewerHours`** in `packages/shared/src/hr/timesheets.ts`, so the API and the demo refuse in the same words.
+- **The model's typed-text filter moved from the screen into `typeHours`.** It is the same `/[^\d.]/g`, so the screen will keep no copy.
+
 ## Owner questions
 None blocks the build.
 
@@ -169,3 +173,8 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b2/logs
 | 1 | five mutations (`b2/mut-s1.sh`): `listPayPeriods` through `request`; no re-read on success; a re-read on GET; 422 dropped; the re-read after `parse` | each failed `api-rereads` or `api-router` (1, 4, 2, 2 and 1 tests); each file restored byte for byte |
 | 1 | `heavy.sh pnpm --filter web exec tsc --noEmit` with one case renamed (`clockIn` to `clockedIn`) | exit 1, TS2561 "Did you mean to write 'clockIn'?"; file restored |
 | 1 | `pnpm exec prettier --check` on the 15 changed files | 2 needed `--write` (router, router test); clean after |
+| 2a | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/hr-people-time.test.ts`, before and after | red (2 failed: the helpers didn't exist), then 15 passed |
+| 2a | `heavy.sh pnpm --filter web exec vitest run tests/unit/my-week-hours.test.ts`, before and after | red (no module), then 10 passed |
+| 2a | three model mutations (`b2/mut-s2a.sh`, `b2/mut-dec.py`): a clean form keeps its old hours; `typedHours` through decimal.js; rule 3 keeps the notice | each failed the model test: (a), (g) and (j); (j) with `DecimalError`; (i). Each file restored byte for byte. (A first try of the decimal.js mutation used `require`, which ESM doesn't have, so it was redone with an import.) |
+| 2a | `heavy.sh b2/checks.sh s2a`: shared `test`, `typecheck`, `lint`; web `lint`, `typecheck` | shared 70 files and 1,046 tests passed; the rest clean |
+| 2a | `pnpm exec prettier --check` on the 4 changed files | clean |
