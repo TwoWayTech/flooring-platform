@@ -41,6 +41,14 @@ function databaseCode(error: unknown): string | undefined {
 }
 
 /**
+ * Whether a lock was not available (SQLSTATE 55P03): a `NOWAIT` row lock another transaction
+ * holds, or a wait past the lock timeout.
+ */
+export function lockNotAvailable(error: unknown): boolean {
+  return databaseCode(error) === "55P03";
+}
+
+/**
  * The answer to an error inside an import or Undo transaction (ADR 0057 api 4.4): a lock wait
  * that failed is a 409 `import_busy` and a unique clash a 409 `import_conflict`, both meaning
  * nothing was written. Refusals pass as they are; anything else is rethrown for the ErrorFilter,

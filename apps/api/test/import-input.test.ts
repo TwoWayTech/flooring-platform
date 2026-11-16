@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from "@nes
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/core/access/request-actor";
 import { IMPORT_COMMIT, IMPORT_REQUEST, MAPPING_SAVE, parseKind } from "../src/modules/imports/import-input";
-import { importFailure } from "../src/modules/imports/import-lock";
+import { importFailure, lockNotAvailable } from "../src/modules/imports/import-lock";
 
 /** A valid dry-run body, with any part replaced. */
 function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -113,6 +113,14 @@ describe("U-4 database failures inside an import", () => {
       expect(importFailure(dbError(code))).toBeInstanceOf(ConflictException);
       expect(answer(dbError(code)).code).toBe("import_busy");
       expect(answer(new Error("query failed", { cause: dbError(code) })).code).toBe("import_busy");
+    }
+  });
+
+  it("knows a lock that was not available, also when wrapped, and nothing else", () => {
+    expect(lockNotAvailable(dbError("55P03"))).toBe(true);
+    expect(lockNotAvailable(new Error("query failed", { cause: dbError("55P03") }))).toBe(true);
+    for (const error of [dbError("40P01"), dbError("40001"), new Error("boom"), null]) {
+      expect(lockNotAvailable(error)).toBe(false);
     }
   });
 

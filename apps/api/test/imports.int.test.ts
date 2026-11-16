@@ -333,22 +333,6 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     return quote.body.id as string;
   }
 
-  /**
-   * Whether a backend waits on the locks of backend `pid` within five seconds, polled every 50 ms;
-   * the polling stops early once `done` says the waiter finished.
-   */
-  async function waitsOn(db: CompanyDb, pid: number, done: () => boolean): Promise<boolean> {
-    const until = Date.now() + 5_000;
-    while (Date.now() < until && !done()) {
-      const [row] = await db.execute<{ n: number }>(
-        sql`select count(*)::int as n from pg_stat_activity where ${pid}::int = any(pg_blocking_pids(pid))`,
-      );
-      if (row.n > 0) return true;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return false;
-  }
-
   async function withFeatureOff(key: FeatureKey, run: () => Promise<void>) {
     const feature = FEATURES[key] as { enabled: boolean };
     feature.enabled = false;
@@ -1384,7 +1368,7 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     ]);
   });
 
-  it("I-32: an Undo waits for a quote still being saved for a customer it created, then refuses", async () => {
+  it("I-32: an Undo answers at once while a quote is being saved for a customer it created, then refuses", async () => {
     const owner = people.ownerA;
     const juniper = await imported(
       owner,
@@ -1394,13 +1378,15 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     );
     const customerId = (await customerByExternalId("CUST-9901"))!.id;
     const writer = await harness.companyDb(co.a);
-    const watcher = await harness.companyDb(co.a);
     let commitQuote = () => {};
     const held = new Promise<void>((resolve) => (commitQuote = resolve));
-    let opened: (pid: number) => void = () => {};
-    const ready = new Promise<number>((resolve) => (opened = resolve));
+    let inserted = () => {};
+    const ready = new Promise<void>((resolve) => (inserted = resolve));
     let saving: Promise<void> | undefined;
-    let undoing: Promise<Response> | undefined;
+    const untouched = async () => {
+      expect((await batchRow(co.a, juniper.batch.id))!.undoneAt).toBeNull();
+      expect(await customerByExternalId("CUST-9901")).toMatchObject({ addresses: [{ label: "billing" }] });
+    };
     try {
       // The quote's foreign-key check holds FOR KEY SHARE on the customer until this transaction ends.
       saving = writer.db.transaction(async (tx) => {
@@ -1419,30 +1405,30 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
           total: "0",
           createdBy: owner.id,
         });
-        const [me] = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
-        opened(Number(me.pid));
+        inserted();
         await held;
       });
-      const writerPid = await Promise.race([ready, saving.then(() => -1)]);
+      await Promise.race([ready, saving]);
       await stepUp(owner);
-      let settled = false;
-      undoing = call("post", `/imports/${juniper.batch.id}/undo`, owner.cookie).then((response) => {
-        settled = true;
-        return response;
-      });
-      const waited = await waitsOn(watcher.db, writerPid, () => settled);
+      // NOWAIT: the Undo meets the quote's lock and answers, well inside the 10-second lock timeout.
+      const started = Date.now();
+      const busy = await call("post", `/imports/${juniper.batch.id}/undo`, owner.cookie);
+      const took = Date.now() - started;
+      refusedWith(busy, 409, { code: "import_busy", message: IMPORT_WORDS.undoBusy });
+      expect(took, "the Undo answered without waiting for the quote").toBeLessThan(5_000);
+      await untouched();
       commitQuote();
       await saving;
-      refusedWith(await undoing, 409, { code: "import_in_use", message: IMPORT_WORDS.inUse("Juniper Floors") });
-      expect(waited, "the Undo waited for the quote's transaction").toBe(true);
+      refusedWith(await undo(owner, juniper.batch.id), 409, {
+        code: "import_in_use",
+        message: IMPORT_WORDS.inUse("Juniper Floors"),
+      });
     } finally {
       commitQuote();
       await saving?.catch(() => undefined);
-      await undoing?.catch(() => undefined);
-      await Promise.all([writer.close(), watcher.close()]);
+      await writer.close();
     }
-    expect((await batchRow(co.a, juniper.batch.id))!.undoneAt).toBeNull();
-    expect(await customerByExternalId("CUST-9901")).toMatchObject({ addresses: [{ label: "billing" }] });
+    await untouched();
   }, 60_000);
 
   it("I-33: an addresses file without the type column leaves a stored billing address as it is", async () => {

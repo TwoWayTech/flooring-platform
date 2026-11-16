@@ -46,7 +46,7 @@ import { companyClock, type CompanyClock } from "../sales/sales-common";
 import { openColumns, openKind, openKinds, type ImportAccess } from "./import-access";
 import { batchEntry, mappingEntry, recordEntry, undoBatchEntry, undoRecordEntry } from "./import-audit";
 import type { ImportCommitInput, ImportInput } from "./import-input";
-import { importFailure, limitLockWait, takeImportLock } from "./import-lock";
+import { importFailure, limitLockWait, lockNotAvailable, takeImportLock } from "./import-lock";
 import {
   batchesInLastDay,
   insertBatch,
@@ -239,8 +239,10 @@ export class ImportsService {
    * Undoes one import (spec G1 step 8; ADR 0057 api 4.6, S-14) after a step-up, all or nothing:
    * refused when the batch is gone or undone, when the person may not import its kind or see its
    * sensitive columns, when any record differs from what the import wrote, when the kind's own
-   * rules stop it, or when a live record points at one it created. Created records are
-   * soft-deleted with their parts and updated ones get their earlier columns back, newest first.
+   * rules stop it, when a live record points at one it created, or, at once and never after a
+   * wait, while a writer is still saving such a link. The checks run before any row lock, and the
+   * reference check again after. Created records are soft-deleted with their parts and updated
+   * ones get their earlier columns back, newest first.
    */
   async undo(tenant: TenantContext, actor: Actor, batchId: string): Promise<ImportBatchSummary> {
     await this.stepUp.require(actor.session);
@@ -256,14 +258,13 @@ export class ImportsService {
         const store = openKind(actor.access, batch.kind);
         openColumns(actor.access, batch.kind, batch.mapping);
         await store.lock(tx);
-        // Waits for a writer still saving a link to a row this Undo removes, so the check below sees it (S-14).
-        const removed = batch.changes.flatMap((change) => createdRows(store, change));
-        await lockTargets(tx, removed);
         await this.assertUnchanged(tx, store, batch.changes);
         const problem = await store.undoProblem(tx, batch.changes);
         if (problem) throw conflict("import_in_use", problem);
-        const used = await this.firstUsed(tx, store, batch.changes);
-        if (used) throw conflict("import_in_use", IMPORT_WORDS.inUse(used));
+        await this.assertUnused(tx, store, batch.changes);
+        await this.lockRemoved(tx, store, batch.changes);
+        // A link committed between the check above and the row locks; a new READ COMMITTED statement sees it (S-14).
+        await this.assertUnused(tx, store, batch.changes);
         for (const change of [...batch.changes].reverse()) {
           await store.undo(tx, change);
           await this.auditLog.record(tenant, actor.audit, undoRecordEntry(store, change, batch.number), tx);
@@ -341,7 +342,7 @@ export class ImportsService {
   }
 
   /**
-   * Refuses an Undo when any record differs from what the import wrote (ADR 0057 api 4.6 step 6):
+   * Refuses an Undo when any record differs from what the import wrote (ADR 0057 api 4.6 step 5):
    * edited through its module, by a later import, deleted since, or read differently by a newer
    * loader. Records compare by content, key order aside.
    */
@@ -352,17 +353,34 @@ export class ImportsService {
   }
 
   /**
-   * The name of the first record the batch created that a live record elsewhere points at, or null
-   * (ADR 0057 api 4.8): created records and their created parts are the targets, and rows the batch
-   * itself wrote never count.
+   * Refuses an Undo while a live record elsewhere points at one the batch created (ADR 0057 api
+   * 4.8), naming that record: created records and their created parts are the targets, and rows
+   * the batch itself wrote never count.
    */
-  private async firstUsed(tx: CompanyDb, store: KindStore, changes: readonly ImportChange[]): Promise<string | null> {
+  private async assertUnused(tx: CompanyDb, store: KindStore, changes: readonly ImportChange[]): Promise<void> {
     const partsOf = (change: ImportChange) => createdRows(store, change);
     const targets = changes.flatMap(partsOf);
     const batchIds = new Set([...changes.map((change) => change.id), ...targets.map((target) => target.id)]);
     const found = await firstReference(tx, targets, batchIds);
-    if (!found) return null;
+    if (!found) return;
     const owner = changes.find((change) => partsOf(change).some((target) => target.id === found));
-    return owner ? recordName(owner) : "A record";
+    throw conflict("import_in_use", IMPORT_WORDS.inUse(owner ? recordName(owner) : "A record"));
+  }
+
+  /**
+   * Locks the rows the Undo will soft-delete without waiting (ADR 0057 api 4.6 step 8, S-14): a row
+   * a writer is still linking to answers 409 `import_busy` at once, so the Undo never waits on a row
+   * lock and is never part of a deadlock through them.
+   */
+  private async lockRemoved(tx: CompanyDb, store: KindStore, changes: readonly ImportChange[]): Promise<void> {
+    try {
+      await lockTargets(
+        tx,
+        changes.flatMap((change) => createdRows(store, change)),
+      );
+    } catch (error) {
+      if (lockNotAvailable(error)) throw conflict("import_busy", IMPORT_WORDS.undoBusy);
+      throw error;
+    }
   }
 }

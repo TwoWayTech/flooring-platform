@@ -97,13 +97,13 @@ async function firstLinked(
 }
 
 /**
- * Locks the rows an Undo will soft-delete, `FOR UPDATE`, table by table from the fixed list and in
- * id order (ADR 0057 api 4.6 step 5, S-14). The table locks let a foreign-key insert elsewhere (a
- * quote, an order line) through, and its check holds `FOR KEY SHARE` on the row it names, which
- * `FOR UPDATE` waits for: so the Undo waits for a writer still saving a link to one of these rows,
- * at most the 10-second lock timeout (409 `import_busy`), and the reference check after it, a new
- * READ COMMITTED statement, sees that link once it commits. Only the batch's own rows are locked,
- * so writes naming other records never wait.
+ * Locks the rows an Undo will soft-delete, `FOR UPDATE NOWAIT`, table by table from the fixed list
+ * and in id order (ADR 0057 api 4.6 step 8, S-14). The table locks let a foreign-key insert
+ * elsewhere (a quote, an invoice line) through, and its check holds `FOR KEY SHARE` on the row it
+ * names until it commits. `NOWAIT` fails at once (SQLSTATE 55P03) on such a row instead of
+ * waiting, so the Undo never waits on a row lock and can't close a deadlock with a writer that
+ * takes the stock lock after its lines, as converting a quote does. Once these rows are locked, no
+ * new foreign key can name them until the Undo ends. Only the batch's own rows are locked.
  */
 export async function lockTargets(tx: CompanyDb, targets: readonly ReferenceTarget[]): Promise<void> {
   for (const table of REFERENCE_TABLES) {
@@ -113,7 +113,7 @@ export async function lockTargets(tx: CompanyDb, targets: readonly ReferenceTarg
         select id from ${sql.identifier(table)}
         where ${inArray(sql`id`, slice)}
         order by id
-        for update`);
+        for update nowait`);
     }
   }
 }

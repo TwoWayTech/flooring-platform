@@ -47,6 +47,8 @@ export const IMPORT_WORDS = {
   alreadyUndone: (number: string) => `${number} was already undone.`,
   changed: (name: string) => `${name} changed after the import, so the import cannot be undone.`,
   inUse: (name: string) => `${name} is already used by other records, so the import cannot be undone.`,
+  /** API only: the demo has no writer running beside an Undo (ADR 0057 api 4.6 step 8). */
+  undoBusy: "Something is being saved for a record this import created, so nothing was undone. Try again in a moment.",
   undoneAfter: "records put back as before the import",
 } as const;
 
