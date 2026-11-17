@@ -112,10 +112,20 @@ export function settingsPermissions(section: keyof CompanySettings): readonly Pe
 }
 
 /**
+ * Whether a line's waste differs from what it had (sales.md rule 8). DemoStore keeps waste as
+ * typed, and the inputs only drop characters other than digits and points, so it can hold "12."
+ * or ".5": the same text is never a change. Other text is compared by value, plain decimal text
+ * only, so odd text still reads as a change (`sameOptionalDecimal`; STATUS B6, review round 2).
+ */
+function wasteDiffers(had: string, sent: string): boolean {
+  return had !== sent && !sameOptionalDecimal(had, sent);
+}
+
+/**
  * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
  * keeps its waste unless the person may see it; a new line must carry the company default. A saved
  * line is the same line only with the same id and product (`savedQuoteLine`); waste is compared by
- * value, as in the API's `assertWaste` (`sameOptionalDecimal`; STATUS B6).
+ * value, as in the API's `assertWaste` (`wasteDiffers`; STATUS B6).
  */
 export function wasteChanged(
   quote: Pick<Quote, "lines">,
@@ -126,9 +136,9 @@ export function wasteChanged(
   return quote.lines.some((line) => {
     if (line.wastePct === undefined) return false;
     const saved = savedQuoteLine(before?.lines, line);
-    if (saved) return !sameOptionalDecimal(saved.wastePct ?? "0", line.wastePct);
+    if (saved) return wasteDiffers(saved.wastePct ?? "0", line.wastePct);
     const product = products.find((p) => p.id === line.productId);
-    return !!product && !sameOptionalDecimal(defaultWastePct(product, defaults) ?? "0", line.wastePct);
+    return !!product && wasteDiffers(defaultWastePct(product, defaults) ?? "0", line.wastePct);
   });
 }
 

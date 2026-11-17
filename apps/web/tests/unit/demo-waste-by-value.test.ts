@@ -81,4 +81,16 @@ describe("wasteChanged compares waste by value (B6)", () => {
     expect(changed(line({ productId: CARPET.id, wastePct: "10" }), saved)).toBe(true);
     expect(changed(line({ productId: CARPET.id, wastePct: "12" }), saved)).toBe(false);
   });
+
+  it("(j) a saved line's waste sent back as the demo kept it, even with a bare point, is no change", () => {
+    expect(changed(line({ wastePct: "12." }), line({ wastePct: "12." }))).toBe(false);
+    expect(changed(line({ wastePct: ".5" }), line({ wastePct: ".5" }))).toBe(false);
+    expect(changed(line({ wastePct: "12" }), line({ wastePct: "12." }))).toBe(true);
+  });
+
+  it("(k) a new line at a category default with a bare point is no change", () => {
+    const defaults = { ...DEFAULTS, porcelain_tile: "10." };
+    expect(wasteChanged({ lines: [line({ wastePct: "10." })] }, undefined, PRODUCTS, defaults)).toBe(false);
+    expect(wasteChanged({ lines: [line({ wastePct: "10" })] }, undefined, PRODUCTS, defaults)).toBe(true);
+  });
 });
