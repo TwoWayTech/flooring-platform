@@ -2,7 +2,13 @@ import { featureOn, type FeatureKey } from "../features";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ModuleKey } from "../products";
-import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
+import type {
+  CompanyProfile,
+  CompanySettings,
+  ExpenseSettings,
+  LocalizationSettings,
+  PaymentSettings,
+} from "../types/settings";
 
 /**
  * Who may save one settings section and where it lives (spec settings-and-permissions.md rule 7;
@@ -31,9 +37,9 @@ export const SETTINGS_SECTIONS = {
     label: "Branding",
   },
   /**
-   * Any one of the two keys saves the whole section in the demo: the demo's whole-section rule. API
-   * routes go per tab (part 2: `settings.localization.manage`; part 3: `settings.tax.manage`) and
-   * must not use these keys together.
+   * The demo's whole-section rule, kept for `updateSettings("localization")`, which no screen calls
+   * since part 2a: any one of the two keys saves the whole section. Screens and the API save per tab,
+   * with one key each: `LOCALIZATION_TABS`.
    */
   localization: {
     keys: ["settings.localization.manage", "settings.tax.manage"],
@@ -151,13 +157,24 @@ export function readableSections(
   reader: SettingsReader,
   on: (key: FeatureKey) => boolean = featureOn,
 ): ApiSettingsSection[] {
-  return API_SETTINGS_SECTIONS.filter((section) => {
-    const { module, feature } = SETTINGS_SECTIONS[section];
-    const { readers, hiddenWhenOff } = SETTINGS_READERS[section];
-    if (!reader.modules.includes(module)) return false;
-    if (readers !== "everyone" && !readers.some((key) => reader.permissions.has(key))) return false;
-    return !hiddenWhenOff || on(feature);
-  });
+  return API_SETTINGS_SECTIONS.filter((section) =>
+    isReadable(SETTINGS_SECTIONS[section], SETTINGS_READERS[section], reader, on),
+  );
+}
+
+/**
+ * Whether a person reads a served section or tab: its module is on, they are one of its readers,
+ * and, when a product feature's switch hides every screen that reads it, that switch is on.
+ */
+function isReadable(
+  rule: Pick<SettingsSectionRule, "module" | "feature">,
+  read: SettingsReadRule,
+  reader: SettingsReader,
+  on: (key: FeatureKey) => boolean,
+): boolean {
+  if (!reader.modules.includes(rule.module)) return false;
+  if (read.readers !== "everyone" && !read.readers.some((key) => reader.permissions.has(key))) return false;
+  return !read.hiddenWhenOff || on(rule.feature);
 }
 
 /**
@@ -223,4 +240,108 @@ export interface SettingsAnswer {
   numbers?: NumberSettingsWire;
   payments?: PaymentSettings;
   expenses?: ExpenseSettings;
+  /**
+   * Present only when the company has saved localization and the person reads at least one served
+   * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a).
+   */
+  localization?: LocalizationAnswer;
 }
+
+// Settings, part 2a (ADR 0059): Localization and tax and the Sales and documents page save one tab
+// at a time, each with exactly one key.
+
+/** Who may save one tab of Localization and tax: a section rule with exactly one key (spec rule 7; ADR 0059 part 2a). */
+export type LocalizationTabRule = Omit<SettingsSectionRule, "keys"> & { keys: readonly [PermissionKey] };
+
+const LOCALIZATION = SETTINGS_SECTIONS.localization;
+
+/**
+ * Who may save each tab of Localization and tax and the Sales and documents page, the switch of its
+ * page (the section's), the module whose absence refuses the save, and the audit target (ADR 0059,
+ * part 2a). Each tab has exactly one key: the API's `PUT /settings/localization/<tab>` and
+ * DemoStore's `updateLocalization` check one tab at a time and never the section's any-of (spec
+ * rule 7). Sales and documents numbers and prints quotes, invoices and purchase orders, so it is
+ * Flooring's (`core`); the overtime rule drives timesheets and pay, so Payroll rules are HR's (`hr`);
+ * Region, Currency and Sales tax stay `platform` until their parts decide (2b, 3).
+ */
+export const LOCALIZATION_TABS = {
+  region: {
+    keys: ["settings.localization.manage"],
+    feature: LOCALIZATION.feature,
+    module: "platform",
+    label: "Region",
+  },
+  currency: {
+    keys: ["settings.localization.manage"],
+    feature: LOCALIZATION.feature,
+    module: "platform",
+    label: "Currency",
+  },
+  tax: { keys: ["settings.tax.manage"], feature: LOCALIZATION.feature, module: "platform", label: "Sales tax" },
+  payroll: {
+    keys: ["settings.localization.manage"],
+    feature: LOCALIZATION.feature,
+    module: "hr",
+    label: "Payroll rules",
+  },
+  documents: {
+    keys: ["settings.localization.manage"],
+    feature: LOCALIZATION.feature,
+    module: "core",
+    label: "Sales and documents",
+  },
+} as const satisfies Readonly<Record<keyof LocalizationSettings, LocalizationTabRule>>;
+
+/**
+ * The tabs the API reads and writes (ADR 0059). 2b adds `region` and `currency`, part 3 `tax`. Each
+ * also needs a `LOCALIZATION_READERS` row; the web merges and routes it with no other change.
+ */
+export const API_LOCALIZATION_TABS = ["documents", "payroll"] as const;
+
+/** A localization tab the API serves. */
+export type ApiLocalizationTab = (typeof API_LOCALIZATION_TABS)[number];
+
+/** Whether the API serves a localization tab (ADR 0059, part 2a), so the web sends it there. */
+export function isApiLocalizationTab(tab: string): tab is ApiLocalizationTab {
+  return (API_LOCALIZATION_TABS as readonly string[]).includes(tab);
+}
+
+/**
+ * Who `GET /settings` answers each served tab to (ADR 0059, part 2a, D8), by the screens that read it:
+ * - `documents`: the quote builder (deposit, default waste, expiry; `sales.quote.view`), the invoice
+ *   page and its receipts (footer; `sales.invoice.view`), the purchase order PDF (footer;
+ *   `purchasing.order.view`), and the page itself.
+ * - `payroll`: Timesheets (`hr.timesheet.view`, held by every default role), the HR dashboard
+ *   (`hr.overview.view`), Settings → HR (`settings.hr.manage`) and the tab.
+ *
+ * `settings.localization` is a page switch: other screens read these tabs whatever it says. A screen
+ * added later that reads a tab for someone not listed must add its key, or in api mode it gets
+ * DemoStore's copy.
+ */
+export const LOCALIZATION_READERS: Readonly<Record<ApiLocalizationTab, SettingsReadRule>> = {
+  documents: {
+    readers: ["sales.quote.view", "sales.invoice.view", "purchasing.order.view", "settings.localization.manage"],
+    hiddenWhenOff: false,
+  },
+  payroll: {
+    readers: ["hr.timesheet.view", "hr.overview.view", "settings.hr.manage", "settings.localization.manage"],
+    hiddenWhenOff: false,
+  },
+};
+
+/**
+ * The served localization tabs a person reads, in `API_LOCALIZATION_TABS` order (ADR 0059, part 2a):
+ * the tab's module is on and the person is one of its readers. `on` is the switch register, a
+ * parameter so tests can switch one off.
+ */
+export function readableTabs(
+  reader: SettingsReader,
+  on: (key: FeatureKey) => boolean = featureOn,
+): ApiLocalizationTab[] {
+  return API_LOCALIZATION_TABS.filter((tab) =>
+    isReadable(LOCALIZATION_TABS[tab], LOCALIZATION_READERS[tab], reader, on),
+  );
+}
+
+/** The localization tabs `GET /settings` answers: each served tab the person reads, as stored. */
+export type LocalizationAnswer = Partial<Pick<LocalizationSettings, ApiLocalizationTab>>;

@@ -1,8 +1,8 @@
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
-import { overtimeRuleProblem } from "../us-pack/overtime";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
+import { DOCUMENT_PREFIX_TEXT, localizationProblem } from "./localization-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
 export const EIN_PATTERN = /^\d{2}-\d{7}$/;
@@ -15,9 +15,6 @@ export const EMAIL_TEXT = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** A website printed on documents: http or https only, so no `javascript:` or other scheme gets in. */
 export const WEBSITE_TEXT = /^https?:\/\/[^\s"'<>]+$/i;
-
-/** A document number prefix: a letter or digit, then up to nine letters, digits or hyphens ("PAY-"). */
-export const DOCUMENT_PREFIX_TEXT = /^[A-Za-z0-9][A-Za-z0-9-]{0,9}$/;
 
 /** What Company profile says about each field it refuses, the same words in both modes. */
 export const PROFILE_MESSAGES = {
@@ -134,8 +131,8 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 /**
  * Why a settings section can't be saved, or null: the content rules both modes run, with the same
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
- * refuse a change that no page makes. Localization keeps its overtime check (ADR 0050); every other
- * section gets its rules when its part moves to the API.
+ * refuse a change that no page makes. Localization runs its tabs' rules (`localization-rules.ts`;
+ * ADR 0059 part 2a); every other section gets its rules when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -148,6 +145,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.numbers) return numberSettingsProblem(settings.numbers, current as NumberSettings);
   if (settings.payments) return paymentSettingsProblem(settings.payments);
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
-  if (settings.localization) return overtimeRuleProblem(settings.localization.payroll.overtimeRule);
+  if (settings.localization) return localizationProblem(settings.localization);
   return null;
 }

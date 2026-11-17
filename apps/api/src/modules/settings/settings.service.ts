@@ -1,16 +1,22 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
 import type { CompanyDb } from "@workspace/db";
-import { settings } from "@workspace/db/company";
+import { settings, type SettingsGroup } from "@workspace/db/company";
 import {
   defaultNumberSettings,
+  LOCALIZATION_TABS,
   numbersToWire,
   profileFor,
   readableSections,
+  readableTabs,
   SETTINGS_SECTIONS,
   unservedSection,
+  type ApiLocalizationTab,
   type ApiSettingsSection,
   type CompanyProfile,
   type CompanySettings,
+  type LocalizationAnswer,
+  type LocalizationSettings,
+  type LocalizationTabInput,
   type SettingsAnswer,
 } from "@workspace/shared";
 import { eq, inArray } from "drizzle-orm";
@@ -48,6 +54,15 @@ const NEVER_SAVED_PAYMENTS: CompanySettings["payments"] = {
   refundPrefix: "RF-",
 };
 
+/** The served tabs of a stored localization row that `tabs` names, as stored (ADR 0059, part 2a). */
+function pickTabs(stored: unknown, tabs: readonly ApiLocalizationTab[]): LocalizationAnswer {
+  // The jsonb row as every loader reads it (`loadLocalization`).
+  const localization = stored as Partial<LocalizationSettings>;
+  const picked: LocalizationAnswer = {};
+  for (const tab of tabs) if (localization[tab] !== undefined) Object.assign(picked, { [tab]: localization[tab] });
+  return picked;
+}
+
 /**
  * Settings part 1 on the API (ADR 0059): reads the served sections a person may see and saves one
  * section at a time, each in the session's company only (TenantGuard's tenant). Rows are one per
@@ -66,15 +81,19 @@ export class SettingsService {
    * profile through `profileFor` (the EIN only for its manager), the number format as the wire list.
    * One query. The dispatch names every served section and ends in `unservedSection`, so a section
    * it doesn't name is refused before its row is read, never answered under another name (D19).
+   * Part 2a adds the localization tabs `readableTabs` gives them, as stored; a company with no
+   * localization row gets no `localization` (D7), and Region, Currency and Sales tax are never answered.
    */
   async answer(tenant: TenantContext, access: RequestAccess): Promise<SettingsAnswer> {
     const sections = readableSections(access);
-    if (sections.length === 0) return {};
+    const tabs = readableTabs(access);
+    if (sections.length === 0 && tabs.length === 0) return {};
     const db = await this.tenancy.db(tenant);
+    const groups: SettingsGroup[] = tabs.length > 0 ? [...sections, "localization"] : [...sections];
     const rows = await db
       .select({ group: settings.group, value: settings.value })
       .from(settings)
-      .where(inArray(settings.group, sections));
+      .where(inArray(settings.group, groups));
     const stored = new Map(rows.map((row) => [row.group, row.value]));
     const read = <S extends ApiSettingsSection>(section: S) => this.valueOf(db, section, stored.get(section));
     const answer: SettingsAnswer = {};
@@ -95,6 +114,11 @@ export class SettingsService {
         default:
           throw unservedSection(section);
       }
+    }
+    const localization = stored.get("localization");
+    if (localization !== undefined) {
+      const picked = pickTabs(localization, tabs);
+      if (Object.keys(picked).length > 0) answer.localization = picked;
     }
     return answer;
   }
@@ -122,11 +146,7 @@ export class SettingsService {
     const { label } = SETTINGS_SECTIONS[section];
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ id: settings.id, value: settings.value })
-        .from(settings)
-        .where(eq(settings.group, section))
-        .for("update");
+      const row = await this.lockGroup(tx, section);
       let id = row?.id;
       if (id) {
         await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, id));
@@ -154,6 +174,62 @@ export class SettingsService {
         tx,
       );
     });
+  }
+
+  /**
+   * Replaces one tab of the localization row and writes its audit entry, in one transaction (ADR
+   * 0059, part 2a). The row is locked first, so two people saving different tabs at once keep both
+   * changes (the spec's "A section is replaced whole", closed on the API), and each entry's `before`
+   * is exactly the tab its save replaced. Only `[tab]` changes: the other tabs and the stored tax
+   * block stay as they were, and the tax tables are never touched. It never makes a row: a company
+   * without localization settings gets 409 (D7). It never writes the control database.
+   */
+  async saveLocalizationTab<T extends ApiLocalizationTab>(
+    tenant: TenantContext,
+    actor: Actor,
+    tab: T,
+    value: LocalizationTabInput[T],
+  ): Promise<void> {
+    const db = await this.tenancy.db(tenant);
+    await db.transaction(async (tx) => {
+      const row = await this.lockGroup(tx, "localization");
+      if (!row)
+        throw new ConflictException({
+          code: "settings_missing",
+          message:
+            "Settings → Localization and tax isn't set up for this company yet, so one tab can't be saved on its own.",
+        });
+      // The jsonb row as every loader reads it.
+      const stored = row.value as Record<string, unknown>;
+      await tx
+        .update(settings)
+        .set({ value: { ...stored, [tab]: value }, updatedAt: new Date() })
+        .where(eq(settings.id, row.id));
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "settings",
+          action: `Changed ${SETTINGS_SECTIONS.localization.label.toLowerCase()}`,
+          targetType: "settings",
+          targetId: row.id,
+          targetLabel: LOCALIZATION_TABS[tab].label,
+          before: stored[tab] ?? null,
+          after: value,
+        },
+        tx,
+      );
+    });
+  }
+
+  /** The row of a settings group, locked until the transaction ends: it orders two saves of one group (ADR 0059). */
+  private async lockGroup(tx: CompanyDb, group: SettingsGroup): Promise<{ id: string; value: unknown } | undefined> {
+    const [row] = await tx
+      .select({ id: settings.id, value: settings.value })
+      .from(settings)
+      .where(eq(settings.group, group))
+      .for("update");
+    return row;
   }
 
   /** A stored section, or what a company that never saved it is answered with and acted on (ADR 0059 D10). */

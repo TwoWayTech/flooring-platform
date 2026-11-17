@@ -1,12 +1,16 @@
 import {
+  DOCUMENT_MESSAGES,
+  LEGAL_FOOTER_MAX,
   NUMBER_KINDS,
   NUMBER_MESSAGES,
   numbersFromWire,
   type CompanyProfile,
+  type DocumentsInput,
   type ExpenseSettings,
   type NumberKind,
   type NumberSettings,
   type PaymentSettings,
+  type PayrollInput,
 } from "@workspace/shared";
 import { z } from "zod";
 
@@ -79,4 +83,32 @@ export const PAYMENTS_INPUT: z.ZodType<PaymentSettings> = z
 /** Expense approval as Settings → Expenses sends it. */
 export const EXPENSES_INPUT: z.ZodType<ExpenseSettings> = z
   .object({ approvalRequired: z.boolean(), approvalThreshold: z.string().max(20) })
+  .strict();
+
+/**
+ * Sales and documents as the page sends it (ADR 0059, part 2a). Only types, outer lengths and
+ * unknown fields are checked here; the terms, percents, days, waste categories and prefixes are the
+ * shared rule's to judge (`documentsProblem`), so both modes refuse them with the same words. The
+ * footer's bound is the shared one, with the shared words. Percents are strings, never JSON numbers.
+ */
+export const DOCUMENTS_INPUT: z.ZodType<DocumentsInput> = z
+  .object({
+    defaultTerms: z.string().max(20),
+    lateFeePct: z.string().max(20),
+    quotePrefix: z.string().max(20),
+    invoicePrefix: z.string().max(20),
+    poPrefix: z.string().max(20),
+    legalFooter: z.string().max(LEGAL_FOOTER_MAX, DOCUMENT_MESSAGES.legalFooter),
+    defaultDepositPct: z.string().max(20),
+    quoteExpiryDays: z.number(),
+    balanceDueDays: z.number(),
+    defaultWastePct: z
+      .record(z.string().max(40), z.string().max(20))
+      .refine((map) => Object.keys(map).length <= 20, DOCUMENT_MESSAGES.wasteCategories),
+  })
+  .strict();
+
+/** Payroll rules as the tab sends them; the overtime rule and the state are the shared rule's to judge (`payrollProblem`). */
+export const PAYROLL_INPUT: z.ZodType<PayrollInput> = z
+  .object({ overtimeRule: z.string().max(20), holidayState: z.string().max(20) })
   .strict();
