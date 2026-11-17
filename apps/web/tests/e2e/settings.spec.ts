@@ -1,5 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { featureOn } from "@workspace/shared";
 import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+
+/** Saves the Payments page, confirming the step-up with any six digits when the switch asks for one. */
+async function savePayments(page: Page) {
+  await page.getByRole("button", { name: "Save payments" }).click();
+  if (!featureOn("auth.step-up")) return;
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  await dialog.getByLabel("Authenticator code").fill("123456");
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+}
 
 test.describe("settings that stay easy to read (spec A4)", () => {
   test("groups the settings home and finds any setting by search", async ({ page }) => {
@@ -35,6 +45,29 @@ test.describe("settings that stay easy to read (spec A4)", () => {
 
     await page.goto("/settings/audit");
     await expect(page.getByRole("cell", { name: "Changed localization and tax" }).first()).toBeVisible();
+  });
+});
+
+test.describe("settings saves that are refused (ADR 0059 D16)", () => {
+  test("S1 Payments asks for a step-up and says why a refused amount wasn't saved", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/payments");
+    const threshold = page.getByLabel("Only above this amount");
+    await threshold.fill("12.");
+    await savePayments(page);
+    await expect(
+      page.getByText("Enter the payment approval amount as a number such as 1000.00, or leave it empty."),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toBeHidden();
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("1 unsaved change");
+
+    await threshold.fill("1200");
+    await savePayments(page);
+    await expect(page.getByText("Payments saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Only above this amount")).toHaveValue("1200");
+
+    await page.goto("/settings/audit");
+    await expect(page.getByRole("row").filter({ hasText: "Changed payments" }).first()).toBeVisible();
   });
 });
 

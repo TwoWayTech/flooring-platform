@@ -9,7 +9,7 @@ import {
   seedPassword,
   WAREHOUSE_EMAIL,
 } from "./accounts";
-import { readAs } from "./flows/checks";
+import { putWithStepUp, readAs, stepUp } from "./flows/checks";
 import { COMPANY_ZONE, flowTest, resetAuthAround, waitForAnswer } from "./flows/kit";
 
 /** The fields `PUT /roles/:id` takes, as recorded before the test changes a role. */
@@ -34,28 +34,9 @@ function literally(text: string): RegExp {
   return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 }
 
-/** Milliseconds until the next 30-second authenticator step starts, plus a second. */
-function untilNextStep(): number {
-  return 30_000 - (Date.now() % 30_000) + 1_000;
-}
-
-/** A step-up with the next code; when the API refuses that code (used already), the next step's code. */
-async function stepUp(request: APIRequestContext, secret: string): Promise<void> {
-  let response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
-  if (response.status() !== 204) {
-    await new Promise((resolve) => setTimeout(resolve, untilNextStep()));
-    response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
-  }
-  expect(response.status(), `POST /auth/step-up answered ${response.status()}: ${await response.text()}`).toBe(204);
-}
-
 /** `PUT /roles/:id` as the Owner, stepping up again once when the last step-up is too old. */
-async function putRole(request: APIRequestContext, secret: string, id: string, body: RoleBody): Promise<APIResponse> {
-  const put = () => request.put(`/api-proxy/roles/${id}`, { data: body });
-  const first = await put();
-  if (first.status() !== 403 || (await first.json()).code !== "step_up_required") return first;
-  await stepUp(request, secret);
-  return put();
+function putRole(request: APIRequestContext, secret: string, id: string, body: RoleBody): Promise<APIResponse> {
+  return putWithStepUp(request, secret, `/roles/${id}`, body);
 }
 
 /**

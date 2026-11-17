@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Locator, type Page } from "@playwright/test";
 import {
   dec,
   roundMoney,
@@ -15,6 +15,7 @@ import {
   type TimesheetWire,
 } from "@workspace/shared";
 import type { MyPortal, PayPeriodReview } from "@/lib/api/contract";
+import { nextCode } from "../accounts";
 import { companyToday, PDF_PROOF, waitForAnswer } from "./kit";
 import { ledgerDelta, ledgerMismatches, type ExpectedMoves, type TrialBalance } from "./ledger";
 
@@ -297,4 +298,63 @@ export async function expectAuditRows(
   await page.getByPlaceholder("Search the audit log").fill(search);
   for (const action of actions)
     await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: search }).first()).toBeVisible();
+}
+
+/** Milliseconds until the next 30-second authenticator step starts, plus a second. */
+export function untilNextStep(): number {
+  return 30_000 - (Date.now() % 30_000) + 1_000;
+}
+
+/** A step-up with the next code; when the API refuses that code (used already), the next step's code. */
+export async function stepUp(request: APIRequestContext, secret: string): Promise<void> {
+  let response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
+  if (response.status() !== 204) {
+    await new Promise((resolve) => setTimeout(resolve, untilNextStep()));
+    response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
+  }
+  expect(response.status(), `POST /auth/step-up answered ${response.status()}: ${await response.text()}`).toBe(204);
+}
+
+/**
+ * A PUT to an `/api-proxy` route that needs a step-up: sent once, and when the API answers 403
+ * `step_up_required`, stepped up with the next code and sent again. Returns the last answer.
+ */
+export async function putWithStepUp(
+  request: APIRequestContext,
+  secret: string,
+  path: string,
+  data: object,
+): Promise<APIResponse> {
+  const put = () => request.put(`/api-proxy${path}`, { data });
+  const first = await put();
+  if (first.status() !== 403 || (await first.json()).code !== "step_up_required") return first;
+  await stepUp(request, secret);
+  return put();
+}
+
+/**
+ * Confirms the open step-up dialog with the next authenticator code and waits for it to close.
+ * When the API refuses the code because it was used already ("That code is not right"), it waits
+ * for the next 30-second step and confirms once more with that step's code.
+ */
+export async function confirmStepUp(page: Page, secret: string): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  const refused = dialog.getByText(/^That code is not right/);
+  await dialog.getByLabel("Authenticator code").fill(nextCode(secret));
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+  // Each wait settles either way, so the one that loses the race is never an unhandled rejection.
+  const closed = dialog.waitFor({ state: "hidden" }).then(
+    () => "closed" as const,
+    () => "unsettled" as const,
+  );
+  const wrong = refused.waitFor({ state: "visible" }).then(
+    () => "refused" as const,
+    () => "unsettled" as const,
+  );
+  if ((await Promise.race([closed, wrong])) === "refused") {
+    await new Promise((resolve) => setTimeout(resolve, untilNextStep()));
+    await dialog.getByLabel("Authenticator code").fill(nextCode(secret));
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+  }
+  await expect(dialog).toBeHidden();
 }
