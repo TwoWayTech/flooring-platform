@@ -58,6 +58,20 @@ export function defaultWastePct(
   return product.category === "service" ? undefined : defaults[product.category];
 }
 
+/**
+ * The saved line a sent quote line stands for (sales.md rule 8; STATUS B6): the one with the same
+ * id and the same product, or none. A line sent under a saved line's id with another product, or
+ * without the product it had, is a new line, so it keeps nothing that was checked for the saved
+ * line: not its waste, nor a line without a product's category and cost. The API's `trustedLines`
+ * and `assertWaste` and the demo's `wasteChanged` all use it, so they agree on which line is which.
+ */
+export function savedQuoteLine<T extends Pick<DocLine, "id" | "productId">>(
+  saved: readonly T[] | undefined,
+  line: Pick<DocLine, "id" | "productId">,
+): T | undefined {
+  return saved?.find((candidate) => candidate.id === line.id && (candidate.productId ?? "") === (line.productId ?? ""));
+}
+
 /** Whether a new line is measured from the rooms: anything sold per sq ft, goods and labor alike. */
 function measuredFromRooms(product: Pick<Product, "unit">): boolean {
   return product.unit === "sq_ft";

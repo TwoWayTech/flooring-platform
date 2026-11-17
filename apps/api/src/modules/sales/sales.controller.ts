@@ -107,7 +107,10 @@ const QUOTE = z.object({
         locationId: OPTIONAL_ID,
       }),
     )
-    .max(300),
+    .max(300)
+    // A saved line's id stands for one line: sent twice, the copy would keep what was checked for
+    // the saved line, such as a waste only a key holder may set (spec rule 8; B6 review round 1).
+    .refine((lines) => new Set(lines.map((line) => line.id)).size === lines.length, "Send each line once."),
   depositPct: PERCENT,
   // Who changed the tax and when are set by the server; anything else sent is dropped.
   taxOverride: z.object({ ratePct: z.string().max(10), reason: z.string().max(500) }).nullable(),

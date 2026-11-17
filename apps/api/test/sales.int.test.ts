@@ -309,6 +309,8 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       expect(res.status, `B6 ${step}: ${JSON.stringify(res.body)}`).toBe(want);
     const WASTE = "Your role does not allow changing waste.";
     const FORMAT = "Enter a percent such as 10.";
+    const NO_PRODUCT = "Only someone who may change tax can add a line without a product.";
+    const TWICE = "Send each line once.";
 
     // 0. A carpet product, for a line moved to another product (A.5e). Summit's carpet default is 12.
     const handle = await harness.companyDb(company.id);
@@ -397,6 +399,13 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       status(res, 403, step);
       expect(res.body.message, `B6 ${step}`).toBe(WASTE);
     }
+    // A line sent without the product it had is a new line without a product, so it takes neither
+    // the saved line's waste nor its category and cost, and needs the tax key (review round 1).
+    const unproduced = { ...line0 };
+    delete unproduced.productId;
+    res = await put({ ...current, lines: [unproduced, ...current.lines.slice(1)] });
+    status(res, 403, "A.5f");
+    expect(res.body.message, "B6 A.5f").toBe(NO_PRODUCT);
 
     // 6. No value past four decimals, nothing above 100, and bad text is 400, never 500.
     const refusals: [string, Answer, string][] = [
@@ -424,6 +433,18 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     res = await put(withLine0({ wastePct: "12.5" }), cookies.manager);
     status(res, 200, "A.7 waste");
     expect(res.body.lines[0].wastePct).toBe("12.50000000");
+
+    // 8. The rep re-saves the manager's waste as she was answered it, but can't copy it onto a
+    // second line by sending the same line twice (review round 1).
+    current = (await call("get", "/quotes", cookies.salesA).expect(200)).body.find(
+      (quote: Json) => quote.id === id,
+    ) as Answer;
+    res = await put(current);
+    status(res, 200, "A.8");
+    current = res.body as Answer;
+    res = await put({ ...current, lines: [current.lines[0], ...current.lines] });
+    status(res, 400, "A.8 twice");
+    expect(res.body.message, "B6 A.8 twice").toBe(TWICE);
   });
 
   it("needs sales.waste.view to change waste and sales.tax.override to change tax", async () => {
