@@ -17,6 +17,7 @@ import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/co
 import {
   defaultNumberSettings,
   enabledModules,
+  EXPENSE_MESSAGES,
   FEATURES,
   NUMBER_KINDS,
   numbersFromWire,
@@ -440,6 +441,24 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(await rowOf(floorco, "profile")).toEqual(placed);
   });
 
+  it("A4b every section's body is strict: an unknown field answers 400 before any step-up, and nothing is stored", async () => {
+    const owner = people.get("flooring:owner")!;
+    const numbers = numbersBody("minus");
+    const strict: [Served, object][] = [
+      ["profile", { ...SUMMIT.settings.profile, unknown: "x" }],
+      ["numbers", { ...numbers, unknown: "x" }],
+      ["numbers", { ...numbers, decimals: numbers.decimals.map((entry) => ({ ...entry, unknown: "x" })) }],
+      ["payments", { ...SUMMIT.settings.payments, unknown: "x" }],
+      ["expenses", { ...SUMMIT.settings.expenses, unknown: "x" }],
+    ];
+    const before = await Promise.all(SERVED.map((section) => rowOf(floorco, section)));
+    const audits = await auditCount(floorco);
+    for (const [section, body] of strict)
+      expect(outcome(await put(section, owner.cookie, body)), JSON.stringify(body)).toEqual([400, "invalid_request"]);
+    expect(await Promise.all(SERVED.map((section) => rowOf(floorco, section)))).toEqual(before);
+    expect(await auditCount(floorco)).toBe(audits);
+  });
+
   it("A5 PUT /settings/payments: the key and module, content checks first, then a step-up", async () => {
     const rules = SUMMIT.settings.payments;
     for (const key of ["owner", "accountant"] as const) {
@@ -664,6 +683,27 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(held.body.status).toBe("pending");
   });
 
+  it("A7b PUT /settings/expenses refuses an amount that is not plain money, with its words, and stores nothing", async () => {
+    const owner = people.get("flooring:owner")!;
+    const before = await rowOf(floorco, "expenses");
+    const audits = await auditCount(floorco);
+    for (const approvalThreshold of ["12.", "-5", "1e3", "abc", "12.345"])
+      for (const approvalRequired of [true, false]) {
+        const response = await put("expenses", owner.cookie, { approvalRequired, approvalThreshold });
+        expect([...outcome(response), response.body.message], approvalThreshold).toEqual([
+          400,
+          "invalid_request",
+          EXPENSE_MESSAGES.approvalThreshold,
+        ]);
+      }
+    expect(outcome(await put("expenses", owner.cookie, { approvalRequired: true, approvalThreshold: 1000 }))).toEqual([
+      400,
+      "invalid_request",
+    ]);
+    expect(await rowOf(floorco, "expenses")).toEqual(before);
+    expect(await auditCount(floorco)).toBe(audits);
+  });
+
   /** Switches a feature off for one run, as imports.int.test.ts does. */
   async function withFeatureOff(key: FeatureKey, run: () => Promise<void>) {
     const feature = FEATURES[key] as { enabled: boolean };
@@ -694,21 +734,37 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     }
   });
 
-  it("A9 data scope: a settings key below scope all is refused with the settings words, then allowed at all", async () => {
-    const roleId = await withCompanyDb(floorco, async (db) => {
-      const [role] = await db
-        .insert(roles)
-        .values({ key: "branch-numbers", name: "Branch numbers", dataScope: "branch" as const })
-        .returning();
-      await db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.numbers.manage" });
-      return role.id;
-    });
-    const person = await member(floorco, ["branch-numbers"], true);
-    const refused = await put("numbers", person.cookie, numbersBody("minus"));
-    expect(refused.status).toBe(403);
-    expect(refused.body).toEqual({ code: "forbidden", message: SETTINGS_SCOPE_MESSAGE });
-    await withCompanyDb(floorco, (db) => db.update(roles).set({ dataScope: "all" }).where(eq(roles.id, roleId)));
-    await put("numbers", person.cookie, numbersBody("minus")).expect(200);
+  it("A9 data scope: each section's key below scope all is refused with the settings words, before any step-up, then allowed at all", async () => {
+    for (const section of SERVED) {
+      const roleKey = `branch-${section}`;
+      const roleId = await withCompanyDb(floorco, async (db) => {
+        const [role] = await db
+          .insert(roles)
+          .values({ key: roleKey, name: `Branch ${section}`, dataScope: "branch" as const })
+          .returning();
+        await db.insert(rolePermissions).values({ roleId: role.id, permissionKey: SETTINGS_SECTIONS[section].keys[0] });
+        return role.id;
+      });
+      const person = await member(floorco, [roleKey], true);
+      // The stored value sent back, so the save allowed at the end changes nothing another case reads.
+      const stored = await rowOf(floorco, section);
+      const body = section === "numbers" ? numbersToWire(stored as NumberSettings) : stored;
+      const audits = await auditCount(floorco);
+      const refused = await put(section, person.cookie, body);
+      expect([refused.status, refused.body], section).toEqual([
+        403,
+        { code: "forbidden", message: SETTINGS_SCOPE_MESSAGE },
+      ]);
+      expect(await rowOf(floorco, section)).toEqual(stored);
+      expect(await auditCount(floorco)).toBe(audits);
+      await withCompanyDb(floorco, (db) => db.update(roles).set({ dataScope: "all" }).where(eq(roles.id, roleId)));
+      if (section === "payments") {
+        expect(outcome(await put(section, person.cookie, body)), section).toEqual([403, "step_up_required"]);
+        await stepUp(person);
+      }
+      const saved = await put(section, person.cookie, body);
+      expect(saved.status, `${section} ${JSON.stringify(saved.body)}`).toBe(200);
+    }
   });
 
   it("A9b a module switched off below: payments and expenses refused and left out of the read", async () => {
