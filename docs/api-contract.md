@@ -78,7 +78,7 @@ The company always comes from the verified session. A `companyId` or `tenantId` 
 
 ## Permissions, sensitive fields and audit (real build, P10, ADR 0031)
 
-Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
+Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Two `@AnyCompanyMember()` routes answer more than that: `GET /locations` (shared reference data) and `GET /company` (the company's reference data and a names directory, ADR 0051 "GET /company"). Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
 
 | Status and code | When |
 | --- | --- |
@@ -236,6 +236,31 @@ It never says why (no billing reason, date, plan, status word or maintenance rea
 
 **Support access** stays on the routes in "Users, roles, step-up, invitations and support access", unchanged. The Owner's panel in Settings → Users lists, approves (step-up) and revokes; while standing is `read_only` it shows no actions, because TenantGuard refuses both writes then.
 
+## Company and the shell (real build, ADR 0051 "GET /company")
+
+The web shell's person, roles, access, modules and branches. Spec: docs/product-spec/settings-and-permissions.md, Real build, "The shell on the API". The route takes no company id: the company is the verified session's, and a `companyId` or `tenantId` in the path, query, body or headers is never read.
+
+| Route | Access | Who | Answer |
+| --- | --- | --- | --- |
+| `GET /company` | A company route: SessionGuard, TenantGuard and PermissionGuard (`@AnyCompanyMember()`); no module and no feature switch | Any member whose profile is active | `CompanyAnswer`, `Cache-Control: no-store`. Not audited |
+
+**`CompanyAnswer`** (`packages/shared/src/platform/company-answer.ts`) is `{ company, me, roles, access, people }`:
+- `company`: `{ id, slug, name, city, state, timeZone, modules, ceiling, branches }`. `id` is the session's tenant id; `timeZone` is `tenants.time_zone`, the zone the API's own date checks use; `modules` are the enabled modules; `branches` are the live ones by name, each `{ id, name, city, state }`. `ceiling` is the company's permission ceiling, sorted, only for someone holding `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage` (`seesCeiling`); `null` for everyone else;
+- `me`: the caller's own `User`, exactly as `GET /users` shapes it;
+- `roles`: only the roles the caller holds, as `GET /roles` shapes them;
+- `access`: `{ permissions, dataScope, isOwner }`, PermissionGuard's own effective access for this request (keys sorted), never worked out a second time;
+- `people`: `{ id, name, status }` for every live profile with an account, `status` `active` or `disabled`, by name. Invited people are left out.
+
+**Refusals** are the guards' own: 401 `unauthenticated` or `session_expired`; 403 `mfa_enrolment_required` (SessionGuard, or PermissionGuard for a role that needs a factor not yet set up); TenantGuard's 403 `company_required`, `not_a_member`, `product_not_enabled` and `company_suspended`, and 503 `company_maintenance` and `company_unavailable`; 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role.", for a disabled profile, and for a profile with no account. A read-only company still answers.
+
+**Never returned:** another company's anything; another person's email, title, roles, branch, MFA, sign-in time, employee link or default warehouse; a role the caller doesn't hold; the ceiling without one of the four keys; billing facts (plan, status, limits; `GET /billing` keeps them); feature switches (the same build on both sides); any `SENSITIVE_FIELDS` name.
+
+**The web:**
+- `getWorkspace()` reads it and drops keys and modules the web doesn't know (fail closed). The shell lays its name, place, modules, ceiling and branches over `getCompany()`, which still holds the plan, status, limits and product, and uses its access as is.
+- `list("users")` and `get("users")` give its people (id, name and status filled; every other field empty); `whoAmI()` is `GET /auth/context`'s `user.id`.
+- View as and Your profile are not offered in api mode.
+- A refused first read shows a full page: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's words, each with Try again and Sign out.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
@@ -281,7 +306,7 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 | `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }` |
 | `PUT /customers/:id` | `customers.customer.edit` | Name, contact, terms and addresses; credit, exemption and rep are never taken from the request |
 | `GET /quotes` | `sales.quote.view` | Quotes within scope, with rooms and lines |
-| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 409 `quote_closed`, `settings_missing` |
+| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 409 `quote_closed`, `settings_missing` |
 | `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
@@ -651,9 +676,9 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
 | `openCompany(companyId, viewer)` | none (session) | Loads the company the session names. |
-| `setViewer(viewer)` | none (session) | Switches "View as role". Data scope then follows that role's first active user. |
+| `setViewer(viewer)` | none (session) | Switches "View as role". Data scope then follows that role's first active user. Demo only, and only for someone who may view as: in api mode View as is not offered (ADR 0051, "GET /company"). |
 | `subscribe(listener)` | WebSocket or polling | Called after every change, so screens refresh. |
-| `today()` | server date | Today's date as the data sees it. |
+| `today()` | server date | Today's date as the data sees it. In api mode still the browser's day; `GET /company` carries the company's zone for the later change. |
 | `resetDemo()` | none | Demo only: restores the fixtures. |
 | `takeNotices()` | none | Messages for the person once, such as saved demo changes from an older version that had to be reset. Reading clears them. |
 
@@ -688,7 +713,8 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
-| `getCompany()` | `GET /company` | The open company's platform record. |
+| `getCompany()` | none yet | The open company's platform record as DemoStore holds it (plan, status, limits, product), until Settings and billing move; Settings → Locations reads its branches here. The shell's facts come from `getWorkspace()`. |
+| `getWorkspace()` | `GET /company` | `WorkspaceFacts` `{ company, user, roles, access }`: the company's name, city, state, modules, ceiling (`[]` when kept back) and branches, the person, the roles and the person's effective access, read through `workspaceFromAnswer`, which drops unknown keys and modules. The demo answers from DemoStore with the same ceiling rule and lists every role, for View as (ADR 0051, "GET /company"). |
 | `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. |
 | `updateSettings(section, value)` | `PUT /settings/:section` | Replaces one section; audited with a before/after summary. |
 | `getDefaultSettings()` | `GET /settings/defaults` | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. |
@@ -702,7 +728,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
-| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments, credits, write-offs, refunds and customers of the user as sales rep (payments and adjustments follow their invoice, refunds their customer); jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. Meetings follow the meeting rules instead of the scope filter: those `GET /meetings` gives, shaped for the reader (ADR 0051 part 3). |
+| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments, credits, write-offs, refunds and customers of the user as sales rep (payments and adjustments follow their invoice, refunds their customer); jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. Meetings follow the meeting rules instead of the scope filter: those `GET /meetings` gives, shaped for the reader (ADR 0051 part 3). In api mode `list("users")` and `get("users")` give `GET /company`'s people: id, name and status only. |
 | `get(collection, id)` | `GET /:collection/:id` | Undefined when missing or outside scope. |
 | `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `stockMovements`, `transfers`, `reservations`, `stockAdjustments`, `payments`, `invoiceAdjustments`, `refunds`, `expenses`, `commissions`, `meetings` and `audit` are written only by domain actions. Invoices store no status or paid amount: both come from the ledger (`packages/shared/src/ledger.ts`, ADR 0013). |
 
@@ -768,7 +794,7 @@ Every call added by feature batch 3 (docs/specs/feature-batch-03.md), with what 
 
 | Method and input | Output | Real endpoint | Permission | Behaviour |
 | --- | --- | --- | --- | --- |
-| `whoAmI()` | `string` | `GET /me/id` | Any signed-in user | The signed-in user's id. |
+| `whoAmI()` | `string` | `GET /auth/context` (`user.id`) | Any signed-in user | The signed-in user's id: the API's own in api mode, the demo persona's in the demo. |
 | `saveExpense(input: ExpenseInput, files: File[])` | `Expense` | `PUT /expenses/:id (multipart)` | `finance.expense.create` | Saves a draft, or records an expense: leaving draft needs a receipt, and a large one waits for approval (spec F1). |
 | `reviewExpense(id: string, decision: ExpenseDecision)` | `Expense` | `POST /expenses/:id/review` | `finance.expense.approve` | Approves or rejects an expense; nobody approves their own, and a rejection needs a reason (ADR 0023). |
 | `voidExpense(id: string, reason: string)` | `Expense` | `POST /expenses/:id/void` | `finance.expense.void` | Voids a confirmed expense with a reason; a pay-later one with payments can't be voided (ADR 0023). |

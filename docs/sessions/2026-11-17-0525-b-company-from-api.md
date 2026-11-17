@@ -124,6 +124,37 @@ Planned decisions, each the safest option found. D16 to D18 came from the critiq
 - **B8, the refused-workspace screen shares the blocked screens' panel and frame.** `company-unavailable.tsx` now exports `BlockedPanel` (icon, title, the API's words, Try again and Sign out), `UnavailablePanel` (the same for a standing state, unchanged on screen) and `FullPageCard` (the full-page frame). `WorkspaceRefused` uses them, so there is one copy of the markup (plan 2.3 "reuse, not copy"). Its message case uses the danger tokens and a shield icon (decoration, `aria-hidden`).
 - **B9, `openWorkspace` reads the facts once more in the demo only.** With a stored choice in the demo it reads `getWorkspace()` before the provider's own query, to decide whether the choice applies before DemoStore acts on it; a failed read applies nothing. In api mode it never reads them (D6 test).
 - **B6, the query count (risk R1, from the code):** `GET /company` makes ten queries of its own on top of the guards': four on the control database (the tenant row, the caller's account, the caller's passkeys, the people's names) and six on the company database (branches, the caller's profile, the caller's held roles, the people's profiles, the roles, the roles' keys).
+- **B10, the standing spec waits for the app's reads before it starts maintenance** (`company-standing.spec.ts`, stage 3). The first green run failed one test there, at its maintenance step: the click on "Audit log" was blocked by the "Under maintenance" overlay, which was already up. The trace shows why: after the support-access revoke, the transport's re-read reads `GET /company`, and its new answer gives the shell a new access object, so the attention list (the bell) loads again: `GET /auth/context` (`whoAmI`, now the API's), then its lists. One of those reads, a `GET /payments`, was still open when the test put Summit under maintenance behind the API's back, and its 503 `company_maintenance` raised the overlay before the click. Before this branch the shell's re-read was DemoStore's and the second attention load started at once, so the chain ended sooner; it had passed in every earlier full run. The overlay on any standing refusal is the designed behaviour (ADR 0054), so the product is right and the test's timing assumption was not. Both maintenance steps now wait until the page has had no `/api-proxy/` request open for 300 ms (`apiReads(page).settled()`); three runs in a row pass. The attention list loading twice after each write is as before this branch; a stable access identity in the provider would halve it (a follow-up in "For STATUS", not built here: it is outside the plan and changes every screen's timing).
+- **B11, stage 3's commit holds only that spec fix.** The four e2e files the plan commits in stage 3 were committed in stage 2 (B7); they passed unchanged.
+- **B12, the trace of the failed run stays in the scratchpad.** It holds a throwaway local session cookie, so nothing from it is quoted here or in the PR beyond the request list.
+
+## Tests that pin it
+
+| Path | Pinned by |
+| --- | --- |
+| The answer is the guard's own access, every role | C1; M5 |
+| `me` is exactly GET /users' entry (the lighter `one`) | C1 |
+| Ceiling only for the settings keys | C1, C7, shared `seesCeiling`; M1 |
+| Held roles only | C1; M4 |
+| People: id, name, status; no invited or deleted; nothing else about anyone | C3, C4, shared `directoryOf`; M2, M3 |
+| Own company only, whatever the request names | C5 |
+| A module off and a ceiling below the role agree with the guarded routes | C6, C7; M5, M6 |
+| Disabled, MFA, no company, wrong product, no session | C8 |
+| The web uses the server's access, never recomputed; unknown keys dropped | B1, W2; M7, M8 |
+| View as off in api mode | V1, V5, B2, E2 (screen); M9 |
+| View as only for someone who may use it; a stored one cleared; DemoStore not left as the stored role | V2 to V4, B5, D5, D6, demo S1; M14, M15 |
+| A View-as access never meets a trimmed ceiling | B6; M18 |
+| A refused first read: standing panel or message, with Sign out | R1 to R4, E4; M16 |
+| Buttons follow the API, not DemoStore; the API refuses what's hidden and allows what's offered | E1 steps 1 and 2 |
+| D19 safe: no cost column and no crash when the API withholds cost | E1 step 3 |
+| Branches: Users column, invite default and body, Locations page | E2 |
+| Invite branches narrowed for a scope below `all` | I1 to I5; M17 |
+| Sold at, Fulfilled from, transfer From | E3 |
+| Names and Team from the API | W4, T1, T2; M10 |
+| `whoAmI`, `saveQuote` bodies | W5, W6; M11, M13 |
+| Demo parity and demo behaviour unchanged | D1 to D4, B3, B4, the demo subset and the whole demo suite; M12 |
+
+The e2e side is pinned by the red runs on B6's code (stage 1): E1 failed at "New quote", E2 at the "Viewing as" banner, E3 at "Sold at", E4 at the refusal heading, T1 and T2 at Priya's Team row, and demo S1 at the banner shown for Cole.
 
 ## Owner questions
 None blocks the build; each has its safest default taken.
@@ -134,7 +165,7 @@ None blocks the build; each has its safest default taken.
 - **Q4, the seat limit.** Taken: `GET /company` carries no limits, since ADR 0054 keeps them on the Owner's Billing page; the Users page's seat meter keeps DemoStore's number in api mode. Give Users viewers (Owner, Manager, HR) the user limit in `GET /company`, or show the meter to the Owner only, from `GET /billing`?
 - **Q5, Your profile.** Taken: hidden in api mode. Build `PATCH /me` (the person's own default warehouse, audited) with the Settings task?
 - **Q6, invite branches (Q-B4-2, narrowed, and STATUS's branch-scoped admin item).** The invite dialog now sends the API's branches, defaults to the inviter's own branch, and lists only that branch below scope `all`. Should the API refuse an unknown branch with 400 and record the stored branch in the invite's audit row? Should the API keep a branch-scoped admin's invitations and branch changes to their own branch (the server half of D18)? Recommended next, since the screen now shows real branch ids.
-- **Q7, CI time.** `company.spec.ts` and the Team tests add to `e2e`; the measured times go here at stage 3 (this joins PR #42's CI question).
+- **Q7, CI time.** `company.spec.ts` adds about 11 s to `e2e` (E1 4.3 s, E2 2.3 s, E3 2.2 s, E4 1.9 s on the first green run; 12 s on the second), and the Team tests about 3 s (T1 1.9 s, T2 1.3 s). This joins PR #42's CI question.
 
 ## For STATUS
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR is #50.
@@ -162,6 +193,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - **D19 hardening:** the five cost displays meet `formatNumber(undefined)` if a role changes between the shell's read and the page's (a crash, nothing shown). Apply the unknown-cost rule with B1 Q4's typed records.
   - **`list("roles")`** is read and unused on Sales and the dashboard (`sales-page.tsx`, `use-dashboard-data.ts`); drop the reads.
   - **A person disabled mid-session** keeps the last shell data (re-reads keep data on error) until a reload, when the refusal screen shows; every API call is refused meanwhile.
+  - **The attention list loads twice after each write** in api mode: once in the transport's re-read, and again when the shell's re-read of `GET /company` lands with a new access object (B10). It did so before this change too; keeping the access object when its keys, scope and owner flag are unchanged would halve the reads.
 - **Owner questions:** a new block, "Owner questions (PR #50, GET /company; none blocks)", with Q1 to Q7 above.
 - **BRANCHES:** a `feat/web-company-from-api` row: "B (Claude)", "Queue item 2, task 1: the shell's person, roles, access, modules and branches come from GET /company (closes ADR 0051 R1) (main checkout; stacked on #49)", "Draft" then the state at handoff, the PR, "see the branch".
 
@@ -191,3 +223,12 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `company
 | 2b | `pnpm exec prettier --write`, then `--check`, on the stage's files | clean |
 | 2b | commit 2b (`23637f2`) | the web change with its unit tests |
 | 2b | `heavy.sh python3 company/mutate.py M1` … `M18`, one at a time, on the committed change | every mutation caught: its tests exited 1 with `expected=True`, and `restored=True`. M1 (ceiling always sent) C1 flooring sales `expected [ 'contracts.billing.create', …(138) ] to be null` (and 7 more C1 roles, C7); M2 (deleted profiles kept) C3 `expected true to be false`; M3 (invited kept) shared "2 directoryOf" and C3; M4 (every role) C1 flooring sales `expected [ { …(9) } … ] to deeply equal [ { …(9) } ]` (12 C1 cases); M5 (raw role keys) C7 `expected [ … ] to not include 'sales.quote.view'` and C6; M6 (every product module) C6 `expected [ 'platform', 'core', 'retail', …(5) ] to not include 'contracts'` and the three hr C1 cases; M7 W2 `to not include 'made.up.key'`; M8 B1 (access worked out again); M9 V1 `expected true to be false` and B2; M10 W4 `demo.list is not a function`; M11 W6 (rep and branch sent); M12 D1 (ceiling given to Priya); M13 W5 `whoAmI is not a function`; M14 V3, B5 and D5 (`expected 'sm-role-sales' to be null`); M15 D5; M16 R1 (and R4); M17 I2 (and I3, I4); M18 B6 (`permissions: Set{}`). `git status` afterwards lists only the four e2e test files |
+| 3 | `heavy.sh flows/api-e2e.sh company-green --build -- company.spec.ts sales.spec.ts users.spec.ts login.spec.ts company-standing.spec.ts platform-admin.spec.ts` | builds 14 s; run 108 s: 24 passed, 1 failed. E1 4.3 s, E2 2.3 s, E3 2.2 s, E4 1.9 s, T1 1.9 s, T2 1.3 s; every users, login, platform-admin and earlier sales test passed. E1's clean-ups ran with 2xx (a failed one fails the test), so Sales and Manager are back as they were. The failure: `company-standing.spec.ts` "the Owner reads Billing …", at its maintenance step, "locator.click: Test timeout of 60000ms exceeded", the "Under maintenance" overlay intercepting the click on Audit log (B10). Ports free after |
+| 3 | `heavy.sh flows/api-e2e.sh company-standing-fix -- company-standing.spec.ts --repeat-each 3`, after B10, no rebuild (no product change) | 6 passed in 39 s (the Owner's test 8.3 s, 7.8 s, 7.8 s). Ports free after |
+| 3 | `heavy.sh flows/api-e2e.sh company-again -- company.spec.ts` (the dirty database, no rebuild) | 4 passed in 17 s (E1 5.7 s, E2 2.2 s, E3 2.2 s, E4 2.0 s) |
+| 3 | `heavy.sh flows/api-e2e.sh company-neighbours -- meetings.spec.ts portal.spec.ts flows` | 11 passed in 85 s: F1 to F7 (both F3 tests), meetings (2) and portal (1) |
+| 3 | `heavy.sh bash company/e2e-demo.sh subset` (demo build, one worker) | build 12 s; flooring 77 passed and 3 skipped in 75 s (S1 1.4 s; the skips are `skipIfFeatureOff` for `inventory.adjustments` twice and `reports.tax-jurisdiction`, as on B6's head); hr 7 passed in 5 s. Ports free after |
+| 3 | `pnpm exec prettier --check` and `heavy.sh pnpm --filter web exec eslint` on `company.spec.ts`, `sales.spec.ts`, `accounts.ts`, `company-standing.spec.ts` and `shell.spec.ts` | clean |
+| 3 | commit 3 (`bb2ed76`) | the standing spec's wait (B10) |
+| 4 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts`, after the FEATURES.md notes | 7 passed |
+| 4 | `pnpm exec prettier --check` on every doc touched | clean |
