@@ -9,6 +9,9 @@ import { dec } from "./money";
  */
 export const PERCENT_TEXT = /^\d{1,3}(\.\d{1,4}0{0,4})?$/;
 
+/** The longest text `PERCENT_TEXT` takes ("100.00000000"), where a percent input stops typing. */
+export const PERCENT_TEXT_MAX = 12;
+
 /**
  * A commission share as a write takes it (sales.md rule 39): up to three digits and two decimals
  * by value, written with up to eight, as `invoice_commission_splits.pct` (numeric(18,8)) is

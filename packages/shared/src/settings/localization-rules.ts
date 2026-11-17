@@ -4,7 +4,7 @@ import { dec } from "../money";
 import { PAYMENT_TERM_LABELS } from "../operations/quotes";
 import type { ProductCategory } from "../types";
 import type { LocalizationSettings, WasteCategory } from "../types/settings";
-import { overtimeRuleProblem } from "../us-pack/overtime";
+import { OVERTIME_RULE_MESSAGE, overtimeRuleProblem } from "../us-pack/overtime";
 import { isStateCode } from "../us-pack/states";
 
 /**
@@ -13,12 +13,25 @@ import { isStateCode } from "../us-pack/states";
  */
 export const DOCUMENT_PREFIX_TEXT = /^[A-Za-z0-9][A-Za-z0-9-]{0,9}$/;
 
+/** The longest prefix `DOCUMENT_PREFIX_TEXT` takes, where a prefix input stops typing. */
+export const DOCUMENT_PREFIX_MAX = 10;
+
+/**
+ * The credit-note series (sales.md rule 22): credit notes are invoices, in the invoices' one number
+ * index, numbered under this fixed prefix. No quote, invoice or purchase order prefix may start with
+ * it, so an invoice can never take a credit note's number (ADR 0059, part 2a, review round 1).
+ */
+export const CREDIT_NOTE_PREFIX = "CR-";
+
+/** The first credit-note number, `CR-5001` (sales.md rule 22). */
+export const FIRST_CREDIT_NOTE = 5001;
+
 /** The categories a default waste covers: every product category but services, exactly `WasteCategory`. */
 export const WASTE_CATEGORIES: readonly WasteCategory[] = (Object.keys(CATEGORY_LABELS) as ProductCategory[]).filter(
   (category): category is WasteCategory => category !== "service",
 );
 
-/** The longest legal footer documents print; the API's body check uses the same bound and words. */
+/** The longest legal footer documents print; `documentsProblem` refuses a longer one in both modes. */
 export const LEGAL_FOOTER_MAX = 1000;
 
 /** What Sales and documents says about each field it refuses, the same words in both modes. */
@@ -34,11 +47,13 @@ export const DOCUMENT_MESSAGES = {
   invoicePrefix: "Use 1 to 10 letters, digits or hyphens for the invoice number prefix, such as INV-.",
   poPrefix: "Use 1 to 10 letters, digits or hyphens for the purchase order prefix, such as PO-.",
   samePrefix: "Use different prefixes for quotes, invoices and purchase orders.",
+  creditNotePrefix: `Credit notes are numbered ${CREDIT_NOTE_PREFIX}; choose a prefix that doesn't start with ${CREDIT_NOTE_PREFIX}.`,
   legalFooter: "Keep the legal footer to 1,000 characters.",
 } as const;
 
-/** What Payroll rules says about the holiday calendar it refuses. */
+/** What Payroll rules says about each field it refuses. */
 export const PAYROLL_MESSAGES = {
+  overtimeRule: OVERTIME_RULE_MESSAGE,
   holidayState: "Choose the state whose public holidays timesheets skip, such as CO.",
 } as const;
 
@@ -89,14 +104,18 @@ function wasteProblem(waste: Record<string, string>): string | null {
 }
 
 /**
- * Why the three document prefixes can't be saved, or null: each a document prefix, and all three
- * different without case, so a quote and an invoice never share a number such as `Q-1001` (ADR 0059 D4).
+ * Why the three document prefixes can't be saved, or null: each a document prefix; none starting
+ * with the credit notes' `CR-` without case, because credit notes share the invoices' number index
+ * and an invoice numbered in their series would make every later credit note fail (review round 1);
+ * and all three different without case, so a quote and an invoice never share a number such as
+ * `Q-1001` (ADR 0059 D4).
  */
 function prefixProblem(documents: DocumentsInput): string | null {
   if (!DOCUMENT_PREFIX_TEXT.test(documents.quotePrefix)) return DOCUMENT_MESSAGES.quotePrefix;
   if (!DOCUMENT_PREFIX_TEXT.test(documents.invoicePrefix)) return DOCUMENT_MESSAGES.invoicePrefix;
   if (!DOCUMENT_PREFIX_TEXT.test(documents.poPrefix)) return DOCUMENT_MESSAGES.poPrefix;
   const prefixes = [documents.quotePrefix, documents.invoicePrefix, documents.poPrefix].map((p) => p.toUpperCase());
+  if (prefixes.some((prefix) => prefix.startsWith(CREDIT_NOTE_PREFIX))) return DOCUMENT_MESSAGES.creditNotePrefix;
   return new Set(prefixes).size === prefixes.length ? null : DOCUMENT_MESSAGES.samePrefix;
 }
 
@@ -104,7 +123,7 @@ function prefixProblem(documents: DocumentsInput): string | null {
  * Why Sales and documents can't be saved, or null (sales.md "Settings that drive this module";
  * ADR 0059, part 2a): known payment terms; the late fee, default deposit and every default waste as
  * the quote API takes a percent; whole days (quotes valid 1 to 365, a deposit's balance due 0 to
- * 365, the page's own bounds); three different document prefixes; and a footer of at most
+ * 365, the page's own bounds); three different document prefixes, none in the credit-note series; and a footer of at most
  * `LEGAL_FOOTER_MAX` characters. The first problem is answered, with its field's words.
  */
 export function documentsProblem(documents: DocumentsInput): string | null {

@@ -1,9 +1,12 @@
 import {
+  CATEGORY_LABELS,
   DOCUMENT_MESSAGES,
   LEGAL_FOOTER_MAX,
   NUMBER_KINDS,
   NUMBER_MESSAGES,
   numbersFromWire,
+  PAYROLL_MESSAGES,
+  WASTE_CATEGORIES,
   type CompanyProfile,
   type DocumentsInput,
   type ExpenseSettings,
@@ -86,29 +89,54 @@ export const EXPENSES_INPUT: z.ZodType<ExpenseSettings> = z
   .strict();
 
 /**
+ * The legal footer's outer bound: ten times the shared `LEGAL_FOOTER_MAX`, so a footer of any length
+ * a person types reaches `documentsProblem`, which names it in its own order (review round 1).
+ */
+const FOOTER_GUARD = 10 * LEGAL_FOOTER_MAX;
+
+/**
+ * A default waste value's words past its outer bound, as `documentsProblem` gives them: its
+ * category's, or the categories' words for a key that is not a waste category.
+ */
+function wasteWords(path: readonly PropertyKey[] | undefined): string {
+  const category = WASTE_CATEGORIES.find((known) => known === path?.at(-1));
+  return category ? DOCUMENT_MESSAGES.waste(CATEGORY_LABELS[category]) : DOCUMENT_MESSAGES.wasteCategories;
+}
+
+/**
  * Sales and documents as the page sends it (ADR 0059, part 2a). Only types, outer lengths and
- * unknown fields are checked here; the terms, percents, days, waste categories and prefixes are the
- * shared rule's to judge (`documentsProblem`), so both modes refuse them with the same words. The
- * footer's bound is the shared one, with the shared words. Percents are strings, never JSON numbers.
+ * unknown fields are checked here; the terms, percents, days, waste categories, prefixes and the
+ * footer's length are the shared rule's to judge (`documentsProblem`), so both modes refuse them with
+ * the same words. Each outer length carries its field's shared words, and the page's inputs stop at
+ * the rule's lengths, so a person never meets one (review round 1). Percents are strings, never JSON numbers.
  */
 export const DOCUMENTS_INPUT: z.ZodType<DocumentsInput> = z
   .object({
-    defaultTerms: z.string().max(20),
-    lateFeePct: z.string().max(20),
-    quotePrefix: z.string().max(20),
-    invoicePrefix: z.string().max(20),
-    poPrefix: z.string().max(20),
-    legalFooter: z.string().max(LEGAL_FOOTER_MAX, DOCUMENT_MESSAGES.legalFooter),
-    defaultDepositPct: z.string().max(20),
+    defaultTerms: z.string().max(20, DOCUMENT_MESSAGES.defaultTerms),
+    lateFeePct: z.string().max(20, DOCUMENT_MESSAGES.lateFeePct),
+    quotePrefix: z.string().max(20, DOCUMENT_MESSAGES.quotePrefix),
+    invoicePrefix: z.string().max(20, DOCUMENT_MESSAGES.invoicePrefix),
+    poPrefix: z.string().max(20, DOCUMENT_MESSAGES.poPrefix),
+    legalFooter: z.string().max(FOOTER_GUARD, DOCUMENT_MESSAGES.legalFooter),
+    defaultDepositPct: z.string().max(20, DOCUMENT_MESSAGES.defaultDepositPct),
     quoteExpiryDays: z.number(),
     balanceDueDays: z.number(),
     defaultWastePct: z
-      .record(z.string().max(40), z.string().max(20))
+      .record(
+        z.string().max(40, DOCUMENT_MESSAGES.wasteCategories),
+        z.string().max(20, { error: (issue) => wasteWords(issue.path) }),
+      )
       .refine((map) => Object.keys(map).length <= 20, DOCUMENT_MESSAGES.wasteCategories),
   })
   .strict();
 
-/** Payroll rules as the tab sends them; the overtime rule and the state are the shared rule's to judge (`payrollProblem`). */
+/**
+ * Payroll rules as the tab sends them; the overtime rule and the state are the shared rule's to judge
+ * (`payrollProblem`), and their outer lengths carry its words.
+ */
 export const PAYROLL_INPUT: z.ZodType<PayrollInput> = z
-  .object({ overtimeRule: z.string().max(20), holidayState: z.string().max(20) })
+  .object({
+    overtimeRule: z.string().max(20, PAYROLL_MESSAGES.overtimeRule),
+    holidayState: z.string().max(20, PAYROLL_MESSAGES.holidayState),
+  })
   .strict();

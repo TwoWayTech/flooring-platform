@@ -15,6 +15,8 @@ import {
 } from "@workspace/db/company";
 import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
 import {
+  CATEGORY_LABELS,
+  CREDIT_NOTE_PREFIX,
   dec,
   DOCUMENT_MESSAGES,
   enabledModules,
@@ -448,6 +450,28 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
       [documents({ quotePrefix: "Q 1" }), DOCUMENT_MESSAGES.quotePrefix],
       [documents({ quotePrefix: "ABCDEFGHIJK" }), DOCUMENT_MESSAGES.quotePrefix],
       [documents({ quotePrefix: DOCUMENTS.invoicePrefix }), DOCUMENT_MESSAGES.samePrefix],
+      // Review round 1: credit notes are numbered CR- in the invoices' number index, in any case.
+      [documents({ invoicePrefix: CREDIT_NOTE_PREFIX }), DOCUMENT_MESSAGES.creditNotePrefix],
+      [documents({ invoicePrefix: "cr-" }), DOCUMENT_MESSAGES.creditNotePrefix],
+      [documents({ poPrefix: "CR-5" }), DOCUMENT_MESSAGES.creditNotePrefix],
+      // Review round 1: past the body's outer lengths, the field's own words, as the demo gives them.
+      [documents({ quotePrefix: "A".repeat(21) }), DOCUMENT_MESSAGES.quotePrefix],
+      [documents({ invoicePrefix: "A".repeat(21) }), DOCUMENT_MESSAGES.invoicePrefix],
+      [documents({ poPrefix: "A".repeat(21) }), DOCUMENT_MESSAGES.poPrefix],
+      [documents({ lateFeePct: "1.50000000000000000000" }), DOCUMENT_MESSAGES.lateFeePct],
+      [documents({ defaultDepositPct: "5".repeat(21) }), DOCUMENT_MESSAGES.defaultDepositPct],
+      [documents({ defaultTerms: "n".repeat(21) }), DOCUMENT_MESSAGES.defaultTerms],
+      [
+        documents({ defaultWastePct: { ...DOCUMENTS.defaultWastePct, carpet: "1".repeat(21) } }),
+        DOCUMENT_MESSAGES.waste(CATEGORY_LABELS.carpet),
+      ],
+      [
+        documents({ defaultWastePct: { ...DOCUMENTS.defaultWastePct, madeUp: "1".repeat(21) } }),
+        DOCUMENT_MESSAGES.wasteCategories,
+      ],
+      [documents({ legalFooter: "x".repeat(10_001) }), DOCUMENT_MESSAGES.legalFooter],
+      // Review round 1: a long footer and a bad late fee name the late fee first, as the demo does.
+      [documents({ lateFeePct: "12.", legalFooter: "x".repeat(1001) }), DOCUMENT_MESSAGES.lateFeePct],
     ];
     for (const [body, message] of cases) {
       const response = await put("documents", owner.cookie, body);
@@ -583,6 +607,19 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     const state = await put("payroll", owner.cookie, { overtimeRule: "federal", holidayState: "XX" });
     expect([...outcome(state), state.body.message]).toEqual([400, "invalid_request", PAYROLL_MESSAGES.holidayState]);
     expect(outcome(await put("payroll", owner.cookie, { ...PAYROLL, unknown: "x" }))).toEqual([400, "invalid_request"]);
+    // Review round 1: past the outer lengths, the shared words.
+    const longRule = await put("payroll", owner.cookie, { overtimeRule: "f".repeat(21), holidayState: "CO" });
+    expect([...outcome(longRule), longRule.body.message]).toEqual([
+      400,
+      "invalid_request",
+      PAYROLL_MESSAGES.overtimeRule,
+    ]);
+    const longState = await put("payroll", owner.cookie, { overtimeRule: "federal", holidayState: "C".repeat(21) });
+    expect([...outcome(longState), longState.body.message]).toEqual([
+      400,
+      "invalid_request",
+      PAYROLL_MESSAGES.holidayState,
+    ]);
     expect((await rowOf(floorco))!.payroll).toEqual({ overtimeRule: "federal", holidayState: "CO" });
   });
 

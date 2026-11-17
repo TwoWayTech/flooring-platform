@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  CREDIT_NOTE_PREFIX,
   DOCUMENT_MESSAGES,
   overtimeRuleProblem,
   PAYROLL_MESSAGES,
@@ -118,6 +119,13 @@ describe("DemoStore saves Localization one tab at a time, with the API's rules (
     await expect(
       store.updateLocalization("documents", await documentsOf(store, { quotePrefix: invoicePrefix })),
     ).rejects.toThrow(DOCUMENT_MESSAGES.samePrefix);
+    // Review round 1: credit notes are numbered CR- among the invoices, in any case.
+    for (const prefix of [CREDIT_NOTE_PREFIX, "cr-"])
+      await expect(
+        store.updateLocalization("documents", await documentsOf(store, { invoicePrefix: prefix })),
+        prefix,
+      ).rejects.toThrow(DOCUMENT_MESSAGES.creditNotePrefix);
+    expect((await store.getSettings()).localization.documents.invoicePrefix).toBe(invoicePrefix);
     await expect(
       store.updateLocalization("documents", await documentsOf(store, { legalFooter: "x".repeat(1001) })),
     ).rejects.toThrow(DOCUMENT_MESSAGES.legalFooter);

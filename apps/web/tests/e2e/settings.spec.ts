@@ -92,7 +92,21 @@ test.describe("settings saved one tab at a time (ADR 0059, part 2a)", () => {
     await expect(page.getByText("Enter the late fee per month as a percent such as 1.5, from 0 to 100.")).toBeVisible();
     await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("1 unsaved change");
 
+    // Review round 1: the inputs stop at the longest text the shared rule takes, and an invoice
+    // prefix in the credit notes' CR- series is refused with its own words.
+    await expect(page.getByLabel("Quote number prefix")).toHaveAttribute("maxlength", "10");
+    await expect(lateFee).toHaveAttribute("maxlength", "12");
+    await expect(page.getByLabel("Waste for Carpet", { exact: true })).toHaveAttribute("maxlength", "12");
+    const invoicePrefix = page.getByLabel("Invoice number prefix");
     await lateFee.fill("1.75");
+    await invoicePrefix.fill("cr-");
+    await page.getByRole("button", { name: "Save documents" }).click();
+    await expect(
+      page.getByText("Credit notes are numbered CR-; choose a prefix that doesn't start with CR-."),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("2 unsaved changes");
+
+    await invoicePrefix.fill("INV-");
     await page.getByRole("button", { name: "Save documents" }).click();
     await expect(page.getByText("Documents saved")).toBeVisible();
     await page.reload();

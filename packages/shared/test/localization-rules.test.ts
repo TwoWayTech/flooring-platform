@@ -5,7 +5,9 @@ import {
   ALL_PERMISSION_KEYS,
   API_LOCALIZATION_TABS,
   CATEGORY_LABELS,
+  CREDIT_NOTE_PREFIX,
   DOCUMENT_MESSAGES,
+  DOCUMENT_PREFIX_MAX,
   DOCUMENT_PREFIX_TEXT,
   documentsProblem,
   effectivePermissions,
@@ -20,6 +22,8 @@ import {
   overtimeRuleProblem,
   PAYROLL_MESSAGES,
   payrollProblem,
+  PERCENT_TEXT,
+  PERCENT_TEXT_MAX,
   permissionsForModules,
   PRODUCT_ROLES,
   readableTabs,
@@ -179,6 +183,15 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
       DOCUMENT_MESSAGES.samePrefix,
     );
     expect(documentsProblem(documents({ poPrefix: DOCUMENTS.quotePrefix }))).toBe(DOCUMENT_MESSAGES.samePrefix);
+    // Credit notes are numbered CR- in the invoices' one number index, so no prefix may start with
+    // it, in any case (review round 1); "CR" without the hyphen numbers CR1001 and is taken.
+    for (const field of ["quotePrefix", "invoicePrefix", "poPrefix"] as const)
+      for (const prefix of [CREDIT_NOTE_PREFIX, "cr-", "Cr-5", "CR-INV"])
+        expect(documentsProblem(documents({ [field]: prefix })), `${field} ${prefix}`).toBe(
+          DOCUMENT_MESSAGES.creditNotePrefix,
+        );
+    expect(documentsProblem(documents({ invoicePrefix: "CR" }))).toBeNull();
+    expect(DOCUMENT_MESSAGES.creditNotePrefix).toContain(CREDIT_NOTE_PREFIX);
     expect(documentsProblem(documents({ legalFooter: "x".repeat(LEGAL_FOOTER_MAX + 1) }))).toBe(
       DOCUMENT_MESSAGES.legalFooter,
     );
@@ -222,5 +235,14 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
     expect(keysOf({ documents: DOCUMENTS, payroll: SUMMIT.payroll }).filter((key) => key in SENSITIVE_FIELDS)).toEqual(
       [],
     );
+  });
+
+  it("LR8 the input bounds are the longest text each rule takes, so a page's input never cuts a valid value", () => {
+    expect(DOCUMENT_PREFIX_TEXT.test("A".repeat(DOCUMENT_PREFIX_MAX))).toBe(true);
+    expect(DOCUMENT_PREFIX_TEXT.test("A".repeat(DOCUMENT_PREFIX_MAX + 1))).toBe(false);
+    expect("100.00000000").toHaveLength(PERCENT_TEXT_MAX);
+    expect(PERCENT_TEXT.test("100.00000000")).toBe(true);
+    for (const longer of ["100.000000000", "1000.00000000"]) expect(PERCENT_TEXT.test(longer), longer).toBe(false);
+    expect(PAYROLL_MESSAGES.overtimeRule).toBe(overtimeRuleProblem("weekly"));
   });
 });

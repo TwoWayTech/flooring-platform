@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  DOCUMENT_PREFIX_MAX,
   PAYMENT_TERM_LABELS,
+  PERCENT_TEXT_MAX,
   type LocalizationSettings,
   type PaymentTerms,
   type WasteCategory,
@@ -22,7 +24,11 @@ import type { SectionProps } from "../localization/simple-tabs";
 
 type Documents = LocalizationSettings["documents"];
 
-/** Terms, late fee, deposit, numbering prefixes and the legal footer. */
+/**
+ * Terms, late fee, deposit, numbering prefixes and the legal footer. Prefixes and percents stop at
+ * the longest the shared rule takes, so a save is judged only by `documentsProblem`, with the same
+ * words in both modes (ADR 0059, part 2a, review round 1).
+ */
 function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>) {
   const text = (key: "quotePrefix" | "invoicePrefix" | "poPrefix") => (
     <SettingRow setting={`documents.${key}`} changed={changed(key)}>
@@ -31,6 +37,7 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
           id={id}
           aria-describedby={`${id}-hint`}
           value={draft[key]}
+          maxLength={DOCUMENT_PREFIX_MAX}
           onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
           className="w-28"
         />
@@ -46,6 +53,7 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
             inputMode="decimal"
             aria-describedby={`${id}-hint`}
             value={draft[key]}
+            maxLength={PERCENT_TEXT_MAX}
             onChange={(e) => setDraft({ ...draft, [key]: e.target.value.replace(/[^\d.]/g, "") })}
             className="w-24 text-right tabular-nums"
           />
@@ -132,6 +140,7 @@ function DocumentsSection({ draft, setDraft, changed }: SectionProps<Documents>)
                     inputMode="decimal"
                     aria-label={`Waste for ${CATEGORY_LABELS[category]}`}
                     value={draft.defaultWastePct[category]}
+                    maxLength={PERCENT_TEXT_MAX}
                     onChange={(e) =>
                       setDraft({
                         ...draft,
