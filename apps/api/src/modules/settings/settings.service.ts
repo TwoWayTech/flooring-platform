@@ -7,6 +7,7 @@ import {
   profileFor,
   readableSections,
   SETTINGS_SECTIONS,
+  unservedSection,
   type ApiSettingsSection,
   type CompanyProfile,
   type CompanySettings,
@@ -63,7 +64,8 @@ export class SettingsService {
   /**
    * What `GET /settings` answers this person: each section `readableSections` gives them, the
    * profile through `profileFor` (the EIN only for its manager), the number format as the wire list.
-   * One query.
+   * One query. The dispatch names every served section and ends in `unservedSection`, so a section
+   * it doesn't name is refused before its row is read, never answered under another name (D19).
    */
   async answer(tenant: TenantContext, access: RequestAccess): Promise<SettingsAnswer> {
     const sections = readableSections(access);
@@ -74,13 +76,25 @@ export class SettingsService {
       .from(settings)
       .where(inArray(settings.group, sections));
     const stored = new Map(rows.map((row) => [row.group, row.value]));
+    const read = <S extends ApiSettingsSection>(section: S) => this.valueOf(db, section, stored.get(section));
     const answer: SettingsAnswer = {};
     for (const section of sections) {
-      const value = await this.valueOf(db, section, stored.get(section));
-      if (section === "profile") answer.profile = profileFor(value as CompanyProfile, access.permissions);
-      else if (section === "numbers") answer.numbers = numbersToWire(value as CompanySettings["numbers"]);
-      else if (section === "payments") answer.payments = value as CompanySettings["payments"];
-      else answer.expenses = value as CompanySettings["expenses"];
+      switch (section) {
+        case "profile":
+          answer.profile = profileFor(await read(section), access.permissions);
+          break;
+        case "numbers":
+          answer.numbers = numbersToWire(await read(section));
+          break;
+        case "payments":
+          answer.payments = await read(section);
+          break;
+        case "expenses":
+          answer.expenses = await read(section);
+          break;
+        default:
+          throw unservedSection(section);
+      }
     }
     return answer;
   }

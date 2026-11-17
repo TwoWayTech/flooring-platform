@@ -98,6 +98,17 @@ export function isApiSettingsSection(section: string): section is ApiSettingsSec
 }
 
 /**
+ * The error of a dispatch over the served sections that reaches a section it doesn't name: the API's
+ * answer and the web merge end their `switch` with it (ADR 0059, part 2a, D19). Its `never`
+ * parameter makes the typecheck refuse a dispatch that leaves out a section of
+ * `API_SETTINGS_SECTIONS`; a section that gets past the types fails here, instead of being answered
+ * under another section's name or left as DemoStore's copy.
+ */
+export function unservedSection(section: never): Error {
+  return new Error(`GET /settings has no answer for "${String(section)}".`);
+}
+
+/**
  * Who reads a served section: everyone, or holders of any listed key. `hiddenWhenOff` is set when
  * the section's feature is a product feature: while it is off, every screen that reads it is hidden.
  */
