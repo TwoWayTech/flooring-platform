@@ -43,7 +43,7 @@ This session is item 2, task 2, "then Settings", part 1 of 6: Company profile, N
   - docs/real-build-plan.md: P11 (spec, failing tests, endpoints with guards and audit, the screen, the security review, the PR, the handoff), module order row 4 (Settings), and the CI budget.
   - `.claude/commands/feature.md` steps 1 to 9, and `.claude/commands/feature-change.md` step 6 ("change a feature") for `auth.step-up`.
   - docs/product-spec/settings-and-permissions.md: "Who uses it", "Settings pages", "Workflows" (Save settings), rules 5, 7, 22, 23, 26, 27, 28 and 30, "CompanySettings", "Events and audit entries", "Edge cases and known limits" and "Real build".
-  - docs/product-spec/sales.md Appendix A (payments: approval, write-off, numbering) and docs/product-spec/purchasing.md (supplier payments use the same rule).
+  - docs/product-spec/sales.md rules 28, 31 and 34 (payments: approval, numbering, write-off; the file has no appendix, corrected in review round 2) and docs/product-spec/purchasing.md (supplier payments use the same rule).
   - docs/api-contract.md: Conventions, Permissions, `/settings/accounting`, Sales part 2, Purchasing, Expenses, "Company and settings", GET /company.
   - ADRs 0009, 0031, 0034, 0040, 0050, 0051, 0054 and 0057; docs/data-model.md "Settings groups"; docs/FEATURES.md rows `auth.step-up`, `sales.payments`, `finance.expenses`, `settings.company` and `settings.number-format`.
   - GET /company's session log (docs/sessions/2026-11-17-0525-b-company-from-api.md), "Decisions taken during the build" B1 to B12.
@@ -179,9 +179,9 @@ Test ids: R (shared), A (API), W, SF and D (web units), E (api-mode e2e), S1 (de
 | Each PUT's permission, every role, both products | A3, A4, A5, A7 |
 | The wire's own number checks | A3b; M19 |
 | Module below; ceiling below | A5 (HR), A7 (HR), A9b, D7; A10; M6, M22 |
-| Company-wide scope (API and DemoStore) | A9, D2; M3, M13 |
+| Company-wide scope (API and DemoStore) | A9 (each of the four routes, Payments before any step-up; review round 2), D2; M3, M13, M25 to M28 |
 | Switch off → 404; DemoStore's order | A8, D3, D3b; M7 |
-| Strict bodies and shared content rules (both modes) | A4, A5, A15, R2 to R5, D1, D8, S1; M8, M9, M11, M21 |
+| Strict bodies and shared content rules (both modes) | A4, A4b (an unknown field on each route; review round 2), A5, A7b (the expense amounts on the route; review round 2), A15, R2 to R5, D1, D8, S1; M8, M9, M11, M21, M24, M29 to M32 |
 | Payments step-up after the content checks, on screen and on the API | A5, E2 step 2 (no request from the page; a direct PUT is refused before any code), S1, SF4, SF5; M1, M2 |
 | A refused save is shown and the draft kept | SF1 to SF4, S1, E2 step 2, E3 step 3; M16 |
 | The server acts on the saved rules (customer and supplier payments, write-off, numbering, expenses) | A6, A7 |
@@ -212,7 +212,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
 
 - **"In progress" and "Next three tasks" item 2:** "then Settings" gains "(part 1 of 6: draft PR #51, `feat/settings-sections-api`, stacked on #50)"; the bell and the Outbox follow Settings' parts, or the owner's order (Q8).
 - **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page, and Payments and Expense approval run the shared rule before the step-up or the request, so a refused value never costs an authenticator code. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …", filled from the "Checks" bullet below.
-- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365 (367 after review round 1), api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. After review round 1 (web only): web lint and typecheck clean, web units 47 files and 367 tests, the api-mode set again on a fresh build (18 of 18), and the demo subset again (271 passed and 1 skipped, and 7). CI could not run (Actions blocked by billing).
+- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365 (367 after review round 1), api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. After review round 1 (web only): web lint and typecheck clean, web units 47 files and 367 tests, the api-mode set again on a fresh build (18 of 18), and the demo subset again (271 passed and 1 skipped, and 7). After review round 2 (API tests and specs): the full checks again (lint and typecheck clean; shared 1,136, web 367, api unit 124, db 18, providers 11; `pnpm test:api` api 37 files and 696 tests, db 59, providers 2; hooks 15), 32 of 32 mutations caught (M24 to M32 new, eight of which survived round 1's tests), and api-mode `settings.spec.ts` on a fresh build (3 of 3). CI could not run (Actions blocked by billing).
 - **Close or update:**
   - "Settings default inputs keep a bare point as typed (`12.`) …": for Payments and Expenses, both modes now refuse it with a message that names the field; Documents' percents remain for part 2.
   - "When `PUT /settings/:section` moves to the API, it must refuse `overtimeRuleProblem`": "the overtime check lives in the shared `settingsSectionProblem`; part 2's payroll route must call it".
@@ -225,8 +225,9 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - **The Expenses page is mixed in api mode:** approval on the API, Shared costs in the browser until part 4.
   - **Reset to default** reads DemoStore's originals in api mode; `resetSettings` is unrouted.
   - **The legal name in two places** (Q5).
-  - **The Payments page says "customer payments",** but its two-person check also governs supplier payments, in both modes. Reword the page and the spec in a later screen pass.
+  - **The Payments page says "customer payments",** but its two-person check also governs supplier payments, in both modes. Reword the page in a later screen pass (sales.md rule 31 and purchasing.md say so since review round 2).
   - **`PUT /settings/accounting` takes `settings.payments.manage` with no step-up,** although it decides where money posts. Add one, and decide whether its scope message should be the settings one (Q10's neighbour).
+  - **One older "sales.md Appendix A" cite:** `apps/web/tests/unit/decimal-zero-reads.test.tsx` (older than this branch) names an appendix sales.md doesn't have. The code's many "spec Appendix A" cites mean the blueprint's Appendix A and are fine. Point this one at the blueprint or sales.md's rule numbers in a docs sweep.
   - **Pattern sweeps:** move the controllers' `MONEY` copies to `MONEY_TEXT`, and the two email copies (`packages/shared/src/import/fields.ts`, `apps/web/src/lib/api/demo/notification-actions.ts`) to `EMAIL_TEXT`.
   - **The settings read path** in the API's own modules still casts the JSON. Reading through the shared rules is a hardening step.
   - **Reserved names:** each later part checks its section's property names against `SENSITIVE_FIELDS` (A1's key walk extends to it).
@@ -313,6 +314,15 @@ Each made one change, ran its tests, and was restored (`git diff --quiet` true a
 | M21 | the equal-prefix rule removed | R4; A5 |
 | M22 | DemoStore's module check removed | D7: Harbor's Owner saved payments |
 | M23 | `readableSections`' product-switch test removed | R10; A8: "expected { … } to not have property 'payments'" |
+| M24 | review round 2: `check(expenseSettingsProblem(expenses))` removed from the expenses PUT | A7b: "12.: expected [ 200, undefined, undefined ] to deeply equal [ 400, 'invalid_request', …(1) ]" (survived round 1's tests) |
+| M25 | review round 2: `requireWholeCompany(access)` removed from the profile PUT | A9: "profile: expected [ 200, { …(7) } ] to deeply equal [ 403, { code: 'forbidden', …(1) } ]" (survived round 1's tests) |
+| M26 | review round 2: the same call removed from the numbers PUT | A9 "numbers: expected [ 200, … ]" (round 1's A9 caught it too) |
+| M27 | review round 2: the same call removed from the payments PUT | A9: "payments: expected [ 403, …(1) ] to deeply equal [ 403, { code: 'forbidden', …(1) } ]" (the step-up answered instead; survived round 1's tests) |
+| M28 | review round 2: the same call removed from the expenses PUT | A9: "expenses: expected [ 200, …(1) ] …" (survived round 1's tests) |
+| M29 | review round 2: `.strict()` removed from the payments body | A4b: "expected [ 403, 'step_up_required' ] to deeply equal [ 400, 'invalid_request' ]" (survived round 1's tests) |
+| M30 | review round 2: `.strict()` removed from the expenses body | A4b: "expected [ 200, undefined ] …" (survived round 1's tests) |
+| M31 | review round 2: the numbers body's top-level `.strict()` removed | A4b (survived round 1's tests) |
+| M32 | review round 2: the decimals entry's `.strict()` removed | A4b (survived round 1's tests) |
 
 ## Outcome
 Stages 0 to 4 are done, and the full checks and both whole e2e suites pass. No stop-and-ask item came up: no control-database write, no Zod in packages/shared, no seeding at provisioning, and no table, migration or dependency change. Nothing was red, so stage 3 needed no spec fix and has no commit of its own.
@@ -371,3 +381,56 @@ One finding, confirmed by a skeptic; fixed in `ba3bf41`.
 | --- | --- |
 | `ba3bf41` | fix(web): a refused Payments or expense value says why before any step-up, so it never costs a code [skip ci] |
 | this commit | docs(sessions): Settings part 1, review round 1 [skip ci] |
+
+## Review round 2
+Two findings, both should_fix and both confirmed by a skeptic. Neither changed runtime behaviour: the first is API test coverage, the second is module specs and one comment.
+
+**Finding 1 (correctness): the API tests left some route-level protections unproved.** The controller was correct, but the suite didn't pin three things:
+- the expenses PUT's content rule: no API test sent a refused amount;
+- data scope on three of the four PUTs: A9 covered only numbers, and M3 mutated only the shared helper;
+- strict bodies outside the profile: no unknown field was sent to the other three routes.
+
+**The fix (tests only, in `apps/api/test/settings.int.test.ts`):**
+- **A7b:** `PUT /settings/expenses` with "12.", "-5", "1e3", "abc" and "12.345", each with approval on and off, answers 400 `invalid_request` with `EXPENSE_MESSAGES.approvalThreshold`. The number 1000 answers 400. The row and the audit count are unchanged.
+- **A9 now loops over all four sections.** For each one, a branch-scope role holding the section's key gets 403 with `SETTINGS_SCOPE_MESSAGE`; the row and the audit count are unchanged. After that:
+  - the role is set to scope `all`;
+  - Payments now answers `step_up_required`, which proves the scope refusal came before any step-up;
+  - after a step-up, Payments saves;
+  - the other three save at once.
+- **A4b:** one unknown field per section, plus one inside a number-format decimals entry. Each answers 400 before any step-up, and nothing is stored or audited.
+
+**Finding 2 (correctness): seven module specs named the deleted `settingsPermissions` or `SETTINGS_PERMISSIONS`.** The affected specs were sales.md, purchasing.md, finance-expenses.md, hr.md, inventory.md, meetings.md and notifications.md. Separately, `paymentSettingsProblem` cited a "sales.md Appendix A" that doesn't exist.
+
+**The fix (docs, plus one comment):**
+- Each of the seven rows now names `SETTINGS_SECTIONS.<section>` in `packages/shared/src/settings/sections.ts`. The Payments and expense rows also name their PUT route and data scope `all`, and the Payments rows name the step-up.
+- sales.md rule 31 and its field table now state the amounts rule (`MONEY_TEXT` or empty), the prefix pattern, the distinct prefixes compared without case, the step-up after those checks, and that the same settings govern supplier payments (purchasing.md rule 28).
+- finance-expenses.md rule 4 and its field table now say that the threshold is empty or `MONEY_TEXT`, that the rule runs even while approval is off, and that there is no step-up.
+- The purchasing.md row says the one rule governs customer and supplier payments.
+- The JSDoc of `paymentSettingsProblem` now cites "sales.md rules 28 and 31". This log's Inputs line made the same mistake and is corrected too.
+
+**Decisions and why (each the safest option):**
+- **R2-1, red before the fix, as mutations.** Finding 1 is about missing tests, so no product test could fail before the fix. The proof is mutants instead. Nine route-level mutants (M24 to M32: each route's own call removed, one at a time) were run against round 1's tests, with the old test file put back for that run. Eight survived; M26, numbers' scope, was already caught by A9. Against the new tests, all nine are caught. M3 and M11 are still caught.
+- **R2-2, A9 sends each section's stored value back.** So the save allowed at the end changes nothing that a later case reads, and the test works when run alone.
+- **R2-3, A7b goes beyond the finding's list.** It adds "abc", the reviewer's case that would make decimal.js throw on every new expense, and "12.345". Each runs with approval on and off, because the rule checks the threshold either way (D21).
+- **R2-4, A4b also covers the profile and one decimals entry.** That makes it one table per route, and it pins the entry's `.strict()` (M32). Zod strips unknown keys by default, so a dropped `.strict()` would store nothing extra. The test pins the 400 contract that api-contract.md states.
+- **R2-5, the optional spec lines were taken.** These are the finding's own fix. They are worded from the code (`MONEY_TEXT`, `DOCUMENT_PREFIX_TEXT`, D21) and only describe what both modes already do, so the plan of record is unchanged and needs no blueprint-delta row.
+- **R2-6, left as history:** ADR 0059 and `packages/shared/test/settings-sections.test.ts` name `SETTINGS_PERMISSIONS` as the map that was replaced. That is history, not a pointer.
+- **R2-7, out of scope:** the code's other "spec Appendix A" cites (about 40 files) mean the blueprint's Appendix A, which exists, so they stay. One older test names "sales.md Appendix A". It predates this branch, so it is a new follow-up in "For STATUS" and was not edited here.
+- **R2-8, what was re-run.** Shared and API code changed (a comment, and the API test), so the full checks were re-run, as the task's rule requires.
+  - The api-mode settings spec was rebuilt and re-run, because `packages/shared` is in the build.
+  - The demo e2e was not re-run: no web file changed, and the only shared change is a comment.
+
+| Command (all through `heavy.sh`) | Result |
+| --- | --- |
+| `pnpm --filter api exec vitest run --project integration test/settings.int.test.ts` | 42 passed (40 before, plus A4b and A7b; A9 rewritten) in 17 s |
+| round 1's test file put back from `HEAD~1`; `python3 settings/mutate.py M24 … M32`; the test file restored with `git checkout --` | 8 survived (exit 0, 40 of 40 passed each), M26 caught by the old A9; tree clean after |
+| `python3 settings/mutate.py M24 … M32` on the committed new tests | 9 of 9 caught, each file restored (messages in the mutation table) |
+| `bash settings/full.sh` | exit 0 in 223 s: `pnpm lint` 0, `pnpm typecheck` 0 (3 of 6 cached each), `pnpm test` 0 (shared 75 files and 1,136 tests, web 47 and 367, api unit 17 and 124, db 5 and 18, providers 1 and 11), `pnpm test:api` 0 (api 37 files and 696 tests, db 8 and 59, providers 1 and 2), `pnpm test:hooks` 15 of 15 |
+| `python3 settings/mutate.py M3 M11` | both still caught: M3 at A9 (profile first), M11 at A4 and A4b |
+| `flows/api-e2e.sh settings-review2 --build -- tests/e2e-api/settings.spec.ts` | builds 13 s; exit 0, **3 passed** in 27 s (E1 8.6 s, E2 8.3 s, E3 4.6 s). Ports free after |
+
+| Commit | Subject |
+| --- | --- |
+| `e0843b3` | test(api): every settings route proves its own scope, strict body and, for expenses, its content rule [skip ci] |
+| `4d05a9d` | docs(specs): settings rows point at SETTINGS_SECTIONS; Payments and expense approval rules written down [skip ci] |
+| this commit | docs(sessions): Settings part 1, review round 2 [skip ci] |
