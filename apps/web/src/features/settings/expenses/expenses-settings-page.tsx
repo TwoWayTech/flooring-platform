@@ -1,6 +1,12 @@
 "use client";
 
-import { fixedPctProblem, type ExpenseSettings, type Location, type SharedCostSettings } from "@workspace/shared";
+import {
+  expenseSettingsProblem,
+  fixedPctProblem,
+  type ExpenseSettings,
+  type Location,
+  type SharedCostSettings,
+} from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
 import { Switch } from "@workspace/ui/components/switch";
@@ -112,6 +118,7 @@ export function ExpensesSettingsPage() {
           description="Expenses above this amount wait for a second person."
           initial={settings.expenses}
           defaults={defaults.expenses}
+          problem={expenseSettingsProblem}
           onSave={(expenses) => api.updateSettings("expenses", expenses).then(() => {})}
         >
           {(draft, setDraft, changed) => <ApprovalSection draft={draft} setDraft={setDraft} changed={changed} />}

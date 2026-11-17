@@ -49,11 +49,12 @@ test.describe("settings that stay easy to read (spec A4)", () => {
 });
 
 test.describe("settings saves that are refused (ADR 0059 D16)", () => {
-  test("S1 Payments asks for a step-up and says why a refused amount wasn't saved", async ({ page }) => {
+  test("S1 Payments says why a refused amount wasn't saved before any step-up, then asks for one", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/payments");
     const threshold = page.getByLabel("Only above this amount");
     await threshold.fill("12.");
-    await savePayments(page);
+    // The shared rule runs before the step-up, so a refused amount never costs a code (review round 1).
+    await page.getByRole("button", { name: "Save payments" }).click();
     await expect(
       page.getByText("Enter the payment approval amount as a number such as 1000.00, or leave it empty."),
     ).toBeVisible();

@@ -42,6 +42,7 @@ const SUMMIT_NUMBERS_WIRE = {
 };
 const SUMMIT_EMAIL = "office@summitfloor.example";
 const PAYMENT_APPROVAL_MESSAGE = "Enter the payment approval amount as a number such as 1000.00, or leave it empty.";
+const EXPENSE_APPROVAL_MESSAGE = "Enter the expense approval amount as a number such as 1000.00, or leave it empty.";
 
 type Served = "profile" | "numbers" | "payments" | "expenses";
 
@@ -227,20 +228,27 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         await expect(writeOff).toHaveCount(0);
         await dana.page.keyboard.press("Escape");
 
-        // 2. A refused amount: the step-up, then the API's words; the draft stays.
+        // 2. A refused amount: the shared rule's words before any step-up, so no code is spent and
+        //    nothing is sent; the draft stays. The API refuses it with the same words before it asks
+        //    for a code (review round 1).
+        const sent: string[] = [];
+        grace.page.on("request", (request) => {
+          const path = new URL(request.url()).pathname;
+          if (path === "/api-proxy/settings/payments" || path === "/api-proxy/auth/step-up")
+            sent.push(`${request.method()} ${path}`);
+        });
         await grace.page.goto("/settings/payments");
         await grace.page.getByLabel("Only above this amount").fill("12.");
-        const refusedPut = grace.page.waitForResponse(
-          (response) =>
-            response.request().method() === "PUT" &&
-            new URL(response.url()).pathname === "/api-proxy/settings/payments",
-        );
         await grace.page.getByRole("button", { name: "Save payments" }).click();
-        await confirmStepUp(grace.page, secret);
-        expect((await refusedPut).status()).toBe(400);
         await expect(grace.page.getByText(PAYMENT_APPROVAL_MESSAGE)).toBeVisible();
         await expect(grace.page.getByRole("dialog", { name: "Confirm it is you" })).toBeHidden();
         await expect(grace.page.getByText("1 unsaved change")).toBeVisible();
+        expect(sent).toEqual([]);
+        const direct = await grace.request.put("/api-proxy/settings/payments", {
+          data: { ...SUMMIT_PAYMENTS, approvalThreshold: "12." },
+        });
+        expect(direct.status()).toBe(400);
+        expect(await direct.json()).toMatchObject({ code: "invalid_request", message: PAYMENT_APPROVAL_MESSAGE });
 
         // 3. Payments above 1.00 wait, and the write-off limit covers the invoice's balance.
         await grace.page.getByLabel("Only above this amount").fill("1.00");
@@ -281,7 +289,7 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         await expect(writeOff).toHaveCount(0);
         await dana.page.keyboard.press("Escape");
 
-        // 7. Two saves audited as Grace: step 3 and the restore; the refused step 2 wrote none.
+        // 7. Two saves audited as Grace: step 3 and the restore; step 2's refusals wrote none.
         expect(await auditBy(grace.request, "Changed payments", "Grace Liu", since)).toBe(audited + 2);
       },
     );
@@ -329,12 +337,20 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         expect((await readAs<SettingsAnswer>(dana.request, "/settings")).profile?.ein).toBe(start.profile?.ein);
         expect(start.profile?.ein).toMatch(/^\d{2}-\d{7}$/);
 
-        // 3. Expense approval saves alone; Shared costs stays in the browser.
+        // 3. A refused amount says why and sends nothing; then expense approval saves alone, and
+        //    Shared costs stays in the browser.
         const sharedCosts: string[] = [];
+        const expensePuts: string[] = [];
         dana.page.on("request", (request) => {
-          if (new URL(request.url()).pathname === "/api-proxy/settings/sharedCosts") sharedCosts.push(request.url());
+          const path = new URL(request.url()).pathname;
+          if (path === "/api-proxy/settings/sharedCosts") sharedCosts.push(request.url());
+          if (path === "/api-proxy/settings/expenses") expensePuts.push(request.method());
         });
         await dana.page.goto("/settings/expenses");
+        await dana.page.getByLabel("Approval above").fill("12.");
+        await dana.page.getByRole("button", { name: "Save expense approval" }).click();
+        await expect(dana.page.getByText(EXPENSE_APPROVAL_MESSAGE)).toBeVisible();
+        expect(expensePuts).toEqual([]);
         await dana.page.getByLabel("Approval above").fill("750.00");
         const expensesPut = dana.page.waitForResponse(
           (response) =>

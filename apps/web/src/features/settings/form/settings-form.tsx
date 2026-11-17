@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { StepUpDialog } from "@/components/step-up-dialog";
 import { SaveBar } from "./save-bar";
-import { saveSection } from "./save-section";
+import { nextSaveStep, saveSection } from "./save-section";
 
 /** Whether two settings values differ; settings are plain data, so JSON compares them fully. */
 export function differs(a: unknown, b: unknown): boolean {
@@ -38,6 +38,11 @@ interface SettingsFormProps<T> {
   stepUp?: boolean;
   /** Extra condition for saving, such as a passing contrast check. */
   canSave?: (draft: T) => boolean;
+  /**
+   * Why the draft can't be saved, or null: the section's shared content rule. Save runs it before
+   * the step-up, so a refused value shows the API's own words and never costs a code (ADR 0059 D5).
+   */
+  problem?: (draft: T) => string | null;
   onSave: (value: T) => Promise<void>;
   /** The rows, given the draft, its setter and whether a top-level field has changed. */
   children: (draft: T, setDraft: (next: T) => void, changed: (key: keyof T) => boolean) => ReactNode;
@@ -56,6 +61,7 @@ export function SettingsForm<T>({
   stepUp = false,
   showTitle = true,
   canSave,
+  problem,
   onSave,
   children,
 }: SettingsFormProps<T>) {
@@ -75,6 +81,12 @@ export function SettingsForm<T>({
       setSaving(false);
       setConfirming(false);
     }
+  }
+
+  function requestSave() {
+    const step = nextSaveStep(draft, problem, stepUp, toast);
+    if (step === "step-up") setConfirming(true);
+    else if (step === "save") void save();
   }
 
   return (
@@ -103,7 +115,7 @@ export function SettingsForm<T>({
         saveLabel={`Save ${title.toLowerCase()}`}
         saving={saving}
         canSave={canSave ? canSave(draft) : true}
-        onSave={() => (stepUp ? setConfirming(true) : void save())}
+        onSave={requestSave}
         onDiscard={() => setDraft(saved)}
       />
       {stepUp ? (

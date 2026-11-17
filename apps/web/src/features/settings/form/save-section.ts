@@ -27,3 +27,27 @@ export async function saveSection<T>(
   notify.success(`${title} saved`);
   return true;
 }
+
+/** What pressing Save does next: stop (the draft was refused), ask for a step-up code, or save at once. */
+export type SaveStep = "refused" | "step-up" | "save";
+
+/**
+ * What pressing Save on a settings section does first. The section's shared content rule
+ * (packages/shared, the one the API and DemoStore run) goes before anything else: a refused draft
+ * shows the rule's words and stops, so the step-up dialog never opens for it and a refused value
+ * never spends an authenticator code (ADR 0059 D5, review round 1; the access editor does the same,
+ * spec "One permission matrix"). Otherwise a step-up section asks for the code and any other saves.
+ */
+export function nextSaveStep<T>(
+  draft: T,
+  problem: ((draft: T) => string | null) | undefined,
+  stepUp: boolean,
+  notify: Pick<SaveNotifier, "error">,
+): SaveStep {
+  const reason = problem?.(draft) ?? null;
+  if (reason !== null) {
+    notify.error(reason);
+    return "refused";
+  }
+  return stepUp ? "step-up" : "save";
+}
