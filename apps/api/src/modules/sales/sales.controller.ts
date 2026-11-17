@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { dec, isStateCode } from "@workspace/shared";
+import { dec, isStateCode, PERCENT_TEXT } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -14,9 +14,14 @@ import { SalesService } from "./sales.service";
 
 const QUANTITY = z.string().regex(/^\d{1,10}(\.\d{1,3})?$/, "Enter a quantity such as 12 or 12.5.");
 const PRICE = z.string().regex(/^\d{1,10}(\.\d{1,4})?$/, "Enter a price such as 3.05.");
+/**
+ * A percent from 0 to 100 with up to four decimals by value; the API's own answer at numeric(18,8)
+ * scale ("50.00000000") is taken back (STATUS B6). A bad format stops here (`abort`), so the bound
+ * never reads text decimal.js can't, which answered 500.
+ */
 const PERCENT = z
   .string()
-  .regex(/^\d{1,3}(\.\d{1,4})?$/, "Enter a percent such as 10.")
+  .regex(PERCENT_TEXT, { error: "Enter a percent such as 10.", abort: true })
   .refine((value) => dec(value).lte(100), "A percent is at most 100.");
 /**
  * A state as stored: trimmed and uppercased, a real US code, or empty on a draft. Tax rules match

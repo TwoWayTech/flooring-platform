@@ -1,6 +1,7 @@
 import { DemoRuleError } from "./admin-rules";
 import {
   defaultWastePct,
+  sameOptionalDecimal,
   type CompanySettings,
   type PermissionKey,
   type Product,
@@ -111,7 +112,9 @@ export function settingsPermissions(section: keyof CompanySettings): readonly Pe
 
 /**
  * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
- * keeps its waste unless the person may see it; a new line must carry the company default.
+ * keeps its waste unless the person may see it; a new line must carry the company default. A saved
+ * line is the same line only with the same id and product; waste is compared by value, as in the
+ * API's `assertWaste` (`sameOptionalDecimal`; STATUS B6).
  */
 export function wasteChanged(
   quote: Pick<Quote, "lines">,
@@ -121,10 +124,10 @@ export function wasteChanged(
 ): boolean {
   return quote.lines.some((line) => {
     if (line.wastePct === undefined) return false;
-    const saved = before?.lines.find((l) => l.id === line.id);
-    if (saved) return (saved.wastePct ?? "0") !== line.wastePct;
+    const saved = before?.lines.find((l) => l.id === line.id && (l.productId ?? "") === (line.productId ?? ""));
+    if (saved) return !sameOptionalDecimal(saved.wastePct ?? "0", line.wastePct);
     const product = products.find((p) => p.id === line.productId);
-    return !!product && (defaultWastePct(product, defaults) ?? "0") !== line.wastePct;
+    return !!product && !sameOptionalDecimal(defaultWastePct(product, defaults) ?? "0", line.wastePct);
   });
 }
 

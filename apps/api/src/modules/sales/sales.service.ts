@@ -11,6 +11,7 @@ import {
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
+  sameOptionalDecimal,
   taxContextFor,
   type Customer,
   type CustomerAddress,
@@ -504,7 +505,13 @@ export class SalesService {
     }
   }
 
-  /** Spec rule 8: waste is internal; changing it from what the line had, or from the default, needs `sales.waste.view`. */
+  /**
+   * Spec rule 8: waste is internal; changing it from what the line had, or from the default, needs
+   * `sales.waste.view`. A saved line is the same line only with the same id and product; any other
+   * line starts from its product's default. Compared by value (STATUS B6): the API answers
+   * "10.00000000" and people type "10", which are the same waste; a blank and a number are not, and
+   * text that isn't plain decimal counts as a change.
+   */
   private assertWaste(
     access: RequestAccess,
     lines: readonly DocLine[],
@@ -514,11 +521,15 @@ export class SalesService {
   ): void {
     if (access.permissions.has("sales.waste.view")) return;
     const changed = lines.some((line) => {
-      const saved = before?.lines.find((candidate) => candidate.id === line.id);
-      if (saved) return (saved.wastePct ?? "") !== (line.wastePct ?? "");
+      // The same line only with the same id and product: the rep is answered every line's id and
+      // waste, so a line moved to another product is new and starts from that product's default.
+      const saved = before?.lines.find(
+        (candidate) => candidate.id === line.id && (candidate.productId ?? "") === (line.productId ?? ""),
+      );
+      if (saved) return !sameOptionalDecimal(saved.wastePct, line.wastePct);
       const product = line.productId ? catalog.get(line.productId) : undefined;
       const expected = product ? defaultWastePct(product, defaults) : undefined;
-      return (expected ?? "") !== (line.wastePct ?? "");
+      return !sameOptionalDecimal(expected, line.wastePct);
     });
     if (changed)
       throw new ForbiddenException({ code: "forbidden", message: "Your role does not allow changing waste." });

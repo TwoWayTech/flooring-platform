@@ -11,7 +11,7 @@ import {
   Res,
   StreamableFile,
 } from "@nestjs/common";
-import { MAX_PROOF_FILES } from "@workspace/shared";
+import { MAX_PROOF_FILES, SHARE_PERCENT_TEXT } from "@workspace/shared";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -86,17 +86,17 @@ const ROLL_INVOICE = z
   })
   .strict();
 
-/** Who shares an invoice's commission (sales rule 39). */
+/**
+ * Who shares an invoice's commission (sales rule 39): a share has up to two decimals by value, and
+ * the stored scale ("60.00000000") is taken back (STATUS B6).
+ */
 const SPLIT = z
   .object({
     split: z
       .array(
         z.object({
           userId: z.uuid(),
-          pct: z
-            .string()
-            .trim()
-            .regex(/^\d{1,3}(\.\d{1,2})?$/, "Enter each share as a percent."),
+          pct: z.string().trim().regex(SHARE_PERCENT_TEXT, "Enter each share as a percent."),
         }),
       )
       .max(2),
