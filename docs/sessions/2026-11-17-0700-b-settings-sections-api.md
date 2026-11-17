@@ -342,7 +342,7 @@ Stages 0 to 4 are done, and the full checks and both whole e2e suites pass. No s
 | `215998b` | docs: Settings part 1 on the API (ADR 0059, api-contract, spec, delta, data model, FEATURES) [skip ci] (the spec itself changed in `230a4d4`; this commit's subject follows the plan) |
 | this commit | docs(sessions): Settings part 1 outcome, full checks and both suites [skip ci] |
 
-**Left for the orchestrator:** `/review`; a fresh read-only security-reviewer on `origin/feat/web-company-from-api...HEAD` focused on the PR body's "Security-review focus" (no packages/db change, so no schema-reviewer); `/handoff` with STATUS and BRANCHES from "For STATUS" above (that commit carries no `[skip ci]`); then, in queue order after #45 to #50 have merged and `origin/main` is merged in, ready, CI and the self-merge. The PR body was refreshed with these results.
+**Left for the orchestrator:** done at handoff (review rounds 1 to 5, the last clean; the summary posted on PR #51; STATUS and BRANCHES from "For STATUS"). The merge waits for #45 to #50 and CI.
 
 ## Review round 1
 One finding, confirmed by a skeptic; fixed in `ba3bf41`.
@@ -536,3 +536,10 @@ One finding, should_fix and confirmed by a skeptic. DemoStore refused in a diffe
 | --- | --- |
 | `517b805` | fix(settings): DemoStore checks the module before the keys, as the API does [skip ci] |
 | this commit | docs(sessions): Settings part 1, review round 4 [skip ci] |
+
+## Review round 5 (final, clean)
+The orchestrator ran it on this branch's own commits (`6dbd03c..1dc7edd`): a fresh, read-only security-reviewer with the plan's section 13 plus the round fixes, and a correctness reviewer. Both passed. Their should-fix candidates (audit readers seeing payment and expense values, the upper bound of who reads payments and expenses, the non-exhaustive `GET /settings` dispatch, A6 and A7 not fully proving the saved limit, R1 not pinning each section's switch and module) each went to a skeptic, and none was confirmed. They are kept as STATUS follow-ups ("Settings part 1 follow-ups"), with the notes: two simultaneous first saves both auditing `before: null`, the locale check read outside the save's transaction, a save that worked shown as not saved when the follow-up read fails, the number-kind list in three places, and ADR 0059's stale test inventory.
+
+## Handoff (2026-11-17 10:54)
+- Review round 5 was clean. STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "Settings part 1 follow-ups"; the review summary posted on PR #51. The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing. PR #51 stays a draft until #45 to #50 merge and origin/main is merged in.
+- **Next prompt:** "Settings part 2a (queue item 2, task 2): Sales and documents and the Payroll rules tab on the API (`PUT /settings/localization/documents` and `/payroll`, per-tab keys, `updateLocalization(tab, value)` on the web), stacked on #51 while CI is blocked by billing; first make `GET /settings`' answer dispatch exhaustive. Build the final plan, with a security review."
