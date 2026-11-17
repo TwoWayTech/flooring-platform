@@ -99,6 +99,28 @@ export class UsersService {
   async list(tenant: TenantContext): Promise<User[]> {
     const db = await this.tenancy.db(tenant);
     const profiles = await db.select().from(userProfiles).where(isNull(userProfiles.deletedAt));
+    return this.usersOf(tenant, db, profiles);
+  }
+
+  /**
+   * One person exactly as `list` shapes them (GET /company's `me`; ADR 0051, "GET /company"), reading
+   * only their own profile, account, passkeys and roles; null without a live profile and an account.
+   */
+  async one(tenant: TenantContext, userId: string): Promise<User | null> {
+    const db = await this.tenancy.db(tenant);
+    const profiles = await db
+      .select()
+      .from(userProfiles)
+      .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
+    return (await this.usersOf(tenant, db, profiles))[0] ?? null;
+  }
+
+  /** These profiles as `User`s, with their accounts' names, emails and MFA state and their live roles. */
+  private async usersOf(
+    tenant: TenantContext,
+    db: CompanyDb,
+    profiles: readonly (typeof userProfiles.$inferSelect)[],
+  ): Promise<User[]> {
     if (profiles.length === 0) return [];
     const ids = profiles.map((profile) => profile.userId);
     const [accounts, keys, held] = await Promise.all([
@@ -441,9 +463,9 @@ export class UsersService {
 }
 
 /**
- * The branch id to store: one of the company's live branches, or null. In api mode the screens
- * still read branches from the demo until Settings → Locations moves, so an unknown id is stored as
- * no branch rather than refused (STATUS).
+ * The branch id to store: one of the company's live branches, or null. Since GET /company the
+ * invite dialog sends the API's own branches (ADR 0051, "GET /company"); an unknown id is still
+ * stored as no branch rather than refused, which is open as Q-B4-2 (STATUS).
  */
 async function knownBranch(db: CompanyDb, branchId: string): Promise<string | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) return null;
