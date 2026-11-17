@@ -183,9 +183,7 @@ export function DocumentsPage() {
         description="Payment terms, deposit, late fee, how long quotes stay valid, and numbering for quotes, invoices and purchase orders."
         initial={settings.localization.documents}
         defaults={defaults.data.localization.documents}
-        onSave={(documents) =>
-          api.updateSettings("localization", { ...settings.localization, documents }).then(() => {})
-        }
+        onSave={(documents) => api.updateLocalization("documents", documents).then(() => {})}
       >
         {(draft, setDraft, changed) => <DocumentsSection draft={draft} setDraft={setDraft} changed={changed} />}
       </SettingsForm>

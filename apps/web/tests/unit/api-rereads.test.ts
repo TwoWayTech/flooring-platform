@@ -70,6 +70,7 @@ const CASES = {
   whoAmI: read((c) => c.whoAmI()),
   getSettings: read((c) => c.getSettings()),
   updateSettings: write((c) => c.updateSettings("numbers", defaultNumberSettings())),
+  updateLocalization: write((c) => c.updateLocalization("payroll", { overtimeRule: "federal", holidayState: "CO" })),
   getCompanyBilling: read((c) => c.getCompanyBilling()),
   listSupportGrants: read((c) => c.listSupportGrants()),
   approveSupportGrant: write((c) => c.approveSupportGrant(ID)),
@@ -228,8 +229,8 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(151);
-    expect(WRITES).toHaveLength(108);
+    expect(READS.length + WRITES.length).toBe(152);
+    expect(WRITES).toHaveLength(109);
   });
 
   it("sends at least one request in every case, so no case passes without reaching the API", async () => {
