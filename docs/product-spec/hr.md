@@ -465,7 +465,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `showTeamCalendarToEmployees` | boolean | false |
 | `clockEnabled` | boolean | Keystone false, others true |
 
-The overtime rule is `localization.payroll.overtimeRule`, changed under Settings, Localization, Payroll. The HR page shows it with a link.
+The overtime rule is `localization.payroll.overtimeRule`, changed under Settings, Localization, Payroll. The HR page shows it with a link. The tab saves on its own (`updateLocalization("payroll")`, `settings.localization.manage`, module `hr`); on the API `PUT /settings/localization/payroll`, which refuses the California rule while its switch is off and a holiday state that isn't a US state code (ADR 0059, part 2a).
 
 ## Events and audit entries
 
