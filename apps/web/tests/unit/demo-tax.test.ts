@@ -24,6 +24,7 @@ vi.mock("@workspace/shared", async (importOriginal) => {
 
 afterEach(() => {
   OFF.clear();
+  Reflect.deleteProperty(globalThis, "localStorage");
 });
 
 /** Personas (fixtures): Summit's Owner and Sales rep, Harbor's Owner (HR Suite). */
@@ -44,6 +45,25 @@ const noFiles: FileStore = {
   remove: async () => undefined,
   clear: async () => undefined,
 };
+
+/** A localStorage kept in memory for one test, so the demo's saved copy can be read as the browser keeps it. */
+function memoryStorage(): Map<string, string> {
+  const items = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => void items.set(key, value),
+    removeItem: (key: string) => void items.delete(key),
+  };
+  Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
+  return items;
+}
+
+/** The Sales tax tab of a company's saved demo data, as the browser keeps it (every row, not only those in force). */
+async function savedTax(items: Map<string, string>, store: DemoStore): Promise<Tax> {
+  const raw = items.get(`fp-demo:v2:${(await store.getCompany()).id}`);
+  expect(raw, "the company's saved demo data").toBeDefined();
+  return (JSON.parse(raw!) as { settings: { localization: LocalizationSettings } }).settings.localization.tax;
+}
 
 /** A fresh demo store with a company open for one person. */
 async function open(company: "summit" | "harbor", userId: string): Promise<DemoStore> {
@@ -238,5 +258,51 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     expect(after.jurisdictions.find((rate) => rate.id === "jur-co-el-paso")).toEqual(
       before.jurisdictions.find((rate) => rate.id === "jur-co-el-paso"),
     );
+  });
+
+  it("TD11 saved demo data typed before 3a: rows dated later are not shown and drop out on the first save", async () => {
+    const items = memoryStorage();
+    const store = await open("summit", DANA);
+    const whole = (await store.getSettings()).localization;
+    const before = whole.tax;
+    const later = `${Number(store.today().slice(0, 4)) + 1}-01-01`;
+    const co = before.rules.find((rule) => rule.state === "CO")!;
+    const elPaso = before.jurisdictions.find((rate) => rate.id === "jur-co-el-paso")!;
+    // As the tab before 3a let anyone type them: a state and a county dated later only, and a later row
+    // beside one in force.
+    const legacy: Tax = {
+      ...before,
+      rules: [
+        ...before.rules,
+        { ...co, state: "AZ", jurisdiction: "Arizona (example)", ratePct: "9", validFrom: later },
+        { ...co, ratePct: "9.5", validFrom: later, version: 2 },
+      ],
+      jurisdictions: [
+        ...before.jurisdictions,
+        {
+          ...elPaso,
+          id: "jur-co-adams",
+          county: "Adams",
+          name: "Adams County combined",
+          ratePct: "7",
+          validFrom: later,
+        },
+        { ...elPaso, id: "jur-co-el-paso-later", ratePct: "9", validFrom: later },
+      ],
+    };
+    const stored = await store.updateSettings("localization", { ...whole, tax: legacy });
+    expect((await savedTax(items, store)).rules).toHaveLength(before.rules.length + 2);
+    // Read and answered as the API answers them: the tab in force today, so the later rows are neither
+    // shown nor sent back.
+    expect(stored.localization.tax).toEqual(before);
+    expect(await taxOf(store)).toEqual(before);
+    expect((await store.updateLocalization("payroll", whole.payroll)).localization.tax).toEqual(before);
+    const rounding = before.rounding === "line" ? "invoice" : "line";
+    await store.updateLocalization("tax", { ...(await taxOf(store)), rounding });
+    expect(await taxOf(store)).toEqual({ ...before, rounding });
+    // The saved copy keeps only what is in force: nothing dated later went live today or stays behind.
+    const saved = await savedTax(items, store);
+    expect(saved.rules).toEqual(before.rules);
+    expect(saved.jurisdictions).toEqual(before.jurisdictions);
   });
 });
