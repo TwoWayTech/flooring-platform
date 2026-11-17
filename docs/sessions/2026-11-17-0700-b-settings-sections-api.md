@@ -96,7 +96,7 @@ The email section goes with the bell and Outbox, and the stock rules with stock 
 ### The web
 - `API_METHODS` gets `getSettings` (the served sections from `GET /settings` merged over DemoStore's, through `settingsFromAnswer`) and `updateSettings` (a served section is a PUT, then a read; any other section stays on DemoStore).
 - `saveSection` makes a refused settings save show its message and keep the draft (`SettingsForm`), the Payments page gets `stepUp`, and Company profile builds its form rules from the shared patterns and messages.
-- DemoStore's `updateSettings` checks the same keys, module, switch, scope and content rules in the API's order.
+- DemoStore's `updateSettings` checks the same module, keys, switch, scope and content rules in the API's order (this line first said "keys, module"; the API checks the module first, corrected in review round 4).
 
 ### Tests (red first)
 - **Shared** R1 to R11 (`settings-sections.test.ts`) and R9 (`decimal-text.test.ts`).
@@ -178,9 +178,9 @@ Test ids: R (shared), A (API), W, SF and D (web units), E (api-mode e2e), S1 (de
 | Never-saved fallbacks | A2 |
 | Each PUT's permission, every role, both products | A3, A4, A5, A7 |
 | The wire's own number checks | A3b; M19 |
-| Module below; ceiling below | A5 (HR), A7 (HR), A9b, D7; A10; M6, M22 |
+| Module below; ceiling below | A5 (HR), A7 (HR), A9b, D7, D7b; A10; M6, M22 |
 | Company-wide scope (API and DemoStore) | A9 (each of the four routes, Payments before any step-up; review round 2), D2; M3, M13, M25 to M28 |
-| Switch off → 404; DemoStore's order | A8, D3, D3b; M7 |
+| Switch off → 404; DemoStore's order (module, keys, switch) | A8, D3, D3b, D7b (review round 4); M7 |
 | Strict bodies and shared content rules (both modes) | A4, A4b (an unknown field on each route; review round 2), A5, A7b (the expense amounts on the route; review round 2), A15, R2 to R5, D1, D8, S1; M8, M9, M11, M21, M24, M29 to M32 |
 | Payments step-up after the content checks, on screen and on the API | A5, E2 step 2 (no request from the page; a direct PUT is refused before any code), S1, SF4, SF5; M1, M2 |
 | A refused save is shown and the draft kept | SF1 to SF4, S1, E2 step 2, E3 step 3; M16 |
@@ -212,8 +212,8 @@ None blocks the build; each has its safest default taken.
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR is #51.
 
 - **"In progress" and "Next three tasks" item 2:** "then Settings" gains "(part 1 of 6: draft PR #51, `feat/settings-sections-api`, stacked on #50)"; the bell and the Outbox follow Settings' parts, or the owner's order (Q8).
-- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page, and Payments and Expense approval run the shared rule before the step-up or the request, so a refused value never costs an authenticator code. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …", filled from the "Checks" bullet below.
-- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365 (367 after review round 1), api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. After review round 1 (web only): web lint and typecheck clean, web units 47 files and 367 tests, the api-mode set again on a fresh build (18 of 18), and the demo subset again (271 passed and 1 skipped, and 7). After review round 2 (API tests and specs): the full checks again (lint and typecheck clean; shared 1,136, web 367, api unit 124, db 18, providers 11; `pnpm test:api` api 37 files and 696 tests, db 59, providers 2; hooks 15), 32 of 32 mutations caught (M24 to M32 new, eight of which survived round 1's tests), and api-mode `settings.spec.ts` on a fresh build (3 of 3). CI could not run (Actions blocked by billing).
+- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own module and key, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page, and Payments and Expense approval run the shared rule before the step-up or the request, so a refused value never costs an authenticator code. DemoStore applies the same module, key, switch, scope and content rules, in the API's order (module first). Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …", filled from the "Checks" bullet below.
+- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365 (367 after review round 1), api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. After review round 1 (web only): web lint and typecheck clean, web units 47 files and 367 tests, the api-mode set again on a fresh build (18 of 18), and the demo subset again (271 passed and 1 skipped, and 7). After review round 2 (API tests and specs): the full checks again (lint and typecheck clean; shared 1,136, web 367, api unit 124, db 18, providers 11; `pnpm test:api` api 37 files and 696 tests, db 59, providers 2; hooks 15), 32 of 32 mutations caught (M24 to M32 new, eight of which survived round 1's tests), and api-mode `settings.spec.ts` on a fresh build (3 of 3). After review round 3 (tests only): the full checks again (web 368; `pnpm test:api` api 37 files and 696 tests) and M33 to M35 caught by the new A15 and D8b (35 mutations in all). After review round 4 (DemoStore's order): web lint and typecheck clean, web units 47 files and 369 tests, api-mode `settings.spec.ts` on a fresh build (3 of 3), and the demo subset again (271 passed and 1 skipped, and 7). CI could not run (Actions blocked by billing).
 - **Close or update:**
   - "Settings default inputs keep a bare point as typed (`12.`) …": for Payments and Expenses, both modes now refuse it with a message that names the field; Documents' percents remain for part 2.
   - "When `PUT /settings/:section` moves to the API, it must refuse `overtimeRuleProblem`": "the overtime check lives in the shared `settingsSectionProblem`; part 2's payroll route must call it".
@@ -480,3 +480,59 @@ One finding, should_fix and confirmed by a skeptic. It was about test coverage o
 | --- | --- |
 | `c684d00` | test(settings): the locale rule is pinned to the company's stored format on the API and in the demo [skip ci] |
 | this commit | docs(sessions): Settings part 1, review round 3 [skip ci] |
+
+## Review round 4
+One finding, should_fix and confirmed by a skeptic. DemoStore refused in a different order from the API, so a few saves got different words in the two modes. Both modes refused, so nothing was loosened.
+
+**Finding (correctness): DemoStore checked the keys before the module.**
+- **The API.** `permissionDecision` (`apps/api/src/core/access/permission.guard.ts`) returns `module_not_enabled` before `forbidden`. The Payments and Expenses PUTs carry `@RequireModule("core")`.
+- **DemoStore.** `updateSettings` called `assertCan(rule.keys)` first.
+- **The effect in Harbor (HR Suite, no `core`):**
+  - A Payments save by the HR manager got "Your role does not allow this…". The API answers "This part of the product is not switched on for your company."
+  - An Expenses save by anyone got the role message, the Owner included. `effectivePermissions` drops the `core` key `settings.expenses.manage`, so no one in Harbor holds it.
+- **The docs.** Five statements claimed the API's order: the store's JSDoc, ADR 0059 section 7, spec rule 7, the spec's Real build bullet and the blueprint-delta row. The plan (plan-final.md S9) and this log's plan had the same mistake about which order the API uses.
+
+**The fix:**
+- **`apps/web/src/lib/api/demo/store.ts`:** `updateSettings` now checks the module, then the keys (`assertCan`), then the switch, scope and content rules. The JSDoc names that order and `permissionDecision`.
+- **D7b** (`apps/web/tests/unit/demo-settings.test.ts`) checks that each of these saves gets the module's words:
+  - Harbor's Owner saving Expenses.
+  - Harbor's HR manager (`hb-usr-02`) saving Payments.
+  - Harbor's HR manager saving Expenses.
+
+  D7 now uses the same `MODULE_REFUSAL` constant.
+- **Docs now name the real order** (module, key, switch, scope, content):
+  - ADR 0059: section 7, and section 3's guard cells for Payments and Expenses.
+  - The spec: rule 7, and the Real build bullets "Which pages save on the API" and "The demo".
+  - `docs/api-contract.md`: the two route rows.
+  - The blueprint-delta row.
+  - This log's plan line, the test map, and the "For STATUS" Done entry and Checks.
+
+**Decisions and why (each the safest option):**
+- **R4-1, the code's order wins over the plan's words.** The plan said DemoStore uses "the API's order: keys, then module", which got the API's order wrong. Its intent was one order and the same words in both modes, so the plan of record is unchanged and needs no new blueprint-delta row. The existing row was corrected instead.
+- **R4-2, the module comes first for every section, not only Payments and Expenses.**
+  - `permissionDecision` applies this order to every route.
+  - Profile, numbers and the other `platform` sections have a module every company holds, so nothing changes for them.
+  - For `hr` and `meetings` (still browser-only), a company without the module now gets the module's words, which is what their API routes will answer.
+- **R4-3, `assertCan` is kept.** Inlining the key check would save one in-memory `granter` call, but it would copy the role message into a second place.
+- **R4-4, red before the fix.** D7b failed at its first assertion (Harbor's Owner, Expenses) with the role message. The fix is the reordering itself, so the code before the fix is the mutant D7b catches. D3b (keys before the switch) is unchanged and still passes, which pins that the module check moved only ahead of the keys.
+- **R4-5, what was re-run.** One web product file changed (`store.ts`), so:
+  - web lint, typecheck and every web unit test ran;
+  - api-mode `settings.spec.ts` ran on a fresh build;
+  - the demo subset ran again, because DemoStore's `updateSettings` runs on every section's save.
+
+  No shared or API code changed, so `pnpm test:api` and the shared suites were not re-run. A5 already pins the API's module-first answer for every Harbor role.
+- **R4-6, not raised again:** Q10 (the Accountant may loosen the controls they work under) and audit-log readers seeing settings values. This finding gives no new reason for either.
+
+| Command (all through `heavy.sh`) | Result |
+| --- | --- |
+| `pnpm --filter web exec vitest run tests/unit/demo-settings.test.ts`, before the fix | exit 1: D7b failed, "expected … 'This part of the product is not switc…' but got 'Your role does not allow this. Ask an…'"; 10 passed |
+| the same, after the fix | 11 passed |
+| `prettier --check` on the six changed files (not through the lock) | clean |
+| `bash settings/checks.sh r4 web:lint web:typecheck web:test` | 21 s. lint 0, typecheck 0, web units 47 files and 369 tests |
+| `flows/api-e2e.sh settings-review4 --build -- tests/e2e-api/settings.spec.ts` | builds 8 s; exit 0, **3 passed** in 25 s (E1 8.6 s, E2 7.5 s, E3 4.2 s). Ports free after |
+| `bash settings/e2e-demo.sh review4` (a new mode: the stage 3 subset) | build 12 s; flooring **271 passed, 1 skipped** in 324 s (S1 1.0 s; the skip is `notifications.spec.ts`'s own, as before); hr **7 passed** in 5 s. Ports free after |
+
+| Commit | Subject |
+| --- | --- |
+| `517b805` | fix(settings): DemoStore checks the module before the keys, as the API does [skip ci] |
+| this commit | docs(sessions): Settings part 1, review round 4 [skip ci] |
