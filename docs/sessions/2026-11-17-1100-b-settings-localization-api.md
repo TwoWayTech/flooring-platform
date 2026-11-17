@@ -122,7 +122,37 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **D21, no test-writer subagent.** feature.md step 4 hands the API and Playwright tests to the test-writer subagent; this session runs as a subagent without one, so the builder writes them from the final plan's test section, as part 1 did (its D23).
 
 ### Decisions taken during the build
-(Filled in as the stages run.)
+- **B1, the exhaustive dispatch reads each section inside its own case.** In `SettingsService.answer` a local `read(section)` calls `valueOf` with the case's narrowed section, so each case gets its own type with no cast (part 1 cast every value), and the `default` throws `unservedSection` before any value is read. The web merge loops over `API_SETTINGS_SECTIONS` with the same `default`. X1 (the four sections each under its own key) passes on part 1's code as the positive control; X2 and X3 failed there for the reason the follow-up names: "promise resolved `{ expenses: { …(6) } }` instead of rejecting" (Summit's branding row answered as `expenses`) and "expected [Function] to throw an error" (the merge kept DemoStore's copy).
+- **B2, `GET /settings` reads the `localization` row in the same one query,** typed as the column's `SettingsGroup` list, and `lockGroup` takes a `SettingsGroup` (the column's own type; a plain `string` doesn't typecheck against it).
+- **B3, part 1's W tests needed one type line.** Their `served()` helper was typed `Required<SettingsAnswer>`; `SettingsAnswer` gained an optional `localization`, so `Required<…>` demanded it. The helper is now `Required<Pick<SettingsAnswer, ApiSettingsSection>>`. No case of W1 to W7 changed. Part 1's `settings.int.test.ts`, `demo-settings.test.ts` and `settings-sections.test.ts` are unchanged, as planned.
+- **B4, `auditBy` moved with a sibling.** `flows/checks.ts` gets `auditEntriesBy` (the entries) and `auditBy` (their count), using checks.ts' existing `auditTime`, the same parse part 1's local copy did; E1 and E2 read the audit targets through `auditEntriesBy`, so the filter is written once.
+- **B5, the `api-rereads` case saves Payroll rules** (`updateLocalization("payroll", { overtimeRule: "federal", holidayState: "CO" })`) rather than Summit's documents literal: a served tab either way, so it is a write that reaches the API; the counts are 152 and 109.
+- **B6, three new cases pass on part 1's code by design:** LW6 (an unrouted method already falls through to DemoStore; LM15 pins the routing), L16 (the routes don't exist yet) and LR7 (a key walk of the fixture). Every other new case was red.
+- **B7, the demo e2e script** is the planning step's `settings2/e2e-demo.sh` (written from part 1's, which came from `b2/e2e-demo-r2.sh`): a demo-mode build, one worker, ports freed through `flows/ports.sh` before and after, logs in `settings2/logs`.
+- **B8, L5's people.** Sales is placed in the warehouse's branch after sign-up, as `sales.int.test.ts` places its rep; the Owner adds the supplier and Purchasing places the order. The quote total of step 7 is compared with step 1's as text (the same body, the same tax rule).
+- **B9, one prettier pass wasn't enough** for `settings-localization.int.test.ts` (a chained `insert … values` re-wrapped on the second `--write`); both passes were run before the commit.
+
+## Which test pins which path
+| Path | Pinned by |
+| --- | --- |
+| `GET /settings` answers each served section under its own name; the web merge takes every served section | X1 to X3; XM1, XM2 |
+| Routes declare one key per tab, with their module | L0, L14, LR1; LM1, LM2 |
+| GET answers each tab to its readers; module filter; switch doesn't hide | L1, L7, L9, LR3, E1 step 3, E2 step 3; LM12, LM13, LM22 |
+| Never saved: no answer, 409, no row made | L2; LM18 |
+| Each PUT's permission, every role, both products | L3, L6 |
+| Strict bodies and shared content rules in both modes, same words | L4, L6, LR4, LR5, LD1 to LD5, LD12, S2, E1 step 1; LM8 to LM11, LM19, LM20, LM23, LM24, LM26 |
+| Read-modify-write keeps the other tabs and the tax block; the lock | L3, L5 step 7, L13, LD11; LM5, LM6 |
+| The server acts on it (numbering, terms, waste rule, PO, prices) | L5, E1 step 3 |
+| Switch, scope, ceiling, module below | L7, L8, L9, L10, LD8 to LD10; LM3, LM4 |
+| Module before keys in DemoStore (as the API) | LD8b; LM17, LM25 |
+| Own company only | L11 |
+| Audit per save, the tab named | L3, L6, LD11, S2, S3, E1 step 7, E2 step 5; LM7 |
+| Per-tab key in DemoStore (the any-of closed for screens) | LD6, LD7; LM16 |
+| Web: served tabs merged, others DemoStore's, unknown ignored, routing | W2, LW1 to LW6; LM14, LM15 |
+| Whole-section path runs the tab rules | LR6, LD13; LM21 |
+| Only documents and payroll are routes (zone, base, tax not writable) | L16 |
+| The saver's screens follow; what isn't offered the API refuses | E1 steps 2 to 5, E2 steps 1 and 3 |
+| Region, Currency and Sales tax unchanged in api mode (browser) | LW6, E2 step 4, S3, the demo subset |
 
 ## Owner questions
 None blocks; each has its safest default taken.
@@ -167,3 +197,65 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `gh pr list --head feat/settings-sections-api --json number,isDraft` | `[{"isDraft":true,"number":51}]` |
 | `git switch -q --no-track -c feat/settings-localization-api origin/feat/settings-sections-api` | the branch, at `b898f05` |
 | `docker ps`; `lsof` on 3000 and 4000 | compose PostgreSQL on 5432, `fp-e2e-worktree` on 5433; both ports free |
+| `gh pr create --draft …` | draft PR **#52** |
+| **0b red** (part 1's product code): `vitest --project unit test/settings-dispatch.test.ts` (api); `vitest tests/unit/settings-dispatch.test.ts` (web) | exit 1, 1 failed and 1 passed (X2 failed, X1 the control passed); exit 1, X3 failed |
+| **0b green:** the same two, plus web `settings-answer`, `api-rereads` | 2 passed; 15 passed |
+| `checks.sh s0b` shared typecheck, lint, test; api typecheck, lint; web typecheck, lint | all exit 0; shared 75 files, 1,136 tests |
+| `vitest --project integration test/settings.int.test.ts` (after 0b) | exit 0, 42 passed, 17 s |
+| **Stage 1 red** `vitest test/localization-rules.test.ts` (shared) | exit 1: LR1 to LR6 failed (the exports don't exist), LR7 passed |
+| `vitest tests/unit/settings-answer.test.ts demo-localization.test.ts api-rereads.test.ts` (web) | exit 1: 23 failed, 11 passed (LW1, LW3 to LW5, LD1 to LD13 and LD8b, and the five `api-rereads` cases failed; W1 to W7, LW2 and LW6 passed) |
+| `vitest --project integration test/settings-localization.int.test.ts` | exit 1: 26 failed, 1 passed (L16), 13 s |
+| `checks.sh s1red web:typecheck` (with the red-run swaps) | exit 0 |
+| `api-e2e.sh settings2-red --build -- tests/e2e-api/settings-localization.spec.ts tests/e2e-api/settings.spec.ts` | exit 1 after 44 s: E1 and E2 failed at their heal ("Expected: 200, Received: 404"); part 1's E1 to E3 passed with the moved helpers |
+| `e2e-demo.sh red` | exit 1 after 45 s: S2 failed at the refusal toast (not found), S3 at the "Payroll rules" audit row (not found) |
+| **Stage 2a green** `vitest test/localization-rules.test.ts test/settings-sections.test.ts` (shared) | exit 0, 17 passed |
+| `checks.sh s2a-pre…` api typecheck | first exit 2 (`inArray` and `eq` on the `SettingsGroup` column with a `string`), then exit 0 (B2) |
+| `vitest --project integration test/settings-localization.int.test.ts` | exit 0, 27 passed, 16 s |
+| `checks.sh s2` shared test, typecheck, lint; api typecheck, lint, test | all exit 0; shared 76 files, 1,143 tests; api unit 18 files, 126 tests |
+| `vitest --project integration` settings-localization, settings, sales, invoices, purchasing, contract-billing, hr, payroll, california-pay, permissions, isolation | exit 0, 11 files, 216 passed, 50 s |
+| **Stage 2b** `vitest` web settings-answer, demo-localization, api-rereads, demo-settings, settings-dispatch | exit 0, 5 files, 46 passed |
+| `checks.sh s2b` web test, typecheck, lint | test exit 0 (49 files, 390 tests); typecheck exit 2 (B3), then `s2b2` exit 0; lint exit 0 |
+| `prettier --check` on each stage's files | clean (after the second `--write`, B9) |
+| **Stage 2c** `eslint` on the four e2e files | exit 0 |
+| `heavy.sh python3 settings2/mutate.py LM1 … LM26 XM1 XM2` (on the committed 2a and 2b, about 25 minutes) | all 28 caught, every file restored (below) |
+
+### Mutations (stage 2, on the committed change)
+Each mutation changes one product file, runs its tests, and restores the file with `git checkout --` (`git diff --quiet` true). Anchors were copied from the committed code and keep their commas (part 1's B13). Every one was caught by the test the plan names; `git status` showed only the uncommitted e2e files and this log afterwards.
+
+| # | Mutation | Caught by (first failure) |
+| --- | --- | --- |
+| LM1 | `saveDocuments`' keys → the section's two | L0 ("expected [ Array(2) ] to deeply equal [ 'settings.localization.manage' ]") |
+| LM2 | `@RequireModule` off `saveDocuments` | L3 ("hr owner: expected [ 200 ] … [ 403, 'module_not_enabled' ]") |
+| LM3 | `requireFeature` off `saveDocuments` | L7 ("expected 200 to be 404") |
+| LM4 | `requireWholeCompany` off `saveDocuments` | L8 (200 instead of the scope refusal) |
+| LM5 | the tab save writes the body as the whole row | L3 (the row's documents undefined) |
+| LM6 | `.for("update")` off `lockGroup` | L13 ("expected 'CO' to be 'WY'": a lost update) |
+| LM7 | the tab save's audit entry removed | L3 ("one audit entry per save: expected [] to have a length of 1") |
+| LM8 | `dec(v).lte(100)` off `isPercent` | LR4 ("100.5: expected null …"); L4 |
+| LM9 | `PERCENT_TEXT` → `/^\d+(\.\d*)?$/` | LR4 ("12.: expected null …"); L4; LD1 |
+| LM10 | `overtimeRuleProblem` off `payrollProblem` | LR5; L6 (200 instead of 400); LD12 |
+| LM11 | the equal-prefix check off | LR4; L4; LD4 |
+| LM12 | `isReadable`'s module test off | LR3 ("hr owner: [documents, payroll]"); L1 hr owner |
+| LM13 | `isReadable`'s readers test off | LR3 ("installer: [documents, payroll]"); L1 flooring installer |
+| LM14 | `servedTabs` copies the whole answer | W2 (DemoStore's localization replaced) |
+| LM15 | `updateLocalization` routes every tab | LW6 ("region: expected [ … ] to deeply equal []") |
+| LM16 | DemoStore's tab rule → the section's any-of | LD6 (the tax-only role saved documents) |
+| LM17 | `assertSettingsSave`'s module check off | LD8 (Harbor saved documents) |
+| LM18 | a missing row is inserted instead of 409 | L2 ("documents: expected [ 200 ] … [ 409 ]") |
+| LM19 | `.strict()` off `DOCUMENTS_INPUT` | L4 (an unknown field answered 200) |
+| LM20 | `Number.isInteger` off the day checks | LR4 ("2.5: expected null …"); L4; LD5 |
+| LM21 | the whole-section branch back to the overtime rule only | LR6; LD13 |
+| LM22 | `answer` gives the whole stored row | L1 ("[currency, documents, …(3)]") |
+| LM23 | the exact waste-category check off | LR4, L4, LD3 (the waste message instead of "Give a default waste for each product category.") |
+| LM24 | the holiday state check off | LR5 ("XX: expected null …"); L6; LD12 |
+| LM25 | `assertSettingsSave` checks the keys before the module | LD8b (the role message instead of the module's) |
+| LM26 | the footer length check off `documentsProblem` | LR4; LD4. L4 stays green, as planned: Zod's bound carries the same words |
+| XM1 | the API dispatch's `default` → `break` | X2 ("promise resolved { expenses: … } instead of rejecting") |
+| XM2 | the web merge's `default` → `break` | X3 ("expected [Function] to throw an error") |
+
+## Stages 0 to 2: outcome
+- **Commits, all pushed:** `f8010ca` (stage 0: this log and the spec), `dd2bbe6` (the exhaustive dispatch, red first), `afb85a2` (2a: shared and API), `26a3c3e` (2b: web), `6f2b060` (2c: the e2e specs), then this log.
+- **Product files (14):** new `packages/shared/src/settings/localization-rules.ts`; changed `sections.ts`, `section-rules.ts`, `index.ts`; the settings controller, service and input; `contract.ts`, `api-methods.ts`, `settings-answer.ts`, `store.ts`; `documents-page.tsx` and `localization-page.tsx` (one line each). The plan's 13 plus nothing new: `settings.service.ts` and `settings-answer.ts` also carry the exhaustive dispatch, and `sections.ts` its `unservedSection`.
+- **Tests:** new `apps/api/test/settings-dispatch.test.ts` (X1, X2), `apps/web/tests/unit/settings-dispatch.test.ts` (X3), `packages/shared/test/localization-rules.test.ts` (LR1 to LR7), `apps/api/test/settings-localization.int.test.ts` (L0 to L16, 27 cases), `apps/web/tests/unit/demo-localization.test.ts` (LD1 to LD13, LD8b), `apps/web/tests/e2e-api/settings-localization.spec.ts` (E1, E2); changed `settings-answer.test.ts` (LW1 to LW6; B3), `api-rereads.test.ts` (152 and 109), `tests/e2e/settings.spec.ts` (S2, S3), `flows/checks.ts` and part 1's `tests/e2e-api/settings.spec.ts` (the helpers moved, B4).
+- **No stop-and-ask item came up:** the time zone isn't touched, `document_sequences` isn't changed, nothing is seeded at provisioning, and nothing in packages/db, core, auth, tenancy, providers or the control database changed.
+- **Left (stages 3 to 5):** the green api-mode run (`settings2-green --build`, then `settings2-again` and `settings2-flows`), the demo subset, the docs (ADR 0059's dated section, api-contract, sales.md and hr.md, data-model, the delta row, FEATURES and the features sync test), the full checks, both whole suites, `/review` and the security review (section "Security-review focus" of the PR body), and the handoff. The e2e specs E1, E2, S2 and S3 have been run only red so far.
