@@ -32,7 +32,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 | Start a transfer | `inventory.transfer.create` | Owner, Manager, Warehouse | `DemoStore.createTransfer` in `apps/web/src/lib/api/demo/store.ts` |
 | Receive a transfer | `inventory.transfer.receive` | Owner, Manager, Warehouse | `DemoStore.receiveTransfer` in `store.ts` |
 | Quick invoice from Cut roll | `sales.invoice.create` | Owner, Manager, Accountant, Sales | `createRollInvoice` in `inventory-actions.ts` |
-| Manage warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation` in `store.ts`, `SETTINGS_PERMISSIONS.inventory` in `permission-rules.ts` |
+| Manage warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation` in `store.ts`, `SETTINGS_SECTIONS.inventory` in `packages/shared/src/settings/sections.ts` |
 
 Data scope does not narrow any inventory collection. `FILTERS` in `apps/web/src/lib/api/demo/scope.ts` has no entry for products, rolls, stock movements, reservations, transfers or locations. Reservations are left out on purpose (audit U-03), so everyone who sees stock sees all holds.
 

@@ -39,7 +39,7 @@ Default roles come from `packages/shared/src/permissions/roles.ts`. "All nine" m
 | Read pay periods, bonuses and contractor payments | `hr.payroll.view` | Owner, Accountant, HR manager | `PRIVATE_COLLECTIONS` and `listPayPeriods` in `store.ts`; `reviewPayPeriod` in `pay-actions.ts` |
 | Leave someone out, approve a run, reopen a run | `hr.payroll.approve` | Owner, HR manager | `setPayExclusion`, `approvePayPeriod`, `reopenPayPeriod` |
 | Export a run | `hr.payroll.export` | Owner, Accountant, HR manager | `exportPayPeriod` |
-| Change Settings, HR and time-off policies | `settings.hr.manage` | Owner, HR manager | `settingsPermissions` in `permission-rules.ts`; `saveTimeOffPolicy`; `HrSettingsPage` |
+| Change Settings, HR and time-off policies | `settings.hr.manage` | Owner, HR manager | `SETTINGS_SECTIONS.hr` in `packages/shared/src/settings/sections.ts`, read by `DemoStore.updateSettings`; `saveTimeOffPolicy`; `HrSettingsPage` |
 
 Data scope, from `applyScope`:
 

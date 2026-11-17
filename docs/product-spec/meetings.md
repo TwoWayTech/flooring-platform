@@ -39,7 +39,7 @@ The nine default roles are Owner, Manager, Accountant, Sales, Purchasing, Wareho
 | Accept or decline a proposed time | `meetings.meeting.edit`; the screen also needs the viewer to be the organiser | Owner, Manager, HR manager, Sales | `decideProposal`; `MeetingAnswers` |
 | Simulate reply | `meetings.meeting.view` for the organiser, otherwise `settings.outbox.view` | All nine for their own meetings; Owner for any | `simulateReply` |
 | Delete a meeting | `meetings.meeting.delete` | Owner, Manager, HR manager | Not enforced anywhere. The key exists and no action checks it. There is no delete. |
-| Change Settings > Meetings | `settings.meetings.manage` | Owner | `MeetingsSettingsPage`; `settingsPermissions("meetings")` in `apps/web/src/lib/api/demo/permission-rules.ts` |
+| Change Settings > Meetings | `settings.meetings.manage` | Owner | `MeetingsSettingsPage`; `SETTINGS_SECTIONS.meetings` in `packages/shared/src/settings/sections.ts`, read by `DemoStore.updateSettings` |
 
 Who sees which meeting (`FILTERS.meetings` in `scope.ts`, applied at every data scope; since part 3 the shared `seesMeeting` through `visibleMeetings` in `meeting-sight.ts`, and `FILTERS.meetings` is gone, ADR 0051):
 

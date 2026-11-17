@@ -71,7 +71,7 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Add a customer | `customers.customer.create` | Owner, Manager, Sales | Store: `createCustomer` |
 | Edit a customer or their addresses | `customers.customer.edit` | Owner, Manager, Sales | Store: `saveCustomer`. Screen: `CustomerAddresses`, `CustomerDrawer` |
 | See a credit limit | `customers.customer.view_sensitive` | Owner, Manager, Accountant | Screen only: `CustomersTable`, `CustomerDrawer` |
-| Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `settingsPermissions`. Screen: `PaymentsSettingsPage` |
+| Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `SETTINGS_SECTIONS.payments` in `packages/shared/src/settings/sections.ts`; on the API, `PUT /settings/payments` (ADR 0059). Data scope `all` and a step-up. Screen: `PaymentsSettingsPage` |
 | Settings > Sales and documents | `settings.localization.manage` to open the page. The store accepts it or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings`. Screen: `apps/web/src/products/settings-menu.ts` |
 | Tax rates in Settings > Localization | `settings.localization.manage` or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings` |
 
@@ -368,7 +368,7 @@ pctOf(v, p)    = v * p / 100
     `needsApproval` is in `payments.ts`. `recordedByOwnScopeRole` is in `payment-actions.ts` (plan N-1). Seed settings: Summit `approvalRequired` true with threshold `1000.00`; Keystone false. `reviewPayment` refuses the person who recorded it, needs a pending payment, and a rejection needs a reason of at least 3 characters.
 29. **Payments to verify.** `PaymentsQueue` in `apps/web/src/features/finance/payments-queue.tsx` lists pending customer payments for holders of `sales.payment.approve`, beside pending supplier payments for holders of `purchasing.payment.approve`. Proof opens in place. The recorder's own rows show "Someone else verifies it" with no buttons. Needs attention counts only payments the viewer did not record (`verify-payments` in `apps/web/src/lib/attention.ts`).
 30. **Recording helpers on the screen.** `RecordPaymentSheet` prefills `max(balance - pending, 0)` and warns when money is already waiting. The Deposit shortcut is offered when the deposit percent is above 0, nothing is confirmed, and the deposit is below the balance. It sets `kind: "deposit"`. Typing an amount resets `kind` to `payment`.
-31. **Settings > Payments.** `PaymentSettings` holds `approvalRequired`, `approvalThreshold`, `writeOffMax`, `paymentPrefix`, `refundPrefix`. Seed values for the last three: `5.00`, `PAY-`, `RF-`.
+31. **Settings > Payments.** `PaymentSettings` holds `approvalRequired`, `approvalThreshold`, `writeOffMax`, `paymentPrefix`, `refundPrefix`. Seed values for the last three: `5.00`, `PAY-`, `RF-`. `paymentSettingsProblem` in `packages/shared/src/settings/section-rules.ts` refuses a save in both modes: each amount is empty or plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign, exponent or bare point), each prefix is 1 to 10 letters, digits or hyphens, and the payment and refund prefixes differ, compared without case. Saving asks for a step-up after those checks, so a refused value never costs a code. The same settings govern supplier payments (purchasing.md rule 28). Settings on the API: settings-and-permissions.md, Real build, and ADR 0059.
 
 ### Corrections
 
@@ -611,9 +611,9 @@ A credit note is an `Invoice` with `isReturn: true`.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `payments.approvalRequired` | boolean | |
-| `payments.approvalThreshold` | decimal string | Empty means every payment waits |
-| `payments.writeOffMax` | decimal string | Empty means no limit |
-| `payments.paymentPrefix`, `payments.refundPrefix` | string | |
+| `payments.approvalThreshold` | decimal string | Empty means every payment waits. Otherwise `MONEY_TEXT` (rule 31) |
+| `payments.writeOffMax` | decimal string | Empty means no limit. Otherwise `MONEY_TEXT` (rule 31) |
+| `payments.paymentPrefix`, `payments.refundPrefix` | string | 1 to 10 letters, digits or hyphens, starting with a letter or digit; the two differ, compared without case (rule 31) |
 | `localization.documents.defaultTerms` | PaymentTerms | New customers |
 | `localization.documents.defaultDepositPct` | decimal string | New quotes |
 | `localization.documents.quoteExpiryDays` | number | Suggested expiry |

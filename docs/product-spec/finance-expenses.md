@@ -31,7 +31,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 | Approve or reject an expense | `finance.expense.approve` | Owner, Manager, Accountant | `reviewExpense` in `expense-actions.ts`. The recorder is refused. |
 | Void an expense | `finance.expense.void` | Owner, Accountant | `voidExpense` in `expense-actions.ts` |
 | Export the expenses table | `finance.expense.export` exists in the catalog | Owner, Accountant | Not enforced. `apps/web/src/components/data-table/data-table.tsx` shows Export CSV whenever `csvName` is set. |
-| Change the approval rule or the shared-cost rule | `settings.expenses.manage` | Owner | `apps/web/src/features/settings/expenses/expenses-settings-page.tsx`, `DemoStore.updateSettings` through `settingsPermissions` in `apps/web/src/lib/api/demo/permission-rules.ts` |
+| Change the approval rule or the shared-cost rule | `settings.expenses.manage` | Owner | `apps/web/src/features/settings/expenses/expenses-settings-page.tsx`, `DemoStore.updateSettings` through `SETTINGS_SECTIONS.expenses` and `SETTINGS_SECTIONS.sharedCosts` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/expenses` for the approval rule (ADR 0059). Data scope `all` |
 
 The collections `expenses` and `recurringExpenses` have no writers in the generic `save` (`SAVE_PERMISSIONS` in `permission-rules.ts`). They change only through the store calls above.
 
@@ -127,6 +127,7 @@ return approvalThreshold.trim() === "" || expenseCost(e) > approvalThreshold
 
 - The comparison is strictly greater, on cost including tax. An expense exactly at the threshold confirms at once.
 - With approval on and a blank threshold, every recorded expense waits.
+- The threshold is empty or plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign, exponent or bare point). `expenseSettingsProblem` in `packages/shared/src/settings/section-rules.ts` refuses anything else in both modes, even while approval is off. No step-up (ADR 0059).
 - Seed values (`packages/shared/scripts/fixtures/tenant.ts`): Summit has approval on above 1000.00. Keystone has approval off.
 
 ### 5. Nobody approves their own expense
@@ -355,7 +356,7 @@ Collection `recurringExpenses`. Type in `packages/shared/src/types/purchasing.ts
 | Field | Type | Notes |
 | --- | --- | --- |
 | `expenses.approvalRequired` | boolean | Label: Approve larger expenses. |
-| `expenses.approvalThreshold` | string | Label: Approval above. Cost including tax. Blank means all. |
+| `expenses.approvalThreshold` | string | Label: Approval above. Cost including tax. Blank means all. Otherwise `MONEY_TEXT` (rule 4). |
 | `sharedCosts.rule` | enum | `revenue`, `floor_area`, `equal`, `fixed`. |
 | `sharedCosts.fixedPct` | `Record<string, string>` | Percent per location id, for the `fixed` rule. |
 

@@ -109,7 +109,7 @@ export function numberSettingsProblem(next: NumberSettings, current: NumberSetti
 }
 
 /**
- * Why payment rules can't be saved, or null (sales.md Appendix A): each amount empty or plain
+ * Why payment rules can't be saved, or null (sales.md rules 28 and 31): each amount empty or plain
  * money, each prefix a document prefix, and the payment and refund prefixes different, compared
  * without case, because refunds have no unique number index (ADR 0059 D18). The threshold is
  * checked even while approval is off (D21).
