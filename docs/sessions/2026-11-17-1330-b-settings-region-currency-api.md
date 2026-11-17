@@ -142,9 +142,9 @@ None blocks; each has its safest default taken.
 - **Q8, locale and country.** Taken: the stored values, refused if changed (rule 12), as the number format's. Confirm.
 
 ## For STATUS
-The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). `<n>` is this PR's number (below).
-- **"In progress" and "Next three tasks" item 2:** after 2a's "(part 2a: draft PR #52, …)", add "part 2b Region and Currency (draft PR #<n>, `feat/settings-region-currency-api`, stacked on #52)".
-- **"Done"** (on merge): "Settings part 2b on the API (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-17 part 2b section). In api mode Localization's Region and Currency tabs save on the API (`PUT /settings/localization/region` and `/currency`, `settings.localization.manage`, scope `all`, strict bodies and shared rules in both modes, only that tab replaced under the row lock with every check that reads it inside the lock, one audit entry naming the tab). The company's time zone is answered from control `tenants.time_zone` and read only in both modes (never written); country and locale stay the stored ones; a change of the states of operation also needs `settings.tax.manage` and a step-up, and the API's tax follows it at once (an accepted quote's invoice too); Currency always needs a step-up, keeps its base, lock and codes, takes plain rates above 0 and dates a changed rate with the company's day. `GET /settings` answers Region to every member and Currency to the key holders, so every screen's date format and a new quote's state follow the server. Reset to default keeps the fields Settings can't change. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …"
+The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). This PR is #53.
+- **"In progress" and "Next three tasks" item 2:** after 2a's "(part 2a: draft PR #52, …)", add "part 2b Region and Currency (draft PR #53, `feat/settings-region-currency-api`, stacked on #52)".
+- **"Done"** (on merge): "Settings part 2b on the API (queue item 2, task 2), PR #53 (ADR 0059, 2026-11-17 part 2b section). In api mode Localization's Region and Currency tabs save on the API (`PUT /settings/localization/region` and `/currency`, `settings.localization.manage`, scope `all`, strict bodies and shared rules in both modes, only that tab replaced under the row lock with every check that reads it inside the lock, one audit entry naming the tab). The company's time zone is answered from control `tenants.time_zone` and read only in both modes (never written); country and locale stay the stored ones; a change of the states of operation also needs `settings.tax.manage` and a step-up, and the API's tax follows it at once (an accepted quote's invoice too); Currency always needs a step-up, keeps its base, lock and codes, takes plain rates above 0 and dates a changed rate with the company's day. `GET /settings` answers Region to every member and Currency to the key holders, so every screen's date format and a new quote's state follow the server. Reset to default keeps the fields Settings can't change. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: lint, typecheck and unit tests (shared 1,153, API 126, web 406, db 18, providers 11), API and database tests (API 753, db 59, providers 2) and the hooks' tests (15) pass; the whole api-mode suite 53 of 53 (3.6 minutes); the demo subset 352 flooring and 7 hr tests; 30 of 30 mutations caught; <the whole demo suite, `/review` and the security review, filled in at handoff>."
 - **Close or update:**
   - "**The company's zone has two copies** … The Settings task must write both …" (and 2a's rewording "Planned for Settings part 2b …"): **done differently:** "the API answers the zone from `tenants.time_zone` and refuses a change in both modes; a Region save writes control's value into the row's copy; nothing writes control. Making it editable is an owner question (Q1)." Keep "the `today()` task reads `GET /company`'s `company.timeZone`".
   - "Part 2b's time zone is a likely stop-and-ask": resolved without one (read only).
@@ -161,7 +161,7 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
   - **A page left open across a control zone change** keeps the old zone in its Region draft, so its save is refused with the zone's words until a reload.
   - **`flows/kit.ts` `formatted()`** assumes Summit's `MMM d, yyyy`; a killed Z1 run leaves `yyyy-MM-dd` (or states `["CO"]`) on the e2e database until the spec runs again. Its `shown()` JSDoc still says "Settings is still DemoStore in api mode".
   - **API test helpers** now have a third per-file copy (RC); the sweep into `apps/api/test/support/` stays open.
-- **Owner questions:** a block "Owner questions (PR #<n>, Settings part 2b; none blocks)" with Q1 to Q8 above.
+- **Owner questions:** a block "Owner questions (PR #53, Settings part 2b; none blocks)" with Q1 to Q8 above.
 - **BRANCHES:** a `feat/settings-region-currency-api` row: "B (Claude)", "Queue item 2, task 2, Settings part 2b: Region and Currency on the API, the zone from control and read only (main checkout; stacked on #52)", "Draft" then the state at handoff, the PR, "see the branch".
 
 ## Which test pins which path
@@ -235,6 +235,9 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `e2e-demo.sh subset` | exit 0 in 7.5 minutes (build 12 s): flooring 352 passed in 432 s (S2 to S6 among them), hr 7 passed |
 | **Stage 4** `vitest run test/features.test.ts` (shared; the FEATURES sync) | exit 0, 7 passed |
 | The docs (Markdown is in `.prettierignore`, 2a's B15) | checked by reading each edit against the code: route order, body fields and outer lengths, refusal codes and words, readers, the 409s, the step-up codes |
+| **Full checks** `heavy.sh bash settings2b/full.sh` (lint, typecheck, test, test:api, test:hooks) | exit 0 in 4 minutes. Lint and typecheck: 6 tasks each, 3 replayed from Turborepo's cache (inputs unchanged since stage 2), 3 run. Test: shared 77 files, 1,153 tests; API unit 18 files, 126; web 52 files, 406; db 18; providers 11. test:api: API 39 files, 753 tests; db 8 files, 59; providers 2 (3 min 17 s, none cached). Hooks: 15 passed |
+| `api-e2e.sh settings2b-all-final --build` (the whole api-mode suite, after the demo build) | exit 0 after 214 s (builds 13 s): 53 passed, 2a's 51 plus Z1 and Z2 |
+| `docker exec fp-e2e-worktree psql … select` (read only) | Summit's region and currency as seeded after the suite; control zone `America/Denver` |
 
 ### Mutations (stage 2, on the committed change; `settings2b/mutate.py`)
 Each mutation was made on the committed code, its commands run, and its file restored with `git checkout --` (`git diff --quiet` true for all 30). A mutation counts as caught only when every listed command failed with the expected test.
@@ -287,3 +290,22 @@ Each mutation was made on the committed code, its commands run, and its file res
 ## Stage 4: outcome
 - **Docs:** ADR 0059's section "2026-11-17: part 2b, Region and Currency" (and the later-parts table's part 2 row); docs/api-contract.md's "Settings, part 2b" section, 2a's "Not routes yet" and web lines, "Company and the shell" and the `getSettings`, `updateLocalization` and `getDefaultSettings` rows; sales.md (rule 15's sentence and two `localization.region` rows); meetings.md's zone line; data-model.md's `localization.region` and `localization.currency` rows; one docs/blueprint-delta.md row; docs/FEATURES.md's `settings.localization` and `auth.step-up` rows (`features.ts` unchanged; the sync test passes). The spec's edits were made in stage 0.
 - **This log:** table "Which test pins which path" and the `today()` note.
+
+## Outcome (stages 3 and 4, full checks, the api-mode suite)
+
+| Commit | Subject |
+| --- | --- |
+| `2c452b5` | docs(settings): plan for Settings part 2b, Region and Currency on the API [skip ci] |
+| `7e79882` | test(settings): part 2b tests, red on part 2a's head [skip ci] |
+| `cf6d7ba` | test(e2e): part 2b's red runs: Z2 tells a healing save by its URL, S5 checks the refusal first [skip ci] |
+| `c758d74` | feat(settings): Region and Currency on the API; the time zone from control and read only (Settings part 2b) [skip ci] |
+| `d04e0a1` | docs(sessions): Settings part 2b, stages 0 to 2 [skip ci] |
+| `1f03d72` | test(e2e): Settings part 2b round-trips Region and Currency through the API [skip ci] |
+| `f0f37a2` | docs: Settings part 2b on the API (ADR 0059 section, api-contract, specs, data model, delta, FEATURES) [skip ci] |
+| this commit | docs(sessions): Settings part 2b outcome, e2e, docs, full checks and the api-mode suite [skip ci] |
+
+- **Green:** the full checks (lint, typecheck, every unit, API, database and hooks test) and the whole api-mode suite (53 of 53) on the last product change (`c758d74`); the stage 3 api-mode runs and the demo subset. No product file changed after `c758d74`; stage 3 changed one test (B12).
+- **Decisions taken in these stages:** B12 (Z1 waits out step 3's toast) and B13 (no flow was in `fixme`). Nothing open needed a new safest-option choice; no blueprint-delta row beyond the planned one.
+- **Red for other reasons:** none seen.
+- **Not run here (stage 5, the orchestrator's next steps):** the whole demo suite (`e2e-demo.sh all`), `/review`, the security review (security-reviewer on `origin/feat/settings-localization-api...HEAD`, section 12's focus as in the PR body), the handoff commit without `[skip ci]`, and STATUS and BRANCHES (their content is under "For STATUS").
+- **No stop-and-ask item came up** (B10).
