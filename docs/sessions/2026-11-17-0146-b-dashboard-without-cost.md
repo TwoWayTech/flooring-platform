@@ -134,7 +134,7 @@ Planned decisions, each the safest option found. Decisions taken while building 
 
 #### Stage 3 (api-mode e2e green, the demo regression)
 - **`sales.spec.ts`'s two new tests now type their answers `ViewedInvoice[]`** (D15), and the unused `Invoice` import is gone. The 12-month precondition reads kit's `companyToday()` (Denver, the day every other flow uses) for the plan's "local today"; 330 days leaves a month's slack either way.
-- **Two throwaway e2e mutations, never committed, prove that Priya's test catches a regression behind the loader,** which the red run (stopped at the loader) could not show. E1 put `dec(i.cost)` back into `salesTotals` (FigureRow); E2 put `dec(line.unitCost)` back into `bestSellersIn` (Best sellers). Each was applied to the committed file, built, run with `--grep B5`, and restored with `git checkout --` (`git diff --quiet`, `restored=True`). Both failed Priya's test with "This screen stopped working." and passed Luis's. On the 5433 database both show at step 3, on landing: her drifted invoice of 2026-11-16 sits in the default "This month" and the 30-day Best sellers window. On a fresh seed once those windows are empty, steps 5 and 6 are the ones that meet her invoices.
+- **Two throwaway e2e mutations, never committed, prove that Priya's test catches a regression behind the loader,** which the red run (stopped at the loader) could not show. E1 put `dec(i.cost)` back into `salesTotals` (FigureRow); E2 put `dec(line.unitCost)` back into `bestSellersIn` (Best sellers). Each was applied to the committed file, built, run with `--grep B5`, and restored with `git checkout --` (`git diff --quiet`, `restored=True`). Both failed Priya's test with "This screen stopped working." and passed Luis's. Both show at step 3, on landing: her November invoices (the seed's, and the drifted 2026-11-16 one on the 5433 database) sit in the default "This month" and 90-day Best sellers windows. Once those windows are empty, steps 5 and 6 are the ones that meet her invoices; stage 5's clock proof shows they catch E1 and E2 then.
 - **The probe is deleted** after the green run (a copy stays in the scratchpad's `b5/keep`). Every step logged `ok`, Sales → Team included, with no `pageerror`.
 - **The demo regression's one skip** is `reports.spec.ts` "sales tax report reads the jurisdiction each invoice stored", which skips itself while `reports.tax-jurisdiction` is off (`skipIfFeatureOff`, unchanged by B5).
 
@@ -142,13 +142,16 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **ADR 0037's history stays.** B1's "B5, recorded, not fixed" bullet gains only "(Fixed 2026-11-17, see below.)", and its follow-up "The View as banner's wording for a margin-only role, after B5" gains "(Done 2026-11-17, see below.)", the same kind of marker (D11 did it), so nothing B1 wrote is rewritten. The new dated section holds the context, D1 to D12, D18 and D19, "The P&L on the server is unchanged", the parity (Best sellers never affected by contract cost) and the follow-ups.
 - **FEATURES.md:** `dashboard.store` and `sales.team` name `inventory.product.view_sensitive` beside the margin key and list `dashboard-without-cost.test.ts` (the sync test checks shared and e2e test files only, so the web unit tests aren't listed). Their descriptions stay: "Sales sees own sales without margin" and "margin (sensitive)" are still true. `sales.quotes` is left as B1 left it.
 
+#### Stage 5 (full checks, the whole api-mode suite)
+- **A throwaway clock proof, never committed, shows that steps 5 and 6 catch E1 and E2 on their own.** On today's calendar both e2e mutations fail Priya's test on landing (step 3), since the default "This month" and 90-day Best sellers windows hold her invoices. `zz-b5-clock.spec.ts` repeats steps 1 to 6 with the browser's clock fixed at 2027-03-15 (`page.clock.setFixedTime` after sign-in), so the default windows hold none of her invoices (asserted: none on or after 2026-12-01) while the 12-month panel still does. On the fixed build it passed (steps 3, 5 and 6 `ok`, before and after). With E1 it passed step 3 and failed at step 5 (the page crashed after the From date; the To field was gone). With E2 it passed steps 3 and 5 and failed at step 6. A first E2 run with the clock at 2027-01-15 failed at step 3, because Best sellers' default window is 90 days, not 30; the clock was moved to March. Each mutation was restored with `git checkout --` (`restored=True`), the last build was rebuilt from the fixed code, and the spec was deleted (a copy stays in the scratchpad's `b5/keep`). No product file changed, so `b5-all-final` stands as the run after the last product change.
+
 ## Which test pins which path
 - **The loader no longer throws:** `dashboard-without-cost.test.ts` `monthlyPnl` (Sales, no contract cost, null and missing cost, the empty month); Priya's api-mode test, step 3; the probe; M1, M2, M4.
 - **The 12-month totals are all or nothing:** `knownPnl` and `pnlTotals` cases; web `RevenuePanel` (b) and (c); M5, M6, M14.
 - **An empty month or set is a known zero:** the December case, `salesTotals([])`, `sumKnown([])`; M3.
 - **No partial sum:** the `NO_CONTRACT_COST` cases of `monthlyPnl`, `pnlTotals`, `salesTotals` (2026-10) and `teamStats`; M2.
-- **The figure card, sparkline and comparison:** `salesTotals` and `marginSeries` cases; web `FigureRow` (a) to (f); Priya's step 5; M8, M9, M15, M16.
-- **Best sellers:** `bestSellersIn` cases (the hand-made two-product case, contract lines); web `BestSellers`; Priya's step 6; M10, M11, M17.
+- **The figure card, sparkline and comparison:** `salesTotals` and `marginSeries` cases; web `FigureRow` (a) to (f); Priya's step 5; M8, M9, M15, M16; e2e mutation E1 (Priya's test fails; the clock proof fails at step 5).
+- **Best sellers:** `bestSellersIn` cases (the hand-made two-product case, contract lines); web `BestSellers`; Priya's step 6; M10, M11, M17; e2e mutation E2 (Priya's test fails; the clock proof fails at step 6).
 - **Sales → Team and the top performer:** `teamStats` cases; web `TeamTable` (a) to (e); M12, M18.
 - **Margin needs both keys:** `access-rules.test.ts` `seesMargin`; web (c) everywhere; M13 to M15, M17.
 - **The P&L on the server is unchanged:** S-HUB-1 (`hub-reports.test.ts`), R-EQ, R-STRIP-1, -3 and -6, R-MODULES-OFF (`reports.int.test.ts`, the same before and after), the `storedPnl` cases, M7, and `reconciliation.test.ts`'s fixed-seed regeneration through the edited generator.
@@ -161,7 +164,7 @@ None blocks the build.
 - **Q1.** The dashboard's Gross margin card and sparkline, the 12-month panel's margin, Best sellers' Margin and Sales → Team's Margin column now need `inventory.product.view_sensitive` as well as `sales.margin.view_sensitive`, as quotes (B1) and reports (ADR 0055 S17) already do. No default role changes in a company with its modules on. In api mode, the server's stripping already made it so for anyone without product cost; the key rule brings the demo into line. Confirm.
 - **Q2.** Commission statement margin bases (HR → Commissions, the employee portal) need only the margin key on the server (`hideMarginBase`, ADR 0048). A gross-margin base gives an invoice's cost away to a margin-only custom role, and the access preview still lists "Sales margin" for that role. Apply the both-keys rule there too? That would be a server change with its own security review, not in B5.
 - **Q3** (extends B1 Q3). Should DemoStore strip invoice `cost` and line `unitCost` the way the API does, including `contractCostShown`? Then the demo would meet the same unknown-cost paths, and a viewer without contract cost would see the same in both modes. Not done.
-- **Q4 (CI time).** Priya's and Luis's dashboard tests add a few seconds to `e2e`; the measured times go here at stage 5. This joins PR #42's Q1.
+- **Q4 (CI time).** Priya's and Luis's dashboard tests add about 3 s to `e2e` (1.6 s and 1.3 s locally in `b5-all-final`), and the whole api-mode suite took 144 s for 39 tests (B4's was 163 s for 37 and 1 skipped). This joins PR #42's Q1.
 - **Q5.** When the earlier period's margin is unknown (custom roles, or a company with Contracts off), the margin card shows no change line rather than "No earlier period to compare". Keep that?
 
 ## For STATUS
@@ -171,7 +174,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
 - **"Done": a B5 entry.**
   - **Where it is:** PR #48 (stacked on #45, #46 and #47); this log; the ADR 0037 section dated 2026-11-17 and the ADR 0055 pointer; one delta row; the api-contract, spec and FEATURES notes.
   - **What changed:** `ViewedInvoice`; `sumKnown` and the exported `signedSubtotal`/`signedCost`; nullable `PnlMonth`, `SalesTotals`, `SellerRow.margin` and `TeamRow.margin`; `marginSeries`, `knownPnl`, `pnlTotals` and `storedPnl`; `seesMargin` (renamed), used by `reportVisibility`, `QuoteSummary`, `FigureRow`, `RevenuePanel`, `BestSellers` and `TeamTable`; the banner's "Costs are hidden."; no API, schema or DemoStore change.
-  - **The checks:** their counts, the api-mode suite's total and time, the demo regression, M1 to M19, then the review rounds (filled in at stage 5).
+  - **The checks:** lint and typecheck clean; `pnpm test` shared 1,116 (B4's 1,075 plus 41), web 302 (B4's 279 plus 23), api unit 124, db 18, providers 11; `pnpm test:api` api 631 (B4's 630 plus 1), db 59, providers 2; hooks 15. The whole api-mode suite on a fresh build (`b5-all-final`): 39 passed, none skipped, in 144 s (Priya's dashboard 1.6 s, Luis's 1.3 s). The demo regression (dashboard, shell, admin, HR workspace, quote and reports specs): 27 passed, 1 skipped (the switched-off tax-jurisdiction report). Mutations M1 to M19 and the e2e mutations E1 and E2 each failed their tests. Then the review rounds (the orchestrator's).
 - **"Api-mode bugs the flows found":**
   - the header lists B5 as fixed, with its PR;
   - remove the B5 bullet;
@@ -187,7 +190,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - Remove "the View as banner, after B5" (done by D11).
 - **PR #42 final review notes, the rule-5 bullet:** `sales.spec` now also checks Priya's `GET /invoices` answer.
 - **"Flows' local runs leave data":** B5's api-mode tests only read.
-- **Q1 (CI time):** add the two dashboard tests' times and the suite total.
+- **Q1 (CI time):** add the two dashboard tests' times (1.6 s and 1.3 s locally) and the suite total (39 tests in 144 s on `b5-all-final`).
 - **Owner questions (PR #48, B5):** Q1 to Q5 above.
 - **BRANCHES:** a `fix/sales-dashboard-without-cost` row: "B (Claude)", "B5: a salesperson's dashboard loads without cost; dashboard and Team margins need product cost too (main checkout; stacked on B4)", "Draft" then "Ready", the PR, "see the branch".
 
@@ -223,3 +226,30 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b5/logs
 | 3 | `heavy.sh pnpm --filter web exec eslint tests/e2e-api/sales.spec.ts`; `pnpm exec prettier --check` on it | both clean |
 | 4 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts` | 7 passed |
 | 4 | `pnpm exec prettier --check` on ADR 0037, ADR 0055, the delta, api-contract.md, FEATURES.md and this log | clean |
+| 5 | `heavy.sh b5/full.sh` (`pnpm lint`, `typecheck`, `test`, `test:api`, `test:hooks`) | all exit 0 (lint 15 s, typecheck 8 s, test 14 s, `test:api` 3 min, hooks under 1 s). Turbo replayed only db, providers and ui, which this branch doesn't touch; api, web and shared ran fresh. `pnpm test`: shared 72 files and 1,116 tests (B4's 1,075 plus B5's 41), web 37 files and 302 (B4's 279 plus B5's 23), api unit 124, db 18, providers 11. `pnpm test:api`: api 35 files and 631 (B4's 630 plus the new case), db 59, providers 2. Hooks: 15 |
+| 5 | `heavy.sh flows/api-e2e.sh b5-all-final --build` (the whole api-mode suite, a fresh api-mode build after the demo build) | builds in 11 s; exit 0 after 144 s: 39 passed, none skipped (B4's run: 37 passed, 1 skipped, the B5 `fixme`). Priya's dashboard 1.6 s, Luis's 1.3 s; F1 16.5 s, F5 9.1 s. Ports free after |
+| 5 | throwaway clock proof `zz-b5-clock.spec.ts` (clock 2027-01-15): `api-e2e.sh b5-clock-control` on the fixed build, then E1 `b5-clock-E1 --build` | control exit 0 (steps 3, 5, 6 `ok`); E1 exit 1: step 3 `ok`, failed at step 5 (`fill` of To timed out after the crash); `restored=True` |
+| 5 | the clock proof with E2: `b5-clock-E2 --build` (clock 2027-01-15), then `b5-clock-E2b --build` (clock 2027-03-15) | 2027-01-15: failed at step 3 (Best sellers' default 90-day window still held her invoices); 2027-03-15: steps 3 and 5 `ok`, failed at step 6 (`fill` of Best sellers to timed out after the crash); `restored=True` each time |
+| 5 | `b5-clock-control2 --build` (the fixed code rebuilt, clock 2027-03-15), then the spec deleted | exit 0, steps 3, 5 and 6 `ok`; `git status` lists only this log. Ports free after every run |
+
+## Outcome
+B5 is fixed in shared and web code, with no API, schema or DemoStore change. A salesperson's dashboard, her landing page, loads in api mode without cost: the 12-month panel, the figure cards, Best sellers and the tables, with no margin anywhere. Every margin on the dashboard, Best sellers and Sales → Team needs both keys (`seesMargin`) and a known cost for everything it adds up, and a withheld cost is unknown, never zero or a partial sum. The server's P&L is unchanged (`storedPnl`; S-HUB-1, R-EQ and the R-STRIP cases the same before and after). The B5 test in `sales.spec.ts` is back from `fixme` and passes, with a manager's dashboard as its control. Every check is green: the full checks, the whole api-mode suite on a fresh build (`b5-all-final`, 39 of 39) and the demo regression run. Commits on `fix/sales-dashboard-without-cost`, each pushed:
+
+| Commit | Subject |
+| --- | --- |
+| `daaaaa6` | docs(sales): plan for B5 and the withheld-cost rule on the dashboard in the spec |
+| `c29a2e4` | fix(dashboard): a salesperson's dashboard loads without cost, and its margins need product cost too (B5) |
+| `f56aca9` | docs(sessions): B5 red runs, the fix's checks and mutations |
+| `85a2f58` | test(e2e): a salesperson's dashboard loads without cost in api mode, and a manager's shows margin (B5) |
+| `ec74e79` | docs: B5, a cost the server withheld is unknown on the dashboard and Sales → Team |
+| (this commit) | docs(sessions): B5 outcome, full checks and the final api-mode suite |
+
+All carry `[skip ci]`. The throwaways (`zz-b5-probe.spec.ts`, `zz-b5-clock.spec.ts`) were deleted and never committed, and the e2e mutations E1 and E2 were restored from the index each time.
+
+## Left
+- **The orchestrator's part:** `/review`; a fresh read-only security-reviewer on `origin/fix/contracts-branch-from-session...HEAD` (CLAUDE.md: cost, margin, a permission rule and `monthlyPnl`, which feeds the API's P&L), focused on the PR body's "Security-review focus"; its summary posted with `gh pr review 48 --comment --body-file`; STATUS and BRANCHES from "For STATUS" above; the handoff commit without `[skip ci]`.
+- **The merge waits for #45, #46 and #47,** which wait for GitHub Actions (blocked by billing). When they merge, `origin/main` is merged into this branch (never a rebase; conflicts are possible only in STATUS, BRANCHES and the top of the delta), then the PR is marked ready and self-merges under the CLAUDE.md rule once `verify` and `e2e` are green.
+- **B6 overlaps** in `sales.spec.ts`, sales.md, ADR 0037, the delta and api-contract.md; every overlap is an addition, and whichever merges second keeps both.
+- **The 5433 database has drifted from the seed:** Priya's latest live invoice there is 2026-11-16, left by earlier F1 runs. B5's test takes its window from her answer, so it passes either way.
+- **The e2e mutations at steps 5 and 6** are shown only by the throwaway clock proof (the browser's clock moved forward), not by the committed test on today's calendar, where they fail on landing. The committed test's steps 5 and 6 are the same actions as the proof's.
+- **Next in the queue:** B6 (a saved quote can't be saved again in api mode), where the owner places it (B1 Q6); then item 2 of the owner's queue.
