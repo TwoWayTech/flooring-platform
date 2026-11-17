@@ -30,8 +30,8 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/profile` (ADR 0059). Data scope `all` |
 | Change branding | `settings.branding.manage` | Owner | `updateSettings`. Data scope `all` |
 | Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings`. On the API, `PUT /settings/numbers` (ADR 0059). Data scope `all` |
-| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage` for the tabs; `updateSettings` for the save. Data scope `all` |
-| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateSettings` for the save. Data scope `all` |
+| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage`; `updateLocalization` with `LOCALIZATION_TABS` in packages/shared (one key per tab). On the API, `PUT /settings/localization/documents` (module `core`) and `/payroll` (module `hr`) (ADR 0059). Data scope `all` |
+| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateLocalization("tax")` with its own key. Data scope `all` |
 | Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
 | Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation`; `updateSettings` for section `inventory` (data scope `all`) |
 | Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval (ADR 0059); shared costs stay on `updateSettings` until their part. Data scope `all` |
@@ -337,7 +337,7 @@ stateDiagram-v2
 
 **View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`. A stored choice applies only to someone who may view as (`viewAsRoleFor` in `apps/web/src/lib/view-as.ts`): when someone who may not view as signs in on the same tab, the shell opens as that person and the stored choice is cleared. The choice is kept per company, not per person, so another person who may view as and signs in on the same tab sees it, with its banner and "Stop viewing as". In api mode View as is not offered, because the API answers for the signed-in person only (Real build, "The shell on the API").
 
-**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. A refused save shows its message in a toast and keeps the draft, with or without a step-up (`saveSection` in `apps/web/src/features/settings/form/save-section.ts`). `DemoStore.resetSettings` exists, but no screen calls it.
+**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. Localization and tax and Sales and documents save one tab at a time through `updateLocalization`; only that tab is replaced. A refused save shows its message in a toast and keeps the draft, with or without a step-up (`saveSection` in `apps/web/src/features/settings/form/save-section.ts`). `DemoStore.resetSettings` exists, but no screen calls it.
 
 **Change company access.** Platform admin, Company. `AccessEditor` in `apps/web/src/features/admin/access-editor.tsx`, loaded by `company-access-page.tsx`, edits modules, ceiling, user limit and branch limit, with a live preview. Save access sends only the parts that changed through `updatePlatformCompanyAccess`. It applies at once. A ticked Users, Security roles or Audit log key can't be unticked ("Every company keeps this permission"), and the shared check runs before anything is sent. In api mode it asks for a step-up first and reads the company again after the save, and the platform `support` role sees the page read only (see Real build).
 
@@ -437,7 +437,17 @@ Formulas below are copied from the code.
    | `meetings` | `settings.meetings.manage` | `settings.meetings` | `meetings` |
    | `email` | `settings.notifications.manage` | `settings.notifications` | `platform` |
 
-   `updateSettings` checks, in this order, the same as the API: the module ("This part of the product is not switched on for your company."), the keys (the role message), the switch ("This feature is switched off."), data scope `all` ("Company settings cover the whole company."), then the section's content rules (`settingsSectionProblem` in `packages/shared/src/settings/section-rules.ts`). The `localization` keys are the demo's whole-section rule; API routes go per tab.
+   Localization and tax and the Sales and documents page save one tab at a time (`LOCALIZATION_TABS` in the same file; ADR 0059, part 2a). Each tab has exactly one key:
+
+   | Tab | Key | Feature | Module | Audit target |
+   | --- | --- | --- | --- | --- |
+   | `region` | `settings.localization.manage` | `settings.localization` | `platform` | Region |
+   | `currency` | `settings.localization.manage` | `settings.localization` | `platform` | Currency |
+   | `tax` | `settings.tax.manage` | `settings.localization` | `platform` | Sales tax |
+   | `payroll` | `settings.localization.manage` | `settings.localization` | `hr` | Payroll rules |
+   | `documents` | `settings.localization.manage` | `settings.localization` | `core` | Sales and documents |
+
+   `updateSettings` and `updateLocalization` check, in this order, the same as the API: the module ("This part of the product is not switched on for your company."), the keys (the role message), the switch ("This feature is switched off."), data scope `all` ("Company settings cover the whole company."), then the content rules (`settingsSectionProblem` in `packages/shared/src/settings/section-rules.ts`; per tab `localizationTabProblem` in `localization-rules.ts`). The `localization` keys are the demo's whole-section rule for `updateSettings("localization")`, which no screen calls; screens and the API save per tab (`LOCALIZATION_TABS`).
 
 8. **Private collections.** `PRIVATE_COLLECTIONS` in `store.ts`. `list` returns an empty array without the key.
 
@@ -840,7 +850,7 @@ Formulas below are copied from the code.
 | --- | --- | --- | --- | --- |
 | `Changed company access` | `ceiling` | Company name | `updatePlatformCompanyAccess`, demo only, and only when the save changes something (ADR 0053). Actor is `Platform admin`, role `Super-admin`. The API writes `company.access_changed` to `platform_audit_log` instead (see Real build) | `store.ts` |
 | `Changed branding` | `settings` | `Branding` | `updateSettings("branding")` | `store.ts` |
-| `Changed localization and tax` | `settings` | `Localization and tax` | `updateSettings("localization")` | `store.ts` |
+| `Changed localization and tax` | `settings` | The tab's label: `Region`, `Currency`, `Sales tax`, `Payroll rules` or `Sales and documents` (`Localization and tax` for the whole section) | `updateLocalization(tab)`; `updateSettings("localization")`. On the API, `PUT /settings/localization/documents` and `/payroll` (ADR 0059, part 2a) | `store.ts`, `settings.service.ts` |
 | `Changed number format` | `settings` | `Number format` | `updateSettings("numbers")` | `store.ts` |
 | `Changed company profile` | `settings` | `Company profile` | `updateSettings("profile")` | `store.ts` |
 | `Changed payments` | `settings` | `Payments` | `updateSettings("payments")` | `store.ts` |
@@ -878,7 +888,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. A status set on the console's Status tab (ADR 0056) shows in the console and its audit log only: the company keeps working on its own side and stays on the sign-in list. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", parts 2 and 4.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
 - **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
-- **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_SECTIONS` accepts either key. Only the tabs separate them. Settings part 3 on the API separates them per tab (ADR 0059, Later parts).
+- **Closed for every screen (ADR 0059, part 2a): "`settings.tax.manage` is enough to save all of `localization`."** Each tab checks its own key in both modes (`LOCALIZATION_TABS`). Only `updateSettings("localization")`, which no screen calls, still takes either key.
 - **Most sensitive fields are hidden by the screens alone.** Product cost, margin and credit limit stay in the records `list` returns. Only pay rate and contract line estimated cost are removed by the store.
 - **The audit log is not a private collection.** `list("audit")` answers any viewer. Only the page checks `settings.audit.view`.
 - **`useCanViewAs` reads a role's raw permissions**, not the effective ones, so it ignores the ceiling. The View as banner's note reads raw permissions as well.
@@ -886,11 +896,12 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Fourteen permission keys are never checked.** They are listed under Permission keys.
 - **Installation is hidden, not removed.** Its 8 keys stay in the catalog, the role templates and the ceilings. Summit still has the module. `visibleModules` hides it from the matrix and the access page.
 - **`inventory.stock.adjust` and `inventory.stock.approve` have no page.** `inventory.adjustments` is removed. The Stock rules form on `/settings/locations` still shows its threshold.
-- **Profile, number format, payments and expense approval are validated by the shared rules in both modes** (`settingsSectionProblem`; ADR 0059), and the overtime rule of `localization` too. Other sections are validated by their forms until their part moves to the API.
+- **Profile, number format, payments, expense approval, Sales and documents and Payroll rules are validated by the shared rules in both modes** (`settingsSectionProblem`, `localizationTabProblem`; ADR 0059). Other sections are validated by their forms until their part moves to the API.
 - **A role with a scope narrower than the whole company can't save settings,** in either mode, and neither can View as such a role.
 - **A refused settings save shows its message and keeps the draft,** on every settings page, with or without a step-up.
 - **Amounts on Payments and Expenses** are plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign or bare point) or empty, and the payment and refund prefixes must differ (refunds have no unique number index).
-- **A section is replaced whole.** Two people editing different tabs of `localization` would overwrite each other. The demo has one user at a time.
+- **A section is replaced whole,** except Localization and tax and Sales and documents, which save one tab at a time (on the API under the row's lock, so two people saving different tabs keep both changes). The demo has one user at a time.
+- **Sales and documents percents** (late fee, default deposit, each default waste) follow the quote's percent rule: plain decimal text from 0 to 100, no sign, bare point or exponent. Days are whole (quotes valid 1 to 365, balance due 0 to 365), the default waste covers exactly the product categories, the quote, invoice and purchase order prefixes differ from each other (without case), and the legal footer is at most 1,000 characters. Payroll rules refuse the California rule while its switch is off and a holiday state that isn't a US state code.
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
@@ -945,13 +956,20 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **A company that never saved a section** gets what the API acts on: the US number format, expense approval off, a blank profile, and payments "every payment waits, nothing can be written off" (the API refuses payments until Payments is saved).
 - **The demo** applies the same module, key, switch, scope and content rules in the same order (module first, as the API), and reads every section in full from the browser.
 
+**Settings on the API, part 2a (ADR 0059): Sales and documents and Payroll rules:**
+- **Who reads what.** `GET /settings` also answers `localization.documents` to people who see quotes (`sales.quote.view`: the builder's deposit, default waste and expiry), invoices (`sales.invoice.view`: the invoice and receipt footer) or purchase orders (`purchasing.order.view`: the PO footer), and to holders of `settings.localization.manage`; and `localization.payroll` to people who see timesheets (`hr.timesheet.view`, every default role of a company with HR), the HR overview, Settings → HR or the tab. Documents needs module `core` and payroll module `hr`; neither is hidden by the `settings.localization` page switch, because other screens read them. Region, Currency and Sales tax are not answered yet, and a company that never saved localization gets no `localization` at all.
+- **Which tabs save on the API.** Sales and documents (`PUT /settings/localization/documents`, module `core`) and Payroll rules (`PUT /settings/localization/payroll`, module `hr`), each with `settings.localization.manage`, the `settings.localization` switch (404 when off), data scope `all`, a body with exactly the tab's fields, and the shared rules, in that order. Only that tab of the stored localization changes, under the row's lock, with one audit entry ("Changed localization and tax", target "Sales and documents" or "Payroll rules"). No step-up. A company with no localization settings gets 409 `settings_missing`, and nothing is created.
+- **Region, Currency and Sales tax** still save in the browser in api mode, each with its own key (Sales tax `settings.tax.manage`), until Settings part 2b and part 3.
+- **A waste default changed while a salesperson's quote builder is open.** Lines she added before the change keep the old default; she can't see or edit their waste, and the server compares each new line with the current default, so every save of that draft is refused ("Your role does not allow changing waste.") until she removes and re-adds those lines or reloads. A builder opened after the change starts from the new default.
+- **The demo** applies the same keys, module, switch, scope and content rules in the same order, and names the tab in the audit log.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes when Settings → Locations moves to the API.
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
 - **The shell's branding** is still the demo's (`getSettings()`) until Settings part 6; the number format and the profile are the API's (ADR 0059).
-- **Settings pages not yet on the API save in the browser only:** Branding, Sales and documents, Localization and tax, Warehouses and showrooms, Shared costs (on the Expenses page), HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Settings pages not yet on the API save in the browser only:** Branding, Localization and tax's Region, Currency and Sales tax tabs, Warehouses and showrooms, Shared costs (on the Expenses page), HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
 - **Reset to default** reads the demo's original values, which the API was seeded with.
 - **The console's legal name** (`tenants.legal_name`) is the one given at sign-up; the company profile's legal name is the one documents print.
 - **The bell's and Outbox's money format** is still the demo's until the bell and Outbox move.
