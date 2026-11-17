@@ -1,6 +1,6 @@
 # Session 2026-11-17 15:10, B (Claude): Settings part 3a on the API: the Sales tax tab with versioned rules (queue item 2, task 2)
 
-Person: B (Claude), on B's Mac. Branch `feat/settings-tax-api`, base `cfb907f` (the handoff head of Settings part 2b, `feat/settings-region-currency-api`, draft PR #53, review clean). Main is `d0e4e20`. This is the main checkout. The paused whole-product check (`feat/check-whole-product`, draft PR #43) sits in its own worktree, `/Users/sarah/dev/flooring-platform-check`, and this branch never touches it. The draft PR is opened right after this log's first commit.
+Person: B (Claude), on B's Mac. Branch `feat/settings-tax-api`, base `cfb907f` (the handoff head of Settings part 2b, `feat/settings-region-currency-api`, draft PR #53, review clean). Main is `d0e4e20`. This is the main checkout. The paused whole-product check (`feat/check-whole-product`, draft PR #43) sits in its own worktree, `/Users/sarah/dev/flooring-platform-check`, and this branch never touches it. The draft PR, #54, was opened right after this log's first commit.
 
 **Stacked on PR #53.** Part 2b (#53) is stacked on part 2a (#52), part 1 (#51), and through them on GET /company (#50), B6 (#49), B5 (#48), B4 (#47), B1 (#46) and B3 (#45). None can merge yet: GitHub Actions is blocked by a billing problem on the account. The orchestrator chose, as the safest option, to cut this branch from 2b's handoff head with `git switch -q --no-track -c feat/settings-tax-api origin/feat/settings-region-currency-api`, so that STATUS and BRANCHES stay linear and the files 2b and 3a share (`localization-rules.ts`, `sections.ts`, the settings module, `localization-page.tsx`, 2a's and 2b's tests, ADR 0059, api-contract.md, the spec, FEATURES) can't conflict later (D22). The PR must merge after #45 to #53; when they merge, the orchestrator merges `origin/main` into this branch.
 
@@ -126,7 +126,21 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **D32, outer bounds as 2b landed them** (2b's D23 and B4): fixed words carry the bound; jurisdiction, name, rates and note (words that name a state or county) and the never-stored `id`, dates and version take none; the JSON body limit bounds the request.
 
 ### Decisions taken during the build
-(Filled in during stages 1 and 2.)
+- **B1, a text is within its bound by its stored length.** `textWithin` takes a jurisdiction, county or name that is not blank once trimmed and at most its maximum **as typed** (strings are stored as typed, 2a's convention), so the stored text never exceeds the bound; the plan's wording ("a text, trimmed, … at most `max` long") would have let trailing spaces past it. SR3 pins 100 taken and 101 refused.
+- **B2, ST8 checks the county rate's source on an invoice.** A quote's answer carries no `taxSource` (only invoices do), so ST8.1 sends, accepts and converts the Adams quote and checks the invoice's source (`{ kind: "jurisdiction", label: "Adams County combined rate (example)" }`) besides the quote's total (481.50).
+- **B3, ST7 compares issued invoices by what they keep of their tax.** I1 and B1's invoice are compared through `GET /invoices` on `subtotal`, `tax`, `total`, `taxRule`, `taxSource` and `issuedAt` (an answer's derived fields, such as a balance, may move with the credit note taken on I1), and their database rows (`tax`, `total`, `updated_at`) are compared right after the PUT, before any later document. The credit note is the last document of the case.
+- **B4, ST7's figures.** Pinned by the red run on 2b's head (step 1 passed there): Q1 `489.65`; I1 tax `39.65`, total `489.65`, `taxRule` CO version 1; B1 (400.00 billed of a 1,000.00 material line at 10 % retainage) subtotal `400.00`, tax `35.24` (8.81 % of the whole gross, as `contract-billing.int.test.ts`'s 600.00 → 52.86), total `395.24`. The after-change figures, computed by hand in the plan, matched the green run: a new CO quote `488.25`; Q2 converted after the change tax `38.25`, total `488.25`, version 2, and Q2's stored total `488.25`; B2 (to 700.00) subtotal `300.00`, tax `25.50`, total `295.50`, version 2; the credit note's tax `8.81`; Q1 saved again `488.25`.
+- **B5, the ST file works out the day before itself.** Its `dayBefore(day)` is `addDays(day, -1)`, not the shared `closesOn`: an expectation built on `closesOn` would move with a wrong `closesOn`, so TM6 would pass ST6.
+- **B6, ST16 doesn't put Colorado back.** Nothing after it reads verco's Colorado (ST19 uses taxco, ST20 zoneco).
+- **B7, ST14 sends taxco's own Adams rate with otherco's row id.** ST8 leaves an Adams rate in force in taxco, so adding a second Adams row would be refused as a duplicate county; ST14 changes taxco's Adams to 5.5 under otherco's id and checks that taxco has a new row with its own id and otherco's rows are untouched.
+- **B8, passing on 2b's head by design:** ST18, L16, RC1, W2 (as planned) and TD6 (2b's `updateLocalization` already checks Sales tax's key, scope and switch, and Harbor's Owner could already save the tab). Every other new or changed case was red.
+- **B9, TE2 is red at its heal on 2b's head,** before its read-only checks (the plan expected it to fail at "Texas valid from" being enabled): `GET /settings` answers no `tax` there, so the heal throws. The same product reason; no test change.
+- **B10, S7 doesn't pin 2025-01-01.** DemoStore moves fixture dates to its anchor (13 days later today), so S7 checks that "Colorado valid from" is a date that isn't today before the save, and the browser's own day right after it (read in the page, as DemoStore's `todayIso` is the browser's day).
+- **B11, TE1 checks the Harris quote's total against the same quote posted for Montana.** A quote's answer has no subtotal; Montana has no rule and isn't a state of operation, so that quote's total is its subtotal, and the Harris total must be subtotal + round(subtotal × 8.5 %) (decimal arithmetic in the test, independent of the engine). It adds one draft quote per run to the e2e database.
+- **B12, the demo spec's `confirmCode` and `expectAuditRow` moved to the top of `tests/e2e/settings.spec.ts`,** so S7 and S8 share them with S4 to S6 (no duplicated logic).
+- **B13, the ST file's unused destructured names** (`_rules`, `_jurisdictions`, `_id`, `_tax`) failed `api:lint`; replaced by explicit objects and a `delete` (in commit 2).
+- **B14, mutation forms.** TM8 keeps `used` referenced; TM28 answers null for every draft but the current tab itself (TP1's drafts are all new objects); TM30 guards the audit call with a condition that is never true; TM12 judges each row on its own start, so every row is kept; TM40 refuses every change of whether prices include tax; TM10 sets `deleted_at` instead of `valid_to`. **TM12 is expected in SR2 and ST6** (not ST1): taxco's and floorco's rows are all in force on the day, so ST1 can't see a row that isn't; ST6.6's later New Jersey row does.
+- **B15, no stop-and-ask item came up:** no table, migration or dependency; nothing in core, providers or packages/db; no control write. 15 product files, as planned.
 
 ## Owner questions
 None blocks; each has its safest default taken.
@@ -141,10 +155,32 @@ None blocks; each has its safest default taken.
 - **Q9, a page left open.** Taken: last save wins, both audited, as every settings section. Refuse a save made from a stale page (a version check; Reset to default would then need the page's current versions)?
 - **Q10, snapshot versions for county and company-default rates.** Taken: the invoice keeps the rate; its version names the state rule (or 1). Add a county version or id to the snapshot (a schema change)?
 
+## Which test pins which path
+| Path | Tests | Mutations |
+| --- | --- | --- |
+| Key, no module, audited | ST0, ST3, ST17, L0 | TM15, TM16 |
+| Readers, in force, raw rates | ST1, ST11, SR2, SR7, LR3, TW2 | TM12, TM12b, TM13, TM14 |
+| Strict body, content words, order, bounds | ST4, SR3, TD2, TP1, S8, TE1 step 2 | TM18 to TM21, TM29 |
+| Rate text by value | SR1, ST5, TD3 | TM3, TM4, TM5 |
+| Versions, closing, numbering | ST6, SR4, TD1 | TM6 to TM10, TM31, TM35 |
+| Every live row reaching the day; tie-break | SR2, SR4.8, ST6.6 | TM36, TM37 |
+| Documents keep tax; quotes follow the day | ST7, TD7, TE1 step 6 | TM9 |
+| County rates, identity by county, by value | ST8, ST5a, SR4.5, TD4, TD10 | TM11, TM32, TM34, TM39 |
+| Company default | ST9, SR4.6, TD5 | TM22 |
+| Prices back to exclusive only | SR3, TD9, ST4, TE2 | TM18, TM40 |
+| Step-up after content | ST10, ST4 | TM1, TM2 |
+| Switch, scope, ceiling, company, refusals | ST11 to ST15 | TM14, TM15, TM16 |
+| Lock and serialization | ST16 | TM17 |
+| The company's day | ST20 | TM33, TM33b |
+| Block stored without tables, answer read back | ST6.1, ST6.5, ST19 | TM23, TM30 |
+| Web routes tax to the API | TW1, TE1 | TM27 |
+| Page rule before the code; read-only dates and prices; remount | TP1, S7, S8, TE1 step 4, TE2 | TM24, TM28, TM38 |
+| Demo versioning | TD1, S7 | TM25 |
+
 ## For STATUS
-The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). This PR is #<n> (filled in below once opened).
-- **"In progress" and "Next three tasks" item 2:** after 2b's "(part 2b: draft PR #53, …)", add "part 3a Sales tax (draft PR #<n>, `feat/settings-tax-api`, stacked on #53); part 3b retires the whole-section save next".
-- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: <filled in at handoff>."
+The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). This PR is #54.
+- **"In progress" and "Next three tasks" item 2:** after 2b's "(part 2b: draft PR #53, …)", add "part 3a Sales tax (draft PR #54, `feat/settings-tax-api`, stacked on #53); part 3b retires the whole-section save next".
+- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #54 (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: <filled in at handoff>."
 - **Close:**
   - B6's "The Settings move: tax rule and county `ratePct` are numeric(18,8) and answered raw; their write check must use the shared pattern (Settings part 3)." → done (`TAX_RATE_TEXT`, compared by value).
   - 2a's and 2b's "**Settings part 2b** …, then part 3 (Sales tax). The quote builder's tax preview still reads …" → done for Sales tax; keep "part 3b (the whole-section save), then Settings parts 4 to 6".
@@ -160,7 +196,7 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
   - **The api-mode e2e adds Texas versions on every run** (each change and restore); harmless, but the shared database's `tax_rules` grows.
   - **County rates without a rule under them** are allowed (inert); a warning on the tab (Q7).
   - **API test helpers** have a fourth per-file copy (ST); the sweep stays open.
-- **Owner questions:** a block "Owner questions (PR #<n>, Settings part 3a; none blocks)" with Q1 to Q10 above.
+- **Owner questions:** a block "Owner questions (PR #54, Settings part 3a; none blocks)" with Q1 to Q10 above.
 - **BRANCHES:** a `feat/settings-tax-api` row: "B (Claude)", "Queue item 2, task 2, Settings part 3a: Sales tax on the API with versions (main checkout; stacked on #53)", "Draft" then the state at handoff, the PR, "see the branch".
 
 ## Commands run
@@ -172,3 +208,73 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `git switch -q --no-track -c feat/settings-tax-api origin/feat/settings-region-currency-api` | on `feat/settings-tax-api` at `cfb907f` |
 | `docker ps`; `lsof` on 3000 and 4000 | 5432 and 5433 up; both ports free |
 | scripts `settings3/checks.sh`, `settings3/e2e-demo.sh` (from 2b's, `sed`) | written; the log folder found in all three scripts, `S[78]` in the demo one |
+| Spec edits (`settings-and-permissions.md`, decided behaviour); commit 0 `7137931`, pushed with `-u` by naming the branch; `gh pr create --draft …` | pushed; draft PR #54 |
+| **Stage 1:** the tests of plan 7.1 to 7.7 and the 7.8 edits; `prettier --write` then `--check` on the eleven test files | all formatted |
+| `heavy.sh pnpm --filter @workspace/shared exec vitest run test/tax-settings.test.ts test/localization-rules.test.ts test/region-currency-rules.test.ts test/access-rules.test.ts` (`s1-shared-red.log`) | **red as planned:** 12 failed, 38 passed. SR1 to SR8 (`TAX_RATE_TEXT`, `taxInForce`, `taxProblem`, `taxChanges`, `closesOn`, `TAX_MESSAGES` undefined; SR7 served tabs without `tax`); LR2, LR3 (lists without `tax`); LR6, RG7 (`TAX_MESSAGES` undefined). `access-rules.test.ts` passed |
+| `heavy.sh pnpm --filter api exec vitest run --project integration test/settings-tax.int.test.ts test/settings-localization.int.test.ts test/settings-region-currency.int.test.ts` (`s1-int-red.log`, 21 s) | **red as planned:** 31 failed, 59 passed. ST0 (no `saveTax` handler); ST1 (no tax readers: "owner reads tax: expected false to be true"; taxco "expected … to have property tax"); ST2 (`PUT …/tax` 404, not 409); ST3 to ST17, ST19, ST20 at their first `GET /settings` read of the tab (no `tax`); L0 (four handlers, five tabs expected), L1 and L9 (lists without `tax`). ST7's step 1 passed there, pinning its before figures (B4). ST18, L16 and RC1 passed (by design) |
+| `heavy.sh pnpm --filter web exec vitest run tests/unit/settings-answer.test.ts tests/unit/demo-tax.test.ts tests/unit/tax-form.test.tsx` (`s1-web-red.log`) | **red as planned:** 11 failed, 16 passed. TW1 (nothing sent to the API), TW2 (DemoStore's tax kept); TD1, TD3, TD4, TD5, TD7, TD10 (the demo stores the tab as sent: CO stays version 1, ids and dates as sent); TD2, TD9 (`TAX_MESSAGES` not exported); TP1 (`taxForm` is not a function). W2 and TD6 passed (B8) |
+| Commit 1 `0bfb73b` (the tests), pushed by naming the branch | pushed |
+| `demo-tax.test.ts` and `tax-form.test.tsx` set aside in `settings3/red-keep/` (they import names 2b's head lacks); `heavy.sh flows/api-e2e.sh settings3-red --build -- tests/e2e-api/settings-tax.spec.ts` | **red as planned** in 12 s (builds 6 s): TE1 and TE2 both at their heal, "GET /settings answers no Sales tax tab" (B9) |
+| `heavy.sh bash settings3/e2e-demo.sh red` (`s1-demo-red.log`, 45 s) | **red as planned:** S7 at "Colorado valid from" (expected disabled, received enabled); S8 at the toast (the demo saved the rate, so the code dialog opened instead) |
+| `git checkout -- apps/web/tests/unit`; `git status --short` | the set-aside files back; clean |
+| **Stage 2:** the 15 product files (section 4 of the plan); `prettier --write` then `--check` | formatted |
+| `heavy.sh pnpm --filter @workspace/shared exec vitest run …` (the four shared files, `s2-shared-1.log`) | 50 passed |
+| `heavy.sh pnpm --filter api exec vitest run --project integration …` (ST, L, RC; `s2-int-1.log`, 23 s), then the ST file with `--reporter=verbose` | 90 passed; 34 ST cases listed, each passed |
+| `heavy.sh pnpm --filter web exec vitest run …` (settings-answer, demo-tax, tax-form, demo-localization, demo-region-currency, region-currency-forms, demo-settings) | 63 passed |
+| `heavy.sh settings3/checks.sh s2 @workspace/shared:test @workspace/shared:typecheck @workspace/shared:lint api:typecheck api:lint api:test` | shared 1,161 tests, typecheck and lint pass; API typecheck and unit tests (126) pass; **API lint 4 errors** (the ST file's unused destructured names, B13) |
+| ST file fixed; `heavy.sh settings3/checks.sh s2b api:lint api:typecheck` | both pass |
+| `heavy.sh settings3/checks.sh s2 web:test web:typecheck web:lint` (26 s) | web 417 tests, typecheck and lint pass |
+| `heavy.sh pnpm --filter api exec vitest run --project integration` the plan's 14 files (settings-tax, settings-localization, settings-region-currency, settings, sales, invoices, contract-billing, accounting, stock-issue, imports, company, meetings, permissions, isolation; `s2-int.log`, 76 s) | 14 files, 313 tests passed: every file that inserts tax rows passes unchanged |
+| Commit 2 `0809465` (the 15 product files and the ST lint fix), kept local until the mutations ran | committed |
+| `python3 settings3/mutate.py --check TM1 … TM40` (41 mutations; TM26 is part 3b's) | 41 anchors found once each |
+| `heavy.sh python3 settings3/mutate.py TM1 … TM40` on commit 2 (`s2-mutations.log`, 664 s); then `git status --porcelain` | **41 of 41 caught**, every file restored byte for byte; only this log was modified in the tree |
+
+### Mutations (stage 2, on the committed change `0809465`; `settings3/mutate.py`)
+Each mutation is made in one file, its commands run, and the file is put back with `git checkout --`. The tests that failed under each (the expected ones first):
+- **TM1** (controller: no step-up in `saveTax`): ST10, ST12, ST19.
+- **TM2** (controller: step-up before `taxProblem`): ST4 (its last line: a fresh Owner gets `step_up_required`, not the rule's words). ST10 still passes: a step-up is still required, only in the wrong order.
+- **TM3** (`TAX_RATE_TEXT` takes eight free decimals): SR1, SR3, SR6, ST4, ST5, ST7, ST8, ST14.
+- **TM4** (three whole digits): SR1, SR3, ST5 ("100" taken).
+- **TM5** (`sameRule` compares rates as text): SR4, ST3, ST5, ST5a, ST6, TD3.
+- **TM6** (`closesOn` answers the day itself): SR5, ST6, ST8, ST16, ST20.
+- **TM7** (no rule is ended): ST6, ST7, ST14, ST16, ST20.
+- **TM8** (version = the one in force + 1): SR4, ST6.
+- **TM9** (the rule in force updated in place, nothing ended or inserted): ST3, ST5, ST6, ST7, ST16, ST20.
+- **TM10** (ended rows soft-deleted instead of dated): ST6, ST7, ST14, ST16, ST20.
+- **TM11** (a new county rate keeps the sent id): SR4, ST8, ST14.
+- **TM12** (`taxInForce` keeps every row): SR2, SR4, ST6 (B14: not ST1).
+- **TM12b** (no `picked.tax` line in `answer`): ST1 and every case that reads the tab (ST3 to ST20 but ST15 and ST18).
+- **TM13** (Sales tax readers without `sales.quote.view`): SR7, LR3, ST1, ST11, ST13.
+- **TM14** (Sales tax hidden while the page is off): LR3, ST11.
+- **TM15** (no scope check): ST12.
+- **TM16** (no switch check): ST11.
+- **TM17** (the rows read before the transaction, outside the lock): ST16, ST2.
+- **TM18** (no prices check): SR3, ST4, TD2, TD9.
+- **TM19** (no filing or certificate check): SR3, ST4, ST16.
+- **TM20** (no duplicate-state check): SR3, ST4.
+- **TM21** (no duplicate-county check): SR3, ST4, ST8.
+- **TM22** (a changed default keeps the sent date): SR4, ST9.
+- **TM23** (the whole tab stored as the block): ST6.
+- **TM24** (the dispatcher's tax rule answers null): SR6, TD2, TD9, TP1.
+- **TM25** (the dispatcher stores the tab as sent): SR6, TD1, TD3, TD4, TD5, TD7, TD10.
+- **TM27** (the transport keeps Sales tax on DemoStore): TW1.
+- **TM28** (the page's rule answers null): TP1.
+- **TM29** (the rule object not strict): ST4, ST14.
+- **TM30** (no audit entry): ST3, ST16, ST19.
+- **TM31** (opened rules take the sent start): SR4, ST3, ST6, ST16, ST20.
+- **TM32** (no `makeId`: new county rates keep the sent id): ST8, ST14.
+- **TM33** (`saveTax` on UTC's day): ST20.
+- **TM33b** (`answer` on UTC's day): ST20.
+- **TM34** (`sameJurisdiction` compares rates as text): SR4, ST5a, ST8.
+- **TM35** (`latest` without soft-deleted rows): ST6 (the unique index refuses MD v2).
+- **TM36** (only the row in force ends): SR4, ST6.
+- **TM37** (`newest` without the version and id tie-breaks): SR2.
+- **TM38** (`revision` a constant): TP1.
+- **TM39** (county rates matched by id): SR4, ST5a, ST8, TD4, TD10.
+- **TM40** (every change of prices refused): SR3, TD9.
+
+## Stages 0 to 2: outcome
+- **Stage 0:** the preconditions held (2b's handoff `cfb907f` on top, its dated ADR section, 2a's head an ancestor, PR #53 a draft, no product change after the plan's base); the branch cut; the scripts written; this log and the spec's decided behaviour committed (`7137931`); draft PR #54 opened.
+- **Stage 1:** every new and changed test written before the code and red on 2b's head for the planned reason, except those that pass on both heads by design (B8); committed (`0bfb73b`). The api-mode e2e (TE1, TE2) and demo e2e (S7, S8) red runs failed for the planned reasons (B9 for TE2's step).
+- **Stage 2:** the 15 product files (1 new, 2 comment-only), as planned; shared, API and web lint, typecheck and unit tests pass; the 14 integration files pass (313 tests); 41 of 41 mutations caught. No stop-and-ask item, no change to packages/db, core, providers or the control database.
+- **Left for the next stages:** stage 3 (the green api-mode and demo e2e: TE1, TE2, S7, S8 and the subsets), stage 4 (ADR 0059 section, api-contract, sales.md, data-model, delta, FEATURES), stage 5 (full checks, both suites, `/review`, the security review, the handoff).
