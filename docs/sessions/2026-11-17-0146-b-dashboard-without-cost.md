@@ -138,6 +138,10 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **The probe is deleted** after the green run (a copy stays in the scratchpad's `b5/keep`). Every step logged `ok`, Sales → Team included, with no `pageerror`.
 - **The demo regression's one skip** is `reports.spec.ts` "sales tax report reads the jurisdiction each invoice stored", which skips itself while `reports.tax-jurisdiction` is off (`skipIfFeatureOff`, unchanged by B5).
 
+#### Stage 4 (docs)
+- **ADR 0037's history stays.** B1's "B5, recorded, not fixed" bullet gains only "(Fixed 2026-11-17, see below.)", and its follow-up "The View as banner's wording for a margin-only role, after B5" gains "(Done 2026-11-17, see below.)", the same kind of marker (D11 did it), so nothing B1 wrote is rewritten. The new dated section holds the context, D1 to D12, D18 and D19, "The P&L on the server is unchanged", the parity (Best sellers never affected by contract cost) and the follow-ups.
+- **FEATURES.md:** `dashboard.store` and `sales.team` name `inventory.product.view_sensitive` beside the margin key and list `dashboard-without-cost.test.ts` (the sync test checks shared and e2e test files only, so the web unit tests aren't listed). Their descriptions stay: "Sales sees own sales without margin" and "margin (sensitive)" are still true. `sales.quotes` is left as B1 left it.
+
 ## Which test pins which path
 - **The loader no longer throws:** `dashboard-without-cost.test.ts` `monthlyPnl` (Sales, no contract cost, null and missing cost, the empty month); Priya's api-mode test, step 3; the probe; M1, M2, M4.
 - **The 12-month totals are all or nothing:** `knownPnl` and `pnlTotals` cases; web `RevenuePanel` (b) and (c); M5, M6, M14.
@@ -217,3 +221,5 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `b5/logs
 | 3 | e2e mutation E2 (`bestSellersIn` with `dec(line.unitCost)`), `api-e2e.sh b5-e2e-mut-E2 --build -- sales.spec --grep B5`, then `git checkout --` | exit 1 after 23 s: the same failure at step 3, Luis's passed; `restored=True` |
 | 3 | `heavy.sh bash b5/e2e-demo.sh` (a demo build, `--project=flooring`, one worker: dashboard, shell, admin, hr-workspace, quote and reports specs) | exit 0: 27 passed, 1 skipped (the tax-jurisdiction report, switched off), in 22 s after an 11 s build. Ports free after |
 | 3 | `heavy.sh pnpm --filter web exec eslint tests/e2e-api/sales.spec.ts`; `pnpm exec prettier --check` on it | both clean |
+| 4 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts` | 7 passed |
+| 4 | `pnpm exec prettier --check` on ADR 0037, ADR 0055, the delta, api-contract.md, FEATURES.md and this log | clean |
