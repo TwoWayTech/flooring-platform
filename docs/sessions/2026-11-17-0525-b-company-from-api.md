@@ -231,9 +231,13 @@ Every commit carries `[skip ci]`; the handoff commit is the first without it.
 **The demo's seven skips** are the tests' own: six `skipIfFeatureOff` for switches that are `removed` (`installation.calendar` three times, `inventory.adjustments` twice, `reports.tax-jurisdiction` once), and `notifications.spec.ts` "marking an invoice sent …", which skips itself when the first open invoice is already sent ("This invoice was already sent"). The branch changes no invoice or notification code; that skip was not re-run on B6's head.
 
 ### Left for the next steps
-- `/review`, then a fresh read-only security-reviewer on `origin/fix/sales-quote-resave...HEAD`, focused on the plan's security list (as in the PR body). No `packages/db` change, so no schema-reviewer.
-- `/handoff`: STATUS and BRANCHES from "For STATUS" below.
+- Done at handoff: the review (round 1, clean; its summary posted on PR #50) and STATUS and BRANCHES from "For STATUS" below.
 - Ready and merge after #45 to #49 merge and `origin/main` is merged in, with `verify` and `e2e` green.
+
+## Review round 1 (final, clean)
+The orchestrator ran it on this branch's own commits (`4b78e8b..90734da`): a fresh, read-only security-reviewer with the plan's section 10, and a correctness reviewer. Both passed. No schema review: no schema or migration change.
+- **The one should-fix, raised by both:** a stored View as choice is kept per company (`fp-view-as:<companyId>`), not per person, so another person who may view as and signs in on the same tab inherits it. Two skeptics judged it a note: the key predates this branch, D16 scoped the gate to "someone who may view as", it is demo only, and nobody gains anything (the banner shows and "Stop viewing as" is one click). Both found one real point: the spec sentence this branch added overstated the rule. **Fixed at handoff:** settings-and-permissions.md now says the choice is cleared when someone who may not view as signs in, and that it is kept per company.
+- **Notes kept for later (STATUS, "GET /company follow-ups", review notes):** D5's new information (who is disabled; Q2); raw keys on held roles show part of what the ceiling blocks; the invite's server-side branch check (pre-existing; Q6); an invited-but-not-accepted person with an existing account passes `GET /company` (pre-existing); load (a full `GET /company` per `list("users")` reader, a quadratic name join); `CEILING_VIEW_KEYS` repeating `GET /roles`' list; the demo's `getWorkspace` giving every role; two out-of-date ApiClient JSDoc comments; two places still comparing the API person with DemoStore lists (already follow-ups).
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `company/logs` folder, and api-mode runs in `flows/logs`.
@@ -273,3 +277,7 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `company
 | 5 | `heavy.sh bash company/full.sh` (lint, typecheck, test, test:api, test:hooks) | exit 0 in 3 min 32 s: lint 16 s, typecheck 7 s, test 15 s, `test:api` 2 min 53 s, `test:hooks` 1 s. Counts in "Checks on the final code" |
 | 5 | `heavy.sh bash company/e2e-demo.sh all` | build 6 s; flooring 444 passed, 7 skipped, 504 s; hr 67 passed, 67 s; status 0. Ports free after |
 | 5 | `heavy.sh flows/api-e2e.sh company-all-final --build` | builds 13 s; 46 passed in 167 s (2.8 min). Ports free after |
+
+## Handoff (2026-11-17 06:55)
+- Review round 1 was clean. STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "GET /company follow-ups", and the spec sentence on View as corrected. The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing. PR #50 stays a draft until #45 to #49 merge and origin/main is merged in.
+- **Next prompt:** "Queue item 2, task 2 of the owner's queue of 2026-11-16: Settings, part 1 of 6 (Company profile, Number format, Payments and Expense approval on the API: `GET /settings` and `PUT /settings/<section>`, a step-up for Payments, company-wide scope). On a branch stacked on #50 while CI is blocked by billing, build the final plan, with a security review."
