@@ -71,6 +71,7 @@ import {
   LOCALIZATION_TABS,
   localizationTabProblem,
   localizationTabStored,
+  taxInForce,
   type LocalizationSettings,
   type SettingsSectionRule,
 } from "@workspace/shared";
@@ -832,7 +833,19 @@ export class DemoStore implements ApiClient {
   }
 
   async getSettings() {
-    return this.open().settings;
+    return this.answered(this.open().settings);
+  }
+
+  /**
+   * Settings as the API answers every read and write of them (ADR 0059, part 3a): the Sales tax tab
+   * in force on today (`taxInForce`), as `GET /settings` answers it on the company's day. Rows that
+   * ended before today or start later (saved demo data typed before part 3a) are neither shown nor
+   * sent back, so the tab saves and they drop out of the stored copy on its next save (spec, known
+   * limits). Pricing reads the stored copy, with every row, as before.
+   */
+  private answered(settings: CompanySettings): CompanySettings {
+    const { localization } = settings;
+    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, this.todayIso) } };
   }
 
   /**
@@ -856,7 +869,7 @@ export class DemoStore implements ApiClient {
       ...diff,
     });
     this.emit();
-    return db.settings;
+    return this.answered(db.settings);
   }
 
   /**
@@ -883,7 +896,7 @@ export class DemoStore implements ApiClient {
       ...diffSummary(current, stored),
     });
     this.emit();
-    return db.settings;
+    return this.answered(db.settings);
   }
 
   async getDefaultSettings() {
