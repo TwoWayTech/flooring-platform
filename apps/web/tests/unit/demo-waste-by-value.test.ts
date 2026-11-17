@@ -93,4 +93,13 @@ describe("wasteChanged compares waste by value (B6)", () => {
     expect(wasteChanged({ lines: [line({ wastePct: "10." })] }, undefined, PRODUCTS, defaults)).toBe(false);
     expect(wasteChanged({ lines: [line({ wastePct: "10" })] }, undefined, PRODUCTS, defaults)).toBe(true);
   });
+
+  it("(l) a line without a catalog product starts from a blank, read as 0", () => {
+    const saved = line({ wastePct: "10" });
+    expect(changed(line({ productId: undefined, wastePct: "50" }), saved)).toBe(true);
+    expect(changed(line({ productId: undefined, wastePct: "0" }), saved)).toBe(false);
+    expect(changed(line({ productId: "p-gone", wastePct: "50" }), saved)).toBe(true);
+    expect(changed(line({ productId: "p-gone", wastePct: "0" }), saved)).toBe(false);
+    expect(changed(line({ productId: undefined, wastePct: "50" }))).toBe(true);
+  });
 });

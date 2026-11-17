@@ -125,7 +125,9 @@ function wasteDiffers(had: string, sent: string): boolean {
  * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
  * keeps its waste unless the person may see it; a new line must carry the company default. A saved
  * line is the same line only with the same id and product (`savedQuoteLine`); waste is compared by
- * value, as in the API's `assertWaste` (`wasteDiffers`; STATUS B6).
+ * value, as in the API's `assertWaste` (`wasteDiffers`; STATUS B6). A line without a catalog product,
+ * including a saved line sent without the product it had, starts from a blank, read as "0", so it
+ * keeps no saved waste (B6 review round 4).
  */
 export function wasteChanged(
   quote: Pick<Quote, "lines">,
@@ -138,7 +140,7 @@ export function wasteChanged(
     const saved = savedQuoteLine(before?.lines, line);
     if (saved) return wasteDiffers(saved.wastePct ?? "0", line.wastePct);
     const product = products.find((p) => p.id === line.productId);
-    return !!product && wasteDiffers(defaultWastePct(product, defaults) ?? "0", line.wastePct);
+    return wasteDiffers((product ? defaultWastePct(product, defaults) : undefined) ?? "0", line.wastePct);
   });
 }
 
