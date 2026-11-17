@@ -31,8 +31,8 @@ All of Settings is too big for one review: nine sections, the locations collecti
 | `GET /settings` | `@AnyCompanyMember()`, `Cache-Control: no-store` | none | `SettingsAnswer`, cut for this person |
 | `PUT /settings/profile` | `settings.company.manage` | switch `settings.company` (404) → data scope `all` (403) → strict body (400) → `companyProfileProblem` (400) → save | the saved profile |
 | `PUT /settings/numbers` | `settings.numbers.manage` | switch `settings.number-format` → scope → strict body, each kind once → `numberSettingsProblem` against the stored format → save | the saved `NumberSettingsWire` |
-| `PUT /settings/payments` | `settings.payments.manage`, module `core` | switch `sales.payments` → scope → strict body → `paymentSettingsProblem` → **step-up** (403 `step_up_required`) → save | the saved `PaymentSettings` |
-| `PUT /settings/expenses` | `settings.expenses.manage`, module `core` | switch `finance.expenses` → scope → strict body → `expenseSettingsProblem` → save | the saved `ExpenseSettings` |
+| `PUT /settings/payments` | module `core`, then `settings.payments.manage` | switch `sales.payments` → scope → strict body → `paymentSettingsProblem` → **step-up** (403 `step_up_required`) → save | the saved `PaymentSettings` |
+| `PUT /settings/expenses` | module `core`, then `settings.expenses.manage` | switch `finance.expenses` → scope → strict body → `expenseSettingsProblem` → save | the saved `ExpenseSettings` |
 
 - **Explicit paths, not `:section`** (D2): each route declares its own permission and module, so the route inventories (`permissions.int`, `isolation.int`) see them, an unknown section is Nest's 404, and nothing clashes with `@Controller("settings/accounting")`.
 - **Strict bodies** (`settings-input.ts`): Zod `.strict()` at every level, with lengths. Strings are stored as sent; the content rule trims to check. Amounts are strings checked against `MONEY_TEXT`, never JSON numbers (D13).
@@ -58,7 +58,7 @@ All of Settings is too big for one review: nine sections, the locations collecti
 - **Four screen edits** (D16): `saveSection` makes a refused save show its message in a toast and keep the draft, on every settings page, with or without a step-up (it also fixes the silent Currency and Sales tax tabs); Payments gets `stepUp`; `SettingsForm` takes the section's shared rule (`problem`), which Save runs before the step-up dialog or the request (`nextSaveStep`), and Payments and Expense approval pass theirs (review round 1); Company profile builds its rules from the shared patterns and messages.
 
 ### 7. DemoStore
-`updateSettings` checks, for every section and in the API's order: the keys (the role message), the module ("This part of the product is not switched on for your company."), the switch ("This feature is switched off."), data scope `all` (`SETTINGS_SCOPE_MESSAGE`; View as limits it), then `settingsSectionProblem`. It can only refuse more than before. Kept different: DemoStore reads every section in full from its own copy; its step-up is the dialog alone (any six digits); its audit `before` and `after` are `diffSummary` text.
+`updateSettings` checks, for every section and in the API's order (`permissionDecision` refuses a module that is off before a missing key): the module ("This part of the product is not switched on for your company."), the keys (the role message), the switch ("This feature is switched off."), data scope `all` (`SETTINGS_SCOPE_MESSAGE`; View as limits it), then `settingsSectionProblem`. It can only refuse more than before. Kept different: DemoStore reads every section in full from its own copy; its step-up is the dialog alone (any six digits); its audit `before` and `after` are `diffSummary` text.
 
 ### 8. Smaller decisions
 - **D6, numbers as a list** in the GET, the PUT body and answer, and the audit entry; stored rows keep `NumberSettings`, which `loadMoneyFormat` reads.

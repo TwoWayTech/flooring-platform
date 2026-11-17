@@ -832,17 +832,18 @@ export class DemoStore implements ApiClient {
 
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
-   * the section's keys, its module, its page's switch, data scope `all` (View as limits it too,
-   * spec rule 22), then the shared content rules against the stored section.
+   * the section's module, then its keys (as `permissionDecision` in apps/api's permission guard),
+   * its page's switch, data scope `all` (View as limits it too, spec rule 22), then the shared
+   * content rules against the stored section.
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
     const rule = SETTINGS_SECTIONS[section];
-    await this.assertCan(db, rule.keys);
     const { access, company } = await this.granter(db);
     // The API's own words (`PERMISSION_REFUSALS.module_not_enabled` in apps/api's permission guard).
     if (!company.modules.includes(rule.module))
       throw new DemoRuleError("This part of the product is not switched on for your company.");
+    await this.assertCan(db, rule.keys);
     if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
     if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
     const problem = settingsSectionProblem(section, value, db.settings[section]);

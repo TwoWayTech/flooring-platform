@@ -45,11 +45,13 @@ afterEach(() => {
   SUMMIT_LOCALE.value = null;
 });
 
-/** Summit personas (fixtures): the Owner and a Sales rep; Harbor's Owner (HR Suite). */
+/** Summit personas (fixtures): the Owner and a Sales rep; Harbor's Owner and HR manager (HR Suite). */
 const DANA = "sm-usr-01";
 const PRIYA = "sm-usr-03";
 const HARBOR_OWNER = "hb-usr-01";
+const HARBOR_HR = "hb-usr-02";
 const ROLE_REFUSAL = "Your role does not allow this. Ask an Owner to change your security role.";
+const MODULE_REFUSAL = "This part of the product is not switched on for your company.";
 
 const noFiles: FileStore = {
   put: async () => undefined,
@@ -148,9 +150,17 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
   it("D7 an HR Suite company has no core module, so its Owner can't save payments", async () => {
     const store = await open("harbor", HARBOR_OWNER);
     const payments = (await store.getSettings()).payments;
-    await expect(store.updateSettings("payments", payments)).rejects.toThrow(
-      "This part of the product is not switched on for your company.",
-    );
+    await expect(store.updateSettings("payments", payments)).rejects.toThrow(MODULE_REFUSAL);
+  });
+
+  it("D7b the module is checked before the keys, as the API's permissionDecision does (review round 4)", async () => {
+    const owner = await open("harbor", HARBOR_OWNER);
+    const { payments, expenses } = await owner.getSettings();
+    // No one in Harbor holds the `core` key settings.expenses.manage, the Owner included.
+    await expect(owner.updateSettings("expenses", expenses)).rejects.toThrow(MODULE_REFUSAL);
+    const hrManager = await open("harbor", HARBOR_HR);
+    await expect(hrManager.updateSettings("payments", payments)).rejects.toThrow(MODULE_REFUSAL);
+    await expect(hrManager.updateSettings("expenses", expenses)).rejects.toThrow(MODULE_REFUSAL);
   });
 
   it("D8 the shared content rules: the company's locale and currency, and different prefixes", async () => {
