@@ -1,4 +1,4 @@
-import { monthlyPnl, salesByCategory } from "../analytics";
+import { monthlyPnl, salesByCategory, storedPnl } from "../analytics";
 import { withoutPayroll } from "../expenses";
 import { sum } from "../money";
 import type { NumberKind } from "../numbers";
@@ -84,7 +84,8 @@ function hubInvoices<T extends Pick<Invoice, "issuedAt" | "locationId">>(
  * Profit and loss by month (spec rule 24), computed from invoices and expenses, never typed by hand.
  * Cost of goods, gross margin, margin and net income need the `margin` flag (ADR 0055 S18); without
  * pay sight, payroll expenses are left out before anything is added up and the headers say so (S3).
- * Rows and totals hold only the visible columns.
+ * Rows and totals hold only the visible columns. It reads stored invoices only (the API's report
+ * rows, DemoStore's records), so it refuses an unknown cost (`storedPnl`; ADR 0037, 2026-11-17).
  */
 export function pnlReport(
   query: PnlQuery,
@@ -93,7 +94,7 @@ export function pnlReport(
 ): Report {
   const w = hubWindow(query.range, data.today);
   const expenses = (show.payroll ? data.expenses : withoutPayroll(data.expenses)).filter((e) => e.date >= w.from);
-  const months = monthlyPnl(w.months, hubInvoices(data.invoices, query, w), expenses);
+  const months = storedPnl(monthlyPnl(w.months, hubInvoices(data.invoices, query, w), expenses));
   const columns: ReportColumn[] = [
     { id: "month", header: "Month", format: "month" },
     { id: "revenue", header: "Revenue", kind: "money" },

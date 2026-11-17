@@ -32,6 +32,20 @@ export function sum(values: readonly DecimalInput[]): Dec {
   return values.reduce<Dec>((acc, v) => acc.plus(v), dec(0));
 }
 
+/**
+ * A sum over values that may be unknown: one unknown makes the whole sum unknown, never zero or a
+ * partial sum (CLAUDE.md rule 5; sales.md rule 13; ADR 0037, 2026-11-16 and 2026-11-17). An empty
+ * list is a known zero.
+ */
+export function sumKnown(values: readonly (Dec | null)[]): Dec | null {
+  let total = dec(0);
+  for (const value of values) {
+    if (value === null) return null;
+    total = total.plus(value);
+  }
+  return total;
+}
+
 /** Money as the canonical string stored in fixtures and the store, e.g. "1250.50". */
 export function moneyString(value: DecimalInput): string {
   return roundMoney(value).toFixed(2);

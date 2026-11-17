@@ -1,6 +1,7 @@
 import {
   auditLog,
   branches,
+  invoices,
   locations,
   products,
   rolePermissions,
@@ -514,6 +515,35 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("get", "/payments", cookies.dispatcher)).status).toBe(403);
     expect((await call("get", "/refunds", cookies.dispatcher)).status).toBe(403);
     expect((await call("get", `/files/${uuidv7()}`, cookies.dispatcher)).status).toBe(403);
+  });
+
+  it("lists invoices for a salesperson without `cost` or any line's `unitCost`, and for the Owner with both (B5)", async () => {
+    // The contract the web's dashboard relies on (CLAUDE.md rule 5; ADR 0037, 2026-11-17): a viewer
+    // without product cost gets no invoice cost at all, so the web must treat it as unknown.
+    type Listed = { id: string; cost?: string; lines: { unitCost?: string }[] };
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Mina Park" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const listed = async (cookie: string) =>
+      ((await call("get", "/invoices", cookie).expect(200)).body as Listed[]).find((i) => i.id === invoice.id);
+
+    const mine = await listed(cookies.salesA);
+    expect(mine).toBeDefined();
+    expect(mine).not.toHaveProperty("cost");
+    expect(mine!.lines.length).toBeGreaterThan(0);
+    expect(mine!.lines.filter((line) => "unitCost" in line)).toEqual([]);
+
+    const handle = await harness.companyDb(company.id);
+    let stored = "";
+    try {
+      const [row] = await handle.db.select({ cost: invoices.cost }).from(invoices).where(eq(invoices.id, invoice.id));
+      stored = row!.cost;
+    } finally {
+      await handle.close();
+    }
+    const owners = await listed(cookies.owner);
+    expect(owners?.cost).toBe(stored);
+    expect(owners!.lines).toHaveLength(mine!.lines.length);
+    expect(owners!.lines.every((line) => typeof line.unitCost === "string")).toBe(true);
   });
 
   it("never reaches another company's invoices, payments or files", async () => {

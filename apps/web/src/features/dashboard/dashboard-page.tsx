@@ -12,11 +12,14 @@ import {
   formatNumber,
   invoicesIn,
   isYear,
+  marginSeries,
   PERIOD_LABELS,
   pendingQuotes,
   periodRange,
   receivablesSummary,
   salesTotals,
+  seesMargin,
+  signedSubtotal,
   sparkSeries,
   teamStats,
   type DashboardPeriod,
@@ -47,8 +50,14 @@ import { useDashboardData, type DashboardData } from "./use-dashboard-data";
 const PENDING_QUOTES_HREF = filteredHref("/sales?view=quotes", "sales-quotes", "status", ["Pending"]);
 const TO_VERIFY_HREF = "/finance?view=payments";
 
-/** The key figures for the chosen period and warehouse, with the change vs the previous period. */
-function FigureRow({
+/**
+ * The key figures for the chosen period and warehouse, with the change vs the previous period (spec
+ * E1). Exported so its margin rule is unit-tested (dashboard-margin.test.tsx). The Gross margin card
+ * needs both keys (`seesMargin`) and a known cost for every invoice in the period, for its value and
+ * its sparkline; its change line is left out when the earlier period's margin is unknown, since "No
+ * earlier period to compare" would be untrue (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+ */
+export function FigureRow({
   data,
   period,
   locationId,
@@ -62,8 +71,10 @@ function FigureRow({
   const count = (n: number) => formatNumber(String(n), "count", numbers);
   const today = api.today();
   const { invoices, payments, ledgers } = data.sales;
-  const now = salesTotals(invoicesIn(invoices, period.from, period.to, locationId));
+  const inPeriod = invoicesIn(invoices, period.from, period.to, locationId);
+  const now = salesTotals(inPeriod);
   const before = salesTotals(invoicesIn(invoices, period.prevFrom, period.prevTo, locationId));
+  const marginPoints = marginSeries(inPeriod, period.from, period.to);
   const shipsFrom = new Map(invoices.map((i) => [i.id, i.locationId]));
   const paidIn = (from: string, to: string) =>
     payments.filter(
@@ -79,14 +90,6 @@ function FigureRow({
   const paidBefore = paidIn(period.prevFrom, period.prevTo)
     .reduce((s, p) => s.plus(p.amount), dec(0))
     .toString();
-  const series = (value: "subtotal" | "margin") =>
-    sparkSeries(
-      invoicesIn(invoices, period.from, period.to, locationId),
-      (i) => i.issuedAt,
-      (i) => (value === "subtotal" ? dec(i.subtotal) : dec(i.subtotal).minus(i.cost)).times(i.isReturn ? -1 : 1),
-      period.from,
-      period.to,
-    );
   const quotes = data.quotes.filter((q) => !locationId || q.locationId === locationId);
   const pending = pendingQuotes(quotes, today);
   const receivables = receivablesSummary(
@@ -101,16 +104,16 @@ function FigureRow({
         value={now.revenue}
         kind="money"
         change={changePct(now.revenue, before.revenue)}
-        points={series("subtotal")}
+        points={sparkSeries(inPeriod, (i) => i.issuedAt, signedSubtotal, period.from, period.to)}
       />
-      {can("sales.margin.view_sensitive") ? (
+      {seesMargin(can) && now.margin !== null && now.marginPct !== null && marginPoints !== null ? (
         <FigureCard
           label="Gross margin"
           value={now.margin}
           kind="money"
-          change={changePct(now.margin, before.margin)}
+          change={before.margin === null ? undefined : changePct(now.margin, before.margin)}
           note={`${formatNumber(now.marginPct, "percent", numbers)} of revenue`}
-          points={series("margin")}
+          points={marginPoints}
         />
       ) : null}
       <FigureCard

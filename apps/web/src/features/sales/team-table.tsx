@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   PERIOD_LABELS,
   periodRange,
+  seesMargin,
   teamStats,
   type DashboardPeriod,
   type Location,
@@ -22,9 +23,11 @@ import type { SalesLedger } from "@/lib/sales-ledger";
 type Row = ReturnType<typeof teamStats>[number];
 
 /**
- * Sales → Team (spec E2): per salesperson sales, paid revenue, margin (sensitive), quotes sent,
- * conversion, average deal and commission earned, paid and pending, for a period and warehouse.
+ * Sales → Team (spec E2): per salesperson sales, paid revenue, margin (both keys, known cost), quotes
+ * sent, conversion, average deal and commission earned, paid and pending, for a period and warehouse.
  * Data scope applies: Sales see their own row. The CSV is the payroll export of commission totals.
+ * The Margin column needs `seesMargin` and every shown row's margin known, or its total and the CSV
+ * would be partial (commissions.md Reports; CLAUDE.md rule 5; ADR 0037, 2026-11-17).
  */
 export function TeamTable({
   sales,
@@ -50,6 +53,7 @@ export function TeamTable({
     { ...sales, users, quotes, commission: new Map(commission.data ?? []) },
     { from: range.from, to: range.to, today: api.today(), locationId: warehouse === ALL_WAREHOUSES ? null : warehouse },
   ).filter((r) => r.userId === user.id || Number(r.sales) !== 0 || Number(r.paidRevenue) !== 0 || r.quotesSent > 0);
+  const marginShown = seesMargin(can) && rows.every((r) => r.margin !== null);
   const money = (id: keyof Row, header: string, total = true): ColumnSpec<Row> => ({
     id,
     header,
@@ -66,7 +70,7 @@ export function TeamTable({
     },
     money("sales", "Sales"),
     money("paidRevenue", "Paid revenue"),
-    ...(can("sales.margin.view_sensitive") ? [money("margin", "Margin")] : []),
+    ...(marginShown ? [money("margin", "Margin")] : []),
     { id: "quotesSent", header: "Quotes sent", kind: "count", value: (r) => r.quotesSent, total: true },
     { id: "conversion", header: "Conversion", kind: "percent", value: (r) => r.conversionPct },
     money("averageDeal", "Average deal", false),

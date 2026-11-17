@@ -6,7 +6,7 @@ import {
   depositAmount,
   dec,
   EXAMPLE_RULE_NOTE,
-  seesQuoteMargin,
+  seesMargin,
   stateName,
   type DocumentTotals,
   type TaxContext,
@@ -83,7 +83,7 @@ interface QuoteSummaryProps {
 /**
  * The quote summary (design brief wireframe): materials, labor, tax for the job-site state,
  * deposit and total, all from the shared calculator. Margin and the cost under it need the margin and
- * product-cost keys (`seesQuoteMargin`) and show only when every line carries its cost (sales.md rule
+ * product-cost keys (`seesMargin`) and show only when every line carries its cost (sales.md rule
  * 13; ADR 0037, 2026-11-16).
  */
 export function QuoteSummary({
@@ -101,7 +101,7 @@ export function QuoteSummary({
   const can = useCan();
   const [changingTax, setChangingTax] = useState(false);
   const deposit = depositAmount(totals.total, depositPct || "0");
-  const margin = shownMargin(totals, seesQuoteMargin(can));
+  const margin = shownMargin(totals, seesMargin(can));
   return (
     <div className="flex flex-col gap-4">
       <dl className="divide-hairline divide-y text-sm">

@@ -6,49 +6,23 @@ import {
   EXAMPLE_TAX_RULES,
   invoiceFromQuote,
   quoteLineFor,
-  roleTemplate,
   ruleForState,
-  sensitiveKeyFor,
   storedCost,
   type CompanyFixtures,
   type Customer,
   type DocLine,
   type DocumentTotals,
   type LocalizationSettings,
-  type PermissionKey,
   type Quote,
   type TaxContext,
   type ViewedDocLine,
 } from "../src";
+import { SALES, strippedFor } from "./viewed-records";
 
 const load = (name: string): CompanyFixtures =>
   JSON.parse(readFileSync(join(import.meta.dirname, "..", "fixtures", `${name}.json`), "utf8")) as CompanyFixtures;
 const summit = load("summit");
 const keystone = load("keystone");
-
-/** What the Sales role holds: neither product cost nor margin. */
-const SALES: ReadonlySet<PermissionKey> = new Set(roleTemplate("sales").permissions);
-
-/**
- * A copy of `value` as the API sends it to someone holding `held`: every property whose name is a
- * sensitive field (SENSITIVE_FIELDS) the viewer may not see is left out, at any depth. It models the
- * API's `stripSensitive` without importing the API.
- */
-function strippedFor<T>(value: T, held: ReadonlySet<PermissionKey>): T {
-  const strip = (node: unknown): unknown => {
-    if (Array.isArray(node)) return node.map(strip);
-    if (node === null || typeof node !== "object") return node;
-    return Object.fromEntries(
-      Object.entries(node)
-        .filter(([field]) => {
-          const key = sensitiveKeyFor(field);
-          return key === undefined || held.has(key);
-        })
-        .map(([field, inner]) => [field, strip(inner)]),
-    );
-  };
-  return strip(value) as T;
-}
 
 /** The totals a viewer without cost gets: the same as with cost, except that every cost and margin is unknown. */
 function withoutCost(full: DocumentTotals): DocumentTotals {

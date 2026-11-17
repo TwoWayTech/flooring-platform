@@ -1,4 +1,4 @@
-import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
+import { dec, marginPct, moneyString, roundMoney, sum, sumKnown, type Dec } from "./money";
 import { salesLines, type SalesLine } from "./sales-lines";
 import { daysBetween } from "./dates";
 import { countsAsCost } from "./expenses";
@@ -6,7 +6,18 @@ import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
 import type { InvoiceLedger } from "./ledger";
 import type { BillLedger } from "./operations/purchasing";
-import type { Bill, Expense, Invoice, InvoiceAdjustment, Job, Payment, Product, Refund, Roll } from "./types";
+import type {
+  Bill,
+  Expense,
+  Invoice,
+  InvoiceAdjustment,
+  Job,
+  Payment,
+  Product,
+  Refund,
+  Roll,
+  ViewedInvoice,
+} from "./types";
 
 /** Aging buckets by days past due (spec "Customers and receivables": current, 30, 60, 90+). */
 export const AGING_BUCKETS = [
@@ -98,45 +109,131 @@ export function inventoryValuation(
 export interface PnlMonth {
   month: string;
   revenue: string;
-  cogs: string;
-  grossMargin: string;
-  grossMarginPct: string;
+  /**
+   * null when an invoice of the month arrived without its cost: never zero or a partial sum
+   * (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+   */
+  cogs: string | null;
+  /**
+   * null when an invoice of the month arrived without its cost: never zero or a partial sum
+   * (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+   */
+  grossMargin: string | null;
+  /**
+   * null when an invoice of the month arrived without its cost: never zero or a partial sum
+   * (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+   */
+  grossMarginPct: string | null;
   expenses: string;
-  netIncome: string;
+  /**
+   * null when an invoice of the month arrived without its cost: never zero or a partial sum
+   * (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+   */
+  netIncome: string | null;
 }
 
 /** Signed revenue of an invoice: returns count against revenue. */
-function signedSubtotal(inv: Pick<Invoice, "isReturn" | "subtotal">): Dec {
+export function signedSubtotal(inv: Pick<ViewedInvoice, "isReturn" | "subtotal">): Dec {
   return inv.isReturn ? dec(inv.subtotal).negated() : dec(inv.subtotal);
 }
 
-/** Signed cost of an invoice. */
-function signedCost(inv: Pick<Invoice, "isReturn" | "cost">): Dec {
-  return inv.isReturn ? dec(inv.cost).negated() : dec(inv.cost);
+/**
+ * Signed cost of an invoice as received: returns count against; null when the cost was withheld
+ * (CLAUDE.md rule 5; sales.md rule 13), never zero.
+ */
+export function signedCost(inv: Pick<ViewedInvoice, "isReturn" | "cost">): Dec | null {
+  const cost = inv.cost ?? null;
+  if (cost === null) return null;
+  return inv.isReturn ? dec(cost).negated() : dec(cost);
 }
 
-/** Monthly P&L for the given months (YYYY-MM), from invoices and expenses. */
+/**
+ * Monthly P&L for the given months (YYYY-MM), from invoices as received and expenses. A month with
+ * an invoice whose cost was withheld has an unknown cost of goods, and so an unknown gross margin,
+ * margin percent and net income (rule 5; reports.md "Profit and loss"); a month with no invoices has
+ * a known zero. Revenue and expenses never depend on cost.
+ */
 export function monthlyPnl(
   months: readonly string[],
-  invoices: readonly Pick<Invoice, "voidedAt" | "issuedAt" | "subtotal" | "cost" | "isReturn">[],
+  invoices: readonly Pick<ViewedInvoice, "voidedAt" | "issuedAt" | "subtotal" | "cost" | "isReturn">[],
   expenses: readonly Pick<Expense, "status" | "category" | "date" | "amount">[],
 ): PnlMonth[] {
   return months.map((month) => {
     const inMonth = invoices.filter((i) => !i.voidedAt && i.issuedAt.startsWith(month));
     const revenue = sum(inMonth.map(signedSubtotal));
-    const cogs = sum(inMonth.map(signedCost));
+    const cogs = sumKnown(inMonth.map(signedCost));
     const opex = sum(expenses.filter((e) => countsAsCost(e) && e.date.startsWith(month)).map((e) => e.amount));
-    const gross = revenue.minus(cogs);
+    const gross = cogs === null ? null : revenue.minus(cogs);
     return {
       month,
       revenue: moneyString(revenue),
-      cogs: moneyString(cogs),
-      grossMargin: moneyString(gross),
-      grossMarginPct: marginPct(revenue, cogs).toString(),
+      cogs: cogs === null ? null : moneyString(cogs),
+      grossMargin: gross === null ? null : moneyString(gross),
+      grossMarginPct: cogs === null ? null : marginPct(revenue, cogs).toString(),
       expenses: moneyString(opex),
-      netIncome: moneyString(gross.minus(opex)),
+      netIncome: gross === null ? null : moneyString(gross.minus(opex)),
     };
   });
+}
+
+/** A P&L month whose every figure is known. */
+export type KnownPnlMonth = { [K in keyof PnlMonth]: NonNullable<PnlMonth[K]> };
+
+/**
+ * The P&L months with every figure, or null when any month's cost of goods is unknown: margin is
+ * shown for all of them or none (ADR 0037, 2026-11-17).
+ */
+export function knownPnl(months: readonly PnlMonth[]): KnownPnlMonth[] | null {
+  const known: KnownPnlMonth[] = [];
+  for (const m of months) {
+    if (m.cogs === null || m.grossMargin === null || m.grossMarginPct === null || m.netIncome === null) return null;
+    known.push({
+      ...m,
+      cogs: m.cogs,
+      grossMargin: m.grossMargin,
+      grossMarginPct: m.grossMarginPct,
+      netIncome: m.netIncome,
+    });
+  }
+  return known;
+}
+
+/** The 12-month panel's totals (spec E1): revenue always, margin only when every month's cost is known. */
+export interface PnlTotals {
+  revenue: string;
+  /** null when any month's cost of goods is unknown; never worked out over the known months only. */
+  margin: { grossMargin: string; marginPct: string; months: KnownPnlMonth[] } | null;
+}
+
+/**
+ * The 12-month panel's totals (spec E1): margin for every month or none, never over the known
+ * months only, since that would understate cost (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+ */
+export function pnlTotals(months: readonly PnlMonth[]): PnlTotals {
+  const revenue = sum(months.map((m) => m.revenue));
+  const known = knownPnl(months);
+  if (known === null) return { revenue: moneyString(revenue), margin: null };
+  const cogs = sum(known.map((m) => m.cogs));
+  return {
+    revenue: moneyString(revenue),
+    margin: {
+      grossMargin: moneyString(revenue.minus(cogs)),
+      marginPct: marginPct(revenue, cogs).toString(),
+      months: known,
+    },
+  };
+}
+
+/**
+ * The P&L of stored invoices, every figure known. Stored invoices always carry cost
+ * (`invoices.cost NOT NULL`; DemoStore's rows), so an unknown cost here means a browser's invoices
+ * reached a stored report: it fails rather than print a partial cost of goods (rule 5; ADR 0037,
+ * 2026-11-17), as `storedCost` does for documents.
+ */
+export function storedPnl(months: readonly PnlMonth[]): KnownPnlMonth[] {
+  const known = knownPnl(months);
+  if (known === null) throw new Error("An invoice has no cost, so the profit and loss can't be worked out.");
+  return known;
 }
 
 /** A product's sales over a period, from invoice lines. */
