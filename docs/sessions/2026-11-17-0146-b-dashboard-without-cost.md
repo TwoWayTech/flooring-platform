@@ -246,10 +246,19 @@ B5 is fixed in shared and web code, with no API, schema or DemoStore change. A s
 
 All carry `[skip ci]`. The throwaways (`zz-b5-probe.spec.ts`, `zz-b5-clock.spec.ts`) were deleted and never committed, and the e2e mutations E1 and E2 were restored from the index each time.
 
+## Review round 1 (final, clean)
+The orchestrator ran it on this branch's own commits (`5a6c653..c4dcc9f`): a fresh, read-only security-reviewer with the PR body's focus (cost, margin, a permission rule and `monthlyPnl`, which feeds the API's P&L) and a correctness reviewer. Both passed with notes only, so no skeptic pass was needed. No schema review: no schema or migration change.
+- **Notes kept for later (STATUS, "B5 follow-ups"):**
+  - The demo and View as still show margins that include contract-invoice cost to a viewer without effective contract cost; api mode relies on the server's strip (Q3).
+  - `SalesLedger.invoices` is still typed `Invoice[]`; Team's margin column reads its value through `String(r[id])`.
+  - A business-rule comment in `dashboard.ts` cites "D1" rather than the spec or ADR.
+  - Commission margin bases on the server (Q2), the 12-month precondition's expiry, and the §10.9 out-of-scope items, all recorded.
+
 ## Left
-- **The orchestrator's part:** `/review`; a fresh read-only security-reviewer on `origin/fix/contracts-branch-from-session...HEAD` (CLAUDE.md: cost, margin, a permission rule and `monthlyPnl`, which feeds the API's P&L), focused on the PR body's "Security-review focus"; its summary posted with `gh pr review 48 --comment --body-file`; STATUS and BRANCHES from "For STATUS" above; the handoff commit without `[skip ci]`.
+- **The orchestrator's part:** done at handoff (review round 1 clean, its summary posted on PR #48, STATUS and BRANCHES from "For STATUS"). The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing; the merge's own push runs CI.
 - **The merge waits for #45, #46 and #47,** which wait for GitHub Actions (blocked by billing). When they merge, `origin/main` is merged into this branch (never a rebase; conflicts are possible only in STATUS, BRANCHES and the top of the delta), then the PR is marked ready and self-merges under the CLAUDE.md rule once `verify` and `e2e` are green.
 - **B6 overlaps** in `sales.spec.ts`, sales.md, ADR 0037, the delta and api-contract.md; every overlap is an addition, and whichever merges second keeps both.
 - **The 5433 database has drifted from the seed:** Priya's latest live invoice there is 2026-11-16, left by earlier F1 runs. B5's test takes its window from her answer, so it passes either way.
 - **The e2e mutations at steps 5 and 6** are shown only by the throwaway clock proof (the browser's clock moved forward), not by the committed test on today's calendar, where they fail on landing. The committed test's steps 5 and 6 are the same actions as the proof's.
-- **Next in the queue:** B6 (a saved quote can't be saved again in api mode), where the owner places it (B1 Q6); then item 2 of the owner's queue.
+- **Handoff (2026-11-17 02:59):** STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "B5 follow-ups". GitHub Actions is still blocked by billing, so PR #48 stays a draft until #45, #46 and #47 merge and origin/main is merged in.
+- **Next prompt:** "B6, the next task of the owner's queue of 2026-11-16 (appended after B5 by the safest-option rule; the owner may move it, B1 Q6): on `fix/sales-quote-resave`, stacked on #48 while CI is blocked by billing, build the final plan (the API takes back the percents it answers, at stored scale, and compares waste by value; a saved line is the same line only with the same id and product), with a security review. Then queue item 2, `GET /company` first (ADR 0051 R1, Q-B4-2, and STATUS's bullet on R1 symptoms found while fixing B4)."
