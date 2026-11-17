@@ -357,3 +357,11 @@ Every file was restored (`git diff --quiet`). The `maxlength` attributes are pin
 | `api-e2e.sh settings2-r1 --build -- settings-localization, settings, invoices, sales, purchasing` (e2e-api) | exit 0 after 60 s (builds 13 s): 15 passed |
 | `e2e-demo.sh r1` (a new mode: demo build, then settings, credit-notes, invoice-lifecycle, quote, waste; one worker) | exit 0: 16 passed in 34 s (S2 with the `CR-` refusal and the `maxlength` checks among them) |
 | `full.sh` (lint, typecheck, test, test:api, test:hooks) | all exit 0 in 4 min 27 s: shared 1,144, web 391, api unit 126, db 18, providers 11; test:api: api 724, db 59, providers 2; hooks green |
+
+## Review round 2 (final, clean)
+The orchestrator's review workflow ran it on this branch's own commits after round 1's fix (`b898f05..65268f3`): a fresh, read-only security-reviewer and a correctness reviewer. Both passed with notes only, so no skeptic pass was needed. No schema review: no schema or migration change.
+- **Notes kept for later (STATUS, "Settings part 2a follow-ups", review notes):** prefixes compared for equality only (`Q-` and `Q-1` can share a visible number); no test pins that a tab save's audit entry is in the save's transaction; ADR 0059's part 2a section and api-contract lag round 1's state.
+
+## Handoff (2026-11-17 13:25)
+- Review round 2 was clean. STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "Settings part 2a follow-ups"; the review summary posted on PR #52. The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing. PR #52 stays a draft until #45 to #51 merge and origin/main is merged in.
+- **Next prompt:** "Settings part 2b (queue item 2, task 2): the Region and Currency tabs on the API (`PUT /settings/localization/region` and `/currency`; the zone answered from control `tenants.time_zone` and a change refused in both modes, never a control-database write; a change of states of operation also needs `settings.tax.manage` and a step-up; Currency always with a step-up after the content checks), stacked on #52 while CI is blocked by billing. Build the final plan, with a security review."
