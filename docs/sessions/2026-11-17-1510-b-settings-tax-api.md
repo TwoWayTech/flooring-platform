@@ -373,3 +373,12 @@ One confirmed finding (should_fix, demo only). Fixed in the safer direction: the
 - **Not re-run:** the full checks, because no shared, API, db or test-infra file changed (the last full checks and the 55 of 55 api-mode suite still hold for everything outside `store.ts`); the whole demo suite; the whole api-mode suite.
 - **Commits:** `c0f1581` (TD11, red), `6b41bf0` (the fix), and this commit (the spec, ADR 0059, delta and this log).
 - **Left or doubtful:** none from this finding. PR #54's body still says 15 product files; the orchestrator updates it at handoff. Markdown is prettier-ignored, so the docs were checked by reading them against the code.
+
+## Review round 3 (final, clean)
+The orchestrator's review workflow ran it on this branch's own commits after round 2's fix (`cfb907f..599d0d8`): a fresh, read-only security-reviewer and a correctness reviewer. Both passed with notes only, so no skeptic pass was needed. No schema review: no schema or migration change.
+- **Notes kept for later (STATUS, "Settings part 3a follow-ups", review notes):** the known 3b open path; demo-only version restart for a removed and re-added state; the tax block and the rule tables read outside one snapshot; a tab at every bound over the 100 kB body limit; duplicated county identity and category list; the ST helpers comparing rates as JS numbers; ST20 against UTC only; ADR 0059's stale test list.
+
+## Handoff (2026-11-17 17:34)
+- Review round 3 was clean. STATUS and BRANCHES applied from "For STATUS" by the orchestrator, with the review notes as "Settings part 3a follow-ups"; the review summary posted on PR #54. The full checks ran once more on the final head (`599d0d8`, 17:34 to 17:38): all green, with the counts in docs/sessions/2026-11-17-1737-b-queue-handover.md. The handoff commit carries `[skip ci]` while GitHub Actions is blocked by billing. PR #54 stays a draft until #45 to #53 merge and origin/main is merged in.
+- **The owner stopped the queue here** (2026-11-17, while part 3a was in review): part 3b is not started. Its final plan and part 4a's are committed as docs/specs/settings-part-3b-plan.md and docs/specs/settings-part-4a-plan.md. See STATUS "Handover for A".
+- **Next prompt:** "Settings part 3b (queue item 2, task 2): retire the whole-section localization save per docs/specs/settings-part-3b-plan.md, stacked on #54 while CI is blocked by billing (or on main once the stack has merged)."
