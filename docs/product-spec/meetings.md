@@ -491,7 +491,7 @@ Permissions and answers:
 Other:
 
 - A cancelled meeting disappears from the calendar. Its rows stay in the Outbox.
-- `timezoneBlock` in `calendar/ics.ts` has seven US zones. A file can't be written for any other zone (rule 15). Every zone the demo's Localization offers is one of the seven.
+- `timezoneBlock` in `calendar/ics.ts` has seven US zones. A file can't be written for any other zone (rule 15). The company's zone is set at setup and shown read only on Localization (ADR 0059, part 2b); every fixture zone is one of the seven.
 - Times are not converted between zones (ADR 0018).
 - A lead saved from a meeting has no Lead label in the customer list (U-52).
 - With `newGuestHandling: contact`, the picker preselects the first customer, so an unchanged form saves the guest under it.

@@ -164,6 +164,36 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 - **Owner questions:** a block "Owner questions (PR #<n>, Settings part 2b; none blocks)" with Q1 to Q8 above.
 - **BRANCHES:** a `feat/settings-region-currency-api` row: "B (Claude)", "Queue item 2, task 2, Settings part 2b: Region and Currency on the API, the zone from control and read only (main checkout; stacked on #52)", "Draft" then the state at handoff, the PR, "see the branch".
 
+## Which test pins which path
+| Path | Pinned by |
+| --- | --- |
+| Routes declare one key per tab, their module from the table | L0; RM1 |
+| GET: region to everyone with control's zone; currency to holders, hidden when off | RC1, RC11, RC13, RC14, L1, L9, LR3, RW1, Z1 step 4, Z2 step 4; RM2, RM14, RM15 |
+| The zone refused in both modes; no control write; a moved control zone followed | RC4, RG2, RD1, RD10, RP1, Z1 steps 1 and 2, S4 step 1; RM3 |
+| Country, locale and Region content rules, same words | RC5, RG1, RG2, RD2; RM16, RM19 |
+| States: tax key, step-up, sets, order of checks | RC6, RG3, RG7, RD3, RD4, RP1, SF6, Z1 step 5, S4 step 3, S6; RM4, RM5, RM6, RM17, RM23, RM29 |
+| Checks judge the locked row | RC16b; RM22 |
+| The server's tax follows the states, the invoice of an accepted quote too | RC7 |
+| Currency rules, step-up after content, no-factor refusal | RC9, RC12, RG4, RG5, RD6, Z2 step 2, S5 step 1; RM7, RM8, RM9, RM10, RM11, RM27 |
+| `asOf` the server's and the company's day | RC8, RC10, RC10b, RG6, RD5; RM12, RM13, RM18, RM24 |
+| 409: missing row every tab; missing tab only Region and Currency | RC2, L2; RM20, RM30 |
+| Every role, both products; switch, scope, ceiling; own company; refusals | RC3, RC8, RC11 to RC15, L14, RD7 to RD9; RM25, RM26 |
+| Only the tab replaced; tax tables untouched; two tabs at once | RC3, RC7, RC16 |
+| Audit per save naming the tab, before as answered | RC3, RC8, RD3, Z1 step 7, Z2 step 5, S4, S5 |
+| Web routing and merge; Sales tax still DemoStore; an unserved tab ignored | W2, LW6, RW1 to RW3 |
+| Page: rules and key before the code; Reset keeps fixed fields | RP1, S5, S6; RM17, RM28 |
+| Whole-section path | RG7, RD10; RM21 |
+| Date format reaches another person's invoice in api mode | Z1 steps 0 and 4 |
+| Outer lengths carry the shared words; the rate input's length | RC5, RC9, RG8, S5 (D23, B4) |
+
+## `today()` and the zone (queue item 2's last task; not built here)
+- **What `today()` should read: `GET /company`'s `company.timeZone`,** not `GET /settings`' `localization.region.timeZone`:
+  1. `GET /company` answers it to every member with no condition; `GET /settings` leaves `localization` out for a company with no localization row (2a's D7), and the web merge then falls back to DemoStore's fixture zone.
+  2. The shell's first read is `GET /company`; STATUS and `company-answer.ts` already point the `today()` task there.
+  3. Both are the same control column, which `companyClock` (every API date check) reads. This part makes `region.timeZone` equal to it wherever it is answered and makes the zone unchangeable in both modes, so a `today()` from the shell's zone can't drift from the API's day within a session.
+- **In demo mode** `today()` should keep DemoStore's own copy (`region.timeZone`), which this part makes read only.
+- **For that task:** `ApiClient.today()` is synchronous and DemoStore's in api mode, so it needs the zone cached from the shell's `GET /company`; and DemoStore's `todayIso` is computed once, when the store is built, so even the demo's day doesn't roll over in a long session: compute it per call. This part's Currency `asOf` in the demo uses that `today()`; the API's uses `companyClock` (no dependency on that task).
+
 ## Commands run
 | Command | Result |
 | --- | --- |
@@ -203,6 +233,8 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `api-e2e.sh settings2b-again -- settings-region-currency.spec.ts` (dirty database, no rebuild) | exit 0 after 16 s: 2 passed |
 | `api-e2e.sh settings2b-flows -- tests/e2e-api/flows` | exit 0 after 77 s: F1 to F7, 8 passed |
 | `e2e-demo.sh subset` | exit 0 in 7.5 minutes (build 12 s): flooring 352 passed in 432 s (S2 to S6 among them), hr 7 passed |
+| **Stage 4** `vitest run test/features.test.ts` (shared; the FEATURES sync) | exit 0, 7 passed |
+| The docs (Markdown is in `.prettierignore`, 2a's B15) | checked by reading each edit against the code: route order, body fields and outer lengths, refusal codes and words, readers, the 409s, the step-up codes |
 
 ### Mutations (stage 2, on the committed change; `settings2b/mutate.py`)
 Each mutation was made on the committed code, its commands run, and its file restored with `git checkout --` (`git diff --quiet` true for all 30). A mutation counts as caught only when every listed command failed with the expected test.
@@ -251,3 +283,7 @@ Each mutation was made on the committed code, its commands run, and its file res
 - **Api mode green:** the eight settings, sales, invoices, company, meetings and login specs (28 tests) with Z1 after B12, again on the dirty database, and the eight flows. 2a's E1 and E2 and part 1's E1 to E3 pass beside Z1 and Z2.
 - **Demo green:** the subset, 352 flooring and 7 hr tests, S4 to S6 among them.
 - **One test fix (B12),** no product change, so the build of the green runs is the build of the product as committed in `c758d74`.
+
+## Stage 4: outcome
+- **Docs:** ADR 0059's section "2026-11-17: part 2b, Region and Currency" (and the later-parts table's part 2 row); docs/api-contract.md's "Settings, part 2b" section, 2a's "Not routes yet" and web lines, "Company and the shell" and the `getSettings`, `updateLocalization` and `getDefaultSettings` rows; sales.md (rule 15's sentence and two `localization.region` rows); meetings.md's zone line; data-model.md's `localization.region` and `localization.currency` rows; one docs/blueprint-delta.md row; docs/FEATURES.md's `settings.localization` and `auth.step-up` rows (`features.ts` unchanged; the sync test passes). The spec's edits were made in stage 0.
+- **This log:** table "Which test pins which path" and the `today()` note.

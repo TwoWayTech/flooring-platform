@@ -293,7 +293,7 @@ pctOf(v, p)    = v * p / 100
 15. **Which rule applies.** `resolveTaxRule` in `tax-defaults.ts`, for the job site on a date. A rule is valid when `validFrom <= date` and `validTo` is empty or `validTo >= date`. The newest valid one wins.
     - A county rate for the site's county, when a state or company rule exists to build on. It replaces only the rate and keeps that rule's taxability. County names match without case and without the word "County". Source `jurisdiction`.
     - Else the state rule. Source `state`.
-    - Else the company default, only in the company's states of operation. Source `company`.
+    - Else the company default, only in the company's states of operation. Source `company`. A change of the states also reaches an accepted quote when it is invoiced (tax is recomputed at conversion).
     - Else nothing is collected. Source `none`.
 16. **Exemption.** `taxContextFor` in `quotes.ts`: `customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on`.
 17. **Changing tax on one document.** `withOverride` in `tax-defaults.ts` keeps the resolved rule's taxability and swaps the rate. With no rule at all it taxes materials only. Source `override`. `TaxOverrideDialog` requires a rate matching `^\d{1,2}(\.\d{1,4})?$` and a reason of at least 3 characters. `saveQuote` requires `sales.tax.override` when `taxOverride` changed, and writes an audit entry.
@@ -622,6 +622,8 @@ A credit note is an `Invoice` with `isReturn: true`.
 | `localization.documents.defaultWastePct` | map by category | Exactly the waste categories, each the quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it. The quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.legalFooter` | string | Printed on invoices, receipts and purchase orders. At most 1,000 characters; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.region.statesOfOperation` | `string[]` | Where the company default rate applies (rule 15). At least one US state code, each once; a change needs `settings.tax.manage` and a step-up; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
+| `localization.region.primaryState` | string | A new quote's job-site state. A US state code; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
 | `localization.tax.rounding` | enum: line, invoice | |
 | `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | |
 
