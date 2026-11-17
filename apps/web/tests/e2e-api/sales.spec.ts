@@ -1,22 +1,15 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import type { Product, Quote } from "@workspace/shared";
+import {
+  defaultNumberSettings,
+  formatNumber,
+  invoicesIn,
+  salesTotals,
+  type Product,
+  type Quote,
+  type ViewedInvoice,
+} from "@workspace/shared";
 import { MANAGER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
-import { addProduct, FIELDSTONE, waitForAnswer } from "./flows/kit";
-
-/**
- * The product bug that stops the B5 test below (STATUS B5, found in B1's audit, session log
- * 2026-11-16-2320). Until it is fixed the test is `fixme`, written to the behaviour the spec asks for.
- */
-const BLOCKED_BY_B5 = [
-  {
-    type: "issue",
-    description:
-      "api mode: a salesperson's dashboard (her landing page) shows 'This page could not load its data.', because " +
-      "GET /invoices leaves out `cost` for anyone without product cost (rule 5) and monthlyPnl, salesTotals, " +
-      "bestSellersIn and the dashboard's margin sparkline add or subtract it (dec(undefined)). Sales → Team's " +
-      "teamStats reads it too, but loads today only because its people still come from DemoStore. B5, STATUS follow-up.",
-  },
-];
+import { addDays, addProduct, choose, companyToday, FIELDSTONE, waitForAnswer } from "./flows/kit";
 
 /** The quote builder's Summary panel. */
 function summaryOf(page: Page): Locator {
@@ -48,7 +41,7 @@ test.describe("sales (api mode)", () => {
   test("a salesperson's quote builder works without cost: no cost reaches her browser and no margin shows (B1)", async ({
     page,
   }) => {
-    // She lands on her dashboard, which fails until B5; nothing below is checked there.
+    // She lands on her dashboard, which loads since B5 (checked in the B5 test below).
     await signInAs(page, SALES_EMAIL);
     const productsAnswer = waitForAnswer<Product[]>(page, "GET", /^\/api-proxy\/products$/);
     const quotesAnswer = waitForAnswer<Quote[]>(page, "GET", /^\/api-proxy\/quotes$/);
@@ -102,13 +95,96 @@ test.describe("sales (api mode)", () => {
     await expect(summary.getByText(/^Cost /)).toBeVisible();
   });
 
-  // Sales → Team is left out: it loads today only because its people come from DemoStore (session log
-  // 2026-11-16-2320, the B5 probe), so a check there would pass whatever B5 does.
-  test.fixme("a salesperson's dashboard loads without cost (B5)", { annotation: BLOCKED_BY_B5 }, async ({ page }) => {
+  // Sales → Team is left out: it loads today only because its people come from DemoStore (R1, session
+  // log 2026-11-16-2320), so a check there would pass whatever B5 does; it comes back with GET /company.
+  // teamStats and TeamTable are pinned by dashboard-without-cost.test.ts and dashboard-margin.test.tsx.
+  test("a salesperson's dashboard loads without cost and shows no margin (B5)", async ({ page }) => {
     await signInAs(page, SALES_EMAIL);
+    const answer = waitForAnswer<ViewedInvoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
     await page.goto("/");
+    const invoices = await answer;
+
+    // Rule 5 on her answer: no invoice cost reaches her browser.
+    expect(invoices.length, "her invoices").toBeGreaterThan(0);
+    expect(invoices.filter((invoice) => "cost" in invoice).length, "invoices carrying cost").toBe(0);
+    const lines = invoices.flatMap((invoice) => invoice.lines);
+    expect(lines.filter((line) => "unitCost" in line).length, "invoice lines carrying unitCost").toBe(0);
+
+    // The loader: its monthlyPnl meets her withheld costs over the last 12 months.
+    const live = invoices.filter((invoice) => !invoice.voidedAt);
+    expect(
+      live.some((invoice) => invoice.issuedAt >= addDays(companyToday(), -330)),
+      "her answer has an invoice in the last 12 months, so the loader's monthlyPnl meets a withheld cost; " +
+        "the API seed keeps the fixture dates (to 2026-11-04)",
+    ).toBe(true);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText("Revenue", { exact: true }).first()).toBeVisible();
+    const panel = page.getByRole("region", { name: "Your revenue, last 12 months" });
+    await expect(panel).toBeVisible();
+    await expect(failures(page)).toHaveCount(0);
+
+    // A window that holds her invoices, taken from her answer: the calendar has moved past the seed.
+    const to = live
+      .map((invoice) => invoice.issuedAt)
+      .sort()
+      .at(-1)!;
+    const from = addDays(to, -29);
+    const inWindow = invoicesIn(invoices, from, to);
+    expect(
+      inWindow.some((invoice) => invoice.lines.some((line) => line.category === "material" && line.productId)),
+      "a product line in her last 30 days of invoices",
+    ).toBe(true);
+
+    // The figure cards: salesTotals over invoices without cost.
+    const filters = page.getByRole("group", { name: "Dashboard filters" });
+    await choose(page, filters.getByLabel("Period"), "Custom");
+    await filters.getByLabel("From", { exact: true }).fill(from);
+    await filters.getByLabel("To", { exact: true }).fill(to);
+    const figures = page.locator("dl").filter({ hasText: "Payments received" });
+    const revenueCard = figures.locator("div").filter({ has: page.locator("dt", { hasText: /^Revenue$/ }) });
+    await expect(revenueCard).toContainText(
+      formatNumber(salesTotals(inWindow).revenue, "money", defaultNumberSettings(), { compact: true }),
+    );
+    await expect(figures.getByText("Gross margin")).toHaveCount(0);
+    await expect(failures(page)).toHaveCount(0);
+
+    // Best sellers: bestSellersIn over lines without unitCost.
+    const best = page.getByRole("region", { name: "Best sellers" });
+    await choose(page, best.getByLabel("Best sellers period"), "Custom");
+    await best.getByLabel("Best sellers from").fill(from);
+    await best.getByLabel("Best sellers to").fill(to);
+    await expect(best.getByRole("listitem").first()).toBeVisible();
+    await expect(best.getByText("No sales in this period.")).toHaveCount(0);
+    await expect(best.getByRole("button", { name: "Revenue", exact: true })).toBeVisible();
+    await expect(best.getByRole("button", { name: "Margin", exact: true })).toHaveCount(0);
+    await best.getByRole("button", { name: "Show best sellers as a table" }).click();
+    await expect(best.getByRole("columnheader", { name: "Revenue", exact: true })).toBeVisible();
+    await expect(best.getByRole("columnheader", { name: "Margin", exact: true })).toHaveCount(0);
+
+    // The 12-month table: revenue only.
+    await panel.getByRole("button", { name: "Show table" }).click();
+    await expect(panel.getByRole("columnheader", { name: "Revenue", exact: true })).toBeVisible();
+    await expect(panel.getByRole("row")).toHaveCount(13);
+    await expect(panel.getByRole("columnheader", { name: "Gross margin" })).toHaveCount(0);
+
+    await expect(page.getByText("Gross margin")).toHaveCount(0);
+    await expect(failures(page)).toHaveCount(0);
+  });
+
+  test("a manager's dashboard shows gross margin from the API (B5)", async ({ page }) => {
+    await signInAs(page, MANAGER_EMAIL);
+    const answer = waitForAnswer<ViewedInvoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
+    await page.goto("/");
+    const invoices = await answer;
+    expect(invoices.length, "his invoices").toBeGreaterThan(0);
+    expect(
+      invoices.every((invoice) => "cost" in invoice),
+      "Summit's ceiling and modules give the Manager product cost and contract cost",
+    ).toBe(true);
+
+    await expect(page.getByRole("heading", { name: "Revenue and gross margin, last 12 months" })).toBeVisible();
+    await expect(page.getByText("Gross margin").first()).toBeVisible();
+    const best = page.getByRole("region", { name: "Best sellers" });
+    await expect(best.getByRole("button", { name: "Margin", exact: true })).toBeVisible();
     await expect(failures(page)).toHaveCount(0);
   });
 });
