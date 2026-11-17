@@ -77,4 +77,22 @@ describe("nextSaveStep: the shared rule runs before any step-up (ADR 0059 D5, re
     expect(notify.error).not.toHaveBeenCalled();
     expect(notify.success).not.toHaveBeenCalled();
   });
+
+  it("SF6 a step-up that depends on the draft is asked only when it says so, and only for a draft the rule passed", () => {
+    // Region asks for a code only when the states of operation change (ADR 0059, part 2b).
+    const notify = notifier();
+    const fixed = { ...PAYMENTS, approvalThreshold: "12.00" };
+    const never = vi.fn(() => false);
+    expect(nextSaveStep(fixed, paymentSettingsProblem, never, notify)).toBe("save");
+    expect(never).toHaveBeenCalledWith(fixed);
+    const always = vi.fn(() => true);
+    expect(nextSaveStep(fixed, paymentSettingsProblem, always, notify)).toBe("step-up");
+    expect(always).toHaveBeenCalledWith(fixed);
+    expect(notify.error).not.toHaveBeenCalled();
+
+    const unasked = vi.fn(() => true);
+    expect(nextSaveStep(PAYMENTS, paymentSettingsProblem, unasked, notify)).toBe("refused");
+    expect(unasked).not.toHaveBeenCalled();
+    expect(notify.error).toHaveBeenCalledWith(PAYMENT_MESSAGES.approvalThreshold);
+  });
 });

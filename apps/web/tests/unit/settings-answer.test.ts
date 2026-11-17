@@ -80,7 +80,7 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
   });
 
   it("W2 the merge takes only the served sections it is given, and keeps DemoStore's for the rest", async () => {
-    const answer = { ...served(), localization: { region: { timeZone: "Europe/Paris" } }, madeUp: { x: 1 } };
+    const answer = { ...served(), localization: { tax: { rounding: "line" } }, madeUp: { x: 1 } };
     const widened = await client(answer).client.getSettings();
     expect(widened.localization).toEqual(demo.localization);
     expect(widened).not.toHaveProperty("madeUp");
@@ -153,7 +153,7 @@ function servedTabs(): {
 }
 
 describe("Settings part 2a in api mode: the served localization tabs (ADR 0059)", () => {
-  it("LW1 getSettings takes documents and payroll from the answer; region, currency and tax stay DemoStore's", async () => {
+  it("LW1 getSettings takes documents and payroll from the answer; tabs the answer leaves out stay DemoStore's", async () => {
     const tabs = servedTabs();
     const settings = await client({ ...served(), localization: tabs }).client.getSettings();
     expect(settings.localization.documents).toEqual(tabs.documents);
@@ -193,14 +193,55 @@ describe("Settings part 2a in api mode: the served localization tabs (ADR 0059)"
     expect(api.sent[0]).toEqual({ call: "PUT /settings/localization/payroll", body: payroll });
   });
 
-  it("LW6 Region, Currency and Sales tax stay on DemoStore and send nothing to the API", async () => {
-    for (const tab of ["region", "currency", "tax"] as const) {
-      const updateLocalization = vi.fn(async () => structuredClone(demo));
-      const api = client(served(), { updateLocalization: updateLocalization as ApiClient["updateLocalization"] });
-      await api.client.updateLocalization(tab, demo.localization[tab]);
-      expect(api.sent, tab).toEqual([]);
-      expect(updateLocalization, tab).toHaveBeenCalledTimes(1);
-      expect(updateLocalization, tab).toHaveBeenCalledWith(tab, demo.localization[tab]);
-    }
+  it("LW6 Sales tax stays on DemoStore and sends nothing to the API", async () => {
+    const updateLocalization = vi.fn(async () => structuredClone(demo));
+    const api = client(served(), { updateLocalization: updateLocalization as ApiClient["updateLocalization"] });
+    await api.client.updateLocalization("tax", demo.localization.tax);
+    expect(api.sent).toEqual([]);
+    expect(updateLocalization).toHaveBeenCalledTimes(1);
+    expect(updateLocalization).toHaveBeenCalledWith("tax", demo.localization.tax);
+  });
+});
+
+/** What the API serves of Region and Currency: the company's control zone and a CAD rate, unlike DemoStore's Summit. */
+function servedRegionCurrency(): {
+  region: CompanySettings["localization"]["region"];
+  currency: CompanySettings["localization"]["currency"];
+} {
+  return {
+    region: { ...demo.localization.region, timeZone: "America/Chicago", dateFormat: "yyyy-MM-dd" },
+    currency: { base: "USD", locked: true, extra: [{ code: "CAD", rate: "1.3870", asOf: "2026-11-04" }] },
+  };
+}
+
+describe("Settings part 2b in api mode: Region and Currency (ADR 0059)", () => {
+  it("RW1 getSettings takes Region and Currency from the answer; documents, payroll and tax stay DemoStore's", async () => {
+    const { region, currency } = servedRegionCurrency();
+    const settings = await client({ ...served(), localization: { region, currency } }).client.getSettings();
+    expect(settings.localization.region).toEqual(region);
+    expect(settings.localization.currency).toEqual(currency);
+    for (const tab of ["documents", "payroll", "tax"] as const)
+      expect(settings.localization[tab], tab).toEqual(demo.localization[tab]);
+  });
+
+  it("RW2 updateLocalization sends Region and Currency to their own routes, then reads again", async () => {
+    const { region, currency } = servedRegionCurrency();
+    const regionApi = client({ ...served(), localization: { region } });
+    const result = await regionApi.client.updateLocalization("region", region);
+    expect(regionApi.sent).toEqual([
+      { call: "PUT /settings/localization/region", body: region },
+      { call: "GET /settings", body: undefined },
+    ]);
+    expect(result.localization.region).toEqual(region);
+    const currencyApi = client(served());
+    await currencyApi.client.updateLocalization("currency", currency);
+    expect(currencyApi.sent[0]).toEqual({ call: "PUT /settings/localization/currency", body: currency });
+  });
+
+  it("RW3 a refused Currency save rejects with the API's words and reads nothing", async () => {
+    const message = "Other currencies can't be added, removed or renamed here. Change only their rates.";
+    const api = client(served(), {}, { status: 400, body: { code: "invalid_request", message } });
+    await expect(api.client.updateLocalization("currency", servedRegionCurrency().currency)).rejects.toThrow(message);
+    expect(api.sent.map((request) => request.call)).toEqual(["PUT /settings/localization/currency"]);
   });
 });

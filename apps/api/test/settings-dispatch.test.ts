@@ -1,3 +1,4 @@
+import type { ControlDb, DbHandle } from "@workspace/db";
 import { numbersToWire, profileFor, type CompanySettings, type PermissionKey } from "@workspace/shared";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -26,7 +27,8 @@ function serviceOver(rows: Record<string, unknown>): SettingsService {
   const stored = Object.entries(rows).map(([group, value]) => ({ group, value }));
   const query = { select: () => query, from: () => query, where: () => Promise.resolve(stored) };
   const tenancy = { db: async () => query } as unknown as TenantConnectionService;
-  return new SettingsService(tenancy, {} as AuditService);
+  // No case reads a localization tab, so the control handle (part 2b's zone) is never used.
+  return new SettingsService(tenancy, {} as AuditService, {} as DbHandle<ControlDb>);
 }
 
 /** A reader with no keys and no modules: `readableSections` is mocked, and nothing else is readable. */
