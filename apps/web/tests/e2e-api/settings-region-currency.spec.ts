@@ -150,7 +150,8 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
         );
         const healed = await healTab(grace.request, "currency", SUMMIT_CURRENCY, grace.secret);
         expect(healed.status()).toBe(200);
-        const healedByPut = healed.request().method() === "PUT";
+        // The heal answers its read of GET /settings when nothing needed saving, else the PUT's answer.
+        const healedByPut = new URL(healed.url()).pathname !== "/api-proxy/settings";
         const since = Date.now();
         const audited = await auditBy(grace.request, ACTION, "Grace Liu", since);
 

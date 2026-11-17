@@ -182,8 +182,6 @@ test.describe("Region and Currency (ADR 0059, part 2b)", () => {
   test("S5 Currency: a refused rate says why before any code; a changed rate saves", async ({ page }) => {
     await signInAs(page, KEYSTONE_OWNER, "/settings/localization?tab=currency");
     const rate = page.getByLabel("per 1 USD");
-    // The input stops at the longest rate the shared rule takes (D23).
-    await expect(rate).toHaveAttribute("maxlength", "19");
     await rate.fill("0");
     await page.getByRole("button", { name: "Save currency" }).click();
     const toast = page.getByText("Enter the rate for CAD as a number above 0 with up to 8 decimals, such as 1.3870.");
@@ -193,6 +191,8 @@ test.describe("Region and Currency (ADR 0059, part 2b)", () => {
     await page.mouse.move(0, 0);
     await expect(toast).toBeHidden();
 
+    // The input stops at the longest rate the shared rule takes (D23).
+    await expect(rate).toHaveAttribute("maxlength", "19");
     await rate.fill("1.3950");
     await page.getByRole("button", { name: "Save currency" }).click();
     await confirmCode(page);
