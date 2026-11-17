@@ -97,20 +97,28 @@ flowTest.describe("Settings part 2a on the API (api mode)", () => {
               new URL(response.url()).pathname === "/api-proxy/settings/localization/documents",
           );
 
-        // 1. A refused late fee: the API's words in a toast, and the draft stays.
+        // 1. A refused late fee: the API's words in a toast, and the draft stays. The toast opens over
+        //    the bar's buttons and stays while the pointer rests on it, so the pointer moves away and
+        //    the test waits for it to close before using the bar again.
         await grace.page.goto("/settings/documents");
-        await grace.page.getByLabel("Late fee per month").fill("12.");
+        const lateFee = grace.page.getByLabel("Late fee per month");
+        await lateFee.fill("12.");
         const refused = documentsPut();
         await grace.page.getByRole("button", { name: "Save documents" }).click();
         expect((await refused).status()).toBe(400);
-        await expect(grace.page.getByText(LATE_FEE_MESSAGE)).toBeVisible();
+        const toast = grace.page.getByText(LATE_FEE_MESSAGE);
+        await expect(toast).toBeVisible();
         const bar = grace.page.getByRole("region", { name: "Unsaved changes" });
         await expect(bar).toContainText("1 unsaved change");
+        await expect(lateFee).toHaveValue("12.");
+        await grace.page.mouse.move(0, 0);
+        await expect(toast).toBeHidden();
         await bar.getByRole("button", { name: "Discard" }).click();
+        await expect(lateFee).toHaveValue(SUMMIT_DOCUMENTS.lateFeePct);
 
         // 2. The save: a 40 % deposit, 13 % carpet waste and a footer of this run.
         await grace.page.getByLabel("Default deposit on quotes").fill("40");
-        await grace.page.getByLabel("Waste for Carpet").fill("13");
+        await grace.page.getByLabel("Waste for Carpet", { exact: true }).fill("13");
         await grace.page.getByLabel("Legal footer").fill(footer);
         const saved = documentsPut();
         await grace.page.getByRole("button", { name: "Save documents" }).click();
