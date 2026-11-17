@@ -26,7 +26,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change roles, disable, enable, reset MFA | `settings.users.manage` | Owner | `DemoStore.updateUser` |
 | Open Security roles | `settings.roles.view` or `settings.roles.manage` | Owner | `SETTINGS_MENU`, `PageGate`, `RolesPage` |
 | Create, duplicate, edit, reset, delete a role | `settings.roles.manage` | Owner | `DemoStore.saveRole`, `resetRole` (through `saveRole`), `deleteRole` |
-| View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx` |
+| View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx`, with the rules in `apps/web/src/lib/view-as.ts`. Demo only, for an Owner or someone who manages roles; in api mode not offered (Real build, "The shell on the API") |
 | Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `settingsPermissions` in `apps/web/src/lib/api/demo/permission-rules.ts` |
 | Change branding | `settings.branding.manage` | Owner | `updateSettings` |
 | Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings` |
@@ -43,7 +43,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Read the company's billing (plan, period, limits; read only) | None: the Owner only | Owner | `BillingPage` in `apps/web/src/features/settings/billing/billing-page.tsx`, opened through the `ownerOnly` menu rule (`itemAllows` in `apps/web/src/products/index.ts`). `DemoStore.getCompanyBilling`; on the API, `GET /billing` (ADR 0054) |
 | Approve or revoke support access | None: the Owner only | Owner | `SupportAccessPanel` in `apps/web/src/features/settings/users/support-access-panel.tsx`, on Settings → Users. `DemoStore.approveSupportGrant` and `revokeSupportGrant`; on the API, `POST /support-grants/:id/approve` (with a step-up) and `/revoke` (ADR 0034, ADR 0054) |
 | Data import, Connect a database | `settings.import.manage` | Owner | `DemoStore.importScope`. See `docs/product-spec/import.md` |
-| Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile` |
+| Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile`. In api mode Your profile is not offered until a `PATCH /me` exists (Real build, "The shell on the API") |
 | Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx` (`getPlatformGate`). `DemoStore.updatePlatformCompanyAccess` runs `accessPatchProblem`. On the API, `PlatformAdminGuard` with the platform `owner` role and a step-up (see Real build) |
 | Manage plans; suspend, reinstate or cancel a company | None. Needs the platform session and `admin.billing` | Platform admin (`owner` role; `support` reads) | `PlansPage` and `CompanyStatusPage` in `apps/web/src/features/admin/`, with `mayManageBilling` in packages/shared. `DemoStore` runs the shared `planProblem`, `planPatchProblem`, `statusActionBodyProblem`, `confirmNameProblem`, `staleStatusRefusal` and `statusAfter`. On the API, `PlatformAdminGuard` with `@PlatformFeature("admin.billing")`, the `owner` role and a step-up, and the admin's own row checked again under a lock (ADR 0056; see Real build) |
 
@@ -321,7 +321,7 @@ stateDiagram-v2
 
 ### Workflows
 
-**Invite a user.** Settings, Users, Invite user. `InviteDialog` collects name, email, title, roles and branch. `inviteUser` checks the permission and the seat limit, creates the user and writes the audit entry. No email goes out.
+**Invite a user.** Settings, Users, Invite user. `InviteDialog` collects name, email, title, roles and branch. The Branch field starts at the inviter's own branch; an inviter whose data scope is narrower than `all` sees only their own branch (`inviteBranches` in `apps/web/src/features/settings/users/invite-branches.ts`). That is the screen only: the API's own check that a branch-scoped admin invites into their own branch is still pending (docs/STATUS.md). `inviteUser` checks the permission and the seat limit, creates the user and writes the audit entry. No email goes out.
 
 **Change a user's roles.** `ChangeRolesDialog` asks for a step-up code, then calls `updateUser` with `roleIds`. Only newly added roles go through `assertCanAssign`. A role the user already holds is not re-checked.
 
@@ -335,7 +335,7 @@ stateDiagram-v2
 
 **Delete a role.** Only a non-system role that nobody holds. There is no step-up code.
 
-**View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`.
+**View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`. A stored choice applies only to someone who may view as (`viewAsRoleFor` in `apps/web/src/lib/view-as.ts`): when someone else signs in on the same tab, the shell opens as that person and the stored choice is cleared. In api mode View as is not offered, because the API answers for the signed-in person only (Real build, "The shell on the API").
 
 **Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. `DemoStore.resetSettings` exists, but no screen calls it.
 
@@ -580,7 +580,7 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | `"summit" \| "keystone" \| "harbor"` | |
+| `id` | `"summit" \| "keystone" \| "harbor"` | In api mode still the DemoStore company's id: the API never takes a company id, and the API's company is `GET /company`'s (Real build, "The shell on the API") |
 | `name`, `city`, `state` | string | |
 | `product` | `flooring` or `hr` | One per company in the demo |
 | `modules` | `ModuleKey[]` | Set by the platform admin |
@@ -887,7 +887,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
-## Real build (ADR 0052, ADR 0053, ADR 0054 and ADR 0056)
+## Real build (ADR 0051, ADR 0052, ADR 0053, ADR 0054 and ADR 0056)
 
 Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. Part 2 (ADR 0056) adds plans as data and suspend, reinstate and cancel, behind the new switch `admin.billing`. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052, ADR 0053 and ADR 0056)", and the draft spec is docs/specs/platform-admin.md.
 
@@ -923,10 +923,20 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Support tab (/admin/companies/:id/support).** The company's support requests the admin may see (the `owner` role every admin's, the `support` role its own), with status pending, approved, revoked or expired, and "Ask for support access" with a reason of 10 to 500 characters and 1 to 72 hours, after a step-up. One open request per admin and company (409), and at most 10 per admin in 24 hours (429). Approved access still opens nothing.
 - **The demo** has the same pages, keeps its audit rows and requests in the browser, and writes nothing for a save that changes nothing.
 
+**The shell on the API (ADR 0051, "GET /company"):**
+- **Who sees what.** On every full page load, and after every write the server answered, the app asks `GET /company`. Every member gets the company's name, city, state, time zone, modules and live branches; their own profile, exactly as Settings → Users shows it; the roles they hold, with their keys; their effective access exactly as the API's guards worked it out for that request; and a names list of the company's people (id, name, active or disabled; invited people are left out). Nothing else about another person is sent. The ceiling goes only to holders of `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage`, the keys that open Security roles and Users, which are the only screens that read it. No plan, status, limits or feature switches: billing facts stay on the Owner's `GET /billing` (ADR 0054), and switches are the same build on both sides.
+- **Buttons follow the API.** Every menu, page gate and button reads that access, so in api mode a role, ceiling or module changed on the API shows on the next load or after the person's next write. Unknown keys and modules from a newer API are dropped (fail closed).
+- **View as and Your profile are not offered in api mode.** The API answers for the signed-in person only, and there is no `PATCH /me` yet. Settings → Security roles' access preview shows what a role may do. In the demo View as stays, only for an Owner or someone who manages roles.
+- **Names.** Names beside records (quotes, invoices, transfers, rolls, customers), Sales → Team and the commission split picker read `GET /company`'s people. A disabled colleague's name still shows beside their history.
+- **A refused first load.** When `GET /company` is refused before the app has opened (a disabled member, a role that needs two-step sign-in without a factor, the company under maintenance, unavailable or locked), the app shows one full page instead: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's own words. Both offer Try again and Sign out. A later refused re-read keeps the last data, and the page shows its own error.
+- **Settings → Users** shows the API's branches in its Branch column and invite dialog (Invite a user, above). **Settings → Locations** still reads its warehouses and their branch names from the demo until Locations moves.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes when Settings → Locations moves to the API.
-- **The company app can look stale.** It still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403.
+- **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
+- **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
+- **The shell's branding and number format** are still the demo's (`getSettings()`) until Settings moves.
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.
