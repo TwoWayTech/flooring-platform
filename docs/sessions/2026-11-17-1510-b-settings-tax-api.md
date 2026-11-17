@@ -87,7 +87,7 @@ This session is item 2, task 2, "then Settings", part 3a: the Sales tax tab of L
 0. This log and the spec (docs only), the draft PR.
 1. Red tests, no product code (one commit), then the red e2e runs on 2b's product code.
 2. The change (shared, API, web), green, committed; the mutations on the committed change; this log.
-3. Api-mode and demo e2e (green). 4. Docs. 5. Full checks, both suites, reviews, handoff (later stages, run by the orchestrator's next steps).
+3. Api-mode and demo e2e (green). 4. Docs. 5. Full checks and the whole api-mode suite (this session); the whole demo suite, `/review`, the security review and the handoff are the orchestrator's next steps.
 
 ## Decisions and why
 Planned decisions, each the safest option found. Decisions taken while building go under "Decisions taken during the build".
@@ -185,7 +185,7 @@ None blocks; each has its safest default taken.
 ## For STATUS
 The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). This PR is #54.
 - **"In progress" and "Next three tasks" item 2:** after 2b's "(part 2b: draft PR #53, …)", add "part 3a Sales tax (draft PR #54, `feat/settings-tax-api`, stacked on #53); part 3b retires the whole-section save next".
-- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #54 (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: <filled in at handoff>."
+- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #54 (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: lint, typecheck, unit (shared 1,161, web 417, api 126, db 18, providers 11), API and database (api 787 in 40 files, db 59, providers 2) and hooks (15) green; the whole api-mode suite 55 of 55; the demo subset (flooring 354, hr 7); 41 of 41 mutations caught."
 - **Close:**
   - B6's "The Settings move: tax rule and county `ratePct` are numeric(18,8) and answered raw; their write check must use the shared pattern (Settings part 3)." → done (`TAX_RATE_TEXT`, compared by value).
   - 2a's and 2b's "**Settings part 2b** …, then part 3 (Sales tax). The quote builder's tax preview still reads …" → done for Sales tax; keep "part 3b (the whole-section save), then Settings parts 4 to 6".
@@ -243,6 +243,9 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | Commit 3 `6274376` (the spec's two fixes), pushed by naming the branch | pushed |
 | **Stage 4:** ADR 0059's part 3a section and "Later parts" lines; api-contract.md "Settings, part 3a" and the ApiClient rows; sales.md, contracts.md rule 13, data-model.md, blueprint-delta.md (one row), FEATURES.md; read against the code (Markdown is prettier-ignored) | written |
 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts` (`s4-features.log`) | 7 passed |
+| Commit 4 `e870148` (the docs and this log's B16 to B20), pushed by naming the branch | pushed |
+| **Full checks:** `heavy.sh bash settings3/full.sh` (`full.log`, 16:18 to 16:22) | **all exit 0:** `pnpm lint`, `pnpm typecheck`; `pnpm test`: shared 1,161, web 417, api 126, db 18, providers 11; `pnpm test:api`: api 787 (40 files), db 59 (8 files), providers 2; `pnpm test:hooks` 15 |
+| `heavy.sh flows/api-e2e.sh settings3-all-final --build` (the whole api-mode suite on a fresh api-mode build after the demo build; builds 13 s, run 239 s) | **55 passed** (2b's 53 and TE1, TE2), F1 to F7 among them |
 
 ### Mutations (stage 2, on the committed change `0809465`; `settings3/mutate.py`)
 Each mutation is made in one file, its commands run, and the file is put back with `git checkout --`. The tests that failed under each (the expected ones first):
@@ -293,3 +296,30 @@ Each mutation is made in one file, its commands run, and the file is put back wi
 - **Stage 1:** every new and changed test written before the code and red on 2b's head for the planned reason, except those that pass on both heads by design (B8); committed (`0bfb73b`). The api-mode e2e (TE1, TE2) and demo e2e (S7, S8) red runs failed for the planned reasons (B9 for TE2's step).
 - **Stage 2:** the 15 product files (1 new, 2 comment-only), as planned; shared, API and web lint, typecheck and unit tests pass; the 14 integration files pass (313 tests); 41 of 41 mutations caught. No stop-and-ask item, no change to packages/db, core, providers or the control database.
 - **Left for the next stages:** stage 3 (the green api-mode and demo e2e: TE1, TE2, S7, S8 and the subsets), stage 4 (ADR 0059 section, api-contract, sales.md, data-model, delta, FEATURES), stage 5 (full checks, both suites, `/review`, the security review, the handoff).
+
+## Stage 3: outcome
+- The api-mode subset (the eight specs of the plan) is green, 28 of 28, after two fixes in the new spec only (B16, B17); again on the dirty database, 2 of 2; the flows, 8 of 8. TE1's last step and its clean-up leave Summit's Texas at 8.25 with no Harris rate.
+- The demo subset is green: flooring 354 (S7, S8, `tax.spec.ts`, `localization.spec.ts` and the quote specs among them), hr 7. No failure, so nothing to compare with 2b's head.
+- No product file changed. Commit `6274376`.
+
+## Stage 4: outcome
+- ADR 0059's part 3a section and its "Later parts" lines, api-contract.md's part 3a section and ApiClient rows, sales.md, contracts.md rule 13, data-model.md, one blueprint-delta row and the FEATURES.md note, each read against the code (B18, B19). The spec's decided behaviour was written in stage 0 and re-read: it matches the code. `features.test.ts` 7 passed. Commit `e870148`.
+
+## Outcome (stages 3 and 4, full checks, the api-mode suite)
+
+| Commit | Subject |
+| --- | --- |
+| `7137931` | docs(settings): plan for Settings part 3a, Sales tax on the API [skip ci] |
+| `0bfb73b` | test(settings): part 3a tests, red on part 2b's head [skip ci] |
+| `0809465` | feat(settings): Sales tax on the API with versioned rules (Settings part 3a) [skip ci] |
+| `6c452d4` | docs(sessions): Settings part 3a, stages 0 to 2 [skip ci] |
+| `6274376` | test(e2e): Settings part 3a round-trips Sales tax through the API [skip ci] |
+| `e870148` | docs: Settings part 3a on the API (ADR 0059 section, api-contract, specs, data model, delta, FEATURES) [skip ci] |
+| this commit | docs(sessions): Settings part 3a outcome, e2e, docs, full checks and the api-mode suite [skip ci] |
+
+- **Green:** the full checks (lint, typecheck, every unit, API, database and hooks test) and the whole api-mode suite (55 of 55) on the last product change (`0809465`, built fresh after the demo build); the stage 3 api-mode runs, the flows and the demo subset. No product file changed after `0809465`; stage 3 changed one test file (B16, B17).
+- **Decisions taken in these stages:** B16 to B20. Nothing open needed a new safest-option choice; no blueprint-delta row beyond the planned one.
+- **Red for other reasons:** none seen.
+- **Not run here (stage 5, the orchestrator's next steps):** the whole demo suite (`e2e-demo.sh all`), `/review`, the security review (a fresh read-only security-reviewer on `origin/feat/settings-region-currency-api...HEAD`, the plan's section 13 focus as in the PR body; no schema review, since nothing in packages/db changed), the handoff commit, and STATUS and BRANCHES (their content is under "For STATUS").
+- **No stop-and-ask item came up** (B15): no schema, migration or dependency change; 15 product files.
+- **Doubtful or worth a look in review:** TM2 (the step-up before the content check) is caught only by ST4's last line; the api-mode e2e adds Texas versions on every run (each heal of a changed Texas, each save and restore); ST16 leaves verco's Colorado changed (B6).
