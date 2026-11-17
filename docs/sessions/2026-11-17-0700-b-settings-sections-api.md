@@ -162,6 +162,36 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **B13, M19's first anchor broke the file.** Removing the `superRefine` call also removed the comma after `.max(…)`, so the mutated file didn't load ("no tests"). The anchor now keeps the comma; M19 is caught by A3b (six kinds pass Zod and `numbersFromWire` fills the seventh).
 - **B14, `company.spec.ts`'s `putRole` uses the moved `putWithStepUp`,** the same logic it had (no duplicated code). Its red-run pass was with its own copy; the stage 3 green run covers the shared one.
 - **B11, the UI check of the Payments step-up.** The dialog is the existing `StepUpDialog` (Radix: focus moves in, returns to Save; it is already used by roles, users, Currency and Sales tax), so no new markup or tokens. S1 and E2 drive it; the a11y and responsive specs run in stage 3's demo subset.
+- **B15, an e2e proof for the one path only the e2e specs pin** (stage 3, throwaway). Table 7.8's "the saver's own shell follows without a reload" has no unit pin, so one mutation was built and run: the web's `PUT /settings/<section>` sent through `requestAsRead` (no re-read). E1 then failed at step 3, "Expected pattern: /^\$[\d,]+$/, Received string: \"$40.00\"" (Grace's own list kept its cents), so E1 step 3 pins the shell's re-read. The file was restored with `git checkout --` (`git diff --quiet` true); E1's clean-up put the number format back; every later api-mode run rebuilt.
+- **B16, a throwaway probe of Summit's settings** (`apps/web/tests/e2e-api/zz-settings-probe.spec.ts`, never committed, removed at the end): Dana's `GET /settings` after the runs. After the green run it answered exactly the four served sections at Summit's seeded values (payments `true`/`1000.00`/`5.00`/`PAY-`/`RF-`, expenses `true`/`1000.00`, the seven decimals, `minus`, compact, `en-US`, `USD`, `office@summitfloor.example`, an EIN of the right shape). This is the plan's "a `readAs(GET /settings)` as Dana shows the four sections back at Summit's values".
+- **B17, no flow to bring back from fixme.** The orchestrator's stage text says "with the flow back from fixme"; `grep -rn fixme apps/web/tests/e2e-api apps/web/tests/e2e` finds none on this branch (B2, B3 and B1 brought F1, F2 and F5 back earlier). The flows that record customer and supplier payments and expenses under Summit's rules (F1, F2, F7) run in stage 3's `settings-flows`.
+- **B18, the whole demo suite** (plan stage 5 step 2) is not part of this run's assignment (stages 3 and 4, full checks and the whole api-mode suite). Stage 3's demo subset (every spec that saves a settings section, plus a11y, responsive, shell and login, both products) covers this branch's demo changes; the whole demo suite is left to the orchestrator.
+
+## Which test pins which path
+Test ids: R (shared), A (API), W, SF and D (web units), E (api-mode e2e), S1 (demo e2e), M (mutations), EP1 (B15).
+
+| Path | Pinned by |
+| --- | --- |
+| The routes declare the shared table | A0; M20 |
+| GET answers each section to its readers; the EIN only to the profile manager; module and product switch filter | A1, A8, A9b, R10, R11, E1 step 4, E3 step 2; M4, M5, M17, M18, M23 |
+| Nothing stripped by name (numbers as a list) | A1, R6, W4; M4 |
+| Never-saved fallbacks | A2 |
+| Each PUT's permission, every role, both products | A3, A4, A5, A7 |
+| The wire's own number checks | A3b; M19 |
+| Module below; ceiling below | A5 (HR), A7 (HR), A9b, D7; A10; M6, M22 |
+| Company-wide scope (API and DemoStore) | A9, D2; M3, M13 |
+| Switch off → 404; DemoStore's order | A8, D3, D3b; M7 |
+| Strict bodies and shared content rules (both modes) | A4, A5, A15, R2 to R5, D1, D8, S1; M8, M9, M11, M21 |
+| Payments step-up after the content checks | A5, E2, S1; M1, M2 |
+| A refused save is shown and the draft kept | SF1 to SF3, S1, E2 step 2; M16 |
+| The server acts on the saved rules (customer and supplier payments, write-off, numbering, expenses) | A6, A7 |
+| Own company only | A11 |
+| Audit per write; the lock orders writes | A3, A14, E2 step 7; M10, M15 |
+| Web: served sections merged, others DemoStore's, unknown ignored | W1, W2, W6; M12, M14 |
+| The saver's own shell follows without a reload; another person's on load | E1 steps 3 and 4, E2 step 4, E3 step 2; EP1 (E1 step 3) |
+| What isn't offered, the API refuses | E1 step 5, E2 step 5 |
+| `/settings/accounting` unaffected | A13 |
+| Demo behaviour otherwise unchanged | D4 to D6, stage 3's demo subset |
 
 ## Owner questions
 None blocks the build; each has its safest default taken.
@@ -239,6 +269,16 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `setting
 | 2b | api `lint`, `typecheck` after the A14 change; commit `1b30ddc`; 2b's commit and it pushed | exit 0; pushed |
 | 2c | `prettier --write` on the four e2e files; `heavy.sh pnpm --filter web exec eslint` on them; `web:typecheck` | unchanged; eslint exit 0, no warnings; typecheck exit 0 |
 | 2c | commit 2c (`2be13e0`), pushed | pushed |
+| 3 | `heavy.sh flows/api-e2e.sh settings-green --build -- tests/e2e-api/settings.spec.ts invoices.spec.ts purchasing.spec.ts expenses.spec.ts company.spec.ts company-standing.spec.ts login.spec.ts` | builds 14 s; exit 0, **18 passed** in 61 s (first green run of E1 to E3: E1 7.7 s, E2 7.3 s, E3 4.5 s; `company.spec.ts` E1 to E4 pass with the shared `putWithStepUp`). Ports free after |
+| 3 | `heavy.sh flows/api-e2e.sh settings-probe-1 -- tests/e2e-api/zz-settings-probe.spec.ts` (B16, throwaway) | 1 passed: Dana's `GET /settings` has exactly `expenses`, `numbers`, `payments`, `profile`, all at Summit's seeded values |
+| 3 | `heavy.sh flows/api-e2e.sh settings-again -- tests/e2e-api/settings.spec.ts` (the now used database, no rebuild) | exit 0, **3 passed** in 23 s (E1 7.4 s, E2 7.6 s, E3 3.6 s) |
+| 3 | `heavy.sh flows/api-e2e.sh settings-flows -- tests/e2e-api/flows` | exit 0, **8 passed** in 74 s (F1 to F7, F3 twice): customer and supplier payments and expenses under Summit's rules |
+| 3 | EP1 (B15): the settings PUT through `requestAsRead`; `heavy.sh flows/api-e2e.sh settings-ep1-mutant --build -- tests/e2e-api/settings.spec.ts -g "E1 "`; `git checkout --` the file | caught: exit 1, E1 at step 3 (line 162), "Received string: \"$40.00\""; restored (`git diff --quiet`); clean-up healed |
+| 3 | `heavy.sh bash settings/e2e-demo.sh subset` (demo build, one worker) | build 11 s; exit 0. Flooring **271 passed, 1 skipped** in 329 s (S1 1.3 s; the skip is `notifications.spec.ts`'s own `test.skip` when the first open invoice was already sent, a file this branch doesn't touch); hr **7 passed** in 5 s. Ports free after |
+| 3 | `grep -rn fixme apps/web/tests/e2e-api apps/web/tests/e2e` | none (B17) |
+| 4 | ADR 0059 (new); api-contract.md (a "Settings, part 1" section, the Permissions paragraph, Bodies, supplier payments, `/settings/accounting` rows, "Company and settings" rows); the delta row; data-model.md "Settings groups"; FEATURES.md `auth.step-up` and `sales.payments` (text only); this log (B15 to B18, table, commands) | written |
+| 4 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts` | 1 file, **7 passed** (the register and `features.ts` still agree; `settings.spec.ts` exists for the `auth.step-up` row) |
+| 4 | `pnpm exec prettier --check` on the six docs | `*.md` is in `.prettierignore`, so this checks nothing (recorded, as stage 0) |
 
 ### Mutations (stage 2, on the committed change)
 Each made one change, ran its tests, and was restored (`git diff --quiet` true after each). Caught means every command exited non-zero with the expected test failing.

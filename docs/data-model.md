@@ -247,9 +247,9 @@ Real build (ADR 0051):
 | `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |
 | `localization.payroll` | Company | `overtime_rules`, `holiday_calendars` |
 | `localization.documents` | Company | `document_defaults` |
-| `numbers` | Company | `number_format` |
-| `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint |
-| `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold |
+| `numbers` | Company | `number_format`. Stored in `settings`; written by `PUT /settings/numbers` (ADR 0059), where `decimals` travel as a list of `{ kind, places }` (the row keeps the record) |
+| `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint. Written by `PUT /settings/profile` (ADR 0059); `tenants.legal_name` is not updated by it |
+| `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold. `payments` and `expenses` are written by `PUT /settings/payments` and `PUT /settings/expenses` (ADR 0059); `payments` is read by customer payments, write-offs and supplier payments |
 | `accounting` | Company | `settings`. Real-build group (ADR 0040): `costingMethod`, `salesTaxBasis`, `bankAccounts` (name and methods only; each one is a `ledger_accounts` row keyed `bank:<uuid>`, code 1010 to 1099) |
 | `sharedCosts`, `hr`, `meetings`, `email` | Company | `settings`. New groups in this demo |
 
