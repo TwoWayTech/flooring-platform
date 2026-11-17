@@ -148,7 +148,20 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **D24, STATUS and BRANCHES are left to the orchestrator,** which applies "For STATUS" below at handoff.
 
 ### Decisions taken during the build
-(Filled in as the build goes.)
+- **B1, A6 and A7 run in a provisioned company, not on Summit.** The plan put the "server acts on it" cases on the harness's Summit. They run in `payco`, a provisioned company set up as `accounting.int.test.ts` sets one up (a branch, a warehouse, a tile, Summit's localization, a Colorado tax rule and Summit's four rows), with fresh invoices, a fresh billed supplier and a services vendor. The safer reading: the cases don't depend on Summit's seeded open balances or pending payments, and Summit's own rows are still exercised end to end by E1 to E3 in api mode.
+- **B2, A7's expense needs a services vendor.** The first green run failed A7 with "Choose an active vendor of services."; the vendor is now inserted as `expenses.int.test.ts` inserts one. Nothing in the product changed.
+- **B3, the shared message tables have a few entries the plan didn't list.** `PROFILE_MESSAGES.position` (a map position that isn't a pair of numbers), `PAYMENT_MESSAGES.approvalRequired`, `EXPENSE_MESSAGES.approvalRequired` and `NUMBER_MESSAGES` (each kind once, the negative style, compact dashboards), so every content rule refuses with words even where TypeScript (DemoStore) or Zod (the API) normally stops the value first. "Give each kind of number once." is one shared string, used by the API's Zod and by the shared rule (an unknown kind in the stored record).
+- **B4, the decimals list's `.max(7)` carries "Give each kind of number once."**, so an eight-entry list with a duplicate gets the same words as a missing kind (A3b).
+- **B5, the tolerant web read also defaults places that aren't a whole number** (`numbersFromWire`). The API's write checks the list strictly first, so this only matters for a newer or broken answer.
+- **B6, `save` takes an `answered` mapper, not a value.** The audit's `before` is read under the row lock inside the transaction, so it needs the same mapping as `after` (the number format as the wire list).
+- **B7, A15 deletes `bareco`'s numbers row first.** Vitest runs the cases in file order, and A2 saved that row earlier; deleting it behind the API's back gives A15 its "never saved" company again.
+- **B8, red D4 matched a seeded entry.** Summit's fixture history holds a "Changed number format" row (`sm-aud-0007`), so D4 now checks only the entry its own save added.
+- **B9, E2 counts audit entries before and after.** The plan counted "exactly 2 from `since`'s minute"; a heal PUT in the same minute would have made it 3. The count is taken right after the heal and compared with the count at the end (two more).
+- **B10, `confirmStepUp` settles both waits of its race** (the dialog closing, or "That code is not right"), so the wait that loses is never an unhandled rejection.
+- **B12, A14 holds the row so the lock is pinned.** The first mutation run left M15 (the save's `FOR UPDATE` removed) uncaught: the two parallel saves didn't interleave, and one of them wrote the value both would have read anyway. A14 now saves a third value first, then holds the numbers row from its own transaction while both saves start (750 ms), so without the save's lock both read the same `before` and the audit chain breaks. It passed three runs in a row with the lock, and M15 is caught. Committed on its own (`1b30ddc`).
+- **B13, M19's first anchor broke the file.** Removing the `superRefine` call also removed the comma after `.max(…)`, so the mutated file didn't load ("no tests"). The anchor now keeps the comma; M19 is caught by A3b (six kinds pass Zod and `numbersFromWire` fills the seventh).
+- **B14, `company.spec.ts`'s `putRole` uses the moved `putWithStepUp`,** the same logic it had (no duplicated code). Its red-run pass was with its own copy; the stage 3 green run covers the shared one.
+- **B11, the UI check of the Payments step-up.** The dialog is the existing `StepUpDialog` (Radix: focus moves in, returns to Save; it is already used by roles, users, Currency and Sales tax), so no new markup or tokens. S1 and E2 drive it; the a11y and responsive specs run in stage 3's demo subset.
 
 ## Owner questions
 None blocks the build; each has its safest default taken.
@@ -165,10 +178,11 @@ None blocks the build; each has its safest default taken.
 - **Q10, separation of duties.** With `settings.payments.manage`, the Accountant, who also records and approves payments, can switch the two-person check off, raise or empty the threshold, and raise or empty the write-off limit, then switch them back. The step-up and audit record this but don't stop it. Taken: no change. Should loosening these controls (approval off, the threshold up or empty, the write-off limit up or empty) be Owner-only? Related: `PUT /settings/accounting` uses the same key with no step-up.
 
 ## For STATUS
-The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR number is filled in below once it exists.
+The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR is #51.
 
-- **"In progress" and "Next three tasks" item 2:** "then Settings" gains "(part 1 of 6: draft PR #<n>, `feat/settings-sections-api`, stacked on #50)"; the bell and the Outbox follow Settings' parts, or the owner's order (Q8).
-- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #<n> (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …" (filled in at the end).
+- **"In progress" and "Next three tasks" item 2:** "then Settings" gains "(part 1 of 6: draft PR #51, `feat/settings-sections-api`, stacked on #50)"; the bell and the Outbox follow Settings' parts, or the owner's order (Q8).
+- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …" (filled in at the end).
+- **Checks so far (stages 0 to 2):** shared 75 files and 1,136 tests; api unit 17 files and 124; web 47 files and 365; lint and typecheck clean in shared, api and web; `settings.int.test.ts` 40 passed, and with `permissions`, `isolation`, `accounting`, `invoices`, `payables`, `expenses`, `users` and `company` 169 passed in 9 files; 23 of 23 mutations caught. E1 to E3 and S1 were run red only; stage 3 runs them green. CI could not run (Actions blocked by billing).
 - **Close or update:**
   - "Settings default inputs keep a bare point as typed (`12.`) …": for Payments and Expenses, both modes now refuse it with a message that names the field; Documents' percents remain for part 2.
   - "When `PUT /settings/:section` moves to the API, it must refuse `overtimeRuleProblem`": "the overtime check lives in the shared `settingsSectionProblem`; part 2's payroll route must call it".
@@ -188,7 +202,7 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - **Reserved names:** each later part checks its section's property names against `SENSITIVE_FIELDS` (A1's key walk extends to it).
   - **The bell's and Outbox's DemoStore messages** format money with DemoStore's number format; this goes with that task.
   - **The Settings → Accounting screen** (ADR 0040) still has none.
-- **Owner questions:** a new block, "Owner questions (PR #<n>, Settings part 1; none blocks)", with Q1 to Q10 above.
+- **Owner questions:** a new block, "Owner questions (PR #51, Settings part 1; none blocks)", with Q1 to Q10 above.
 - **BRANCHES:** a `feat/settings-sections-api` row: "B (Claude)", "Queue item 2, task 2, Settings part 1 of 6: company profile, number format, payments and expense approval on the API (main checkout; stacked on #50)", "Draft" then the state at handoff, the PR, "see the branch".
 
 ## Commands run
@@ -199,3 +213,61 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `setting
 | 0 | `git fetch origin`; `git log -3 origin/feat/web-company-from-api`; `merge-base --is-ancestor origin/fix/sales-quote-resave origin/feat/web-company-from-api`; `gh pr list --head feat/web-company-from-api` | GET /company's newest commit is its handoff (`6dbd03c`); it holds B6; one PR, #50 (draft); the tree was clean; main is `d0e4e20` |
 | 0 | `git switch -q --no-track -c feat/settings-sections-api origin/feat/web-company-from-api` | branch made at `6dbd03c` |
 | 0 | `docker ps`; ports 3000 and 4000 | the compose PostgreSQL on 5432 and the api e2e one on 5433 up; both ports free |
+| 0 | `pnpm exec prettier --check` on this log and the spec | clean (Markdown is in `.prettierignore`, so this checks nothing) |
+| 0 | commit 0 (`230a4d4`), pushed with `-u` by naming the branch; `rev-parse --abbrev-ref feat/settings-sections-api@{upstream}` | pushed; `origin/feat/settings-sections-api` |
+| 0 | `gh pr create --draft --base main --head feat/settings-sections-api … --body-file settings/pr-body.md` | draft PR #51 |
+| 1 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/settings-sections.test.ts test/decimal-text.test.ts`, before the change | red as expected: 11 failed (R1 to R11 "… is not a function" or "undefined"; R9 "Cannot read properties of undefined (reading 'test')": no `MONEY_TEXT`) |
+| 1 | `heavy.sh pnpm --filter api exec vitest run --project integration test/settings.int.test.ts`, before the change | red as expected: 39 failed, 1 passed (A13, `/settings/accounting`). Every route `{"code":"not_found","message":"Cannot GET /settings"}` (or PUT); A0 "Cannot find module … settings.controller"; the rest "numbersToWire is not a function" |
+| 1 | `heavy.sh pnpm --filter web exec vitest run` on the three new unit files and `api-rereads.test.ts`, before the change | red as expected: `save-section.test.ts` cannot import its module; W1 to W6 "numbersToWire is not a function"; D1, D2, D3, D4, D7, D8 resolved or found no export; `api-rereads` 7 failed (151 cases against 149 methods, "c.getSettings is not a function"). D3b, D5, D6 and W7 passed: they pin behaviour that must not change (B8 for D4) |
+| 1 | `heavy.sh pnpm --filter web exec tsc --noEmit -p tsconfig.json`, with the red unit files kept aside and the e2e type stub | clean |
+| 1 | `heavy.sh flows/api-e2e.sh settings-red --build -- tests/e2e-api/settings.spec.ts tests/e2e-api/company.spec.ts` | builds 6 s; exit 1 after 28 s: 3 failed, 4 passed. E1, E2 and E3 at their heal, "GET /settings answered 404: Cannot GET /settings" (the expected red: the setup needs the new route); `company.spec.ts` E1 to E4 passed with the moved step-up helpers. Ports free after |
+| 1 | `heavy.sh bash settings/e2e-demo.sh red` (demo build, then S1, one worker) | build 10 s; exit 1 after 62 s: S1 at step 2, "waiting for getByRole('dialog', { name: 'Confirm it is you' }).getByLabel('Authenticator code')" (no step-up dialog on Payments). Ports free after |
+| 1 | the red files put back (moved and copied back, the shared type import restored); `git status --short` | exactly the stage's files |
+| 2a | the targeted shared tests after the change | 2 files, 16 passed |
+| 2a | `heavy.sh pnpm --filter api exec vitest run --project integration test/settings.int.test.ts` | first run 39 passed, 1 failed (A7: "Choose an active vendor of services.", B2); after the test fix 40 passed |
+| 2a | `heavy.sh settings/checks.sh s2`: shared `test`, `typecheck`, `lint`; api `typecheck`, `lint`, `test` | shared 75 files and 1,136 tests, typecheck and lint exit 0; api typecheck 0, unit 17 files and 124 tests; api lint first exit 1 (two unused names in the new test), then 0 after the fix |
+| 2a | `heavy.sh pnpm --filter api exec vitest run --project integration` on `settings`, `permissions`, `isolation`, `accounting`, `invoices`, `payables`, `expenses`, `users` and `company` | 9 files, 169 passed in 39 s. The permission and isolation route inventories (`listRoutes`) pick the five new routes up with no edit |
+| 2a | `pnpm exec prettier --write` on the stage's files | two test files reformatted, the rest unchanged |
+| 2a | commit 2a (`f3530b6`), pushed by naming the branch | pushed |
+| 2b | the targeted web unit tests after the change | 4 files, 26 passed |
+| 2b | `heavy.sh settings/checks.sh s2b web:test web:typecheck web:lint` | web 47 files and 365 tests; typecheck 0; lint 0 with 2 warnings (unused names in W2), fixed; eslint and W1 to W7 again clean |
+| 2b | `pnpm exec prettier --write` on the stage's files | one test file reformatted |
+| 2b | commit 2b (`eb66bf3`), local until the mutations ran | committed |
+| 2b | `heavy.sh python3 settings/mutate.py M1` … `M23` (background, one run; every mutated file restored with `git checkout --`) | 21 of 23 caught at first; M15 not caught (B12) and M19's file didn't load (B13) |
+| 2b | A14 strengthened (B12); `settings.int.test.ts` again | 40 passed, three runs in a row |
+| 2b | `mutate.py M15 M19` again | both caught: M15 at A14 (the second save's `before` is not the first's `after`), M19 at A3b ("expected [ 200, undefined ] to deeply equal [ 400, 'invalid_request' ]") |
+| 2b | api `lint`, `typecheck` after the A14 change; commit `1b30ddc`; 2b's commit and it pushed | exit 0; pushed |
+| 2c | `prettier --write` on the four e2e files; `heavy.sh pnpm --filter web exec eslint` on them; `web:typecheck` | unchanged; eslint exit 0, no warnings; typecheck exit 0 |
+| 2c | commit 2c (`2be13e0`), pushed | pushed |
+
+### Mutations (stage 2, on the committed change)
+Each made one change, ran its tests, and was restored (`git diff --quiet` true after each). Caught means every command exited non-zero with the expected test failing.
+
+| # | Mutation | Caught by |
+| --- | --- | --- |
+| M1 | the payments PUT's `stepUp.require` removed | A5: "owner: expected [ 200, undefined ] to deeply equal [ 403, 'step_up_required' ]" |
+| M2 | the step-up moved before the content check | A5: "expected [ 403, 'step_up_required', … ] to deeply equal [ 400, 'invalid_request', … ]" |
+| M3 | `requireWholeCompany` returns at once | A9: "expected 200 to be 403" |
+| M4 | the number format answered as the stored record | A1 flooring owner: the answer's `numbers` is not the wire list |
+| M5 | `readableSections`' module test removed | R10 (HR owner gets payments); A1 hr owner |
+| M6 | `@RequireModule` removed from the payments PUT | A5: "expected [ 403, 'step_up_required' ] to deeply equal [ 403, 'module_not_enabled' ]" |
+| M7 | `requireFeature` removed from the numbers PUT | A8: "numbers: expected 200 to be 404" |
+| M8 | `MONEY_TEXT` takes `12.` | R9, A5 and D1 ("promise resolved … instead of rejecting") |
+| M9 | the decimals range check removed | R3: "expected null to be 'Choose between 0 and 4 decimals for M…'" |
+| M10 | the save's audit entry removed | A3 flooring owner: "one audit entry per save: expected [] to have a length of 1" |
+| M11 | `.strict()` removed from the profile body | A4: the unknown top-level field answered 200 |
+| M12 | `settingsFromAnswer` takes every key of the answer | W2: the answer's `localization` replaced DemoStore's |
+| M13 | DemoStore's scope check removed | D2: "promise resolved … instead of rejecting" |
+| M14 | `updateSettings` routes every section to the API | W6: a localization save reached the API |
+| M15 | the save's `FOR UPDATE` removed | A14, after B12 |
+| M16 | `saveSection`'s catch removed | SF2: "promise rejected … instead of resolving" (and SF3) |
+| M17 | `readableSections`' readers test removed | R10; A1 flooring warehouse |
+| M18 | `profileFor` returns the profile unchanged | R11; A1 flooring sales: "expected '33-4974049' to be ''" |
+| M19 | the numbers body's kinds-once check removed | A3b, after B13 |
+| M20 | the numbers PUT takes `settings.company.manage` | A0: "expected [ 'settings.company.manage' ] to deeply equal [ 'settings.numbers.manage' ]" (and A3) |
+| M21 | the equal-prefix rule removed | R4; A5 |
+| M22 | DemoStore's module check removed | D7: Harbor's Owner saved payments |
+| M23 | `readableSections`' product-switch test removed | R10; A8: "expected { … } to not have property 'payments'" |
+
+## Left for the next stages
+Stage 3 (api-mode green runs of `settings.spec.ts` with invoices, purchasing, expenses, company, company-standing and login; the run again on the dirty database; the flows; the demo subset), stage 4 (ADR 0059, api-contract.md, the delta row, data-model.md, FEATURES.md with the features sync test, table 7.8) and stage 5 (full checks, both whole suites, `/review`, the security review, handoff) are the orchestrator's next steps. The e2e specs E1 to E3 have only been run red (at their heal); their first green run is stage 3.
