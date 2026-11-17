@@ -125,8 +125,10 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **B7, RD5 doesn't pin the seeded `asOf`:** DemoStore may shift fixture dates. It sends `asOf: "1999-01-01"` with the changed rate, so a store that kept the sent date fails it.
 - **B8, passing on 2a's head by design:** RG9 (a fixture key walk), RD3, RD7, RD8, RD9 (keys, switch, scope and an Owner's states change, which 2a's demo already allowed), W2 and LW6 (narrowed), L16 (Sales tax and the whole section were never routes), X1 and X2, and 2a's E2 (its in-browser Region step is gone). Every other new or changed case was red.
 - **B9, `saveLocalizationTab` answers what it stored,** so each handler returns it: Region as sent, Currency with its dated rates (RC8 asserts the answer equals the row), and documents and payroll as before.
-- **B11, Z1 and Z2 count their own audit entries by id.** The plan compared a count taken after the heal and checked the set of targets from that minute on; another spec saving as Dana or Grace in the same minute (2a's E2 saves Payroll rules as Dana, E1 Sales and documents as Grace) would put its target in the set. Each test now keeps the ids it saw after its heal and expects exactly its own saves' targets: Region three times (steps 3 and 5 and the restore), Currency once. Not run yet: the green e2e run is stage 3.
 - **B10, no stop-and-ask item came up:** the zone stays read only, no currency can be added, nothing is seeded at provisioning, and nothing under `apps/api/src/core`, packages/db or providers changed. The control database is only read (RC4 and the RC file's `afterAll` compare floorco's whole control row).
+- **B11, Z1 and Z2 count their own audit entries by id.** The plan compared a count taken after the heal and checked the set of targets from that minute on; another spec saving as Dana or Grace in the same minute (2a's E2 saves Payroll rules as Dana, E1 Sales and documents as Grace) would put its target in the set. Each test now keeps the ids it saw after its heal and expects exactly its own saves' targets: Region three times (steps 3 and 5 and the restore), Currency once. Green in stage 3 (twice, B12).
+- **B12, Z1 waits out step 3's toast.** The first green run failed Z1 at step 5: "Region saved" from step 3 was still on Dana's page when step 5's appeared, so `getByText("Region saved")` matched two toasts (a strict-mode error; the PUT had answered 200 and the states were `["CO"]`). Z1 now moves the pointer away and waits for step 3's toast to hide before step 5, as demo S4 and 2a's B10 do. The clean-up put Region back (checked with a read-only query of the e2e database: Summit's region and currency as seeded, control's zone `America/Denver`).
+- **B13, no flow was in `fixme`.** `git grep fixme apps/web/tests/e2e-api` finds nothing, so stage 3 had no flow to turn back on; the eight api-mode flows ran as they are (all passed).
 
 ## Owner questions
 None blocks; each has its safest default taken.
@@ -194,6 +196,13 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `mutate.py --check RM1 … RM30` | every anchor found once |
 | `heavy.sh python3 settings2b/mutate.py RM1 … RM30` (on the committed `c758d74`, before it was pushed) | exit 0 in 7.5 minutes: all 30 caught, every file restored; `git status --porcelain` showed only this log and B11's spec edit, no product file |
 | `checks.sh s2d` web typecheck and lint (after B11) | both exit 0 |
+| **Stage 3** `api-e2e.sh settings2b-green --build -- settings-region-currency, settings-localization, settings, sales, invoices, company, meetings, login` | exit 1 after 165 s (builds 14 s): 27 passed, Z1 failed at step 5 (two "Region saved" toasts, B12) |
+| `prettier --check`, `eslint` on the Z spec (after B12) | clean |
+| `api-e2e.sh settings2b-green-z -- settings-region-currency.spec.ts` | exit 0 after 17 s: Z1, Z2 passed |
+| `docker exec fp-e2e-worktree psql … select` (read only) | Summit's region and currency as seeded; control `summit` zone `America/Denver` |
+| `api-e2e.sh settings2b-again -- settings-region-currency.spec.ts` (dirty database, no rebuild) | exit 0 after 16 s: 2 passed |
+| `api-e2e.sh settings2b-flows -- tests/e2e-api/flows` | exit 0 after 77 s: F1 to F7, 8 passed |
+| `e2e-demo.sh subset` | exit 0 in 7.5 minutes (build 12 s): flooring 352 passed in 432 s (S2 to S6 among them), hr 7 passed |
 
 ### Mutations (stage 2, on the committed change; `settings2b/mutate.py`)
 Each mutation was made on the committed code, its commands run, and its file restored with `git checkout --` (`git diff --quiet` true for all 30). A mutation counts as caught only when every listed command failed with the expected test.
@@ -237,3 +246,8 @@ Each mutation was made on the committed code, its commands run, and its file res
 - **Green:** shared, API (unit and the ten related integration files) and web unit suites, typecheck and lint for all three packages; 30 of 30 mutations caught.
 - **Not run in these stages:** the green api-mode and demo e2e runs (stage 3; Z1 and Z2 have only been run red), the docs (stage 4), the full checks, the whole suites and the reviews (stage 5).
 - **No stop-and-ask item** (B10).
+
+## Stage 3: outcome
+- **Api mode green:** the eight settings, sales, invoices, company, meetings and login specs (28 tests) with Z1 after B12, again on the dirty database, and the eight flows. 2a's E1 and E2 and part 1's E1 to E3 pass beside Z1 and Z2.
+- **Demo green:** the subset, 352 flooring and 7 hr tests, S4 to S6 among them.
+- **One test fix (B12),** no product change, so the build of the green runs is the build of the product as committed in `c758d74`.

@@ -119,8 +119,12 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
         const saved = regionPut();
         await dana.page.getByRole("button", { name: "Save region" }).click();
         expect((await saved).status()).toBe(200);
-        await expect(dana.page.getByText("Region saved")).toBeVisible();
+        const savedToast = dana.page.getByText("Region saved");
+        await expect(savedToast).toBeVisible();
         await expect(dana.page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+        // Waited out, so step 5's "Region saved" is that save's own toast.
+        await dana.page.mouse.move(0, 0);
+        await expect(savedToast).toBeHidden();
 
         // 4. Priya's invoice now reads the API's format; she reads Region but not Currency.
         await priya.page.reload();
