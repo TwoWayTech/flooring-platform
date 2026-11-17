@@ -4,6 +4,7 @@ import {
   overtimeRuleProblem,
   PAYMENT_MESSAGES,
   SETTINGS_SCOPE_MESSAGE,
+  type CompanyId,
   type FeatureKey,
   type FeatureRegister,
   type Role,
@@ -22,7 +23,27 @@ vi.mock("@workspace/shared", async (importOriginal) => {
   };
 });
 
-afterEach(() => OFF.clear());
+/** The number-format locale Summit opens with when a test sets one (D8b); null keeps the fixture's. */
+const SUMMIT_LOCALE = vi.hoisted(() => ({ value: null as string | null }));
+
+vi.mock("@/lib/api/demo/fixtures", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/api/demo/fixtures")>();
+  return {
+    ...real,
+    loadCompanyFixtures: async (companyId: CompanyId) => {
+      const fixtures = await real.loadCompanyFixtures(companyId);
+      const locale = SUMMIT_LOCALE.value;
+      if (companyId !== "summit" || !locale) return fixtures;
+      const numbers = { ...fixtures.settings.numbers, locale };
+      return { ...fixtures, settings: { ...fixtures.settings, numbers } };
+    },
+  };
+});
+
+afterEach(() => {
+  OFF.clear();
+  SUMMIT_LOCALE.value = null;
+});
 
 /** Summit personas (fixtures): the Owner and a Sales rep; Harbor's Owner (HR Suite). */
 const DANA = "sm-usr-01";
@@ -141,5 +162,16 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     await expect(
       store.updateSettings("payments", { ...settings.payments, refundPrefix: settings.payments.paymentPrefix }),
     ).rejects.toThrow(PAYMENT_MESSAGES.samePrefix);
+  });
+
+  it("D8b the locale rule compares with the company's stored format, not the default (rule 12)", async () => {
+    SUMMIT_LOCALE.value = "en-CA";
+    const store = await open("summit", DANA);
+    const canadian = (await store.getSettings()).numbers;
+    expect(canadian.locale).toBe("en-CA");
+    await expect(store.updateSettings("numbers", { ...canadian, locale: "en-US" })).rejects.toThrow("(en-CA, USD)");
+    const kept = { ...canadian, negativeStyle: "parens" as const };
+    await store.updateSettings("numbers", kept);
+    expect((await store.getSettings()).numbers).toEqual(kept);
   });
 });

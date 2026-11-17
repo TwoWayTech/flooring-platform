@@ -899,6 +899,21 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(outcome(euros)).toEqual([400, "invalid_request"]);
     expect(euros.body.message).toContain("en-US, USD");
 
+    // A stored format that is not the default (rule 12): the rule compares with the company's own row,
+    // so a Canadian company keeps en-CA and can't switch to the en-US default.
+    const canadian: NumberSettings = { ...SUMMIT.settings.numbers, locale: "en-CA" };
+    await withCompanyDb(otherco, (db) =>
+      db.update(settings).set({ value: canadian }).where(eq(settings.group, "numbers")),
+    );
+    const otherOwner = await member(otherco, ["owner"]);
+    const kept = await put("numbers", otherOwner.cookie, numbersBody("parens", canadian));
+    expect(kept.status, JSON.stringify(kept.body)).toBe(200);
+    expect(await rowOf(otherco, "numbers")).toEqual({ ...canadian, negativeStyle: "parens" });
+    const american = await put("numbers", otherOwner.cookie, numbersBody("minus"));
+    expect(outcome(american)).toEqual([400, "invalid_request"]);
+    expect(american.body.message).toContain("(en-CA, USD)");
+    expect(await rowOf(otherco, "numbers")).toEqual({ ...canadian, negativeStyle: "parens" });
+
     await withCompanyDb(bareco, (db) => db.delete(settings).where(eq(settings.group, "numbers")));
     const bare = await member(bareco, ["owner"]);
     const defaults: NumberSettingsWire = numbersToWire(defaultNumberSettings());
