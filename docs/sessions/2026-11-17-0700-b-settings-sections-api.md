@@ -185,6 +185,7 @@ Test ids: R (shared), A (API), W, SF and D (web units), E (api-mode e2e), S1 (de
 | Payments step-up after the content checks, on screen and on the API | A5, E2 step 2 (no request from the page; a direct PUT is refused before any code), S1, SF4, SF5; M1, M2 |
 | A refused save is shown and the draft kept | SF1 to SF4, S1, E2 step 2, E3 step 3; M16 |
 | The server acts on the saved rules (customer and supplier payments, write-off, numbering, expenses) | A6, A7 |
+| The locale rule compares with the stored row, not the defaults (rule 12; review round 3) | A15 (an en-CA company), D8b, R3; M33 to M35 |
 | Own company only | A11 |
 | Audit per write; the lock orders writes | A3, A14, E2 step 7; M10, M15 |
 | Web: served sections merged, others DemoStore's, unknown ignored | W1, W2, W6; M12, M14 |
@@ -323,6 +324,9 @@ Each made one change, ran its tests, and was restored (`git diff --quiet` true a
 | M30 | review round 2: `.strict()` removed from the expenses body | A4b: "expected [ 200, undefined ] …" (survived round 1's tests) |
 | M31 | review round 2: the numbers body's top-level `.strict()` removed | A4b (survived round 1's tests) |
 | M32 | review round 2: the decimals entry's `.strict()` removed | A4b (survived round 1's tests) |
+| M33 | review round 3: `saveNumbers` compares with `defaultNumberSettings()`, not the stored row | A15: "(en-US, USD)", expected 400 to be 200 (survived round 2's tests) |
+| M34 | review round 3: `SettingsService.current` always answers the defaults | A15, the same (survived round 2's tests) |
+| M35 | review round 3: DemoStore compares the number format with `defaultNumberSettings()` | D8b: the en-US save resolved instead of being refused (survived round 2's tests) |
 
 ## Outcome
 Stages 0 to 4 are done, and the full checks and both whole e2e suites pass. No stop-and-ask item came up: no control-database write, no Zod in packages/shared, no seeding at provisioning, and no table, migration or dependency change. Nothing was red, so stage 3 needed no spec fix and has no commit of its own.
@@ -434,3 +438,45 @@ Two findings, both should_fix and both confirmed by a skeptic. Neither changed r
 | `e0843b3` | test(api): every settings route proves its own scope, strict body and, for expenses, its content rule [skip ci] |
 | `4d05a9d` | docs(specs): settings rows point at SETTINGS_SECTIONS; Payments and expense approval rules written down [skip ci] |
 | this commit | docs(sessions): Settings part 1, review round 2 [skip ci] |
+
+## Review round 3
+One finding, should_fix and confirmed by a skeptic. It was about test coverage only, so no runtime behaviour changed.
+
+**Finding (correctness): the API tests didn't pin rule 12's wiring.** `saveNumbers` compares the sent locale and currency with `SettingsService.current(tenant, "numbers")`, which returns the stored row or, when there is none, the defaults. Every API test company stored, or fell back to, en-US/USD, which is also the literal default. A mutant that compared with `defaultNumberSettings()` instead of the stored row would therefore pass A2, A3, A11 and A15. Only the shared units (R3, with an en-CA current value) pinned the rule itself. DemoStore's D8 had the same gap, because Summit is en-US too.
+
+**The fix (tests only):**
+- **A15** (`apps/api/test/settings.int.test.ts`) now gives otherco a stored en-CA format, written behind the API's back.
+  - A save that keeps en-CA answers 200 and is stored.
+  - A save that sends en-US answers 400 `invalid_request`, naming "(en-CA, USD)". The row is unchanged.
+- **D8b** (`apps/web/tests/unit/demo-settings.test.ts`) is the finding's optional demo case. It opens Summit with an en-CA format through a hoisted override of `loadCompanyFixtures`, the same pattern as the file's `OFF` switch override, reset after each test.
+  - A save that sends en-US is refused with "(en-CA, USD)".
+  - A save that keeps en-CA is stored.
+
+**Decisions and why (each the safest option):**
+- **R3-1, red before the fix, as mutations.** The product code was already correct, so no product test could fail before the fix. The proof is mutants instead, as in R2-1:
+  - **M33:** the controller compares with `defaultNumberSettings()`.
+  - **M34:** `SettingsService.current` always answers the defaults.
+  - **M35:** DemoStore compares the number format with `defaultNumberSettings()`.
+
+  All three survived round 2's tests, which were put back from `HEAD~1` for that run. All three are caught by the new A15 and D8b.
+- **R3-2, otherco and not a new company.** Provisioning a sixth company costs a database and about 10 s.
+  - otherco is the suite's "another company", and A15 runs after A11, its only other user.
+  - A15 writes the en-CA row itself, so the case still works when run alone (`-t A15`).
+- **R3-3, both directions.** Keeping en-CA pins that the stored row is accepted. Sending en-US pins that the default is refused. Either one alone would catch M33 and M34, but the pair also pins the message's "(en-CA, USD)".
+- **R3-4, the demo case overrides the loader and leaves Summit's fixture alone.** All three demo companies are en-US. Changing a fixture would change the demo for everyone. The override is scoped to D8b by a hoisted value that `afterEach` clears. DemoStore keeps its overlay in memory under Node (no `localStorage`), so nothing leaks into later cases.
+- **R3-5, what was re-run.** API and web test code changed, so the full checks ran.
+  - No product, shared or web source file changed, so the api-mode and demo e2e were not rebuilt or re-run. Their inputs are byte for byte the same as round 2's run.
+  - No STATUS, BRANCHES or blueprint-delta change: this round only adds tests.
+
+| Command (all through `heavy.sh`) | Result |
+| --- | --- |
+| `pnpm --filter web exec vitest run tests/unit/demo-settings.test.ts` | 10 passed (9 before, plus D8b) |
+| `pnpm --filter api exec vitest run --project integration test/settings.int.test.ts` | 42 passed (A15 extended) in 17 s |
+| round 2's two test files put back from `HEAD~1`; `python3 settings/mutate.py M33 M34 M35`; the test files restored with `git checkout --` | 3 survived: M33 and M34 at 42 of 42, M35 at 9 of 9. Tree clean after |
+| `python3 settings/mutate.py M33 M34 M35` on the committed new tests | 3 of 3 caught, each file restored: M33 and M34 at A15 ("(en-US, USD)": expected 400 to be 200), M35 at D8b ("promise resolved instead of rejecting") |
+| `bash settings/full.sh` | exit 0 in 218 s. `pnpm lint` 0 and `pnpm typecheck` 0 (api and web ran, 4 of 6 cached each). `pnpm test` 0: shared 75 files and 1,136 tests, web 47 and 368, api unit 17 and 124, db 5 and 18, providers 1 and 11. `pnpm test:api` 0: api 37 files and 696 tests, db 8 and 59, providers 1 and 2. `pnpm test:hooks` 15 of 15 |
+
+| Commit | Subject |
+| --- | --- |
+| `c684d00` | test(settings): the locale rule is pinned to the company's stored format on the API and in the demo [skip ci] |
+| this commit | docs(sessions): Settings part 1, review round 3 [skip ci] |
