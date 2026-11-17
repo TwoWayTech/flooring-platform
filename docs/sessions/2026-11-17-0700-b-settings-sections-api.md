@@ -182,8 +182,8 @@ Test ids: R (shared), A (API), W, SF and D (web units), E (api-mode e2e), S1 (de
 | Company-wide scope (API and DemoStore) | A9, D2; M3, M13 |
 | Switch off → 404; DemoStore's order | A8, D3, D3b; M7 |
 | Strict bodies and shared content rules (both modes) | A4, A5, A15, R2 to R5, D1, D8, S1; M8, M9, M11, M21 |
-| Payments step-up after the content checks | A5, E2, S1; M1, M2 |
-| A refused save is shown and the draft kept | SF1 to SF3, S1, E2 step 2; M16 |
+| Payments step-up after the content checks, on screen and on the API | A5, E2 step 2 (no request from the page; a direct PUT is refused before any code), S1, SF4, SF5; M1, M2 |
+| A refused save is shown and the draft kept | SF1 to SF4, S1, E2 step 2, E3 step 3; M16 |
 | The server acts on the saved rules (customer and supplier payments, write-off, numbering, expenses) | A6, A7 |
 | Own company only | A11 |
 | Audit per write; the lock orders writes | A3, A14, E2 step 7; M10, M15 |
@@ -211,8 +211,8 @@ None blocks the build; each has its safest default taken.
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR is #51.
 
 - **"In progress" and "Next three tasks" item 2:** "then Settings" gains "(part 1 of 6: draft PR #51, `feat/settings-sections-api`, stacked on #50)"; the bell and the Outbox follow Settings' parts, or the owner's order (Q8).
-- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …", filled from the "Checks" bullet below.
-- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365, api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. CI could not run (Actions blocked by billing).
+- **"Done": a Settings part 1 entry** (on merge): "Settings part 1 on the API (queue item 2, task 2), PR #51 (ADR 0059). In api mode `GET /settings` gives the company profile and number format to every member (the EIN only to the profile's manager), the payment rules to people who see invoices or manage payments, and expense approval to its managers, each by module and product switch, with the number format's decimals as a list; `PUT /settings/profile`, `/numbers`, `/payments` (with a step-up) and `/expenses` save them with their own key and module, company-wide scope, strict bodies and shared rules, under a row lock with one audit entry; the web merges these sections over DemoStore's and routes their saves, so the shell, documents, the payment sheet and Update status follow the server, and the server's customer and supplier payments, write-offs and expenses apply what the pages save; a refused settings save now shows its message on every settings page, and Payments and Expense approval run the shared rule before the step-up or the request, so a refused value never costs an authenticator code. DemoStore applies the same keys, module, switch, scope and content rules, in the same order. Other sections stay in the browser until their part. No schema change, migration or dependency; nothing in core, providers, packages/db or the web's session. Checks: …", filled from the "Checks" bullet below.
+- **Checks** (for the Done entry's "Checks: …"): `pnpm lint` and `pnpm typecheck` clean; `pnpm test`: shared 75 files and 1,136 tests, web 47 and 365 (367 after review round 1), api unit 17 and 124, db 5 and 18, providers 1 and 11; `pnpm test:api`: api 37 files and 694 tests, db 8 and 59, providers 1 and 2; `pnpm test:hooks` 15; 23 of 23 mutations caught, plus the e2e proof EP1; api-mode `settings.spec.ts` (E1 to E3) green with invoices, purchasing, expenses, company, company-standing and login (18), again on the used database (3), the flows (8) and the whole api-mode suite on a fresh build (49 of 49); demo subset 271 passed and 1 skipped (flooring) and 7 (hr); the whole demo suite 445 passed and 7 skipped (flooring; every skip is a switched-off feature or a data condition in a file this branch doesn't touch) and 67 (hr). Summit's four sections were back at their seeded values after the runs. After review round 1 (web only): web lint and typecheck clean, web units 47 files and 367 tests, the api-mode set again on a fresh build (18 of 18), and the demo subset again (271 passed and 1 skipped, and 7). CI could not run (Actions blocked by billing).
 - **Close or update:**
   - "Settings default inputs keep a bare point as typed (`12.`) …": for Payments and Expenses, both modes now refuse it with a message that names the field; Documents' percents remain for part 2.
   - "When `PUT /settings/:section` moves to the API, it must refuse `overtimeRuleProblem`": "the overtime check lives in the shared `settingsSectionProblem`; part 2's payroll route must call it".
@@ -329,3 +329,45 @@ Stages 0 to 4 are done, and the full checks and both whole e2e suites pass. No s
 | this commit | docs(sessions): Settings part 1 outcome, full checks and both suites [skip ci] |
 
 **Left for the orchestrator:** `/review`; a fresh read-only security-reviewer on `origin/feat/web-company-from-api...HEAD` focused on the PR body's "Security-review focus" (no packages/db change, so no schema-reviewer); `/handoff` with STATUS and BRANCHES from "For STATUS" above (that commit carries no `[skip ci]`); then, in queue order after #45 to #50 have merged and `origin/main` is merged in, ready, CI and the self-merge. The PR body was refreshed with these results.
+
+## Review round 1
+One finding, confirmed by a skeptic; fixed in `ba3bf41`.
+
+**The finding (should_fix, correctness):** a refused Payments value still cost an authenticator code on screen. `SettingsForm`'s Save opened the step-up dialog at once, and `StepUpDialog` spends the code on `POST /auth/step-up` before `onConfirm` sends the PUT. So "12." in "Only above this amount" spent a code, then got the API's 400. The code can't be used again, so the corrected save waited up to 30 s for the next one, and the repeat counted towards the 5-failure lockout. The spec and ADR 0059 D5 promised the opposite. The API's own order (content rules, then the step-up) only protected direct API calls. E2 step 2 and S1 had encoded the costly path.
+
+**The fix:**
+- `save-section.ts`: a pure `nextSaveStep(draft, problem, stepUp, notify)`. It runs the section's shared rule first. A refused draft shows the rule's words in a toast and returns `"refused"`, so there is no dialog and no request. Otherwise it returns `"step-up"` or `"save"`.
+- `SettingsForm` takes an optional `problem` and calls `nextSaveStep` from Save.
+- Payments passes `paymentSettingsProblem`; Expense approval passes `expenseSettingsProblem`. These are the rules the API and DemoStore already run, with the same words.
+- Spec "The step-up" and ADR 0059 D5 and section 6 ("Four screen edits") now say how the promise is kept, on screen and on the API.
+
+**Tests (each red before the fix, green after):**
+- SF4 and SF5 (`save-section.test.ts`): red with "nextSaveStep is not a function".
+- Demo S1: Save shows the refusal with no dialog. Red at the message ("element(s) not found": the dialog had opened instead).
+- Api-mode E2 step 2: the page sends no PUT and no `POST /auth/step-up`, the message shows, the dialog stays closed and the draft stays. A direct PUT of the same body answers 400 `invalid_request` with the same words before any code. Red at the message.
+- Api-mode E3 step 3: a refused expense amount shows its words and sends no PUT. Red: `["PUT"]` was sent.
+
+**Decisions and why (each the safest option):**
+- **R1-1, fix the screen rather than reword the docs.** Keeping the promise means a refused value wastes no code and doesn't count towards the lockout. The access editor already works this way (spec "One permission matrix"; ADR 0053 item 17).
+- **R1-2, a pure `nextSaveStep` rather than logic inside the component.** The web unit suite has no DOM renderer (it uses `renderToStaticMarkup`), so a pure step is what a unit test can pin. The screen behaviour is pinned by S1, E2 and E3.
+- **R1-3, Expense approval passes its rule too** (the finding's suggestion). It has no step-up, so this only saves a refused request, with the same words. Company profile already checks in the browser with the same patterns and messages (its own form). Number format's steppers can't go out of range, and no page edits its locale or currency. Neither gets `problem`.
+- **R1-4, a toast, not a disabled Save (`canSave`).** A disabled button doesn't say why; the toast gives the shared rule's words, as the access editor does.
+- **R1-5, E2 step 2 keeps a direct PUT.** The api-mode e2e still pins the API's order (400 before any code) and that its words match the page's.
+- **R1-6, no shared or API code changed**, so the full checks were not re-run (the task's rule). The API controller's comment about its order is still true and was left alone. Ran instead: web lint, web typecheck, the whole web unit suite, the api-mode set with a rebuild, and the demo subset with a rebuild.
+- **Residual:** for these four sections, the on-screen path where the API refuses a settings save is now pinned only by SF1 to SF3. S1 and E2 used to drive it. Payments' and Expense approval's page rules equal the API's, so that path now runs only if a newer API rule differs. Company profile's refusals still reach `saveSection` that way.
+- **Tooling note:** the push guard reads git's stash subcommand that saves changes as a push and blocks it. For the red e2e runs, the new unit file was set aside by copy instead, because the Next build typechecks `tests/unit`.
+
+| Command (all through `heavy.sh`) | Result |
+| --- | --- |
+| `pnpm exec vitest run tests/unit/save-section.test.ts` (before the fix) | red as expected: SF4 and SF5 "nextSaveStep is not a function"; 3 passed |
+| `settings/e2e-demo.sh review1-red` (demo build, S1, product code unchanged) | build 4 s; S1 failed in 16 s at the refusal message (the dialog opened instead). Ports free after |
+| `flows/api-e2e.sh settings-review1-red --build -- tests/e2e-api/settings.spec.ts` | builds 12 s; exit 1 after 41 s: E2 failed at the message, E3 failed with `["PUT"]` sent, E1 passed; clean-ups quiet. Ports free after |
+| `pnpm exec vitest run tests/unit/save-section.test.ts` (after) | 5 passed |
+| `pnpm --filter web lint`, `pnpm --filter web typecheck`, `pnpm exec vitest run` (web) | clean, clean, 47 files and 367 tests passed (19 s together); Prettier clean on the changed files |
+| `flows/api-e2e.sh settings-review1 --build -- settings, invoices, purchasing, expenses, company, company-standing, login` | builds 6 s; exit 0, **18 passed** in 67 s (E1 8.0 s, E2 8.1 s, E3 4.2 s). Ports free after |
+| `settings/e2e-demo.sh review1` (demo build, the stage 3 subset) | build 12 s; flooring **271 passed, 1 skipped** in 340 s (S1 1.0 s; the skip is `notifications.spec.ts`'s own, as in stage 3); hr **7 passed** in 6 s. Ports free after |
+
+| Commit | Subject |
+| --- | --- |
+| `ba3bf41` | fix(web): a refused Payments or expense value says why before any step-up, so it never costs a code [skip ci] |
+| this commit | docs(sessions): Settings part 1, review round 1 [skip ci] |
