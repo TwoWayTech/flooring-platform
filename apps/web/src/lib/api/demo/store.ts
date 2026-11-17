@@ -7,7 +7,6 @@ import {
   isDefaultRoleKey,
   permissionsForModules,
   featureOn,
-  overtimeRuleProblem,
   PRODUCT_MODULES,
   roleTemplate,
   boxedStock,
@@ -66,6 +65,9 @@ import {
   type PlatformAccessPatch,
   type PlatformAuditQuery,
   type SupportRequestInput,
+  SETTINGS_SCOPE_MESSAGE,
+  SETTINGS_SECTIONS,
+  settingsSectionProblem,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -181,7 +183,7 @@ import {
   saveNotificationRule,
   simulateBounce,
 } from "./notification-actions";
-import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
+import { assertRollEditOnly, savePermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-actions";
 import {
@@ -309,19 +311,6 @@ const PLATFORM_KEY = "platform";
 /** The demo's platform audit log and support requests (docs/specs/platform-admin.md, part 3, "Demo mode"). */
 const PLATFORM_AUDIT_KEY = "platform-audit";
 const PLATFORM_SUPPORT_KEY = "platform-support";
-const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
-  branding: "Branding",
-  localization: "Localization and tax",
-  numbers: "Number format",
-  profile: "Company profile",
-  payments: "Payments",
-  inventory: "Stock rules",
-  expenses: "Expense approval",
-  sharedCosts: "Shared costs",
-  hr: "HR",
-  meetings: "Meetings",
-  email: "Email and notifications",
-};
 
 /** Collections that need a permission even to read: an API would answer 403 for the whole list. */
 const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
@@ -841,21 +830,30 @@ export class DemoStore implements ApiClient {
     return this.open().settings;
   }
 
+  /**
+   * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
+   * the section's keys, its module, its page's switch, data scope `all` (View as limits it too,
+   * spec rule 22), then the shared content rules against the stored section.
+   */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
-    await this.assertCan(db, settingsPermissions(section));
-    if (section === "localization") {
-      // California only while its switch is on (ADR 0050).
-      const problem = overtimeRuleProblem((value as CompanySettings["localization"]).payroll.overtimeRule);
-      if (problem) throw new DemoRuleError(problem);
-    }
+    const rule = SETTINGS_SECTIONS[section];
+    await this.assertCan(db, rule.keys);
+    const { access, company } = await this.granter(db);
+    // The API's own words (`PERMISSION_REFUSALS.module_not_enabled` in apps/api's permission guard).
+    if (!company.modules.includes(rule.module))
+      throw new DemoRuleError("This part of the product is not switched on for your company.");
+    if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
+    if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
+    const problem = settingsSectionProblem(section, value, db.settings[section]);
+    if (problem) throw new DemoRuleError(problem);
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);
     this.appendAudit(db, {
       category: "settings",
-      action: `Changed ${SETTINGS_LABELS[section].toLowerCase()}`,
-      target: SETTINGS_LABELS[section],
+      action: `Changed ${rule.label.toLowerCase()}`,
+      target: rule.label,
       ...diff,
     });
     this.emit();

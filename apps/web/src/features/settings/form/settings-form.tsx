@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { StepUpDialog } from "@/components/step-up-dialog";
 import { SaveBar } from "./save-bar";
+import { saveSection } from "./save-section";
 
 /** Whether two settings values differ; settings are plain data, so JSON compares them fully. */
 export function differs(a: unknown, b: unknown): boolean {
@@ -30,7 +31,10 @@ interface SettingsFormProps<T> {
   initial: T;
   /** The company's original values, for Reset to default. */
   defaults: T;
-  /** Base currency and tax changes need a step-up code (blueprint "Localization", rule 4). */
+  /**
+   * The save needs a step-up code: base currency and tax (blueprint "Localization", rule 4), and
+   * Payments (ADR 0059 D5).
+   */
   stepUp?: boolean;
   /** Extra condition for saving, such as a passing contrast check. */
   canSave?: (draft: T) => boolean;
@@ -42,7 +46,7 @@ interface SettingsFormProps<T> {
 /**
  * One settings section (spec A4): title and one sentence, the rows with changed ones marked,
  * Reset to default, and the sticky Save / Discard bar. Saving goes through the ApiClient, which
- * writes the change to the audit log.
+ * writes the change to the audit log; a refused save shows its message and keeps the draft.
  */
 export function SettingsForm<T>({
   title,
@@ -65,9 +69,8 @@ export function SettingsForm<T>({
   async function save() {
     setSaving(true);
     try {
-      await onSave(draft);
-      setSaved(draft);
-      toast.success(`${title} saved`);
+      // A refusal shows its words and keeps the draft, so the bar still shows the change (D16).
+      if (await saveSection(draft, onSave, title, toast)) setSaved(draft);
     } finally {
       setSaving(false);
       setConfirming(false);

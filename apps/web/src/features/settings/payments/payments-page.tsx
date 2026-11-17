@@ -70,7 +70,8 @@ function PaymentsSection({ draft, setDraft, changed }: SectionProps<PaymentSetti
 
 /**
  * Settings: Payments (spec Appendix A): whether payments wait for a second person, above which
- * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes.
+ * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes. These are
+ * fraud controls over money in and out, so saving asks for a step-up code (ADR 0059 D5).
  */
 export function PaymentsSettingsPage() {
   const can = useCan();
@@ -82,6 +83,7 @@ export function PaymentsSettingsPage() {
     <Panel bodyClassName="flex flex-col gap-8">
       <SettingsForm
         showTitle={false}
+        stepUp
         title="Payments"
         description="The two-person check on customer payments, small write-offs, and payment and refund numbering."
         initial={settings.payments}
