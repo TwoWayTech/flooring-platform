@@ -7,12 +7,12 @@ import { BrandStyle } from "@workspace/ui/components/brand-style";
 import { NumberSettingsProvider } from "@workspace/ui/components/number-settings";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
-import { QueryFallback } from "@/components/query-fallback";
-import { viewerAccess } from "@/lib/access";
 import type { CompanySession } from "@/lib/session/session";
-import { PRODUCTS } from "@/products";
+import { viewAsOffered } from "@/lib/view-as";
+import { buildWorkspace } from "./build-workspace";
+import { openWorkspace } from "./open-workspace";
 import { WorkspaceContext, type Workspace } from "./workspace-context";
-import { featureOn } from "@workspace/shared";
+import { WorkspaceRefused } from "./workspace-refused";
 
 const viewAsKey = (companyId: string) => `fp-view-as:${companyId}`;
 
@@ -35,7 +35,9 @@ function storeViewAs(companyId: string, roleId: string | null) {
 
 /**
  * Opens the signed-in company in the ApiClient, then provides the workspace: company, settings,
- * user, roles and effective access. Branding and number format apply to everything below.
+ * user, roles and effective access (`getWorkspace`, GET /company in api mode; ADR 0051, "GET
+ * /company"). A stored View as applies only for someone who may use it, and one that doesn't is
+ * cleared (D16). Branding and number format apply to everything below.
  */
 export function WorkspaceProvider({
   session,
@@ -50,10 +52,12 @@ export function WorkspaceProvider({
   const [viewAs, setViewAsState] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = featureOn("shell.view-as") ? readViewAs(session.companyId) : null;
-    void api.openCompany(session.companyId, { userId: session.userId, viewAsRoleId: stored }).then(() => {
+    const stored = viewAsOffered() ? readViewAs(session.companyId) : null;
+    void openWorkspace(api, { companyId: session.companyId, userId: session.userId }, stored).then((applied) => {
+      // A stored choice that doesn't apply to this person is cleared, so it never reaches the next one.
+      if (stored !== applied) storeViewAs(session.companyId, applied);
       for (const notice of api.takeNotices()) toast.info(notice);
-      setViewAsState(stored);
+      setViewAsState(applied);
       setOpened(true);
     });
   }, [session.companyId, session.userId]);
@@ -86,13 +90,12 @@ interface WorkspaceDataProps {
 function WorkspaceData({ session, viewAs, setViewAs, children, fallback }: WorkspaceDataProps) {
   const query = useApiQuery(
     async (client) => {
-      const [company, settings, roles, users] = await Promise.all([
+      const [facts, base, settings] = await Promise.all([
+        client.getWorkspace(),
         client.getCompany(),
         client.getSettings(),
-        client.list("roles"),
-        client.list("users"),
       ]);
-      return { company, settings, roles, users };
+      return { facts, base, settings };
     },
     [session.companyId],
     // The shell keeps its company and roles when a later re-read fails; the page shows the error.
@@ -100,28 +103,13 @@ function WorkspaceData({ session, viewAs, setViewAs, children, fallback }: Works
   );
   useCompanyDefaultTheme(query.data?.settings.branding.defaultTheme);
 
-  const workspace = useMemo<Workspace | null>(() => {
-    if (query.status !== "ready") return null;
-    const { company, settings, roles, users } = query.data;
-    const user = users.find((u) => u.id === session.userId);
-    if (!user) return null;
-    const viewAsRole = roles.find((r) => r.id === viewAs) ?? null;
-    return {
-      session,
-      product: PRODUCTS[session.product],
-      company,
-      settings,
-      user,
-      roles,
-      access: viewerAccess(company, roles, user, viewAsRole?.id ?? null),
-      viewAsRole,
-      setViewAs,
-    };
-  }, [query, session, viewAs, setViewAs]);
+  const workspace = useMemo<Workspace | null>(
+    () => (query.status === "ready" ? buildWorkspace(query.data, { session, viewAs, setViewAs }) : null),
+    [query, session, viewAs, setViewAs],
+  );
 
-  if (query.status === "error") {
-    return <QueryFallback query={query} className="m-4 lg:m-8" label="Loading your workspace" />;
-  }
+  // With keepDataOnError this is only a first read that failed: a full page with Sign out (D17).
+  if (query.status === "error") return <WorkspaceRefused error={query.error} onRetry={query.retry} />;
   if (!workspace) return <>{fallback}</>;
   return (
     <WorkspaceContext.Provider value={workspace}>

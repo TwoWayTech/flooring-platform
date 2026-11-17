@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsUpDown, Eye } from "lucide-react";
-import { featureOn, SENSITIVE, type PermissionKey, type Role } from "@workspace/shared";
+import { SENSITIVE, type PermissionKey, type Role } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   DropdownMenu,
@@ -12,12 +12,15 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { mayViewAs, viewAsOffered } from "@/lib/view-as";
 
-/** "View as role" is for people who manage roles, so they can check what each role sees. */
+/**
+ * "View as role" is for people who manage roles, so they can check what each role sees. Demo only:
+ * in api mode the API answers for the signed-in person only (`lib/view-as.ts`; ADR 0051, "GET /company").
+ */
 export function useCanViewAs(): boolean {
   const { user, roles } = useWorkspace();
-  const held = roles.filter((r) => user.roleIds.includes(r.id));
-  return featureOn("shell.view-as") && held.some((r) => r.owner || r.permissions.includes("settings.roles.manage"));
+  return viewAsOffered() && mayViewAs(user, roles);
 }
 
 /**

@@ -100,15 +100,19 @@ import {
   type ImportResult,
 } from "@workspace/shared";
 import { importBody } from "./import-body";
+// GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
+import type { CompanyAnswer } from "@workspace/shared";
+import { peopleAsUsers, workspaceFromAnswer } from "./company-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
 /**
  * Collections the real API lists through `list`, with their endpoints (docs/api-contract.md).
- * Users and roles are not here: many screens read them for names and pickers next to demo
- * records, so Settings reads them through its own methods instead (ADR 0034). Invoices and what
- * settles them move with sales, part 2 (ADR 0038), so every balance on every screen comes from
- * one place.
+ * Users and roles are not here. `list("users")` gives GET /company's people (id, name and status,
+ * for names beside records; ADR 0051, "GET /company"), and Settings reads full users and roles
+ * through its own methods (ADR 0034). Roles stay DemoStore's: their two screen reads are unused.
+ * Invoices and what settles them move with sales, part 2 (ADR 0038), so every balance on every
+ * screen comes from one place.
  */
 const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   audit: "/audit",
@@ -137,6 +141,7 @@ export const API_METHODS = {
   list:
     (http, demo) =>
     <K extends CollectionName>(collection: K) => {
+      if (collection === "users") return companyPeople(http) as Promise<Collections[K]>;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.list(collection);
       return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
@@ -144,11 +149,17 @@ export const API_METHODS = {
   get:
     (http, demo) =>
     async <K extends CollectionName>(collection: K, id: string) => {
+      if (collection === "users")
+        return (await companyPeople(http)).find((user) => user.id === id) as ItemOf<K> | undefined;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
       const all = await seen(http.request<ItemOf<K>[]>("GET", path));
       return all.find((item) => (item as { id: string }).id === id);
     },
+  // The shell's person, roles, access and company facts (ADR 0051, "GET /company").
+  getWorkspace: (http) => async () => workspaceFromAnswer(await http.request<CompanyAnswer>("GET", "/company")),
+  // The API's own id for the session, the read `meetingsData` makes too; never the demo persona's.
+  whoAmI: (http) => async () => (await http.request<SessionContext>("GET", "/auth/context")).user.id,
   listSettingsUsers: (http) => () => http.request<User[]>("GET", "/users"),
   listSettingsRoles: (http) => () => http.request<Role[]>("GET", "/roles"),
   inviteUser: (http) => (input) => http.request<User>("POST", "/users/invite", input),
@@ -264,8 +275,8 @@ export const API_METHODS = {
   // A quote the API has saved has a number; a draft from the screen does not yet.
   saveQuote: (http) => (quote) =>
     quote.number
-      ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quote)
-      : http.request<Quote>("POST", "/quotes", quote),
+      ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quoteBody(quote))
+      : http.request<Quote>("POST", "/quotes", quoteBody(quote)),
   updateQuoteStatus: (http) => (quoteId, change) => http.request<Quote>("POST", `/quotes/${quoteId}/status`, change),
   convertQuoteToInvoice: (http) => (quoteId) => http.request<Invoice>("POST", `/quotes/${quoteId}/invoice`),
   markInvoiceSent: (http) => (invoiceId) => http.request<Invoice>("POST", `/invoices/${invoiceId}/sent`),
@@ -853,9 +864,8 @@ function employeeBody(input: EmployeeInput) {
 /**
  * A contract as the API takes it: only the form's fields, since an edit starts from the whole
  * stored contract. The rep and the branch are the server's (ADR 0044, "New contracts"): a new
- * contract is filed under its creator's own branch and an edit keeps both, so neither is sent. In
- * api mode the form's branch is still DemoStore's (ADR 0044, "The web leaves a new contract's
- * branch to the API"). An estimated cost the person can't see is left out so the stored one is kept.
+ * contract is filed under its creator's own branch and an edit keeps both, so neither is sent. An
+ * estimated cost the person can't see is left out so the stored one is kept.
  */
 function contractBody(input: ContractInput) {
   return {
@@ -958,6 +968,23 @@ async function encodeFiles(files: readonly File[]): Promise<{ name: string; data
       return { name: file.name, data: btoa(binary) };
     }),
   );
+}
+
+/**
+ * A quote as the API takes it: everything but the rep and the branch, which the server sets (the
+ * creator, and the fulfilment location's branch; ADR 0037), as `contractBody` does for contracts
+ * (ADR 0051, "GET /company", D9). Keeping them off the wire lets the API's schema become strict.
+ */
+function quoteBody(quote: Quote): Omit<Quote, "salesRepId" | "branchId"> {
+  const body: Partial<Quote> = { ...quote };
+  delete body.salesRepId;
+  delete body.branchId;
+  return body as Omit<Quote, "salesRepId" | "branchId">;
+}
+
+/** GET /company's people as users: id, name and status only (`peopleAsUsers`; ADR 0051, "GET /company"). */
+async function companyPeople(http: HttpTransport): Promise<User[]> {
+  return peopleAsUsers(await http.request<CompanyAnswer>("GET", "/company"));
 }
 
 /** An id the API made (a UUID); a draft from the screen or a demo record has another kind of id. */

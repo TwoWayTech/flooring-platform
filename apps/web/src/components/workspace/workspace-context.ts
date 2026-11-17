@@ -13,7 +13,10 @@ export interface Workspace {
   settings: CompanySettings;
   user: User;
   roles: Role[];
-  /** Effective access: the user's roles, or the viewed-as role, ∩ ceiling ∩ modules (CLAUDE.md rule 2). */
+  /**
+   * Effective access: the user's roles, or the viewed-as role (demo only), ∩ ceiling ∩ modules
+   * (CLAUDE.md rule 4). On the API it is the guard's own, from GET /company (ADR 0051).
+   */
   access: Access;
   viewAsRole: Role | null;
   setViewAs: (roleId: string | null) => void;
