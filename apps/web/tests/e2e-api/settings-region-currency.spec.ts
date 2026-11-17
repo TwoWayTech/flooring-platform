@@ -1,8 +1,7 @@
-import { expect } from "@playwright/test";
+import { expect, type APIRequestContext } from "@playwright/test";
 import type { Invoice } from "@workspace/shared";
 import { ACCOUNTANT_EMAIL, OWNER_EMAIL, SALES_EMAIL } from "./accounts";
 import {
-  auditBy,
   auditEntriesBy,
   canonical,
   confirmStepUp,
@@ -36,6 +35,26 @@ const ZONE_MESSAGE = "The company's time zone is set when the company is set up.
 const BASE_MESSAGE = "The company's base currency stays USD.";
 const CODES_MESSAGE = "Other currencies can't be added, removed or renamed here. Change only their rates.";
 
+/** The ids of `actor`'s ACTION entries from `since`'s minute on: what a test's own saves are told apart from. */
+async function auditIds(request: APIRequestContext, actor: string, since: number): Promise<Set<string>> {
+  return new Set((await auditEntriesBy(request, ACTION, actor, since)).map((entry) => entry.id));
+}
+
+/**
+ * The targets of `actor`'s ACTION entries from `since`'s minute on that `seen` doesn't hold: this
+ * test's saves only, whatever another spec saved as the same person in that minute.
+ */
+async function targetsSince(
+  request: APIRequestContext,
+  actor: string,
+  since: number,
+  seen: ReadonlySet<string>,
+): Promise<string[]> {
+  return (await auditEntriesBy(request, ACTION, actor, since))
+    .filter((entry) => !seen.has(entry.id))
+    .map((entry) => entry.target);
+}
+
 /** What these tests read of `GET /settings`, loosely, so the spec builds with or without part 2b's types. */
 type Read = {
   localization?: {
@@ -65,7 +84,7 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
         personas.onCleanup("put Region back", () => healTabOrThrow(dana.request, "region", SUMMIT_REGION, dana.secret));
         expect((await healTab(dana.request, "region", SUMMIT_REGION, dana.secret)).status()).toBe(200);
         const since = Date.now();
-        const audited = await auditBy(dana.request, ACTION, "Dana Whitfield", since);
+        const seen = await auditIds(dana.request, "Dana Whitfield", since);
         const regionPut = () =>
           dana.page.waitForResponse(
             (response) =>
@@ -128,9 +147,7 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
 
         // 7. Put back; three saves audited as Dana (steps 3 and 5, and the restore), each naming Region.
         expect((await healTabOrThrow(dana.request, "region", SUMMIT_REGION, dana.secret)).status()).toBe(200);
-        expect(await auditBy(dana.request, ACTION, "Dana Whitfield", since)).toBe(audited + 3);
-        const targets = (await auditEntriesBy(dana.request, ACTION, "Dana Whitfield", since)).map((e) => e.target);
-        expect(new Set(targets)).toEqual(new Set(["Region"]));
+        expect(await targetsSince(dana.request, "Dana Whitfield", since, seen)).toEqual(["Region", "Region", "Region"]);
         await expectAuditRows(dana.page, "Region", [ACTION], since);
       },
     );
@@ -153,7 +170,7 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
         // The heal answers its read of GET /settings when nothing needed saving, else the PUT's answer.
         const healedByPut = new URL(healed.url()).pathname !== "/api-proxy/settings";
         const since = Date.now();
-        const audited = await auditBy(grace.request, ACTION, "Grace Liu", since);
+        const seen = await auditIds(grace.request, "Grace Liu", since);
 
         // 1. The tab: no other currencies, and the base currency can't be edited.
         await grace.page.goto("/settings/localization?tab=currency");
@@ -201,11 +218,8 @@ flowTest.describe("Settings part 2b on the API (api mode)", () => {
         await priya.page.goto("/settings");
         await expect(priya.page.getByRole("link", { name: "Localization and tax" })).toHaveCount(0);
 
-        // 5. One more save audited as Grace (step 3; a heal in the same minute is in both counts),
-        //    naming Currency.
-        expect(await auditBy(grace.request, ACTION, "Grace Liu", since)).toBe(audited + 1);
-        const targets = (await auditEntriesBy(grace.request, ACTION, "Grace Liu", since)).map((e) => e.target);
-        expect(targets).toContain("Currency");
+        // 5. One save audited as Grace since the heal (step 3), naming Currency.
+        expect(await targetsSince(grace.request, "Grace Liu", since, seen)).toEqual(["Currency"]);
       },
     );
   });

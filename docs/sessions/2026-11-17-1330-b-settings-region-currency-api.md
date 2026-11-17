@@ -116,7 +116,17 @@ Planned decisions, each the safest option found. Decisions taken while building 
 - **D23, the bodies' outer lengths carry the shared words, as 2a's review round 1 (R1-2) made them.** Where the words are fixed (zone, primary state, states, date format, week start, a currency code), the outer `max` carries them. Where the words name stored values or a sibling field (country and locale name the stored ones, the base names the stored base, a rate names its code), the body check can't know them, so those strings and `asOf` take no outer length: the rule compares them with the stored tab and nothing else is ever stored (`asOf` is never stored at all), and the API's JSON body limit (the parser's default, about 100 kB) bounds the request. The page's rate input stops at `FX_RATE_TEXT_MAX`, the longest text `FX_RATE_TEXT` takes. So from the screen and from a direct caller, every refusal of these fields reads the same in both modes.
 
 ### Decisions taken during the build
-(Filled in at stages 1 and 2.)
+- **B1, L0 and L14 name the four tabs.** As first written (the plan's 7.9), both looped `API_LOCALIZATION_TABS`, which still holds two tabs on 2a's head, so both passed there. L0 now asserts its handler map's keys equal `API_LOCALIZATION_TABS` and checks every handler in the map; L14 loops the four tabs by name. Both were then red on 2a's head for the planned reason (L0: "expected [ 'currency', 'documents', …(2) ] to deeply equal [ 'documents', 'payroll' ]"; L14: "region: expected [ 404, 'not_found' ] to deeply equal [ 403, 'forbidden' ]").
+- **B2, the red e2e runs fixed two test bugs** (`cf6d7ba`). The first `next build` failed to typecheck Z2: Playwright's `APIResponse` has no `request()`, so Z2 now tells a heal that saved from one that only read by the answer's URL. S5 first checked the rate input's `maxlength` (D23), so on 2a's head it failed there; the check moved after the refusal, and S5 then failed for the planned reason (the code dialog opens for a rate of 0, so the refusal's toast is never shown).
+- **B3, the rate refusal's words are `CURRENCY_MESSAGES.exchange`, not `.rate`.** The shared suite's sensitive-field classification test (`access-rules.test.ts`, "every cost, margin, rate, wage and limit field in packages/shared is classified") failed with `rate` unclassified: it scans field declarations at the start of a line, and the message dictionary's `rate:` key matched. An extra currency's exchange rate isn't sensitive (RG9 and RC1's key walks: no Region or Currency property is a `SENSITIVE_FIELDS` name), but a blanket `rate` entry in its `NOT_SENSITIVE` list would also wave through a future pay rate named `rate`. Renaming the key keeps that guard as it was; the tests were renamed with it.
+- **B4, D23 as built.** `REGION_INPUT`'s primary state, states (each and the list), zone, date format and week start carry their shared words; country and locale have no outer length. `CURRENCY_INPUT`'s codes and list carry the codes' words; base, rate and `asOf` have no outer length. RC5 and RC9 pin each, past the bounds and without them (a 200-character country, base or rate gets the rule's words naming the stored values or the code). The rate input stops at `FX_RATE_TEXT_MAX` (19), pinned by RG8 and demo S5.
+- **B5, the RC cases put rows back with a direct write** (`setRow`), never through the API: a put-back through the API would re-date CAD (RC10 needs the stored `2026-11-04` entry) and would cost audit entries other cases count. RC6's second half runs the reorder first, so `localOnly` saves with no step-up before it ever stepped up, then the states change is refused for the key before and after a step-up.
+- **B6, RC7's totals are as planned.** The red run (on 2a's head) confirmed the Wyoming quote at `468.00` (4 % default on 450.00) and the Colorado quote at `489.65` (8.81 %); the green run confirmed Wyoming at `450.00` after the change and the accepted quote's invoice at `450.00`.
+- **B7, RD5 doesn't pin the seeded `asOf`:** DemoStore may shift fixture dates. It sends `asOf: "1999-01-01"` with the changed rate, so a store that kept the sent date fails it.
+- **B8, passing on 2a's head by design:** RG9 (a fixture key walk), RD3, RD7, RD8, RD9 (keys, switch, scope and an Owner's states change, which 2a's demo already allowed), W2 and LW6 (narrowed), L16 (Sales tax and the whole section were never routes), X1 and X2, and 2a's E2 (its in-browser Region step is gone). Every other new or changed case was red.
+- **B9, `saveLocalizationTab` answers what it stored,** so each handler returns it: Region as sent, Currency with its dated rates (RC8 asserts the answer equals the row), and documents and payroll as before.
+- **B11, Z1 and Z2 count their own audit entries by id.** The plan compared a count taken after the heal and checked the set of targets from that minute on; another spec saving as Dana or Grace in the same minute (2a's E2 saves Payroll rules as Dana, E1 Sales and documents as Grace) would put its target in the set. Each test now keeps the ids it saw after its heal and expects exactly its own saves' targets: Region three times (steps 3 and 5 and the restore), Currency once. Not run yet: the green e2e run is stage 3.
+- **B10, no stop-and-ask item came up:** the zone stays read only, no currency can be added, nothing is seeded at provisioning, and nothing under `apps/api/src/core`, packages/db or providers changed. The control database is only read (RC4 and the RC file's `afterAll` compare floorco's whole control row).
 
 ## Owner questions
 None blocks; each has its safest default taken.
@@ -162,3 +172,68 @@ The orchestrator applies these at handoff (re-read STATUS first and anchor on th
 | `git diff --stat 0a5b01c 3b1d530` (what 2a changed after the plan) | review round 1 and the handoff (above) |
 | `git switch -q --no-track -c feat/settings-region-currency-api origin/feat/settings-localization-api` | the branch, at `3b1d530` |
 | `docker ps`; `lsof` on 3000 and 4000 | compose PostgreSQL on 5432, `fp-e2e-worktree` on 5433; both ports free |
+| `gh pr create --draft …` | draft PR **#53** |
+| **Stage 1 red** `vitest run test/region-currency-rules.test.ts test/localization-rules.test.ts` (shared) | exit 1: 11 failed, 6 passed (RG1 to RG8 and LR2, LR3, LR6 failed: the exports don't exist, the served tabs and readers are 2a's; RG9 and LR1, LR4, LR5, LR7, LR8 passed) |
+| `vitest run` api `settings-region-currency.int`, `settings-localization.int`, `settings-dispatch` | exit 1 after 14 s: 36 failed, 22 passed (every RC case: Region not answered, `/region` and `/currency` 404; L1's six pinned roles and L9's exact keys; X1, X2 and the rest of 2a's L cases passed) |
+| `vitest --project integration settings-localization.int -t "L0 \|L14 \|L16 "` (after B1) | exit 1: L0 and L14 failed (B1's reasons), L16 passed |
+| `vitest run` web `settings-answer`, `save-section`, `demo-region-currency`, `region-currency-forms` | exit 1: 11 failed, 22 passed (RW1 to RW3, SF6, RP1 "regionCurrencyForms is not a function", RD1, RD2, RD4, RD5, RD6, RD10; W2, LW6 and RD3, RD7 to RD9 passed, B8) |
+| Red e2e set-aside: `demo-region-currency.test.ts`, `region-currency-forms.test.tsx` moved to `settings2b/red-keep`, `save-section.test.ts` from 2a's head; `settings-answer.test.ts` built as it is | — |
+| `api-e2e.sh settings2b-red --build -- settings-region-currency.spec.ts settings-localization.spec.ts` | first exit 1 at the web build (B2, Z2's `request()`); after the fix exit 1 after 31 s (builds about 12 s): Z1 and Z2 failed at their heal ("Expected: 200, Received: 404"), 2a's E1 at step 3 ("Expected path: region"), E2 passed |
+| `e2e-demo.sh red` | exit 1 after 62 s: S4 at step 1 (`getByLabel('Time zone')` enabled), S5 at its `maxlength` check (B2), S6 at step 3 (the states-key toast not found; the role, View as and "Wyoming" locators worked) |
+| `e2e-demo.sh red "S5 "` (S5's check moved, B2) | exit 1 after 18 s of tests: S5 at step 1 (the rate refusal's toast not found) |
+| `git checkout --` the three set-aside unit files | `git status --short` clean but for the two e2e fixes, committed as `cf6d7ba` |
+| **Stage 2** `vitest run` shared `region-currency-rules`, `localization-rules`, `settings-sections` | exit 0, 27 passed |
+| `checks.sh s2a` shared and api typecheck | both exit 0 |
+| `vitest run` api `settings-region-currency.int`, `settings-localization.int`, `settings-dispatch` | exit 0, 3 files, 58 passed (first green run) |
+| `vitest run` web `settings-answer`, `save-section`, `demo-region-currency`, `region-currency-forms`, `demo-localization`, `demo-settings`, `api-rereads`, `settings-dispatch` | exit 0, 8 files, 66 passed |
+| `checks.sh s2` shared test, typecheck, lint; api typecheck, lint, test; web test, typecheck, lint | all exit 0 but shared test: 1 failed of 1,153 (`access-rules.test.ts`, `rate` unclassified, B3); api unit 18 files, 126 tests; web 52 files, 406 tests |
+| `checks.sh s2b` shared test and typecheck, api and web typecheck (after B3) | all exit 0; shared 77 files, 1,153 tests |
+| `vitest --project integration` settings-region-currency, settings-localization, settings, sales, invoices, contract-billing, company, meetings, permissions, isolation | exit 0, 10 files, 223 passed, 58 s |
+| `checks.sh s2c` shared, api and web lint; web test | all exit 0; web 52 files, 406 tests |
+| `prettier --write` twice, then `--check`, on the stage's files | clean |
+| `mutate.py --check RM1 … RM30` | every anchor found once |
+| `heavy.sh python3 settings2b/mutate.py RM1 … RM30` (on the committed `c758d74`, before it was pushed) | exit 0 in 7.5 minutes: all 30 caught, every file restored; `git status --porcelain` showed only this log and B11's spec edit, no product file |
+| `checks.sh s2d` web typecheck and lint (after B11) | both exit 0 |
+
+### Mutations (stage 2, on the committed change; `settings2b/mutate.py`)
+Each mutation was made on the committed code, its commands run, and its file restored with `git checkout --` (`git diff --quiet` true for all 30). A mutation counts as caught only when every listed command failed with the expected test.
+
+| # | Mutation | Caught by (first failure) |
+| --- | --- | --- |
+| RM1 | `saveRegion`'s key from the section's any-of | L0 ("region: expected [ Array(2) ] to deeply equal [ 'settings.localization.manage' ]") |
+| RM2 | `answered` without the control zone overlay | RC1 (every role: the row's Denver answered) |
+| RM3 | the zone check off `regionProblem` | RG2 ("America/Chicago: expected null to be 'The company's time zone…'"); RC4 ("America/Denver: expected [ 200 ] … [ 400, 'invalid_request' ]"); RD1 (the save resolved) |
+| RM4 | the states' tax-key 403 off `saveRegion` | RC6 (`localOnly` got `step_up_required`, not the key's words) |
+| RM5 | the states' step-up off `saveRegion` | RC6 ("expected [ 200 ] to deeply equal [ 403, 'step_up_required' ]") |
+| RM6 | states compared as JSON text | RG3 ("expected true to be false", a reorder); RC6 |
+| RM7 | Currency's step-up off | RC9 ("expected [ 200 ] … [ 403, 'step_up_required' ]") |
+| RM8 | Currency's step-up before its content checks | RC9 ("The company's base currency stays USD.: expected [ 403, 'step_up_required' ] … [ 400, 'invalid_request' ]") |
+| RM9 | the codes check off `currencyProblem` | RG5; RC9; RD6 |
+| RM10 | the base and lock check off | RG5; RC9; RD6 |
+| RM11 | rates no longer above 0 | RG5 ("0: expected null to be 'Enter the rate for CAD…'"); RC9 |
+| RM12 | a changed rate keeps the sent `asOf` | RG6; RC10; RD5 |
+| RM13 | rates compared as text | RG6; RC10 ("expected { asOf: '2026-11-17' } … { asOf: '2026-11-04' }") |
+| RM14 | Currency read by everyone | LR3 ("manager: expected [ 'documents', 'payroll', …(2) ] … [ 'documents', 'payroll', 'region' ]"); RC1 |
+| RM15 | Currency not hidden while the page is off | LR3; RC11 ("to not have property 'currency'") |
+| RM16 | the country and locale check off | RG2; RC5; RD2 |
+| RM17 | the tab dispatcher without `regionKeyProblem` | RG7; RD4; RP1 |
+| RM18 | DemoStore stores the sent value, not the dated one | RD5 |
+| RM19 | `REGION_INPUT` not strict | RC5 ("expected [ 200 ] … [ 400, 'invalid_request' ]") |
+| RM20 | Currency's missing-tab 409 off | RC2 ("expected [ 500 ] … [ 409 ]") |
+| RM21 | the whole-section rule without Region and Currency | RG7; RD10 |
+| RM22 | `settle` judges a read taken before the lock | RC16b ("expected [ 200, { country: 'US', … } ] … [ 403, { code: 'forbidden', … } ]") |
+| RM23 | a step-up function always asks | SF6 ("expected 'step-up' to be 'save'") |
+| RM24 | Currency dated with the UTC day | RC10b ("expected '2026-11-17' to be '2026-11-18'", Kiritimati's day) |
+| RM25 | Currency's switch check off | RC11 ("expected 200 to be 404") |
+| RM26 | Region's scope check off | RC12 ("region: expected [ 200, … ] … [ 403, { code: 'forbidden', … } ]") |
+| RM27 | `CURRENCY_INPUT` not strict | RC9 ("expected [ 403, 'step_up_required' ] … [ 400, 'invalid_request' ]") |
+| RM28 | Region's Reset is the original region whole | RP1 |
+| RM29 | `regionKeyProblem` never refuses | RG3; RC6 |
+| RM30 | every tab missing from the row answers 409 | RC2 (the payroll repair answered 409) |
+
+## Stages 0 to 2: outcome
+- **Commits:** `2c452b5` (this log and the spec), `7e79882` (the tests, red), `cf6d7ba` (two test fixes found by the red e2e runs, B2), `c758d74` (the change, with the `exchange` rename in its tests, B3), then this log's stage 2 commit with B11's spec edit.
+- **Red first:** every new or changed case was red on 2a's head for the planned reason, except the cases B8 lists, which pass on both heads by design.
+- **Green:** shared, API (unit and the ten related integration files) and web unit suites, typecheck and lint for all three packages; 30 of 30 mutations caught.
+- **Not run in these stages:** the green api-mode and demo e2e runs (stage 3; Z1 and Z2 have only been run red), the docs (stage 4), the full checks, the whole suites and the reviews (stage 5).
+- **No stop-and-ask item** (B10).
