@@ -315,7 +315,7 @@ pctOf(v, p)    = v * p / 100
     ```
 
     `PAYMENT_TERM_DAYS`: `due_on_receipt` 0, `net_15` 15, `net_30` 30, `net_45` 45. `holdUntilInstalled` is `featureOn("installation.calendar") && company.modules.includes("installation")`. That feature is `removed`, so it is always false and every new invoice from a quote has a date. Seed `balanceDueDays` is 30. Roll and contract invoices use `dueDate(issuedAt, customer.terms)`. A credit note is due the day it is issued.
-22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` from 5001. `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
+22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` (`CREDIT_NOTE_PREFIX`) from 5001, numbered after the highest `CR-` number among all invoices, not only the credit notes, because they share the invoices' number index. No quote, invoice or purchase order prefix may start with `CR-`, in any case (Settings part 2a, review round 1). `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
 23. **The ledger.** `invoiceLedger` in `ledger.ts`:
 
     ```
@@ -618,7 +618,7 @@ A credit note is an `Invoice` with `isReturn: true`.
 | `localization.documents.defaultDepositPct` | decimal string | New quotes. The quote's percent (0 to 100, `PERCENT_TEXT`); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.quoteExpiryDays` | number | Suggested expiry. Whole days, 1 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.balanceDueDays` | number | Rule 21. Whole days, 0 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
-| `localization.documents.quotePrefix`, `invoicePrefix`, `poPrefix` | string | `DOCUMENT_PREFIX_TEXT`; the three differ, compared without case; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.quotePrefix`, `invoicePrefix`, `poPrefix` | string | `DOCUMENT_PREFIX_TEXT`; the three differ, compared without case, and none starts with the credit notes' `CR-` (rule 22); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.defaultWastePct` | map by category | Exactly the waste categories, each the quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it. The quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.documents.legalFooter` | string | Printed on invoices, receipts and purchase orders. At most 1,000 characters; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |

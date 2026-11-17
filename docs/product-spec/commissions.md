@@ -194,7 +194,7 @@ All functions below are in `packages/shared/src/hr/commission-plans.ts` unless a
 
 15. **Signature.** `acknowledgePlan`. The typed name must equal the user's name, ignoring case and surrounding spaces. Commission accrues whether or not the plan is signed.
 
-16. **Issuing a credit note.** `issueCreditNote`, `commission-actions.ts`. The invoice must be live. The amount must be above 0, and with earlier credits must not exceed the invoice subtotal. The number is `CR-` from 5001 up.
+16. **Issuing a credit note.** `issueCreditNote`, `commission-actions.ts`. The invoice must be live. The amount must be above 0, and with earlier credits must not exceed the invoice subtotal. The number is `CR-` from 5001 up, after the highest `CR-` number among all invoices (sales.md rule 22).
 
     ```ts
     const share = (field: "tax" | "cost") => roundMoney(dec(invoice[field]).times(amount).dividedBy(invoice.subtotal));
