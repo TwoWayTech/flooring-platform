@@ -80,7 +80,7 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
   });
 
   it("W2 the merge takes only the served sections it is given, and keeps DemoStore's for the rest", async () => {
-    const answer = { ...served(), localization: { tax: { rounding: "line" } }, madeUp: { x: 1 } };
+    const answer = { ...served(), localization: { holidays: { x: 1 } }, madeUp: { x: 1 } };
     const widened = await client(answer).client.getSettings();
     expect(widened.localization).toEqual(demo.localization);
     expect(widened).not.toHaveProperty("madeUp");
@@ -192,15 +192,6 @@ describe("Settings part 2a in api mode: the served localization tabs (ADR 0059)"
     await api.client.updateLocalization("payroll", payroll);
     expect(api.sent[0]).toEqual({ call: "PUT /settings/localization/payroll", body: payroll });
   });
-
-  it("LW6 Sales tax stays on DemoStore and sends nothing to the API", async () => {
-    const updateLocalization = vi.fn(async () => structuredClone(demo));
-    const api = client(served(), { updateLocalization: updateLocalization as ApiClient["updateLocalization"] });
-    await api.client.updateLocalization("tax", demo.localization.tax);
-    expect(api.sent).toEqual([]);
-    expect(updateLocalization).toHaveBeenCalledTimes(1);
-    expect(updateLocalization).toHaveBeenCalledWith("tax", demo.localization.tax);
-  });
 });
 
 /** What the API serves of Region and Currency: the company's control zone and a CAD rate, unlike DemoStore's Summit. */
@@ -243,5 +234,48 @@ describe("Settings part 2b in api mode: Region and Currency (ADR 0059)", () => {
     const api = client(served(), {}, { status: 400, body: { code: "invalid_request", message } });
     await expect(api.client.updateLocalization("currency", servedRegionCurrency().currency)).rejects.toThrow(message);
     expect(api.sent.map((request) => request.call)).toEqual(["PUT /settings/localization/currency"]);
+  });
+});
+
+/** What the API serves of Sales tax: the tab in force with rates at the columns' scale, unlike DemoStore's Summit. */
+function servedTax(): CompanySettings["localization"]["tax"] {
+  const tax = demo.localization.tax;
+  return {
+    ...tax,
+    rules: tax.rules.map((rule) => (rule.state === "CO" ? { ...rule, ratePct: "8.81000000", validTo: null } : rule)),
+    jurisdictions: tax.jurisdictions.map((rate) => ({ ...rate, id: `0190${rate.id}`, ratePct: "8.25000000" })),
+  };
+}
+
+describe("Settings part 3a in api mode: Sales tax (ADR 0059)", () => {
+  it("TW1 updateLocalization('tax') sends the tab to its own route unchanged, then reads again", async () => {
+    const answered = servedTax();
+    const updateLocalization = vi.fn(async () => structuredClone(demo));
+    const api = client(
+      { ...served(), localization: { tax: answered } },
+      { updateLocalization: updateLocalization as ApiClient["updateLocalization"] },
+    );
+    const sent = structuredClone(demo.localization.tax);
+    const result = await api.client.updateLocalization("tax", sent);
+    expect(api.sent).toEqual([
+      { call: "PUT /settings/localization/tax", body: demo.localization.tax },
+      { call: "GET /settings", body: undefined },
+    ]);
+    expect(updateLocalization).not.toHaveBeenCalled();
+    expect(result.localization.tax).toEqual(answered);
+  });
+
+  it("TW2 getSettings takes Sales tax from the answer, raw rates included; an answer without it keeps DemoStore's", async () => {
+    const answered = servedTax();
+    const settings = await client({ ...served(), localization: { tax: answered } }).client.getSettings();
+    expect(settings.localization.tax).toEqual(answered);
+    expect(settings.localization.tax.rules.find((rule) => rule.state === "CO")?.ratePct).toBe("8.81000000");
+    for (const tab of ["region", "currency", "documents", "payroll"] as const)
+      expect(settings.localization[tab], tab).toEqual(demo.localization[tab]);
+    const without = await client({
+      ...served(),
+      localization: { region: demo.localization.region },
+    }).client.getSettings();
+    expect(without.localization.tax).toEqual(demo.localization.tax);
   });
 });

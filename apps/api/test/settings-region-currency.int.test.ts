@@ -397,7 +397,6 @@ describe("settings part 2b on the API: Region and Currency (needs the local Post
         const managers = company === floorco ? ["owner", "accountant"] : ["owner"];
         if (managers.includes(key)) expect(body.localization?.currency).toEqual(stored.currency);
         else expect(body.localization ?? {}).not.toHaveProperty("currency");
-        expect(body.localization ?? {}).not.toHaveProperty("tax");
         expect(keysOf(body.localization ?? {}).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         expect(await rowOf(company)).toEqual(stored);

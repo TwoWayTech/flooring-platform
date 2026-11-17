@@ -14,6 +14,21 @@ async function savePayments(page: Page) {
   await dialog.getByRole("button", { name: "Confirm" }).click();
 }
 
+/** Confirms the open step-up dialog with any six digits, when the switch asks for one. */
+async function confirmCode(page: Page) {
+  if (!featureOn("auth.step-up")) return;
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Authenticator code").fill("123456");
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+}
+
+/** Whether the audit log has a row with `action` naming `target`. */
+async function expectAuditRow(page: Page, action: string, target: string) {
+  await page.goto("/settings/audit");
+  await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: target }).first()).toBeVisible();
+}
+
 test.describe("settings that stay easy to read (spec A4)", () => {
   test("groups the settings home and finds any setting by search", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings");
@@ -137,21 +152,6 @@ test.describe("settings saved one tab at a time (ADR 0059, part 2a)", () => {
 });
 
 test.describe("Region and Currency (ADR 0059, part 2b)", () => {
-  /** Confirms the open step-up dialog with any six digits, when the switch asks for one. */
-  async function confirmCode(page: Page) {
-    if (!featureOn("auth.step-up")) return;
-    const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
-    await expect(dialog).toBeVisible();
-    await dialog.getByLabel("Authenticator code").fill("123456");
-    await dialog.getByRole("button", { name: "Confirm" }).click();
-  }
-
-  /** Whether the audit log has a row with `action` naming `target`. */
-  async function expectAuditRow(page: Page, action: string, target: string) {
-    await page.goto("/settings/audit");
-    await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: target }).first()).toBeVisible();
-  }
-
   test("S4 Region: the time zone is read only, a date format change saves without a code, a states change asks for one", async ({
     page,
   }) => {
@@ -232,6 +232,52 @@ test.describe("Region and Currency (ADR 0059, part 2b)", () => {
     await page.getByRole("button", { name: "Save region" }).click();
     await expect(page.getByText("Region saved")).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+  });
+});
+
+test.describe("Sales tax (ADR 0059, part 3a)", () => {
+  /** The browser's own day, which the demo dates a save with (DemoStore's today). */
+  function browserDay(page: Page): Promise<string> {
+    return page.evaluate(() => {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    });
+  }
+
+  test("S7 Sales tax: a changed rate is a new version from today; the dates are read only", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/localization?tab=tax");
+    const validFrom = page.getByLabel("Colorado valid from");
+    await expect(validFrom).toBeDisabled();
+    const today = await browserDay(page);
+    const started = await validFrom.inputValue();
+    expect(started).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(started).not.toBe(today);
+    await page.getByLabel("Colorado rate in percent").fill("8.5");
+    await page.getByRole("button", { name: "Save sales tax" }).click();
+    await confirmCode(page);
+    await expect(page.getByText("Sales tax saved")).toBeVisible();
+    // Right away: the form remounts with what the save stored (D27).
+    await expect(validFrom).toHaveValue(today);
+    await expect(validFrom).toBeDisabled();
+    await expectAuditRow(page, "Changed localization and tax", "Sales tax");
+    await page.goto("/sales/quotes/new");
+    await page.getByRole("button", { name: "Add room" }).click();
+    await page.getByRole("button", { name: "Add labor or service" }).click();
+    await page.getByPlaceholder("Search by name, color or brand").fill("Hard surface installation");
+    await page.getByRole("option").first().click();
+    await expect(page.getByText(/Default rate for Colorado \(example\)/)).toBeVisible();
+  });
+
+  test("S8 Sales tax says why a rate is refused before any code", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/localization?tab=tax");
+    await page.getByLabel("Colorado rate in percent").fill("8.123456");
+    await page.getByRole("button", { name: "Save sales tax" }).click();
+    await expect(
+      page.getByText("Enter the rate for Colorado as a percent below 100 with up to 4 decimals, such as 8.25."),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("1 unsaved change");
   });
 });
 

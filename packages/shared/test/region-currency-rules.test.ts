@@ -18,6 +18,7 @@ import {
   SENSITIVE_FIELDS,
   settingsSectionProblem,
   statesOfOperationChanged,
+  TAX_MESSAGES,
   WEEK_STARTS,
   type CompanySettings,
   type CurrencyInput,
@@ -207,8 +208,9 @@ describe("Settings part 2b: Region and Currency rules (ADR 0059)", () => {
     expect(localizationTabProblem("region", { ...changed, timeZone: "Europe/Paris" }, REGION, none)).toBe(
       REGION_MESSAGES.timeZone,
     );
+    // Part 3a: Sales tax has its rule.
     const odd = { anything: true } as unknown as LocalizationSettings["tax"];
-    expect(localizationTabProblem("tax", odd, SUMMIT.tax, none)).toBeNull();
+    expect(localizationTabProblem("tax", odd, SUMMIT.tax, none)).toBe(TAX_MESSAGES.pricesInclude);
     expect(
       localizationTabProblem("documents", { ...SUMMIT.documents, lateFeePct: "12." }, SUMMIT.documents, none),
     ).toBe(DOCUMENT_MESSAGES.lateFeePct);
