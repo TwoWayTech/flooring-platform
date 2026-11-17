@@ -171,7 +171,8 @@ None blocks the build; each has its safest default taken.
 The orchestrator applies these at handoff (this session leaves docs/STATUS.md and docs/BRANCHES.md alone). Re-read STATUS first; anchor on the quoted text. This branch's draft PR is #50.
 
 - **"In progress" and "Next three tasks" item 2:** "`GET /company` first …" gains "(draft PR #50, `feat/web-company-from-api`, stacked on #49)"; Settings is next.
-- **"Done": a GET /company entry,** next to B6's: "GET /company (queue item 2, task 1), PR #50 (ADR 0051 'GET /company'): in api mode the shell's person, roles, effective access (the guard's own), modules, ceiling (role and user settings keys only) and branches come from `GET /company`; View as and Your profile are demo only, and in the demo View as applies only to someone who may use it; a refused first read shows a full page with Sign out; names beside records and Sales → Team come from its people (id, name, active or disabled); `whoAmI` is the API's id; `saveQuote` sends no rep or branch; the invite dialog defaults to the inviter's own branch and lists only it below scope `all`. No schema change, migration or dependency; nothing in core/auth, core/tenancy, providers or the web's session. Checks: …" (the counts from "Commands run").
+- **"Tests" or the e2e notes, if STATUS lists changed specs:** `company-standing.spec.ts` now waits for the app's reads before it puts Summit under maintenance (B10).
+- **"Done": a GET /company entry,** next to B6's: "GET /company (queue item 2, task 1), PR #50 (ADR 0051 'GET /company'): in api mode the shell's person, roles, effective access (the guard's own), modules, ceiling (role and user settings keys only) and branches come from `GET /company`; View as and Your profile are demo only, and in the demo View as applies only to someone who may use it; a refused first read shows a full page with Sign out; names beside records and Sales → Team come from its people (id, name, active or disabled); `whoAmI` is the API's id; `saveQuote` sends no rep or branch; the invite dialog defaults to the inviter's own branch and lists only it below scope `all`. No schema change, migration or dependency; nothing in core/auth, core/tenancy, providers or the web's session. Checks: lint, typecheck, unit (shared 1,125, web 346, api 124, db 18, providers 11), `test:api` (api 654 in 36 files, db 59, providers 2) and `test:hooks` (15) pass; the whole api-mode suite 46 passed in 2.8 min; the whole demo suite (flooring 444 passed and 7 skipped, hr 67 passed); 18 mutations caught. CI could not run (Actions blocked by billing)."
 - **Remove or close:**
   - "The api-mode company shell still reads modules and the ceiling from DemoStore until `GET /company` moves …";
   - "**Cost displays gated only by the shell's `can()`** …" (safe once `can()` is the API's; the stale-window hardening moves to the follow-up below);
@@ -196,6 +197,43 @@ The orchestrator applies these at handoff (this session leaves docs/STATUS.md an
   - **The attention list loads twice after each write** in api mode: once in the transport's re-read, and again when the shell's re-read of `GET /company` lands with a new access object (B10). It did so before this change too; keeping the access object when its keys, scope and owner flag are unchanged would halve the reads.
 - **Owner questions:** a new block, "Owner questions (PR #50, GET /company; none blocks)", with Q1 to Q7 above.
 - **BRANCHES:** a `feat/web-company-from-api` row: "B (Claude)", "Queue item 2, task 1: the shell's person, roles, access, modules and branches come from GET /company (closes ADR 0051 R1) (main checkout; stacked on #49)", "Draft" then the state at handoff, the PR, "see the branch".
+
+## Outcome
+
+Stages 0 to 4 and stage 5's checks and suites are done; the reviews and the handoff (stage 5 steps 5 to 8) are the orchestrator's next steps. In api mode the shell's person, roles, access, modules, ceiling and branches come from `GET /company`, which closes ADR 0051 R1. Every check and both whole e2e suites pass on the final code. No stop-and-ask item came up.
+
+### Commits
+
+| Commit | Subject |
+| --- | --- |
+| `b0a5b70` | docs(settings): plan for GET /company, the shell's access from the API |
+| `112876c` | feat(api): GET /company answers the person's company, roles, access, branches and people |
+| `23637f2` | feat(web): the shell's person, roles, access, modules and branches come from GET /company |
+| `4a0beec` | test(e2e): GET /company specs, red on B6's head; the green run is stage 3 |
+| `bb2ed76` | test(e2e): the standing spec waits for the app's reads before maintenance |
+| `8ac1c89` | docs: GET /company closes R1 (ADR 0051, api-contract, spec, delta) |
+| this commit | docs(sessions): GET /company outcome, full checks and both suites |
+
+Every commit carries `[skip ci]`; the handoff commit is the first without it.
+
+### Checks on the final code
+
+| Check | Result |
+| --- | --- |
+| `pnpm lint`, `pnpm typecheck` | pass (shared, api and web ran fresh; db, providers and ui were Turbo cache hits, unchanged) |
+| `pnpm test` | shared 1,125 (74 files), web 346 (44), api 124 (17), db 18, providers 11 |
+| `pnpm test:api` (PostgreSQL on 5432, throwaway databases) | api 654 (36 files), db 59, providers 2; nothing cached |
+| `pnpm test:hooks` | 15 |
+| Whole api-mode suite (`company-all-final`, fresh build) | 46 passed in 2.8 min: B6's 40 plus E1 to E4, T1 and T2. E1 4.6 s, E2 2.1 s, E3 2.0 s, E4 2.1 s, T1 1.7 s, T2 1.4 s; the standing spec's Owner test 8.2 s |
+| Whole demo suite (`e2e-demo.sh all`, one worker) | flooring 444 passed and 7 skipped in 504 s; hr 67 passed in 67 s |
+| Mutations M1 to M18 | each caught (stage 2) |
+
+**The demo's seven skips** are the tests' own: six `skipIfFeatureOff` for switches that are `removed` (`installation.calendar` three times, `inventory.adjustments` twice, `reports.tax-jurisdiction` once), and `notifications.spec.ts` "marking an invoice sent …", which skips itself when the first open invoice is already sent ("This invoice was already sent"). The branch changes no invoice or notification code; that skip was not re-run on B6's head.
+
+### Left for the next steps
+- `/review`, then a fresh read-only security-reviewer on `origin/fix/sales-quote-resave...HEAD`, focused on the plan's security list (as in the PR body). No `packages/db` change, so no schema-reviewer.
+- `/handoff`: STATUS and BRANCHES from "For STATUS" below.
+- Ready and merge after #45 to #49 merge and `origin/main` is merged in, with `verify` and `e2e` green.
 
 ## Commands run
 Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `company/logs` folder, and api-mode runs in `flows/logs`.
@@ -232,3 +270,6 @@ Heavy runs go through the scratchpad lock. Logs are in the scratchpad's `company
 | 3 | commit 3 (`bb2ed76`) | the standing spec's wait (B10) |
 | 4 | `heavy.sh pnpm --filter @workspace/shared exec vitest run test/features.test.ts`, after the FEATURES.md notes | 7 passed |
 | 4 | `pnpm exec prettier --check` on every doc touched | clean |
+| 5 | `heavy.sh bash company/full.sh` (lint, typecheck, test, test:api, test:hooks) | exit 0 in 3 min 32 s: lint 16 s, typecheck 7 s, test 15 s, `test:api` 2 min 53 s, `test:hooks` 1 s. Counts in "Checks on the final code" |
+| 5 | `heavy.sh bash company/e2e-demo.sh all` | build 6 s; flooring 444 passed, 7 skipped, 504 s; hr 67 passed, 67 s; status 0. Ports free after |
+| 5 | `heavy.sh flows/api-e2e.sh company-all-final --build` | builds 13 s; 46 passed in 167 s (2.8 min). Ports free after |
