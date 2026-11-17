@@ -2140,10 +2140,6 @@ export class DemoStore implements ApiClient {
   }
 
   /**
-   * The save logic's own permission check (CLAUDE.md rule 2, spec section 0.4): the screen hides
-   * what a role cannot do, and the store refuses it anyway. Passes when any listed key is held.
-   */
-  /**
    * The checks every settings save makes before its content rules, in the API's order (ADR 0059):
    * the module first, as `permissionDecision` in apps/api's permission guard, then the keys, the
    * page's switch and data scope `all` (View as limits it too, spec rule 22).
@@ -2158,6 +2154,10 @@ export class DemoStore implements ApiClient {
     if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
   }
 
+  /**
+   * The save logic's own permission check (CLAUDE.md rule 2, spec section 0.4): the screen hides
+   * what a role cannot do, and the store refuses it anyway. Passes when any listed key is held.
+   */
   private async assertCan(db: CompanyDb, anyOf: readonly PermissionKey[]) {
     if (anyOf.length === 0) return;
     const { access } = await this.granter(db);
