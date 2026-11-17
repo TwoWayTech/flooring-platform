@@ -4,7 +4,7 @@ Person: B (Claude), on B's Mac. Branch `feat/settings-tax-api`, base `cfb907f` (
 
 **Stacked on PR #53.** Part 2b (#53) is stacked on part 2a (#52), part 1 (#51), and through them on GET /company (#50), B6 (#49), B5 (#48), B4 (#47), B1 (#46) and B3 (#45). None can merge yet: GitHub Actions is blocked by a billing problem on the account. The orchestrator chose, as the safest option, to cut this branch from 2b's handoff head with `git switch -q --no-track -c feat/settings-tax-api origin/feat/settings-region-currency-api`, so that STATUS and BRANCHES stay linear and the files 2b and 3a share (`localization-rules.ts`, `sections.ts`, the settings module, `localization-page.tsx`, 2a's and 2b's tests, ADR 0059, api-contract.md, the spec, FEATURES) can't conflict later (D22). The PR must merge after #45 to #53; when they merge, the orchestrator merges `origin/main` into this branch.
 
-**Part 3 is split: this PR (3a) is 15 product files, 2 of them comments only; the whole-section retirement (`updateSettings("localization")`'s any-of keys) is part 3b (D29).**
+**Part 3 is split: this PR (3a) is 16 product files (15 planned, DemoStore's `store.ts` added in review round 2), 2 of them comments only; the whole-section retirement (`updateSettings("localization")`'s any-of keys) is part 3b (D29).**
 
 ## Prompt
 
@@ -181,11 +181,12 @@ None blocks; each has its safest default taken.
 | Web routes tax to the API | TW1, TE1 | TM27 |
 | Page rule before the code; read-only dates and prices; remount | TP1, S7, S8, TE1 step 4, TE2 | TM24, TM28, TM38 |
 | Demo versioning | TD1, S7 | TM25 |
+| Demo answers the tab in force; saved later rows drop out (review round 2) | TD11 | R2-M1, R2-M2 |
 
 ## For STATUS
 The orchestrator applies these at handoff (re-read STATUS first and anchor on the quoted text). This PR is #54.
 - **"In progress" and "Next three tasks" item 2:** after 2b's "(part 2b: draft PR #53, …)", add "part 3a Sales tax (draft PR #54, `feat/settings-tax-api`, stacked on #53); part 3b retires the whole-section save next".
-- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #54 (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: lint, typecheck, unit (shared 1,161, web 417, api 126, db 18, providers 11), API and database (api 787 in 40 files, db 59, providers 2) and hooks (15) green; the whole api-mode suite 55 of 55; the demo subset (flooring 354, hr 7); 41 of 41 mutations caught."
+- **"Done"** (on merge): "Settings part 3a on the API (queue item 2, task 2), PR #54 (ADR 0059, 2026-11-17 part 3a section). In api mode Localization's Sales tax tab saves on the API (`PUT /settings/localization/tax`, `settings.tax.manage`, platform, scope `all`, a strict body, the shared rules in both modes against the locked row, always a step-up after them, one audit entry). A changed rule or county rate is a new row from the company's day and every row of that state or county reaching the day ends the day before; a changed rule takes the next version of its state; county rates are matched by state and county; nothing is edited in place or deleted, and issued invoices keep their tax. Rates are `TAX_RATE_TEXT` (below 100, four decimals by value, eight written). `GET /settings` answers the tab in force to quote viewers and tax managers, so the quote builder's preview follows the server, and the demo answers it the same way. Dates, filing and certificate types are read only; prices can't be made tax-inclusive. The form remounts after a save. No schema change, migration or dependency. Checks: lint, typecheck, unit (shared 1,161, web 418, api 126, db 18, providers 11), API and database (api 787 in 40 files, db 59, providers 2) and hooks (15) green; the whole api-mode suite 55 of 55; the demo subset (flooring 354, hr 7); 41 of 41 mutations caught."
 - **Close:**
   - B6's "The Settings move: tax rule and county `ratePct` are numeric(18,8) and answered raw; their write check must use the shared pattern (Settings part 3)." → done (`TAX_RATE_TEXT`, compared by value).
   - 2a's and 2b's "**Settings part 2b** …, then part 3 (Sales tax). The quote builder's tax preview still reads …" → done for Sales tax; keep "part 3b (the whole-section save), then Settings parts 4 to 6".
@@ -334,3 +335,41 @@ One confirmed finding (should_fix, docs only); fixed.
 
 - **Test before the fix:** none possible. No test reads docs/api-contract.md (its mentions in code are comments) and `*.md` is in `.prettierignore`. Checked by hand instead: `git grep` of docs/ outside docs/sessions for `localization/tax` together with 404, "not a route" or "not routes" found only this line before the fix. After the fix, the only matches are the true 404s for the switch being off (api-contract.md's part 3a row, ADR 0059, the spec). The controller has `@Put("localization/tax")` and no `@Put("localization")`, so the corrected line matches the code.
 - **Checks:** no product, shared, API or test file changed, so no lint, typecheck, build or e2e was re-run. The last full checks and the 55 of 55 api-mode suite (above) still hold for the product code.
+
+## Review round 2
+
+One confirmed finding (should_fix, demo only). Fixed in the safer direction: the demo now does what the docs say.
+
+| # | Severity | File | Finding | Fix |
+| --- | --- | --- | --- | --- |
+| R2 | should_fix | packages/shared/src/settings/tax-settings.ts:277 (the cause: `getSettings` in apps/web/src/lib/api/demo/store.ts) | The spec's known limits, ADR 0059's residual risks and the delta row said that future-dated rows in demo data saved before 3a "drop out on the first save". They didn't. DemoStore's `getSettings` answered its whole stored copy, so the tab showed a later rule or county rate and sent it back. `taxChanges` then matched it against `taxInForce(current, day)`, found nothing in force and started it today (version + 1), so a scheduled rate went live at once when someone saved an unrelated change. A state or county with both a row in force and a later row could not be saved at all (`stateOnce`, `sameCounty`). | Took the reviewer's first option. DemoStore's `getSettings`, `updateSettings` and `updateLocalization` now answer through a private `answered()`: the settings with the Sales tax tab in force on its `todayIso` (`taxInForce`). This matches `GET /settings` and the API's writes, which read it again (`readSettings`), on the company's day. Rows that ended before today or start later are not shown or sent back. The save's `taxChanges(...).after` is already `taxInForce` of what is kept, so they also drop out of the stored copy. Pricing still reads the stored copy. The spec, ADR and delta lines now say why the rows drop out. |
+
+### Decisions and why (review round 2)
+- **R2-D1, which fix:** made the demo match the docs instead of rewording them. This is the safer behaviour: a scheduled rate never goes live early, and no tab is refused over rows the person can't see. The demo then answers exactly what the API's GET answers through one shared function (`taxInForce`), nothing changes in shared or API code, and the statement in the source-of-truth spec becomes true. Rewording would have documented a demo that starts future rates early.
+- **R2-D2, the answer lives in DemoStore, not the page's `initial`:** every demo screen that reads settings (the tab, the quote builder's preview, the invoice page, the workspace) sees the same tab as api mode. Writes answer it too, because the API's writes are followed by a read of `GET /settings`.
+- **R2-D3, pricing unchanged:** DemoStore's own quote and invoice tax still reads `db.settings` with every row. For today's documents that gives the same row as the answer. Until the first tab save, a later row left in saved data still takes effect on its date, as it did before 3a. The ADR's residual risks say the same of a row written outside the API.
+- **R2-D4, row order:** the answer lists rules by state and county rates by state and county, as `taxInForce` and the API do. A fresh demo used to list the fixture order (Philadelphia before Allegheny), and a tab save already stored the sorted order. No unit test or e2e spec reads the order.
+- **R2-D5, scope:** `store.ts` is the sixteenth product file (15 planned). The stop-and-ask limit is "past 16 product files", so it was not reached. No change to shared, API, db, schema, migration or dependency. No blueprint-delta row was added: the existing part 3a row was corrected to match the code.
+
+### Test before the fix
+- **TD11** (apps/web/tests/unit/demo-tax.test.ts, commit `c0f1581`) writes Summit's Sales tax through the whole-section save (the screenless path that can still store a block unversioned, D29). It adds Arizona and Adams county dated next year only, plus a later Colorado (version 2) and El Paso row beside the rows in force. It expects:
+  - `updateSettings`'s answer, `getSettings` and a Payroll tab save's answer to show only the rows in force;
+  - an unrelated Sales tax save (rounding) to pass;
+  - the browser's saved copy afterwards (read from an in-memory `localStorage`, as the browser keeps it) to hold only the rows in force.
+- **Red** on the unfixed store (`store.ts` at `c0f1581`): first at the read (`getSettings` showed both later rules and both later county rates), and with the final test at line 297 (`updateSettings`'s answer). **Green** after the fix.
+- **Mutation R2-M1:** `updateLocalization` answering `db.settings` raw is caught at line 299 (the Payroll save's answer). `store.ts` was restored byte for byte (`cmp`).
+
+### Commands run (review round 2)
+| Command | Result |
+| --- | --- |
+| `heavy.sh pnpm --filter web exec vitest run tests/unit/demo-tax.test.ts` (`r2-web-red.log`, the test alone) | **red as planned:** 1 failed (TD11 at `getSettings`, the later rows shown), 9 passed |
+| the fix; `prettier --check` on both files; the same run (`r2-web-green.log`, `r2-web-green2.log`) | 10 passed |
+| `store.ts` taken from `HEAD` (`c0f1581`, the test alone), the same run (`r2-web-red2.log`), then the fix copied back | **red:** TD11 at `:297` |
+| R2-M1 (`r2-mut-ul.log`) | caught at `:299`; file restored (`cmp`) |
+| `heavy.sh settings3/checks.sh r2 web:test web:typecheck web:lint` | web 54 files, **418 tests** passed; typecheck and lint exit 0 |
+| `heavy.sh flows/api-e2e.sh settings3-r2 --build --` settings-tax, settings-region-currency, settings-localization, settings, sales, invoices, company, login (api-mode e2e) | **28 passed** in 164 s (builds 10 s, a fresh web compile) |
+| `heavy.sh bash settings3/e2e-demo.sh subset` (demo-mode e2e on a fresh demo build; `r2-demo-subset-run.log`, the `subset-demo-*` logs) | build 12 s; **flooring 354 passed** (445 s: S7, S8, `tax.spec.ts`, `localization.spec.ts` and the quote specs among them), **hr 7 passed**; both ports free afterwards |
+
+- **Not re-run:** the full checks, because no shared, API, db or test-infra file changed (the last full checks and the 55 of 55 api-mode suite still hold for everything outside `store.ts`); the whole demo suite; the whole api-mode suite.
+- **Commits:** `c0f1581` (TD11, red), `6b41bf0` (the fix), and this commit (the spec, ADR 0059, delta and this log).
+- **Left or doubtful:** none from this finding. PR #54's body still says 15 product files; the orchestrator updates it at handoff. Markdown is prettier-ignored, so the docs were checked by reading them against the code.

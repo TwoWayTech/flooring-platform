@@ -901,7 +901,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Tax dates are set by the save** (the company's day): no back-dating or scheduling (ADR 0059, part 3a).
 - **A rule or county rate changed twice in one day** keeps an empty range for the earlier change of that day; invoices issued under it keep its snapshot.
 - **A snapshot's rule version identifies state rules only;** county and company-default snapshots keep the rate, with the state rule's version or 1.
-- **Saved demo data typed before part 3a:** future-dated rows drop out on the first save; rates the rule refuses must be retyped before the tab saves.
+- **Saved demo data typed before part 3a:** the demo answers the Sales tax tab in force on today, as the API does, so rows dated later (or ended before today) are not shown and drop out on the tab's first save; rates the rule refuses must be retyped before the tab saves.
 - **Profile, number format, payments, expense approval, Sales and documents, Payroll rules, Region, Currency and Sales tax are validated by the shared rules in both modes** (`settingsSectionProblem`, `localizationTabProblem`; ADR 0059). Other sections are validated by their forms until their part moves to the API.
 - **A role with a scope narrower than the whole company can't save settings,** in either mode, and neither can View as such a role.
 - **A refused settings save shows its message and keeps the draft,** on every settings page, with or without a step-up.
