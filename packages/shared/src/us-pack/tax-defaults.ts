@@ -50,15 +50,25 @@ const validOn = (r: { validFrom: string; validTo?: string | null }, on: string) 
   r.validFrom <= on && (!r.validTo || r.validTo >= on);
 
 /** "El Paso County" and "el paso" name the same county. */
-const countyKey = (county: string | undefined) =>
+export const countyKey = (county: string | undefined) =>
   (county ?? "")
     .toLowerCase()
     .replace(/\s+county$/, "")
     .trim();
 
-/** The newest of several rules valid on a date. */
-function newest<T extends { validFrom: string }>(items: T[]): T | undefined {
-  return [...items].sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0];
+/**
+ * The newest of several rows valid on a date: the latest `validFrom`, then the higher version, then
+ * the higher id (a later uuid v7), so the tab (`taxInForce`) and the engine pick the same row even
+ * when rows overlap (ADR 0059, part 3a, D26). Saves never make two rows of one state or county valid
+ * on one day; only rows written outside the API can.
+ */
+function newest<T extends { validFrom: string; version?: number; id?: string }>(items: readonly T[]): T | undefined {
+  return [...items].sort(
+    (a, b) =>
+      b.validFrom.localeCompare(a.validFrom) ||
+      (b.version ?? 0) - (a.version ?? 0) ||
+      (b.id ?? "").localeCompare(a.id ?? ""),
+  )[0];
 }
 
 /** The company default as a rule for one state, so the tax engine can use it unchanged. */
@@ -107,6 +117,32 @@ export function resolveTaxRule(
     return { rule: stateRule, source: { kind: "state", label: `Default rate for ${stateName(state)} (example)` } };
   if (company) return { rule: company, source: { kind: "company", label: "Company default rate (example)" } };
   return { rule: undefined, source: { kind: "none", label: `Not collected in ${stateName(state)}` } };
+}
+
+/**
+ * The Sales tax tab as in force on `day` (ADR 0059, part 3a, D7, D26): per state the rule
+ * `resolveTaxRule` uses that day, and per county (`countyKey`) the rate it uses: `newest` among the
+ * rows valid that day. Sorted by state, then county, so both modes answer one order. Rows closed
+ * before `day` or starting after it are left out; the other fields are as given.
+ */
+export function taxInForce<T extends TaxDefaults>(tax: T, day: string): T {
+  const pick = <R extends { validFrom: string; validTo?: string | null; version?: number; id?: string }>(
+    rows: readonly R[],
+    keyOf: (row: R) => string,
+  ): R[] => {
+    const groups = new Map<string, R[]>();
+    for (const row of rows) if (validOn(row, day)) groups.set(keyOf(row), [...(groups.get(keyOf(row)) ?? []), row]);
+    return [...groups.keys()]
+      .sort()
+      .map((key) => newest(groups.get(key) ?? []))
+      .filter((row): row is R => row !== undefined);
+  };
+  // Only the two lists are replaced, by rows of their own types, so the result is still a T.
+  return {
+    ...tax,
+    rules: pick(tax.rules, (rule) => rule.state),
+    jurisdictions: pick(tax.jurisdictions, (rate) => `${rate.state}:${countyKey(rate.county)}`),
+  } as T;
 }
 
 /**

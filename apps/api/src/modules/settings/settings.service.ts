@@ -1,7 +1,8 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { settings, type SettingsGroup } from "@workspace/db/company";
+import { settings, taxJurisdictions, taxRules, type SettingsGroup } from "@workspace/db/company";
 import {
+  closesOn,
   defaultNumberSettings,
   LOCALIZATION_TABS,
   numbersToWire,
@@ -9,6 +10,9 @@ import {
   readableSections,
   readableTabs,
   SETTINGS_SECTIONS,
+  taxBlock,
+  taxChanges,
+  taxInForce,
   unservedSection,
   type ApiLocalizationTab,
   type ApiSettingsSection,
@@ -18,8 +22,9 @@ import {
   type LocalizationSettings,
   type LocalizationTabInput,
   type SettingsAnswer,
+  type TaxInput,
 } from "@workspace/shared";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, max } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -29,6 +34,7 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadExpenseSettings } from "../finance/expense-records";
 import { companyClock, type CompanyClock } from "../sales/sales-common";
+import { loadLocalization } from "../sales/sales-records";
 
 /** A served section's value as it is stored. */
 export type StoredSection<S extends ApiSettingsSection> = CompanySettings[S];
@@ -110,8 +116,10 @@ export class SettingsService {
    * One query. The dispatch names every served section and ends in `unservedSection`, so a section
    * it doesn't name is refused before its row is read, never answered under another name (D19).
    * Part 2a adds the localization tabs `readableTabs` gives them, as stored; a company with no
-   * localization row gets no `localization` (D7). Sales tax is not answered yet (part 3). Region's
-   * zone is control's, read once per answer that read the row (part 2b, D2, D15).
+   * localization row gets no `localization` (D7). Region's zone is control's, read once per answer
+   * that read the row (part 2b, D2, D15). Sales tax is answered as in force on the company's day:
+   * the block with the rules and county rates in force (part 3a, D7); one more read of the row and
+   * both tables, only for its readers.
    */
   async answer(tenant: TenantContext, access: RequestAccess): Promise<SettingsAnswer> {
     const sections = readableSections(access);
@@ -146,8 +154,10 @@ export class SettingsService {
     }
     const localization = stored.get("localization");
     if (localization !== undefined) {
-      const { zone } = await companyClock(this.control.db, tenant);
-      const picked = pickTabs(answered(localization, zone), tabs);
+      const clock = await companyClock(this.control.db, tenant);
+      const picked = pickTabs(answered(localization, clock.zone), tabs);
+      // Sales tax is never answered as the block alone: with its tables, as in force on the company's day (part 3a, D7).
+      if (picked.tax) picked.tax = taxInForce((await loadLocalization(db)).tax, clock.day);
       if (Object.keys(picked).length > 0) answer.localization = picked;
     }
     return answer;
@@ -217,9 +227,9 @@ export class SettingsService {
    * localization row gets 409 (D7); a tab is written into a row that lacks it only when `settle` takes
    * it whole (documents, payroll). Only `[tab]` changes: the other tabs and the stored tax block stay
    * as they were, and the tax tables are never touched. Never writes the control database. Answers
-   * what it stored.
+   * what it stored. Sales tax has its own save, which writes its tables (`saveTax`).
    */
-  async saveLocalizationTab<T extends ApiLocalizationTab>(
+  async saveLocalizationTab<T extends Exclude<ApiLocalizationTab, "tax">>(
     tenant: TenantContext,
     actor: Actor,
     tab: T,
@@ -257,6 +267,94 @@ export class SettingsService {
         tx,
       );
       return value;
+    });
+  }
+
+  /**
+   * Saves the Sales tax tab (ADR 0059, part 3a) in one transaction under the localization row's
+   * lock. It reads every live rule and county rate under the lock, gives `settle` the tab in force on
+   * the company's day (`taxInForce`) to run every check against (content, then the step-up), then
+   * ends each row the save replaces on the day before and inserts each changed or new row from the
+   * company's day (`taxChanges`), a state rule with the next version of its state. A row is never
+   * updated except to end it, and never deleted, so an issued invoice's snapshot keeps a rate the
+   * tables still hold (blueprint p21 rule 1). The block is stored without the tables. One audit entry,
+   * before and after the tab in force. A company without the row, or a row without the block, gets
+   * 409. Never writes the control database. Answers the tab now in force, read back.
+   */
+  async saveTax(
+    tenant: TenantContext,
+    actor: Actor,
+    settle: (current: LocalizationSettings["tax"], clock: CompanyClock) => TaxInput | Promise<TaxInput>,
+  ): Promise<LocalizationSettings["tax"]> {
+    const clock = await companyClock(this.control.db, tenant);
+    const db = await this.tenancy.db(tenant);
+    return db.transaction(async (tx) => {
+      const row = await this.lockGroup(tx, "localization");
+      // The jsonb row as every loader reads it.
+      const stored = row?.value as { tax?: unknown } | undefined;
+      if (!row || !stored?.tax) throw settingsMissing();
+      // Every live row, all versions, read under the lock (D13).
+      const all = (await loadLocalization(tx)).tax;
+      const current = taxInForce(all, clock.day);
+      const next = await settle(current, clock);
+      // Every number a state ever used, soft-deleted rows too: the (state, version) unique index counts them.
+      const used = await tx
+        .select({ state: taxRules.state, version: max(taxRules.version) })
+        .from(taxRules)
+        .groupBy(taxRules.state);
+      const latest = Object.fromEntries(used.map((entry) => [entry.state, entry.version ?? 0]));
+      const changes = taxChanges(next, all, clock.day, { latest, makeId: uuidv7 });
+      const lastDay = closesOn(clock.day);
+      const by = actor.access.userId;
+      for (const rule of changes.closedRules) {
+        const ended = await tx
+          .update(taxRules)
+          .set({ validTo: lastDay, updatedAt: new Date() })
+          .where(and(eq(taxRules.state, rule.state), eq(taxRules.version, rule.version), isNull(taxRules.deletedAt)))
+          .returning({ id: taxRules.id });
+        if (ended.length !== 1) throw new Error(`Tax rule ${rule.state} version ${rule.version} could not be ended.`);
+      }
+      if (changes.openedRules.length > 0)
+        await tx
+          .insert(taxRules)
+          .values(changes.openedRules.map((rule) => ({ id: uuidv7(), ...rule, validTo: null, createdBy: by })));
+      const ids = changes.closedJurisdictions.map((rate) => rate.id);
+      if (ids.length > 0) {
+        const ended = await tx
+          .update(taxJurisdictions)
+          .set({ validTo: lastDay, updatedAt: new Date() })
+          .where(and(inArray(taxJurisdictions.id, ids), isNull(taxJurisdictions.deletedAt)))
+          .returning({ id: taxJurisdictions.id });
+        if (ended.length !== ids.length) throw new Error("A county rate could not be ended.");
+      }
+      if (changes.openedJurisdictions.length > 0)
+        await tx
+          .insert(taxJurisdictions)
+          .values(changes.openedJurisdictions.map((rate) => ({ ...rate, validTo: null, createdBy: by })));
+      await tx
+        .update(settings)
+        .set({
+          value: { ...(row.value as Record<string, unknown>), tax: taxBlock(changes.after) },
+          updatedAt: new Date(),
+        })
+        .where(eq(settings.id, row.id));
+      // What is now in force, read back, so the answer and the audit are what the tables hold (D8).
+      const after = taxInForce((await loadLocalization(tx)).tax, clock.day);
+      await this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "settings",
+          action: `Changed ${SETTINGS_SECTIONS.localization.label.toLowerCase()}`,
+          targetType: "settings",
+          targetId: row.id,
+          targetLabel: LOCALIZATION_TABS.tax.label,
+          before: current,
+          after,
+        },
+        tx,
+      );
+      return after;
     });
   }
 

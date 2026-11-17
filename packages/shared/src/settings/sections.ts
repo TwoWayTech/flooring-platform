@@ -263,8 +263,9 @@ const LOCALIZATION = SETTINGS_SECTIONS.localization;
  * DemoStore's `updateLocalization` check one tab at a time and never the section's any-of (spec
  * rule 7). Sales and documents numbers and prints quotes, invoices and purchase orders, so it is
  * Flooring's (`core`); the overtime rule drives timesheets and pay, so Payroll rules are HR's (`hr`);
- * Region and Currency are `platform`: every company of both products has them (part 2b); Sales tax
- * stays `platform` until part 3 decides.
+ * Region and Currency are `platform`: every company of both products has them (part 2b). Sales tax
+ * is `platform` too: every company database has its tables; an HR Suite company's rules drive
+ * nothing, because it issues no quotes or invoices (part 3a, D5).
  */
 export const LOCALIZATION_TABS = {
   region: {
@@ -295,10 +296,11 @@ export const LOCALIZATION_TABS = {
 } as const satisfies Readonly<Record<keyof LocalizationSettings, LocalizationTabRule>>;
 
 /**
- * The tabs the API reads and writes (ADR 0059). Part 2b adds `region` and `currency`; part 3 adds
- * `tax`. Each also needs a `LOCALIZATION_READERS` row; the web merges and routes it with no other change.
+ * The tabs the API reads and writes (ADR 0059). Part 2b adds `region` and `currency`; part 3a adds
+ * `tax`, so every tab is served. Each also needs a `LOCALIZATION_READERS` row; the web merges and
+ * routes it with no other change.
  */
-export const API_LOCALIZATION_TABS = ["documents", "payroll", "region", "currency"] as const;
+export const API_LOCALIZATION_TABS = ["documents", "payroll", "region", "currency", "tax"] as const;
 
 /** A localization tab the API serves. */
 export type ApiLocalizationTab = (typeof API_LOCALIZATION_TABS)[number];
@@ -320,9 +322,12 @@ export function isApiLocalizationTab(tab: string): tab is ApiLocalizationTab {
  *   receipts, a new quote's job-site state and the address dialogs (`primaryState`), the quote
  *   builder's tax preview (`statesOfOperation`); its zone is control's (`tenants.time_zone`).
  * - `currency`: only its own tab.
+ * - `tax`: the quote builder's tax preview and its job-site state list (`sales.quote.view`) and the
+ *   tab (`settings.tax.manage`); answered as in force on the company's day, with its tables (part
+ *   3a, D7).
  *
- * Documents, payroll and region are read by other screens whatever the `settings.localization` page
- * switch says; currency is read only on its tab, so it is hidden while the switch is off. A screen
+ * Documents, payroll, region and tax are read by other screens whatever the `settings.localization`
+ * page switch says; currency is read only on its tab, so it is hidden while the switch is off. A screen
  * added later that reads a tab for someone not listed must add its key, or in api mode it gets
  * DemoStore's copy.
  */
@@ -337,6 +342,7 @@ export const LOCALIZATION_READERS: Readonly<Record<ApiLocalizationTab, SettingsR
   },
   region: { readers: "everyone", hiddenWhenOff: false },
   currency: { readers: ["settings.localization.manage"], hiddenWhenOff: true },
+  tax: { readers: ["sales.quote.view", "settings.tax.manage"], hiddenWhenOff: false },
 };
 
 /**
@@ -354,5 +360,9 @@ export function readableTabs(
   );
 }
 
-/** The localization tabs `GET /settings` answers: each served tab the person reads, as stored (Region with control's zone). */
+/**
+ * The localization tabs `GET /settings` answers: each served tab the person reads, as stored (Region
+ * with control's zone). Sales tax is the stored block with the rules and county rates in force on
+ * the company's day (part 3a).
+ */
 export type LocalizationAnswer = Partial<Pick<LocalizationSettings, ApiLocalizationTab>>;

@@ -59,7 +59,13 @@ type County = Tax["jurisdictions"][number];
 /** Summit's Sales tax tab as DemoStore and the page's Reset send it: six rules and three county rates. */
 const SUMMIT_TAX: Tax = SUMMIT.settings.localization.tax;
 /** Summit's tax block as the `localization` row stores it: the tab without its tables. */
-const SUMMIT_TAX_BLOCK = (({ rules: _rules, jurisdictions: _jurisdictions, ...block }) => block)(SUMMIT_TAX);
+const SUMMIT_TAX_BLOCK = {
+  pricesInclude: SUMMIT_TAX.pricesInclude,
+  rounding: SUMMIT_TAX.rounding,
+  companyDefault: SUMMIT_TAX.companyDefault,
+  filing: SUMMIT_TAX.filing,
+  certificateTypes: SUMMIT_TAX.certificateTypes,
+};
 const PART_1 = ["profile", "numbers", "payments", "expenses"] as const;
 const ACTION = "Changed localization and tax";
 const MISSING =
@@ -195,7 +201,16 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     });
     await withCompanyDb(verco, async (db) => {
       await db.insert(taxRules).values(SUMMIT_TAX.rules.map(ruleRow));
-      await db.insert(taxJurisdictions).values(SUMMIT_TAX.jurisdictions.map(({ id: _id, ...rate }) => rate));
+      await db.insert(taxJurisdictions).values(
+        SUMMIT_TAX.jurisdictions.map((rate) => ({
+          state: rate.state,
+          county: rate.county,
+          name: rate.name,
+          ratePct: rate.ratePct,
+          validFrom: rate.validFrom,
+          validTo: rate.validTo,
+        })),
+      );
     });
     await withCompanyDb(zoneco, (db) => db.insert(taxRules).values(ruleRow(summitRule("CO"))));
     await withCompanyDb(taxco, async (db) => {
@@ -601,7 +616,8 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     expect([await ruleRows(bareco), await countyRows(bareco)]).toEqual([[], []]);
     expect(await auditCount(bareco)).toBe(audits);
 
-    const { tax: _tax, ...withoutTax } = summitLocalization();
+    const withoutTax: Partial<StoredLocalization> = summitLocalization();
+    delete withoutTax.tax;
     await setRow(bareco, withoutTax);
     try {
       const fresh = await member(bareco, ["owner"]);
