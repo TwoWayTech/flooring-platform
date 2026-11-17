@@ -810,11 +810,23 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
 
   it("A14 two saves at once: both answered, both audited in order, the later one stored", async () => {
     const owner = people.get("flooring:owner")!;
+    // A third value first, so neither save's `after` can equal what both would read without the lock.
+    await put("numbers", owner.cookie, { ...numbersBody("minus"), compactDashboards: false }).expect(200);
     const audits = (await auditsOf(floorco, "Changed number format")).length;
-    const [first, second] = await Promise.all([
-      put("numbers", owner.cookie, numbersBody("parens")),
-      put("numbers", owner.cookie, numbersBody("minus")),
-    ]);
+    // Hold the row while both saves start, so both reach their read of it before either writes:
+    // without the save's own row lock, both would read the same `before`.
+    const saves = await withCompanyDb(floorco, (db) =>
+      db.transaction(async (tx) => {
+        await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "numbers")).for("update");
+        const both = Promise.all([
+          put("numbers", owner.cookie, numbersBody("parens")).then((response) => response),
+          put("numbers", owner.cookie, numbersBody("minus")).then((response) => response),
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return { both };
+      }),
+    );
+    const [first, second] = await saves.both;
     expect([first.status, second.status]).toEqual([200, 200]);
     const entries = (await auditsOf(floorco, "Changed number format")).slice(audits);
     expect(entries).toHaveLength(2);
