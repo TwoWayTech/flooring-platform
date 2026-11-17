@@ -32,10 +32,11 @@ interface SettingsFormProps<T> {
   /** The company's original values, for Reset to default. */
   defaults: T;
   /**
-   * The save needs a step-up code: base currency and tax (blueprint "Localization", rule 4), and
-   * Payments (ADR 0059 D5).
+   * The save needs a step-up code: base currency and tax (blueprint "Localization", rule 4), Payments
+   * (ADR 0059 D5); or, as a function of the draft, only for some changes (Region's states of
+   * operation, ADR 0059 part 2b).
    */
-  stepUp?: boolean;
+  stepUp?: boolean | ((draft: T) => boolean);
   /** Extra condition for saving, such as a passing contrast check. */
   canSave?: (draft: T) => boolean;
   /**

@@ -37,11 +37,13 @@ export type SaveStep = "refused" | "step-up" | "save";
  * shows the rule's words and stops, so the step-up dialog never opens for it and a refused value
  * never spends an authenticator code (ADR 0059 D5, review round 1; the access editor does the same,
  * spec "One permission matrix"). Otherwise a step-up section asks for the code and any other saves.
+ * A section whose code depends on what changed (Region: only a change of the states of operation,
+ * ADR 0059 part 2b) passes a function of the draft; it is called only for a draft the rule passed.
  */
 export function nextSaveStep<T>(
   draft: T,
   problem: ((draft: T) => string | null) | undefined,
-  stepUp: boolean,
+  stepUp: boolean | ((draft: T) => boolean),
   notify: Pick<SaveNotifier, "error">,
 ): SaveStep {
   const reason = problem?.(draft) ?? null;
@@ -49,5 +51,6 @@ export function nextSaveStep<T>(
     notify.error(reason);
     return "refused";
   }
-  return stepUp ? "step-up" : "save";
+  const asks = typeof stepUp === "function" ? stepUp(draft) : stepUp;
+  return asks ? "step-up" : "save";
 }

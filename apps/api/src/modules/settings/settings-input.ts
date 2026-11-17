@@ -1,19 +1,23 @@
 import {
   CATEGORY_LABELS,
+  CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
   LEGAL_FOOTER_MAX,
   NUMBER_KINDS,
   NUMBER_MESSAGES,
   numbersFromWire,
   PAYROLL_MESSAGES,
+  REGION_MESSAGES,
   WASTE_CATEGORIES,
   type CompanyProfile,
+  type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
   type NumberKind,
   type NumberSettings,
   type PaymentSettings,
   type PayrollInput,
+  type RegionInput,
 } from "@workspace/shared";
 import { z } from "zod";
 
@@ -138,5 +142,47 @@ export const PAYROLL_INPUT: z.ZodType<PayrollInput> = z
   .object({
     overtimeRule: z.string().max(20, PAYROLL_MESSAGES.overtimeRule),
     holidayState: z.string().max(20, PAYROLL_MESSAGES.holidayState),
+  })
+  .strict();
+
+/**
+ * Region as the tab sends it (ADR 0059, part 2b). Only types, outer lengths and unknown fields are
+ * checked here; every value, the zone included, is the shared rule's to judge (`regionProblem`), so
+ * both modes refuse it with the same words. Each outer length carries its field's words (part 2a's
+ * review round 1). Country and locale take none: the rule's words name the stored values, which this
+ * check can't know; the rule takes only the stored values, so nothing longer is ever stored; and the
+ * JSON body limit bounds the request (part 2b, D23).
+ */
+export const REGION_INPUT: z.ZodType<RegionInput> = z
+  .object({
+    country: z.string(),
+    primaryState: z.string().max(10, REGION_MESSAGES.primaryState),
+    statesOfOperation: z
+      .array(z.string().max(10, REGION_MESSAGES.statesOfOperation))
+      .max(100, REGION_MESSAGES.statesOfOperation),
+    timeZone: z.string().max(64, REGION_MESSAGES.timeZone),
+    locale: z.string(),
+    dateFormat: z.string().max(20, REGION_MESSAGES.dateFormat),
+    firstDayOfWeek: z.string().max(20, REGION_MESSAGES.firstDayOfWeek),
+    fiscalYearStartMonth: z.number(),
+  })
+  .strict();
+
+/**
+ * Currency as the tab sends it (ADR 0059, part 2b). Rates are strings, never JSON numbers (CLAUDE.md
+ * rule 6). The base and the rates take no outer length: the rule's words name the stored base and
+ * each rate's code, which this check can't know; only the stored base and rates `FX_RATE_TEXT` takes
+ * are ever stored; and the JSON body limit bounds the request (D23). `asOf` is taken for its shape
+ * only: the save dates rates itself and never stores it (D8).
+ */
+export const CURRENCY_INPUT: z.ZodType<CurrencyInput> = z
+  .object({
+    base: z.string(),
+    locked: z.boolean(),
+    extra: z
+      .array(
+        z.object({ code: z.string().max(10, CURRENCY_MESSAGES.codes), rate: z.string(), asOf: z.string() }).strict(),
+      )
+      .max(50, CURRENCY_MESSAGES.codes),
   })
   .strict();

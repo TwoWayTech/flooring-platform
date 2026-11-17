@@ -242,7 +242,8 @@ export interface SettingsAnswer {
   expenses?: ExpenseSettings;
   /**
    * Present only when the company has saved localization and the person reads at least one served
-   * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a).
+   * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is
+   * the company's control zone (`tenants.time_zone`), not the stored copy (part 2b).
    */
   localization?: LocalizationAnswer;
 }
@@ -262,7 +263,8 @@ const LOCALIZATION = SETTINGS_SECTIONS.localization;
  * DemoStore's `updateLocalization` check one tab at a time and never the section's any-of (spec
  * rule 7). Sales and documents numbers and prints quotes, invoices and purchase orders, so it is
  * Flooring's (`core`); the overtime rule drives timesheets and pay, so Payroll rules are HR's (`hr`);
- * Region, Currency and Sales tax stay `platform` until their parts decide (2b, 3).
+ * Region and Currency are `platform`: every company of both products has them (part 2b); Sales tax
+ * stays `platform` until part 3 decides.
  */
 export const LOCALIZATION_TABS = {
   region: {
@@ -293,10 +295,10 @@ export const LOCALIZATION_TABS = {
 } as const satisfies Readonly<Record<keyof LocalizationSettings, LocalizationTabRule>>;
 
 /**
- * The tabs the API reads and writes (ADR 0059). 2b adds `region` and `currency`, part 3 `tax`. Each
- * also needs a `LOCALIZATION_READERS` row; the web merges and routes it with no other change.
+ * The tabs the API reads and writes (ADR 0059). Part 2b adds `region` and `currency`; part 3 adds
+ * `tax`. Each also needs a `LOCALIZATION_READERS` row; the web merges and routes it with no other change.
  */
-export const API_LOCALIZATION_TABS = ["documents", "payroll"] as const;
+export const API_LOCALIZATION_TABS = ["documents", "payroll", "region", "currency"] as const;
 
 /** A localization tab the API serves. */
 export type ApiLocalizationTab = (typeof API_LOCALIZATION_TABS)[number];
@@ -307,14 +309,20 @@ export function isApiLocalizationTab(tab: string): tab is ApiLocalizationTab {
 }
 
 /**
- * Who `GET /settings` answers each served tab to (ADR 0059, part 2a, D8), by the screens that read it:
+ * Who `GET /settings` answers each served tab to (ADR 0059, parts 2a D8 and 2b D10), by the screens
+ * that read it:
  * - `documents`: the quote builder (deposit, default waste, expiry; `sales.quote.view`), the invoice
  *   page and its receipts (footer; `sales.invoice.view`), the purchase order PDF (footer;
  *   `purchasing.order.view`), and the page itself.
  * - `payroll`: Timesheets (`hr.timesheet.view`, held by every default role), the HR dashboard
  *   (`hr.overview.view`), Settings → HR (`settings.hr.manage`) and the tab.
+ * - `region`: every member: every screen's dates (`use-format-date.ts`), the invoice document and
+ *   receipts, a new quote's job-site state and the address dialogs (`primaryState`), the quote
+ *   builder's tax preview (`statesOfOperation`); its zone is control's (`tenants.time_zone`).
+ * - `currency`: only its own tab.
  *
- * `settings.localization` is a page switch: other screens read these tabs whatever it says. A screen
+ * Documents, payroll and region are read by other screens whatever the `settings.localization` page
+ * switch says; currency is read only on its tab, so it is hidden while the switch is off. A screen
  * added later that reads a tab for someone not listed must add its key, or in api mode it gets
  * DemoStore's copy.
  */
@@ -327,12 +335,15 @@ export const LOCALIZATION_READERS: Readonly<Record<ApiLocalizationTab, SettingsR
     readers: ["hr.timesheet.view", "hr.overview.view", "settings.hr.manage", "settings.localization.manage"],
     hiddenWhenOff: false,
   },
+  region: { readers: "everyone", hiddenWhenOff: false },
+  currency: { readers: ["settings.localization.manage"], hiddenWhenOff: true },
 };
 
 /**
- * The served localization tabs a person reads, in `API_LOCALIZATION_TABS` order (ADR 0059, part 2a):
- * the tab's module is on and the person is one of its readers. `on` is the switch register, a
- * parameter so tests can switch one off.
+ * The served localization tabs a person reads, in `API_LOCALIZATION_TABS` order (ADR 0059, parts 2a
+ * and 2b): the tab's module is on, the person is one of its readers, and, for a tab hidden while its
+ * page is off (Currency), the switch is on. `on` is the switch register, a parameter so tests can
+ * switch one off.
  */
 export function readableTabs(
   reader: SettingsReader,
@@ -343,5 +354,5 @@ export function readableTabs(
   );
 }
 
-/** The localization tabs `GET /settings` answers: each served tab the person reads, as stored. */
+/** The localization tabs `GET /settings` answers: each served tab the person reads, as stored (Region with control's zone). */
 export type LocalizationAnswer = Partial<Pick<LocalizationSettings, ApiLocalizationTab>>;

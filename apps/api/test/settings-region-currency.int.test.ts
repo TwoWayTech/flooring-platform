@@ -686,11 +686,11 @@ describe("settings part 2b on the API: Region and Currency (needs the local Post
       [{ ...current, extra: [] }, CURRENCY_MESSAGES.codes],
       [{ ...current, extra: [{ ...entry, code: "CAN" }] }, CURRENCY_MESSAGES.codes],
       ...["0", "-1", "1.", "1e3", "1.123456789"].map(
-        (rate) => [cad(current, rate), CURRENCY_MESSAGES.rate("CAD")] as [unknown, string],
+        (rate) => [cad(current, rate), CURRENCY_MESSAGES.exchange("CAD")] as [unknown, string],
       ),
       // Past the body's outer lengths, the field's own words (D23).
       [{ ...current, base: "U".repeat(200) }, CURRENCY_MESSAGES.base("USD")],
-      [cad(current, "1".repeat(200)), CURRENCY_MESSAGES.rate("CAD")],
+      [cad(current, "1".repeat(200)), CURRENCY_MESSAGES.exchange("CAD")],
       [{ ...current, extra: [{ ...entry, code: "C".repeat(11) }] }, CURRENCY_MESSAGES.codes],
       [{ ...current, extra: Array(51).fill(entry) }, CURRENCY_MESSAGES.codes],
     ];

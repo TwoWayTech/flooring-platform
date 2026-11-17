@@ -70,6 +70,7 @@ import {
   settingsSectionProblem,
   LOCALIZATION_TABS,
   localizationTabProblem,
+  localizationTabStored,
   type LocalizationSettings,
   type SettingsSectionRule,
 } from "@workspace/shared";
@@ -860,22 +861,26 @@ export class DemoStore implements ApiClient {
 
   /**
    * Replaces one tab of Localization and tax, or the Sales and documents page, with its own key
-   * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule. Only
-   * that tab changes, and the audit entry names it.
+   * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule against
+   * the stored tab. Region refuses a zone, country or locale change and needs Sales tax's key for a
+   * change of the states of operation (View as limits the keys, spec rule 22); Currency keeps its
+   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). The step-up is the
+   * dialog alone, as everywhere in the demo. Only that tab changes, and the audit entry names it.
    */
   async updateLocalization<T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) {
     const db = this.open();
     const rule = LOCALIZATION_TABS[tab];
-    await this.assertSettingsSave(db, rule);
-    const problem = localizationTabProblem(tab, value);
+    const access = await this.assertSettingsSave(db, rule);
+    const current = db.settings.localization[tab];
+    const problem = localizationTabProblem(tab, value, current, (key) => access.permissions.has(key));
     if (problem) throw new DemoRuleError(problem);
-    const before = db.settings.localization[tab];
-    db.settings = { ...db.settings, localization: { ...db.settings.localization, [tab]: value } };
+    const stored = localizationTabStored(tab, value, current, this.todayIso);
+    db.settings = { ...db.settings, localization: { ...db.settings.localization, [tab]: stored } };
     this.appendAudit(db, {
       category: "settings",
       action: `Changed ${SETTINGS_SECTIONS.localization.label.toLowerCase()}`,
       target: rule.label,
-      ...diffSummary(before, value),
+      ...diffSummary(current, stored),
     });
     this.emit();
     return db.settings;
@@ -2142,7 +2147,8 @@ export class DemoStore implements ApiClient {
   /**
    * The checks every settings save makes before its content rules, in the API's order (ADR 0059):
    * the module first, as `permissionDecision` in apps/api's permission guard, then the keys, the
-   * page's switch and data scope `all` (View as limits it too, spec rule 22).
+   * page's switch and data scope `all` (View as limits it too, spec rule 22). Gives the viewer's
+   * access back for the checks that follow (Region's tax key, ADR 0059 part 2b).
    */
   private async assertSettingsSave(db: CompanyDb, rule: Pick<SettingsSectionRule, "keys" | "module" | "feature">) {
     const { access, company } = await this.granter(db);
@@ -2152,6 +2158,7 @@ export class DemoStore implements ApiClient {
     await this.assertCan(db, rule.keys);
     if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
     if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
+    return access;
   }
 
   /**

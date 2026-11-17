@@ -2,6 +2,8 @@ import { Body, Controller, ForbiddenException, Get, Header, Put, Req } from "@ne
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
   companyProfileProblem,
+  currencyProblem,
+  datedRates,
   documentsProblem,
   expenseSettingsProblem,
   LOCALIZATION_TABS,
@@ -9,14 +11,19 @@ import {
   numbersToWire,
   paymentSettingsProblem,
   payrollProblem,
+  regionKeyProblem,
+  regionProblem,
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
+  statesOfOperationChanged,
   type CompanyProfile,
+  type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
   type NumberSettingsWire,
   type PaymentSettings,
   type PayrollInput,
+  type RegionInput,
   type SettingsAnswer,
 } from "@workspace/shared";
 import type { Request } from "express";
@@ -30,14 +37,16 @@ import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
+  CURRENCY_INPUT,
   DOCUMENTS_INPUT,
   EXPENSES_INPUT,
   NUMBERS_INPUT,
   PAYMENTS_INPUT,
   PAYROLL_INPUT,
   PROFILE_INPUT,
+  REGION_INPUT,
 } from "./settings-input";
-import { SettingsService } from "./settings.service";
+import { settingsMissing, SettingsService } from "./settings.service";
 
 /**
  * Settings bind the whole company, so a save needs data scope `all` (ADR 0059 D4), as the books do
@@ -60,7 +69,8 @@ function check(problem: string | null): void {
  * (403), the strict body (400), the shared content rules (400), for Payments a step-up (403
  * `step_up_required`, after the content checks so a refused value never costs a code), then the save
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
- * and documents and Payroll rules, one tab of the localization row each.
+ * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
+ * Currency; their checks that read the stored tab run inside the save, under the row lock.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -191,8 +201,7 @@ export class SettingsController {
     requireWholeCompany(access);
     const documents = parse(DOCUMENTS_INPUT, body);
     check(documentsProblem(documents));
-    await this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "documents", documents);
-    return documents;
+    return this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "documents", () => documents);
   }
 
   /**
@@ -215,7 +224,68 @@ export class SettingsController {
     requireWholeCompany(access);
     const payroll = parse(PAYROLL_INPUT, body);
     check(payrollProblem(payroll));
-    await this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "payroll", payroll);
-    return payroll;
+    return this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "payroll", () => payroll);
+  }
+
+  /**
+   * PUT /settings/localization/region (ADR 0059, part 2b). One key, `platform` (no module guard, as
+   * profile and numbers). The zone must be the company's own (control `tenants.time_zone`), country
+   * and locale the stored ones; a change of the states of operation also needs `settings.tax.manage`
+   * (403) and a step-up, because the company default tax rate applies only in them. Every check that
+   * reads the stored region runs under the row lock. Answers the tab as saved.
+   */
+  @Put("localization/region")
+  @RequirePermission(...LOCALIZATION_TABS.region.keys)
+  @Audited()
+  async saveRegion(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<RegionInput> {
+    requireFeature(LOCALIZATION_TABS.region.feature);
+    requireWholeCompany(access);
+    const region = parse(REGION_INPUT, body);
+    return this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "region", async (current) => {
+      if (!current) throw settingsMissing();
+      check(regionProblem(region, current));
+      const keys = regionKeyProblem(region, current, (key) => access.permissions.has(key));
+      if (keys) throw new ForbiddenException({ code: "forbidden", message: keys });
+      if (statesOfOperationChanged(region, current)) await this.stepUp.require(session);
+      return region;
+    });
+  }
+
+  /**
+   * PUT /settings/localization/currency (ADR 0059, part 2b). The base currency, its lock and the codes
+   * stay; rates change. Always a step-up, after the content checks (blueprint p21 rule 4, as
+   * Payments), and a changed rate is dated the company's day. Every check that reads the stored
+   * currency runs under the row lock. Answers the tab as saved.
+   */
+  @Put("localization/currency")
+  @RequirePermission(...LOCALIZATION_TABS.currency.keys)
+  @Audited()
+  async saveCurrency(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<CurrencyInput> {
+    requireFeature(LOCALIZATION_TABS.currency.feature);
+    requireWholeCompany(access);
+    const currency = parse(CURRENCY_INPUT, body);
+    return this.settings.saveLocalizationTab(
+      tenant,
+      actorOf(access, session, request),
+      "currency",
+      async (current, clock) => {
+        if (!current) throw settingsMissing();
+        check(currencyProblem(currency, current));
+        await this.stepUp.require(session);
+        return datedRates(currency, current, clock.day);
+      },
+    );
   }
 }

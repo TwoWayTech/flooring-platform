@@ -27,6 +27,16 @@ export const SHARE_PERCENT_TEXT = /^\d{1,3}(\.\d{1,2}0{0,6})?$/;
 export const MONEY_TEXT = /^\d{1,12}(\.\d{1,2})?$/;
 
 /**
+ * An exchange rate as a write takes it (blueprint p20 Currency; CLAUDE.md rule 8, rates are
+ * numeric(18,8)): up to ten digits and eight decimals. No bare point, sign, exponent or space. The
+ * caller checks it is above 0 (ADR 0059, part 2b).
+ */
+export const FX_RATE_TEXT = /^\d{1,10}(\.\d{1,8})?$/;
+
+/** The longest text `FX_RATE_TEXT` takes ("9999999999.99999999"), where a rate input stops typing. */
+export const FX_RATE_TEXT_MAX = 19;
+
+/**
  * Plain decimal text: digits with an optional fraction. No sign, exponent, radix prefix ("0x0a"),
  * bare point ("10.", ".5") or space, all of which decimal.js would otherwise read as a number.
  */

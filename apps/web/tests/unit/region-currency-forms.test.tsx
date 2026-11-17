@@ -51,7 +51,7 @@ describe("the Region and Currency forms (ADR 0059, part 2b)", () => {
 
     const currency = CURRENT.currency;
     const zero = { ...currency, extra: currency.extra.map((entry, i) => (i === 0 ? { ...entry, rate: "0" } : entry)) };
-    expect(keyless.currency.problem(zero)).toBe(CURRENCY_MESSAGES.rate("CAD"));
+    expect(keyless.currency.problem(zero)).toBe(CURRENCY_MESSAGES.exchange("CAD"));
     expect(keyless.currency.problem(currency)).toBeNull();
 
     // Reset keeps the zone, country and locale from the company's copy and takes the rest from the original.

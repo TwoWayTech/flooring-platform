@@ -161,8 +161,8 @@ describe("Settings part 2b: Region and Currency rules (ADR 0059)", () => {
     expect(currencyProblem({ ...two, extra: [eur, entry] }, two)).toBe(CURRENCY_MESSAGES.codes);
     expect(currencyProblem(two, two)).toBeNull();
     for (const rate of ["0", "0.0", "0.00000000", ...BAD_RATES])
-      expect(currencyProblem(cad(rate), CURRENCY), rate).toBe(CURRENCY_MESSAGES.rate("CAD"));
-    expect(CURRENCY_MESSAGES.rate("CAD")).toBe(
+      expect(currencyProblem(cad(rate), CURRENCY), rate).toBe(CURRENCY_MESSAGES.exchange("CAD"));
+    expect(CURRENCY_MESSAGES.exchange("CAD")).toBe(
       "Enter the rate for CAD as a number above 0 with up to 8 decimals, such as 1.3870.",
     );
     // The first refused field answers: the base before the codes, the codes before a rate.
@@ -199,7 +199,7 @@ describe("Settings part 2b: Region and Currency rules (ADR 0059)", () => {
     expect(localizationTabProblem("region", asRegion(region({ dateFormat: "dd/MM/yyyy" })), REGION, all)).toBe(
       REGION_MESSAGES.dateFormat,
     );
-    expect(localizationTabProblem("currency", cad("0"), CURRENCY, all)).toBe(CURRENCY_MESSAGES.rate("CAD"));
+    expect(localizationTabProblem("currency", cad("0"), CURRENCY, all)).toBe(CURRENCY_MESSAGES.exchange("CAD"));
     const changed = asRegion(region({ statesOfOperation: ["CO"] }));
     expect(localizationTabProblem("region", changed, REGION, none)).toBe(REGION_MESSAGES.statesNeedTax);
     expect(localizationTabProblem("region", changed, REGION, all)).toBeNull();

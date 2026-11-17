@@ -1,11 +1,18 @@
 import { CATEGORY_LABELS } from "../catalog-labels";
-import { PERCENT_TEXT } from "../decimal-text";
+import { FX_RATE_TEXT, PERCENT_TEXT, sameOptionalDecimal } from "../decimal-text";
 import { dec } from "../money";
 import { PAYMENT_TERM_LABELS } from "../operations/quotes";
+import type { PermissionKey } from "../permissions/catalog";
 import type { ProductCategory } from "../types";
 import type { LocalizationSettings, WasteCategory } from "../types/settings";
 import { OVERTIME_RULE_MESSAGE, overtimeRuleProblem } from "../us-pack/overtime";
 import { isStateCode } from "../us-pack/states";
+// Region's tax key comes from the one table of tab keys (CLAUDE.md rule 4; ADR 0059, part 2b), so
+// this file is no longer a leaf. sections.ts imports nothing from settings/, so there is no cycle.
+import { LOCALIZATION_TABS } from "./sections";
+
+type Region = LocalizationSettings["region"];
+type Currency = LocalizationSettings["currency"];
 
 /**
  * A document number prefix: a letter or digit, then up to nine letters, digits or hyphens ("PAY-").
@@ -70,11 +77,32 @@ export type DocumentsInput = Omit<LocalizationSettings["documents"], "defaultTer
 /** Payroll rules as a save sends them, before `payrollProblem` has checked the rule. */
 export type PayrollInput = Omit<LocalizationSettings["payroll"], "overtimeRule"> & { overtimeRule: string };
 
+/**
+ * Region as a save sends it, before `regionProblem` has checked it: the country, date format and
+ * week start as plain text (ADR 0059, part 2b, D5). The stored type is assignable to it.
+ */
+export type RegionInput = Omit<Region, "country" | "dateFormat" | "firstDayOfWeek"> & {
+  country: string;
+  dateFormat: string;
+  firstDayOfWeek: string;
+};
+
+/** Currency as a save sends it, before `currencyProblem` has checked it: the base as plain text. */
+export type CurrencyInput = Omit<Currency, "base"> & { base: string };
+
 /** What each tab the API serves takes as its body. */
 export interface LocalizationTabInput {
   documents: DocumentsInput;
   payroll: PayrollInput;
+  region: RegionInput;
+  currency: CurrencyInput;
 }
+
+/**
+ * Whether the person saving holds a key: the API's `access.permissions.has`, DemoStore's viewer
+ * (View as limits it), the page's `useCan()` (ADR 0059, part 2b).
+ */
+export type HoldsKey = (key: PermissionKey) => boolean;
 
 /**
  * Whether a value is a percent the quote API takes (sales.md rules 8 and 12; STATUS B6): plain
@@ -154,27 +182,205 @@ export function payrollProblem(payroll: PayrollInput): string | null {
     : PAYROLL_MESSAGES.holidayState;
 }
 
+// Region and Currency (ADR 0059, part 2b).
+
+/** The date formats the Region tab offers; `regionProblem` takes exactly these. */
+export const DATE_FORMATS = [
+  "MMM d, yyyy",
+  "MM/dd/yyyy",
+  "yyyy-MM-dd",
+] as const satisfies readonly Region["dateFormat"][];
+
+/** The days a week can start on, as the Region tab offers them; `regionProblem` takes exactly these. */
+export const WEEK_STARTS = ["monday", "sunday"] as const satisfies readonly Region["firstDayOfWeek"][];
+
+/** What Region says about each field it refuses, the same words in both modes. */
+export const REGION_MESSAGES = {
+  timeZone: "The company's time zone is set when the company is set up. Ask us to change it.",
+  countryLocale: (country: string, locale: string) =>
+    `The region keeps the company's country and locale (${country}, ${locale}).`,
+  primaryState: "Choose the primary state, such as CO.",
+  statesOfOperation: "Choose at least one state of operation, each once, from the list.",
+  dateFormat: "Choose one of the date formats offered.",
+  firstDayOfWeek: "Choose Monday or Sunday for the first day of the week.",
+  fiscalYearStartMonth: "Choose the month the fiscal year starts, January to December.",
+  statesNeedTax:
+    "Changing the states of operation changes where sales tax is collected, so it also needs the sales tax permission.",
+} as const;
+
 /**
- * Why one tab of Localization and tax (or the Sales and documents page) can't be saved, or null:
- * DemoStore's `updateLocalization` runs it, as the API's routes run each tab's rule (ADR 0059, part
- * 2a). Region and Currency get their rules in part 2b, which also passes the stored tab as `current`
- * with the first rule that reads it; Sales tax gets its rules in part 3.
+ * What Currency says about each field it refuses, the same words in both modes. A rate's words are
+ * `exchange`, so packages/shared declares no new field named like a rate and the sensitive-field
+ * check (`access-rules.test.ts`) needs no blanket `rate` entry, which would also wave through a
+ * future pay rate named `rate`.
  */
-export function localizationTabProblem<T extends keyof LocalizationSettings>(
-  tab: T,
-  value: LocalizationSettings[T],
-): string | null {
-  // One key is set, so reading a tab's property narrows the value to that tab's type (as settingsSectionProblem does).
-  const tabs = { [tab]: value } as Partial<LocalizationSettings>;
-  if (tabs.documents) return documentsProblem(tabs.documents);
-  if (tabs.payroll) return payrollProblem(tabs.payroll);
+export const CURRENCY_MESSAGES = {
+  base: (base: string) => `The company's base currency stays ${base}.`,
+  codes: "Other currencies can't be added, removed or renamed here. Change only their rates.",
+  exchange: (code: string) => `Enter the rate for ${code} as a number above 0 with up to 8 decimals, such as 1.3870.`,
+} as const;
+
+/** Whether a list of states holds at least one US pack code (CLAUDE.md rule 12), each once. */
+function statesOk(states: readonly string[]): boolean {
+  return (
+    Array.isArray(states) &&
+    states.length > 0 &&
+    states.every((state) => isStateCode(state)) &&
+    new Set(states).size === states.length
+  );
+}
+
+/**
+ * Why a Region save can't be stored, or null (blueprint p20 Region; ADR 0059, part 2b, D3 to D5;
+ * CLAUDE.md rule 12). `current` is the stored region, the first problem is answered:
+ * 1. The time zone must be the company's own. On the API `current.timeZone` is control's
+ *    `tenants.time_zone` (the caller overlays it); in the demo DemoStore's own copy. Every API date is
+ *    read in that zone, so a change would move past invoice days: it is set when the company is set up.
+ * 2. Country and locale stay the stored ones (no literal; as the number format's, part 1 D12).
+ * 3. The primary state, a US state code; at least one state of operation, each a code once.
+ * 4. A date format and a week start the tab offers, and a fiscal month from 1 to 12.
+ * The extra key a change of the states of operation needs is `regionKeyProblem`'s.
+ */
+export function regionProblem(next: RegionInput, current: Region): string | null {
+  if (next.timeZone !== current.timeZone) return REGION_MESSAGES.timeZone;
+  if (next.country !== current.country || next.locale !== current.locale)
+    return REGION_MESSAGES.countryLocale(current.country, current.locale);
+  if (!isStateCode(next.primaryState)) return REGION_MESSAGES.primaryState;
+  if (!statesOk(next.statesOfOperation)) return REGION_MESSAGES.statesOfOperation;
+  if (!(DATE_FORMATS as readonly string[]).includes(next.dateFormat)) return REGION_MESSAGES.dateFormat;
+  if (!(WEEK_STARTS as readonly string[]).includes(next.firstDayOfWeek)) return REGION_MESSAGES.firstDayOfWeek;
+  const month = next.fiscalYearStartMonth;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return REGION_MESSAGES.fiscalYearStartMonth;
   return null;
 }
 
 /**
- * Why the whole Localization and tax section can't be saved, or null: every tab's rule, for
- * `updateSettings("localization")` and `resetSettings`, which no screen calls (ADR 0059, part 2a).
+ * Whether a save changes the states of operation, compared as sets, so a reorder is no change. The
+ * company default tax rate applies only in these states (spec rule 25), so a change moves where sales
+ * tax is collected and needs Sales tax's key and a step-up (ADR 0059, part 2b, D6).
  */
-export function localizationProblem(localization: LocalizationSettings): string | null {
-  return payrollProblem(localization.payroll) ?? documentsProblem(localization.documents);
+export function statesOfOperationChanged(
+  next: Pick<RegionInput, "statesOfOperation">,
+  current: Pick<Region, "statesOfOperation">,
+): boolean {
+  const was = new Set(current.statesOfOperation);
+  const now = new Set(next.statesOfOperation);
+  return was.size !== now.size || [...now].some((state) => !was.has(state));
+}
+
+/**
+ * The one check of the extra key a Region save needs (ADR 0059, part 2b, D6, D19): a change of the
+ * states of operation is a tax change, so it also needs every key of the Sales tax tab
+ * (`LOCALIZATION_TABS.tax`). The page and DemoStore run it through `localizationTabProblem`; the API
+ * answers it as 403.
+ */
+export function regionKeyProblem(
+  next: Pick<RegionInput, "statesOfOperation">,
+  current: Pick<Region, "statesOfOperation">,
+  holds: HoldsKey,
+): string | null {
+  return statesOfOperationChanged(next, current) && !LOCALIZATION_TABS.tax.keys.every(holds)
+    ? REGION_MESSAGES.statesNeedTax
+    : null;
+}
+
+/** Whether a rate is plain decimal text above 0 with up to eight decimals (`FX_RATE_TEXT`). */
+function isRate(rate: string): boolean {
+  return FX_RATE_TEXT.test(rate) && dec(rate).gt(0);
+}
+
+/**
+ * Why a Currency save can't be stored, or null (blueprint p20 Currency, p21 rules 3 and 4; ADR 0059,
+ * part 2b, D7), against the stored currency: the base and its lock stay; the other currencies can't
+ * be added, removed, renamed or reordered, because documents in them would need FX postings (rule
+ * 3); each rate is plain decimal text above 0. The sent `asOf` is not judged: it is never stored (D8).
+ */
+export function currencyProblem(next: CurrencyInput, current: Currency): string | null {
+  if (next.base !== current.base || next.locked !== current.locked) return CURRENCY_MESSAGES.base(current.base);
+  const codes = current.extra.map((entry) => entry.code);
+  if (next.extra.length !== codes.length || next.extra.some((entry, i) => entry.code !== codes[i]))
+    return CURRENCY_MESSAGES.codes;
+  const bad = next.extra.find((entry) => !isRate(entry.rate));
+  return bad ? CURRENCY_MESSAGES.exchange(bad.code) : null;
+}
+
+/**
+ * What a Currency save stores, once `currencyProblem` passed (blueprint "exchange rates by date";
+ * ADR 0059, part 2b, D8): the stored base and lock; a rate whose value changed is dated `day`, the
+ * company's day, and an unchanged value keeps its stored entry, text and date. The sent `asOf` is
+ * never stored.
+ */
+export function datedRates(next: CurrencyInput, current: Currency, day: string): Currency {
+  return {
+    base: current.base,
+    locked: current.locked,
+    extra: next.extra.map((entry, i) => {
+      const stored = current.extra[i];
+      return stored && sameOptionalDecimal(entry.rate, stored.rate)
+        ? stored
+        : { code: entry.code, rate: entry.rate, asOf: day };
+    }),
+  };
+}
+
+/** One tab's value and the stored tab, under the tab's key, so reading a property narrows both. */
+type TabPair = {
+  [K in keyof LocalizationSettings]?: { next: LocalizationSettings[K]; current: LocalizationSettings[K] };
+};
+
+/**
+ * Why one tab of Localization and tax (or the Sales and documents page) can't be saved, or null,
+ * with the API's words: the tab's content rule against the stored tab (`current`), then, for Region,
+ * the extra key a change of the states of operation needs (`regionKeyProblem`). The page runs it
+ * before any code and DemoStore's `updateLocalization` before it saves; the API answers the content
+ * part as 400 and the key as 403 (ADR 0059, parts 2a and 2b). Sales tax gets its rules in part 3.
+ */
+export function localizationTabProblem<T extends keyof LocalizationSettings>(
+  tab: T,
+  value: LocalizationSettings[T],
+  current: LocalizationSettings[T],
+  holds: HoldsKey,
+): string | null {
+  // One key is set, so reading a tab's property narrows both values to that tab's type (as settingsSectionProblem does).
+  const pair = { [tab]: { next: value, current } } as TabPair;
+  if (pair.documents) return documentsProblem(pair.documents.next);
+  if (pair.payroll) return payrollProblem(pair.payroll.next);
+  if (pair.region)
+    return (
+      regionProblem(pair.region.next, pair.region.current) ??
+      regionKeyProblem(pair.region.next, pair.region.current, holds)
+    );
+  if (pair.currency) return currencyProblem(pair.currency.next, pair.currency.current);
+  return null;
+}
+
+/**
+ * What a tab's save stores beyond what was sent, once `localizationTabProblem` passed (DemoStore's;
+ * the API's routes store the same): Currency dates a changed rate with `day` (`datedRates`), every
+ * other tab is stored as sent (ADR 0059, part 2b, D8).
+ */
+export function localizationTabStored<T extends keyof LocalizationSettings>(
+  tab: T,
+  value: LocalizationSettings[T],
+  current: LocalizationSettings[T],
+  day: string,
+): LocalizationSettings[T] {
+  const pair = { [tab]: { next: value, current } } as TabPair;
+  // The branch is the currency tab, so its stored value is that tab's type.
+  if (pair.currency) return datedRates(pair.currency.next, pair.currency.current, day) as LocalizationSettings[T];
+  return value;
+}
+
+/**
+ * Why the whole Localization and tax section can't be saved, or null: every tab's content rule
+ * against the stored section, for `updateSettings("localization")` and `resetSettings`, which no
+ * screen calls (ADR 0059, parts 2a and 2b). It checks no extra key and dates no rate (part 2b, D17).
+ */
+export function localizationProblem(localization: LocalizationSettings, current: LocalizationSettings): string | null {
+  return (
+    payrollProblem(localization.payroll) ??
+    documentsProblem(localization.documents) ??
+    regionProblem(localization.region, current.region) ??
+    currencyProblem(localization.currency, current.currency)
+  );
 }

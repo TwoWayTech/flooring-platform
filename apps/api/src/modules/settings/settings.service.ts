@@ -1,5 +1,5 @@
-import { ConflictException, Injectable } from "@nestjs/common";
-import type { CompanyDb } from "@workspace/db";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { settings, type SettingsGroup } from "@workspace/db/company";
 import {
   defaultNumberSettings,
@@ -24,9 +24,11 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadExpenseSettings } from "../finance/expense-records";
+import { companyClock, type CompanyClock } from "../sales/sales-common";
 
 /** A served section's value as it is stored. */
 export type StoredSection<S extends ApiSettingsSection> = CompanySettings[S];
@@ -54,26 +56,52 @@ const NEVER_SAVED_PAYMENTS: CompanySettings["payments"] = {
   refundPrefix: "RF-",
 };
 
-/** The served tabs of a stored localization row that `tabs` names, as stored (ADR 0059, part 2a). */
-function pickTabs(stored: unknown, tabs: readonly ApiLocalizationTab[]): LocalizationAnswer {
+/**
+ * The localization row as the API answers and judges it (ADR 0059, part 2b, D2): Region's time zone
+ * is always the company's control zone (`tenants.time_zone`, the zone `companyClock` gives every
+ * date the API checks); the row's own copy is never read.
+ */
+function answered(stored: unknown, zone: string): Partial<LocalizationSettings> {
   // The jsonb row as every loader reads it (`loadLocalization`).
   const localization = stored as Partial<LocalizationSettings>;
+  return localization.region ? { ...localization, region: { ...localization.region, timeZone: zone } } : localization;
+}
+
+/** The served tabs of a localization row (as `answered` gives it) that `tabs` names (ADR 0059, part 2a). */
+function pickTabs(
+  localization: Partial<LocalizationSettings>,
+  tabs: readonly ApiLocalizationTab[],
+): LocalizationAnswer {
   const picked: LocalizationAnswer = {};
   for (const tab of tabs) if (localization[tab] !== undefined) Object.assign(picked, { [tab]: localization[tab] });
   return picked;
 }
 
 /**
+ * The refusal of a localization tab save when the company has no localization row, or (Region and
+ * Currency) a row without that tab: their rules judge the stored tab, so nothing is invented (ADR
+ * 0059, part 2a D7; part 2b D11).
+ */
+export function settingsMissing(): ConflictException {
+  return new ConflictException({
+    code: "settings_missing",
+    message: "Settings → Localization and tax isn't set up for this company yet, so one tab can't be saved on its own.",
+  });
+}
+
+/**
  * Settings part 1 on the API (ADR 0059): reads the served sections a person may see and saves one
  * section at a time, each in the session's company only (TenantGuard's tenant). Rows are one per
  * group, never soft-deleted, so neither the read nor the lock filters `deleted_at`, the same as the
- * modules that read them (D20). It never writes the control database (D11).
+ * modules that read them (D20). It reads the company's time zone from the control database
+ * (`companyClock`, by the verified tenant's id) and never writes it (part 1 D11; part 2b D2).
  */
 @Injectable()
 export class SettingsService {
   constructor(
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
   ) {}
 
   /**
@@ -82,7 +110,8 @@ export class SettingsService {
    * One query. The dispatch names every served section and ends in `unservedSection`, so a section
    * it doesn't name is refused before its row is read, never answered under another name (D19).
    * Part 2a adds the localization tabs `readableTabs` gives them, as stored; a company with no
-   * localization row gets no `localization` (D7), and Region, Currency and Sales tax are never answered.
+   * localization row gets no `localization` (D7). Sales tax is not answered yet (part 3). Region's
+   * zone is control's, read once per answer that read the row (part 2b, D2, D15).
    */
   async answer(tenant: TenantContext, access: RequestAccess): Promise<SettingsAnswer> {
     const sections = readableSections(access);
@@ -117,7 +146,8 @@ export class SettingsService {
     }
     const localization = stored.get("localization");
     if (localization !== undefined) {
-      const picked = pickTabs(localization, tabs);
+      const { zone } = await companyClock(this.control.db, tenant);
+      const picked = pickTabs(answered(localization, zone), tabs);
       if (Object.keys(picked).length > 0) answer.localization = picked;
     }
     return answer;
@@ -177,30 +207,36 @@ export class SettingsService {
   }
 
   /**
-   * Replaces one tab of the localization row and writes its audit entry, in one transaction (ADR
-   * 0059, part 2a). The row is locked first, so two people saving different tabs at once keep both
+   * Replaces one tab of the localization row and writes its audit entry, in one transaction under
+   * the row's lock (ADR 0059, parts 2a and 2b). Two people saving different tabs at once keep both
    * changes (the spec's "A section is replaced whole", closed on the API), and each entry's `before`
-   * is exactly the tab its save replaced. Only `[tab]` changes: the other tabs and the stored tax
-   * block stay as they were, and the tax tables are never touched. It never makes a row: a company
-   * without localization settings gets 409 (D7). It never writes the control database.
+   * is exactly the tab its save replaced. `settle` gets the tab as the API answers it (Region with
+   * control's zone; undefined when the row lacks the tab) and the company's clock. It runs every
+   * check that reads the stored tab, so it judges the locked row and never an earlier read (part 2b,
+   * D9), and returns what to store, or throws a refusal, which rolls back. A company with no
+   * localization row gets 409 (D7); a tab is written into a row that lacks it only when `settle` takes
+   * it whole (documents, payroll). Only `[tab]` changes: the other tabs and the stored tax block stay
+   * as they were, and the tax tables are never touched. Never writes the control database. Answers
+   * what it stored.
    */
   async saveLocalizationTab<T extends ApiLocalizationTab>(
     tenant: TenantContext,
     actor: Actor,
     tab: T,
-    value: LocalizationTabInput[T],
-  ): Promise<void> {
+    settle: (
+      current: LocalizationSettings[T] | undefined,
+      clock: CompanyClock,
+    ) => LocalizationTabInput[T] | Promise<LocalizationTabInput[T]>,
+  ): Promise<LocalizationTabInput[T]> {
+    const clock = await companyClock(this.control.db, tenant);
     const db = await this.tenancy.db(tenant);
-    await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const row = await this.lockGroup(tx, "localization");
-      if (!row)
-        throw new ConflictException({
-          code: "settings_missing",
-          message:
-            "Settings → Localization and tax isn't set up for this company yet, so one tab can't be saved on its own.",
-        });
+      if (!row) throw settingsMissing();
       // The jsonb row as every loader reads it.
       const stored = row.value as Record<string, unknown>;
+      const current = answered(row.value, clock.zone)[tab];
+      const value = await settle(current, clock);
       await tx
         .update(settings)
         .set({ value: { ...stored, [tab]: value }, updatedAt: new Date() })
@@ -214,11 +250,13 @@ export class SettingsService {
           targetType: "settings",
           targetId: row.id,
           targetLabel: LOCALIZATION_TABS[tab].label,
-          before: stored[tab] ?? null,
+          // As answered (Region with control's zone, so a stale copy shows no false zone change).
+          before: current ?? null,
           after: value,
         },
         tx,
       );
+      return value;
     });
   }
 

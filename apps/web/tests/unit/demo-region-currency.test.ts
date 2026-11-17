@@ -168,8 +168,8 @@ describe("DemoStore saves Region and Currency with the API's rules (ADR 0059, pa
       [{ ...currency, extra: [entry, { ...entry, code: "EUR" }] }, CURRENCY_MESSAGES.codes],
       [{ ...currency, extra: [] }, CURRENCY_MESSAGES.codes],
       [{ ...currency, extra: [{ ...entry, code: "CAN" }] }, CURRENCY_MESSAGES.codes],
-      [await rateOf(store, "0"), CURRENCY_MESSAGES.rate("CAD")],
-      [await rateOf(store, "1."), CURRENCY_MESSAGES.rate("CAD")],
+      [await rateOf(store, "0"), CURRENCY_MESSAGES.exchange("CAD")],
+      [await rateOf(store, "1."), CURRENCY_MESSAGES.exchange("CAD")],
     ];
     for (const [value, message] of cases)
       await expect(store.updateLocalization("currency", value as Currency), message).rejects.toThrow(message);
