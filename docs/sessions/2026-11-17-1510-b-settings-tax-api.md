@@ -323,3 +323,14 @@ Each mutation is made in one file, its commands run, and the file is put back wi
 - **Not run here (stage 5, the orchestrator's next steps):** the whole demo suite (`e2e-demo.sh all`), `/review`, the security review (a fresh read-only security-reviewer on `origin/feat/settings-region-currency-api...HEAD`, the plan's section 13 focus as in the PR body; no schema review, since nothing in packages/db changed), the handoff commit, and STATUS and BRANCHES (their content is under "For STATUS").
 - **No stop-and-ask item came up** (B15): no schema, migration or dependency change; 15 product files.
 - **Doubtful or worth a look in review:** TM2 (the step-up before the content check) is caught only by ST4's last line; the api-mode e2e adds Texas versions on every run (each heal of a changed Texas, each save and restore); ST16 leaves verco's Colorado changed (B6).
+
+## Review round 1
+
+One confirmed finding (should_fix, docs only); fixed.
+
+| # | Severity | File | Finding | Fix |
+| --- | --- | --- | --- | --- |
+| R1 | should_fix | docs/api-contract.md, part 2a's "Not routes yet" line | It still said `/settings/localization/tax` answers 404, while part 3a made `PUT /settings/localization/tax` a route (`saveTax`, ST3 to ST20 answer 200). B19 added "Sales tax became a route in part 3a" but left `/tax` in the 404 list, against part 2b's pattern of taking a tab out of that list once it became a route. | The line now reads "`PUT /settings/localization` (the whole section) answers 404. Region and Currency became routes in part 2b and Sales tax in part 3a (below)." The reviewer's own wording; B19 stands as history, corrected here. |
+
+- **Test before the fix:** none possible. No test reads docs/api-contract.md (its mentions in code are comments) and `*.md` is in `.prettierignore`. Checked by hand instead: `git grep` of docs/ outside docs/sessions for `localization/tax` together with 404, "not a route" or "not routes" found only this line before the fix. After the fix, the only matches are the true 404s for the switch being off (api-contract.md's part 3a row, ADR 0059, the spec). The controller has `@Put("localization/tax")` and no `@Put("localization")`, so the corrected line matches the code.
+- **Checks:** no product, shared, API or test file changed, so no lint, typecheck, build or e2e was re-run. The last full checks and the 55 of 55 api-mode suite (above) still hold for the product code.
