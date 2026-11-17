@@ -73,7 +73,7 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | See a credit limit | `customers.customer.view_sensitive` | Owner, Manager, Accountant | Screen only: `CustomersTable`, `CustomerDrawer` |
 | Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `SETTINGS_SECTIONS.payments` in `packages/shared/src/settings/sections.ts`; on the API, `PUT /settings/payments` (ADR 0059). Data scope `all` and a step-up. Screen: `PaymentsSettingsPage` |
 | Settings > Sales and documents | `settings.localization.manage` to open the page. The store accepts it or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings`. Screen: `apps/web/src/products/settings-menu.ts` |
-| Tax rates in Settings > Localization | `settings.localization.manage` or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings` |
+| Tax rates in Settings > Localization | `settings.tax.manage` | Owner, Accountant | Store: `updateLocalization("tax")`; on the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up |
 
 Data scope, from `apps/web/src/lib/api/demo/scope.ts`, applied by `DemoStore.list` and `DemoStore.get`:
 
@@ -290,14 +290,14 @@ pctOf(v, p)    = v * p / 100
     otherwise                                              -> rule.taxable[category]
     ```
 
-15. **Which rule applies.** `resolveTaxRule` in `tax-defaults.ts`, for the job site on a date. A rule is valid when `validFrom <= date` and `validTo` is empty or `validTo >= date`. The newest valid one wins.
+15. **Which rule applies.** `resolveTaxRule` in `tax-defaults.ts`, for the job site on a date. A rule is valid when `validFrom <= date` and `validTo` is empty or `validTo >= date`. The newest valid one wins: the latest `validFrom`, then the higher version, then the higher id. Rules and county rates in force come from versioned rows: a change starts on the company's day and the rows it replaces end the day before (ADR 0059, part 3a).
     - A county rate for the site's county, when a state or company rule exists to build on. It replaces only the rate and keeps that rule's taxability. County names match without case and without the word "County". Source `jurisdiction`.
     - Else the state rule. Source `state`.
     - Else the company default, only in the company's states of operation. Source `company`. A change of the states also reaches an accepted quote when it is invoiced (tax is recomputed at conversion).
     - Else nothing is collected. Source `none`.
 16. **Exemption.** `taxContextFor` in `quotes.ts`: `customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on`.
 17. **Changing tax on one document.** `withOverride` in `tax-defaults.ts` keeps the resolved rule's taxability and swaps the rate. With no rule at all it taxes materials only. Source `override`. `TaxOverrideDialog` requires a rate matching `^\d{1,2}(\.\d{1,4})?$` and a reason of at least 3 characters. `saveQuote` requires `sales.tax.override` when `taxOverride` changed, and writes an audit entry.
-18. **Invoices keep the tax they used.** `invoiceFromQuote` in `quotes.ts` recomputes under the rule valid on the issue date. It stores `taxRule` (state, jurisdiction, rate, version), `taxSource`, `taxOverride` and `taxExempt`, so later rule changes never alter it. The builder previews with today's date.
+18. **Invoices keep the tax they used.** `invoiceFromQuote` in `quotes.ts` recomputes under the rule valid on the issue date. It stores `taxRule` (state, jurisdiction, rate, version), `taxSource`, `taxOverride` and `taxExempt`, so later rule changes never alter it. The builder previews with today's date. An accepted quote converted after a rule change is taxed under the new rule, and its stored total becomes the invoice's (rule 19). A sent or accepted quote opened in the builder previews today's rule (ADR 0059, part 3a).
 
 ### Conversion and invoices
 
@@ -624,8 +624,8 @@ A credit note is an `Invoice` with `isReturn: true`.
 | `localization.documents.legalFooter` | string | Printed on invoices, receipts and purchase orders. At most 1,000 characters; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.region.statesOfOperation` | `string[]` | Where the company default rate applies (rule 15). At least one US state code, each once; a change needs `settings.tax.manage` and a step-up; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
 | `localization.region.primaryState` | string | A new quote's job-site state. A US state code; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
-| `localization.tax.rounding` | enum: line, invoice | |
-| `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | |
+| `localization.tax.rounding` | enum: line, invoice | Saved by `PUT /settings/localization/tax` in api mode (ADR 0059, part 3a) |
+| `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | Rates `TAX_RATE_TEXT` (below 100, up to 4 decimals by value); saved by `PUT /settings/localization/tax` in api mode as new rows from the company's day, never edited (ADR 0059, part 3a) |
 
 ### Derived, never stored
 
@@ -679,7 +679,7 @@ Exact `action` strings. The default category inside an `ActionContext` is `payme
 | `Applied customer credit` | payment | `applyCredit` |
 | `Refunded customer credit` | payment | `refundCredit` |
 | `Changed payments` | settings | `updateSettings("payments", ...)` |
-| `Changed localization and tax` | settings | `updateSettings("localization", ...)` |
+| `Changed localization and tax` | settings | `updateLocalization("tax", ...)` for the Sales tax tab (target "Sales tax"); `updateSettings("localization", ...)` |
 
 `keepNewGuest` writes no audit entry of its own for a lead or a customer contact.
 

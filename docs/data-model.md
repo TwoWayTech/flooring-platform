@@ -242,9 +242,9 @@ Real build (ADR 0051):
 | `branding` | Control | `tenant_branding` |
 | `localization.region` | Company | `locale_settings`. `timeZone` is a copy of control `tenants.time_zone`, which the API answers instead and writes into the row on a Region save; never read on the API. Written one tab at a time by `PUT /settings/localization/region` under the row's lock (ADR 0059, part 2b) |
 | `localization.currency` | Company | `currencies_enabled`, `exchange_rates`. `extra[].asOf` is set by the save (the company's day, when the rate's value changes). Written one tab at a time by `PUT /settings/localization/currency` under the row's lock (ADR 0059, part 2b) |
-| `localization.tax.rules` | Company | `tax_rules` |
-| `localization.tax.jurisdictions` | Company | `tax_jurisdictions` |
-| `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |
+| `localization.tax.rules` | Company | `tax_rules`. Written by `PUT /settings/localization/tax`: a change ends every live row of the state reaching the company's day (`valid_to` the day before) and inserts the next version from that day; never edited otherwise or deleted (ADR 0059, part 3a) |
+| `localization.tax.jurisdictions` | Company | `tax_jurisdictions`. Written by `PUT /settings/localization/tax`, matched by state and county: a change ends every live row of the county reaching the company's day and inserts a new row with a new id from that day (ADR 0059, part 3a) |
+| `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them: stored in the `localization` row's `tax` block with `pricesInclude` and `rounding`. The company default is dated the company's day when it changes; filing and certificate types are not edited (ADR 0059, part 3a) |
 | `localization.payroll` | Company | `overtime_rules`, `holiday_calendars`. Written one tab at a time by `PUT /settings/localization/payroll` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a) |
 | `localization.documents` | Company | `document_defaults`. Written one tab at a time by `PUT /settings/localization/documents` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a). A prefix change doesn't touch `document_sequences` |
 | `numbers` | Company | `number_format`. Stored in `settings`; written by `PUT /settings/numbers` (ADR 0059), where `decimals` travel as a list of `{ kind, places }` (the row keeps the record) |
