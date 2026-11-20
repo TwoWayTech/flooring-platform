@@ -17,6 +17,7 @@ import {
   keepsAcceptedTotal,
   permissionsForModules,
   featureOn,
+  type FeatureKey,
   PRODUCT_MODULES,
   roleTemplate,
   becomesShowroom,
@@ -511,7 +512,7 @@ export class DemoStore implements ApiClient {
    * could see the request (CLAUDE.md rule 13).
    */
   async requestSupportAccess(input: SupportRequestInput) {
-    if (!featureOn("settings.users")) throw new DemoRuleError("This feature is switched off.");
+    switchedOn("settings.users");
     const problem = supportRequestInputProblem(input);
     if (problem) throw new DemoRuleError(problem);
     const company = await this.platformCompany(input.companyId);
@@ -580,7 +581,7 @@ export class DemoStore implements ApiClient {
    * the `settings.users` switch, whose page holds the panel, as on the API (CLAUDE.md rule 13).
    */
   private async supportOwner(): Promise<CompanyDb> {
-    if (!featureOn("settings.users")) throw new DemoRuleError("This feature is switched off.");
+    switchedOn("settings.users");
     const db = this.open();
     if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(SUPPORT_OWNER_ONLY_MESSAGE);
     return db;
@@ -974,6 +975,7 @@ export class DemoStore implements ApiClient {
   }
 
   async list<K extends CollectionName>(collection: K) {
+    if (collection === "audit") switchedOn("settings.audit");
     const db = this.open();
     const can = this.actionContext(db).can;
     const needed = PRIVATE_COLLECTIONS[collection];
@@ -1017,6 +1019,7 @@ export class DemoStore implements ApiClient {
   }
 
   async inviteUser(input: InviteUserInput) {
+    switchedOn("settings.users");
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
@@ -1045,6 +1048,7 @@ export class DemoStore implements ApiClient {
   }
 
   async updateUser(userId: string, patch: UserPatch) {
+    switchedOn("settings.users");
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
@@ -1072,6 +1076,7 @@ export class DemoStore implements ApiClient {
   }
 
   async saveRole(role: Role) {
+    switchedOn("settings.roles");
     const db = this.open();
     await this.assertCan(db, ["settings.roles.manage"]);
     const before = db.get("roles", role.id);
@@ -1090,6 +1095,7 @@ export class DemoStore implements ApiClient {
   }
 
   async resetRole(roleId: string) {
+    switchedOn("settings.roles");
     const db = this.open();
     const role = db.get("roles", roleId);
     if (!role?.system || !isDefaultRoleKey(role.key)) throw new DemoRuleError("Only default roles can be reset.");
@@ -1106,6 +1112,7 @@ export class DemoStore implements ApiClient {
   }
 
   async deleteRole(roleId: string) {
+    switchedOn("settings.roles");
     const db = this.open();
     await this.assertCan(db, ["settings.roles.manage"]);
     const role = db.get("roles", roleId)!;
@@ -1547,11 +1554,14 @@ export class DemoStore implements ApiClient {
     );
   }
 
+  // Each settings page reads both lists, so either page's switch keeps them, as on the API (F-h).
   async listSettingsUsers() {
+    switchedOn("settings.users", "settings.roles");
     return this.list("users");
   }
 
   async listSettingsRoles() {
+    switchedOn("settings.users", "settings.roles");
     return this.list("roles");
   }
 
@@ -2451,3 +2461,11 @@ function branchOf(id: string): string | null {
 
 /** The API's words when a branch-scoped admin changes someone outside their branch, or moves them out. */
 const BRANCH_CHANGE = "You can only change people in your own branch, and keep them in it.";
+
+/**
+ * Refuses, as the API's 404 does, unless one of these switches is on (CLAUDE.md rule 13): the
+ * Users, Roles and Audit log pages' reads and writes (whole-product check finding F-h).
+ */
+function switchedOn(...keys: [FeatureKey, ...FeatureKey[]]): void {
+  if (!keys.some((key) => featureOn(key))) throw new DemoRuleError("This feature is switched off.");
+}

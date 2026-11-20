@@ -163,9 +163,9 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `settings.users` | demo | `/settings/users` (api) | 7 | 2 | 8 | 5 | 4 |
-| `settings.roles` | demo | `/settings/roles` (api) | 6 | 1 | 6 | 6 | 1 |
-| `settings.audit` | demo | `/settings/audit` (api) | 1 | 0 | 3 | 9 | 20 |
+| `settings.users` | demo | `/settings/users` (api) | 7 | 3 | 8 | 5 | 4 |
+| `settings.roles` | demo | `/settings/roles` (api) | 6 | 2 | 6 | 6 | 1 |
+| `settings.audit` | demo | `/settings/audit` (api) | 1 | 1 | 3 | 9 | 20 |
 | `auth.mfa` | demo | — | 0 | 0 | 0 | 0 | 0 |
 | `auth.step-up` | demo | — | 0 | 0 | 0 | 0 | 0 |
 
@@ -233,7 +233,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/sales/quotes/*` | api | `convertQuoteToInvoice`, `createCustomer`, `createTransfer`, `getSettings`, `inventoryData`, `list:invoiceAdjustments`, `list:invoices`, `list:payments`, `list:refunds`, `salesData`, `saveCustomer`, `saveQuote`, `updateQuoteStatus` | — | — | `a11y.spec.ts`, `console.spec.ts`, `quote-status.spec.ts`, `responsive.spec.ts`, `tax.spec.ts` | `f1-sales-quote-to-cut.spec.ts`, `sales.spec.ts` |
 | `/sales/quotes/new` | api | `convertQuoteToInvoice`, `createCustomer`, `createTransfer`, `getSettings`, `inventoryData`, `list:invoiceAdjustments`, `list:invoices`, `list:payments`, `list:refunds`, `salesData`, `saveCustomer`, `saveQuote`, `updateQuoteStatus` | — | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `customers-picker.spec.ts`, `flows-batch3.spec.ts`, `flows.spec.ts`, `invoice-lifecycle.spec.ts`, `localization.spec.ts`, `quote-status.spec.ts`, `quote-warehouse.spec.ts`, `quote.spec.ts`, `responsive.spec.ts`, `settings.spec.ts`, `square-feet.spec.ts`, `tax.spec.ts`, `warehouses.spec.ts`, `waste.spec.ts` | `company.spec.ts`, `f1-sales-quote-to-cut.spec.ts`, `sales.spec.ts`, `settings-localization.spec.ts`, `settings-locations.spec.ts`, `settings-tax.spec.ts` |
 | `/settings` | no data | — | — | `features.test.ts` | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `settings.spec.ts` | `company-standing.spec.ts`, `notifications.spec.ts`, `settings-branding.spec.ts`, `settings-hr.spec.ts`, `settings-localization.spec.ts`, `settings-region-currency.spec.ts`, `settings-shared-costs.spec.ts`, `settings-stock.spec.ts`, `settings-tax.spec.ts`, `settings.spec.ts` |
-| `/settings/audit` | api | `list:audit` | — | — | `a11y.spec.ts`, `audit.spec.ts`, `branding.spec.ts`, `console.spec.ts`, `notifications.spec.ts`, `responsive.spec.ts`, `settings.spec.ts`, `stock.spec.ts`, `tax.spec.ts` | `demo-script.spec.ts` |
+| `/settings/audit` | api | `list:audit` | — | `demo-settings-switches.test.ts` | `a11y.spec.ts`, `audit.spec.ts`, `branding.spec.ts`, `console.spec.ts`, `notifications.spec.ts`, `responsive.spec.ts`, `settings.spec.ts`, `stock.spec.ts`, `tax.spec.ts` | `demo-script.spec.ts` |
 | `/settings/billing` | api | `getCompanyBilling` | — | `features.test.ts`, `company-standing.test.tsx` | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `company-standing.spec.ts`, `platform-billing.spec.ts` |
 | `/settings/branding` | mixed | `updateSettings`, `verifyStepUp` | `getDefaultSettings` (settings) | — | `a11y.spec.ts`, `branding.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts`, `settings-branding.spec.ts` |
 | `/settings/commissions` | no data | — | — | — | — | — |
@@ -250,8 +250,8 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/settings/number-format` | mixed | `updateSettings`, `verifyStepUp` | `getDefaultSettings` (settings) | — | `a11y.spec.ts`, `console.spec.ts`, `number-format.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts`, `settings.spec.ts` |
 | `/settings/outbox` | mixed | `cancelMeeting`, `cancelOutbox`, `decideProposal`, `listOutbox`, `meetingCalendarFile`, `removeGuest`, `requestMeeting`, `respondToMeeting`, `retryOutbox`, `updateMeeting` | `get:meetings` (outbox), `simulateBounce` (outbox), `simulateReply` (outbox) | `company-standing.test.tsx`, `products-demo-only.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `flows-batch3.spec.ts`, `meetings-invites.spec.ts`, `notifications.spec.ts`, `responsive.spec.ts` | `notifications.spec.ts` |
 | `/settings/payments` | mixed | `updateSettings`, `verifyStepUp` | `getDefaultSettings` (settings) | — | `a11y.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `settings.spec.ts` | `settings.spec.ts` |
-| `/settings/roles` | api | `deleteRole`, `listSettingsRoles`, `listSettingsUsers`, `resetRole`, `saveRole`, `verifyStepUp` | — | `features.test.ts` | `a11y.spec.ts`, `admin.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `roles.spec.ts`, `settings.spec.ts` | — |
-| `/settings/users` | api | `approveSupportGrant`, `inviteUser`, `listSettingsRoles`, `listSettingsUsers`, `listSupportGrants`, `revokeSupportGrant`, `updateUser`, `verifyStepUp` | — | `company-standing.test.tsx` | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `users.spec.ts` | `company-standing.spec.ts`, `company.spec.ts`, `login.spec.ts`, `users.spec.ts` |
+| `/settings/roles` | api | `deleteRole`, `listSettingsRoles`, `listSettingsUsers`, `resetRole`, `saveRole`, `verifyStepUp` | — | `features.test.ts`, `demo-settings-switches.test.ts` | `a11y.spec.ts`, `admin.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `roles.spec.ts`, `settings.spec.ts` | — |
+| `/settings/users` | api | `approveSupportGrant`, `inviteUser`, `listSettingsRoles`, `listSettingsUsers`, `listSupportGrants`, `revokeSupportGrant`, `updateUser`, `verifyStepUp` | — | `company-standing.test.tsx`, `demo-settings-switches.test.ts` | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts`, `users.spec.ts` | `company-standing.spec.ts`, `company.spec.ts`, `login.spec.ts`, `users.spec.ts` |
 
 ### Layouts
 

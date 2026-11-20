@@ -151,8 +151,15 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
       });
     }
     await withFeaturesOff(["settings.users", "settings.roles"], async () => {
-      expect((await call("get", "/users", owner.cookie)).status).toBe(404);
-      expect((await call("get", "/roles", owner.cookie)).status).toBe(404);
+      for (const path of ["/users", "/roles"]) {
+        const answer = await call("get", path, owner.cookie);
+        expect([path, answer.status, answer.body.code, answer.body.message]).toEqual([
+          path,
+          404,
+          "not_found",
+          "Not Found",
+        ]);
+      }
     });
   });
 
