@@ -17,6 +17,7 @@ import {
   regionProblem,
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
+  sharedCostsProblem,
   statesOfOperationChanged,
   taxProblem,
   type CompanyProfile,
@@ -29,6 +30,7 @@ import {
   type PayrollInput,
   type RegionInput,
   type SettingsAnswer,
+  type SharedCostSettings,
 } from "@workspace/shared";
 import type { Request } from "express";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -39,6 +41,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
   CURRENCY_INPUT,
@@ -49,6 +52,7 @@ import {
   PAYROLL_INPUT,
   PROFILE_INPUT,
   REGION_INPUT,
+  SHARED_COSTS_INPUT,
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
@@ -199,6 +203,41 @@ export class SettingsController {
     check(expenseSettingsProblem(expenses));
     await this.settings.save(tenant, actorOf(access, session, request), "expenses", expenses, (value) => value);
     return expenses;
+  }
+
+  /**
+   * PUT /settings/sharedCosts: how the Business report splits company-wide costs across locations
+   * (ADR 0023; ADR 0059, part 4b). Expense approval's key, module `core` and switch; scope `all`; a
+   * strict body; then, inside the save's transaction under the row's lock, the shared rule against the
+   * company's live locations read there (D2, D4), so a share can only name a location the company has
+   * and a fixed split adds up to 100. No step-up (D3): nothing posts to the ledger, the key is not an
+   * MFA key, and every save is audited with before and after. Answers the section as saved.
+   */
+  @Put("sharedCosts")
+  @RequirePermission(...SETTINGS_SECTIONS.sharedCosts.keys)
+  @RequireModule(SETTINGS_SECTIONS.sharedCosts.module)
+  @Audited()
+  async saveSharedCosts(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<SharedCostSettings> {
+    requireFeature(SETTINGS_SECTIONS.sharedCosts.feature);
+    requireWholeCompany(access);
+    const input = parse(SHARED_COSTS_INPUT, body);
+    // The rule is checked inside the guard before anything is stored, so the cast is what it proved.
+    const sharedCosts = input as SharedCostSettings;
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "sharedCosts",
+      sharedCosts,
+      (value) => value,
+      async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
+    );
+    return sharedCosts;
   }
 
   /**
