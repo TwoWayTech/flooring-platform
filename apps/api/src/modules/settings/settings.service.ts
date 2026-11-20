@@ -254,6 +254,8 @@ export class SettingsService {
    * locked first (`FOR UPDATE`), so two saves of a section run one after the other and each entry's
    * `before` is exactly what its save replaced; the last save wins. `answered` gives the section as
    * the API answers it (the number format as the wire list), which is what the audit records.
+   * `firstSave: "refuse"` makes a first save that finds the row taken meanwhile a 409, for a section
+   * whose `guard` judged the never-saved answer (Stock rules, security review round 1).
    */
   async save<S extends DefaultedSection>(
     tenant: TenantContext,
@@ -262,6 +264,7 @@ export class SettingsService {
     value: StoredSection<S>,
     answered: (value: StoredSection<S>) => unknown,
     guard?: (current: StoredSection<S>) => Promise<void>,
+    firstSave: "upsert" | "refuse" = "upsert",
   ): Promise<void> {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
@@ -269,10 +272,16 @@ export class SettingsService {
       // Checks that compare with what is stored run under the row's lock, against the never-saved
       // answer when nothing is (ADR 0059 D10), so two saves at once can't both pass on a stale value.
       if (guard) await guard(await this.valueOf(tx, section, row?.value));
-      await this.write(tx, tenant, actor, section, row?.id, value, {
-        before: row ? answered(row.value as StoredSection<S>) : null,
-        after: answered(value),
-      });
+      await this.write(
+        tx,
+        tenant,
+        actor,
+        section,
+        row?.id,
+        value,
+        { before: row ? answered(row.value as StoredSection<S>) : null, after: answered(value) },
+        firstSave,
+      );
     });
   }
 

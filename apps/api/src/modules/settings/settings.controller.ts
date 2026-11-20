@@ -286,7 +286,8 @@ export class SettingsController {
    * loosening of the two-person check, so it is the Owner's alone (403 `owner_only`, the owner's
    * answer to Q10 applied to stock) and needs a step-up (403 `step_up_required`), both after the
    * content rule so a refused value never costs a code. Keeping or tightening needs only the key, as
-   * Warehouses and showrooms (part 4a, Q5). Stock adjustments are switched off (`removed`) and the API
+   * Warehouses and showrooms (part 4a, Q5). A first save that finds the row saved meanwhile is a 409
+   * `conflict`. Stock adjustments are switched off (`removed`) and the API
    * has none; nothing on the API acts on the section until they come back (D1). Answers it as saved.
    */
   @Put("inventory")
@@ -315,6 +316,9 @@ export class SettingsController {
         if (!access.isOwner) throw new ForbiddenException({ code: "owner_only", message: STOCK_RULES_OWNER_ONLY });
         await this.stepUp.require(session);
       },
+      // Two first saves at once are both judged against the never-saved answer: the second is a 409,
+      // so what is stored is always what its own judgement saw (security review round 1).
+      "refuse",
     );
     return inventory;
   }

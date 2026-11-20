@@ -340,7 +340,7 @@ describe("Stock rules on the API (needs the local PostgreSQL)", () => {
 
   it("MS7 a stored quantity the rule refuses: any change by someone not an Owner is a loosening", async () => {
     const keeper = await member(floorco, [await keyRoleKey(floorco, "stock-odd-row", "all")], false);
-    for (const odd of [{ adjustmentApprovalQty: "abc" }, {}, { adjustmentApprovalQty: 5 }]) {
+    for (const odd of [{ adjustmentApprovalQty: "abc" }, {}, { adjustmentApprovalQty: 5 }, null]) {
       await seedStock(floorco, odd);
       const audits = await auditCount(floorco);
       expect(outcome(await put(keeper.cookie, { adjustmentApprovalQty: "0" })), JSON.stringify(odd)).toEqual([
@@ -350,6 +350,55 @@ describe("Stock rules on the API (needs the local PostgreSQL)", () => {
       await expectNothingChanged(floorco, odd, audits);
     }
     await seedStock(floorco, STOCK);
+  });
+
+  it("MS11 an Owner keeps or lowers the quantity without a step-up", async () => {
+    const owner = await member(floorco, ["owner"]);
+    await seedStock(floorco, STOCK);
+    const audits = (await stockAudits(floorco)).length;
+    await put(owner.cookie, STOCK).expect(200);
+    const lowered = await put(owner.cookie, { adjustmentApprovalQty: "10" });
+    expect(lowered.status, JSON.stringify(lowered.body)).toBe(200);
+    expect(await stockOf(floorco)).toEqual({ adjustmentApprovalQty: "10" });
+    expect(await stockAudits(floorco)).toHaveLength(audits + 2);
+    await seedStock(floorco, STOCK);
+  });
+
+  it("MS12 someone not an Owner with a second factor gets owner_only for a loosening, with or without a step-up", async () => {
+    const roleKey = "stock-and-payments";
+    await withCompanyDb(floorco, async (db) => {
+      const [role] = await db.insert(roles).values({ key: roleKey, name: roleKey, dataScope: "all" }).returning();
+      await db.insert(rolePermissions).values([
+        { roleId: role!.id, permissionKey: "settings.locations.manage" },
+        { roleId: role!.id, permissionKey: "settings.payments.manage" },
+      ]);
+    });
+    const person = await member(floorco, [roleKey], true);
+    await seedStock(floorco, STOCK);
+    const audits = await auditCount(floorco);
+    expect(outcome(await put(person.cookie, { adjustmentApprovalQty: "2000" }))).toEqual([403, "owner_only"]);
+    await stepUp(person);
+    expect(outcome(await put(person.cookie, { adjustmentApprovalQty: "" }))).toEqual([403, "owner_only"]);
+    await expectNothingChanged(floorco, STOCK, audits);
+  });
+
+  it("MS13 two first saves at once: each stored value is what its own judgement saw, and the audit chain holds", async () => {
+    const company: TestCompany = { ...(await harness.provisionCompany("stockraceco")), product: "flooring" };
+    const roleKey = "race-stock-rules";
+    await keyRole(company, roleKey, "all");
+    const [first, second] = [await member(company, [roleKey], false), await member(company, [roleKey], false)];
+    const answers = await Promise.all([
+      put(first.cookie, NEVER_SAVED),
+      put(second.cookie, { adjustmentApprovalQty: "0.000" }),
+    ]);
+    for (const answer of answers) expect([200, 409], JSON.stringify(answer.body)).toContain(answer.status);
+    const conflicts = answers.filter((answer) => answer.status === 409);
+    for (const conflict of conflicts) expect(conflict.body.code).toBe("conflict");
+    const entries = await stockAudits(company);
+    expect(entries).toHaveLength(2 - conflicts.length);
+    expect(entries[0]!.before).toBeNull();
+    if (entries[1]) expect(entries[1].before).toEqual(entries[0]!.after);
+    expect(await stockOf(company)).toEqual(entries.at(-1)!.after);
   });
 
   it("MS8 the Warehouses and showrooms switch off answers the PUT 404 and leaves the section out of the read; adjustments off changes nothing", async () => {
