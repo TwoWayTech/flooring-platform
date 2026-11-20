@@ -73,12 +73,30 @@ export function seesCeiling(has: (key: PermissionKey) => boolean): boolean {
 }
 
 /**
- * The names directory every member gets (ADR 0051, "GET /company", D5): active and disabled people,
- * so history keeps its names and Team totals keep a disabled rep, never invited ones (they haven't
- * joined, and their name came from the inviter). Each entry is exactly id, name and status, by name.
+ * The keys that show disabled colleagues in the directory (owner's answer to PR #50 Q2, ADR 0051
+ * "2026-11-20"): Settings → Users' own readers, who see them on `GET /users` anyway.
  */
-export function directoryOf(rows: readonly { id: string; name: string; status: UserStatus }[]): CompanyPerson[] {
+export const DISABLED_PEOPLE_KEYS: readonly PermissionKey[] = ["settings.users.view", "settings.users.manage"];
+
+/** Whether someone with these effective keys sees disabled colleagues: any one of `DISABLED_PEOPLE_KEYS`. */
+export function seesDisabledPeople(has: (key: PermissionKey) => boolean): boolean {
+  return DISABLED_PEOPLE_KEYS.some(has);
+}
+
+/**
+ * The names directory every member gets (ADR 0051, "GET /company", D5, and "2026-11-20"): active
+ * colleagues for everyone, and disabled ones only for `seesDisabledPeople`, since who has left is
+ * HR's business; never invited people (they haven't joined, and their name came from the inviter).
+ * A record whose person isn't listed shows them as a former employee. Each entry is exactly id,
+ * name and status, by name.
+ */
+export function directoryOf(
+  rows: readonly { id: string; name: string; status: UserStatus }[],
+  seesDisabled: boolean,
+): CompanyPerson[] {
   return rows
-    .flatMap(({ id, name, status }) => (status === "invited" ? [] : [{ id, name, status }]))
+    .flatMap(({ id, name, status }) =>
+      status === "active" || (status === "disabled" && seesDisabled) ? [{ id, name, status }] : [],
+    )
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }

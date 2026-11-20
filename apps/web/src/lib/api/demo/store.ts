@@ -34,6 +34,7 @@ import {
   type CompanyId,
   type CompanySettings,
   type PermissionKey,
+  seesDisabledPeople,
   SENSITIVE,
   type BusinessFilters,
   type PaymentsReportQuery,
@@ -935,6 +936,12 @@ export class DemoStore implements ApiClient {
       return (items as ContractLine[]).map((l) => ({ ...l, estimatedCost: "0.00" })) as unknown as Collections[K];
     }
     if (collection === "audit") return (await this.auditAsSeen(db, items as AuditEntry[])) as unknown as Collections[K];
+    // Who has left is HR's business: disabled colleagues only for Settings → Users' readers, as
+    // GET /company's directory (ADR 0051, "2026-11-20"). View as narrows it too.
+    const { access } = await this.granter(db);
+    if (collection === "users" && !seesDisabledPeople((key) => access.permissions.has(key))) {
+      return (items as User[]).filter((u) => u.status !== "disabled") as unknown as Collections[K];
+    }
     return items;
   }
 

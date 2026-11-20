@@ -249,7 +249,7 @@ The web shell's person, roles, access, modules and branches. Spec: docs/product-
 - `me`: the caller's own `User`, exactly as `GET /users` shapes it;
 - `roles`: only the roles the caller holds, as `GET /roles` shapes them;
 - `access`: `{ permissions, dataScope, isOwner }`, PermissionGuard's own effective access for this request (keys sorted), never worked out a second time;
-- `people`: `{ id, name, status }` for every live profile with an account, `status` `active` or `disabled`, by name. Invited people are left out.
+- `people`: `{ id, name, status }` for every live profile with an account, by name. Everyone gets active colleagues; disabled ones (`status` `disabled`) only holders of `settings.users.view` or `settings.users.manage` (`seesDisabledPeople`; ADR 0051, "2026-11-20"). Invited people are left out.
 
 **Refusals** are the guards' own: 401 `unauthenticated` or `session_expired`; 403 `mfa_enrolment_required` (SessionGuard, or PermissionGuard for a role that needs a factor not yet set up); TenantGuard's 403 `company_required`, `not_a_member`, `product_not_enabled` and `company_suspended`, and 503 `company_maintenance` and `company_unavailable`; 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role.", for a disabled profile, and for a profile with no account. A read-only company still answers.
 

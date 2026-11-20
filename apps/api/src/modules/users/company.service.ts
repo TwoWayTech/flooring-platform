@@ -2,7 +2,13 @@ import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { branches, userProfiles } from "@workspace/db/company";
 import { tenants, user } from "@workspace/db/control";
-import { directoryOf, seesCeiling, type CompanyAnswer, type CompanyPerson } from "@workspace/shared";
+import {
+  directoryOf,
+  seesCeiling,
+  seesDisabledPeople,
+  type CompanyAnswer,
+  type CompanyPerson,
+} from "@workspace/shared";
 import { eq, inArray, isNull } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import { PERMISSION_REFUSALS } from "../../core/access/permission.guard";
@@ -42,7 +48,10 @@ export class CompanyService {
         .where(isNull(branches.deletedAt))
         .orderBy(branches.name),
       this.users.one(tenant, access.userId),
-      this.people(db),
+      this.people(
+        db,
+        seesDisabledPeople((key) => access.permissions.has(key)),
+      ),
       loadRoles(db),
     ]);
     // A profile without a control account holds nothing here: the guard's own words, nothing else.
@@ -81,9 +90,10 @@ export class CompanyService {
 
   /**
    * Every live profile with an account, as a name beside a record (D5): only the profile's id and
-   * status and the account's name are read, and `directoryOf` leaves invited people out.
+   * status and the account's name are read, and `directoryOf` leaves invited people out, and
+   * disabled ones unless the caller reads Settings → Users (ADR 0051, "2026-11-20").
    */
-  private async people(db: CompanyDb): Promise<CompanyPerson[]> {
+  private async people(db: CompanyDb, seesDisabled: boolean): Promise<CompanyPerson[]> {
     const profiles = await db
       .select({ userId: userProfiles.userId, status: userProfiles.status })
       .from(userProfiles)
@@ -103,6 +113,7 @@ export class CompanyService {
         const account = names.find((row) => row.id === profile.userId);
         return account ? [{ id: profile.userId, name: account.name, status: profile.status }] : [];
       }),
+      seesDisabled,
     );
   }
 }

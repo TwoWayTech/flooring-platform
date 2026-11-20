@@ -964,7 +964,7 @@ The five displays (`product-drawer.tsx`, `products-table.tsx`, `rolls-table.tsx`
 - **Unchanged `settings.meetings` module:** the feature sits in module `platform` while its key `settings.meetings.manage` is in module `meetings` (`features.ts`, `catalog.ts`). It is unchanged here.
 
 ## 2026-11-20: the owner's answers on GET /company and invitations
-- **The people directory (Q2).** Every member sees only active colleagues' names in `GET /company`. Disabled people, and the status itself, reach only holders of `settings.users.view`. Invited people stay left out. Built in its own small PR after the invite-branch fix.
+- **The people directory (Q2).** Every member sees only active colleagues' names in `GET /company`. Disabled people, and the status itself, reach only holders of `settings.users.view` (or `settings.users.manage`, which reads the same people on `GET /users`; `seesDisabledPeople` in packages/shared). Invited people stay left out. DemoStore's `list("users")` follows the same rule, View as included. **Consequence:** a screen that names a disabled person for someone without those keys shows no name, for example an Accountant's commission rows for a rep who left (open: should `sales.commission.view` see them too?).
 - **Invite branches (Q6), the server half of D18.** Approved, first after the stack, with a security review:
   - `POST /users/invite` and `PATCH /users/:id` refuse a branch id that is not one of the company's live branches (400 `unknown_branch`); an empty id still means no branch.
   - The invite's audit row records the branch actually stored, never the id as sent.
