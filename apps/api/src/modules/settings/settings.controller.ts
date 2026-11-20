@@ -20,6 +20,7 @@ import {
   regionProblem,
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
+  sharedCostsProblem,
   statesOfOperationChanged,
   taxProblem,
   type CompanyProfile,
@@ -33,6 +34,7 @@ import {
   type PayrollInput,
   type RegionInput,
   type SettingsAnswer,
+  type SharedCostSettings,
 } from "@workspace/shared";
 import type { Request } from "express";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -43,6 +45,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
   CURRENCY_INPUT,
@@ -54,6 +57,7 @@ import {
   PAYROLL_INPUT,
   PROFILE_INPUT,
   REGION_INPUT,
+  SHARED_COSTS_INPUT,
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
@@ -82,8 +86,9 @@ function check(problem: string | null): void {
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
- * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 5
- * adds Settings → HR, whose checks against recorded pay run under the `hr` row's lock.
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
+ * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
+ * whose checks against recorded pay run under the `hr` row's lock.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -205,6 +210,42 @@ export class SettingsController {
     check(expenseSettingsProblem(expenses));
     await this.settings.save(tenant, actorOf(access, session, request), "expenses", expenses, (value) => value);
     return expenses;
+  }
+
+  /**
+   * PUT /settings/sharedCosts: how the Business report splits company-wide costs across locations
+   * (ADR 0023; ADR 0059, part 4b). Expense approval's key, module `core` and switch; scope `all`; a
+   * strict body; then, inside the save's transaction under the row's lock, the shared rule against the
+   * company's live locations read there (D2, D4), so a share can only name a location the company has
+   * and a fixed split adds up to 100. No step-up (D3): nothing posts to the ledger, the key is not an
+   * MFA key, and every save is audited with before and after. Answers the section as saved.
+   */
+  @Put("sharedCosts")
+  @RequirePermission(...SETTINGS_SECTIONS.sharedCosts.keys)
+  @RequireModule(SETTINGS_SECTIONS.sharedCosts.module)
+  @Audited()
+  async saveSharedCosts(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<SharedCostSettings> {
+    requireFeature(SETTINGS_SECTIONS.sharedCosts.feature);
+    requireWholeCompany(access);
+    const input = parse(SHARED_COSTS_INPUT, body);
+    // The cast is what the guard proves: `SettingsService.save` runs the guard (the shared rule, which
+    // refuses an unknown rule) before it writes anything, and a refusal rolls the save back.
+    const sharedCosts = input as SharedCostSettings;
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "sharedCosts",
+      sharedCosts,
+      (value) => value,
+      async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
+    );
+    return sharedCosts;
   }
 
   /**

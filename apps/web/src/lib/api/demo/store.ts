@@ -864,17 +864,17 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`) and Settings →
-   * HR's schedule lock and monthly rule against the demo's own records (part 5). Localization
-   * and tax is never replaced whole: after those checks it is refused with "Localization and tax
-   * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
-   * `updateLocalization` (ADR 0059, part 3b, D34).
+   * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
+   * Owner-only loosening (`paymentControlsLoosened`) and Settings → HR's schedule lock and monthly
+   * rule against the demo's own records (part 5). Localization and tax is never replaced whole:
+   * after those checks it is refused with "Localization and tax saves one tab at a time." and nothing
+   * is stored or audited; screens save it per tab through `updateLocalization` (ADR 0059, part 3b, D34).
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
     const rule = SETTINGS_SECTIONS[section];
     const access = await this.assertSettingsSave(db, rule);
-    const problem = settingsSectionProblem(section, value, db.settings[section]);
+    const problem = settingsSectionProblem(section, value, db.settings[section], { locations: db.list("locations") });
     if (problem) throw new DemoRuleError(problem);
     // One key is set, so reading a section's property narrows the value to that section's type.
     const next = { [section]: value } as Partial<CompanySettings>;

@@ -12,6 +12,7 @@ import {
 } from "@workspace/db/company";
 import {
   closesOn,
+  DEFAULT_SHARED_COSTS,
   defaultNumberSettings,
   LOCALIZATION_TABS,
   numbersToWire,
@@ -200,6 +201,9 @@ export class SettingsService {
         case "expenses":
           answer.expenses = await read(section);
           break;
+        case "sharedCosts":
+          answer.sharedCosts = await read(section);
+          break;
         case "hr": {
           // As stored, and only once saved: the API acts on no HR settings before that (part 5, D7).
           const hr = stored.get(section);
@@ -233,6 +237,9 @@ export class SettingsService {
    * locked first (`FOR UPDATE`), so two saves of a section run one after the other and each entry's
    * `before` is exactly what its save replaced; the last save wins. `answered` gives the section as
    * the API answers it (the number format as the wire list), which is what the audit records.
+   * `guard` runs every check that reads the stored section or other rows, inside the transaction
+   * and under the lock (`tx`; Shared costs read the live locations there: ADR 0059, part 4b, D2), and
+   * refuses by throwing, which rolls back.
    */
   async save<S extends DefaultedSection>(
     tenant: TenantContext,
@@ -240,14 +247,14 @@ export class SettingsService {
     section: S,
     value: StoredSection<S>,
     answered: (value: StoredSection<S>) => unknown,
-    guard?: (current: StoredSection<S>) => Promise<void>,
+    guard?: (current: StoredSection<S>, tx: CompanyDb) => Promise<void>,
   ): Promise<void> {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const row = await this.lockGroup(tx, section);
       // Checks that compare with what is stored run under the row's lock, against the never-saved
       // answer when nothing is (ADR 0059 D10), so two saves at once can't both pass on a stale value.
-      if (guard) await guard(await this.valueOf(tx, section, row?.value));
+      if (guard) await guard(await this.valueOf(tx, section, row?.value), tx);
       await this.write(tx, tenant, actor, section, row?.id, value, {
         before: row ? answered(row.value as StoredSection<S>) : null,
         after: answered(value),
@@ -498,6 +505,8 @@ export class SettingsService {
       payments: async () => NEVER_SAVED_PAYMENTS,
       // Exactly how the expense rules read a missing row: approval off.
       expenses: () => loadExpenseSettings(db),
+      // Exactly how the Business report reads a missing row: by revenue share (ADR 0023; part 4b, D9).
+      sharedCosts: async () => DEFAULT_SHARED_COSTS,
     };
     return (await never[section]()) as StoredSection<S>;
   }

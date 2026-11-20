@@ -212,8 +212,8 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(read.decimals.fxRate).toBe(NUMBER_KINDS.fxRate.default);
   });
 
-  it("R7 the served sections: exactly five (part 5 adds HR), each with a rule and a reader rule", () => {
-    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses", "hr"]);
+  it("R7 the served sections: exactly six (part 4b adds shared costs, part 5 HR), each with a rule and a reader rule", () => {
+    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses", "sharedCosts", "hr"]);
     for (const section of API_SETTINGS_SECTIONS) {
       expect(SETTINGS_SECTIONS[section], section).toBeDefined();
       expect(SETTINGS_READERS[section], section).toBeDefined();
@@ -267,7 +267,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
   it("R10 readableSections: each section only to its readers, while its module and product switch are on", () => {
     const of = (product: ProductKey, key: DefaultRoleKey, on?: (key: FeatureKey) => boolean) =>
       readableSections(readerOf(product, key), on).sort();
-    expect(of("flooring", "owner")).toEqual(["expenses", "hr", "numbers", "payments", "profile"]);
+    expect(of("flooring", "owner")).toEqual(["expenses", "hr", "numbers", "payments", "profile", "sharedCosts"]);
     expect(of("flooring", "accountant")).toEqual(["hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "sales")).toEqual(["hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "warehouse")).toEqual(["hr", "numbers", "profile"]);
@@ -275,7 +275,14 @@ describe("Settings sections on the API (ADR 0059)", () => {
     for (const key of PRODUCT_ROLES.flooring)
       expect(of("flooring", key), key).toEqual(expect.arrayContaining(["hr", "numbers", "profile"]));
     for (const key of PRODUCT_ROLES.hr) expect(of("hr", key), key).toEqual(["hr", "numbers", "profile"]);
-    expect(of("flooring", "owner", without("sales.payments"))).toEqual(["expenses", "hr", "numbers", "profile"]);
+    expect(of("flooring", "owner", without("sales.payments"))).toEqual([
+      "expenses",
+      "hr",
+      "numbers",
+      "profile",
+      "sharedCosts",
+    ]);
+    // Shared costs ride the Expenses switch (part 4b, D1): off, neither is answered.
     expect(of("flooring", "owner", without("finance.expenses"))).toEqual(["hr", "numbers", "payments", "profile"]);
     // The HR page switch gates only the save: HR Home, Timesheets and the calendars read it whatever it says.
     expect(of("flooring", "owner", without("settings.hr"))).toEqual([
@@ -284,6 +291,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
     ]);
     expect(of("flooring", "owner", without("settings.company", "settings.number-format"))).toEqual([
       "expenses",
@@ -291,6 +299,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
     ]);
     const noCore = {
       permissions: new Set<PermissionKey>([
