@@ -190,7 +190,18 @@ describe("purchasing part 1 (P11, needs the local PostgreSQL)", () => {
     expect([moved.status, moved.body.message]).toEqual([404, "This contact no longer exists."]);
     const elsewhere = await call("put", `/supplier-contacts/${second.body.id}`, cookies.otherPurchasing).send(edit);
     expect([elsewhere.status, elsewhere.body.message]).toEqual([404, "This supplier no longer exists."]);
-    expect((await call("put", `/supplier-contacts/${second.body.id}`, cookies.sales).send(edit)).status).toBe(403);
+    const theirs = await supplierWithContact(cookies.otherPurchasing, "Far Range Supply");
+    const viaTheirs = await call("put", `/supplier-contacts/${second.body.id}`, cookies.otherPurchasing).send({
+      ...edit,
+      supplierId: theirs.supplier,
+    });
+    expect([viaTheirs.status, viaTheirs.body.message]).toEqual([404, "This contact no longer exists."]);
+    const noKey = await call("put", `/supplier-contacts/${second.body.id}`, cookies.sales).send(edit);
+    expect([noKey.status, noKey.body.code]).toEqual([403, "forbidden"]);
+    const unchanged = (await call("get", "/supplier-contacts", cookies.purchasing).expect(200)).body.find(
+      (c: { id: string }) => c.id === second.body.id,
+    );
+    expect(unchanged).toMatchObject({ supplierId: supplier, name: "Sonny Reyes", isPrimary: true });
     const handle = await harness.companyDb(company.id);
     try {
       const rows = await handle.db

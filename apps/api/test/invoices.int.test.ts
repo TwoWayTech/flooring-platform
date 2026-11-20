@@ -338,7 +338,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     // Another rep's own scope, another company and a role without the key don't reach it.
     expect((await call("post", path, cookies.salesB).send({ files: [PDF] })).status).toBe(404);
     expect((await call("post", path, cookies.otherSales).send({ files: [PDF] })).status).toBe(404);
-    expect((await call("post", path, cookies.dispatcher).send({ files: [PDF] })).status).toBe(403);
+    const noKey = await call("post", path, cookies.dispatcher).send({ files: [PDF] });
+    expect([noKey.status, noKey.body.code]).toEqual([403, "forbidden"]);
     await call("post", `/payments/${paid.body.id}/review`, cookies.accountant)
       .send({ action: "reject", reason: "The check is unreadable." })
       .expect(201);

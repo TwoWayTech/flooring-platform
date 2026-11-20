@@ -437,7 +437,8 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     const notDefault = await call("post", `/roles/${custom}/reset`, owner.cookie);
     expect([notDefault.status, notDefault.body.code]).toEqual([409, "not_default"]);
     const sales = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
-    expect((await call("post", `/roles/${salesId}/reset`, sales)).status).toBe(403);
+    const refused = await call("post", `/roles/${salesId}/reset`, sales);
+    expect([refused.status, refused.body.code]).toEqual([403, "forbidden"]);
   });
 
   it("records the changes in the audit log the Owner can read", async () => {
