@@ -384,6 +384,20 @@ The sender details every Outbox row is written with, on part 1's pattern. The co
 - **Who reads it.** `GET /settings` adds `email` for holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, it is `{ senderName: "", replyTo: "", signature: "" }`, which is what the sender acts on.
 - **The web.** `updateSettings("email", value)` goes to the route through `API_SETTINGS_SECTIONS`. The Sender form runs `emailSettingsProblem` before the code dialog.
 
+## Settings → Stock rules (real build, ADR 0059, the Stock rules part, 2026-11-20)
+
+The adjustment approval quantity, on part 1's pattern. The company is the verified session's. No control-database read or write. Stock adjustments stay switched off (`inventory.adjustments`, `removed`) and have no routes; nothing on the API reads this section yet.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/inventory` | module `core` (checked first), then `settings.locations.manage` | switch `inventory.locations` (404), data scope `all` (403), strict body (400), `inventorySettingsProblem` (400); then under `FOR UPDATE` on the `inventory` row, only when `stockRulesLoosened` against the stored section (never saved: `"0"`): Owner only (403 `owner_only`), then a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `InventorySettings`. Audited |
+
+- **The body** is exactly `{ adjustmentApprovalQty }`, a string (never a JSON number); outer length 140 with the rule's words. Then `inventorySettingsProblem`: empty, or `QUANTITY_TEXT` (up to ten digits and three decimals; no bare point, sign, exponent or space).
+- **Loosening** is raising the quantity (compared by value) or clearing it (empty: no adjustment waits); a stored value the rule refuses counts any change as loosening. Keeping, lowering, or setting one where there was none needs only the key and no step-up.
+- **The save** writes the row under its lock (or inserts it, with `null` before) and one `audit_log` entry: "Changed stock rules", target "Stock rules". The last save wins.
+- **Who reads it.** `GET /settings` adds `inventory` for holders of `settings.locations.manage` while module `core` and `inventory.locations` are on; never saved, `{ adjustmentApprovalQty: "0" }`.
+- **The web.** `updateSettings("inventory", value)` goes to the route through `API_SETTINGS_SECTIONS`. The Stock rules form runs the rule and the Owner-only words before the code dialog, which opens only for a loosening.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.

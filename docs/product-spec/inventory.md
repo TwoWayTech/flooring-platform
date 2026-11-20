@@ -286,7 +286,7 @@ return left < LOW_ROLL_FT ? "Low" : "Roll";
 
     A zero change is refused. Otherwise an `ADJ-` record is written with `status: "approved"`, `reason: "count"` and the reason in `note`, and `apply` runs at once. On a roll, `apply` adds `quantity` to `remainingLengthFt` and appends a cut with `lengthFt` equal to the negated quantity. On boxed goods it writes a movement of kind `adjustment`.
 
-23. **Adjustments (switched off).** `recordAdjustment` and `reviewAdjustment` in `inventory-actions.ts`. Screens are hidden by `featureOn("inventory.adjustments")`. The Owner's Correct stock count replaces them (plan A-1). Past adjustments stay in the ledger, so on hand still adds up.
+23. **Adjustments (switched off).** `recordAdjustment` and `reviewAdjustment` in `inventory-actions.ts`. Screens are hidden by `featureOn("inventory.adjustments")`. The Owner's Correct stock count replaces them (plan A-1). Past adjustments stay in the ledger, so on hand still adds up. The API has no adjustment routes while the switch is off (ADR 0059, the Stock rules part, D1; an owner question); the Stock rules threshold they read is on the API.
 
     ```ts
     // adjustmentNeedsApproval in reservations.ts
@@ -450,7 +450,7 @@ Returned by `listStockHolds` for active reservations. It carries the customer na
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `adjustmentApprovalQty` | string | Seeded as `"1000"` in `packages/shared/scripts/fixtures/tenant.ts`. ADR 0015 says 50. Edited in `stock-rules-form.tsx` |
+| `adjustmentApprovalQty` | string | Seeded as `"1000"` in `packages/shared/scripts/fixtures/tenant.ts`. ADR 0015 says 50. Edited in `stock-rules-form.tsx`; empty or a plain quantity of up to 3 decimals (`inventorySettingsProblem`). Raising or clearing it is the Owner's alone, with a step-up (`stockRulesLoosened`). In api mode it saves on the API, `PUT /settings/inventory` (ADR 0059, the Stock rules part); never saved, the API answers `"0"` |
 
 ## Events and audit entries
 
