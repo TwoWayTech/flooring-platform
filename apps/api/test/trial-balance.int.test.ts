@@ -19,7 +19,11 @@ import { LedgerService } from "../src/core/ledger/ledger.service";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 
 const PATH = "/ledger/trial-balance";
-const COST: PermissionKey[] = ["reports.financial.view", "sales.margin.view_sensitive", "inventory.product.view_sensitive"];
+const COST: PermissionKey[] = [
+  "reports.financial.view",
+  "sales.margin.view_sensitive",
+  "inventory.product.view_sensitive",
+];
 
 /** Custom roles at the edges of the sight rule (ADR 0055 "Trial balance"). */
 const CUSTOM_ROLES: Record<string, { scope: DataScope; keys: PermissionKey[] }> = {
@@ -134,11 +138,16 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     let branchId = "";
     const handle = await harness.companyDb(company.id);
     try {
-      const [branch] = await handle.db.insert(branches).values({ name: "Denver", city: "Denver", state: "CO" }).returning();
+      const [branch] = await handle.db
+        .insert(branches)
+        .values({ name: "Denver", city: "Denver", state: "CO" })
+        .returning();
       branchId = branch!.id;
       for (const [key, role] of Object.entries(CUSTOM_ROLES)) {
         const [made] = await handle.db.insert(roles).values({ key, name: key, dataScope: role.scope }).returning();
-        await handle.db.insert(rolePermissions).values(role.keys.map((permissionKey) => ({ roleId: made!.id, permissionKey })));
+        await handle.db
+          .insert(rolePermissions)
+          .values(role.keys.map((permissionKey) => ({ roleId: made!.id, permissionKey })));
       }
     } finally {
       await handle.close();
@@ -219,7 +228,16 @@ describe("trial balance (needs the local PostgreSQL)", () => {
   });
 
   it("needs contract cost sight once a contract has posted", async () => {
-    await post(draft("contract_billing.posted", "contract_billing", "2026-04-01", "cost_of_goods_sold", "accounts_payable", "10.00"));
+    await post(
+      draft(
+        "contract_billing.posted",
+        "contract_billing",
+        "2026-04-01",
+        "cost_of_goods_sold",
+        "accounts_payable",
+        "10.00",
+      ),
+    );
     await hidden(cookies.tb_costpay!);
     expect(await offered(cookies.tb_costpay!)).toBe(false);
     for (const key of ["tb_full", "owner", "accountant"]) {
@@ -229,7 +247,9 @@ describe("trial balance (needs the local PostgreSQL)", () => {
   });
 
   it("refuses an Owner whose company switched HR off once pay has posted (pay sight, S3)", async () => {
-    await harness.control.db.insert(tenantModuleOverrides).values({ tenantId: company.id, module: "hr", enabled: false });
+    await harness.control.db
+      .insert(tenantModuleOverrides)
+      .values({ tenantId: company.id, module: "hr", enabled: false });
     try {
       await hidden(cookies.owner!);
       expect(await offered(cookies.owner!)).toBe(false);

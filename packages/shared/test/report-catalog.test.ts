@@ -46,7 +46,8 @@ describe("who opens and exports which report (ADR 0055 S1, S-ACC-1)", () => {
       expect(access.reports).toEqual(["sales", "payments"]);
       expect(access.exports).toEqual(["sales", "payments"]);
     }
-    for (const key of REPORT_ORDER) expect(REPORT_CATALOG[key].wholeCompany).toBe(["business", "pnl", "trial-balance"].includes(key));
+    for (const key of REPORT_ORDER)
+      expect(REPORT_CATALOG[key].wholeCompany).toBe(["business", "pnl", "trial-balance"].includes(key));
   });
 
   it("follows the switches: a report's own, and the hub for all of them", () => {
