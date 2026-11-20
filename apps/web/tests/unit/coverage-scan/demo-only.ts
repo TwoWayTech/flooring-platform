@@ -54,8 +54,7 @@ export const DEMO_REASONS = {
     status: 'ADR 0057; docs/product-spec/import.md, "Connect a database is simulated".',
   },
   demoTools: {
-    reason:
-      "Demo tools: the persona directory and company switch, Reset demo data, and closing a company view for the console.",
+    reason: "Demo tools: the persona directory and company switch, and Reset demo data.",
     status: 'STATUS "The persona picker shows in demo mode only"; `demo.reset`; whole-product check G1 for the switch.',
   },
 } as const satisfies Record<string, DemoReason>;
@@ -68,7 +67,6 @@ export type DemoReasonId = keyof typeof DEMO_REASONS;
  * `get:<collection>`, `save:<collection>`), with its reason's id. One line per call.
  */
 export const DEMO_ONLY: Readonly<Record<string, DemoReasonId>> = {
-  closeCompany: "demoTools",
   createInvoiceFromJob: "installation",
   "get:meetings": "outbox",
   getCompany: "workspace",
@@ -114,9 +112,12 @@ export const DEMO_ONLY: Readonly<Record<string, DemoReasonId>> = {
  * web client").
  */
 export const CLIENT_LOCAL: Readonly<Record<string, string>> = {
-  openCompany: "Opens the signed-in company in the client (the workspace provider).",
+  closeCompany: "Closes the client's company view for the console and forgets the company's zone.",
+  openCompany:
+    "Opens the signed-in company in the client (the workspace provider) and forgets the last company's zone.",
   setViewer: "Sets who the client acts as for View as.",
   subscribe: "Lets a screen re-read after a change.",
   takeNotices: "Hands the shell the client's queued notices.",
-  today: "The client's day; STATUS \"The company's day on the web client\".",
+  today:
+    "The company's day in its own zone, from GET /company's time zone (ADR 0051, \"The company's day on the web\"); computed on the client.",
 };

@@ -8,7 +8,7 @@ import {
   type Report,
 } from "@workspace/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { todayIn } from "../src/modules/sales/sales-common";
+import { todayIn } from "./support/company-day";
 import { AuthHarness } from "./auth-harness";
 import { BOOTSTRAP_ZONE } from "./support/company-bootstrap";
 import { balanceOf, stateLikeColumns } from "./support/ledger-read";

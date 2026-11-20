@@ -579,7 +579,6 @@ const ALLOWED_URL_OPTIONS: ReadonlySet<string> = new Set(["sslmode"]);
 const ALLOWED_URL_PROTOCOLS: ReadonlySet<string> = new Set(["postgres:", "postgresql:"]);
 
 /** Control characters, spaces and backslashes: WHATWG URL drops or rewrites them, postgres.js doesn't. */
-// eslint-disable-next-line no-control-regex -- matching control characters is the point here
 const UNSAFE_URL_CHARACTERS = /[\u0000-\u0020\u007f\\]/;
 
 /**

@@ -2020,7 +2020,6 @@
       "layouts": [],
       "onApi": [],
       "onDemo": [
-        "closeCompany",
         "listCompanyDirectory"
       ],
       "routes": []

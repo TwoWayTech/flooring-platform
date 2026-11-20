@@ -32,7 +32,7 @@ import {
 import { asc, eq } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { todayIn } from "../src/modules/sales/sales-common";
+import { todayIn } from "./support/company-day";
 import { AuthHarness, isUuidV7, PASSWORD, SUMMIT_ID } from "./auth-harness";
 import { BOOTSTRAP_ZONE, PAY_SCHEDULE, TILE } from "./support/company-bootstrap";
 import { freshCalls, type LocalTime } from "./support/fresh-calls";

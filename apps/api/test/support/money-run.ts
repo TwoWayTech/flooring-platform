@@ -2,7 +2,7 @@ import type { CompanyDb, DbHandle } from "@workspace/db";
 import { userProfiles } from "@workspace/db/company";
 import { cashAccountFor, type PaymentMethod } from "@workspace/shared";
 import { inArray } from "drizzle-orm";
-import { todayIn } from "../../src/modules/sales/sales-common";
+import { todayIn } from "./company-day";
 import type { AuthHarness } from "../auth-harness";
 import { BOOTSTRAP_ZONE, bootstrapCompany, type BootstrappedCompany } from "./company-bootstrap";
 import { acceptInvitation, inviteProvisionedOwner } from "./fresh-owner";

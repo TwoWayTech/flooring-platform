@@ -29,7 +29,7 @@ import {
   type Supplier,
 } from "@workspace/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { todayIn } from "../src/modules/sales/sales-common";
+import { todayIn } from "./support/company-day";
 import { AuthHarness } from "./auth-harness";
 import { localizationRow, SUMMIT_SETTINGS } from "./support/company-bootstrap";
 import { NAME_REUSED_AT } from "./support/json-walk";

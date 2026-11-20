@@ -31,6 +31,22 @@ export interface MethodRoute {
  * test's do (CROSS_CUTTING).
  */
 export const RESOLVED_ELSEWHERE: Readonly<Record<string, { routes: string[]; betterAuth?: string[]; why: string }>> = {
+  getWorkspace: {
+    routes: ["GET /company"],
+    why: "companyAnswer(http, demo) in api-methods.ts reads GET /company and keeps its time zone for today().",
+  },
+  today: {
+    routes: [],
+    why: "Sends nothing: the company's day from the zone GET /company gave (companyDayOf, lib/api/company-day.ts; ADR 0051).",
+  },
+  openCompany: {
+    routes: [],
+    why: "Sends nothing: forgets the last company's zone, then opens the company on the client (demo.openCompany).",
+  },
+  closeCompany: {
+    routes: [],
+    why: "Sends nothing: forgets the company's zone and closes the client's company view (demo.closeCompany).",
+  },
   getSettings: {
     routes: ["GET /settings"],
     why: "readSettings(http, demo) reads GET /settings and merges it over demo.getSettings() (settingsFromAnswer): Settings → Meetings, and any section the answer leaves out for this reader, still show DemoStore's values (G5).",
