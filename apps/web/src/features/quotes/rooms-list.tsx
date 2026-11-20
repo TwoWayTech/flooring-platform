@@ -1,11 +1,12 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
-import type { Room } from "@workspace/shared";
+import { dec, QUANTITY_TEXT, roomAreaSqFt, type Room } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
+import { halfFoot } from "./room-geometry";
 
 interface RoomsListProps {
   rooms: Room[];
@@ -17,10 +18,11 @@ interface RoomsListProps {
   onAddDefault: () => void;
 }
 
-/** Feet entered as text; blank or invalid input keeps the previous size. */
-function feet(value: string, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 1 ? Math.round(n * 2) / 2 : fallback;
+/** Feet entered as text, to the half foot; blank or invalid input keeps the previous size. */
+function feet(value: string, fallback: string): string {
+  const typed = value.trim();
+  if (!QUANTITY_TEXT.test(typed) || dec(typed).lt(1)) return fallback;
+  return halfFoot(typed);
 }
 
 /** Rooms as rows with name and dimensions, the precise alternative to dragging on the canvas. */
@@ -64,7 +66,7 @@ export function RoomsList({ rooms, selectedId, editable, onSelect, onChange, onR
               className="h-8 text-right tabular-nums"
             />
             <span className="text-right text-sm">
-              <Num kind="quantity" value={room.widthFt * room.lengthFt} unit="sq ft" />
+              <Num kind="quantity" value={roomAreaSqFt(room.widthFt, room.lengthFt).toString()} unit="sq ft" />
             </span>
             {editable ? (
               <Button

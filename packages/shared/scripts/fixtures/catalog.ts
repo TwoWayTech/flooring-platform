@@ -89,7 +89,7 @@ export function buildSuppliers(ctx: GenContext): GeneratedSupplier[] {
 }
 
 /** Attributes per category (spec section 4: fiber, construction, face weight, wear layer, species). */
-function attributesFor(ctx: GenContext, category: GoodsCategory, widthFt?: number): Record<string, string> {
+function attributesFor(ctx: GenContext, category: GoodsCategory, widthFt?: string): Record<string, string> {
   const { rng } = ctx;
   switch (category) {
     case "carpet":
@@ -139,7 +139,7 @@ function goodsProduct(
   const drawn = dec(rng.money(pricing.min, pricing.max));
   const price = pricing.bySqYd ? drawn.dividedBy(SQ_FT_PER_SQ_YD).toDecimalPlaces(2) : drawn;
   const cost = price.times(rng.decimal(0.52, 0.68, 2)).toDecimalPlaces(2);
-  const widthFt = category === "carpet" ? rng.pick([12, 12, 15]) : undefined;
+  const widthFt = category === "carpet" ? String(rng.pick([12, 12, 15])) : undefined;
   const boxed = coverage !== undefined;
   return {
     id: ctx.id("prd"),
@@ -159,7 +159,7 @@ function goodsProduct(
           cartonsOnHand: rng.chance(0.12) ? rng.int(2, 15) : rng.int(25, 180),
           reorderPoint: dec(rng.int(20, 40))
             .times(coverage ?? 1)
-            .toNumber(),
+            .toString(),
         }
       : {}),
     ...(widthFt ? { widthFt } : {}),

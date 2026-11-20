@@ -102,10 +102,10 @@ Every finding, with evidence, is in the session log's "Findings"; the ones to fi
 ## Follow-ups ranked for P13
 
 - **T1, security:** F-h (switches on users, roles, audit, support grants; fixed 2026-11-20, P1); F-l (prototype names in field stripping; fixed 2026-11-20, P2); F-j (outbox writes on a view key); the trial balance and contract amounts visible only with the right sight (fixed in #67, re-checked by PM-7).
-- **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons, fixed 2026-11-20: the API refuses them); F-o (float money in the UI); "payroll paid" posting (Q3).
+- **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons, fixed 2026-11-20: the API refuses them); F-o (float money in the UI, fixed 2026-11-20); "payroll paid" posting (Q3).
 - **T3, real-company readiness:** G1 to G4, G7, then G6.
 - **T4, robustness and operations:** F-g (no CI on main since 2026-11-14), F-c (retirement and migrations), F-b (Turbo), F-r (dates).
-- **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates; fixed 2026-11-20, P9), F-q (five routes without API tests; fixed 2026-11-20, P10), F-k (JSON-number quantities).
+- **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates; fixed 2026-11-20, P9), F-q (five routes without API tests; fixed 2026-11-20, P10), F-k (JSON-number quantities, fixed 2026-11-20).
 
 ## Owner questions
 

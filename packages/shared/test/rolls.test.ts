@@ -6,7 +6,7 @@ const roll: Roll = {
   rollNumber: "NM-4471",
   productId: "p1",
   dyeLot: "22B",
-  widthFt: 12,
+  widthFt: "12",
   originalLengthFt: "150",
   remainingLengthFt: "63",
   costPerSqFt: "1.8725",

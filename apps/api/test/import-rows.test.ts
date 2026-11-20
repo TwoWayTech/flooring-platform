@@ -171,7 +171,7 @@ describe("U-6 row functions", () => {
       ].sort(),
     );
     expect(row).toMatchObject({ supplierId: null, sqFtPerCarton: null, widthFt: null, reorderPoint: null });
-    expect(productRow({ ...PRODUCT, widthFt: 12.5, reorderPoint: 40, sqFtPerCarton: "23.640" })).toMatchObject({
+    expect(productRow({ ...PRODUCT, widthFt: "12.5", reorderPoint: "40", sqFtPerCarton: "23.640" })).toMatchObject({
       widthFt: "12.5",
       reorderPoint: "40",
       sqFtPerCarton: "23.640",

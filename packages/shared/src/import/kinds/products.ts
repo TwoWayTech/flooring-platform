@@ -74,7 +74,7 @@ function matchSku(sku: string, ctx: KindContext): { product?: Product } | { prob
  */
 function stockHistoryProblem(
   existing: Product,
-  next: { cost: string; category: ProductCategory; unit: SellUnit; coverage: string | null; width?: number },
+  next: { cost: string; category: ProductCategory; unit: SellUnit; coverage: string | null; width: string | null },
   ctx: KindContext,
 ): CellProblem | null {
   if (!ctx.lookups.productsWithStock.has(existing.id)) return null;
@@ -83,7 +83,7 @@ function stockHistoryProblem(
     next.category !== existing.category ||
     next.unit !== existing.unit ||
     (next.coverage !== null && !sameDecimal(existing.sqFtPerCarton, next.coverage)) ||
-    (next.width !== undefined && next.width !== existing.widthFt);
+    (next.width !== null && !sameDecimal(existing.widthFt, next.width));
   if (!costChanges && !otherChanges) return null;
   return {
     field: costChanges ? "cost" : "unit",
@@ -123,8 +123,9 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
   const cost = pricePerSellUnit(text(row, "cost"), fileUnit, coverage);
   const size = tooLarge(price, cost);
   if (size) return { problems: [size] };
-  const width = row.width_ft ? Number(row.width_ft) : undefined;
-  const reorder = row.reorder_point ? Number(row.reorder_point) : undefined;
+  // Quantities stay decimal strings, as typed (CLAUDE.md rule 6; whole-product check F-k).
+  const width = (row.width_ft as string | null) || null;
+  const reorder = (row.reorder_point as string | null) || null;
   if (!existing) {
     const product: Product = {
       id: ctx.newId("prd"),
@@ -139,8 +140,8 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
       price,
       cost,
       ...(coverageCell ? { sqFtPerCarton: coverageCell } : {}),
-      ...(reorder !== undefined ? { reorderPoint: reorder } : {}),
-      ...(width !== undefined ? { widthFt: width } : {}),
+      ...(reorder ? { reorderPoint: reorder } : {}),
+      ...(width ? { widthFt: width } : {}),
       attributes: {},
       supplierId: supplier.id,
       createdAt: ctx.today,
@@ -159,8 +160,8 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
     price: keepStored(existing.price, price),
     cost: keepStored(existing.cost, cost),
     sqFtPerCarton: keepStored(existing.sqFtPerCarton, coverageCell),
-    reorderPoint: reorder,
-    widthFt: width,
+    reorderPoint: keepStored(existing.reorderPoint, reorder),
+    widthFt: keepStored(existing.widthFt, width),
     supplierId: supplier.id,
   });
   if (!next) return { action: "skip", label: sku, writes: [], note: "Nothing changed." };

@@ -446,7 +446,7 @@ describe("SR-5 to SR-7: products with stock history and retired SKUs (ADR 0057 S
       id: "prd-carpet",
       sku: "CP-1",
       category: "carpet",
-      widthFt: 12,
+      widthFt: "12",
       sqFtPerCarton: undefined,
     });
     const carpetRow = { ...row, sku: "CP-1", category: "Carpet", sq_ft_per_carton: "", width_ft: "15" };
@@ -935,6 +935,10 @@ describe("SR-21 to SR-23: control characters and product sizes (ADR 0057 S-17, S
     expect(readCell(field("products", "width_ft"), "0.000 ft")).toEqual({
       error: "Roll width (ft) must be more than 0.",
     });
+    // A stock row's roll width fits numeric(14,3) too, so applying it can't overflow (review, F-k round 1).
+    expect(readCell(field("stock", "width_ft"), "123456789012")).toHaveProperty("error");
+    expect(readCell(field("stock", "width_ft"), "0")).toHaveProperty("error");
+    expect(readCell(field("stock", "width_ft"), "12.5")).toEqual({ value: "12.5" });
     // The column is numeric(14,3), so a fourth decimal of coverage is refused before any division.
     expect(readCell(field("products", "sq_ft_per_carton"), "0.0001")).toEqual({
       error: "“0.0001” has more than 3 decimals.",
@@ -1075,7 +1079,7 @@ describe("SR-28: an Undo never puts back what stock is valued at (ADR 0057 S-5, 
       { category: "carpet" as const },
       { unit: "each" as const },
       { sqFtPerCarton: "20.000" },
-      { widthFt: 12 },
+      { widthFt: "12" },
     ]) {
       expect(productUndoProblem(change(after), facts(true))).toBe(FROZEN);
       expect(productUndoProblem(change(after), facts(false))).toBeNull();

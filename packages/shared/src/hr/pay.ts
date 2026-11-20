@@ -324,3 +324,8 @@ export function payFrequencyProblem(
   const blocked = employees.some((e) => e.state === "CA" && e.flsaStatus === "non_exempt" && e.status !== "terminated");
   return blocked ? "California non-exempt staff must be paid at least twice a month." : null;
 }
+
+/** A pay line's bonus as people see it: both kinds added with decimal.js (CLAUDE.md rule 6; F-o). */
+export function bonusPay(line: Pick<PayPeriodLine, "nondiscretionaryBonus" | "discretionaryBonus">): string {
+  return moneyString(dec(line.nondiscretionaryBonus).plus(line.discretionaryBonus));
+}

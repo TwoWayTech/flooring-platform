@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { FileSignature } from "lucide-react";
 import { toast } from "sonner";
+import { moneyString, sum } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
@@ -59,13 +60,13 @@ function SignPlan({ portal }: { portal: MyPortal }) {
 
 function Commission({ portal }: { portal: MyPortal }) {
   const formatDate = useFormatDate();
-  const pending = portal.statements.filter((s) => s.status !== "paid").reduce((t, s) => t + Number(s.payable), 0);
+  const pending = moneyString(sum(portal.statements.filter((s) => s.status !== "paid").map((s) => s.payable)));
   return (
     <div className="flex flex-col gap-4">
       <SignPlan portal={portal} />
       <Panel title="Waiting to be paid">
         <p className="font-display text-2xl font-semibold">
-          <Num kind="money" value={String(pending)} />
+          <Num kind="money" value={pending} />
         </p>
       </Panel>
       {portal.statements.map((s) => (

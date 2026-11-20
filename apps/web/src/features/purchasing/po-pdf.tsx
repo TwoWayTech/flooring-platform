@@ -8,6 +8,7 @@ import {
   type Location,
   type PurchaseOrder,
   type Supplier,
+  poLineAmount,
 } from "@workspace/shared";
 import { LINE, Monogram, styles } from "@/features/invoices/pdf-parts";
 
@@ -59,7 +60,7 @@ export function buildPoModel(
         l.sqFtPerCarton ? ` (${cartonEquivalent(l.quantity, l.sqFtPerCarton).cartons} cartons)` : ""
       }`,
       cost: money(l.unitCost),
-      amount: money(formatNumber(Number(l.quantity) * Number(l.unitCost), "money", settings.numbers).replace(/,/g, "")),
+      amount: money(poLineAmount(l)),
       into: locationName([...locations], l.locationId ?? po.locationId),
     })),
     total: money(po.total),

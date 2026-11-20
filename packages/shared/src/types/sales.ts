@@ -55,8 +55,8 @@ export interface Room {
   name: string;
   x: number;
   y: number;
-  widthFt: number;
-  lengthFt: number;
+  widthFt: string;
+  lengthFt: string;
 }
 
 /**

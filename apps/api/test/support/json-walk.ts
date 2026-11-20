@@ -212,28 +212,16 @@ export function reusedNamePaths(body: unknown, route: string): string[] {
 }
 
 /** Why a JSON number that is not a whole count is listed: outside rule 6, or a rule-6 finding to follow up. */
-export type NumberKeyKind = "not money or a quantity" | "finding F-k";
+export type NumberKeyKind = "not money or a quantity";
 
 /**
- * JSON numbers that are not whole counts. Coordinates are outside rule 6. The rest are quantities
- * rule 6 wants as decimal strings: each is finding F-k, with a proposed STATUS line, listed so it is
- * followed up rather than hidden (S-12).
+ * JSON numbers that are not whole counts: coordinates, outside rule 6. Quantities are decimal
+ * strings everywhere; the last ones that went out as numbers (`reorderPoint`, `widthFt`, a room's
+ * `lengthFt`, finding F-k) were fixed on 2026-11-20, so a number under any of them fails MI-DEC.
  */
 export const OTHER_NUMBER_KEYS: Readonly<Record<string, readonly [NumberKeyKind, string]>> = {
   lat: ["not money or a quantity", "A customer address's map latitude in degrees."],
-  lengthFt: [
-    "finding F-k",
-    "A quote room's length in ft (feeds the room's area) is a JSON number; a roll cut's lengthFt is a decimal string.",
-  ],
   lng: ["not money or a quantity", "A customer address's map longitude in degrees."],
-  reorderPoint: [
-    "finding F-k",
-    "A product's reorder point in sq ft: stored numeric(14,3) but sent through asNumber, so Summit sends 692.85.",
-  ],
-  widthFt: [
-    "finding F-k",
-    "A product's, a roll's and a quote room's width in ft are JSON numbers (asNumber, Number); they feed sq ft.",
-  ],
   x: ["not money or a quantity", "A quote room's position on the drawing canvas."],
   y: ["not money or a quantity", "A quote room's position on the drawing canvas."],
 };

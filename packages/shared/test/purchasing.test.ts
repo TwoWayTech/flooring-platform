@@ -7,6 +7,7 @@ import {
   billLedger,
   cartonsFor,
   poState,
+  poLineAmount,
   poTotal,
   receiptProblem,
   receiptStock,
@@ -22,7 +23,7 @@ import {
   type SupplierPayment,
 } from "../src";
 
-const carpet = { id: "c", sku: "CP-1", unit: "sq_ft", widthFt: 12, category: "carpet" } as Product;
+const carpet = { id: "c", sku: "CP-1", unit: "sq_ft", widthFt: "12", category: "carpet" } as Product;
 const lvp = { id: "l", sku: "LV-1", unit: "sq_ft", sqFtPerCarton: "20.00", category: "lvp" } as Product;
 const lines = [
   { id: "1", productId: "c", description: "Carpet", quantity: "200", unit: "sq_ft" as const, unitCost: "18.00" },
@@ -189,5 +190,18 @@ describe("purchasing (spec D1 to D3)", () => {
       creditUsedPct: "25",
       nextDueAt: "2026-12-01",
     });
+  });
+});
+
+describe("a purchase order line's amount (F-o, rule 6)", () => {
+  it("is quantity × unit cost with decimal.js, rounded to the cent, and the total adds the rounded lines", () => {
+    expect(poLineAmount({ quantity: "520.08", unitCost: "1.1000" })).toBe("572.09");
+    expect(poLineAmount({ quantity: "0.1", unitCost: "0.2000" })).toBe("0.02");
+    expect(
+      poTotal([
+        { quantity: "3", unitCost: "0.1000" },
+        { quantity: "0.3", unitCost: "1.0000" },
+      ]),
+    ).toBe("0.60");
   });
 });

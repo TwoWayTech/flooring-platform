@@ -8,11 +8,6 @@ function stamp(value: Date): string {
   return value.toISOString().slice(0, 16);
 }
 
-/** Optional numeric text as a number, for the fields the shared types keep as numbers. */
-function asNumber(value: string | null): number | undefined {
-  return value === null ? undefined : Number(value);
-}
-
 /** Live products as the shared `Product`, by SKU. */
 export async function loadProducts(db: CompanyDb): Promise<Product[]> {
   const rows = await db.select().from(products).where(isNull(products.deletedAt)).orderBy(asc(products.sku));
@@ -29,8 +24,9 @@ export async function loadProducts(db: CompanyDb): Promise<Product[]> {
     price: row.price,
     cost: row.cost,
     ...(row.sqFtPerCarton === null ? {} : { sqFtPerCarton: row.sqFtPerCarton }),
-    ...(row.reorderPoint === null ? {} : { reorderPoint: asNumber(row.reorderPoint) }),
-    ...(row.widthFt === null ? {} : { widthFt: asNumber(row.widthFt) }),
+    // Quantities are decimal strings at their column's scale (CLAUDE.md rule 6; whole-product check F-k).
+    ...(row.reorderPoint === null ? {} : { reorderPoint: row.reorderPoint }),
+    ...(row.widthFt === null ? {} : { widthFt: row.widthFt }),
     attributes: row.attributes,
     supplierId: row.supplierId ?? "",
     createdAt: stamp(row.createdAt),
@@ -60,7 +56,7 @@ export async function loadRolls(db: CompanyDb, ids?: readonly string[]): Promise
     rollNumber: row.rollNumber,
     productId: row.productId,
     dyeLot: row.dyeLot,
-    widthFt: Number(row.widthFt),
+    widthFt: row.widthFt,
     originalLengthFt: row.originalLengthFt,
     remainingLengthFt: row.remainingLengthFt,
     costPerSqFt: row.costPerSqFt,

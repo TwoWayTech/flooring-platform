@@ -39,7 +39,7 @@ export function buildRooms(ctx: GenContext): Room[] {
       y += rowDepth + 2;
       rowDepth = 0;
     }
-    const room = { id: ctx.id("room"), name, x, y, widthFt, lengthFt };
+    const room = { id: ctx.id("room"), name, x, y, widthFt: String(widthFt), lengthFt: String(lengthFt) };
     x += widthFt + 2;
     rowDepth = Math.max(rowDepth, lengthFt);
     return room;

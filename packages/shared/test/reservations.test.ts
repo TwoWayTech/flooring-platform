@@ -35,7 +35,7 @@ const invoice = (lines: Invoice["lines"]) => ({ id: "inv-x", locationId: at, lin
 
 describe("reservations (spec C2)", () => {
   it("turns sq ft of carpet into ft of roll length, and keeps boxed goods in sq ft", () => {
-    expect(stockNeed({ quantity: "360", unit: "sq_ft" }, { ...carpet, widthFt: 12 })?.toString()).toBe("30");
+    expect(stockNeed({ quantity: "360", unit: "sq_ft" }, { ...carpet, widthFt: "12" })?.toString()).toBe("30");
     expect(stockNeed({ quantity: "168", unit: "sq_ft" }, boxed)?.toString()).toBe("168");
   });
 

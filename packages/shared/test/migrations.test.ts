@@ -29,6 +29,28 @@ describe("saved demo data (feature batch 3 plan, section 5)", () => {
     expect(() => upgradeOverlay({ shift, settings: null, records: {} })).toThrow(OverlayUpgradeError);
   });
 
+  it("upgrades version 4's quantities sent as numbers to decimal strings, and keeps everything else (F-k)", () => {
+    const records = {
+      products: { p1: { id: "p1", reorderPoint: 692.85, widthFt: 12, price: "4.50" }, p2: null },
+      rolls: { r1: { id: "r1", widthFt: 15, remainingLengthFt: "40.5", cuts: [{ lengthFt: "10" }] } },
+      quotes: { q1: { id: "q1", rooms: [{ id: "a", x: 1.5, y: 0, widthFt: 12.5, lengthFt: 9 }] } },
+      importBatches: { b1: { changes: [{ before: { widthFt: 12 }, after: { widthFt: 15 } }] } },
+    };
+    const upgraded = upgradeOverlay({ schemaVersion: 4, shift, settings: { a: 1 }, records });
+    expect(OVERLAY_SCHEMA_VERSION).toBe(5);
+    expect(upgraded).toEqual({
+      schemaVersion: 5,
+      shift,
+      settings: { a: 1 },
+      records: {
+        products: { p1: { id: "p1", reorderPoint: "692.85", widthFt: "12", price: "4.50" }, p2: null },
+        rolls: { r1: { id: "r1", widthFt: "15", remainingLengthFt: "40.5", cuts: [{ lengthFt: "10" }] } },
+        quotes: { q1: { id: "q1", rooms: [{ id: "a", x: 1.5, y: 0, widthFt: "12.5", lengthFt: "9" }] } },
+        importBatches: { b1: { changes: [{ before: { widthFt: "12" }, after: { widthFt: "15" } }] } },
+      },
+    });
+  });
+
   it("refuses data from an unknown future version", () => {
     expect(() => upgradeOverlay({ schemaVersion: 9, shift, settings: null, records: {} })).toThrow(OverlayUpgradeError);
   });

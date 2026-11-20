@@ -155,7 +155,7 @@ stateDiagram-v2
 
     ```ts
     costPerSqFt: text(row, "cost_per_sq_ft") || roundUnitCost(dec(product.cost)).toString(),
-    widthFt: row.width_ft ? Number(row.width_ft) : (product.widthFt ?? 12),
+    widthFt: text(row, "width_ft") || (product.widthFt ?? "12"),
     ```
 
     `stockUnit` in `packages/shared/src/stock.ts` decides the path: `ft` for carpet with a width, `sq_ft` for a product with coverage, `each` for adhesives and trims, null for anything else.

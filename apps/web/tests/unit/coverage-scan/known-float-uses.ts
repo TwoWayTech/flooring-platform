@@ -9,11 +9,13 @@
 export const FLOAT_USE_CLASSES = {
   "arithmetic shown": {
     meaning: "Adds, subtracts, multiplies or takes the absolute value as JS floats, and shows the result.",
-    status: "Proposed STATUS follow-up F-o (rule 6, fix first): compute with decimal.js (packages/shared money).",
+    status:
+      "None listed: F-o was fixed on 2026-11-20. A new one is a rule-6 defect: compute with decimal.js (packages/shared money) rather than list it.",
   },
   "arithmetic sent": {
     meaning: "Computes a value as JS floats and sends it to the API.",
-    status: "Proposed STATUS follow-up F-o (rule 6, fix first): compute with decimal.js (packages/shared money).",
+    status:
+      "None listed: F-o was fixed on 2026-11-20. A new one is a rule-6 defect: compute with decimal.js (packages/shared money) rather than list it.",
   },
   "sign check": {
     meaning: "Compares with zero only; a decimal string's sign survives the float. Nothing computed is shown.",
@@ -34,7 +36,7 @@ export const FLOAT_USE_CLASSES = {
   },
   "number in the contract": {
     meaning: "The shared type itself holds a number here, so the screen can't avoid it.",
-    status: "Proposed STATUS follow-up F-k (rule 6): quantities sent as JSON numbers.",
+    status: "None listed: F-k was fixed on 2026-11-20, so every quantity in the contract is a decimal string.",
   },
   "whole number": {
     meaning: "A whole number that is not money: days, or a support grant's hours. Not a rule-6 value.",
@@ -55,10 +57,6 @@ export const KNOWN_FLOAT_USES: Readonly<Record<string, { use: FloatUseClass; why
     use: "chart or gauge",
     why: "Bar widths for the best sellers; the figures are shown with <Num>.",
   },
-  "apps/web/src/features/dashboard/figure-card.tsx: Number(change)": {
-    use: "arithmetic shown",
-    why: "The percent change's sign picks Up or Down, and its absolute value goes through a float before formatNumber.",
-  },
   "apps/web/src/features/dashboard/key-figure.tsx: Number(value)": {
     use: "chart or gauge",
     why: "The count-up animation's frames; the settled figure is <Num> from the string.",
@@ -78,14 +76,6 @@ export const KNOWN_FLOAT_USES: Readonly<Record<string, { use: FloatUseClass; why
   "apps/web/src/features/hr/commissions/plan-form-dialog.tsx: Number(numeric(e.target.value))": {
     use: "whole number",
     why: "The clawback window in days.",
-  },
-  "apps/web/src/features/hr/pay-periods-page.tsx: Number(r.line.discretionaryBonus)": {
-    use: "arithmetic shown",
-    why: "The pay review's Bonus column (and its total) adds the two bonuses as floats.",
-  },
-  "apps/web/src/features/hr/pay-periods-page.tsx: Number(r.line.nondiscretionaryBonus)": {
-    use: "arithmetic shown",
-    why: "The pay review's Bonus column (and its total) adds the two bonuses as floats.",
   },
   "apps/web/src/features/inventory/adjust-stock-dialog.tsx: Number(quantity)": {
     use: "sign check",
@@ -139,49 +129,9 @@ export const KNOWN_FLOAT_USES: Readonly<Record<string, { use: FloatUseClass; why
     use: "comparison",
     why: "Labels a roll Used up (0) or Low (under LOW_ROLL_FT).",
   },
-  "apps/web/src/features/invoices/commission-split-dialog.tsx: Number(pct)": {
-    use: "arithmetic sent",
-    why: 'The second share is sent as String(100 − Number(pct)): a first share of 66.6 sends 33.400000000000006, which the API refuses (400 "Enter each share as a percent.").',
-  },
-  "apps/web/src/features/my/my-commission.tsx: Number(s.payable)": {
-    use: "arithmetic shown",
-    why: "Waiting to be paid adds the statements' payable amounts as floats.",
-  },
-  "apps/web/src/features/my/my-pay.tsx: Number(bonus)": {
-    use: "sign check",
-    why: "Shows the Bonus row when the float-made sum is above zero.",
-  },
-  "apps/web/src/features/my/my-pay.tsx: Number(line.discretionaryBonus)": {
-    use: "arithmetic shown",
-    why: "The pay card's Bonus adds the two bonuses as floats.",
-  },
-  "apps/web/src/features/my/my-pay.tsx: Number(line.nondiscretionaryBonus)": {
-    use: "arithmetic shown",
-    why: "The pay card's Bonus adds the two bonuses as floats.",
-  },
-  "apps/web/src/features/my/my-pay.tsx: Number(line.salaryAmount)": {
-    use: "sign check",
-    why: "Whether the pay line is salaried.",
-  },
-  "apps/web/src/features/my/my-pay.tsx: Number(line.salaryDeduction)": {
-    use: "sign check",
-    why: "Shows the unpaid-leave row only when there is one.",
-  },
   "apps/web/src/features/my/my-time-off.tsx: Number(b.pending)": {
     use: "sign check",
     why: "Shows pending hours only when there are some.",
-  },
-  "apps/web/src/features/purchasing/po-pdf.tsx: Number(l.quantity)": {
-    use: "arithmetic shown",
-    why: "The printed purchase order's line amount is quantity × unit cost as floats.",
-  },
-  "apps/web/src/features/purchasing/po-pdf.tsx: Number(l.unitCost)": {
-    use: "arithmetic shown",
-    why: "The printed purchase order's line amount is quantity × unit cost as floats.",
-  },
-  "apps/web/src/features/quotes/rooms-list.tsx: Number(value)": {
-    use: "number in the contract",
-    why: "A quote room's width and length are numbers in the shared Room type (F-k).",
   },
   "apps/web/src/features/reports/business-report.tsx: Number(r.values[column] ?? 0)": {
     use: "chart or gauge",

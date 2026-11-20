@@ -40,8 +40,8 @@ const localization = { tax, region: { statesOfOperation: ["NJ", "CO"] } } as Pic
 >;
 const lvp = { id: "lvp", unit: "sq_ft", sqFtPerCarton: "23.64", category: "lvp" } as Product;
 const rooms = [
-  { id: "living", name: "Living room", x: 0, y: 0, widthFt: 14, lengthFt: 18 },
-  { id: "hall", name: "Hall", x: 16, y: 0, widthFt: 4, lengthFt: 12 },
+  { id: "living", name: "Living room", x: 0, y: 0, widthFt: "14", lengthFt: "18" },
+  { id: "hall", name: "Hall", x: 16, y: 0, widthFt: "4", lengthFt: "12" },
 ];
 const lines: DocLine[] = [
   {

@@ -51,6 +51,7 @@ import { QuoteActions } from "./quote-actions";
 import { QUOTE_FIELD_IDS, QuoteHeader } from "./quote-header";
 import { QuoteSummary } from "./quote-summary";
 import { RoomCanvas } from "./room-canvas";
+import { roomSize } from "./room-geometry";
 import { RoomsList } from "./rooms-list";
 import { SendQuoteDialog } from "./send-quote-dialog";
 import { useQuoteDraft } from "./use-quote-draft";
@@ -95,7 +96,7 @@ export function newQuote(
 
 /** Where a new default room goes: the next free spot along the top row of the canvas. */
 function nextRoomSpot(rooms: readonly Room[]): Pick<Room, "x" | "y"> {
-  const right = rooms.reduce((max, r) => Math.max(max, r.x + r.widthFt), -2);
+  const right = rooms.reduce((max, r) => Math.max(max, r.x + roomSize(r).w), -2);
   return right + 14 <= 48 ? { x: right + 2, y: 0 } : { x: 0, y: 16 };
 }
 
@@ -337,8 +338,8 @@ export function QuoteBuilder({
                     room: {
                       id: localId("room"),
                       name: `Room ${draft.rooms.length + 1}`,
-                      widthFt: 12,
-                      lengthFt: 12,
+                      widthFt: "12",
+                      lengthFt: "12",
                       ...nextRoomSpot(draft.rooms),
                     },
                   })
