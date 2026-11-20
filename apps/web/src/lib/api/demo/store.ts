@@ -1,6 +1,8 @@
 import { format } from "date-fns";
 import {
   branchManageDenial,
+  PAYMENT_CONTROLS_OWNER_ONLY,
+  paymentControlsLoosened,
   branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
@@ -853,14 +855,19 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section. Screens save `localization` per tab through `updateLocalization`.
+   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Screens save `localization` per tab through `updateLocalization`.
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
     const rule = SETTINGS_SECTIONS[section];
-    await this.assertSettingsSave(db, rule);
+    const access = await this.assertSettingsSave(db, rule);
     const problem = settingsSectionProblem(section, value, db.settings[section]);
     if (problem) throw new DemoRuleError(problem);
+    // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
+    const payments = { [section]: value } as Partial<CompanySettings>;
+    if (payments.payments && !access.isOwner && paymentControlsLoosened(payments.payments, db.settings.payments)) {
+      throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
+    }
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);

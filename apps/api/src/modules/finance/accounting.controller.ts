@@ -7,6 +7,7 @@ import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { ACCOUNTING_INPUT, loadAccounting } from "../../core/ledger/accounting-settings";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
@@ -25,6 +26,7 @@ export class AccountingController {
     private readonly tenancy: TenantConnectionService,
     private readonly accounting: AccountingService,
     private readonly auditLog: AuditService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /** GET /settings/accounting: the saved settings, or the defaults. */
@@ -35,7 +37,11 @@ export class AccountingController {
     return loadAccounting(await this.tenancy.db(tenant));
   }
 
-  /** PUT /settings/accounting: saves the settings and the bank ledger accounts. Audited. */
+  /**
+   * PUT /settings/accounting: saves the settings and the bank ledger accounts. Audited. It decides
+   * where money posts, so it needs a step-up from the last 5 minutes after the body is checked, as
+   * Payments does (owner's answer to PR #51 Q10; ADR 0040 and ADR 0059, "2026-11-20").
+   */
   @Put()
   @RequirePermission("settings.payments.manage")
   @Audited()
@@ -48,6 +54,7 @@ export class AccountingController {
   ) {
     requireCompanyWide(access);
     const input = parse(ACCOUNTING_INPUT, body);
+    await this.stepUp.require(session);
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);
     return db.transaction(async (tx) => {

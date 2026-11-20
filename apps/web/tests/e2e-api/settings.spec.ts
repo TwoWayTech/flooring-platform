@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from "@pl
 import {
   dec,
   invoiceLedger,
+  PAYMENT_CONTROLS_OWNER_ONLY,
   type Invoice,
   type InvoiceAdjustment,
   type Payment,
@@ -168,17 +169,19 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
     resetAuthAround([ACCOUNTANT_EMAIL, OWNER_EMAIL, SALES_EMAIL]);
 
     flowTest(
-      "E2 Payments: a refused save says why; the Accountant's change needs a step-up, reaches the server, and the Owner's buttons follow",
+      "E2 Payments: a refused save says why; the Accountant tightens with a step-up, only the Owner loosens, and the Owner's buttons follow",
       async ({ personas }) => {
         flowTest.setTimeout(180_000);
         const grace = await personas.open(ACCOUNTANT_EMAIL, { mfa: true });
         const dana = await personas.open(OWNER_EMAIL, { mfa: true });
         const priya = await personas.open(SALES_EMAIL);
         const secret = grace.secret!;
+        // Putting the rules back loosens them, which only the Owner may do (ADR 0059, "2026-11-20").
+        const danaSecret = dana.secret!;
         personas.onCleanup("put the payment rules back", () =>
-          healOrThrow(grace.request, "payments", SUMMIT_PAYMENTS, secret),
+          healOrThrow(dana.request, "payments", SUMMIT_PAYMENTS, danaSecret),
         );
-        expect((await healSection(grace.request, "payments", SUMMIT_PAYMENTS, secret)).status()).toBe(200);
+        expect((await healSection(dana.request, "payments", SUMMIT_PAYMENTS, danaSecret)).status()).toBe(200);
         const since = Date.now();
         const audited = await auditBy(grace.request, "Changed payments", "Grace Liu", since);
 
@@ -225,9 +228,20 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         expect(direct.status()).toBe(400);
         expect(await direct.json()).toMatchObject({ code: "invalid_request", message: PAYMENT_APPROVAL_MESSAGE });
 
-        // 3. Payments above 1.00 wait, and the write-off limit covers the invoice's balance.
+        // 3. Grace can't raise the write-off limit: the Owner-only words before any step-up, and the
+        //    API refuses it too (ADR 0059, "2026-11-20"). She can make payments above 1.00 wait.
         await grace.page.getByLabel("Only above this amount").fill("1.00");
         await grace.page.getByLabel("Largest write-off").fill(ledger.balance);
+        await grace.page.getByRole("button", { name: "Save payments" }).click();
+        await expect(grace.page.getByText(PAYMENT_CONTROLS_OWNER_ONLY)).toBeVisible();
+        await expect(grace.page.getByRole("dialog", { name: "Confirm it is you" })).toBeHidden();
+        expect(sent).toEqual([]);
+        const looser = await grace.request.put("/api-proxy/settings/payments", {
+          data: { ...SUMMIT_PAYMENTS, writeOffMax: ledger.balance },
+        });
+        expect(looser.status()).toBe(403);
+        expect(await looser.json()).toMatchObject({ code: "owner_only", message: PAYMENT_CONTROLS_OWNER_ONLY });
+        await grace.page.getByLabel("Largest write-off").fill(SUMMIT_PAYMENTS.writeOffMax);
         const savedPut = grace.page.waitForResponse(
           (response) =>
             response.request().method() === "PUT" &&
@@ -237,6 +251,9 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         await confirmStepUp(grace.page, secret);
         expect((await savedPut).status()).toBe(200);
         await expect(grace.page.getByText("Payments saved")).toBeVisible();
+        // The Owner raises the write-off limit over the invoice's balance.
+        const raised = { ...SUMMIT_PAYMENTS, approvalThreshold: "1.00", writeOffMax: ledger.balance };
+        expect((await healSection(dana.request, "payments", raised, danaSecret)).status()).toBe(200);
 
         // 4. Dana's invoice follows the server's rules.
         await dana.page.reload();
@@ -257,15 +274,15 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         expect((await refused.json()).code).toBe("forbidden");
 
         // 6. Put back; Dana is offered no write-off again.
-        expect((await healOrThrow(grace.request, "payments", SUMMIT_PAYMENTS, secret)).status()).toBe(200);
+        expect((await healOrThrow(dana.request, "payments", SUMMIT_PAYMENTS, danaSecret)).status()).toBe(200);
         await dana.page.reload();
         await dana.page.getByRole("button", { name: "Update status" }).click();
         await expect(dana.page.getByRole("menu")).toBeVisible();
         await expect(writeOff).toHaveCount(0);
         await dana.page.keyboard.press("Escape");
 
-        // 7. Two saves audited as Grace: step 3 and the restore; step 2's refusals wrote none.
-        expect(await auditBy(grace.request, "Changed payments", "Grace Liu", since)).toBe(audited + 2);
+        // 7. One save audited as Grace, step 3's; her refusals wrote none.
+        expect(await auditBy(grace.request, "Changed payments", "Grace Liu", since)).toBe(audited + 1);
       },
     );
   });

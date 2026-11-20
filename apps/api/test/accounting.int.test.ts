@@ -248,11 +248,14 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
       { bankAccounts: [{ name: "Operating", methods: ["wire"] }] },
       { bankAccounts: [{ name: "Operating", methods: [], number: "123456789" }] },
     ];
+    // The step-up comes after the body is read, so these reach the content checks (ADR 0040, 2026-11-20).
+    await harness.grantStepUp(cookies.accountant);
     for (const body of bad) {
       expect((await call("put", "/settings/accounting", cookies.accountant).send({ ...base, ...body })).status).toBe(
         400,
       );
     }
+    await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({
         ...base,
@@ -301,6 +304,7 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
           ? { ...bank, methods: [] }
           : bank,
     );
+    await harness.grantStepUp(cookies.owner);
     await call("put", "/settings/accounting", cookies.owner)
       .send({ costingMethod: "average", salesTaxBasis: "cash", bankAccounts: moved })
       .expect(200);
@@ -317,6 +321,7 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
       bankAccounts: { key: string; name: string; methods: string[] }[];
     };
     const withoutMerchant = current.bankAccounts.filter((bank) => bank.name !== "Merchant");
+    await harness.grantStepUp(cookies.owner);
     const refused = await call("put", "/settings/accounting", cookies.owner).send({
       ...current,
       bankAccounts: withoutMerchant,
@@ -326,6 +331,7 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
     const renamed = current.bankAccounts
       .filter((bank) => bank.name !== "Spare")
       .map((bank) => (bank.name === "Merchant" ? { ...bank, name: "Card settlements" } : bank));
+    await harness.grantStepUp(cookies.owner);
     await call("put", "/settings/accounting", cookies.owner)
       .send({ ...current, bankAccounts: renamed })
       .expect(200);

@@ -398,6 +398,7 @@ describe("expenses API (needs the local PostgreSQL)", () => {
   });
 
   it("posts cash to the bank account that claims the payment method", async () => {
+    await harness.grantStepUp(cookies.accountant);
     const bank = await call("put", "/settings/accounting", cookies.accountant)
       .send({
         costingMethod: "average",

@@ -182,11 +182,15 @@ export class SettingsService {
     section: S,
     value: StoredSection<S>,
     answered: (value: StoredSection<S>) => unknown,
+    guard?: (current: StoredSection<S>) => Promise<void>,
   ): Promise<void> {
     const { label } = SETTINGS_SECTIONS[section];
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const row = await this.lockGroup(tx, section);
+      // Checks that compare with what is stored run under the row's lock, against the never-saved
+      // answer when nothing is (ADR 0059 D10), so two saves at once can't both pass on a stale value.
+      if (guard) await guard(await this.valueOf(tx, section, row?.value));
       let id = row?.id;
       if (id) {
         await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, id));

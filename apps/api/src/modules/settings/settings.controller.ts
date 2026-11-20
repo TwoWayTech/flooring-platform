@@ -9,6 +9,8 @@ import {
   LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
+  PAYMENT_CONTROLS_OWNER_ONLY,
+  paymentControlsLoosened,
   paymentSettingsProblem,
   payrollProblem,
   regionKeyProblem,
@@ -143,7 +145,9 @@ export class SettingsController {
    * PUT /settings/payments: the two-person check, the write-off limit and the payment and refund
    * prefixes, which customer payments, write-offs and supplier payments read on the server. These
    * are fraud controls over money in and out under an MFA key, so a save also needs a step-up from
-   * the last 5 minutes (ADR 0059 D5).
+   * the last 5 minutes (ADR 0059 D5). Loosening one (approval off, a higher approval amount or
+   * write-off limit, an empty write-off limit) is the Owner's alone, judged against the stored row
+   * under its lock and before the code is asked for (owner's answer to Q10, ADR 0059 "2026-11-20").
    */
   @Put("payments")
   @RequirePermission(...SETTINGS_SECTIONS.payments.keys)
@@ -160,8 +164,19 @@ export class SettingsController {
     requireWholeCompany(access);
     const payments = parse(PAYMENTS_INPUT, body);
     check(paymentSettingsProblem(payments));
-    await this.stepUp.require(session);
-    await this.settings.save(tenant, actorOf(access, session, request), "payments", payments, (value) => value);
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "payments",
+      payments,
+      (value) => value,
+      async (current) => {
+        if (!access.isOwner && paymentControlsLoosened(payments, current)) {
+          throw new ForbiddenException({ code: "owner_only", message: PAYMENT_CONTROLS_OWNER_ONLY });
+        }
+        await this.stepUp.require(session);
+      },
+    );
     return payments;
   }
 
