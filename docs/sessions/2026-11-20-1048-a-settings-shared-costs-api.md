@@ -40,14 +40,85 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Q2 A non-fixed rule keeps the fixed shares** (D5). Clear them instead?
 - **Q3 Effective dates** for the sharing rule (ADR 0023 Consequences: "changing the rule cannot rewrite closed months"). Not built: a save changes every month of the report, as before. A dated rule needs a design (and `expense_allocations` when periods close).
 
+## Build notes
+
+- **B1 Tests changed for the fifth served section:** packages/shared R7 and R10; apps/api part 1's A1 (the Owner's answer and the never-saved shared costs), A8 (one switch hides expenses and shared costs), A9b, and X1 in `settings-dispatch.test.ts`; apps/web W1, W2 and W5. Part 1's `SERVED` list stays part 1's four; 4b has its own file.
+- **B2 Zod's record** reports a refused key as the record's own issue ("Invalid key in record"), so the key's words are set on the record. Part 2a's `DOCUMENTS_INPUT` waste-category keys have the same shape and probably answer Zod's words for a key over 40 characters: follow-up F1.
+- **B3 Zod's record drops a `__proto__` key silently**, so `fixedPct` refuses one first with the unknown-location words (review round 1).
+- **B4 `PLAIN_DECIMAL`** (decimal-text.ts) is exported for `weightsFor`, rather than a second copy of the pattern.
+
 ## Commands run
 
-(filled in as the work goes)
+- `packages/shared`: `npx vitest run` 82 files, 1203 tests pass; `npx tsc --noEmit`.
+- `apps/api`: `npx vitest run --project integration --maxWorkers=2 test/settings-shared-costs.int.test.ts` 24/24; `test/settings.int.test.ts` and `test/reports.int.test.ts` 73/73; `npx vitest run test/settings-dispatch.test.ts` 2/2.
+- `apps/web`: `npx vitest run tests/unit/demo-settings.test.ts tests/unit/settings-answer.test.ts tests/unit/settings-dispatch.test.ts` 33/33.
+- Root: `pnpm lint` (6 tasks, Prettier clean), `pnpm typecheck` (6 tasks), `pnpm test` (shared 1203, api 126, web 444, db 18, providers 11; all pass).
+- Whole integration suite, `--maxWorkers=3`: first run 852/853. The one failure, SCA5, was the new `__proto__` case: the run overlapped with its addition and with the SCM27 mutation of `settings-input.ts`. The file alone then passed 24/24. **Whole suite rerun on the committed tree (`06fbe4b`), `--maxWorkers=3`: 43 files, 853/853 pass.**
+- **Not run (by instruction):** e2e, `next build`, Playwright.
+
+### Mutations (Node runner in the scratchpad; each file restored from a saved copy, never `git stash`)
+
+| Id | Mutation | Caught by |
+| --- | --- | --- |
+| SCM1 | no rule check | SCR1, SCA5 |
+| SCM2 | unknown location skipped | SCR4, SCA5, SCA11 |
+| SCM3 | no upper bound of 100 | SCR3, SCA5 |
+| SCM4 | `PERCENT_TEXT` loosened to digits and points | SCR2 to SCR6, SCA5, SCA6, SCA10 to SCA12 (malformed text throws: 500) |
+| SCM5 | fixed total not checked | SCR2, SCR6, SCA5 |
+| SCM6 | no share count bound | SCR4 |
+| SCM7 | `weightsFor` reads malformed text | SCR7 |
+| SCM8 | fixed shares in hundredths | SCR7, SCR8 |
+| SCM9 | `fixedPctProblem` skips the share check | SCR5 |
+| SCM10 | dispatcher returns null for shared costs | SCR6, SCD2 |
+| SCM11 | dispatcher without locations passes | SCR6 |
+| SCM12 | readers widened to everyone | SCA2 |
+| SCM13 | not hidden while the switch is off | SCA7 |
+| SCM14 | no switch check | SCA7 |
+| SCM15 | no scope check | SCA8 |
+| SCM16 | no module guard | SCA0, SCA2, SCA9 |
+| SCM17 | the rule not run in the save | SCA5, SCA11 |
+| SCM18 | every sent key counted as a live location | SCA5, SCA6, SCA10 to SCA12 |
+| SCM19 | `@Audited()` removed (safety-net entry doubles) | SCA0, SCA10 |
+| SCM20 | never saved answered as equal | SCA1 |
+| SCM21 | the stored row not answered | SCA1, SCA2, SCA6, SCA11, X1 |
+| SCM22 | body not strict | SCA3 |
+| SCM23 | record key words removed | SCA4 |
+| SCM24 | rule's outer length removed | **survived, equivalent:** the shared rule refuses any unknown rule with the same words, and the JSON body limit bounds the size |
+| SCM25 | DemoStore counts an unknown location as live | SCD2 |
+| SCM26 | web merge keeps DemoStore's copy | W1 |
+| SCM27 | `__proto__` refusal removed (after review round 1) | SCA5 |
 
 ## Review
 
-(filled in at the end)
+- **Round 1** (fresh read-only security-reviewer, `3c3a04b..1753b7e`): PASS, no blocking finding. Two low notes, both fixed in `35d446f`: (1) Zod's record silently dropped a `__proto__` share key; it is now refused with the unknown-location words, pinned by SCA5 and SCM27. (2) The `SharedCostSettings` cast relies on the guard running before the write; the comment now names `SettingsService.save`'s order.
+- **Round 2** (a fresh reviewer, `3c3a04b..35d446f`): PASS, no blocking finding; it agrees with D3 (no step-up). Three low notes: a top-level `__proto__` key was untested (now pinned in SCA3, `06fbe4b`, no product change); `loadSharedCosts` casts the stored row without checking its shape (outside 4b's files, harmless because `weightsFor` reads bad values as 0: follow-up F2); a share over 20 characters gets the general share words rather than the named ones (wording only: follow-up F3). Round 2 is the clean round.
+- `/review` was not run as a slash command (unattended subagent session); the security-reviewer rounds are the self-merge rule's reviewer for money and permissions.
 
-## For STATUS
+### Reviewer summary, ready to paste (`gh pr review <n> --comment --body-file …`)
 
-(filled in at the end)
+> Security review (read-only, two rounds), feat/settings-shared-costs-api, diff 3c3a04b..HEAD: **PASS**, no blocking issues. `PUT /settings/sharedCosts` takes the company only from the session through TenantConnectionService. In order, it checks the shared `SETTINGS_SECTIONS` key (`settings.expenses.manage`) and `core` module in the guards, then the `finance.expenses` switch (404), data scope `all` (403) and a strict Zod body (400; an own `__proto__` key is refused, not dropped). Then the shared `sharedCostsProblem` runs inside the save's transaction, under the row lock, against this company's live locations, so a share can't name another company's or a retired location, every percent is `PERCENT_TEXT` from 0 to 100, and a fixed split totals exactly 100. One audit entry per save, before and after. `GET /settings` answers the section only to `settings.expenses.manage` holders with `core` and Expenses on; the Business report reads the stored row on the server, and `weightsFor` no longer throws on blank or malformed stored text. Fixed shares split exactly (ten-thousandths of a percent, whole cents by largest remainder). DemoStore runs the same rule with the same words. No step-up (D3) is agreed: nothing posts to the ledger and every save is audited. Non-blocking follow-ups: `loadSharedCosts` could check the stored rule's shape; a share over 20 characters gets the general words.
+
+## Follow-ups
+
+- **F1** `DOCUMENTS_INPUT`'s waste-category record keys likely answer Zod's "Invalid key in record" instead of the shared words (B2).
+- **F2** `loadSharedCosts` (`report-records.ts`) could read the stored row through `isSharedCostRule` and fall back to `DEFAULT_SHARED_COSTS`.
+- **F3** A share over 20 characters gets "Enter each share as a percent…" without the location's name.
+
+## For STATUS (the orchestrator applies these; re-read STATUS first and anchor on the quoted text)
+
+- **In progress / next:** "…; part 4b, Shared costs (`feat/settings-shared-costs-api`, stacked on #61); then 5 HR, 6 Branding".
+- **Done (on merge):** "Settings part 4b (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-20 part 4b section). Shared costs save on the API: `PUT /settings/sharedCosts` (core, `settings.expenses.manage`, the `finance.expenses` switch, scope `all`, a strict body), with the shared `sharedCostsProblem` judged inside the save against the company's live locations (a known rule; shares only for live locations, each a percent from 0 to 100; fixed totals exactly 100), one audit entry per save, no step-up (D3). `GET /settings` answers it to `settings.expenses.manage`; never saved = revenue share. The Expenses page and DemoStore run the same rule with the same words; the Business report's weights never throw on stored text (closes R5) and split fixed shares exactly. No schema, migration or dependency change. 26 of 27 mutations caught (SCM24 is equivalent); security review PASS in two rounds."
+- **Close:** "The Expenses page is mixed in api mode: approval on the API, Shared costs in the browser until part 4." (both halves are on the API).
+- **Change:** the unmoved-pages list loses "Shared costs".
+- **Close:** 4a's follow-up "Saved demo data with an empty floor area breaks the demo Business report until … 4b's reader fix lands (R5)".
+- **New follow-ups:** F1 to F3 above.
+- **Owner questions:** "Owner questions (Settings part 4b; none blocks)" with Q1 to Q3 above.
+- **BRANCHES:** a `feat/settings-shared-costs-api` row: "A (Claude)", "Queue item 2, task 2, Settings part 4b: shared costs on the API (worktree `C:\dev\fp-4b`; stacked on #61)", the state at handoff, the PR once opened, "see the branch".
+
+## E2E (written, not run: another builder owns ports 3000 and 4000)
+
+- Api mode: `apps/web/tests/e2e-api/settings-shared-costs.spec.ts`, SCE1 (new); part 1's E3 in `tests/e2e-api/settings.spec.ts` keeps its check that saving expense approval sends no shared costs, with its comment rewritten.
+- Demo: SCS1 in `apps/web/tests/e2e/expenses.spec.ts`.
+- To run (one server at a time; stop it after; demo and api need separate builds):
+  - Demo: `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build`, then from `apps/web`: `E2E_WORKERS=2 npx playwright test tests/e2e/expenses.spec.ts --project=flooring`.
+  - Api mode: `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` and `pnpm --filter api build`, then `node <scratchpad>/e2e-api.mjs C:/dev/fp-4b tests/e2e-api/settings-shared-costs.spec.ts tests/e2e-api/settings.spec.ts` (the orchestrator's runner, as in 4a), then the whole api-mode suite once: `node <scratchpad>/e2e-api.mjs C:/dev/fp-4b tests/e2e-api`.
