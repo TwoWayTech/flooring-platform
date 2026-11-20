@@ -1,9 +1,22 @@
-import { dayInZone, isKnownTimeZone } from "@workspace/shared";
+import { dayInZone, instantToZoned, isKnownTimeZone } from "@workspace/shared";
 import { format } from "date-fns";
 
 /** The browser's own calendar day, "YYYY-MM-DD": the fallback while no company's zone is known. */
 export function browserDay(now: Date = new Date()): string {
   return format(now, "yyyy-MM-dd");
+}
+
+/**
+ * Today, "YYYY-MM-DD", in a zone; the browser's day when there is none or Intl doesn't know it. The one
+ * fallback rule for the api client and DemoStore, so `today()` never throws while a screen renders.
+ */
+export function dayInOrBrowser(zone: string | null, now: Date = new Date()): string {
+  return zone && isKnownTimeZone(zone) ? dayInZone(now, zone) : browserDay(now);
+}
+
+/** The wall clock, "YYYY-MM-DDTHH:mm", in a zone, with the same fallback as `dayInOrBrowser`. */
+export function clockInOrBrowser(zone: string | null, now: Date = new Date()): string {
+  return zone && isKnownTimeZone(zone) ? instantToZoned(now, zone) : format(now, "yyyy-MM-dd'T'HH:mm");
 }
 
 /**
@@ -34,7 +47,7 @@ export class CompanyDay {
 
   /** Today, "YYYY-MM-DD", in the company's zone once known, else in the browser's. */
   today(now: Date = new Date()): string {
-    return this.zone ? dayInZone(now, this.zone) : browserDay(now);
+    return dayInOrBrowser(this.zone, now);
   }
 }
 

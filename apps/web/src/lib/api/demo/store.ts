@@ -1,7 +1,5 @@
-import { format } from "date-fns";
 // The company's day (ADR 0051, "The company's day on the web", 2026-11-20) keeps its own imports.
-import { dayInZone, instantToZoned, isKnownTimeZone } from "@workspace/shared";
-import { browserDay } from "../company-day";
+import { browserDay, clockInOrBrowser, dayInOrBrowser } from "../company-day";
 import {
   branchManageDenial,
   PAYMENT_CONTROLS_OWNER_ONLY,
@@ -354,31 +352,17 @@ const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
 };
 
 /**
- * The zone a demo company keeps its day in: its own `localization.region.timeZone`, read only since
- * Settings part 2b, or null for a zone Intl doesn't know (the browser's clock then stands in).
- */
-function zoneOf(db: CompanyDb): string | null {
-  const zone = db.settings.localization.region.timeZone;
-  return isKnownTimeZone(zone) ? zone : null;
-}
-
-/**
  * A company's today, worked out on every call so it rolls over at the company's midnight: the day the
- * API would date a record on (ADR 0051, "The company's day on the web", 2026-11-20).
+ * API would date a record on, in its own `localization.region.timeZone` (read only since Settings part
+ * 2b; ADR 0051, "The company's day on the web", 2026-11-20).
  */
 function dayOf(db: CompanyDb): string {
   return dayInOrBrowser(db.settings.localization.region.timeZone);
 }
 
-/** Today in a zone, or the browser's day for a zone Intl doesn't know. */
-function dayInOrBrowser(zone: string): string {
-  return isKnownTimeZone(zone) ? dayInZone(new Date(), zone) : browserDay();
-}
-
 /** A company's wall clock, "YYYY-MM-DDTHH:mm", for the moments records and audit rows carry. */
 function stampOf(db: CompanyDb): string {
-  const zone = zoneOf(db);
-  return zone ? instantToZoned(new Date(), zone) : format(new Date(), "yyyy-MM-dd'T'HH:mm");
+  return clockInOrBrowser(db.settings.localization.region.timeZone);
 }
 const newId = (companyId: string, kind: string) => `${companyId}-${kind}-${crypto.randomUUID().slice(0, 8)}`;
 

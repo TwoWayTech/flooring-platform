@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CompanyAnswer } from "@workspace/shared";
-import { CompanyDay, browserDay, companyDayOf } from "@/lib/api/company-day";
+import { CompanyDay, browserDay, clockInOrBrowser, companyDayOf, dayInOrBrowser } from "@/lib/api/company-day";
 import type { FileStore } from "@/lib/api/demo/file-store";
 import { DemoStore } from "@/lib/api/demo/store";
 import { fakeApi } from "./fake-api";
@@ -122,6 +122,16 @@ describe("CompanyDay, with the browser in Tokyo", () => {
     // Another company's answer with a zone this browser doesn't know: the browser's day, never Denver's.
     day.learn("Mars/Olympus_Mons");
     expect(day.today()).toBe("2026-11-21");
+  });
+
+  it("CD7 one fallback for the api client and DemoStore: no zone or an unknown one reads the browser's clock", () => {
+    at(DENVER_EVENING);
+    expect(dayInOrBrowser("America/Denver")).toBe("2026-11-20");
+    expect(clockInOrBrowser("America/Denver")).toBe("2026-11-20T23:30");
+    for (const zone of [null, "", "Mars/Olympus_Mons"]) {
+      expect(dayInOrBrowser(zone)).toBe("2026-11-21");
+      expect(clockInOrBrowser(zone)).toBe("2026-11-21T15:30");
+    }
   });
 
   it("CD6 forgets the zone when the company closes", () => {
