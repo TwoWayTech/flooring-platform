@@ -89,7 +89,7 @@ The plan assumes 15 to 20 hours a week each (blueprint p52). Re-plan once both p
 | 17 | Mar 8 | HR 2: pay periods and exports; commissions with statements; employee portal projection | Pay periods, commissions, `/my` portal | Approved period frozen; portal shows own data only |
 | 18 | Mar 15 | Meetings with .ics through EmailProvider and reminders on pg-boss; reports (business report, P&L) | Calendar and reports on the API | Location profits add up to company profit |
 | 19 | Mar 22 | Import on the server with undo; platform admin and manual billing | Import wizard and super-admin on the API | Summit's demo data imports through the wizard |
-| 20 | Mar 29 | P13 with B: OWASP ASVS level 2 review, fix critical and high findings | P13 with A; full regression; launch checklist; external reviewer booked | docs/security-review.md written; no open critical or high findings |
+| 20 | Mar 29 | P13 with B: OWASP ASVS level 2 review, fix critical and high findings | P13 with A; full regression, including the whole-product check suites (`WHOLE_CHECK=1`, ADR 0058); launch checklist; external reviewer booked | docs/security-review.md written; no open critical or high findings |
 
 ## CI budget (GitHub Free: 2,000 Actions minutes a month)
 GitHub bills each job separately, rounded up to whole minutes. Main isn't protected on GitHub Free, so the Claude Code deny rule in `.claude/settings.json` and the CLAUDE.md rules keep pushes off main.
@@ -102,6 +102,8 @@ GitHub bills each job separately, rounded up to whole minutes. Main isn't protec
 | `verify` on main | Each merge to main | 10 | about 9 | about 90 |
 | `merge-log` | Each merge to main | 1 | about 9 | about 9 |
 | **Total** | | | | **about 1,375 (69 %)** |
+
+Measured 2026-11-20 (whole-product check, ADR 0058): ready-PR `verify` 10.6 to 18.0 minutes (its API step 3.5 to 7.1), `e2e` 9.3 to 17.6, so the estimates of 10 and 20 above are low for verify and about right for e2e. The check adds about 45 seconds to verify. `verify` and `merge-log` on main haven't run since 2026-11-14, because squash commits carry the branches' `[skip ci]` lines (owner question Q9).
 
 The old design ran verify on every push. That cost about 285 × 10 = 2,850 minutes before any pull request, which is why only `fast` runs on branch pushes now.
 

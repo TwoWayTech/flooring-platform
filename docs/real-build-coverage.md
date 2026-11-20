@@ -1,6 +1,6 @@
 # Real-build coverage
 
-What the real product (api mode, the NestJS API and PostgreSQL) does today, item by item, against docs/product-spec/, docs/FEATURES.md and docs/demo-script.md. Written by the whole-product check (ADR 0058, session log docs/sessions/2026-11-16-1241-b-whole-product-check.md) on 2026-11-20, on main plus the stack up to PR #68.
+What the real product (api mode, the NestJS API and PostgreSQL) does today, item by item, against docs/product-spec/, docs/FEATURES.md and docs/demo-script.md. Written by the whole-product check (ADR 0058, session log docs/sessions/2026-11-16-1241-b-whole-product-check.md) on 2026-11-20, on main plus the stack up to PR #68, after the api-mode browser runs (default suite 68 passed; FC, DS 6 and PGM 9 passed).
 
 - **Done:** the item runs on the API end to end, through its screens in api mode, with API tests and, where it has a screen, api-mode e2e.
 - **Partly:** it runs on the API, but part of it still reads or writes DemoStore, has no api-mode e2e, or a new company can't reach it yet. What is missing is named.
@@ -13,8 +13,8 @@ The generated list `docs/coverage.md` holds the per-page and per-route facts thi
 
 | | Done | Partly | Missing | Not on the API by design |
 | --- | --- | --- | --- | --- |
-| Features in docs/FEATURES.md (72) | 38 | 23 | 1 | 10 |
-| Demo-script steps (19, 4 personas, 9 HR Suite steps, 5 extras: 37) | 21 | 14 | 0 | 2 |
+| Features in docs/FEATURES.md (72) | 39 | 21 | 1 | 11 |
+| Demo-script steps (19, 4 personas, 9 HR Suite steps, 5 extras: 37) | 22 | 12 | 0 | 3 |
 
 The real product's biggest gaps are not in single features but across them:
 
@@ -38,7 +38,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | --- | --- | --- | --- | --- |
 | `sales.quotes` | Partly | Quotes, rooms, status, convert to invoice (4 routes) | A new company can't quote (G2, G3); the API takes part cartons on a boxed line (F-m) | F1, `sales.spec.ts`, FS-6 |
 | `sales.quote-availability` | Done | Reads stock through `inventoryData` | No test names the feature; covered by the quote screens' reads | `docs/coverage.md` |
-| `sales.invoices` | Partly | Invoices, credit notes, void, write-off, sent, apply credit (9 routes) | The invoice page's installation scheduling stays on DemoStore (removed feature); commission split with a second person (F-t, to re-check now people come from `GET /company`) | F1, F5, `invoices.spec.ts`, DS-4 |
+| `sales.invoices` | Done | Invoices, credit notes, void, write-off, sent, apply credit, the commission split (9 routes) | The page also holds the removed installation scheduling's DemoStore calls, which never run; F-t closed (the split saves under the API's ids) | F1, F5, `invoices.spec.ts`, DS-4 |
 | `sales.payments` | Done | Payments, proof files, review, void, refunds (10 routes) | Settings → Payments' Reset to default reads DemoStore | `payments` integration, 20 api-mode specs |
 | `sales.customers` | Partly | Customers and addresses (3 routes) | Customer pickers on the dashboard, Sales, Inventory and roll pages read DemoStore's list (G5); a new company can't add one by hand until Localization exists (F-n, G2) | FA-4, FS-3 |
 | `sales.team` | Partly | `teamCommission` | `/sales` is mixed (roles list from DemoStore) | `sales.spec.ts` |
@@ -138,7 +138,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | --- | --- | --- | --- | --- |
 | `dashboard.store` | Partly | 14 reads on the API | 17 lists still from DemoStore (G5) | PGM-1, DS-1 |
 | `shell.company-switcher` | Partly | Companies from `/auth/context` | The switcher and palette list companies from DemoStore (G1) | `docs/coverage.md` |
-| `shell.view-as` | Partly | A screen preview | The API answers as the Owner during View as (DS-G15) | DS-G15 |
+| `shell.view-as` | Not by design | — | Demo only since PR #50: in api mode it isn't offered, because the API answers only for the signed-in person | DS-15 |
 | `shell.command-palette` | Done | Client-side over API data | Its company list as for the switcher | — |
 | `shell.tables`, `shell.addresses` | Done | Client-side | — | — |
 | `shell.presenter-guide`, `shell.network-simulation`, `demo.reset` | Not by design | — | Demo tools | — |
@@ -149,21 +149,21 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Step | Verdict | Summit (api mode) | New company | Gap |
 | --- | --- | --- | --- | --- |
-| 1 Dashboard | Partly | DS-1, PGM | — | G5 (17 DemoStore lists) |
+| 1 Dashboard | Partly | DS-1, PGM (loads for every persona, Sales included) | — | G5 (17 DemoStore lists) |
 | 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3, F-m |
 | 3 Deposit with proof | Done | F1 | FS-6 | — |
-| 4 Corrections | Partly | DS-4 (credit note) | — | F-t (re-check) |
+| 4 Corrections | Done | DS-4 (commission split and credit note) | — | — |
 | 5 Cut a roll | Done | F1 | — | — |
 | 6 Receivables | Partly | `sales.spec.ts` | — | G5 (customer pickers) |
 | 7 Purchasing | Done | F2 | FA-3, FS-6 | — |
 | 8 Contracts | Done | F5, DS-8 | MI-4 | — |
 | 9 Expenses | Done | F7, DS-9 | FA-6 | — |
 | 10 Business report | Done | DS-10, `reports.spec.ts` | FA-8 | F-a (by design) |
-| 11 Meetings | Partly | F6, `meetings.spec.ts` | FA-7 | Simulate reply on DemoStore |
+| 11 Meetings | Partly | F6, `meetings.spec.ts`, DS-GB (the Outbox on the API) | FA-7 | Simulate reply on DemoStore |
 | 12 HR inside Flooring | Done | F3, F4, DS-12 | MI-5 | — |
 | 13 Sales team | Partly | `sales.spec.ts` | — | `/sales` mixed |
 | 14 Data import | Done | `import.spec.ts` | FA-9, FS-5 (four invented CSV files) | — |
-| 15 View as Sales | Partly | DS-G15 | — | API answers as the Owner |
+| 15 View as Sales | Not by design | DS-15: not offered in api mode | — | demo tool (PR #50) |
 | 16 Security roles | Partly | DS-16 | FA-2 | no api-mode e2e of the roles page |
 | 17 Number format | Done | `settings.spec.ts` | FS-3 | — |
 | 18 Branding | Done | `settings-branding.spec.ts` | FS-3 | — |

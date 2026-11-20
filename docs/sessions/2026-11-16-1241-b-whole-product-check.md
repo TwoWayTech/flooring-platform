@@ -487,6 +487,15 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 - **F-g holds for PR #42 too:** `gh run list --branch main` still ends at `e2ff2ae` (2026-11-14); the squash merge `0042b89` started no run.
 - **Observation, not a finding:** Settings home refuses Sales, Purchasing, Warehouse, Installer and Employee, though page-gates.json lets them in. It is stricter than the gate, so nothing is exposed (decision 69).
 
+- **Resume results (2026-11-20, main plus PR #68's stack).**
+  - **Stages 1 and 2 again:** 225 routes (201 company, 20 session, 4 public). PM-2 agrees with the oracle on all 2,412 pairs (201 × 12 roles) and refuses all 201 on the wrong product's host. PM-5: the new settings routes each read their switch; `GET /company` and `GET /settings` read none, by design. **PM-6 and PM-7 clean: no leak, no scope problem** on the new screens' reads. MI-DEC: five new whole counts, one reused name (the currency code).
+  - **Stages 3 and 4 again:** every money equality still exact; FA's G3 narrowed (row 140).
+  - **FS (new):** the real setup script, settings, locations, CSV import, a purchase and a sale; the ledger agrees to the cent. G2 is confirmed by design (row 143): a company made by the script can't save Localization at all until provisioning seeds it.
+  - **Stages 6 and 7 again (browser):** the default suite 68 passed, 16 skipped; FC passed; DS 6 and PGM 9 passed after five pins were turned round because their gaps had closed.
+  - **Closed upstream, confirmed here:** F-s (Sales dashboard, PR #48), F-t (commission split, people from `GET /company`), G15 (View as is demo-only, PR #50), G17 and G18 (Number format and Branding on the API, parts 1 and 6), GB (bell and Outbox, PR #65), the four float uses' `invoice-stock.tsx` entry (gone from the code), `POST /suppliers/:id/status` now has an API test (F-q down to 5 routes, the outbox pair through a computed path).
+  - **Still open:** F-a, F-c, F-g, F-h, F-i, F-j, F-k, F-l, F-m, F-n (now only its words; the cause is G2), F-o, F-p, F-q, F-r, and gaps G1 to G7 (G3 narrowed to branches and products).
+  - **No new product bug.** The two "new" behaviours met (a Localization tab refused on a company without settings; stock issued only after a confirmed payment) are the product's documented rules.
+
 ## Fix PRs to make
 Product bugs the check found and pinned, not fixed on this branch (owner, 2026-11-20). Each is small and on its own branch from main; each test idea fails today and passes with the fix. Ordered by risk.
 
@@ -527,6 +536,20 @@ New at stage 0:
 
 - **Q10, permissions (F-j):** should the outbox get a `settings.outbox.manage` key for retry and cancel, so seeing the outbox and acting on it can be given separately? And is `hr.payroll.view` the intended key for opening a pay period (`POST /pay-periods`)?
 
+### Defaults the check took (2026-11-20)
+| # | Default until the owner decides |
+| --- | --- |
+| Q1 | The browser suites stay opt-in (`WHOLE_CHECK=1`), run before P13's full regression; no workflow change |
+| Q2 | No order taken; G2 (seed settings at provisioning, PR #51 Q4) is the one that blocks every new company first, then G3 (a branch route), G4, G1, G7 |
+| Q3 | P&L expenses stay before tax (as built); the check asserts the difference exactly |
+| Q4 | The failure messages say how to regenerate; no CLAUDE.md change |
+| Q5 | Harbor is not seeded in the api-mode database; G6 stays open |
+| Q6 | Turbo inputs only, no transit node |
+| Q7 | The helpers stay test-only and guarded; ADR 0058 stands in for a spec |
+| Q8 | The test helpers set both stamps; real deletion is P17's |
+| Q9 | Recorded only; the merge guard and repository settings are the owner's |
+| Q10 | The outbox keeps its one view key; `WRITE_WITH_VIEW_KEY` pins it |
+
 ## For STATUS
 Proposed lines; the orchestrating session decides and edits STATUS.
 - **Follow-up (CI, F-g):** push-triggered CI and the Merge log workflow haven't run on main since `e2ff2ae`/`bd9155d` (2026-11-14). Each squash merge's body carries the branch's `[skip ci]` subjects, and GitHub then skips the push run. Ten merges (PRs #32 to #41) have had no verify on main and no merge-log entry. Owner question Q9 (whole-product check session log).
@@ -550,6 +573,14 @@ Proposed lines; the orchestrating session decides and edits STATUS.
 
 - **Follow-up (rule 5 in the UI, F-s; with B1):** in api mode the dashboard fails for Sales ("This page could not load its data. [DecimalError] Invalid argument: undefined"): `use-dashboard-data.ts` runs `monthlyPnl` over invoices whose `cost` the API strips for a role without the cost key, and `dec(undefined)` throws. Compute the margin only for a viewer holding the key (or take it from the API), as for B1. Found by the whole-product check's page-gate matrix (PGM, opt-in), pinned in its `RUNTIME_MISMATCHES`.
 - **Follow-up (G5, F-t; with B4):** in api mode the invoice's Commission split dialog lists DemoStore's people (fixture ids such as `sm-usr-08`), so a share with a second person answers 400 "Invalid UUID" and only "Nobody" can be saved; the rep shows as "the sales rep". Read the people from the API (the users list moves with Settings → Users). Pinned by the whole-product check's DS-4 (opt-in).
+
+### For STATUS, resume (2026-11-20)
+These replace the lines above where they differ.
+- **Done (whole-product check, PR #43):** coverage list, route matrix, money integrity, a bare and a fresh company (FS: `pnpm db:provision-tenant`, settings, locations, sample CSV import, a purchase and a sale with the ledger agreeing), the browser suites, the report (docs/whole-product-check.md) and item-by-item coverage (docs/real-build-coverage.md); ADR 0058.
+- **Closed, remove from follow-ups:** F-s, F-t, G15, G17, G18 and GB (see "Resume results").
+- **Follow-up (G2, sharper):** a company made by the setup script can't save any Localization tab (409 `settings_missing`, by design), so it can't add a customer by hand or quote: seeding settings at provisioning (PR #51 Q4) is the first onboarding step.
+- **Follow-up (G3, narrower):** locations have routes now; a branch has none, so a new company can't add its first location; products only through the import.
+- **Fix PRs to make:** P1 to P10 above.
 
 ## Commands run
 | Stage | Command | Result |
@@ -653,6 +684,24 @@ Proposed lines; the orchestrating session decides and edits STATUS.
 | 7 | `heavy.sh check/api-e2e.sh noflag -- tests/e2e-api/check` (no flag) | 16 skipped (FC 1, DS 6, PGM 9), 3 s |
 | 7 | `heavy.sh check/api-e2e.sh e2e-default7` (the whole api-mode suite, no flag, as CI) | 31 passed, 19 skipped (16 check, F1, F2, F5), 2.0 min; ports 3000 and 4000 free after |
 | 7 | `check/scope.sh` | scope ok; in `packages/db/src` only `testing.ts` |
+| R | `git merge --no-ff --no-commit origin/main`; resolve `accounts.ts`; commit; then the same with `origin/feat/auth-passkey-screens`, `git checkout --theirs` for the 27 conflicted product and doc files after checking each main version is in #68's history | `8e5f189`, `f718961`; product paths equal #68's tree; `pnpm install --frozen-lockfile` (the lockfile changed) |
+| R | `pnpm turbo run typecheck --filter api --filter web --filter @workspace/db` | web failed on the scan's three-argument factory call (row 131), then exit 0 |
+| R | `vitest run tests/unit/coverage-list.test.ts tests/unit/page-gates.test.ts tests/unit/money-in-ui.test.ts`, five rounds of review, then `-u` | 10 failed at first (rows 130 to 135), then 16 passed |
+| R | `int.sh rm-0 apps/api test/route-matrix.int.test.ts --maxWorkers=3`, then `rm-u … -u`, `rm-a`, `rm-b` | 6 failed (rows 136, 137), then 19 passed each (108 s, 84 s, 83 s) |
+| R | `int.sh mi-0 apps/api test/money-integrity.int.test.ts test/new-company.int.test.ts`, `mi-1` | 8 failed (rows 138 to 141), then 23 passed |
+| R | `int.sh fs-0` to `fs-3 apps/api test/fresh-setup.int.test.ts` | FS-1 and FS-2 passed first time; then rows 143 and 144 and the reused names; 6 passed (22 s) |
+| R | `int.sh chk-a` on the four check files | 4 files, 48 passed, 88 s |
+| R | `int.sh fh-0 packages/db test/fresh-company-helpers.int.test.ts` | 3 passed, 23 s |
+| R | `mutate.sh M1` to `M11` | all 11 CAUGHT (rows 145 to 148); `git status` unchanged after each |
+| R | `gh run list` and `gh run view` (read only) for the 9.4 gate | ready-PR verify 10.6 to 18.0 min; no main run since 2026-11-14 |
+| R | `int.sh full-api apps/api --maxWorkers=3`, then with the four check files excluded | 52 files, 1,021 passed, 738 s; 48 files, 973 passed, 654 s |
+| R | `docker run … fp-e2e-worktree -p 5433:5432 postgres:16-alpine`; `pnpm db:seed` twice and `pnpm db:migrate` on :5433 | ready; seeded; exit 0 |
+| R | `pnpm --filter api build`; `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` | 37 s |
+| R | `pnpm lint`, `pnpm typecheck`, `pnpm test` (with `test:hooks`) | exit 0 each |
+| R | Ports given by the orchestrator; `api-e2e.sh e2e-default` (no flag) | 68 passed, 16 skipped, 6.3 min |
+| R | `WHOLE_CHECK=1 api-e2e.sh fc-ds`, `ds-a`, `ds-b`, `ds-c` | FC passed; DS failed on closed gaps F-t, G17/G18, G15, then 6 passed |
+| R | `WHOLE_CHECK=1 api-e2e.sh pgm-a`, then `pgm-sales` | 8 passed and Sales failed on the stale F-s entry; then passed |
+| R | read-only `psql` counts on 5433 | 0 live `e2efresh` companies, 0 databases; ports 3000 and 4000 free; the orchestrator told |
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 
@@ -665,9 +714,16 @@ The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.
 - **Stage 5** is done: the generated coverage list (`docs/coverage.md`, `page-coverage.json`; CV-1 to CV-8), the page gates (`page-gates.json`; PG-1 to PG-4), the money-in-UI scan (UI-1), the Turbo inputs and `.prettierignore`. 15 new web unit tests; `pnpm --filter web test` 244 passed in 4.2 s. G5 is listed page by page; F-o, F-p and F-q are new.
 - **Stage 6** is done: the test-only fresh-company helpers in `packages/db/src/testing.ts` (`provisionTestCompany`, `inviteTestOwner`, `retireTestCompany`, `sweepTestCompanies`) with `fresh-company-helpers.int.test.ts` (FH-1 to FH-3, 3 tests, 2–4 s), and the opt-in `tests/e2e-api/check/{opt-in.ts,fresh-company.spec.ts}` (FC-1 to FC-5, 1 test, 6–7 s on 5433). The default api-mode run passes with the spec skipped, nothing is left live on 5433, and `docs/coverage.md` is regenerated. New finding F-r; the G1 and Q8 lines are added under "For STATUS".
 - **Stage 7** is done: PR #42 had merged, so DS and PGM are built and no longer "waiting for PR #42". origin/main came in as `07b872b`. The opt-in `tests/e2e-api/check/demo-script.spec.ts` (DS, 6 tests, 31 to 37 s) and `page-gate-matrix.spec.ts` (PGM-1, 9 tests, 6.2 min) share `check/page-walk.ts`. `MUST_STRIP` moved to `apps/api/test/support/strippable.ts`, `INSTALLER_EMAIL` was added, and the config docblock has its `check/` paragraph. The coverage list now parks `fixme` specs (CV-9). Findings F-s and F-t are new; F-g holds for #42's merge.
-- **Next:** stage 8 (whole runs, the ten mutations, the 9.4 gate, the report). Its gate starts from row 116: the last verify of main's content took 20:18. The cited list for the report is row 115.
+- **Stage 8** is done (2026-11-20, resumed): merged main and PR #68's stack; regenerated the coverage list and both route snapshots; re-ran stages 1 to 7 against the new screens; added FS (`fresh-setup.int.test.ts`, the real setup script and four invented CSV files); 11 of 11 mutations caught; the 9.4 gate keeps tier B on (about +45 s per verify); `docs/whole-product-check.md`, `docs/real-build-coverage.md`, ADR 0058, the blueprint-delta row and the real-build-plan lines written. Whole runs: lint, typecheck and unit tests pass; the apps/api integration suite 1,021 passed; the api-mode suite 68 passed and 16 skipped; FC, DS 6 and PGM 9 passed.
+- **Stage 9:** the fresh security review and its summary below. The PR stays a draft: the owner marks it ready and merges (2026-11-20 instruction). STATUS and BRANCHES are the orchestrator's.
 
 ## Paused (2026-11-16 16:55 EET)
 - **Why:** the owner changed the queue from their phone at about 16:45. The order is now: the flows' bugs (B2, B3, B1, B4, each turning its flow back on), then the remaining screens on the API (GET /company first, then Settings, the bell and the Outbox, stock adjustments, installation jobs, a trial balance screen, the passkey screens with the QR code, and `today()` in the company's time zone), then this check, then a handoff without P13. The owner chose to pause this build and keep the draft rather than finish or close it.
 - **Where it stopped:** stages 0 to 7 are committed and pushed; the last commit is `7928549` (the demo-script walk and the page-gate matrix). Nothing was left uncommitted, no lock or server was left running, and the 5433 e2e container is untouched.
 - **To resume:** merge origin/main (it will hold the bug fixes and the moved screens), regenerate the coverage list, re-run stages 6 and 7 against the new screens, then stage 8 (whole runs, mutations, the gate, the report) and stage 9 (review, handoff, ready, merge). The owner's step 3 also asks for docs/real-build-coverage.md (done, partly done, missing) from docs/product-spec/, docs/FEATURES.md and docs/demo-script.md, a fresh company made with the setup script, and imported sample CSV data; check the plan covers each one before stage 8.
+
+## Resumed (2026-11-20)
+- **Who:** B (Claude), on the owner's laptop (Windows), worktree `C:devp-check`, under the orchestrating session.
+- **Base:** `origin/main` (`c8c2d1b`) merged as `8e5f189`, then `origin/feat/auth-passkey-screens` (PR #68, `2727cd9`) as `f718961` (row 128). Main and the `today()` branch are merged again when the owner says.
+- **Ports:** 3000 and 4000 were used only after the orchestrator gave them, and given back after the browser runs.
+- **Left running on purpose:** the check's 5433 container `fp-e2e-worktree` (Summit seeded, no live fresh company). Postgres on 5432 untouched.
