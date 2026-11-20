@@ -73,8 +73,9 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 | Web unit tests (vitest) | 69 files, 499 tests passed (new: webauthn WA1-10, qr-matrix QR1-3, passkeys-api PK1-15, demo-passkeys DP1-5; api-rereads classifies the 5 new methods) |
 | Prettier on changed files | clean |
 | API integration | not run: the API does not change (its mfa.int.test.ts already covers the rules) |
-| api-mode Playwright (`passkeys.spec.ts`, `login.spec.ts`) | written; not run yet: ports 3000/4000 are shared, waiting for the hand-over |
-| demo Playwright (`account-security.spec.ts`, screens list for a11y, responsive, console) | written; not run yet, same reason |
+| api-mode Playwright, `passkeys.spec.ts` + `login.spec.ts` (fresh PostgreSQL 16 container on 5434, throwaway secrets made in-process, seed twice then migrate, api and api-mode web builds, 1 worker) | **8 passed** (1.1 min), with Chromium's virtual authenticator |
+| api-mode Playwright, the whole suite (same container and builds, 1 worker) | **66 passed** (7.1 min) |
+| demo Playwright, 2 workers, both projects: `account-security`, `a11y`, `responsive`, `console` (the screens list, with `/account/security` in Flooring and HR), `login`, `shell`, `users` | **329 passed** (5.9 min) |
 
 ## For STATUS
 
@@ -98,3 +99,5 @@ Security review (six fresh read-only `security-reviewer` rounds on 29e8d42..HEAD
 ## Merge of the base branch
 
 - `git merge --no-ff origin/feat/inventory-stock-rules-api` (f3e9136: Stock rules through Settings parts 4b, 5 and 6) as d9d26eb: **no conflicts**, 42 files from the base, none of them this branch's files. ADR 0060 is still free on the base. After it: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck` and `pnpm test` all green (6/6, 6/6, 5/5). No API file conflicted, so the API integration suites were not run; no code was resolved by hand, so no new security review.
+
+E2E ran after the merge of f3e9136, at 503f99a, once the ports were handed over. Servers stopped, container removed, ports 3000, 4000 and 5434 free afterwards. No failures, so no product change and no new review.
