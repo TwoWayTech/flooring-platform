@@ -24,9 +24,12 @@ describe("the commission split dialog's shares (F-o, rule 6)", () => {
 
 describe("the split dialog's typed share (security review, round 1)", () => {
   it("says what is wrong with a share that isn't a percent, before any decimal maths", () => {
-    for (const typed of ["", ".", "1.2.3", "150", "33.333"]) {
-      expect(sharePctProblem(typed), typed).toBe("Enter the rep's share as a percent from 0 to 100, such as 60.");
+    for (const typed of ["", ".", "1.2.3", "150", "33.333", "0", "100"]) {
+      expect(sharePctProblem(typed), typed).toBe(
+        "Enter the rep's share as a percent above 0 and below 100, such as 60.",
+      );
     }
-    for (const typed of ["60", "66.6", "60.00000000", "100", "0"]) expect(sharePctProblem(typed), typed).toBeNull();
+    for (const typed of ["60", "66.6", "60.00000000", "99.99", "0.01"])
+      expect(sharePctProblem(typed), typed).toBeNull();
   });
 });

@@ -38,11 +38,11 @@ export function splitShown(
 
 /**
  * Why a typed share can't be sent, or null: the API takes a percent of up to two decimals
- * (`SHARE_PERCENT_TEXT`), and the rest is worked out from it, so it is at most 100.
+ * (`SHARE_PERCENT_TEXT`), and each of two shares must be above 0 (sales rule 39), so it is below 100.
  */
 export function sharePctProblem(pct: string): string | null {
   const typed = pct.trim();
-  return SHARE_PERCENT_TEXT.test(typed) && dec(typed).lte(100)
+  return SHARE_PERCENT_TEXT.test(typed) && dec(typed).gt(0) && dec(typed).lt(100)
     ? null
-    : "Enter the rep's share as a percent from 0 to 100, such as 60.";
+    : "Enter the rep's share as a percent above 0 and below 100, such as 60.";
 }
