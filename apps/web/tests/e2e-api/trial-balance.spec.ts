@@ -6,6 +6,21 @@ import { ACCOUNTANT_EMAIL, MANAGER_EMAIL, SALES_EMAIL, signInAndEnrol, signInAs 
 /** The control database the API uses (global-setup.ts checks it is set). */
 const CONTROL_URL = process.env.CONTROL_DATABASE_URL ?? "";
 
+/** One account of GET /ledger/trial-balance's answer, as far as the spec reads it. */
+interface Row {
+  name: string;
+  type: string;
+}
+
+/** Each kind of account and the heading its group shows. */
+const GROUPS = [
+  ["asset", "Assets"],
+  ["liability", "Liabilities"],
+  ["equity", "Equity"],
+  ["revenue", "Revenue"],
+  ["expense", "Expenses"],
+] as const;
+
 /** Waits for the trial balance's answer, through any day. */
 function trialBalanceResponse(page: Page) {
   return page.waitForResponse((r) => new URL(r.url()).pathname === "/api-proxy/ledger/trial-balance");
@@ -52,13 +67,15 @@ test.describe("trial balance (api mode)", () => {
     ]);
 
     const table = page.getByRole("region", { name: "Trial balance table" });
+    let rows: Row[] = [];
     await test.step("opens from the hub with its totals and whether the books balance", async () => {
       const answer = trialBalanceResponse(page);
       await page.getByRole("navigation", { name: "Reports" }).getByRole("button", { name: "Trial balance" }).click();
       const response = await answer;
       expect(response.status()).toBe(200);
       expect(response.headers()["cache-control"] ?? "").toContain("no-store");
-      const body = (await response.json()) as { balanced: boolean; rows: unknown[] };
+      const body = (await response.json()) as { balanced: boolean; rows: Row[] };
+      rows = body.rows;
       expect(page.url()).toContain("report=trial-balance");
       await expect(table.getByRole("rowheader", { name: "Total", exact: true })).toBeVisible();
       await expect(page.getByText(body.balanced ? "Balanced" : "Out of balance", { exact: true })).toBeVisible();
@@ -67,9 +84,16 @@ test.describe("trial balance (api mode)", () => {
 
     await test.step("shows every account when asked, grouped by kind", async () => {
       await page.getByRole("switch").click();
-      for (const group of ["Assets", "Liabilities", "Equity", "Revenue", "Expenses"])
-        await expect(table.getByRole("rowheader", { name: group, exact: true })).toBeVisible();
-      await expect(table.getByRole("rowheader", { name: "Cash and Bank" })).toBeVisible();
+      // Accounts are made by the first posting (ADR 0039), so a fresh database has none yet.
+      if (rows.length === 0) {
+        await expect(table.getByText("Nothing has been recorded in the books through this day.")).toBeVisible();
+        return;
+      }
+      for (const [type, group] of GROUPS) {
+        const heading = table.getByRole("rowheader", { name: group, exact: true });
+        await expect(heading).toHaveCount(rows.some((row) => row.type === type) ? 1 : 0);
+      }
+      for (const row of rows) await expect(table.getByRole("rowheader", { name: row.name, exact: true })).toBeVisible();
     });
 
     await test.step("reads the books through an earlier day", async () => {
