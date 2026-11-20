@@ -70,6 +70,12 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 | 2 | `git grep -n localizationProblem -- apps packages` | only WS1's assertion that it is gone |
 | 2 | commit `35d2b8a` (the 6 product files; Prettier reformatted two of the new tests) | pushed after the mutations |
 | 2 | mutations WM1 to WM6 (`settings3b/mutate.mjs` in the scratchpad: a saved copy restored after each) | all caught, all restored, tree clean (below) |
+| 3 | `netstat -ano | grep -E ":3000 |:4000 " | grep LISTEN` before and after every e2e run | nothing listening each time |
+| 3 | `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build`, `pnpm --filter api build` | both exit 0 |
+| 3 | `node <scratchpad>/e2e-api.mjs C:/dev/fp-3b tests/e2e-api/settings.spec.ts tests/e2e-api/settings-localization.spec.ts tests/e2e-api/settings-region-currency.spec.ts` (trimmed, plan S5; `settings-tax.spec.ts` waits for the whole suite) | 7 passed (1.3m) |
+| 3 | `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build` | exit 0 |
+| 3 | `apps/web: E2E_WORKERS=2 npx playwright test` settings, localization, tax, number-format, branding, square-feet, quote, invoice-lifecycle, audit, roles, users, presenter-guide, expenses, payments `--project=flooring` | 56 passed (1.2m) |
+| 3 | the same for settings, localization, hr, hr-workspace, branding, number-format, roles, users, audit `--project=hr` (only settings.spec.ts holds `@hr` tests among them) | 8 passed (10.8s) |
 
 ### Mutations (stage 2, on the committed change `35d2b8a`)
 
@@ -86,6 +92,10 @@ WM6 (3a's TM40: refuse every pricesInclude change) caught by TD9                
 
 Red for the stated reasons, then green; every mutation caught. No screen, flow or e2e calls the whole-section save; only unit tests did.
 
+## Stage 3: outcome
+
+Every settings page of both projects, Localization and tax, Sales tax, Sales and documents' Reset to default, the quote builder, invoices and the audit log pass in demo mode, and the settings, localization and region-currency specs pass in api mode on this branch's build. No e2e test changed (D41).
+
 ## What's left
 
-Stages 3 to 5.
+Stages 4 and 5.
