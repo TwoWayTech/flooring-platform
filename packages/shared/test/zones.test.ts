@@ -201,6 +201,43 @@ describe("dayInZone: the company's day (ADR 0051, the company's day on the web)"
     }
   });
 
+  it("agrees with Intl for UTC and zones with half-hour, 45-minute and southern summer time offsets, at their switches", () => {
+    const zones = [
+      "UTC",
+      "Asia/Kolkata",
+      "Asia/Kathmandu",
+      "Australia/Lord_Howe",
+      "America/St_Johns",
+      "Pacific/Chatham",
+    ];
+    // Every 13 minutes across a year, so each zone's summer time switches are crossed close up.
+    for (const zone of zones) {
+      const intl = new Intl.DateTimeFormat("en-CA", {
+        timeZone: zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      for (let minute = 0; minute < 365 * 24 * 60; minute += 13) {
+        const moment = new Date(Date.UTC(2026, 0, 1) + minute * 60_000);
+        expect(dayInZone(moment, zone), `${zone} ${moment.toISOString()}`).toBe(intl.format(moment));
+      }
+    }
+  });
+
+  it("keeps the day until the last millisecond before the zone's midnight", () => {
+    expect(dayInZone(new Date("2026-11-21T06:59:59.999Z"), "America/Denver")).toBe("2026-11-20");
+    expect(dayInZone(new Date("2026-11-20T23:59:59.999Z"), "UTC")).toBe("2026-11-20");
+  });
+
+  it("reads a year below 100 as that year, not as 19xx", () => {
+    expect(dayInZone(new Date("0050-06-01T12:00:00Z"), "UTC")).toBe("0050-06-01");
+  });
+
+  it("throws a RangeError for an invalid date, as Intl does", () => {
+    expect(() => dayInZone(new Date(Number.NaN), "America/Denver")).toThrow(RangeError);
+  });
+
   it("throws for a zone Intl doesn't know, which isKnownTimeZone reports", () => {
     expect(() => dayInZone(new Date(), "Mars/Olympus_Mons")).toThrow(RangeError);
     expect(isKnownTimeZone("Mars/Olympus_Mons")).toBe(false);

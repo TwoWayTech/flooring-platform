@@ -31,13 +31,6 @@ export function notFound(what: string): NotFoundException {
   return new NotFoundException({ code: "not_found", message: `This ${what} no longer exists.` });
 }
 
-/** Today in a time zone, as the shared rules compare dates (`yyyy-MM-dd`). */
-export function todayIn(timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
-}
-
 /** The company's time zone and today in it: the business day every sales date is read in. */
 export interface CompanyClock {
   /** Today in the company's time zone, `yyyy-MM-dd`. */

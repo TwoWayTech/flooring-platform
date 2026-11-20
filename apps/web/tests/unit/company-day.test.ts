@@ -111,15 +111,25 @@ describe("CompanyDay, with the browser in Tokyo", () => {
     expect(day.today()).toBe("2026-11-19");
   });
 
-  it("CD4 never learns a zone Intl doesn't know, and keeps the last good one", () => {
+  it("CD4 never learns a zone Intl doesn't know, and drops an earlier company's zone for it", () => {
     const day = new CompanyDay();
     at(DENVER_EVENING);
     day.learn("Mars/Olympus_Mons");
     day.learn("");
     expect(day.today()).toBe("2026-11-21");
     day.learn("America/Denver");
-    day.learn("Mars/Olympus_Mons");
     expect(day.today()).toBe("2026-11-20");
+    // Another company's answer with a zone this browser doesn't know: the browser's day, never Denver's.
+    day.learn("Mars/Olympus_Mons");
+    expect(day.today()).toBe("2026-11-21");
+  });
+
+  it("CD6 forgets the zone when the company closes", () => {
+    const day = new CompanyDay();
+    day.learn("America/Denver");
+    at(DENVER_EVENING);
+    day.forget();
+    expect(day.today()).toBe("2026-11-21");
   });
 
   it("CD5 keeps one day per client: two clients never share a zone", () => {
@@ -179,6 +189,27 @@ describe("the api-mode client's today()", () => {
       await expect(fake.client.getWorkspace()).rejects.toThrow();
       at(DENVER_EVENING);
       expect(fake.client.today()).toBe("2026-11-20");
+    });
+
+    it("AD7 a switch to a company whose zone the browser doesn't know gives the browser's day, not the last company's", async () => {
+      let zone = "America/Denver";
+      const fake = fakeApi({}, () => ({ status: 200, body: companyAnswer(zone) }));
+      await fake.client.getWorkspace();
+      zone = "Mars/Olympus_Mons";
+      await fake.client.getWorkspace();
+      at(DENVER_EVENING);
+      expect(fake.client.today()).toBe("2026-11-21");
+    });
+
+    it("AD8 leaving for the platform pages forgets the zone and closes the demo's company too", async () => {
+      let closed = 0;
+      const fake = fakeApi(served("America/Denver"), undefined, { closeCompany: () => void closed++ });
+      await fake.client.getWorkspace();
+      fake.client.closeCompany();
+      at(DENVER_EVENING);
+      expect(fake.client.today()).toBe("2026-11-21");
+      expect(closed).toBe(1);
+      expect(fake.calls()).toEqual(["GET /company"]);
     });
   });
 

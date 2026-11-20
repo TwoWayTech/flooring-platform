@@ -55,11 +55,17 @@ function formatter(zone: string): Intl.DateTimeFormat {
   return made;
 }
 
-/** The wall clock a zone shows at an instant, read as if it were UTC, in milliseconds. */
+/**
+ * The wall clock a zone shows at an instant, read as if it were UTC, in milliseconds. Built with
+ * `setUTCFullYear`, because `Date.UTC` reads a year 0 to 99 as 1900 to 1999 (security review, round 1).
+ */
 function wallClockAt(instantMs: number, zone: string): number {
   const parts = formatter(zone).formatToParts(new Date(instantMs));
   const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value);
-  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  const wall = new Date(0);
+  wall.setUTCFullYear(get("year"), get("month") - 1, get("day"));
+  wall.setUTCHours(get("hour"), get("minute"), get("second"), 0);
+  return wall.getTime();
 }
 
 /** The zone's offset from UTC at an instant, in milliseconds (negative west of Greenwich). */

@@ -70,6 +70,7 @@ const CASES = {
   getCompanyStanding: read((c) => c.getCompanyStanding()),
   getWorkspace: read((c) => c.getWorkspace()),
   today: local((c) => c.today()),
+  closeCompany: local((c) => c.closeCompany()),
   whoAmI: read((c) => c.whoAmI()),
   getSettings: read((c) => c.getSettings()),
   updateSettings: write((c) => c.updateSettings("numbers", defaultNumberSettings())),
@@ -243,7 +244,7 @@ describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
     expect(READS.length + WRITES.length).toBe(158);
     expect(WRITES).toHaveLength(113);
-    expect(LOCALS.map((c) => c.name)).toEqual(["today"]);
+    expect(LOCALS.map((c) => c.name).sort()).toEqual(["closeCompany", "today"]);
   });
 
   it("sends nothing and asks no re-read for a method that answers in the browser", async () => {

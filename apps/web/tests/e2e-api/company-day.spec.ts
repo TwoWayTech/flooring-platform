@@ -7,7 +7,9 @@ import { assertSameCompanyDay, companyToday, PDF_PROOF } from "./flows/kit";
  * runs on Kiritimati (UTC+14), on the far side of the date line from Summit's Denver, so for most of
  * Denver's day the browser is already on Denver's tomorrow. A new expense must still default to
  * Denver's today, the day `GET /company`'s `company.timeZone` gives, and the API must accept it:
- * before, the form defaulted to the browser's day and the API refused it as "in the future".
+ * before, the form defaulted to the browser's day and the API refused it as "in the future". From
+ * midnight to 03:00 in Denver (04:00 in summer) Kiritimati is on the same day, so a run then proves
+ * nothing new; the annotation records both days. The unit tests (`company-day.test.ts`) fix the clock.
  */
 test.use({ timezoneId: "Pacific/Kiritimati" });
 

@@ -15,15 +15,21 @@ export function browserDay(now: Date = new Date()): string {
  * The zone is learned from every `GET /company` answer (`company.timeZone`, read only since Settings
  * part 2b) and the day is worked out on every call from the clock, so a tab left open rolls over at
  * the company's midnight. Until a zone is known (the sign-in and platform pages; the shell opens no
- * company screen before `GET /company` answers) it is the browser's day, as before. A zone Intl
- * doesn't know is never learned, so `today()` can't throw while a screen renders.
+ * company screen before `GET /company` answers) it is the browser's day, as before. An answer whose
+ * zone Intl doesn't know, and leaving the company for the platform pages, go back to the browser's
+ * day rather than keep another company's zone (security review, round 1), so `today()` never throws.
  */
 export class CompanyDay {
   private zone: string | null = null;
 
-  /** Keeps the company's zone from a `GET /company` answer; an unknown zone leaves the last one. */
+  /** Keeps the company's zone from a `GET /company` answer; a zone Intl doesn't know means none. */
   learn(zone: string): void {
-    if (isKnownTimeZone(zone)) this.zone = zone;
+    this.zone = isKnownTimeZone(zone) ? zone : null;
+  }
+
+  /** Drops the zone when no company is open (the platform pages), so the browser's day applies. */
+  forget(): void {
+    this.zone = null;
   }
 
   /** Today, "YYYY-MM-DD", in the company's zone once known, else in the browser's. */
