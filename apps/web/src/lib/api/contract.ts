@@ -871,14 +871,23 @@ export interface ApiClient {
    * `getCompany()`'s.
    */
   getWorkspace(): Promise<WorkspaceFacts>;
-  /** The open company's settings. */
+  /**
+   * The open company's settings. In api mode the sections in `API_SETTINGS_SECTIONS` come from
+   * `GET /settings`, cut to what the person reads (ADR 0059); the rest are still DemoStore's.
+   */
   getSettings(): Promise<CompanySettings>;
-  /** Replaces one settings section and audits the change. */
+  /**
+   * Replaces one settings section and audits the change. In api mode a served section is
+   * `PUT /settings/<section>`; other sections stay on DemoStore.
+   */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
 
-  /** The company's original settings, for Reset to default on settings pages (spec A4). */
+  /**
+   * The company's original settings, for Reset to default on settings pages (spec A4). Still
+   * DemoStore's in api mode: the fixture's originals, which the API was seeded with (ADR 0059 D7).
+   */
   getDefaultSettings(): Promise<CompanySettings>;
-  /** Restores one settings section to the company's original values and audits it. */
+  /** Restores one settings section to the company's original values and audits it. No screen calls it; DemoStore only. */
   resetSettings(section: keyof CompanySettings): Promise<CompanySettings>;
 
   /** Records of a collection, limited to the viewer's data scope. */

@@ -1,6 +1,6 @@
 "use client";
 
-import type { PaymentSettings } from "@workspace/shared";
+import { paymentSettingsProblem, type PaymentSettings } from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
 import { Switch } from "@workspace/ui/components/switch";
@@ -70,7 +70,9 @@ function PaymentsSection({ draft, setDraft, changed }: SectionProps<PaymentSetti
 
 /**
  * Settings: Payments (spec Appendix A): whether payments wait for a second person, above which
- * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes.
+ * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes. These are
+ * fraud controls over money in and out, so saving asks for a step-up code once the shared rule has
+ * passed the draft, and a refused value never costs one (ADR 0059 D5).
  */
 export function PaymentsSettingsPage() {
   const can = useCan();
@@ -82,10 +84,12 @@ export function PaymentsSettingsPage() {
     <Panel bodyClassName="flex flex-col gap-8">
       <SettingsForm
         showTitle={false}
+        stepUp
         title="Payments"
         description="The two-person check on customer payments, small write-offs, and payment and refund numbering."
         initial={settings.payments}
         defaults={defaults.data.payments}
+        problem={paymentSettingsProblem}
         onSave={(payments) => api.updateSettings("payments", payments).then(() => {})}
       >
         {(draft, setDraft, changed) => <PaymentsSection draft={draft} setDraft={setDraft} changed={changed} />}

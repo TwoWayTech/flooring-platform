@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dec, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT } from "../src";
+import { dec, MONEY_TEXT, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT } from "../src";
 
 /** Each text with the pattern's verdict, so a failure names the text. */
 function verdicts(pattern: RegExp, texts: readonly string[]): Record<string, boolean> {
@@ -110,5 +110,15 @@ describe("decimal text (B6)", () => {
     ];
     for (const [a, b] of same) expect(sameOptionalDecimal(a, b), `${a} and ${b}`).toBe(true);
     for (const [a, b] of different) expect(sameOptionalDecimal(a, b), `${a} and ${b}`).toBe(false);
+  });
+});
+
+/** Settings amounts (ADR 0059): plain unsigned money with at most two decimals, as typed and stored. */
+describe("money text (Settings part 1)", () => {
+  it("R9 MONEY_TEXT takes plain money and nothing a number parser would also read", () => {
+    const good = ["0", "5.00", "1000.5", "999999999999.99"];
+    const bad = ["12.", ".5", "-1", "1e3", " 1", "1,000", "1234567890123", "1.234", "+1", "0x10", ""];
+    expect(verdicts(MONEY_TEXT, good)).toEqual(all(good, true));
+    expect(verdicts(MONEY_TEXT, bad)).toEqual(all(bad, false));
   });
 });

@@ -27,17 +27,17 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Open Security roles | `settings.roles.view` or `settings.roles.manage` | Owner | `SETTINGS_MENU`, `PageGate`, `RolesPage` |
 | Create, duplicate, edit, reset, delete a role | `settings.roles.manage` | Owner | `DemoStore.saveRole`, `resetRole` (through `saveRole`), `deleteRole` |
 | View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx`, with the rules in `apps/web/src/lib/view-as.ts`. Demo only, for an Owner or someone who manages roles; in api mode not offered (Real build, "The shell on the API") |
-| Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `settingsPermissions` in `apps/web/src/lib/api/demo/permission-rules.ts` |
-| Change branding | `settings.branding.manage` | Owner | `updateSettings` |
-| Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings` |
-| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage` for the tabs; `updateSettings` for the save |
-| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateSettings` for the save |
-| Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings` |
-| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation`; `updateSettings` for section `inventory` |
-| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings` |
-| Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings` |
-| Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings` |
-| Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings`; `apps/web/src/lib/api/demo/notification-actions.ts` |
+| Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/profile` (ADR 0059). Data scope `all` |
+| Change branding | `settings.branding.manage` | Owner | `updateSettings`. Data scope `all` |
+| Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings`. On the API, `PUT /settings/numbers` (ADR 0059). Data scope `all` |
+| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage` for the tabs; `updateSettings` for the save. Data scope `all` |
+| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateSettings` for the save. Data scope `all` |
+| Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
+| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation`; `updateSettings` for section `inventory` (data scope `all`) |
+| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval (ADR 0059); shared costs stay on `updateSettings` until their part. Data scope `all` |
+| Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings`. Data scope `all` |
+| Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings`. Data scope `all` |
+| Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings` (data scope `all`); `apps/web/src/lib/api/demo/notification-actions.ts` |
 | See every Outbox row | `settings.outbox.view` | Owner | `listOutbox` in `notification-actions.ts` |
 | Read the audit log | `settings.audit.view` | Owner, Manager, Accountant, HR manager | `AuditLogPage` in `apps/web/src/features/settings/audit-log-page.tsx` |
 | Read the company's billing (plan, period, limits; read only) | None: the Owner only | Owner | `BillingPage` in `apps/web/src/features/settings/billing/billing-page.tsx`, opened through the `ownerOnly` menu rule (`itemAllows` in `apps/web/src/products/index.ts`). `DemoStore.getCompanyBilling`; on the API, `GET /billing` (ADR 0054) |
@@ -337,7 +337,7 @@ stateDiagram-v2
 
 **View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`. A stored choice applies only to someone who may view as (`viewAsRoleFor` in `apps/web/src/lib/view-as.ts`): when someone who may not view as signs in on the same tab, the shell opens as that person and the stored choice is cleared. The choice is kept per company, not per person, so another person who may view as and signs in on the same tab sees it, with its banner and "Stop viewing as". In api mode View as is not offered, because the API answers for the signed-in person only (Real build, "The shell on the API").
 
-**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. `DemoStore.resetSettings` exists, but no screen calls it.
+**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. A refused save shows its message in a toast and keeps the draft, with or without a step-up (`saveSection` in `apps/web/src/features/settings/form/save-section.ts`). `DemoStore.resetSettings` exists, but no screen calls it.
 
 **Change company access.** Platform admin, Company. `AccessEditor` in `apps/web/src/features/admin/access-editor.tsx`, loaded by `company-access-page.tsx`, edits modules, ceiling, user limit and branch limit, with a live preview. Save access sends only the parts that changed through `updatePlatformCompanyAccess`. It applies at once. A ticked Users, Security roles or Audit log key can't be unticked ("Every company keeps this permission"), and the shared check runs before anything is sent. In api mode it asks for a step-up first and reads the company again after the save, and the platform `support` role sees the page read only (see Real build).
 
@@ -422,20 +422,22 @@ Formulas below are copied from the code.
    | `bonuses` | `hr.payroll.approve` |
    | Every other collection | None. Written only by domain actions |
 
-7. **Settings sections.** `SETTINGS_PERMISSIONS` in `permission-rules.ts`.
+7. **Settings sections.** `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`, which DemoStore and the API both read (ADR 0059). Each section names the keys that save it (any one), the feature switch of the page that saves it, the module whose absence refuses the save, and the audit label. Payments is in `core` although its key is a `platform` key: the payments feature belongs to Flooring, and `/settings/accounting` takes the same key with module `core`.
 
-   | Section | Keys, any of |
-   | --- | --- |
-   | `branding` | `settings.branding.manage` |
-   | `localization` | `settings.localization.manage`, `settings.tax.manage` |
-   | `numbers` | `settings.numbers.manage` |
-   | `profile` | `settings.company.manage` |
-   | `payments` | `settings.payments.manage` |
-   | `inventory` | `settings.locations.manage` |
-   | `expenses`, `sharedCosts` | `settings.expenses.manage` |
-   | `hr` | `settings.hr.manage` |
-   | `meetings` | `settings.meetings.manage` |
-   | `email` | `settings.notifications.manage` |
+   | Section | Keys, any of | Feature | Module |
+   | --- | --- | --- | --- |
+   | `branding` | `settings.branding.manage` | `settings.branding` | `platform` |
+   | `localization` | `settings.localization.manage`, `settings.tax.manage` | `settings.localization` | `platform` |
+   | `numbers` | `settings.numbers.manage` | `settings.number-format` | `platform` |
+   | `profile` | `settings.company.manage` | `settings.company` | `platform` |
+   | `payments` | `settings.payments.manage` | `sales.payments` | `core` |
+   | `inventory` | `settings.locations.manage` | `inventory.locations` | `core` |
+   | `expenses`, `sharedCosts` | `settings.expenses.manage` | `finance.expenses` | `core` |
+   | `hr` | `settings.hr.manage` | `settings.hr` | `hr` |
+   | `meetings` | `settings.meetings.manage` | `settings.meetings` | `meetings` |
+   | `email` | `settings.notifications.manage` | `settings.notifications` | `platform` |
+
+   `updateSettings` checks, in this order, the same as the API: the module ("This part of the product is not switched on for your company."), the keys (the role message), the switch ("This feature is switched off."), data scope `all` ("Company settings cover the whole company."), then the section's content rules (`settingsSectionProblem` in `packages/shared/src/settings/section-rules.ts`). The `localization` keys are the demo's whole-section rule; API routes go per tab.
 
 8. **Private collections.** `PRIVATE_COLLECTIONS` in `store.ts`. `list` returns an empty array without the key.
 
@@ -536,7 +538,7 @@ Formulas below are copied from the code.
 
 22. **View as limits saves.** `granter` in `store.ts` uses `viewerAccess` with the viewed role, so saves are limited too. `scopeSubject` in `scope.ts` borrows the first active user who holds the role, so "own" means that persona's records. The audit entry still names the real person.
 
-23. **Step-up.** `StepUpDialog` in `apps/web/src/components/step-up-dialog.tsx` accepts `/^\d{6}$/`. It guards: save role, change a user's roles, reset MFA, and the Currency and Sales tax tabs (`stepUp: true` in `apps/web/src/features/settings/localization/localization-page.tsx`). With `auth.step-up` off it confirms at once.
+23. **Step-up.** `StepUpDialog` in `apps/web/src/components/step-up-dialog.tsx` accepts `/^\d{6}$/`. It guards: save role, change a user's roles, reset MFA, the Currency and Sales tax tabs (`stepUp: true` in `apps/web/src/features/settings/localization/localization-page.tsx`), and saving Settings → Payments (`stepUp` on the form in `apps/web/src/features/settings/payments/payments-page.tsx`; on the API `PUT /settings/payments` always needs it, ADR 0059). With `auth.step-up` off it confirms at once in the demo.
 
 24. **Effective access preview.** `AccessPreview` in `apps/web/src/components/access-preview.tsx` runs `resolveAccess` for a role or a person against a ceiling and modules. The platform admin passes the draft, so the result shows before saving. It lists pages, actions, sensitive fields and data scope.
 
@@ -562,9 +564,11 @@ Formulas below are copied from the code.
 
     A value that rounds to zero at the shown precision has no sign. `displayDecimals` clamps a per-column change to the same limits.
 
+    The number format keeps the company's own locale and currency: a save that changes either is refused (`numberSettingsProblem` in `packages/shared/src/settings/section-rules.ts`), compared with the company's stored format or, when none is stored, the US pack's `defaultNumberSettings()`. No page edits them.
+
 27. **Brand color.** `checkBrandColor` in `packages/shared/src/color.ts`. The color must be 6-digit hex, and `contrastRatio(hex, NEUTRALS.light.surface)` must be at least 3. `BrandingPage` passes this as `canSave`. A logo may be up to 300 KB (`MAX_LOGO_BYTES`) and is stored as a data URL.
 
-28. **Company profile.** `ProfileSchema` in `apps/web/src/features/settings/company-profile-page.tsx`. Legal name required. EIN matches `^\d{2}-\d{7}$`. Phone has at least 7 characters. Valid email. Street and city required. State is a US code. ZIP matches `ZIP_PATTERN`. The store does not repeat these checks.
+28. **Company profile.** `companyProfileProblem` in `packages/shared/src/settings/section-rules.ts`, run by DemoStore and the API; the page's `ProfileSchema` in `apps/web/src/features/settings/company-profile-page.tsx` builds its inline checks from the same patterns and `PROFILE_MESSAGES`. Legal name required. EIN matches `^\d{2}-\d{7}$`. Phone has at least 7 characters. Email matches `EMAIL_TEXT`. Website is empty or `http://` or `https://` (`WEBSITE_TEXT`). Street and city required. State is a US code. ZIP matches `ZIP_PATTERN`.
 
 29. **Locations.** `saveLocation` in `store.ts`. A location holding stock cannot become a showroom. A showroom cannot be the default. One warehouse must stay the default. Saving a new default clears the old one.
 
@@ -874,7 +878,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. A status set on the console's Status tab (ADR 0056) shows in the console and its audit log only: the company keeps working on its own side and stays on the sign-in list. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", parts 2 and 4.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
 - **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
-- **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_PERMISSIONS` accepts either key. Only the tabs separate them.
+- **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_SECTIONS` accepts either key. Only the tabs separate them. Settings part 3 on the API separates them per tab (ADR 0059, Later parts).
 - **Most sensitive fields are hidden by the screens alone.** Product cost, margin and credit limit stay in the records `list` returns. Only pay rate and contract line estimated cost are removed by the store.
 - **The audit log is not a private collection.** `list("audit")` answers any viewer. Only the page checks `settings.audit.view`.
 - **`useCanViewAs` reads a role's raw permissions**, not the effective ones, so it ignores the ceiling. The View as banner's note reads raw permissions as well.
@@ -882,12 +886,15 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Fourteen permission keys are never checked.** They are listed under Permission keys.
 - **Installation is hidden, not removed.** Its 8 keys stay in the catalog, the role templates and the ceilings. Summit still has the module. `visibleModules` hides it from the matrix and the access page.
 - **`inventory.stock.adjust` and `inventory.stock.approve` have no page.** `inventory.adjustments` is removed. The Stock rules form on `/settings/locations` still shows its threshold.
-- **Settings are not validated by the store.** `updateSettings` stores the section as given. Validation is in the forms.
+- **Profile, number format, payments and expense approval are validated by the shared rules in both modes** (`settingsSectionProblem`; ADR 0059), and the overtime rule of `localization` too. Other sections are validated by their forms until their part moves to the API.
+- **A role with a scope narrower than the whole company can't save settings,** in either mode, and neither can View as such a role.
+- **A refused settings save shows its message and keeps the draft,** on every settings page, with or without a step-up.
+- **Amounts on Payments and Expenses** are plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign or bare point) or empty, and the payment and refund prefixes must differ (refunds have no unique number index).
 - **A section is replaced whole.** Two people editing different tabs of `localization` would overwrite each other. The demo has one user at a time.
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
-## Real build (ADR 0051, ADR 0052, ADR 0053, ADR 0054 and ADR 0056)
+## Real build (ADR 0051, ADR 0052, ADR 0053, ADR 0054, ADR 0056 and ADR 0059)
 
 Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. Part 2 (ADR 0056) adds plans as data and suspend, reinstate and cancel, behind the new switch `admin.billing`. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052, ADR 0053 and ADR 0056)", and the draft spec is docs/specs/platform-admin.md.
 
@@ -931,12 +938,23 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **A refused first load.** When `GET /company` is refused before the app has opened (a disabled member, a role that needs two-step sign-in without a factor, the company under maintenance, unavailable or locked), the app shows one full page instead: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's own words. Both offer Try again and Sign out. A later refused re-read keeps the last data, and the page shows its own error.
 - **Settings → Users** shows the API's branches in its Branch column and invite dialog (Invite a user, above). **Settings → Locations** still reads its warehouses and their branch names from the demo until Locations moves.
 
+**Settings on the API, part 1 (ADR 0059):**
+- **Who reads what.** On every full page load, after every write the server answered, and on the invoice and quote pages, the app asks `GET /settings` with `GET /company`. Every member gets the company profile (printed on documents) and the number format (every number on screen). The EIN is blank for anyone without `settings.company.manage`: only Company profile shows it, and no document prints it. The payment rules go to people who see invoices (`sales.invoice.view`) or manage payments: the payment sheet's "Status after" and Update status's Write off read them. Expense approval goes to holders of `settings.expenses.manage`. Payments and expense approval are left out while their module (`core`) or product switch (`sales.payments`, `finance.expenses`) is off; the profile and number format stay, because documents and every number use them. The number format's decimals travel as a list of `{ kind, places }`, because `unitCost` is a reserved name for product cost.
+- **Which pages save on the API.** Company profile (`PUT /settings/profile`), Number format (`PUT /settings/numbers`), Payments (`PUT /settings/payments`) and the approval half of Expenses (`PUT /settings/expenses`). Payments and Expenses first need module `core`; then each needs its own key, its page's switch (404 when off), data scope `all`, a body with exactly the section's fields, and the shared content rules, checked in that order; one audit entry ("Changed company profile", "Changed number format", "Changed payments", "Changed expense approval") is written with the change under a row lock, with the section before and after.
+- **The step-up.** Saving Payments asks for a fresh authenticator code, in both modes. The page runs the shared content rules before it asks, and shows a refused value's message without the code dialog; the API checks the code after the same rules. So a refused value never costs a code, on screen or through the API. Expense approval runs its rule before it sends, too. The two-person check, the threshold and the write-off limit govern customer payments, write-offs and supplier payments on the server.
+- **A company that never saved a section** gets what the API acts on: the US number format, expense approval off, a blank profile, and payments "every payment waits, nothing can be written off" (the API refuses payments until Payments is saved).
+- **The demo** applies the same module, key, switch, scope and content rules in the same order (module first, as the API), and reads every section in full from the browser.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes when Settings → Locations moves to the API.
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
-- **The shell's branding and number format** are still the demo's (`getSettings()`) until Settings moves.
+- **The shell's branding** is still the demo's (`getSettings()`) until Settings part 6; the number format and the profile are the API's (ADR 0059).
+- **Settings pages not yet on the API save in the browser only:** Branding, Sales and documents, Localization and tax, Warehouses and showrooms, Shared costs (on the Expenses page), HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Reset to default** reads the demo's original values, which the API was seeded with.
+- **The console's legal name** (`tenants.legal_name`) is the one given at sign-up; the company profile's legal name is the one documents print.
+- **The bell's and Outbox's money format** is still the demo's until the bell and Outbox move.
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.

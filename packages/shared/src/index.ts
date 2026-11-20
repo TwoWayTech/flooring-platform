@@ -85,3 +85,5 @@ export * from "./platform/admin-reason";
 export * from "./platform/plans";
 export * from "./platform/company-status";
 export * from "./platform/company-answer";
+export * from "./settings/sections";
+export * from "./settings/section-rules";

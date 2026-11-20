@@ -9,7 +9,7 @@ The tenant always comes from the session, never from a parameter, as it will on 
 - **Moving a module.** With `NEXT_PUBLIC_DATA_SOURCE=api`, `apps/web/src/lib/api/index.ts` routes each `ApiClient` method listed in `API_METHODS` (`lib/api/http/api-methods.ts`) to apps/api through `HttpTransport`. Every other method stays on DemoStore. A module's pull request adds its methods there. The persona picker and `/api/demo/*` exist only in demo mode.
 - **URLs.** No version prefix. Resources are plural and kebab-case (`/purchase-orders`, `/supplier-payments`). `GET /:resource` lists and `GET /:resource/:id` reads. A business action is `POST /:resource/:id/<action>` (`/invoices/:id/void`), never a PATCH of a status field. `/me/...` is the signed-in person's own data.
 - **Tenant.** It comes only from the verified session, never from a path, query or body. The API picks the company database through `TenantConnectionService` (P9).
-- **Bodies.** JSON with camelCase fields. Every body is checked with a Zod schema from `packages/shared`. Money, quantities and rates are decimal strings, never JSON numbers. Their text is not canonical: the same amount may arrive as `"0"`, `"0.00"` or `"0.000"` (a numeric(14,3) column keeps its scale), so clients compare them by value with decimal.js, never as text (STATUS B3). A write takes back the percents the API answers at numeric(18,8) scale (`"50.00000000"`): a quote's deposit and waste and a contract's retainage with up to four decimals by value, a commission share with up to two, and the places past them may only be zeros. The quote's waste check compares waste by value, never as text (`sameOptionalDecimal`; ADR 0037, 2026-11-17). Not every change check does: the quote's `taxOverride` is compared as text, so a client sends back the override it was answered, unchanged. Area is in sq ft and length in ft. Dates are `YYYY-MM-DD` and moments are ISO 8601 in UTC.
+- **Bodies.** JSON with camelCase fields. Every body is checked with a Zod schema from `packages/shared`. Money, quantities and rates are decimal strings, never JSON numbers. Their text is not canonical: the same amount may arrive as `"0"`, `"0.00"` or `"0.000"` (a numeric(14,3) column keeps its scale), so clients compare them by value with decimal.js, never as text (STATUS B3). A write takes back the percents the API answers at numeric(18,8) scale (`"50.00000000"`): a quote's deposit and waste and a contract's retainage with up to four decimals by value, a commission share with up to two, and the places past them may only be zeros. The quote's waste check compares waste by value, never as text (`sameOptionalDecimal`; ADR 0037, 2026-11-17). Not every change check does: the quote's `taxOverride` is compared as text, so a client sends back the override it was answered, unchanged. Amounts in settings (the payment and expense approval thresholds, the write-off limit) are `MONEY_TEXT` strings (digits with up to two decimals, no sign, exponent or bare point) or empty, stored as sent; the number format's decimals travel as a list of `{ kind, places }`, because `unitCost` is a reserved sensitive name (ADR 0059). Area is in sq ft and length in ft. Dates are `YYYY-MM-DD` and moments are ISO 8601 in UTC.
 - **Errors.** Every failure returns `{ code, message, details? }`. `message` is written for the person and shown as it is.
 
   | Status | Code | When |
@@ -78,7 +78,7 @@ The company always comes from the verified session. A `companyId` or `tenantId` 
 
 ## Permissions, sensitive fields and audit (real build, P10, ADR 0031)
 
-Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Two `@AnyCompanyMember()` routes answer more than that: `GET /locations` (shared reference data) and `GET /company` (the company's reference data and a names directory, ADR 0051 "GET /company"). Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
+Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Three `@AnyCompanyMember()` routes answer more than that: `GET /locations` (shared reference data), `GET /company` (the company's reference data and a names directory, ADR 0051 "GET /company") and `GET /settings` (the company's settings, cut per person, ADR 0059). Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
 
 | Status and code | When |
 | --- | --- |
@@ -261,6 +261,25 @@ The web shell's person, roles, access, modules and branches. Spec: docs/product-
 - View as and Your profile are not offered in api mode.
 - A refused first read shows a full page: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's words, each with Try again and Sign out.
 
+## Settings, part 1 (real build, ADR 0059)
+
+The company profile, number format, payment rules and expense approval. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 1". The company is the verified session's; nothing in the path, query, body or headers names it. No control-database write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `GET /settings` | `@AnyCompanyMember()`; no module, no switch | none | `SettingsAnswer` for this person, `Cache-Control: no-store`. Not audited |
+| `PUT /settings/profile` | `settings.company.manage` | switch `settings.company` (404), data scope `all` (403), strict body (400), `companyProfileProblem` (400) | the saved `CompanyProfile`. Audited |
+| `PUT /settings/numbers` | `settings.numbers.manage` | switch `settings.number-format`, scope, strict body (each kind once), `numberSettingsProblem` against the stored format (the locale and currency can't change) | the saved `NumberSettingsWire`. Audited |
+| `PUT /settings/payments` | module `core` (checked first), then `settings.payments.manage` | switch `sales.payments`, scope, strict body, `paymentSettingsProblem`, then a step-up (403 `step_up_required`) | the saved `PaymentSettings`. Audited |
+| `PUT /settings/expenses` | module `core` (checked first), then `settings.expenses.manage` | switch `finance.expenses`, scope, strict body, `expenseSettingsProblem` | the saved `ExpenseSettings`. Audited |
+
+- **Keys, module and switch** come from `SETTINGS_SECTIONS` (packages/shared). The guards answer first: 401 `unauthenticated`; 403 `company_required`, `not_a_member`, `product_not_enabled`, `company_suspended`, `company_read_only` (a PUT), `mfa_enrolment_required`, `module_not_enabled` or `forbidden`; 503 `company_maintenance`. Then the handler's checks above. The scope refusal is 403 `forbidden`, "Company settings cover the whole company."; a content refusal is 400 `invalid_request` with the first problem's words (each names its field). An unknown section is 404; `/settings/accounting` is ADR 0040's (Ledger, below).
+- **The save** locks the group's row (`FOR UPDATE`), replaces the section whole and writes one `audit_log` entry in the same transaction: "Changed company profile", "Changed number format", "Changed payments" or "Changed expense approval", with `before` and `after` as answered (`null` before a first save). The last save wins.
+- **Who reads what.** `profile` and `numbers`: every member; the `ein` is `""` without `settings.company.manage`. `payments`: `sales.invoice.view` or `settings.payments.manage`. `expenses`: `settings.expenses.manage`. Payments and expenses are left out while module `core` or their product switch (`sales.payments`, `finance.expenses`) is off; profile and numbers stay while their page's switch is off. A section left out is absent from the answer, not empty.
+- **Never saved.** A section with no row is answered as the API acts on it: the US pack's number format, expense approval off, a blank profile, and payments `{ approvalRequired: true, approvalThreshold: "", writeOffMax: "0.00", paymentPrefix: "PAY-", refundPrefix: "RF-" }` (every payment waits, nothing is written off; payments themselves are refused with 409 until the row exists).
+- **Numbers as a list.** `NumberSettingsWire` is `NumberSettings` with `decimals: { kind, places }[]`, every kind once. The stored row keeps the record. A client ignores a kind it doesn't know and defaults one that is missing (`numbersFromWire`).
+- **The web.** `getSettings()` reads `GET /settings` and lays its sections over DemoStore's copy (only the sections in `API_SETTINGS_SECTIONS`; anything else in the answer is ignored). `updateSettings()` sends those sections to their `PUT` and reads again; every other section stays on DemoStore until its part. The shell reads `GET /settings` with `GET /company`, so a save shows on the saver's own screens at once. A refused or failed first read shows the full-page refusal (deploy the API before the web).
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
@@ -342,8 +361,8 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 | `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
 | `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
-| `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040) |
-| `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited |
+| `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040). Unchanged by Settings part 1; in the finance module |
+| `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited. Unchanged by Settings part 1; no step-up yet (a STATUS follow-up) |
 
 Cash lines post to the bank account for the payment's method, or to Cash and Bank when no bank account claims it. A void credits the account the payment first posted to (ADR 0040).
 
@@ -373,7 +392,7 @@ Behind the `purchasing.orders` switch. No data scope. Files are base64 in the bo
 | `GET /bills` | `purchasing.bill.view` | `Bill[]`: order, pay-later and (later) subcontract bills |
 | `GET /supplier-payments` | `purchasing.bill.view` or a payment key | `SupplierPayment[]` with allocations |
 | `POST /purchase-orders/:id/bills` | `purchasing.bill.create` | `{ number, issuedAt, total, files }`: bills every unbilled receipt of the order, stores match issues, posts. Audited |
-| `POST /supplier-payments` | `purchasing.payment.record` | `{ supplierId, amount, date, method, reference, note, billIds?, files }`: oldest due first, never more than unpaid; waits above the payment approval rule; posts when confirmed. Audited |
+| `POST /supplier-payments` | `purchasing.payment.record` | `{ supplierId, amount, date, method, reference, note, billIds?, files }`: oldest due first, never more than unpaid; waits above the payment approval rule (`settings.payments`, which `PUT /settings/payments` writes); posts when confirmed. Audited |
 | `POST /supplier-payments/:id/review` | `purchasing.payment.approve` | `{ action: "confirm" }` or `{ action: "reject", reason }`; never the recorder. Audited |
 | `POST /supplier-payments/:id/void` | `purchasing.payment.void` | `{ reason }`: a confirmed one posts its reversal. Audited |
 
@@ -715,10 +734,10 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | --- | --- | --- |
 | `getCompany()` | none yet | The open company's platform record as DemoStore holds it (plan, status, limits, product), until Settings and billing move; Settings → Locations reads its branches here. The shell's facts come from `getWorkspace()`. |
 | `getWorkspace()` | `GET /company` | `WorkspaceFacts` `{ company, user, roles, access }`: the company's name, city, state, modules, ceiling (`[]` when kept back) and branches, the person, the roles and the person's effective access, read through `workspaceFromAnswer`, which drops unknown keys and modules. The demo answers from DemoStore with the same ceiling rule and lists every role, for View as (ADR 0051, "GET /company"). |
-| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. |
-| `updateSettings(section, value)` | `PUT /settings/:section` | Replaces one section; audited with a before/after summary. |
-| `getDefaultSettings()` | `GET /settings/defaults` | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. |
-| `resetSettings(section)` | `DELETE /settings/:section` | Restores one section to the company's original values; audited. |
+| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. Part 1 (ADR 0059): profile, numbers, payments and expenses come from the API, each to its readers; the other sections are still DemoStore's. |
+| `updateSettings(section, value)` | `PUT /settings/profile`, `/numbers`, `/payments`, `/expenses` | Replaces one section; audited with a before/after summary. Other sections stay on DemoStore until their part (ADR 0059). |
+| `getDefaultSettings()` | none yet | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. In api mode DemoStore's fixture originals, which the API was seeded with (ADR 0059 D7). |
+| `resetSettings(section)` | none yet | Restores one section to the company's original values; audited. No screen calls it; DemoStore only. |
 | `getCompanyStanding()` | `GET /company/standing` | `CompanyStanding` `{ state }`, read through `companyStandingFromWire`: an unknown or missing state reads `unavailable`, extra fields are dropped. The (app) layout also asks it on the server, with the host's product header. The demo always answers `{ state: "full" }` (ADR 0054). |
 | `getCompanyBilling()` | `GET /billing` | `CompanyBilling`, the Owner's only. The demo shows the stand-in plan with standing `current` and no notice, reads no clock, and refuses with "This feature is switched off." or "Only an Owner can see billing.". |
 

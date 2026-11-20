@@ -32,7 +32,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 | Open Payments to verify | `sales.payment.approve` or `purchasing.payment.approve` | Owner, Manager, Accountant | `pages.ts`. Supplier rows need `purchasing.payment.approve` in `payments-queue.tsx` |
 | See money columns on suppliers and orders | `inventory.product.view_sensitive` or `purchasing.bill.view` | Owner, Manager, Accountant, Purchasing | `money` in `purchasing-page.tsx`, `supplier-drawer.tsx` |
 | See unit cost in the order drawer | `inventory.product.view_sensitive` | Owner, Manager, Accountant, Purchasing | `showCost` in `order-drawer.tsx` |
-| Set the payment approval rule | `settings.payments.manage` | Owner, Accountant | `SETTINGS_PERMISSIONS.payments` in `apps/web/src/lib/api/demo/permission-rules.ts` |
+| Set the payment approval rule | `settings.payments.manage` | Owner, Accountant | `SETTINGS_SECTIONS.payments` in `packages/shared/src/settings/sections.ts`, read by `DemoStore.updateSettings` and, on the API, `PUT /settings/payments` (ADR 0059). Data scope `all` and a step-up; the one rule governs customer and supplier payments (rule 28; sales.md rule 31) |
 
 Warehouse can receive goods but has no `purchasing.bill.view`, so it sees no bills tab. Purchasing can record a payment but cannot confirm or void one.
 

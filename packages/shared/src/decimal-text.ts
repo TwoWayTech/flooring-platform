@@ -17,6 +17,13 @@ export const PERCENT_TEXT = /^\d{1,3}(\.\d{1,4}0{0,4})?$/;
 export const SHARE_PERCENT_TEXT = /^\d{1,3}(\.\d{1,2}0{0,6})?$/;
 
 /**
+ * Plain unsigned money as a settings amount takes it (ADR 0059): up to twelve digits and at most
+ * two decimals, the same as the purchasing and invoices controllers' `MONEY`, whose copies move here
+ * in a sweep. No bare point ("12.", ".5"), sign, exponent, separator or space.
+ */
+export const MONEY_TEXT = /^\d{1,12}(\.\d{1,2})?$/;
+
+/**
  * Plain decimal text: digits with an optional fraction. No sign, exponent, radix prefix ("0x0a"),
  * bare point ("10.", ".5") or space, all of which decimal.js would otherwise read as a number.
  */

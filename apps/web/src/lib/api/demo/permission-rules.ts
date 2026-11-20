@@ -3,7 +3,6 @@ import {
   defaultWastePct,
   sameOptionalDecimal,
   savedQuoteLine,
-  type CompanySettings,
   type PermissionKey,
   type Product,
   type Quote,
@@ -91,25 +90,6 @@ export function savePermissions(collection: CollectionName): readonly Permission
 
 /** A key no role holds, so a collection with no writers refuses every generic save. */
 const NOBODY: readonly PermissionKey[] = ["store.internal.manage"];
-
-const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey[]> = {
-  branding: ["settings.branding.manage"],
-  localization: ["settings.localization.manage", "settings.tax.manage"],
-  numbers: ["settings.numbers.manage"],
-  profile: ["settings.company.manage"],
-  payments: ["settings.payments.manage"],
-  inventory: ["settings.locations.manage"],
-  expenses: ["settings.expenses.manage"],
-  sharedCosts: ["settings.expenses.manage"],
-  hr: ["settings.hr.manage"],
-  meetings: ["settings.meetings.manage"],
-  email: ["settings.notifications.manage"],
-};
-
-/** Permissions that allow changing one settings section. */
-export function settingsPermissions(section: keyof CompanySettings): readonly PermissionKey[] {
-  return SETTINGS_PERMISSIONS[section];
-}
 
 /**
  * Whether a line's waste differs from what it had (sales.md rule 8). DemoStore keeps waste as

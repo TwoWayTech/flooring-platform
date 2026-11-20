@@ -103,6 +103,15 @@ import { importBody } from "./import-body";
 // GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
 import type { CompanyAnswer } from "@workspace/shared";
 import { peopleAsUsers, workspaceFromAnswer } from "./company-answer";
+// Settings, part 1 (ADR 0059) keeps its own imports, so the lists above stay as they are.
+import {
+  isApiSettingsSection,
+  numbersToWire,
+  type CompanySettings,
+  type NumberSettings,
+  type SettingsAnswer,
+} from "@workspace/shared";
+import { settingsFromAnswer } from "./settings-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
@@ -179,6 +188,20 @@ export const API_METHODS = {
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   // Changes no company data, and the write that follows it reads again.
   verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
+  // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
+  // other section, Reset to default and resetSettings stay on DemoStore until their part moves. The
+  // read comes before DemoStore's, so a refused read never touches it.
+  getSettings: (http, demo) => async () =>
+    settingsFromAnswer(await http.request<SettingsAnswer>("GET", "/settings"), await demo.getSettings()),
+  updateSettings:
+    (http, demo) =>
+    async <K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) => {
+      if (!isApiSettingsSection(section)) return demo.updateSettings(section, value);
+      // `section` names the value's type; the number format travels with its decimals as a list (D6).
+      const body = section === "numbers" ? numbersToWire(value as NumberSettings) : value;
+      await http.request<unknown>("PUT", `/settings/${section}`, body);
+      return settingsFromAnswer(await http.request<SettingsAnswer>("GET", "/settings"), await demo.getSettings());
+    },
   // The platform console (docs/specs/platform-admin.md, part 1). PlatformAdminGuard decides who may
   // call these. The demo's switcher, palette and sign-in keep `listCompanies` on DemoStore.
   listPlatformCompanies: (http) => () => http.request<PlatformCompanySummary[]>("GET", "/platform/companies"),
