@@ -1,5 +1,9 @@
 import {
   ADDRESS_MAX,
+  BRANDING_MESSAGES,
+  BRANDING_NAME_MAX,
+  DEFAULT_THEMES,
+  FLOOR_PATTERNS,
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
@@ -14,10 +18,13 @@ import {
   numbersFromWire,
   PAYROLL_MESSAGES,
   REGION_MESSAGES,
+  SHARED_COST_MESSAGES,
+  SHARED_COST_SHARES_MAX,
   TAX_JURISDICTIONS_MAX,
   TAX_MESSAGES,
   US_STATES,
   WASTE_CATEGORIES,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
@@ -29,6 +36,7 @@ import {
   type PaymentSettings,
   type PayrollInput,
   type RegionInput,
+  type SharedCostsInput,
   type TaxInput,
 } from "@workspace/shared";
 import { z } from "zod";
@@ -95,6 +103,24 @@ export const NUMBERS_INPUT: z.ZodType<NumberSettings> = z
   .strict()
   .transform(numbersFromWire);
 
+/**
+ * Branding as Settings → Branding sends it (ADR 0059, part 6, D4, D5). Types, outer lengths and
+ * unknown fields only; the name, monogram and color are the shared rule's to judge
+ * (`brandingProblem`), with the same words in both modes, and each outer bound carries its field's
+ * words. The pattern and theme are their options, with the rule's words. The logo must be null: the
+ * API keeps no logo yet, so the monogram stands in, and a data URL is refused with words, never stored.
+ */
+export const BRANDING_INPUT: z.ZodType<Branding> = z
+  .object({
+    displayName: z.string().max(10 * BRANDING_NAME_MAX, BRANDING_MESSAGES.displayName),
+    monogram: z.string().max(20, BRANDING_MESSAGES.monogram),
+    brandColor: z.string().max(20, BRANDING_MESSAGES.brandColor),
+    pattern: z.enum(FLOOR_PATTERNS, { error: BRANDING_MESSAGES.pattern }),
+    logoDataUrl: z.null({ error: BRANDING_MESSAGES.logoNotOnApi }),
+    defaultTheme: z.enum(DEFAULT_THEMES, { error: BRANDING_MESSAGES.defaultTheme }),
+  })
+  .strict();
+
 /** Payment rules as Settings → Payments sends them. */
 export const PAYMENTS_INPUT: z.ZodType<PaymentSettings> = z
   .object({
@@ -109,6 +135,35 @@ export const PAYMENTS_INPUT: z.ZodType<PaymentSettings> = z
 /** Expense approval as Settings → Expenses sends it. */
 export const EXPENSES_INPUT: z.ZodType<ExpenseSettings> = z
   .object({ approvalRequired: z.boolean(), approvalThreshold: z.string().max(20) })
+  .strict();
+
+/**
+ * Shared costs as Settings → Expenses sends them (ADR 0059, part 4b, D4). Only types, outer lengths
+ * and unknown fields are checked here; the rule, which locations the shares name, each percent and
+ * the fixed total are the shared rule's to judge (`sharedCostsProblem`, against the live locations
+ * inside the save), so both modes refuse them with the same words. Each outer length carries its
+ * words; a share's bound sits above `PERCENT_TEXT_MAX`, where the page's inputs stop. Percents are
+ * strings, never JSON numbers (CLAUDE.md rule 6).
+ */
+export const SHARED_COSTS_INPUT: z.ZodType<SharedCostsInput> = z
+  .object({
+    rule: z.string().max(20, SHARED_COST_MESSAGES.rule),
+    // Zod's record drops a "__proto__" key without an issue, so it is refused here first with the
+    // words of any key that names no location (security review round 1).
+    fixedPct: z.preprocess(
+      (raw, context) => {
+        if (raw !== null && typeof raw === "object" && Object.hasOwn(raw, "__proto__"))
+          context.addIssue({ code: "custom", message: SHARED_COST_MESSAGES.unknownLocation });
+        return raw;
+      },
+      z
+        .record(z.string().max(64), z.string().max(20, SHARED_COST_MESSAGES.share), {
+          // Zod reports a refused key as the record's own issue, so its words are set here.
+          error: (issue) => (issue.code === "invalid_key" ? SHARED_COST_MESSAGES.unknownLocation : undefined),
+        })
+        .refine((map) => Object.keys(map).length <= SHARED_COST_SHARES_MAX, SHARED_COST_MESSAGES.shares),
+    ),
+  })
   .strict();
 
 /**

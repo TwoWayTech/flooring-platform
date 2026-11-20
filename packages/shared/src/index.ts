@@ -93,3 +93,4 @@ export * from "./settings/localization-rules";
 export * from "./settings/tax-settings";
 export * from "./settings/location-rules";
 export * from "./settings/hr-rules";
+export * from "./settings/branding-rules";

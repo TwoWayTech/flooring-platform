@@ -201,7 +201,8 @@ export const API_METHODS = {
   // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
   // other section, Reset to default and resetSettings stay on DemoStore until their part moves.
   // `localization` is never sent whole: DemoStore refuses it, because Localization and tax saves one
-  // tab at a time through updateLocalization (ADR 0059, part 3b, D37).
+  // tab at a time through updateLocalization (ADR 0059, part 3b, D37). Branding is served since part 6:
+  // `PUT /settings/branding` writes the company's control branding row, after a step-up.
   getSettings: (http, demo) => () => readSettings(http, demo),
   updateSettings:
     (http, demo) =>
