@@ -886,6 +886,8 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     await accept(q2.id);
     const q3 = await quote("CO");
     await accept(q3.id);
+    const q4 = await quote("CO");
+    await accept(q4.id);
     const i1 = await invoiceOf((await convert(q3.id)).id);
     expect([i1.tax, i1.total]).toEqual(["39.65", "489.65"]);
     expect(i1.taxRule).toMatchObject({ state: "CO", version: 1 });
@@ -929,6 +931,20 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     });
     expect(note.status, JSON.stringify(note.body)).toBe(201);
     expect((note.body as Invoice).tax).toBe("8.81");
+    // An accepted quote saved with nothing that prices it changed keeps its accepted total; a priced
+    // change is priced under the day's rule (owner, 2026-11-20; sales.md rule 18).
+    const notes = await call("put", `/quotes/${q4.id}`, tax.owner.cookie).send({
+      ...quoteBody("CO"),
+      notes: "Gate code 1234",
+    });
+    expect(notes.status, JSON.stringify(notes.body)).toBe(200);
+    expect([(notes.body as Quote).total, await storedTotal(q4.id)]).toEqual(["489.65", "489.65"]);
+    const repriced = quoteBody("CO");
+    repriced.lines[0].quantity = "110";
+    const more = await call("put", `/quotes/${q4.id}`, tax.owner.cookie).send(repriced);
+    expect(more.status, JSON.stringify(more.body)).toBe(200);
+    // 110 sq ft at 4.50 is 495.00; at 8.5 % that is 537.08.
+    expect((more.body as Quote).total).toBe("537.08");
     // A quote saved again takes the day's rule.
     const resaved = await call("put", `/quotes/${q1.id}`, tax.owner.cookie).send(quoteBody("CO"));
     expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);

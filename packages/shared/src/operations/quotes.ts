@@ -237,3 +237,36 @@ export function acceptedTotalIfDifferent(
   if (!quote || invoice.isReturn || invoice.quoteId !== quote.id) return null;
   return dec(quote.total).equals(dec(invoice.total)) ? null : quote.total;
 }
+
+/** What prices a quote: its customer, where the job is, its tax override and its lines, by value. */
+function pricingOf(quote: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">): string {
+  return JSON.stringify({
+    customerId: quote.customerId,
+    state: quote.jobSite.state,
+    county: quote.jobSite.county ?? "",
+    overridePct: quote.taxOverride ? dec(quote.taxOverride.ratePct).toFixed() : null,
+    lumpSum: quote.lumpSum,
+    lines: quote.lines.map((line) => [
+      line.productId ?? "",
+      line.category,
+      line.unit,
+      dec(line.quantity).toFixed(),
+      dec(line.unitPrice).toFixed(),
+    ]),
+  });
+}
+
+/**
+ * Whether a save of this quote keeps its stored total instead of pricing it again (owner's answer
+ * of 2026-11-20, ADR 0059; sales.md rule 18): an accepted quote keeps the total the customer
+ * accepted as long as the save changes nothing that prices it (customer, job site state and county,
+ * tax override, lump sum, and each line's product, category, unit, quantity and price), so editing
+ * its notes after a tax change can't rewrite what was agreed. A priced change is a new offer and is
+ * priced under the day's rule, as any save.
+ */
+export function keepsAcceptedTotal(
+  before: Quote | undefined,
+  next: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">,
+): boolean {
+  return before?.status === "accepted" && pricingOf(before) === pricingOf(next);
+}

@@ -3,6 +3,7 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { addresses, customers, measurementRooms, quoteLines, quotes } from "@workspace/db/company";
 import {
   computeTotals,
+  keepsAcceptedTotal,
   productTaxCategory,
   defaultWastePct,
   nextNumber,
@@ -294,7 +295,15 @@ export class SalesService {
         : asked && { ...asked, byName: actor.session.user.name, at: new Date().toISOString() };
       const day = await companyToday(this.control.db, tenant);
       const ctx = taxContextFor(localization, input.jobSite, customer, day, before?.lumpSum ?? false, taxOverride);
-      const total = computeTotals(lines, ctx).total;
+      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      const next = {
+        customerId: customer.id,
+        jobSite: input.jobSite,
+        taxOverride,
+        lumpSum: before?.lumpSum ?? false,
+        lines,
+      };
+      const total = before && keepsAcceptedTotal(before, next) ? before.total : computeTotals(lines, ctx).total;
 
       const quoteId = before?.id ?? uuidv7();
       const values = {
