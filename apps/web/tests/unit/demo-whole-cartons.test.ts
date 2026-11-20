@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { dec } from "@workspace/shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { dec, type CompanyId } from "@workspace/shared";
 import { createPurchaseOrder } from "@/lib/api/demo/purchasing-actions";
 import { CompanyDb } from "@/lib/api/demo/company-db";
 import type { FileStore } from "@/lib/api/demo/file-store";
@@ -13,6 +13,39 @@ const noFiles: FileStore = {
   remove: async () => undefined,
   clear: async () => undefined,
 };
+
+/**
+ * A seeded quote line the test turns into a part carton as the fixtures load, as a quote saved
+ * before the rule would hold one; null loads the fixtures as they are.
+ */
+const PART_CARTON = vi.hoisted(() => ({ quoteId: null as string | null }));
+
+vi.mock("@/lib/api/demo/fixtures", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/api/demo/fixtures")>();
+  return {
+    ...real,
+    loadCompanyFixtures: async (companyId: CompanyId) => {
+      const fixtures = await real.loadCompanyFixtures(companyId);
+      const quoteId = PART_CARTON.quoteId;
+      if (!quoteId) return fixtures;
+      const quotes = fixtures.quotes.map((quote) => {
+        if (quote.id !== quoteId) return quote;
+        const index = quote.lines.findIndex((line) => line.sqFtPerCarton);
+        const lines = quote.lines.map((line, i) =>
+          i === index
+            ? { ...line, quantity: dec(line.quantity).plus(dec(line.sqFtPerCarton!).dividedBy(2)).toString() }
+            : line,
+        );
+        return { ...quote, lines };
+      });
+      return { ...fixtures, quotes };
+    },
+  };
+});
+
+afterEach(() => {
+  PART_CARTON.quoteId = null;
+});
 
 /** DemoStore refuses part cartons as the API does (F-m, ADR 0027; security review round 2, note 3). */
 describe("demo whole cartons on purchase orders", () => {
@@ -101,9 +134,12 @@ describe("demo whole cartons on purchase orders", () => {
     );
     expect(quote, "Summit has a draft quote with a boxed line").toBeDefined();
     const index = quote!.lines.findIndex((l) => l.sqFtPerCarton);
-    const pack = quote!.lines[index]!.sqFtPerCarton;
+    const productId = quote!.lines[index]!.productId!;
+    const pack = (await store.list("products")).find((product) => product.id === productId)!.sqFtPerCarton;
+    expect(pack).toBeDefined();
+    // Saved again as it is, the quote is accepted and its boxed line keeps the product's pack.
     const again = await store.saveQuote(quote!);
-    expect(again.total).toBe(quote!.total);
+    expect(again.lines[index]!.sqFtPerCarton).toBe(pack);
     // A pack sent on a line is replaced by the product's; a line without a product keeps none.
     const loose = { ...quote!.lines[index]!, id: "loose", productId: undefined, sqFtPerCarton: "7" };
     const sentLines = quote!.lines.map((line, i) => (i === index ? { ...line, sqFtPerCarton: "1" } : line));
@@ -114,5 +150,18 @@ describe("demo whole cartons on purchase orders", () => {
     await expect(store.saveQuote({ ...quote!, lines: gone })).rejects.toThrow(
       "A product on the quote no longer exists.",
     );
+  });
+
+  it("WC4 converting a quote that holds a part carton is refused, as on the API (review round 6)", async () => {
+    const fixtures = await loadCompanyFixtures("summit");
+    const accepted = fixtures.quotes.find(
+      (q) => q.status === "accepted" && !q.invoiceId && q.lines.some((l) => l.sqFtPerCarton),
+    );
+    expect(accepted, "Summit has an accepted, unconverted quote with a boxed line").toBeDefined();
+    PART_CARTON.quoteId = accepted!.id;
+    const store = new DemoStore(noFiles);
+    await store.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+    await expect(store.convertQuoteToInvoice(accepted!.id)).rejects.toThrow("sell whole cartons, multiples of");
+    expect((await store.list("quotes")).find((q) => q.id === accepted!.id)?.invoiceId ?? null).toBeNull();
   });
 });

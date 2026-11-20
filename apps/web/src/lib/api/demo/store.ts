@@ -1299,6 +1299,9 @@ export class DemoStore implements ApiClient {
     const today = dayOf(db);
     const problem = Object.values(quoteSendProblems(quote, null, today))[0];
     if (problem) throw new DemoRuleError(problem);
+    // A part carton saved before the rule is not invoiced, as on the API (F-m, rule 7).
+    const cartons = partCartonProblem(quote.lines, "sell");
+    if (cartons) throw new DemoRuleError(cartons);
     const customer = db.get("customers", quote.customerId)!;
     const prefix = db.settings.localization.documents.invoicePrefix;
     const invoice = invoiceFromQuote(quote, customer, db.settings.localization, {
