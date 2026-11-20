@@ -4,12 +4,14 @@ import {
   businessReport,
   businessWindow,
   capDrillRecords,
+  featureOn,
   hubWindow,
   paymentsReport,
   pnlReport,
   reportAccess,
   reportVisibility,
   salesByCategoryReport,
+  seesTrialBalance,
   type BusinessData,
   type BusinessFilters,
   type BusinessReport,
@@ -22,6 +24,7 @@ import {
 } from "@workspace/shared";
 import type { RequestAccess } from "../../core/access/access.service";
 import { CONTROL_DB } from "../../core/database/control-db";
+import { LedgerService } from "../../core/ledger/ledger.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
@@ -75,6 +78,7 @@ export class ReportsService {
   constructor(
     @Inject(CONTROL_DB) private readonly control: DbHandle<ControlDb>,
     private readonly tenancy: TenantConnectionService,
+    private readonly ledger: LedgerService,
   ) {}
 
   /**
@@ -82,13 +86,21 @@ export class ReportsService {
    * export, the live locations, and the Business report's pickers only when they may open it.
    */
   async options(tenant: TenantContext, access: RequestAccess): Promise<ReportOptions> {
-    const { reports, exports } = reportAccess(access);
-    const withPickers = reports.includes("business");
-    const read = await readSnapshot(await this.tenancy.db(tenant), async (tx) => ({
-      locations: await loadLocations(tx),
-      repIds: withPickers ? await loadInvoiceRepIds(tx) : [],
-      vendors: withPickers ? await loadVendorOptions(tx) : [],
-    }));
+    // The trial balance is listed only when GET /ledger/trial-balance would answer: its route checks
+    // first, then the sight rule on the journal's facts (ADR 0055 "Trial balance").
+    const mayAskBooks = reportAccess(access, featureOn, true).reports.includes("trial-balance");
+    const read = await readSnapshot(await this.tenancy.db(tenant), async (tx) => {
+      const books = mayAskBooks && seesTrialBalance(access, await this.ledger.trialBalanceFacts(tx));
+      const offer = reportAccess(access, featureOn, books);
+      const withPickers = offer.reports.includes("business");
+      return {
+        ...offer,
+        locations: await loadLocations(tx),
+        repIds: withPickers ? await loadInvoiceRepIds(tx) : [],
+        vendors: withPickers ? await loadVendorOptions(tx) : [],
+      };
+    });
+    const { reports, exports } = read;
     const names = await loadNames(this.control.db, read.repIds);
     const salespeople = read.repIds
       .map((id) => ({ id, name: names.get(id) ?? FORMER_EMPLOYEE }))

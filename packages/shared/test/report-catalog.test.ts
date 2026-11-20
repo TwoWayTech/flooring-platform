@@ -46,7 +46,7 @@ describe("who opens and exports which report (ADR 0055 S1, S-ACC-1)", () => {
       expect(access.reports).toEqual(["sales", "payments"]);
       expect(access.exports).toEqual(["sales", "payments"]);
     }
-    for (const key of REPORT_ORDER) expect(REPORT_CATALOG[key].wholeCompany).toBe(key === "business" || key === "pnl");
+    for (const key of REPORT_ORDER) expect(REPORT_CATALOG[key].wholeCompany).toBe(["business", "pnl", "trial-balance"].includes(key));
   });
 
   it("follows the switches: a report's own, and the hub for all of them", () => {
@@ -64,6 +64,23 @@ describe("who opens and exports which report (ADR 0055 S1, S-ACC-1)", () => {
         for (const k of access.reports) expect(REMOVED).not.toContain(k);
       }
     }
+  });
+
+  it("offers the trial balance only when the caller says the books may be shown (ADR 0055 Trial balance)", () => {
+    const all: ReportKey[] = ["business", "pnl", "sales", "payments", "trial-balance"];
+    expect(reportAccess(accessOf("owner"), featureOn, true)).toEqual({ reports: all, exports: all });
+    expect(reportAccess(accessOf("accountant"), featureOn, true)).toEqual({ reports: all, exports: all });
+    // Branch scope and missing keys win over `books`.
+    expect(reportAccess(accessOf("manager"), featureOn, true).reports).toEqual(["sales", "payments"]);
+    expect(reportAccess({ ...accessOf("owner"), dataScope: "branch" }, featureOn, true).reports).not.toContain(
+      "trial-balance",
+    );
+    expect(reportAccess(accessOf("sales"), featureOn, true)).toEqual({ reports: ["sales"], exports: [] });
+    // It rides on the hub's switch.
+    expect(REPORT_CATALOG["trial-balance"].feature).toBe("reports.hub");
+    expect(reportAccess(accessOf("owner"), without("reports.hub"), true)).toEqual({ reports: [], exports: [] });
+    expect(reportAccess(accessOf("owner"), without("reports.business"), true).reports).toContain("trial-balance");
+    for (const key of REPORT_ORDER) expect(REPORT_CATALOG[key].books).toBe(key === "trial-balance");
   });
 
   it("offers nothing to a person with no report", () => {
