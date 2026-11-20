@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { ControlDb } from "@workspace/db";
 import { tenants } from "@workspace/db/control";
-import { featureOn, scopeAllows, type Customer, type FeatureKey } from "@workspace/shared";
+import { dayInZone, featureOn, scopeAllows, type Customer, type FeatureKey } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -68,12 +68,11 @@ export async function companyToday(control: ControlDb, tenant: TenantContext): P
 /**
  * The company's day a moment falls on. Invoices keep the moment they were issued, sent or voided;
  * read as a UTC day, an invoice issued after 6 pm in Chicago would read as tomorrow, and a payment
- * made that evening would be refused as "before the invoice date".
+ * made that evening would be refused as "before the invoice date". The shared `dayInZone`, which the
+ * web's `today()` reads too, so a form's default date is the day this API accepts.
  */
 export function dayIn(moment: Date, zone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    moment,
-  );
+  return dayInZone(moment, zone);
 }
 
 /**

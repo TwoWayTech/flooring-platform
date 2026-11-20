@@ -142,6 +142,27 @@ export function instantToZoned(instant: Date, zone: string): string {
   return new Date(wallClockAt(instant.getTime(), zone)).toISOString().slice(0, 16);
 }
 
+/**
+ * The calendar day, "YYYY-MM-DD", a zone's clock shows at an instant: the company's day when the zone
+ * is the company's (`tenants.time_zone`). The API dates and checks every record on it (`companyClock`)
+ * and the web's `today()` reads it too, so a form's default date is the day the server accepts
+ * (ADR 0051, "The company's day on the web", 2026-11-20). Throws a RangeError for a zone Intl doesn't know.
+ */
+export function dayInZone(instant: Date, zone: string): string {
+  return instantToZoned(instant, zone).slice(0, 10);
+}
+
+/** Whether Intl knows a zone name, so that `dayInZone` and `instantToZoned` can read a clock in it. */
+export function isKnownTimeZone(zone: string): boolean {
+  if (!zone) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether a name is one of the zones a meeting can be booked in, exactly as listed. */
 export function isMeetingTimeZone(zone: string): zone is MeetingTimeZone {
   return (MEETING_TIME_ZONES as readonly string[]).includes(zone);
