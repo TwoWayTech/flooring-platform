@@ -18,6 +18,7 @@ import {
 import { passkeysSupported } from "@/lib/session/webauthn";
 import { useHydrated } from "@/lib/use-hydrated";
 import type { ContextCompany } from "@/lib/session/api-context";
+import { failureWords } from "@/lib/api/errors";
 import { PRODUCTS } from "@/products";
 import { LoginLayout } from "./login-layout";
 import { MfaEnrolment } from "./mfa-enrolment";
@@ -132,7 +133,7 @@ function PasswordForm({ notice, onVerifyEmail, onSecondFactor, onSignedIn }: Pas
         await onSignedIn();
         return;
       } catch (failure) {
-        setError(failure instanceof Error ? failure.message : "Sign-in failed. Try again.");
+        setError(failureWords(failure));
       }
     } else {
       setError(result.message);

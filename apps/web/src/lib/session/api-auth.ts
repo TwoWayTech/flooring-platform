@@ -104,14 +104,14 @@ export async function signInWithPassword(email: string, password: string): Promi
 /** The signed-in user's context from apps/api; throws when the session is missing or ended. */
 export async function fetchSessionContext(): Promise<SessionContext> {
   const response = await fetch(`${API_PROXY_PATH}/auth/context`, { credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) throw new Error(messageFor(await errorBody(response)));
+  if (!response.ok) throw new ApiError(messageFor(await errorBody(response)));
   return (await response.json()) as SessionContext;
 }
 
 /** Opens one of the user's companies in the session; the API refuses a company they do not belong to. */
 export async function openCompany(companyId: string): Promise<void> {
   const response = await post(`${AUTH_BASE_PATH}/organization/set-active`, { organizationId: companyId });
-  if (!response.ok) throw new Error(messageFor(await errorBody(response)));
+  if (!response.ok) throw new ApiError(messageFor(await errorBody(response)));
 }
 
 /** Ends the real session. */

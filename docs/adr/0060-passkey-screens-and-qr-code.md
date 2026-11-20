@@ -37,3 +37,4 @@
 - The API does not change. Its tests (mfa.int.test.ts) already cover the password-first rule, `create_session_unsupported`, `passkey_required` and `mfa_required`.
 - Passkey names are bounded to 60 characters on screen only; the plugin accepts any length (owner question in the session log).
 - Setting up the authenticator app from the security page, for people whose role does not require it, is not built (owner question).
+- If the API refuses `verify-registration` after the browser has made the credential (say the 5-minute password check ran out during the prompt), the device keeps a passkey the account never saved. The API never accepts it; signing in with it says it does not belong to an account here. Telling the browser to forget it (`PublicKeyCredential.signalUnknownCredential`) is left for later, as browser support is still partial.

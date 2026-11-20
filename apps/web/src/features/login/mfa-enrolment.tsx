@@ -381,7 +381,7 @@ function PasskeyDone({ onDone }: { onDone: () => Promise<void> }) {
     try {
       await onDone();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Something went wrong. Try again.");
+      setError(failureWords(failure));
       setPending(false);
     }
   }

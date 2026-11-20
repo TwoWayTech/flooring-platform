@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, failureWords } from "@/lib/api/errors";
-import { signInWithPasskey } from "@/lib/session/api-auth";
+import { fetchSessionContext, signInWithPasskey } from "@/lib/session/api-auth";
 import { defaultPasskeyName, PASSKEY_NAME_MAX, passkeyNameProblem } from "@/lib/session/passkeys";
 import { fakeApi, type FakeAnswer } from "./fake-api";
 
@@ -225,5 +225,20 @@ describe("refusal words by code", () => {
       const fake = fakeApi({ "POST /api/auth/passkey/delete-passkey": refusal(400, code, "Refused.") });
       await expect(fake.client.deletePasskey("pk-1"), code).rejects.toMatchObject({ message: "Refused.", code });
     }
+  });
+});
+
+describe("the session read after a sign-in", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("PK15 a refused /auth/context is an ApiError, so the screens keep its words rather than a generic retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(JSON.stringify({ code: "session_expired", message: "Your session ended." }), { status: 401 }),
+    );
+    const failure = await fetchSessionContext().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failureWords(failure)).toBe("Your session ended.");
   });
 });
