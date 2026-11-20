@@ -1,6 +1,7 @@
 # ADR 0044: Contracts part 1 on the API (register, change orders, waivers, insurance)
 
 - **Status:** accepted, 2026-11-14
+- **2026-11-17 (the flows' bug B4):** the web sends neither a branch nor a rep on a contract, so the API alone files a new contract under its creator's branch. It is the section "The web leaves a new contract's branch to the API" below.
 - **Context:** contracts.md describes the demo's contracts: drafts with a schedule of values, sending, a simulated signature, completion, closing, termination, renewal, change orders, lien waivers and certificates of insurance, plus progress billings and retainage releases that raise invoices and bills. The schema already exists (`packages/db/src/company/contracts.ts`, ADR 0026). Billings post to the ledger through invoices and bills, so they come in part 2 with their postings.
 
 ## Decision
@@ -24,3 +25,10 @@
 - Summit's seed has contracts, lines, change orders, the waiver that points at no unseeded payment, and the certificate. Billings, contract invoices, subcontract bills, the waiver on a contract-invoice payment, and the signed PDFs (they have no bytes) wait for part 2.
 - Seeded and API-signed contracts carry no signed PDF on the API.
 - No separation of duties between submitting and approving a change order (edge case 19), as in the demo; an open question for the owner.
+
+## The web leaves a new contract's branch to the API (2026-11-17, the flows' bug B4)
+- **Problem.** In api mode the contract form put the shell user's branch in its body, and that user is still DemoStore's (ADR 0051 R1), so `POST /contracts` got `"sm-br-denver"` and refused it as not a UUID (400). Nobody could save a new contract from the screen.
+- **Decision.** `contractBody` (apps/web/src/lib/api/http/api-methods.ts) sends neither `branchId` nor `salesRepId`, for a new contract or an edit. The server stays the only judge, as "New contracts" above says: the creator's own branch; someone with no branch picks one only with scope `all`; an edit keeps both. The API is unchanged, and `branchId` stays optional in its body.
+- **No picker.** No screen picks a branch, so an all-scope creator with no branch (a new company's first Owner, whose profile has none) gets the API's refusal in the form. That can't happen in api mode today: the web opens only for an account whose email matches a seeded fixture profile (`toCompanySession`), and the seed gives every such person their branch. A person invited from api mode gets no branch (the invite drops DemoStore's branch id), but has no fixture profile, so can't open the app; and no screen changes a branch. Whether to add a picker is an owner question (B4 session log, Q-B4-1).
+- **The demo** still files a new contract under the form's `user.branchId`, the demo persona's own, so both modes give the creator's branch. DemoStore trusts the form here; it is not a security boundary.
+- **Tests:** `apps/web/tests/unit/contracts-api.test.ts` (the body); `apps/api/test/contracts.int.test.ts`, "files a new contract under its creator's own branch whatever the body says"; flow F5 (`apps/web/tests/e2e-api/flows/f5-contract-retainage.spec.ts`, step 1).

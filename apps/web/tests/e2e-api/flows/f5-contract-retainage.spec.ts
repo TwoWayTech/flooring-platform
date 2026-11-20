@@ -1,4 +1,11 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import {
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+  type Locator,
+  type Page,
+  type Request,
+} from "@playwright/test";
 import {
   dec,
   sum,
@@ -7,6 +14,7 @@ import {
   type Customer,
   type Invoice,
   type Payment,
+  type User,
 } from "@workspace/shared";
 import { FLOW_TAG } from "../../e2e/helpers";
 import { OWNER_EMAIL } from "../accounts";
@@ -14,6 +22,8 @@ import {
   expectAuditRows,
   expectLedgerMoved,
   invoicePills,
+  postAs,
+  readAs,
   savePayment,
   trialBalance,
   type PaymentOutcome,
@@ -30,33 +40,65 @@ import {
 } from "./kit";
 import { CASH } from "./ledger";
 
-/**
- * The product bug that stops this flow in step 1 (session log 2026-11-16-0200, "For STATUS", B4; B2
- * is fixed, session log 2026-11-16-1651). Until it is fixed the flow is `fixme`, written to the
- * behaviour the spec asks for; a throwaway run that worked around it passed every later step
- * (session log 2026-11-16-0200, stage 5).
- */
-const BLOCKED_BY = [
-  {
-    type: "issue",
-    description:
-      "api mode: the contract form sends the signed-in person's branch as the DemoStore user has it (R1), such as " +
-      '"sm-br-denver", and POST /contracts refuses it with 400 "Invalid UUID" (`branchId` is a UUID), so nobody with ' +
-      "a branch can save a new contract (contract-form-dialog.tsx `branchId: user.branchId`; api-methods.ts " +
-      "`contractBody`). The API files a new contract under its creator's own branch anyway (contracts.service.ts " +
-      "`newBranch`). B4, STATUS follow-up.",
-  },
-];
-
 /** Every payment the Owner records here counts at once (payments.service.ts). */
 const COUNTS: PaymentOutcome = {
   status: "confirmed",
   why: "the Owner's scope is all and the amount is under Summit's 1,000.00 approval threshold, so it counts when recorded",
 };
 
+/**
+ * The refusals a billing's clean-up may meet once the run went past it (contract-billing.service.ts
+ * `voidBilling`): the billing is paid, is no longer the latest, or is already void. Any other
+ * refusal fails the clean-up, so a void the API starts refusing for a new reason doesn't pass
+ * silently (PR #42 final review).
+ */
+const SETTLED_REFUSALS: ReadonlySet<string> = new Set([
+  "This billing has a confirmed payment, so it can't be voided.",
+  "Only the latest billing can be voided.",
+  "This billing is already void.",
+]);
+
+/** Voids a billing a stopped run left open, as the request's person; a 400 must be a settled refusal. */
+async function voidLeftBilling(request: APIRequestContext, id: string): Promise<APIResponse> {
+  const response = await request.post(`/api-proxy/contract-billings/${id}/void`, {
+    data: { reason: "e2e flow clean-up" },
+  });
+  if (response.status() !== 400) return response;
+  const { message } = (await response.json()) as { message?: unknown };
+  if (typeof message === "string" && SETTLED_REFUSALS.has(message)) return response;
+  throw new Error(`refused for another reason: ${await response.text()}`);
+}
+
 /** A figure in the contract's Money panel (Invoiced, Paid, Retained, ...). */
 function figure(page: Page, label: string): Locator {
   return page.locator("dt", { hasText: new RegExp(`^${label}$`) }).locator("xpath=following-sibling::dd[1]");
+}
+
+/**
+ * Arms a wait for the page's next read of GET /invoices, the re-read of the write the step is about
+ * to make (transport.ts reads the screen again after every write), and resolves to its answer.
+ * Unlike `waitForAnswer`, it passes over an answer to a read sent before it was armed: the last
+ * write's re-read can still be queued behind the browser's six connections to the app, and its
+ * invoices predate this write (B4 session log, runs b4-f5-stop-release and b4-f5-stop-drop). The
+ * contract page reads only on opening and after a write (use-api.ts), so nothing else is sent.
+ */
+function nextInvoicesRead(page: Page): Promise<Invoice[]> {
+  const sent = new Set<Request>();
+  const onRequest = (request: Request): void => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === "/api-proxy/invoices") sent.add(request);
+  };
+  page.on("request", onRequest);
+  const answer = page
+    .waitForResponse((response) => sent.has(response.request()), { timeout: 30_000 })
+    .then(async (response) => {
+      const text = await response.text();
+      if (!response.ok()) throw new Error(`GET /invoices answered ${response.status()}: ${text}`);
+      return JSON.parse(text) as Invoice[];
+    })
+    .finally(() => page.off("request", onRequest));
+  // As the kit's waits: a step that fails before this is awaited leaves no unhandled rejection.
+  answer.catch(() => undefined);
+  return answer;
 }
 
 /** The invoice in the page's GET /invoices answer that a billing raised. */
@@ -86,16 +128,17 @@ async function payInvoice(page: Page, invoice: Invoice, reference: string): Prom
  * simulated signature, posts the milestone (its invoice holds the retainage back), takes the
  * payment, marks the contract completed, releases the retainage on its own invoice and takes that
  * payment too. The ledger after each posting, the contract's figures and the audit log are checked
- * from the answers the screens got. It registers no clean-ups yet: while it is `fixme` it never
- * runs, so none could be proved. Once B4 is fixed, register what a stopped run must undo
- * (the contract and what it billed) with `personas.onCleanup`, as the other flows do.
+ * from the answers the screens got, and step 1 checks that the form leaves the branch to the API
+ * (B4). A run that stops midway voids its open billings, newest first (`voidLeftBilling`). Once a
+ * run has finished both voids are refused (the release is paid, Billing 1 is no longer the latest),
+ * so it leaves a completed contract with two paid invoices, and its customer.
  */
 flowTest.describe("flow F5: contract billing with retainage, and its release", () => {
   resetAuthAround([OWNER_EMAIL]);
 
-  flowTest.fixme(
+  flowTest(
     "a signed contract's milestone billing holds retainage back, is paid, and the released retainage is billed and paid",
-    { tag: FLOW_TAG, annotation: BLOCKED_BY },
+    { tag: FLOW_TAG },
     async ({ personas }) => {
       flowTest.setTimeout(120_000);
       const run = runId();
@@ -105,6 +148,12 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
       const title = `e2e-flow contract ${run}`;
       const owner = await personas.open(OWNER_EMAIL, { mfa: true });
       const { page } = owner;
+      // The Owner as the API has them: a new contract must be filed under the Owner's own branch (B4).
+      const me = (await readAs<User[]>(owner.request, "/users")).find(
+        (user) => user.email.toLowerCase() === OWNER_EMAIL,
+      );
+      if (!me) throw new Error(`GET /users has no ${OWNER_EMAIL}`);
+      expect(me.branchId, "the seeded Owner has a branch on the API").toMatch(/^[0-9a-f-]{36}$/);
 
       const t0 = await flowTest.step("0. the books before", () => trialBalance(owner.request));
 
@@ -112,9 +161,8 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
         "1. the Owner writes the contract, sends it and records the signature",
         async () => {
           // Setup, not the journey: the contract form picks from the customers the API serves.
-          const added = await owner.request.post("/api-proxy/customers", { data: { name: customerName } });
-          expect(added.ok(), `POST /customers answered ${added.status()}: ${await added.text()}`).toBe(true);
-          expect(((await added.json()) as Customer).name).toBe(customerName);
+          const added = await postAs<Customer>(owner.request, "/customers", { name: customerName });
+          expect(added.name).toBe(customerName);
 
           await page.goto("/contracts");
           await page.getByRole("button", { name: "New contract" }).click();
@@ -131,9 +179,19 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
           await form.getByLabel("Description", { exact: true }).fill("Final inspection");
           await choose(page, form.getByLabel("Billing", { exact: true }), "Bill as a milestone");
           await form.getByLabel("Value", { exact: true }).fill("800");
+          const sentBody = page.waitForRequest(
+            (request) => request.method() === "POST" && new URL(request.url()).pathname === "/api-proxy/contracts",
+          );
+          // As the kit's waits: a step that fails before this is awaited leaves no unhandled rejection.
+          sentBody.catch(() => undefined);
           const saved = waitForAnswer<Contract>(page, "POST", /^\/api-proxy\/contracts$/);
           await form.getByRole("button", { name: "Save contract" }).click();
+          const body = (await sentBody).postDataJSON() as Record<string, unknown>;
+          expect(body, "the form leaves the branch to the API (B4)").not.toHaveProperty("branchId");
+          expect(body, "and the rep").not.toHaveProperty("salesRepId");
           const made = await saved;
+          expect(made.branchId, "a new contract is filed under its creator's own branch").toBe(me.branchId);
+          expect(made.salesRepId, "and its rep is its creator").toBe(me.id);
           await expect(page).toHaveURL(new RegExp(`/contracts/${made.id}$`));
           await expect(page.getByRole("heading", { level: 1, name: `${made.number}, ${title}` })).toBeVisible();
 
@@ -162,9 +220,12 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
           "POST",
           new RegExp(`^/api-proxy/contracts/${contract.id}/billings$`),
         );
-        const reread = waitForAnswer<Invoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
+        const reread = nextInvoicesRead(page);
         await dialog.getByRole("button", { name: "Post billing" }).click();
         const made = await posted;
+        personas.onCleanup(`void Billing ${made.number} on ${contract.number}`, () =>
+          voidLeftBilling(owner.request, made.id),
+        );
         await expect(page.getByText(`Billing ${made.number} posted`, { exact: true })).toBeVisible();
         expect(made.number).toBe(1);
         const raised = invoiceOf(await reread, made);
@@ -230,9 +291,10 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
             "POST",
             new RegExp(`^/api-proxy/contracts/${contract.id}/retainage-releases$`),
           );
-          const reread = waitForAnswer<Invoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
+          const reread = nextInvoicesRead(page);
           await dialog.getByRole("button", { name: "Release retainage" }).click();
           const made = await posted;
+          personas.onCleanup(`void the release on ${contract.number}`, () => voidLeftBilling(owner.request, made.id));
           await expect(page.getByText("Retainage released", { exact: true })).toBeVisible();
           expect(made.kind).toBe("release");
           expect(made.released).toBe(billing.withheld);
