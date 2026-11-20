@@ -82,7 +82,7 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 | `pnpm lint` | pass |
 | `pnpm typecheck` | pass |
 | `pnpm test` | pass: shared 1,236, web 495, API 128, db 18, providers 11 |
-| API integration (`vitest --project integration --maxWorkers=3`) | 963 of 963 at `a85c87b`; rerun on `1869f8c` (the last API-side change): see the report |
+| API integration (`vitest --project integration --maxWorkers=3`) | 963 of 963 at `a85c87b`, and again 963 of 963 at `1869f8c` (after the last API-side change) |
 | Playwright api mode (with `company-day.spec.ts`) | not run: ports 3000/4000 belong to another builder |
 | Playwright demo (expenses, timesheets, time off, quotes, invoices, plus the six changed specs) | not run, for the same reason |
 | Red first | the old DemoStore fails DD2, DD3 and DD4; an unrouted `today` fails the six AD tests |
