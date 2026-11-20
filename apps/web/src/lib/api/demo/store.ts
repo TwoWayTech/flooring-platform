@@ -1194,16 +1194,20 @@ export class DemoStore implements ApiClient {
     const draftProblem = quoteDraftProblem(input);
     if (draftProblem) throw new DemoRuleError(draftProblem);
     // Boxed lines are sold in whole cartons, as on the API (F-m, ADR 0027).
-    // The pack is the product's, as on the API, never the one the line was sent with.
+    // The pack is the product's, as on the API, never the one the line was sent with; it is
+    // checked and stored that way.
     const packed = input.lines.map((line) => {
-      const pack = line.productId ? db.get("products", line.productId)?.sqFtPerCarton : undefined;
-      return { ...line, sqFtPerCarton: pack };
+      if (!line.productId) return { ...line, sqFtPerCarton: undefined };
+      const product = db.get("products", line.productId);
+      if (!product) throw new DemoRuleError("A product on the quote no longer exists.");
+      return { ...line, sqFtPerCarton: product.sqFtPerCarton };
     });
     const cartons = partCartonProblem(packed, "sell");
     if (cartons) throw new DemoRuleError(cartons);
     // Status, sending and conversion change only through their own calls (spec B1).
     const quote: Quote = {
       ...input,
+      lines: packed,
       status: before?.status ?? "draft",
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
