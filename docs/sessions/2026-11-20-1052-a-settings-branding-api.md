@@ -81,6 +81,15 @@ Mutations BM28 (no `lock_timeout`: BA14 hangs past its timeout), BM29 (no busy m
 
 **Fresh review of that delta (`b73c910`): PASS, no blocking.** Three Low notes, taken: the `select 1` comment now says the idle limit, not the check, bounds the wait for a company connection; the three limits are set with `set_config(..., true)` and parameters instead of `sql.raw`; ADR 0059's residual-risk line notes that an audit slower than 10 s ends the control session after the audit committed (D3's accepted gap, slightly likelier). Untested: the idle-limit path (holding all 3 company connections), recorded as follow-up F6.
 
+## E2e (ports free, run at the coordinator's request)
+
+- **Database:** a throwaway `postgres:16-alpine` container on port 5434 (`fp6-e2e-pg`), as CI does: fresh throwaway secrets made in-process by `settings6/run-env.mjs` (never printed, no `.env` read), `pnpm db:seed` twice. The shared PostgreSQL on 5432 was not touched. The container was removed afterwards.
+- **Builds, one at a time:** `pnpm --filter api build`, `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build`; later `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build`.
+- **Api mode, the whole suite, the config's 1 worker:** `npx playwright test --config playwright.api.config.ts`: **58 passed (7.4 min)**, BE1 among them.
+- **Demo, 2 workers:** `E2E_WORKERS=2 npx playwright test branding settings shell roles audit a11y responsive --project=flooring`: **211 passed (5.3 min)**, the branding spec's step-up, BS1 and BS2 among them; `... branding settings shell --project=hr`: **2 passed**.
+- No failure, so no code change and no further review. Ports 3000 and 4000 free after each run (`netstat`).
+- F4 (e2e not run) is closed.
+
 ## Owner questions (added during the build)
 
 - **Q4. A company with no live branding row in api mode** shows the demo's branding (a save answers 409). Taken: as every section left out of the answer. Show neutral product defaults instead?
