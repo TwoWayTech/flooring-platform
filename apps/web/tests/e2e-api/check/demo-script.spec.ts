@@ -7,6 +7,7 @@ import {
   moneyString,
   sum,
   type AuditEntry,
+  type CompanyAnswer,
   type Contract,
   type Customer,
   type Expense,
@@ -128,7 +129,7 @@ flowTest.describe("the demo script on Summit in api mode (whole-product check DS
   });
 
   flowTest(
-    "DS-1, DS-4, DS-6, DS-8, DS-9, DS-13, DS-19 and the Owner's gaps (G15, G17, G18, bell and Outbox)",
+    "DS-1, DS-4, DS-6, DS-8, DS-9, DS-13, DS-19 and the Owner's gap G15 and the closed G17, G18 and bell and Outbox",
     async ({ personas }) => {
       const run = runId();
       const startedAt = Date.now();
@@ -175,30 +176,23 @@ flowTest.describe("the demo script on Summit in api mode (whole-product check DS
         await openScreen<Invoice[]>(dana, `/sales/invoices/${invoice.id}`, /^\/api-proxy\/invoices$/);
         await expect(page.getByText(invoice.number).first()).toBeVisible();
 
-        // GAP (finding F-t): the split dialog offers DemoStore's people, whose ids aren't the API's, so a
-        // share with anyone else is refused before it reaches the rules.
+        // Finding F-t closed (2026-11-20): the dialog's people come from GET /company, so a share with
+        // a second rep saves under the API's own id.
+        const people = (await readAs<CompanyAnswer>(dana.request, "/company")).people;
+        const second = people.find((person) => person.name === SECOND_REP);
+        expect(second, `${SECOND_REP} is in the company's directory`).toBeDefined();
         await page.getByRole("button", { name: "Update status" }).click();
         await page.getByRole("menuitem", { name: "Commission split" }).click();
         const split = page.getByRole("dialog", { name: `Commission split on ${invoice.number}` });
         await choose(page, split.getByLabel("Share with"), SECOND_REP);
-        const splitAnswer = page.waitForResponse(
-          (response) =>
-            response.request().method() === "PUT" &&
-            new URL(response.url()).pathname === `/api-proxy/invoices/${invoice.id}/commission-split`,
-        );
+        const saved = waitForAnswer<Invoice>(page, "PUT", /^\/api-proxy\/invoices\/[^/]+\/commission-split$/);
         await split.getByRole("button", { name: "Save split" }).click();
-        const refused = await splitAnswer;
-        expect(refused.status(), "the split with a DemoStore person").toBe(400);
-        const refusal = (await refused.json()) as { code: string; message: string };
-        expect(refusal).toEqual({ code: "invalid_request", message: "Invalid UUID" });
-        await expect(split.getByRole("alert")).toHaveText(refusal.message);
-        await split.getByRole("button", { name: "Cancel" }).click();
-        const afterSplit = await readAs<Invoice[]>(dana.request, "/invoices");
-        expect(afterSplit.find((row) => row.id === invoice.id)?.commissionSplit ?? []).toEqual([]);
-        flowTest.info().annotations.push({
-          type: "GAP F-t",
-          description: `PUT /invoices/:id/commission-split answered 400 ${refusal.code}: "${refusal.message}"`,
-        });
+        await saved;
+        await expect(split).toBeHidden();
+        const afterSplit = (await readAs<Invoice[]>(dana.request, "/invoices")).find((row) => row.id === invoice.id);
+        const shares = afterSplit?.commissionSplit ?? [];
+        expect(shares.map((share) => share.userId)).toContain(second?.id);
+        expect(shares.reduce((total, share) => total.plus(share.pct), dec(0)).toString()).toBe("100");
 
         await page.getByRole("button", { name: "Update status" }).click();
         await page.getByRole("menuitem", { name: "Issue credit note" }).click();
@@ -287,76 +281,35 @@ flowTest.describe("the demo script on Summit in api mode (whole-product check DS
       });
 
       await flowTest.step(
-        "DS-G17 and DS-G18: Number format and Branding save to DemoStore, never the API",
+        "DS-17 and DS-18: Number format and Branding read the API (G17 and G18 closed; their saves are settings.spec.ts E1 and settings-branding.spec.ts, which restore Summit)",
         async () => {
-          for (const [href, change, save, saved] of [
-            [
-              "/settings/number-format",
-              () =>
-                page
-                  .getByRole("button", { name: /^More decimals for / })
-                  .first()
-                  .click(),
-              "Save number format",
-              "Number format saved",
-            ],
-            [
-              "/settings/branding",
-              () => page.getByLabel("Monogram letters").fill("DS"),
-              "Save branding",
-              "Branding saved",
-            ],
-          ] as const) {
+          for (const href of ["/settings/number-format", "/settings/branding"]) {
+            log.clear();
             expect(await openAndSettle(page, href)).toBe("open");
             noteCoverage(href);
-            log.clear();
-            await change();
-            await page.getByRole("button", { name: save }).click();
-            await expect(page.getByText(saved)).toBeVisible();
-            expect(log.writes, `${href} saved through the API`).toEqual([]);
+            expect(asked(log, "GET /settings"), `${href} read GET /settings`).toBe(true);
           }
-          flowTest.info().annotations.push({
-            type: "GAP-G17, GAP-G18",
-            description:
-              "Settings → Number format and Branding save to DemoStore in api mode (updateSettings); the API is never asked",
-          });
         },
       );
 
-      await flowTest.step("DS-GB: the Outbox and the bell show DemoStore's rows", async () => {
+      await flowTest.step("DS-GB: the Outbox and the bell read the API (GB closed, PR #65)", async () => {
         log.clear();
         expect(await openAndSettle(page, "/outbox")).toBe("open");
         noteCoverage("/outbox");
-        await expect(page.getByRole("row").nth(1)).toBeVisible();
         await page.getByRole("button", { name: /^Notifications/ }).click();
         await expect(page.getByRole("dialog")).toBeVisible();
-        expect(asked(log, "GET /outbox"), "the Outbox screen asked GET /outbox").toBe(false);
-        expect(asked(log, "GET /notifications"), "the bell asked GET /notifications").toBe(false);
+        expect(asked(log, "GET /outbox"), "the Outbox screen asked GET /outbox").toBe(true);
+        expect(asked(log, "GET /notifications"), "the bell asked GET /notifications").toBe(true);
         await page.keyboard.press("Escape");
-        flowTest.info().annotations.push({
-          type: "GAP-GB",
-          description: "The Outbox screen (listOutbox) and the bell (listMyNotifications) read DemoStore in api mode",
-        });
       });
 
       await flowTest.step(
-        "DS-G15: View as follows the role on screen, while the API answers as the Owner",
+        "DS-15: View as is not offered in api mode, since the API answers only for the signed-in person (G15 closed by PR #50)",
         async () => {
           await page.goto("/");
           await settle(page);
-          await page.getByRole("button", { name: "View as", exact: true }).click();
-          await page.getByRole("menuitem", { name: "Sales", exact: true }).click();
-          await expect(page.getByText(/^Viewing as Sales\./)).toBeVisible();
-          expect(await openAndSettle(page, "/finance")).toBe("refused");
-          const customers = waitForAnswer<Customer[]>(page, "GET", /^\/api-proxy\/customers$/);
-          await page.goto("/sales?view=customers");
-          expect([...strippableNames(await customers)], "an Owner-only field in the answer").toContain("creditLimit");
-          await page.getByRole("button", { name: "Stop viewing as" }).click();
-          flowTest.info().annotations.push({
-            type: "GAP-G15",
-            description:
-              "View as Sales hides pages on screen, but the API still answers as the Owner (creditLimit in GET /customers)",
-          });
+          await expect(page.getByRole("navigation").first()).toBeVisible();
+          await expect(page.getByRole("button", { name: "View as", exact: true })).toHaveCount(0);
         },
       );
     },
