@@ -50,7 +50,7 @@ Decided on resuming (2026-11-20):
 
 The owner asked for the findings to be fixed in small PRs ("Fix what it finds in small PRs"), one branch each, stacked. Each fix turns the check's pin round: the test that pinned the gap now asserts the fixed behaviour. Details and decisions: docs/sessions/2026-11-20-1948-a-check-fixes-x.md.
 
-- **F-h (P1, `fix/api-settings-switch-checks`):** the users, roles, audit and support-grant routes read their switch first, and the 12 entries left `NO_SWITCH_ROUTES`; PM-5 now finds each one hidden. `GET /users` and `GET /roles` are hidden only with both `settings.users` and `settings.roles` off (`any-of`), because the Users page reads the roles and the Roles page reads the users.
+- **F-h (P1, `fix/api-settings-switch-checks`):** the users, roles, audit and support-grant routes read their switch first, and the 12 entries left `NO_SWITCH_ROUTES`; PM-5 now finds each one hidden. `GET /users` and `GET /roles` are hidden only with both `settings.users` and `settings.roles` off (`any-of`), because the Users page reads the roles and the Roles page reads the users. The console's support request is hidden with `settings.users` too, so no request starts that no Owner could answer (security review, round 1).
 
 ## Consequences
 

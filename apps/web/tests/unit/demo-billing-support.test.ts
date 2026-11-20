@@ -132,6 +132,23 @@ describe("demo standing and billing (part 4)", () => {
 });
 
 describe("demo support access for the Owner (part 4)", () => {
+  it("refuses requests, the list and both decisions while settings.users is off, as the API does", async () => {
+    const store = await summitAs(SUMMIT_OWNER);
+    const { id } = await store.requestSupportAccess({ companyId: "summit", reason: REASON, hours: 2 });
+    const feature = FEATURES["settings.users"] as { enabled: boolean };
+    feature.enabled = false;
+    try {
+      const off = "This feature is switched off.";
+      await expect(store.requestSupportAccess({ companyId: "summit", reason: REASON, hours: 2 })).rejects.toThrow(off);
+      await expect(store.listSupportGrants()).rejects.toThrow(off);
+      await expect(store.approveSupportGrant(id)).rejects.toThrow(off);
+      await expect(store.revokeSupportGrant(id)).rejects.toThrow(off);
+    } finally {
+      feature.enabled = true;
+    }
+    expect((await store.listSupportGrants()).map((grant) => [grant.id, grant.status])).toEqual([[id, "pending"]]);
+  });
+
   it("lists the console's request, and approves then revokes it with both log rows", async () => {
     const store = await summitAs(SUMMIT_OWNER);
     const { id } = await store.requestSupportAccess({ companyId: "summit", reason: REASON, hours: 2 });

@@ -124,19 +124,22 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
       ],
       ["settings.audit", [["get", "/audit"]]],
     ];
+    /** The bare 404 a switched-off feature answers; a missing record's 404 has words. */
+    const switchedOff = (answer: request.Response) =>
+      answer.status === 404 && answer.body.code === "not_found" && answer.body.message === "Not Found";
     for (const [key, routes] of hidden) {
-      await withFeaturesOff([key], async () => {
-        for (const [method, path] of routes) {
-          const answer = await call(method, path, owner.cookie).send({});
-          expect({ key, method, path, status: answer.status, code: answer.body.code }).toEqual({
-            key,
-            method,
-            path,
-            status: 404,
-            code: "not_found",
-          });
-        }
-      });
+      for (const [method, path] of routes) {
+        // With the switch on the route answers something else, so the 404 with it off is the switch's own.
+        const on = await call(method, path, owner.cookie).send({});
+        const off = await withFeaturesOff([key], () => call(method, path, owner.cookie).send({}));
+        expect({ key, method, path, on: switchedOff(on), off: switchedOff(off) }).toEqual({
+          key,
+          method,
+          path,
+          on: false,
+          off: true,
+        });
+      }
     }
   });
 

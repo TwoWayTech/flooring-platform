@@ -507,9 +507,11 @@ export class DemoStore implements ApiClient {
    * ("Refusal order": the body's 400 before the 404, 409 and 429). The grant and its
    * `support.requested` row are kept in this browser. No step-up, like the demo's access save. The
    * company's Owner approves or revokes it in Settings → Users (part 4); otherwise it stays pending
-   * until it expires.
+   * until it expires. Refused while `settings.users` is off, as the API hides the route then: no Owner
+   * could see the request (CLAUDE.md rule 13).
    */
   async requestSupportAccess(input: SupportRequestInput) {
+    if (!featureOn("settings.users")) throw new DemoRuleError("This feature is switched off.");
     const problem = supportRequestInputProblem(input);
     if (problem) throw new DemoRuleError(problem);
     const company = await this.platformCompany(input.companyId);
@@ -573,8 +575,12 @@ export class DemoStore implements ApiClient {
     await this.decideSupportGrant(grantId, "revoke");
   }
 
-  /** The open company, once its viewer is checked to be its Owner, as the support routes check. */
+  /**
+   * The open company, once its viewer is checked to be its Owner, as the support routes check; first
+   * the `settings.users` switch, whose page holds the panel, as on the API (CLAUDE.md rule 13).
+   */
   private async supportOwner(): Promise<CompanyDb> {
+    if (!featureOn("settings.users")) throw new DemoRuleError("This feature is switched off.");
     const db = this.open();
     if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(SUPPORT_OWNER_ONLY_MESSAGE);
     return db;

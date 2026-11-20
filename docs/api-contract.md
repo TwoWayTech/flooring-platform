@@ -96,7 +96,7 @@ Every company route declares what it needs: `@RequirePermission(...keys)` (any o
 
 Draft spec: docs/specs/settings-users-access.md.
 
-**Feature switches (CLAUDE.md rule 13, 2026-11-20, finding F-h).** Each route reads its page's switch first, after the guards, and answers 404 `not_found` while it is off: `POST /users/invite`, `PATCH /users/:id` and the three company `/support-grants` routes read `settings.users`; `POST /roles`, `PUT /roles/:id`, `POST /roles/:id/reset` and `DELETE /roles/:id` read `settings.roles`; `GET /audit` reads `settings.audit`. `GET /users` and `GET /roles` answer while `settings.users` or `settings.roles` is on, since the Users page reads the roles and the Roles page reads the users; they answer 404 only with both off.
+**Feature switches (CLAUDE.md rule 13, 2026-11-20, finding F-h).** Each route reads its page's switch first, after the guards, and answers 404 `not_found` while it is off: `POST /users/invite`, `PATCH /users/:id` and the three company `/support-grants` routes read `settings.users`; `POST /roles`, `PUT /roles/:id`, `POST /roles/:id/reset` and `DELETE /roles/:id` read `settings.roles`; `GET /audit` reads `settings.audit`. `GET /users` and `GET /roles` answer while `settings.users` or `settings.roles` is on, since the Users page reads the roles and the Roles page reads the users; they answer 404 only with both off. `POST /platform/support-grants` also answers 404 while `settings.users` is off (`@PlatformFeature`), since no Owner could see, approve or revoke the request; `GET /platform/support-grants` still lists the console's own requests.
 
 | Route | Needs | Does |
 | --- | --- | --- |

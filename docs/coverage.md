@@ -163,7 +163,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `settings.users` | demo | `/settings/users` (api) | 7 | 1 | 8 | 5 | 4 |
+| `settings.users` | demo | `/settings/users` (api) | 7 | 2 | 8 | 5 | 4 |
 | `settings.roles` | demo | `/settings/roles` (api) | 6 | 1 | 6 | 6 | 1 |
 | `settings.audit` | demo | `/settings/audit` (api) | 1 | 0 | 3 | 9 | 20 |
 | `auth.mfa` | demo | — | 0 | 0 | 0 | 0 | 0 |
