@@ -26,7 +26,7 @@ The tenant always comes from the session, never from a parameter, as it will on 
   The web client turns all of these into `ApiError`, so screens handle them as they handle a DemoStore rule error.
 - **Re-reading after a write.** In api mode the HTTP transport tells the screens to read again after every non-GET request the server answered, a success or a 400, 403, 404, 409 or 422 refusal, once the response is OK or refused and before its body is parsed. A GET never does, and neither do a network failure, 401, 429 or 5xx. A POST that only reads goes through `requestAsRead` and never re-reads: `POST /auth/step-up`, `POST /imports/check`, `POST /pay-periods` (it runs inside a read) and the timesheet upload's dry run. A method factory can't re-read on its own (ADR 0051, 2026-11-16).
 - **Lists.** Filtered by data scope on the server. Pagination arrives when a module needs it, as `?limit=&cursor=` returning `{ items, nextCursor }`.
-- **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md). A client treats a field the server left out as unknown, never as zero: no margin without cost (`computeTotals`, ADR 0037, 2026-11-16).
+- **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md). A client treats a field the server left out as unknown, never as zero: no margin without cost (`computeTotals`, `monthlyPnl`, `salesTotals`, `bestSellersIn`, `teamStats`; ADR 0037, 2026-11-16 and 2026-11-17).
 - **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
 - **Docs.** OpenAPI is generated from the controllers at `/docs` (browsable) and `/docs/openapi.json`. `GET /health` is public.
 
@@ -290,7 +290,7 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split |
+| `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split. Invoice `cost` and each line's `unitCost` are left out without `inventory.product.view_sensitive`, and a contract invoice's also without `contracts.contract.view_sensitive` (`contractCostShown`); the web treats them as unknown (ADR 0037, 2026-11-17) |
 | `GET /payments` | `sales.payment.view` or `sales.payment.approve` | Payments on invoices within scope, with their files |
 | `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
 | `GET /refunds` | `sales.payment.view` or `sales.payment.refund` | Refunds to customers within scope |

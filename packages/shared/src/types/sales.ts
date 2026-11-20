@@ -1,4 +1,4 @@
-import type { DocLine } from "../documents";
+import type { DocLine, ViewedDocLine } from "../documents";
 import type { TaxRule } from "../us-pack/tax";
 import type { TaxOverride, TaxSource } from "../us-pack/tax-defaults";
 import type { Address } from "./company";
@@ -147,6 +147,13 @@ export interface Invoice {
   total: string;
   cost: string;
 }
+
+/**
+ * An invoice as its viewer holds it: the API leaves out `cost` and each line's `unitCost` without
+ * product cost (CLAUDE.md rule 5), and a contract invoice's without contract cost
+ * (`contractCostShown`). Stored invoices always carry them. A null counts the same as a missing one.
+ */
+export type ViewedInvoice = Omit<Invoice, "cost" | "lines"> & { cost?: string | null; lines: ViewedDocLine[] };
 
 /** How a customer paid (spec Appendix A "Record payment"). */
 export type PaymentMethod = "cash" | "check" | "ach" | "card" | "other";

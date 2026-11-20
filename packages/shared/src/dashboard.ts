@@ -1,7 +1,8 @@
+import { signedCost, signedSubtotal } from "./analytics";
 import { addDays, daysBetween } from "./dates";
 import { lineAmount } from "./documents";
-import { dec, marginPct, moneyString, roundMoney, sum, type Dec } from "./money";
-import type { Invoice, Product } from "./types";
+import { dec, marginPct, moneyString, roundMoney, sum, sumKnown, type Dec } from "./money";
+import type { Invoice, Product, ViewedInvoice } from "./types";
 
 /** The dashboard's one period selector (spec E1). */
 export type DashboardPeriod = "month" | "30d" | "quarter" | "ytd" | "custom";
@@ -47,22 +48,48 @@ export function periodRange(
 const inRange = (iso: string, from: string, to: string) => iso >= from && iso <= to;
 
 /** Invoices issued in a range at a warehouse (or all), returns netted, voids left out. */
-export function invoicesIn(invoices: readonly Invoice[], from: string, to: string, locationId?: string | null) {
+export function invoicesIn<T extends Pick<Invoice, "voidedAt" | "issuedAt" | "locationId">>(
+  invoices: readonly T[],
+  from: string,
+  to: string,
+  locationId?: string | null,
+): T[] {
   return invoices.filter(
     (i) => !i.voidedAt && inRange(i.issuedAt, from, to) && (!locationId || i.locationId === locationId),
   );
 }
 
-/** Revenue (before tax), cost and margin of invoices; returns count against. */
-export function salesTotals(invoices: readonly Invoice[]) {
-  const sign = (i: Invoice) => (i.isReturn ? -1 : 1);
-  const revenue = sum(invoices.map((i) => dec(i.subtotal).times(sign(i))));
-  const cost = sum(invoices.map((i) => dec(i.cost).times(sign(i))));
+/** Revenue (before tax), cost and margin of a set of invoices (spec E1 figure cards). */
+export interface SalesTotals {
+  revenue: string;
+  /**
+   * null when an invoice arrived without its cost: never zero or a partial sum (CLAUDE.md rule 5;
+   * ADR 0037, 2026-11-17).
+   */
+  cost: string | null;
+  /**
+   * null when an invoice arrived without its cost: never zero or a partial sum (CLAUDE.md rule 5;
+   * ADR 0037, 2026-11-17).
+   */
+  margin: string | null;
+  /**
+   * null when an invoice arrived without its cost: never zero or a partial sum (CLAUDE.md rule 5;
+   * ADR 0037, 2026-11-17).
+   */
+  marginPct: string | null;
+  /** Invoices, returns left out. */
+  count: number;
+}
+
+/** Revenue (before tax), cost and margin of invoices as received; returns count against. */
+export function salesTotals(invoices: readonly Pick<ViewedInvoice, "isReturn" | "subtotal" | "cost">[]): SalesTotals {
+  const revenue = sum(invoices.map(signedSubtotal));
+  const cost = sumKnown(invoices.map(signedCost));
   return {
     revenue: moneyString(revenue),
-    cost: moneyString(cost),
-    margin: moneyString(revenue.minus(cost)),
-    marginPct: marginPct(revenue, cost).toString(),
+    cost: cost === null ? null : moneyString(cost),
+    margin: cost === null ? null : moneyString(revenue.minus(cost)),
+    marginPct: cost === null ? null : marginPct(revenue, cost).toString(),
     count: invoices.filter((i) => !i.isReturn).length,
   };
 }
@@ -98,6 +125,31 @@ export function sparkSeries<T>(
   return out.map((v) => v.toNumber());
 }
 
+/**
+ * The Gross margin card's sparkline (spec E1): signed subtotal less cost per bucket, or null when
+ * any invoice it is given arrived without its cost, so an unknown is never drawn as zero (CLAUDE.md
+ * rule 5; ADR 0037, 2026-11-17).
+ */
+export function marginSeries(
+  invoices: readonly Pick<ViewedInvoice, "issuedAt" | "isReturn" | "subtotal" | "cost">[],
+  from: string,
+  to: string,
+): number[] | null {
+  const points: { at: string; margin: Dec }[] = [];
+  for (const invoice of invoices) {
+    const cost = signedCost(invoice);
+    if (cost === null) return null;
+    points.push({ at: invoice.issuedAt, margin: signedSubtotal(invoice).minus(cost) });
+  }
+  return sparkSeries(
+    points,
+    (p) => p.at,
+    (p) => p.margin,
+    from,
+    to,
+  );
+}
+
 /** What best sellers rank by (spec E1). */
 export type SellerMetric = "revenue" | "quantity" | "margin";
 
@@ -106,15 +158,29 @@ export interface SellerRow {
   productId: string;
   revenue: string;
   quantity: string;
-  margin: string;
+  /**
+   * null for every row when a counted line arrived without its cost, since rows rank against each
+   * other: never zero or a partial sum (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
+   */
+  margin: string | null;
+}
+
+/** A product's running totals; margin turns unknown at its first line without cost. */
+interface SellerTotals {
+  revenue: Dec;
+  quantity: Dec;
+  margin: Dec | null;
 }
 
 /**
  * Best sellers over any range (spec E1): material lines by product, returns subtracted, ranked
- * by revenue, quantity or margin, optionally one category and one warehouse.
+ * by revenue, quantity or margin, optionally one category and one warehouse. Margin can't rank what
+ * isn't known: when a counted line arrived without its cost, every row's margin is null and a margin
+ * ranking falls back to revenue (rule 5; ADR 0037, 2026-11-17). A contract invoice's lines carry no
+ * product, so they are never counted.
  */
 export function bestSellersIn(
-  invoices: readonly Invoice[],
+  invoices: readonly ViewedInvoice[],
   products: readonly Product[],
   options: {
     from: string;
@@ -125,7 +191,7 @@ export function bestSellersIn(
     limit: number;
   },
 ): SellerRow[] {
-  const totals = new Map<string, { revenue: Dec; quantity: Dec; margin: Dec }>();
+  const totals = new Map<string, SellerTotals>();
   for (const inv of invoicesIn(invoices, options.from, options.to, options.locationId)) {
     const sign = inv.isReturn ? -1 : 1;
     for (const line of inv.lines) {
@@ -134,21 +200,28 @@ export function bestSellersIn(
       if (options.category && product?.category !== options.category) continue;
       const t = totals.get(line.productId) ?? { revenue: dec(0), quantity: dec(0), margin: dec(0) };
       const amount = lineAmount(line).times(sign);
-      const cost = roundMoney(dec(line.quantity).times(line.unitCost)).times(sign);
+      const unitCost = line.unitCost ?? null;
+      const cost = unitCost === null ? null : roundMoney(dec(line.quantity).times(unitCost)).times(sign);
       totals.set(line.productId, {
         revenue: t.revenue.plus(amount),
         quantity: t.quantity.plus(dec(line.quantity).times(sign)),
-        margin: t.margin.plus(amount.minus(cost)),
+        margin: t.margin === null || cost === null ? null : t.margin.plus(amount.minus(cost)),
       });
     }
   }
+  // Rows rank against each other, so one unknown margin makes them all unknown (D1).
+  const costKnown = [...totals.values()].every((t) => t.margin !== null);
+  const rankBy: SellerMetric = options.metric === "margin" && !costKnown ? "revenue" : options.metric;
+  // With every cost known a margin is never null; the check only narrows the type.
+  const rankOf = (t: SellerTotals): Dec =>
+    rankBy === "margin" && t.margin !== null ? t.margin : rankBy === "quantity" ? t.quantity : t.revenue;
   return [...totals.entries()]
-    .sort(([, a], [, b]) => b[options.metric].comparedTo(a[options.metric]))
+    .sort(([, a], [, b]) => rankOf(b).comparedTo(rankOf(a)))
     .slice(0, options.limit)
     .map(([productId, t]) => ({
       productId,
       revenue: moneyString(t.revenue),
       quantity: t.quantity.toString(),
-      margin: moneyString(t.margin),
+      margin: !costKnown || t.margin === null ? null : moneyString(t.margin),
     }));
 }

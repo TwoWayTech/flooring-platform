@@ -2,11 +2,9 @@
 
 import {
   last12Months,
-  marginPct,
-  moneyString,
   monthlyPnl,
+  pnlTotals,
   slowMovers,
-  sum,
   boxedStock,
   type Crew,
   type Customer,
@@ -14,6 +12,7 @@ import {
   type Job,
   type Location,
   type PnlMonth,
+  type PnlTotals,
   type Product,
   type Quote,
   type Role,
@@ -40,7 +39,11 @@ export interface TimelineJob {
  */
 export interface DashboardData {
   months: PnlMonth[];
-  totals: { revenue: string; grossMargin: string; marginPct: string };
+  /**
+   * The 12-month totals (`pnlTotals`). The margin part is shown only with `seesMargin`: the panel
+   * decides, and the hook doesn't read permissions, so View as keeps working through `useCan`.
+   */
+  totals: PnlTotals;
   slow: (SlowMover & { product: Product })[];
   jobsToday: TimelineJob[];
   sales: SalesLedger;
@@ -95,15 +98,9 @@ export function useDashboardData() {
         client.list("roles"),
       ]);
       const months = monthlyPnl(last12Months(today), sales.invoices, expenses);
-      const revenue = sum(months.map((m) => m.revenue));
-      const cogs = sum(months.map((m) => m.cogs));
       return {
         months,
-        totals: {
-          revenue: moneyString(revenue),
-          grossMargin: moneyString(revenue.minus(cogs)),
-          marginPct: marginPct(revenue, cogs).toString(),
-        },
+        totals: pnlTotals(months),
         slow: withProduct(
           slowMovers(products, rolls, sales.invoices, today, LIST_LENGTH, boxedStock(stockMovements)),
           products,

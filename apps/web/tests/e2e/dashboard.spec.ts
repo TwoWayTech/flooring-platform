@@ -9,6 +9,7 @@ import {
   marginPct,
   monthlyPnl,
   shiftDates,
+  storedPnl,
   sum,
   type CompanyFixtures,
 } from "@workspace/shared";
@@ -22,7 +23,7 @@ function expectedFigures() {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const f = shiftDates(raw, dateShift(raw.anchorDate, today));
-  const months = monthlyPnl(last12Months(today), f.invoices, f.expenses);
+  const months = storedPnl(monthlyPnl(last12Months(today), f.invoices, f.expenses));
   const revenue = sum(months.map((m) => m.revenue));
   const cogs = sum(months.map((m) => m.cogs));
   const settings = defaultNumberSettings();

@@ -1,6 +1,6 @@
 import { last12Months } from "../../src/dates";
 import { dec, moneyString, sum } from "../../src/money";
-import { monthlyPnl } from "../../src/analytics";
+import { monthlyPnl, storedPnl } from "../../src/analytics";
 import type { CompanyFixtures, PlatformFixtures, Supplier } from "../../src/types";
 import { buildAudit } from "./audit";
 import { buildProducts, buildSuppliers } from "./catalog";
@@ -33,7 +33,7 @@ export interface GeneratedFixtures {
 
 /** Average monthly gross margin over the trailing year, used to size operating expenses. */
 function averageMonthlyGross(fixtures: Pick<CompanyFixtures, "invoices">, anchor: string): string {
-  const months = monthlyPnl(last12Months(anchor), fixtures.invoices, []);
+  const months = storedPnl(monthlyPnl(last12Months(anchor), fixtures.invoices, []));
   return moneyString(sum(months.map((m) => m.grossMargin)).dividedBy(months.length));
 }
 

@@ -6,7 +6,7 @@ import {
   enabledModules,
   planModulesOf,
   scopeAllows,
-  seesQuoteMargin,
+  seesMargin,
   SENSITIVE_FIELDS,
   sensitiveKeyFor,
   separateDuties,
@@ -121,23 +121,23 @@ describe("planModulesOf (PR #7 reviews: only a trial company gets all modules)",
   });
 });
 
-describe("seesQuoteMargin (ADR 0037, 2026-11-16)", () => {
+describe("seesMargin (ADR 0037, 2026-11-16 and 2026-11-17)", () => {
   const holding =
     (...keys: PermissionKey[]) =>
     (key: PermissionKey) =>
       keys.includes(key);
 
   it("needs the margin key and the product-cost key, because margin gives the cost away", () => {
-    expect(seesQuoteMargin(holding(SENSITIVE.margin, SENSITIVE.productCost))).toBe(true);
-    expect(seesQuoteMargin(holding(SENSITIVE.margin))).toBe(false);
-    expect(seesQuoteMargin(holding(SENSITIVE.productCost))).toBe(false);
-    expect(seesQuoteMargin(holding())).toBe(false);
+    expect(seesMargin(holding(SENSITIVE.margin, SENSITIVE.productCost))).toBe(true);
+    expect(seesMargin(holding(SENSITIVE.margin))).toBe(false);
+    expect(seesMargin(holding(SENSITIVE.productCost))).toBe(false);
+    expect(seesMargin(holding())).toBe(false);
   });
 
   it.each(PRODUCT_ROLES.flooring)("changes nothing for the default %s role: it follows the margin key", (key) => {
     const held = new Set(roleTemplate(key).permissions);
     const has = (permission: PermissionKey) => held.has(permission);
-    expect(seesQuoteMargin(has)).toBe(held.has(SENSITIVE.margin));
+    expect(seesMargin(has)).toBe(held.has(SENSITIVE.margin));
   });
 });
 

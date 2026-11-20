@@ -330,7 +330,7 @@ No real email is sent. `notify` writes an Outbox row.
 
 | Output | Source | Who |
 | --- | --- | --- |
-| Sales, Team CSV, `commissions` | `DataTable` in `team-table.tsx`, from `teamStats`. The margin column is left out without `sales.margin.view_sensitive` | `sales.commission.view` |
+| Sales, Team CSV, `commissions` | `DataTable` in `team-table.tsx`, from `teamStats`. The margin column needs `sales.margin.view_sensitive` and `inventory.product.view_sensitive` (`seesMargin`) and shows only when every salesperson's margin in the table is known | `sales.commission.view` |
 | Statements CSV, `commission-<month>` | `DataTable` in `commissions-page.tsx` | `hr.commission.view` |
 | People on plans CSV, `commission-plans-assigned` | `DataTable` in `commissions-page.tsx` | `hr.commission.view` |
 | Pay period lines and summary CSV | `commissionPay`, in `docs/product-spec/hr.md` | `hr.payroll.view`, `hr.payroll.export` |

@@ -1,4 +1,4 @@
-import { dec, moneyString, pctOf, roundMoney, sum, marginPct, type Dec } from "./money";
+import { dec, moneyString, pctOf, roundMoney, sum, sumKnown, marginPct, type Dec } from "./money";
 import type { SellUnit } from "./units";
 import type { Product } from "./types/catalog";
 import type { TaxCategory, TaxRule } from "./us-pack/tax";
@@ -124,8 +124,7 @@ export function computeTotals(lines: readonly ViewedDocLine[], ctx: TaxContext):
   const taxableAmount = sum(perLine.filter((l) => l.taxable).map((l) => l.amount));
   const tax = ctx.rounding === "line" ? sum(perLine.map((l) => l.tax)) : roundMoney(pctOf(taxableAmount, rate));
   // All or nothing: a sum of the known costs would understate cost and overstate margin.
-  const known = perLine.flatMap((l) => (l.cost === null ? [] : [l.cost]));
-  const cost = known.length === perLine.length ? sum(known) : null;
+  const cost = sumKnown(perLine.map((l) => l.cost));
   const byCategory = (cats: TaxCategory[]) =>
     sum(perLine.filter((l) => cats.includes(l.line.category)).map((l) => l.amount));
   return {
