@@ -88,7 +88,7 @@ async function sweep(request: APIRequestContext): Promise<void> {
  * schedules a meeting with Priya and a guest from outside, and each gets an invite with a REQUEST
  * calendar file in the Outbox; Priya accepts in her drawer, and Luis gets her reply by email and
  * in-app; Luis cancels, and each guest gets a CANCEL. The Outbox and the bell are read through the
- * API, since their screens still show DemoStore's rows in api mode. A cancelled meeting, its Outbox
+ * API (their screens read the same since the bell and Outbox part of ADR 0059). A cancelled meeting, its Outbox
  * rows, notes and audit entries stay.
  */
 flowTest.describe("flow F6: meeting invites in the Outbox, an answer and a cancel", () => {
