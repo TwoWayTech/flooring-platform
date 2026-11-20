@@ -34,7 +34,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateLocalization("tax")` with its own key. On the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. Data scope `all` |
 | Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
 | Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode since ADR 0059 part 4a; data scope `all`); `updateSettings` for section `inventory` (Stock rules, still the browser's; data scope `all`) |
-| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval (ADR 0059); shared costs stay on `updateSettings` until their part. Data scope `all` |
+| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval and `PUT /settings/sharedCosts` for shared costs (ADR 0059, part 4b). Data scope `all` |
 | Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings`. Data scope `all` |
 | Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings`. Data scope `all` |
 | Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings` (data scope `all`); `apps/web/src/lib/api/demo/notification-actions.ts` |
@@ -809,8 +809,8 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue` |
-| `fixedPct` | `Record<string, string>` | Percent per location id |
+| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue`; never saved = `revenue` |
+| `fixedPct` | `Record<string, string>` | Percent per live location id, each `PERCENT_TEXT` from 0 to 100, kept whatever the rule; with `fixed` they add up to exactly 100 (a location with none counts 0). `sharedCostsProblem`, both modes (ADR 0059, part 4b) |
 
 **`hr`**
 
@@ -856,7 +856,7 @@ Formulas below are copied from the code.
 | `Changed payments` | `settings` | `Payments` | `updateSettings("payments")` | `store.ts` |
 | `Changed stock rules` | `settings` | `Stock rules` | `updateSettings("inventory")` | `store.ts` |
 | `Changed expense approval` | `settings` | `Expense approval` | `updateSettings("expenses")` | `store.ts` |
-| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")` | `store.ts` |
+| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")`; on the API `PUT /settings/sharedCosts`, before and after as stored | `store.ts`, `settings.service.ts` |
 | `Changed hr` | `settings` | `HR` | `updateSettings("hr")` | `store.ts` |
 | `Changed meetings` | `settings` | `Meetings` | `updateSettings("meetings")` | `store.ts` |
 | `Changed email and notifications` | `settings` | `Email and notifications` | `updateSettings("email")` | `store.ts` |
@@ -1000,13 +1000,20 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The page** names branches from the shell, runs rule 29 before sending, shows the branch read only on an edit, takes the floor area at scale, and its inputs stop at the rule's and the API's lengths.
 - **The demo** applies the same module, key, switch, scope, rules, holds and words in the same order on its own records, stores a blank floor area as none, audits the cleared default, and refuses the generic save of locations.
 
+**Settings on the API, part 4b (ADR 0059): Shared costs:**
+- **Who reads.** `GET /settings` also answers `sharedCosts` to holders of `settings.expenses.manage` (only Settings → Expenses reads it), left out while `finance.expenses` is off or the company has no `core`. A company that never saved it gets revenue share, what the Business report acts on. The report reads the stored row on the server.
+- **The save.** `PUT /settings/sharedCosts`, with module `core`, `settings.expenses.manage`, the `finance.expenses` switch (404), data scope `all` (403), a body with exactly `rule` and `fixedPct` (strings only, 400), then, inside the save under the row's lock, the shared rule against the company's live locations (400 with its words): a known rule; every share names a live location of the company and is a percent from 0 to 100, whatever the rule; with `fixed`, the shares add up to exactly 100. No step-up: nothing posts to the ledger (ADR 0059, part 4b, D3). One audit entry, "Changed shared costs", before and after as stored.
+- **The page** runs the same rule before it sends (the refusal shows on the page and in a toast, and nothing is sent); its percent inputs stop at 12 characters; a cleared share is dropped (the location counts 0), never sent blank.
+- **The demo** applies the same module, key, switch, scope, rule and words against its own live locations.
+- **The Business report** reads a blank or malformed stored floor area or share as 0 and never fails on one; fixed shares weigh in ten-thousandths of a percent, so every share the rule takes splits exactly.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes with a branch editor (locations aren't branches; ADR 0059, part 4a).
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
 - **The shell's branding** is still the demo's (`getSettings()`) until Settings part 6; the number format and the profile are the API's (ADR 0059).
-- **Settings pages not yet on the API save in the browser only:** Branding, Shared costs (on the Expenses page), HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Settings pages not yet on the API save in the browser only:** Branding, HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
 - **Locations (part 4a).** A location added in the wrong branch can be renamed but not moved or removed, and stays in every picker. A company with no branch can't add a location until a branch editor exists. Short rows stay at a location that became a showroom (they hold nothing). A quote saved at the moment its warehouse becomes a showroom stays open there; its conversion is refused until its warehouse is changed. The dashboard's warehouse filter reads the API's locations while its quotes are still the demo's, so with a warehouse picked its pending quotes read 0. Shared costs on the Expenses page list the API's locations but still save in the browser until part 4b. Saved demo data with an empty floor area breaks the demo's Business report until that location is saved again.
 - **Reset to default** reads the demo's original values, which the API was seeded with; Region and Currency keep the time zone, country, locale, base currency, its lock and the currencies from the company's own copy (ADR 0059, part 2b); Sales tax keeps filing and certificate types from the company's own copy (part 3a).
 - **The Sales tax tab shows rates at the columns' scale** (`8.81000000`).

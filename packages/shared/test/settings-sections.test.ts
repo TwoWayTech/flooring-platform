@@ -212,8 +212,8 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(read.decimals.fxRate).toBe(NUMBER_KINDS.fxRate.default);
   });
 
-  it("R7 the served sections: exactly four, each with a rule and a reader rule", () => {
-    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses"]);
+  it("R7 the served sections: exactly five (part 4b adds shared costs), each with a rule and a reader rule", () => {
+    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses", "sharedCosts"]);
     for (const section of API_SETTINGS_SECTIONS) {
       expect(SETTINGS_SECTIONS[section], section).toBeDefined();
       expect(SETTINGS_READERS[section], section).toBeDefined();
@@ -267,20 +267,26 @@ describe("Settings sections on the API (ADR 0059)", () => {
   it("R10 readableSections: each section only to its readers, while its module and product switch are on", () => {
     const of = (product: ProductKey, key: DefaultRoleKey, on?: (key: FeatureKey) => boolean) =>
       readableSections(readerOf(product, key), on).sort();
-    expect(of("flooring", "owner")).toEqual(["expenses", "numbers", "payments", "profile"]);
+    expect(of("flooring", "owner")).toEqual(["expenses", "numbers", "payments", "profile", "sharedCosts"]);
     expect(of("flooring", "accountant")).toEqual(["numbers", "payments", "profile"]);
     expect(of("flooring", "sales")).toEqual(["numbers", "payments", "profile"]);
     expect(of("flooring", "warehouse")).toEqual(["numbers", "profile"]);
     for (const key of PRODUCT_ROLES.flooring)
       expect(of("flooring", key), key).toEqual(expect.arrayContaining(["numbers", "profile"]));
     for (const key of PRODUCT_ROLES.hr) expect(of("hr", key), key).toEqual(["numbers", "profile"]);
-    expect(of("flooring", "owner", without("sales.payments"))).toEqual(["expenses", "numbers", "profile"]);
+    expect(of("flooring", "owner", without("sales.payments"))).toEqual([
+      "expenses",
+      "numbers",
+      "profile",
+      "sharedCosts",
+    ]);
     expect(of("flooring", "owner", without("finance.expenses"))).toEqual(["numbers", "payments", "profile"]);
     expect(of("flooring", "owner", without("settings.company", "settings.number-format"))).toEqual([
       "expenses",
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
     ]);
     const noCore = {
       permissions: new Set<PermissionKey>([

@@ -861,7 +861,8 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Localization
+   * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
+   * Owner-only loosening (`paymentControlsLoosened`). Localization
    * and tax is never replaced whole: after those checks it is refused with "Localization and tax
    * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
    * `updateLocalization` (ADR 0059, part 3b, D34).
@@ -870,7 +871,7 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     const rule = SETTINGS_SECTIONS[section];
     const access = await this.assertSettingsSave(db, rule);
-    const problem = settingsSectionProblem(section, value, db.settings[section]);
+    const problem = settingsSectionProblem(section, value, db.settings[section], { locations: db.list("locations") });
     if (problem) throw new DemoRuleError(problem);
     // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
     const payments = { [section]: value } as Partial<CompanySettings>;

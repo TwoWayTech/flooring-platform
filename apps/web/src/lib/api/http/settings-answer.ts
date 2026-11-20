@@ -46,6 +46,9 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
       case "expenses":
         merged.expenses = answer.expenses ?? demo.expenses;
         break;
+      case "sharedCosts":
+        merged.sharedCosts = answer.sharedCosts ?? demo.sharedCosts;
+        break;
       default:
         throw unservedSection(section);
     }
