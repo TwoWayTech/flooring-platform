@@ -62,6 +62,16 @@ const SUMMIT = JSON.parse(
 const SERVED = ["profile", "numbers", "payments", "expenses"] as const;
 type Served = (typeof SERVED)[number];
 
+/**
+ * The part 1 sections an answer holds, sorted: later parts' sections (HR, Email) are their own
+ * files' (settings-hr.int, settings-email.int), so these cases compare part 1's only.
+ */
+function partOne(answer: object): string[] {
+  return Object.keys(answer)
+    .filter((section) => (SERVED as readonly string[]).includes(section))
+    .sort();
+}
+
 /** One company of the test: its tenant id and slug, and its product. */
 interface TestCompany {
   id: string;
@@ -310,7 +320,11 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
           permissions: held,
           modules: enabledModules([company.product], null, []),
         }).filter((section): section is Served => (SERVED as readonly string[]).includes(section));
-        expect(Object.keys(body).sort()).toEqual([...expected].sort());
+        expect(partOne(body)).toEqual([...expected].sort());
+        // Nothing else but Settings → Email, never saved here, to its readers (settings-email.int, ME1).
+        const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
+        const others = readableSections(reader).includes("email") ? ["email"] : [];
+        expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
           const stored = await rowOf(company, section);
           const want =
@@ -326,17 +340,16 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(keysOf(body).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         if (company === floorco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+          expect(partOne(body)).toEqual(["expenses", "numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
         if (company === floorco && key === "sales") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "payments", "profile"]);
+          expect(partOne(body)).toEqual(["numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe("");
         }
-        if (company === floorco && key === "warehouse")
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+        if (company === floorco && key === "warehouse") expect(partOne(body)).toEqual(["numbers", "profile"]);
         if (company === peopleco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+          expect(partOne(body)).toEqual(["numbers", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
       });
@@ -739,7 +752,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         const body = await answerOf(owner.cookie);
         if (section === "payments") expect(body).not.toHaveProperty("payments");
         else if (section === "expenses") expect(body).not.toHaveProperty("expenses");
-        else expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+        else expect(partOne(body)).toEqual(["expenses", "numbers", "payments", "profile"]);
       });
     }
   });
@@ -791,11 +804,11 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         403,
         "module_not_enabled",
       ]);
-      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["numbers", "profile"]);
+      expect(partOne(await answerOf(owner.cookie))).toEqual(["numbers", "profile"]);
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, floorco.id));
     }
-    expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+    expect(partOne(await answerOf(owner.cookie))).toEqual(["expenses", "numbers", "payments", "profile"]);
     await put("expenses", owner.cookie, SUMMIT.settings.expenses).expect(200);
   });
 

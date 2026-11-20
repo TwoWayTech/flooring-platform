@@ -13,8 +13,7 @@ import {
 } from "@workspace/db/company";
 import { user } from "@workspace/db/control";
 import {
-  formatNumber,
-  moneyString,
+  messageMoney,
   type FileMeta,
   type Invoice,
   type InvoiceAdjustment,
@@ -321,9 +320,13 @@ export async function loadReservations(db: CompanyDb, invoiceIds?: readonly stri
   }));
 }
 
-/** How the company writes money in emails (Settings → Numbers), e.g. "$1,250.00". */
+/**
+ * How the company writes money in emails, in-app titles and refusals (Settings → Numbers), e.g.
+ * "$1,250.00": the shared `messageMoney`, with the US pack's format when none is saved (spec rule
+ * 11; ADR 0059, bell and Outbox part, D6).
+ */
 export async function loadMoneyFormat(db: CompanyDb): Promise<(value: string) => string> {
   const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, "numbers"));
   const numbers = row?.value as NumberSettings | undefined;
-  return (value) => (numbers ? formatNumber(value, "money", numbers) : `$${moneyString(value)}`);
+  return (value) => messageMoney(value, numbers);
 }

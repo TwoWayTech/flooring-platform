@@ -2,6 +2,7 @@ import { featureOn, type FeatureKey } from "../features";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ModuleKey } from "../products";
+import type { EmailSettings } from "../types/notifications";
 import type {
   CompanyProfile,
   CompanySettings,
@@ -95,9 +96,10 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then. Part 5 adds Settings → HR.
+ * DemoStore in api mode until then. Part 5 adds Settings → HR; the bell and Outbox part adds
+ * Settings → Email (`email`, the sender details).
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "hr"] as const;
+export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "hr", "email"] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -139,6 +141,9 @@ export interface SettingsReadRule {
  *   (`hr.portal.view`), and Settings → HR (`settings.hr.manage`). Those screens read it whatever
  *   the `settings.hr` page switch says, so it is not hidden while that switch is off. Pay periods,
  *   timesheets, the clock and the portal read the stored row on the server.
+ * - `email` (the bell and Outbox part, D9): only Settings → Email and notifications reads it, so only
+ *   `settings.notifications.manage`, and it is hidden while that page's switch is off. The API's
+ *   sender reads the stored row whatever is answered.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -153,6 +158,7 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
     readers: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view", "hr.portal.view", "settings.hr.manage"],
     hiddenWhenOff: false,
   },
+  email: { readers: ["settings.notifications.manage"], hiddenWhenOff: true },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -255,6 +261,8 @@ export interface SettingsAnswer {
   expenses?: ExpenseSettings;
   /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
   hr?: HrSettings;
+  /** Settings → Email as stored, or all three fields empty when never saved (the bell and Outbox part, D10). */
+  email?: EmailSettings;
   /**
    * Present only when the company has saved localization and the person reads at least one served
    * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is

@@ -247,8 +247,8 @@ export class NotificationService implements OnApplicationBootstrap {
   /** The Outbox as this reader may see it, newest first (spec "Who can see which Outbox row"). */
   async listOutbox(tenant: TenantContext, reader: OutboxReader) {
     const db = await this.tenancy.db(tenant);
-    // Only what the Outbox screen shows (spec "Outbox"). Template values, the dedupe key and the
-    // provider's id are never returned, so redaction cannot be undone from them (PR #9 review).
+    // Only what the Outbox screen shows (spec "Outbox"), the sender's name and reply-to included.
+    // Template values, the dedupe key and the provider's id are never returned, so redaction cannot be undone from them (PR #9 review).
     const rows = await db
       .select({
         id: outboxMessages.id,
@@ -260,6 +260,9 @@ export class NotificationService implements OnApplicationBootstrap {
         recipientId: outboxMessages.recipientId,
         recipientName: outboxMessages.recipientName,
         recipientEmail: outboxMessages.recipientEmail,
+        // The sender snapshot the Outbox drawer shows (ADR 0059, bell and Outbox part, D2).
+        fromName: outboxMessages.fromName,
+        replyTo: outboxMessages.replyTo,
         subject: outboxMessages.subject,
         bodyText: outboxMessages.bodyText,
         attachments: outboxMessages.attachments,
@@ -390,6 +393,8 @@ export class NotificationService implements OnApplicationBootstrap {
     return db
       .select({
         id: notifications.id,
+        // Always the reader's own id: the filter below takes no one else's note.
+        userId: notifications.userId,
         eventKey: notifications.eventKey,
         title: notifications.title,
         href: notifications.href,

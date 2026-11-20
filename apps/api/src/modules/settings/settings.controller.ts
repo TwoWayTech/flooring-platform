@@ -5,6 +5,7 @@ import {
   currencyProblem,
   datedRates,
   documentsProblem,
+  emailSettingsProblem,
   expenseSettingsProblem,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -25,6 +26,7 @@ import {
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
+  type EmailSettings,
   type ExpenseSettings,
   type HrSettings,
   type LocalizationSettings,
@@ -47,6 +49,7 @@ import { refuse, requireFeature } from "../sales/sales-common";
 import {
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
+  EMAIL_INPUT,
   EXPENSES_INPUT,
   HR_INPUT,
   NUMBERS_INPUT,
@@ -83,7 +86,8 @@ function check(problem: string | null): void {
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
  * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 5
- * adds Settings → HR, whose checks against recorded pay run under the `hr` row's lock.
+ * adds Settings → HR, whose checks against recorded pay run under the `hr` row's lock. The bell and
+ * Outbox part adds Settings → Email, the sender details, with a step-up on every save.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -240,6 +244,40 @@ export class SettingsController {
       await this.stepUp.require(session);
       return hr;
     });
+  }
+
+  /**
+   * PUT /settings/email: Settings → Email, the sender details every Outbox row is written with (ADR
+   * 0059, bell and Outbox part, D7): `settings.notifications.manage`, `platform` (no module guard,
+   * as profile and numbers); the page's switch (404), scope `all` (403), a strict body and
+   * `emailSettingsProblem` (400), then always a step-up (403 `step_up_required`), after the content
+   * checks so a refused value never costs a code: the sender name and reply-to decide who customers'
+   * mail seems to come from and where their answers to invoices and receipts go, and the sign-off is
+   * under every message, so a change is a phishing lever. Answers the section as saved.
+   */
+  @Put("email")
+  @RequirePermission(...SETTINGS_SECTIONS.email.keys)
+  @Audited()
+  async saveEmail(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<EmailSettings> {
+    requireFeature(SETTINGS_SECTIONS.email.feature);
+    requireWholeCompany(access);
+    const email = parse(EMAIL_INPUT, body);
+    check(emailSettingsProblem(email));
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "email",
+      email,
+      (value) => value,
+      () => this.stepUp.require(session),
+    );
+    return email;
   }
 
   /**

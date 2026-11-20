@@ -35,6 +35,7 @@ import { TenantConnectionService } from "../../core/tenancy/tenant-connection.se
 import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { companyToday, notFound, refuse, seesCustomer, seesDocument } from "./sales-common";
+import { loadMoneyFormat } from "./invoice-records";
 import { customerAudit, loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
 
 /** What adding a customer carries (ApiClient `NewCustomerInput`). */
@@ -428,8 +429,11 @@ export class SalesService {
       );
       return quote;
     });
-    if (action === "send") await this.emailQuote(tenant, actor, updated);
-    return (await loadQuotes(db, [quoteId]))[0]!;
+    // The email is written from the quote as saved, with the total and expiry of this send; the
+    // row read inside the transaction still holds the ones before it (ADR 0059, bell and Outbox part, D6).
+    const saved = (await loadQuotes(db, [updated.id]))[0]!;
+    if (action === "send") await this.emailQuote(tenant, actor, saved);
+    return saved;
   }
 
   /** A quote's total on a day, from the company's rules and the customer's certificate then. */
@@ -620,13 +624,20 @@ export class SalesService {
   /** Emails the quote to the customer (event `quote.sent`); a failure is logged and never undoes the send. */
   private async emailQuote(tenant: TenantContext, actor: Actor, quote: Quote): Promise<void> {
     try {
-      const [customer] = await loadCustomers(await this.tenancy.db(tenant), [quote.customerId]);
+      const db = await this.tenancy.db(tenant);
+      const [[customer], money] = await Promise.all([loadCustomers(db, [quote.customerId]), loadMoneyFormat(db)]);
       if (!customer?.email) return;
       await this.notifications.notify(tenant, actor.access.userId, {
         event: "quote.sent",
         source: { type: "quote", id: quote.id },
         to: [{ kind: "customer", id: customer.id, name: customer.name, email: customer.email }],
-        values: { "customer.name": customer.name, "quote.number": quote.number, "quote.total": quote.total },
+        // The total in the company's number format, as every other message's money (spec rule 11).
+        values: {
+          "customer.name": customer.name,
+          "quote.number": quote.number,
+          "quote.total": money(quote.total),
+          "quote.expires": quote.expiresAt ?? "",
+        },
       });
     } catch {
       this.logger.warn("A quote was sent, but its email could not be queued.");

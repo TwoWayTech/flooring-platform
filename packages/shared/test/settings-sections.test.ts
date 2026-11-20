@@ -5,6 +5,9 @@ import {
   API_SETTINGS_SECTIONS,
   companyProfileProblem,
   defaultNumberSettings,
+  EMAIL_MAX,
+  EMAIL_MESSAGES,
+  emailSettingsProblem,
   effectivePermissions,
   enabledModules,
   EXPENSE_MESSAGES,
@@ -212,8 +215,8 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(read.decimals.fxRate).toBe(NUMBER_KINDS.fxRate.default);
   });
 
-  it("R7 the served sections: exactly five (part 5 adds HR), each with a rule and a reader rule", () => {
-    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses", "hr"]);
+  it("R7 the served sections: exactly six (part 5 adds HR, the bell and Outbox part Email), each with a rule and a reader rule", () => {
+    expect([...API_SETTINGS_SECTIONS]).toEqual(["profile", "numbers", "payments", "expenses", "hr", "email"]);
     for (const section of API_SETTINGS_SECTIONS) {
       expect(SETTINGS_SECTIONS[section], section).toBeDefined();
       expect(SETTINGS_READERS[section], section).toBeDefined();
@@ -229,6 +232,10 @@ describe("Settings sections on the API (ADR 0059)", () => {
       LOCALIZATION_SECTION_MESSAGE,
     );
     expect(settingsSectionProblem("hr", SUMMIT.hr, SUMMIT.hr)).toBeNull();
+    expect(settingsSectionProblem("email", SUMMIT.email, SUMMIT.email)).toBeNull();
+    expect(settingsSectionProblem("email", { ...SUMMIT.email, replyTo: "nope" }, SUMMIT.email)).toBe(
+      EMAIL_MESSAGES.replyTo,
+    );
     expect(settingsSectionProblem("payments", { ...SUMMIT.payments, writeOffMax: "12." }, SUMMIT.payments)).toBe(
       PAYMENT_MESSAGES.writeOffMax,
     );
@@ -267,18 +274,43 @@ describe("Settings sections on the API (ADR 0059)", () => {
   it("R10 readableSections: each section only to its readers, while its module and product switch are on", () => {
     const of = (product: ProductKey, key: DefaultRoleKey, on?: (key: FeatureKey) => boolean) =>
       readableSections(readerOf(product, key), on).sort();
-    expect(of("flooring", "owner")).toEqual(["expenses", "hr", "numbers", "payments", "profile"]);
+    expect(of("flooring", "owner")).toEqual(["email", "expenses", "hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "accountant")).toEqual(["hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "sales")).toEqual(["hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "warehouse")).toEqual(["hr", "numbers", "profile"]);
     // Every default role holds hr.timesheet.view (its own timesheet), so every one reads Settings → HR (part 5, D6).
     for (const key of PRODUCT_ROLES.flooring)
       expect(of("flooring", key), key).toEqual(expect.arrayContaining(["hr", "numbers", "profile"]));
-    for (const key of PRODUCT_ROLES.hr) expect(of("hr", key), key).toEqual(["hr", "numbers", "profile"]);
-    expect(of("flooring", "owner", without("sales.payments"))).toEqual(["expenses", "hr", "numbers", "profile"]);
-    expect(of("flooring", "owner", without("finance.expenses"))).toEqual(["hr", "numbers", "payments", "profile"]);
+    // Only the Owner holds settings.notifications.manage, in both products (the bell and Outbox part, D9).
+    for (const key of PRODUCT_ROLES.hr)
+      expect(of("hr", key), key).toEqual(
+        key === "owner" ? ["email", "hr", "numbers", "profile"] : ["hr", "numbers", "profile"],
+      );
+    for (const key of PRODUCT_ROLES.flooring) expect(of("flooring", key).includes("email"), key).toBe(key === "owner");
+    expect(of("flooring", "owner", without("settings.notifications"))).toEqual([
+      "expenses",
+      "hr",
+      "numbers",
+      "payments",
+      "profile",
+    ]);
+    expect(of("flooring", "owner", without("sales.payments"))).toEqual([
+      "email",
+      "expenses",
+      "hr",
+      "numbers",
+      "profile",
+    ]);
+    expect(of("flooring", "owner", without("finance.expenses"))).toEqual([
+      "email",
+      "hr",
+      "numbers",
+      "payments",
+      "profile",
+    ]);
     // The HR page switch gates only the save: HR Home, Timesheets and the calendars read it whatever it says.
     expect(of("flooring", "owner", without("settings.hr"))).toEqual([
+      "email",
       "expenses",
       "hr",
       "numbers",
@@ -286,6 +318,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "profile",
     ]);
     expect(of("flooring", "owner", without("settings.company", "settings.number-format"))).toEqual([
+      "email",
       "expenses",
       "hr",
       "numbers",
@@ -317,6 +350,36 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(readableSections(noCore)).toEqual(
       API_SETTINGS_SECTIONS.filter((section) => readableSections(noCore).includes(section)),
     );
+  });
+
+  it("R12 emailSettingsProblem: Summit and empty fields pass; each refused field gets its own words", () => {
+    expect(emailSettingsProblem(SUMMIT.email)).toBeNull();
+    expect(emailSettingsProblem({ senderName: "", replyTo: "", signature: "" })).toBeNull();
+    const ok = SUMMIT.email;
+    const cases: [Partial<typeof ok>, string | null][] = [
+      [{ senderName: "x".repeat(EMAIL_MAX.senderName) }, null],
+      [{ senderName: "x".repeat(EMAIL_MAX.senderName + 1) }, EMAIL_MESSAGES.senderName],
+      [{ senderName: "Summit\nBcc: a@b.co" }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: "Summit\r" }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: "Summit\t" }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: 'Bank "Billing"' }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: "Billing <pay@x.co>" }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: "Billing \\ Team" }, EMAIL_MESSAGES.senderNameCharacters],
+      [{ senderName: "Summit Floor Co. & Sons" }, null],
+      [{ replyTo: "office@summit.example" }, null],
+      [{ replyTo: "office" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "a b@c.co" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "a@b.co, c@d.co" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "a@b.co\nBcc: c@d.co" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: `${"a".repeat(250)}@b.co` }, EMAIL_MESSAGES.replyTo],
+      [{ signature: "x".repeat(EMAIL_MAX.signature) }, null],
+      [{ signature: "Thanks,\nThe team" }, null],
+      [{ signature: "x".repeat(EMAIL_MAX.signature + 1) }, EMAIL_MESSAGES.signature],
+    ];
+    for (const [change, words] of cases)
+      expect(emailSettingsProblem({ ...ok, ...change }), JSON.stringify(change).slice(0, 60)).toBe(words);
+    // No property of the section is a reserved name the interceptor would strip.
+    expect(keysOf(SUMMIT.email).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
   });
 
   it("R11 profileFor: the EIN only for settings.company.manage, every other field unchanged", () => {

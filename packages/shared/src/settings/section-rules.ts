@@ -1,6 +1,7 @@
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { Address } from "../types/company";
+import type { EmailSettings } from "../types/notifications";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { hrSettingsProblem } from "./hr-rules";
@@ -47,6 +48,20 @@ export const EXPENSE_MESSAGES = {
   approvalRequired: "Choose whether expenses wait for approval.",
   approvalThreshold: "Enter the expense approval amount as a number such as 1000.00, or leave it empty.",
 } as const;
+
+/** The longest sender name, reply-to address and sign-off Settings → Email takes (ADR 0059, bell and Outbox part, D8). */
+export const EMAIL_MAX = { senderName: 80, replyTo: 254, signature: 500 } as const;
+
+/** What Settings → Email says about each field it refuses, the same words in both modes. */
+export const EMAIL_MESSAGES = {
+  senderName: `Keep the sender name to ${EMAIL_MAX.senderName} characters.`,
+  senderNameCharacters: "Leave line breaks, quotes, backslashes and angle brackets out of the sender name.",
+  replyTo: "Enter the reply-to address as name@example.com, or leave it empty.",
+  signature: `Keep the sign-off to ${EMAIL_MAX.signature} characters.`,
+} as const;
+
+/** What the From header could not carry as typed: line breaks and other control characters, quotes, backslashes, angle brackets. */
+const SENDER_NAME_REFUSED = /[\u0000-\u001f\u007f"\\<>]/;
 
 /** What Number format says about what it refuses that no single kind's range covers. */
 export const NUMBER_MESSAGES = {
@@ -145,6 +160,22 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 }
 
 /**
+ * Why Settings → Email can't be saved, or null (notifications.md "EmailSettings"; ADR 0059, bell and
+ * Outbox part, D8). The sender name is at most 80 characters with nothing the From header would
+ * have to strip, so what the page shows is what recipients see; empty sends as the company's name.
+ * The reply-to is empty or one plain address (`EMAIL_TEXT`), where customers' answers to invoices
+ * and receipts go. The sign-off is at most 500 characters. Fields are stored as sent.
+ */
+export function emailSettingsProblem(email: EmailSettings): string | null {
+  if (email.senderName.length > EMAIL_MAX.senderName) return EMAIL_MESSAGES.senderName;
+  if (SENDER_NAME_REFUSED.test(email.senderName)) return EMAIL_MESSAGES.senderNameCharacters;
+  if (email.replyTo.length > EMAIL_MAX.replyTo) return EMAIL_MESSAGES.replyTo;
+  if (email.replyTo !== "" && !EMAIL_TEXT.test(email.replyTo)) return EMAIL_MESSAGES.replyTo;
+  if (email.signature.length > EMAIL_MAX.signature) return EMAIL_MESSAGES.signature;
+  return null;
+}
+
+/**
  * Why Localization and tax is never saved whole (spec settings-and-permissions.md rule 7; ADR 0059,
  * part 3b, D16): each tab saves on its own, with its own key, rules, step-up and dating
  * (`LOCALIZATION_TABS`, `localizationTabProblem`, `localizationTabStored`; Sales tax's versions),
@@ -159,7 +190,8 @@ export const LOCALIZATION_SECTION_MESSAGE = "Localization and tax saves one tab 
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
  * refuse a change that no page makes. Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
- * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5). Every other
+ * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5), Settings → Email
+ * `emailSettingsProblem` (the bell and Outbox part). Every other
  * section gets its rules when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
@@ -178,5 +210,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
   // The value alone; what recorded pay forbids needs the store's records (`hrScheduleProblem`, ADR 0059 part 5).
   if (settings.hr) return hrSettingsProblem(settings.hr);
+  if (settings.email) return emailSettingsProblem(settings.email);
   return null;
 }

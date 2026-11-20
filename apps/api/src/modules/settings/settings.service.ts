@@ -91,6 +91,13 @@ async function loadHrRecords(tx: CompanyDb): Promise<HrRecords> {
   return { facts: { payPeriods: periods, hoursRecorded: hours }, employees: people };
 }
 
+/**
+ * Settings → Email never saved (ADR 0059, bell and Outbox part, D10): every field empty, which is
+ * what the sender acts on: an empty sender name sends as the company's name, with no reply-to and
+ * no sign-off (`NotificationService`).
+ */
+const NEVER_SAVED_EMAIL: CompanySettings["email"] = { senderName: "", replyTo: "", signature: "" };
+
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
   legalName: "",
@@ -199,6 +206,9 @@ export class SettingsService {
           break;
         case "expenses":
           answer.expenses = await read(section);
+          break;
+        case "email":
+          answer.email = await read(section);
           break;
         case "hr": {
           // As stored, and only once saved: the API acts on no HR settings before that (part 5, D7).
@@ -494,6 +504,7 @@ export class SettingsService {
       payments: async () => NEVER_SAVED_PAYMENTS,
       // Exactly how the expense rules read a missing row: approval off.
       expenses: () => loadExpenseSettings(db),
+      email: async () => NEVER_SAVED_EMAIL,
     };
     return (await never[section]()) as StoredSection<S>;
   }

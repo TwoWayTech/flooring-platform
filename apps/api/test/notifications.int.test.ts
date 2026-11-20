@@ -206,12 +206,51 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       await handle.close();
     }
     const viewer = await harness.signIn(viewerEmail);
-    const all = await call("get", "/outbox", viewer).expect(200);
+    // The personal Outbox lists only one's own rows, whatever one holds (spec `admin = all && can`;
+    // ADR 0059, bell and Outbox part, D2); only `?all=true` is the whole company's.
+    for (const path of ["/outbox", "/outbox?all=1", "/outbox?all=TRUE", "/outbox?all=true&all=true"]) {
+      const own = await call("get", path, viewer).expect(200);
+      expect(
+        own.body.some((row: { sourceId: string }) => row.sourceId === sourceId),
+        path,
+      ).toBe(false);
+    }
+    const all = await call("get", "/outbox?all=true", viewer).expect(200);
     const restricted = all.body.find((row: { sourceId: string }) => row.sourceId === sourceId);
     expect(restricted).toMatchObject({
       subject: "Restricted message",
       bodyText: "Only the people involved can read this.",
+      attachments: [],
     });
+    // The sender snapshot the drawer shows comes back; the template values never do.
+    expect(Object.keys(restricted).sort()).toEqual(
+      [
+        "actorUserId",
+        "attachments",
+        "bodyText",
+        "createdAt",
+        "eventKey",
+        "failureDetail",
+        "failureType",
+        "fromName",
+        "id",
+        "recipientEmail",
+        "recipientId",
+        "recipientName",
+        "recipientType",
+        "replyTo",
+        "restricted",
+        "scheduledFor",
+        "sentAt",
+        "sourceId",
+        "sourceType",
+        "status",
+        "subject",
+      ].sort(),
+    );
+    // Without settings.outbox.view, ?all=true is still only one's own rows.
+    const plainAll = await call("get", "/outbox?all=true", plain).expect(200);
+    expect(plainAll.body.some((row: { sourceId: string }) => row.sourceId === sourceId)).toBe(false);
     // Nothing that would undo the redaction comes back: no template values, dedupe key or provider id (PR #9 review).
     for (const row of all.body as Record<string, unknown>[]) {
       expect(row).not.toHaveProperty("values");
@@ -363,6 +402,16 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     }
     const bad = await call("post", "/notifications/read", other).send({ ids: ["not-an-id"] });
     expect(bad.status).toBe(400);
+    // The bell lists only the reader's own notes, each with the reader's own id.
+    const otherId = await harness.userIdOf(otherEmail);
+    await service().notify(tenant, null, {
+      event: "timeoff.requested",
+      source: { type: "pto", id: uuidv7() },
+      inApp: [{ userId: otherId, title: "Yours", href: "/hr/time-off" }],
+    });
+    const listed = await call("get", "/notifications", other).expect(200);
+    expect(listed.body.map((note: { title: string }) => note.title)).toEqual(["Yours"]);
+    for (const note of listed.body as { userId: string }[]) expect(note.userId).toBe(otherId);
   });
 
   it("queues no job inside the caller's transaction: the rows come back unqueued, for queueSends after the commit (final review of PR #33)", async () => {

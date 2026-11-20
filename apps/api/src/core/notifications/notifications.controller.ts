@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from "@nestjs/common";
 import { featureOn, type FeatureKey } from "@workspace/shared";
 import { z } from "zod";
@@ -62,8 +63,12 @@ export class OutboxController {
   constructor(private readonly notifications: NotificationService) {}
 
   /**
-   * GET /outbox: everyone sees the messages they caused or received; `settings.outbox.view` sees
-   * all; restricted messages of others are redacted without `hr.employee.view` (spec "Who can see").
+   * GET /outbox: everyone sees the messages they caused or received; with `?all=true` (the whole
+   * company's Outbox, Settings → Outbox) `settings.outbox.view` sees all, as the spec's
+   * `admin = all && can("settings.outbox.view")`, so the personal `/outbox` page lists only one's
+   * own rows whatever one holds (ADR 0059, bell and Outbox part, D2). Restricted messages of others
+   * are redacted without `hr.employee.view`, a private meeting's for everyone it does not involve
+   * (spec "Who can see"). Any other value of `all` is the personal view.
    */
   @Get()
   @AnyCompanyMember()
@@ -71,12 +76,13 @@ export class OutboxController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,
     @CurrentSession() session: AuthSession,
+    @Query("all") all: unknown,
   ) {
     requireFeature("settings.outbox");
     return this.notifications.listOutbox(tenant, {
       userId: access.userId,
       email: session.user.email,
-      admin: access.permissions.has("settings.outbox.view"),
+      admin: all === "true" && access.permissions.has("settings.outbox.view"),
       hrView: access.permissions.has("hr.employee.view"),
     });
   }
