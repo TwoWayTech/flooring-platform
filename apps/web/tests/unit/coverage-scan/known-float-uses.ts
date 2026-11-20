@@ -51,7 +51,7 @@ export const KNOWN_FLOAT_USES: Readonly<Record<string, { use: FloatUseClass; why
     use: "whole number",
     why: "How many hours a support request asks for.",
   },
-  "apps/web/src/features/dashboard/best-sellers.tsx: Number(r[metric])": {
+  "apps/web/src/features/dashboard/best-sellers.tsx: Number(value)": {
     use: "chart or gauge",
     why: "Bar widths for the best sellers; the figures are shown with <Num>.",
   },
@@ -142,10 +142,6 @@ export const KNOWN_FLOAT_USES: Readonly<Record<string, { use: FloatUseClass; why
   "apps/web/src/features/invoices/commission-split-dialog.tsx: Number(pct)": {
     use: "arithmetic sent",
     why: 'The second share is sent as String(100 − Number(pct)): a first share of 66.6 sends 33.400000000000006, which the API refuses (400 "Enter each share as a percent.").',
-  },
-  "apps/web/src/features/invoices/invoice-stock.tsx: Number(r.quantity)": {
-    use: "sign check",
-    why: "Offers Cut only on an active hold with something left.",
   },
   "apps/web/src/features/my/my-commission.tsx: Number(s.payable)": {
     use: "arithmetic shown",

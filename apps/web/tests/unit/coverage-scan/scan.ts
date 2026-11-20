@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join } from "node:path/posix";
 import { filesUnder, lineAt, readRepoFile, repoPath, repoRelative, withoutComments } from "./source";
 
 /**

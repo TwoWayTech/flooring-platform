@@ -51,6 +51,20 @@ export const NO_MODULE_ROUTES: Reviewed = {
   "PUT /imports/mappings/:kind":
     "Settings → Import: settings.import.manage (platform); the kind's module is checked in ImportsService.",
   "PUT /roles/:id": "Settings → Security roles: settings.roles.manage, a platform key.",
+  "PUT /settings/branding":
+    "Settings → Branding: settings.branding.manage, a platform key; reads settings.branding first (ADR 0059).",
+  "PUT /settings/email":
+    "Settings → Email and notifications: settings.notifications.manage, a platform key; reads settings.notifications first (ADR 0059).",
+  "PUT /settings/localization/currency":
+    "Localization → Currency: settings.localization.manage, a platform key; reads settings.localization first (ADR 0059).",
+  "PUT /settings/localization/region":
+    "Localization → Region: settings.localization.manage, a platform key; reads settings.localization first (ADR 0059).",
+  "PUT /settings/localization/tax":
+    "Localization → Sales tax: settings.tax.manage, a platform key; reads settings.localization first; rules are versioned (ADR 0059).",
+  "PUT /settings/numbers":
+    "Settings → Number format: settings.numbers.manage, a platform key; reads settings.number-format first (ADR 0059).",
+  "PUT /settings/profile":
+    "Settings → Company profile: settings.company.manage, a platform key; reads settings.company first (ADR 0059).",
 };
 
 /** Routes that declare a key from a module other than their own, `core` or `platform`. */
@@ -283,6 +297,10 @@ export const DOCUMENT_WRITES: Readonly<Record<string, readonly [DocumentWriteKin
     "refused once posted",
     "Who shares the commission, only until the first confirmed payment.",
   ],
+  "PUT /locations/:id": [
+    "not a money document",
+    "Changes a warehouse or showroom's details; stock and its postings are unchanged.",
+  ],
   "PUT /quotes/:id": [
     "refused once posted",
     "Saves an open quote; once accepted or invoiced it is locked. Quotes never post.",
@@ -292,6 +310,53 @@ export const DOCUMENT_WRITES: Readonly<Record<string, readonly [DocumentWriteKin
   "PUT /settings/accounting": [
     "not a money document",
     "Costing method, tax basis and bank accounts; a bank account with postings cannot be retired (ADR 0040).",
+  ],
+  "PUT /settings/branding": ["not a money document", "The company's logo and colours; no posted money."],
+  "PUT /settings/email": ["not a money document", "Email sender and notification choices; no posted money."],
+  "PUT /settings/expenses": [
+    "not a money document",
+    "Expense approval (required, threshold) for expenses entered later; entered expenses keep their state.",
+  ],
+  "PUT /settings/hr": [
+    "not a money document",
+    "Workweek, pay frequency and anchor, holidays and what employees see; an approved run keeps its figures.",
+  ],
+  "PUT /settings/inventory": [
+    "not a money document",
+    "Stock rules: the adjustment quantity that needs approval; stock already moved keeps its postings.",
+  ],
+  "PUT /settings/localization/currency": [
+    "not a money document",
+    "The company's currency and rounding for documents to come; posted documents keep their amounts.",
+  ],
+  "PUT /settings/localization/documents": [
+    "not a money document",
+    "Quote expiry, balance-due days and document defaults for documents made later.",
+  ],
+  "PUT /settings/localization/payroll": [
+    "not a money document",
+    "Payroll rules for periods to come; an approved run keeps its figures.",
+  ],
+  "PUT /settings/localization/region": [
+    "not a money document",
+    "Region, fiscal year and dates; the time zone is read only (ADR 0059).",
+  ],
+  "PUT /settings/localization/tax": [
+    "not a money document",
+    "Sales tax rules, versioned (Settings part 3a); posted documents keep the tax they posted with.",
+  ],
+  "PUT /settings/numbers": ["not a money document", "How numbers are shown; nothing stored changes."],
+  "PUT /settings/payments": [
+    "not a money document",
+    "Payment approval rules for payments recorded later; posted payments are unchanged.",
+  ],
+  "PUT /settings/profile": [
+    "not a money document",
+    "The company's name, address and EIN printed on documents to come.",
+  ],
+  "PUT /settings/sharedCosts": [
+    "not a money document",
+    "How company-wide costs are split across locations (spec F1); expenses and their postings are unchanged.",
   ],
   "PUT /supplier-contacts/:id": ["not a money document", "Edits a supplier contact."],
   "PUT /suppliers/:id": ["not a money document", "Edits a supplier."],
@@ -306,11 +371,14 @@ export const NO_SWITCH_ROUTES: Reviewed = {
   "GET /audit":
     "Reads no switch. Finding F-h: settings.audit exists, so rule 13 says this route should answer 404 when it is off.",
   "GET /ledger/period-close": "The ledger has no switch in the register (ADR 0039); no screen calls it yet.",
-  "GET /ledger/trial-balance": "The ledger has no switch in the register (ADR 0039); no screen calls it yet.",
+  "GET /company":
+    "The shell's own read (ADR 0051): every screen needs the company, the person's access and the names directory, so no switch may hide it.",
   "GET /locations":
     "Shared reference data every module picks from; inventory.locations owns only the settings page, so hiding pickers with it would break other features.",
   "GET /roles":
     "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
+  "GET /settings":
+    "Company reference data every screen reads (ADR 0059 D3); each section is cut inside by its own switch (readableSections), so no one switch hides the route.",
   "GET /settings/accounting":
     "Accounting settings have no switch in the register (ADR 0040); no screen calls them yet.",
   "GET /support-grants":

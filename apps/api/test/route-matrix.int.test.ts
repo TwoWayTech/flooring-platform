@@ -25,7 +25,7 @@ import { PERMISSION_REFUSALS, PermissionGuard } from "../src/core/access/permiss
 import type { AuthSession } from "../src/core/auth/session.service";
 import { TENANCY_REFUSALS, TenantGuard } from "../src/core/tenancy/tenant.guard";
 import { AuthHarness, SUMMIT_ID } from "./auth-harness";
-import { decimalProblems, leaks, MUST_STRIP_NOT_EXERCISED } from "./support/json-walk";
+import { decimalProblems, leaks, MUST_STRIP_NOT_EXERCISED, NAME_REUSED_AT, reusedNamePaths } from "./support/json-walk";
 import { MUST_STRIP, strippableNames } from "./support/strippable";
 import {
   byCodeUnit,
@@ -524,6 +524,8 @@ describe("route matrix: the guard chain against the shared engine (whole-product
     const SCOPE_PERSONAS: readonly DefaultRoleKey[] = ["sales", "manager", "warehouse", "employee"];
     /** Rule-6 problems in every body PM-7 read, one per route, field and problem with its first place, for MI-DEC. */
     const decimals = new Map<string, string>();
+    /** The NAME_REUSED_AT paths some body held. */
+    const reusedSeen = new Set<string>();
     let bodiesRead = 0;
 
     /** A Summit persona's session cookie, signed in once (the Owner, Accountant and HR enrol MFA). */
@@ -698,6 +700,7 @@ describe("route matrix: the guard chain against the shared engine (whole-product
             const key = `${route.name}: ${found.field} ${found.problem}`;
             if (!decimals.has(key)) decimals.set(key, `${key} (${found.path})`);
           }
+          for (const path of reusedNamePaths(response.body)) reusedSeen.add(path);
           if (role === "owner") for (const name of strippableNames(response.body)) shownToOwner.add(name);
         }
       }
@@ -716,6 +719,8 @@ describe("route matrix: the guard chain against the shared engine (whole-product
     it("MI-DEC: every body PM-7 read sends money, quantities and rates as decimal strings", () => {
       expect(bodiesRead).toBeGreaterThan(0);
       expect([...decimals.values()].sort(byCodeUnit)).toEqual([]);
+      const stale = Object.keys(NAME_REUSED_AT).filter((path) => !reusedSeen.has(path));
+      expect(stale, "no body holds it any more: remove it from NAME_REUSED_AT").toEqual([]);
     });
   });
 

@@ -14,11 +14,16 @@
         "hrData",
         "list:invoiceAdjustments",
         "list:invoices",
+        "list:locations",
         "list:payments",
         "list:refunds",
+        "list:users",
         "listCommissionStatements",
+        "listMyNotifications",
         "listPayPeriods",
-        "listStockHolds"
+        "listStockHolds",
+        "markNotificationsRead",
+        "whoAmI"
       ],
       "onDemo": [
         "list:bills",
@@ -26,7 +31,6 @@
         "list:customers",
         "list:expenses",
         "list:jobs",
-        "list:locations",
         "list:products",
         "list:ptoRequests",
         "list:purchaseOrders",
@@ -38,16 +42,14 @@
         "list:stockMovements",
         "list:supplierPayments",
         "list:timesheets",
-        "list:transfers",
-        "list:users",
-        "listMyNotifications",
-        "markNotificationsRead",
-        "whoAmI"
+        "list:transfers"
       ],
       "routes": [
+        "GET /auth/context",
         "GET /bills",
         "GET /change-orders",
         "GET /commissions",
+        "GET /company",
         "GET /contract-billings",
         "GET /contract-lines",
         "GET /contracts",
@@ -58,6 +60,7 @@
         "GET /invoices",
         "GET /lien-waivers",
         "GET /locations",
+        "GET /notifications",
         "GET /pay-periods",
         "GET /payments",
         "GET /pto-requests",
@@ -68,6 +71,7 @@
         "GET /time-off-entries",
         "GET /time-off-policies",
         "GET /timesheets",
+        "POST /notifications/read",
         "POST /pay-periods"
       ]
     },
@@ -93,6 +97,26 @@
       "onApi": [],
       "onDemo": [],
       "routes": []
+    },
+    "/account/security": {
+      "file": "apps/web/src/app/(app)/account/security/page.tsx",
+      "classification": "api",
+      "hiddenInApiMode": false,
+      "layouts": [
+        "root",
+        "(app)"
+      ],
+      "onApi": [
+        "addPasskey",
+        "confirmPassword",
+        "deletePasskey",
+        "renamePasskey",
+        "signInSecurity"
+      ],
+      "onDemo": [],
+      "routes": [
+        "GET /auth/context"
+      ]
     },
     "/admin": {
       "file": "apps/web/src/app/admin/page.tsx",
@@ -650,8 +674,10 @@
         "list:invoices",
         "list:payments",
         "list:refunds",
+        "list:users",
         "listStockHolds",
-        "receiveTransfer"
+        "receiveTransfer",
+        "whoAmI"
       ],
       "onDemo": [
         "list:customers",
@@ -661,12 +687,12 @@
         "list:stockAdjustments",
         "list:supplierPayments",
         "list:timesheets",
-        "list:users",
         "recordAdjustment",
-        "reviewAdjustment",
-        "whoAmI"
+        "reviewAdjustment"
       ],
       "routes": [
+        "GET /auth/context",
+        "GET /company",
         "GET /invoice-adjustments",
         "GET /invoices",
         "GET /locations",
@@ -698,15 +724,16 @@
         "createRollInvoice",
         "inventoryData",
         "issueReservation",
+        "list:users",
         "listStockHolds",
         "moveRoll"
       ],
       "onDemo": [
         "list:customers",
-        "list:users",
         "recordAdjustment"
       ],
       "routes": [
+        "GET /company",
         "GET /locations",
         "GET /products",
         "GET /reservations",
@@ -723,12 +750,15 @@
     },
     "/login": {
       "file": "apps/web/src/app/login/page.tsx",
-      "classification": "demo-only",
+      "classification": "mixed",
       "hiddenInApiMode": false,
       "layouts": [
         "root"
       ],
-      "onApi": [],
+      "onApi": [
+        "addPasskey",
+        "confirmPassword"
+      ],
       "onDemo": [
         "listCompanies",
         "listCompanyDirectory"
@@ -1044,29 +1074,32 @@
       ],
       "onApi": [
         "cancelMeeting",
+        "cancelOutbox",
         "decideProposal",
+        "listOutbox",
         "meetingCalendarFile",
         "removeGuest",
         "requestMeeting",
         "respondToMeeting",
+        "retryOutbox",
         "updateMeeting"
       ],
       "onDemo": [
-        "cancelOutbox",
         "get:meetings",
-        "listOutbox",
-        "retryOutbox",
         "simulateBounce",
         "simulateReply"
       ],
       "routes": [
         "DELETE /meetings/:id/attendees/:attendeeId",
         "GET /meetings/:id/calendar.ics",
+        "GET /outbox",
         "PATCH /meetings/:id",
         "POST /meeting-requests",
         "POST /meetings/:id/attendees/:attendeeId/proposal",
         "POST /meetings/:id/cancel",
-        "POST /meetings/:id/response"
+        "POST /meetings/:id/response",
+        "POST /outbox/:id/cancel",
+        "POST /outbox/:id/retry"
       ]
     },
     "/purchasing": {
@@ -1133,10 +1166,12 @@
         "paymentsReport",
         "pnlReport",
         "reportOptions",
-        "salesByCategoryReport"
+        "salesByCategoryReport",
+        "trialBalance"
       ],
       "onDemo": [],
       "routes": [
+        "GET /ledger/trial-balance",
         "GET /reports/business",
         "GET /reports/options",
         "GET /reports/payments",
@@ -1169,10 +1204,12 @@
         "list:invoices",
         "list:payments",
         "list:refunds",
+        "list:users",
         "refundCredit",
         "salesData",
         "saveCustomer",
-        "teamCommission"
+        "teamCommission",
+        "whoAmI"
       ],
       "onDemo": [
         "list:customers",
@@ -1182,12 +1219,12 @@
         "list:rolls",
         "list:stockAdjustments",
         "list:supplierPayments",
-        "list:timesheets",
-        "list:users",
-        "whoAmI"
+        "list:timesheets"
       ],
       "routes": [
+        "GET /auth/context",
         "GET /commission-totals",
+        "GET /company",
         "GET /customers",
         "GET /invoice-adjustments",
         "GET /invoices",
@@ -1213,6 +1250,7 @@
         "attachPaymentFiles",
         "get:invoices",
         "getFile",
+        "getSettings",
         "inventoryData",
         "issueCreditNote",
         "issueReservation",
@@ -1220,6 +1258,7 @@
         "list:invoices",
         "list:payments",
         "list:refunds",
+        "list:users",
         "markInvoiceSent",
         "recordPayment",
         "reviewPayment",
@@ -1230,13 +1269,12 @@
         "writeOffBalance"
       ],
       "onDemo": [
-        "getSettings",
         "list:crews",
         "list:jobs",
-        "list:users",
         "scheduleJob"
       ],
       "routes": [
+        "GET /company",
         "GET /customers",
         "GET /files/:id",
         "GET /invoice-adjustments",
@@ -1248,6 +1286,7 @@
         "GET /refunds",
         "GET /reservations",
         "GET /rolls",
+        "GET /settings",
         "GET /stock-movements",
         "GET /transfers",
         "POST /invoices/:id/apply-credit",
@@ -1265,7 +1304,7 @@
     },
     "/sales/quotes/*": {
       "file": "apps/web/src/app/(app)/sales/quotes/[id]/page.tsx",
-      "classification": "mixed",
+      "classification": "api",
       "hiddenInApiMode": false,
       "layouts": [
         "root",
@@ -1275,6 +1314,7 @@
         "convertQuoteToInvoice",
         "createCustomer",
         "createTransfer",
+        "getSettings",
         "inventoryData",
         "list:invoiceAdjustments",
         "list:invoices",
@@ -1285,9 +1325,7 @@
         "saveQuote",
         "updateQuoteStatus"
       ],
-      "onDemo": [
-        "getSettings"
-      ],
+      "onDemo": [],
       "routes": [
         "GET /customers",
         "GET /invoice-adjustments",
@@ -1299,6 +1337,7 @@
         "GET /refunds",
         "GET /reservations",
         "GET /rolls",
+        "GET /settings",
         "GET /stock-movements",
         "GET /transfers",
         "POST /customers",
@@ -1312,7 +1351,7 @@
     },
     "/sales/quotes/new": {
       "file": "apps/web/src/app/(app)/sales/quotes/new/page.tsx",
-      "classification": "mixed",
+      "classification": "api",
       "hiddenInApiMode": false,
       "layouts": [
         "root",
@@ -1322,6 +1361,7 @@
         "convertQuoteToInvoice",
         "createCustomer",
         "createTransfer",
+        "getSettings",
         "inventoryData",
         "list:invoiceAdjustments",
         "list:invoices",
@@ -1332,9 +1372,7 @@
         "saveQuote",
         "updateQuoteStatus"
       ],
-      "onDemo": [
-        "getSettings"
-      ],
+      "onDemo": [],
       "routes": [
         "GET /customers",
         "GET /invoice-adjustments",
@@ -1346,6 +1384,7 @@
         "GET /refunds",
         "GET /reservations",
         "GET /rolls",
+        "GET /settings",
         "GET /stock-movements",
         "GET /transfers",
         "POST /customers",
@@ -1414,14 +1453,23 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/commissions": {
@@ -1439,19 +1487,30 @@
     },
     "/settings/company": {
       "file": "apps/web/src/app/(app)/settings/company/page.tsx",
-      "classification": "demo-only",
+      "classification": "mixed",
       "hiddenInApiMode": false,
       "layouts": [
         "root",
         "(app)",
         "(app)/settings"
       ],
-      "onApi": [],
-      "onDemo": [
-        "getDefaultSettings",
+      "onApi": [
         "updateSettings"
       ],
-      "routes": []
+      "onDemo": [
+        "getDefaultSettings"
+      ],
+      "routes": [
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
+      ]
     },
     "/settings/database": {
       "file": "apps/web/src/app/(app)/settings/database/page.tsx",
@@ -1482,14 +1541,19 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateLocalization",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/localization/currency",
+        "PUT /settings/localization/documents",
+        "PUT /settings/localization/payroll",
+        "PUT /settings/localization/region",
+        "PUT /settings/localization/tax"
       ]
     },
     "/settings/expenses": {
@@ -1502,15 +1566,25 @@
         "(app)/settings"
       ],
       "onApi": [
+        "list:locations",
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "list:locations",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "GET /locations",
+        "POST /auth/step-up",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/hr": {
@@ -1523,24 +1597,34 @@
         "(app)/settings"
       ],
       "onApi": [
+        "getSettings",
         "hrData",
         "saveTimeOffPolicy",
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "getSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
         "GET /employees",
         "GET /locations",
         "GET /pto-requests",
+        "GET /settings",
         "GET /time-off-entries",
         "GET /time-off-policies",
         "GET /timesheets",
         "POST /auth/step-up",
         "POST /time-off-policies",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts",
         "PUT /time-off-policies/:id"
       ]
     },
@@ -1581,14 +1665,19 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateLocalization",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/localization/currency",
+        "PUT /settings/localization/documents",
+        "PUT /settings/localization/payroll",
+        "PUT /settings/localization/region",
+        "PUT /settings/localization/tax"
       ]
     },
     "/settings/locations": {
@@ -1601,16 +1690,28 @@
         "(app)/settings"
       ],
       "onApi": [
+        "list:locations",
+        "saveLocation",
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "list:locations",
-        "saveLocation",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "GET /locations",
+        "POST /auth/step-up",
+        "POST /locations",
+        "PUT /locations/:id",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/meetings": {
@@ -1623,14 +1724,23 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/notifications": {
@@ -1644,36 +1754,48 @@
       ],
       "onApi": [
         "cancelMeeting",
+        "cancelOutbox",
         "decideProposal",
+        "listOutbox",
         "meetingCalendarFile",
         "removeGuest",
         "requestMeeting",
         "respondToMeeting",
+        "retryOutbox",
         "updateMeeting",
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "cancelOutbox",
         "get:meetings",
         "getDefaultSettings",
         "list:notificationRules",
-        "listOutbox",
         "resetNotificationRule",
-        "retryOutbox",
         "saveNotificationRule",
         "simulateBounce",
-        "simulateReply",
-        "updateSettings"
+        "simulateReply"
       ],
       "routes": [
         "DELETE /meetings/:id/attendees/:attendeeId",
         "GET /meetings/:id/calendar.ics",
+        "GET /outbox",
         "PATCH /meetings/:id",
         "POST /auth/step-up",
         "POST /meeting-requests",
         "POST /meetings/:id/attendees/:attendeeId/proposal",
         "POST /meetings/:id/cancel",
-        "POST /meetings/:id/response"
+        "POST /meetings/:id/response",
+        "POST /outbox/:id/cancel",
+        "POST /outbox/:id/retry",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/number-format": {
@@ -1686,14 +1808,23 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/outbox": {
@@ -1707,29 +1838,32 @@
       ],
       "onApi": [
         "cancelMeeting",
+        "cancelOutbox",
         "decideProposal",
+        "listOutbox",
         "meetingCalendarFile",
         "removeGuest",
         "requestMeeting",
         "respondToMeeting",
+        "retryOutbox",
         "updateMeeting"
       ],
       "onDemo": [
-        "cancelOutbox",
         "get:meetings",
-        "listOutbox",
-        "retryOutbox",
         "simulateBounce",
         "simulateReply"
       ],
       "routes": [
         "DELETE /meetings/:id/attendees/:attendeeId",
         "GET /meetings/:id/calendar.ics",
+        "GET /outbox",
         "PATCH /meetings/:id",
         "POST /meeting-requests",
         "POST /meetings/:id/attendees/:attendeeId/proposal",
         "POST /meetings/:id/cancel",
-        "POST /meetings/:id/response"
+        "POST /meetings/:id/response",
+        "POST /outbox/:id/cancel",
+        "POST /outbox/:id/retry"
       ]
     },
     "/settings/payments": {
@@ -1742,14 +1876,23 @@
         "(app)/settings"
       ],
       "onApi": [
+        "updateSettings",
         "verifyStepUp"
       ],
       "onDemo": [
-        "getDefaultSettings",
-        "updateSettings"
+        "getDefaultSettings"
       ],
       "routes": [
-        "POST /auth/step-up"
+        "POST /auth/step-up",
+        "PUT /settings/branding",
+        "PUT /settings/email",
+        "PUT /settings/expenses",
+        "PUT /settings/hr",
+        "PUT /settings/inventory",
+        "PUT /settings/numbers",
+        "PUT /settings/payments",
+        "PUT /settings/profile",
+        "PUT /settings/sharedCosts"
       ]
     },
     "/settings/roles": {
@@ -1821,39 +1964,44 @@
       "onApi": [
         "getCompanyBilling",
         "getCompanyStanding",
+        "getSettings",
+        "getWorkspace",
         "list:invoiceAdjustments",
         "list:invoices",
+        "list:locations",
         "list:payments",
-        "list:refunds"
+        "list:refunds",
+        "listMyNotifications",
+        "markNotificationsRead",
+        "whoAmI"
       ],
       "onDemo": [
         "getCompany",
-        "getSettings",
         "list:customers",
         "list:jobs",
-        "list:locations",
         "list:ptoRequests",
-        "list:roles",
         "list:rolls",
         "list:stockAdjustments",
         "list:supplierPayments",
         "list:timesheets",
-        "list:users",
         "listCompanies",
         "listCompanyDirectory",
-        "listMyNotifications",
-        "markNotificationsRead",
         "resetDemo",
-        "updateMyProfile",
-        "whoAmI"
+        "updateMyProfile"
       ],
       "routes": [
+        "GET /auth/context",
         "GET /billing",
+        "GET /company",
         "GET /company/standing",
         "GET /invoice-adjustments",
         "GET /invoices",
+        "GET /locations",
+        "GET /notifications",
         "GET /payments",
-        "GET /refunds"
+        "GET /refunds",
+        "GET /settings",
+        "POST /notifications/read"
       ]
     },
     "(app)/settings": {

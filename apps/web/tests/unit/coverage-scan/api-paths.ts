@@ -1,3 +1,4 @@
+import { API_LOCALIZATION_TABS, API_SETTINGS_SECTIONS } from "@workspace/shared";
 import type { ApiClient, CollectionName } from "@/lib/api/contract";
 import { API_METHODS } from "@/lib/api/http/api-methods";
 import type { HttpTransport } from "@/lib/api/http/transport";
@@ -24,9 +25,65 @@ export interface MethodRoute {
 
 /**
  * Methods whose path comes from a helper rather than a literal at the call, with the routes the
- * helper builds. Reviewed by hand against the helper named in each reason.
+ * helper builds. Reviewed by hand against the helper named in each reason. `routes` are the API's
+ * own (the route catalog); `betterAuth` names the paths a helper sends through `http.auth()` to
+ * Better Auth's endpoints (`/api/auth`, ADR 0060), which sit outside the catalog, as the lockout
+ * test's do (CROSS_CUTTING).
  */
-export const RESOLVED_ELSEWHERE: Readonly<Record<string, { routes: string[]; why: string }>> = {
+export const RESOLVED_ELSEWHERE: Readonly<Record<string, { routes: string[]; betterAuth?: string[]; why: string }>> = {
+  getSettings: {
+    routes: ["GET /settings"],
+    why: "readSettings(http, demo) reads GET /settings and merges it over demo.getSettings() (settingsFromAnswer): Settings → Meetings, and any section the answer leaves out for this reader, still show DemoStore's values (G5).",
+  },
+  markNotificationsRead: {
+    routes: ["POST /notifications/read"],
+    why: "markRead(http, ids) in outbox-answer.ts posts the ids in batches.",
+  },
+  listOutbox: {
+    routes: ["GET /outbox"],
+    why: "readOutbox(http, all) in outbox-answer.ts reads /outbox, or /outbox?all=true.",
+  },
+  retryOutbox: {
+    routes: ["POST /outbox/:p/retry"],
+    why: "outboxAction(http, id, 'retry') in outbox-answer.ts builds /outbox/${id}/${action}.",
+  },
+  cancelOutbox: {
+    routes: ["POST /outbox/:p/cancel"],
+    why: "outboxAction(http, id, 'cancel') in outbox-answer.ts builds /outbox/${id}/${action}.",
+  },
+  updateSettings: {
+    routes: API_SETTINGS_SECTIONS.map((section) => `PUT /settings/${section}`),
+    why: "/settings/${section} for each section in the shared API_SETTINGS_SECTIONS; any other section (Settings → Meetings) still saves to DemoStore through demo.updateSettings (G2).",
+  },
+  updateLocalization: {
+    routes: API_LOCALIZATION_TABS.map((tab) => `PUT /settings/localization/${tab}`),
+    why: "/settings/localization/${tab} for each tab in the shared API_LOCALIZATION_TABS (all five since Settings part 3a); any other tab would save to DemoStore.",
+  },
+  signInSecurity: {
+    routes: ["GET /auth/context"],
+    betterAuth: ["GET /passkey/list-user-passkeys"],
+    why: "signInSecurityOn(http) in lib/session/passkeys.ts reads /auth/context and, through http.auth(), the passkey list.",
+  },
+  confirmPassword: {
+    routes: [],
+    betterAuth: ["POST /verify-password"],
+    why: "confirmPasswordOn(http.auth(), password) in lib/session/passkeys.ts.",
+  },
+  addPasskey: {
+    routes: [],
+    betterAuth: ["GET /passkey/generate-register-options", "POST /passkey/verify-registration"],
+    why: "addPasskeyOn(http.auth(), name) in lib/session/passkeys.ts.",
+  },
+  renamePasskey: {
+    routes: [],
+    betterAuth: ["POST /passkey/update-passkey"],
+    why: "renamePasskeyOn(http.auth(), id, name) in lib/session/passkeys.ts.",
+  },
+  deletePasskey: {
+    routes: [],
+    betterAuth: ["POST /passkey/delete-passkey"],
+    why: "deletePasskeyOn(http.auth(), id) in lib/session/passkeys.ts.",
+  },
   approveSupportGrant: {
     routes: ["POST /support-grants/:p/approve"],
     why: "supportGrantDecision(http, grantId, 'approve') builds /support-grants/${id}/${step}.",
@@ -67,9 +124,12 @@ export const PROBED_METHODS: readonly string[] = ["list", "get"];
 /** The text of each top-level key of the API_METHODS object literal, by key, in file order. */
 function methodTexts(): Map<string, string> {
   const code = withoutComments(readRepoFile(METHODS_FILE));
-  const start = code.indexOf("export const API_METHODS: HttpRoutes = {");
-  const end = code.indexOf("\n};", start);
-  const body = code.slice(start, end);
+  const opening = /^export const API_METHODS(?:: HttpRoutes)? = \{$/m.exec(code);
+  if (!opening) throw new Error(`API_METHODS' declaration not found in ${METHODS_FILE}: update methodTexts()`);
+  const start = opening.index;
+  const closing = /^\}(?: satisfies HttpRoutes)?;$/m.exec(code.slice(start));
+  if (!closing) throw new Error(`API_METHODS' closing brace not found in ${METHODS_FILE}: update methodTexts()`);
+  const body = code.slice(start, start + closing.index);
   const keys = [...body.matchAll(/^ {2}([A-Za-z_]\w*):/gm)];
   const texts = new Map<string, string>();
   keys.forEach((key, i) => {
@@ -111,7 +171,7 @@ export function collectionNames(): CollectionName[] {
 function requestsIn(text: string): { routes: MethodRoute[]; literal: boolean } {
   const routes: MethodRoute[] = [];
   let literal = true;
-  const call = /\b(seen|seenOrOff|orNone)?\(?\s*http\s*\.\s*(request|blob)\s*(?:<[\s\S]*?>)?\s*\(/g;
+  const call = /\b(seen|seenOrOff|orNone)?\(?\s*http\s*\.\s*(request|requestAsRead|blob)\s*(?:<[\s\S]*?>)?\s*\(/g;
   for (const match of text.matchAll(call)) {
     const open = (match.index ?? 0) + match[0].length - 1;
     const args = insideParens(text, open) ?? "";
@@ -171,7 +231,12 @@ export function staleResolvedElsewhere(known: (route: string) => boolean): strin
   });
 }
 
-/** The route a probe sent to the fake transport, or undefined when it read the fake DemoStore. */
+/**
+ * The route a probe sent to the fake transport, or undefined when it read the fake DemoStore. The
+ * fake answers `[]` to everything, so a method that reshapes a richer answer (the `users` list
+ * reads `GET /company` and maps its people) throws after sending; the route it sent still counts.
+ * A throw before any request is rethrown, so nothing is classed DemoStore by accident.
+ */
 async function probe(
   run: (http: HttpTransport, demo: ApiClient) => Promise<unknown> | undefined,
 ): Promise<string | undefined> {
@@ -183,7 +248,11 @@ async function probe(
     },
   } as unknown as HttpTransport;
   const demo = { list: async () => [], get: async () => undefined } as unknown as ApiClient;
-  await run(http, demo);
+  try {
+    await run(http, demo);
+  } catch (error) {
+    if (sent.length === 0) throw error;
+  }
   return sent[0];
 }
 
@@ -195,11 +264,10 @@ async function probe(
 export async function servedCollections(): Promise<{ list: Map<string, string>; get: Map<string, string> }> {
   const list = new Map<string, string>();
   const get = new Map<string, string>();
-  const noChange = () => undefined;
   for (const collection of collectionNames()) {
-    const listed = await probe((http, demo) => API_METHODS.list?.(http, demo, noChange)(collection));
+    const listed = await probe((http, demo) => API_METHODS.list?.(http, demo)(collection));
     if (listed) list.set(collection, listed);
-    const got = await probe((http, demo) => API_METHODS.get?.(http, demo, noChange)(collection, "id"));
+    const got = await probe((http, demo) => API_METHODS.get?.(http, demo)(collection, "id"));
     if (got) get.set(collection, got);
   }
   return { list, get };

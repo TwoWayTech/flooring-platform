@@ -158,6 +158,7 @@ export const MONEY_KEYS: ReadonlySet<string> = new Set<string>([
  * checks every value is an integer.
  */
 export const INTEGER_KEYS: Reviewed = {
+  balanceDueDays: "GET /settings, Localization → Documents: the default days until a balance is due.",
   branchLimit: "GET /billing: how many branches the plan allows.",
   clawbackDays: "A commission plan's clawback window in whole days.",
   create: "An import's count of rows it creates (ADR 0057): the dry run's, the batch's and its undo's `counts`.",
@@ -165,10 +166,13 @@ export const INTEGER_KEYS: Reviewed = {
   displaySamples: "A location's count of display samples on the floor (plan A-1), never stock.",
   durationMin: "A meeting's length in whole minutes, 15 to 1440.",
   error: "An import's count of rows refused for problems (ADR 0057), beside `create`, `update` and `skip`.",
+  fiscalYearStartMonth: "GET /settings, Localization → Region: the month the fiscal year starts, 1 to 12.",
   line: "An import row's line in its file, the header being line 1 (ADR 0057).",
   noticeDays: "A contract renewal's notice period in whole days.",
   number: "A contract billing's sequence within its contract (1, 2, …); other documents' numbers are text.",
   passkeys: "GET /auth/context: how many passkeys the person has registered.",
+  places: "GET /settings, Number format: how many decimal places a kind of number shows.",
+  quoteExpiryDays: "GET /settings, Localization → Documents: the days a quote stays open by default.",
   recordCount: "A Business report row cut at 200 drill records: how many records it holds (ADR 0055).",
   reminderMin: "A meeting reminder's lead time in whole minutes.",
   rescheduleSequence: "The iCalendar SEQUENCE a meeting's last move was sent with.",
@@ -183,7 +187,23 @@ export const INTEGER_KEYS: Reviewed = {
   version: "A version number: a commission plan's, a contract signature's or a tax rule's.",
   waitingPeriodDays: "A time-off policy's waiting period in whole days.",
   weekStartDay: "My portal: the first day of the company's workweek, 0 to 6.",
+  workweekStartDay: "GET /settings, HR: the day the fixed workweek starts, 0 Sunday to 6 Saturday.",
 };
+
+/**
+ * Places where a MONEY_KEYS name holds something that is not money, by JSON path, each with what it
+ * holds there. The name stays in MONEY_KEYS for every other place, so a new reuse fails MI-DEC
+ * until it is reviewed here.
+ */
+export const NAME_REUSED_AT: Reviewed = {
+  "$.localization.currency.base":
+    "GET /settings: the company's base currency code (ISO 4217, such as USD), not an amount.",
+};
+
+/** The NAME_REUSED_AT paths a body holds, so an entry no answer carries any more shows as stale. */
+export function reusedNamePaths(body: unknown): string[] {
+  return [...jsonNodes(body)].map((node) => node.path).filter((path) => own(NAME_REUSED_AT, path) !== undefined);
+}
 
 /** Why a JSON number that is not a whole count is listed: outside rule 6, or a rule-6 finding to follow up. */
 export type NumberKeyKind = "not money or a quantity" | "finding F-k";
@@ -240,7 +260,12 @@ export function decimalProblems(body: unknown): DecimalProblem[] {
       } else if (own(OTHER_NUMBER_KEYS, field) === undefined) {
         note(node, "is a JSON number");
       }
-    } else if (MONEY_KEYS.has(field) && node.value !== null && typeof node.value !== "object") {
+    } else if (
+      MONEY_KEYS.has(field) &&
+      own(NAME_REUSED_AT, node.path) === undefined &&
+      node.value !== null &&
+      typeof node.value !== "object"
+    ) {
       // Arrays and objects are containers (a plan's draw, a report section's total row): their own
       // fields are checked where the walk meets them.
       if (typeof node.value !== "string" || !DECIMAL.test(node.value)) note(node, "is not a decimal string");

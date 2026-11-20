@@ -12,6 +12,17 @@
       "hr",
       "employee"
     ],
+    "/account/security": [
+      "owner",
+      "manager",
+      "accountant",
+      "sales",
+      "purchasing",
+      "warehouse",
+      "installer",
+      "hr",
+      "employee"
+    ],
     "/contracts": [
       "owner",
       "manager",
@@ -408,6 +419,11 @@
   },
   "hr": {
     "/": [
+      "owner",
+      "hr",
+      "employee"
+    ],
+    "/account/security": [
       "owner",
       "hr",
       "employee"

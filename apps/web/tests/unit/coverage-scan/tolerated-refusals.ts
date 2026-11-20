@@ -16,4 +16,6 @@ export const TOLERATED_REFUSALS: Readonly<Record<string, string>> = {
     "The hub opens only the reports GET /reports/options offers the viewer (reports-page.tsx, ADR 0055); Sales isn't offered this one.",
   "/reports pnlReport":
     "The hub opens only the reports GET /reports/options offers the viewer (reports-page.tsx, ADR 0055); Sales isn't offered this one.",
+  "/reports trialBalance":
+    "The hub opens only the reports GET /reports/options offers the viewer (reports-page.tsx, ADR 0055); the trial balance needs company-wide books sight, so Sales isn't offered it.",
 };

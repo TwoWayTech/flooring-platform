@@ -16,23 +16,25 @@ export interface DemoReason {
 /** The reasons, by id. Each id names a gap in the whole-product check's report where there is one. */
 export const DEMO_REASONS = {
   settings: {
-    reason: "Company settings are not on the API (G2): reads come from DemoStore and saves stay in the browser.",
+    reason:
+      "Reset to default still reads DemoStore's original settings (ADR 0059 D7): the API has no GET /settings/defaults, and a new company has no settings rows (G2).",
     status:
-      'STATUS "Settings at provisioning" (seed country-pack defaults with the Settings module); docs/real-build-plan.md, the Settings module.',
+      'STATUS "Settings at provisioning" and the owner question "Reset to default on the API" (PR #51 Q4); ADR 0059 D7.',
   },
   workspace: {
     reason:
-      "The api-mode shell still reads the company, its roles and users and the company list from DemoStore (the workspace bridge, G1).",
-    status:
-      'STATUS "The api-mode company shell still reads modules and the ceiling from DemoStore until `GET /company` moves"; whole-product check G1.',
+      "The api-mode shell takes the person, access and people from GET /company, but still reads the company record (workspace provider), the roles list (dashboard, Sales) and the company list (switcher, palette, sign-in directory) from DemoStore (the workspace bridge, G1).",
+    status: 'ADR 0051 "GET /company"; whole-product check G1.',
   },
   locations: {
-    reason: "Locations and a person's default location have no write route on the API (G3).",
-    status: 'STATUS "The branch limit is stored, not enforced, until Settings → Locations moves to the API."',
+    reason:
+      "A person's default location (the profile dialog) has no write route on the API; warehouses and showrooms moved (POST and PUT /locations, ADR 0059 part 4a).",
+    status: "Whole-product check G3; ADR 0059 part 4a.",
   },
   outbox: {
-    reason: "The Outbox, the bell, Simulate reply and notification rules stay on DemoStore in api mode.",
-    status: 'ADR 0051 "Part 3"; STATUS "Api mode\'s Outbox, bell and Simulate reply still show DemoStore\'s rows."',
+    reason:
+      "Notification rules, Simulate reply and Simulate bounce (with the meeting Simulate reply reads) stay on DemoStore in api mode; the bell, the Outbox and Settings → Email moved (PR #65).",
+    status: 'ADR 0051 "Part 3"; docs/product-spec/notifications.md.',
   },
   mixed: {
     reason:
@@ -66,19 +68,16 @@ export type DemoReasonId = keyof typeof DEMO_REASONS;
  * `get:<collection>`, `save:<collection>`), with its reason's id. One line per call.
  */
 export const DEMO_ONLY: Readonly<Record<string, DemoReasonId>> = {
-  cancelOutbox: "outbox",
   closeCompany: "demoTools",
   createInvoiceFromJob: "installation",
   "get:meetings": "outbox",
   getCompany: "workspace",
   getDefaultSettings: "settings",
-  getSettings: "settings",
   "list:bills": "mixed",
   "list:crews": "installation",
   "list:customers": "mixed",
   "list:expenses": "mixed",
   "list:jobs": "installation",
-  "list:locations": "locations",
   "list:notificationRules": "outbox",
   "list:products": "mixed",
   "list:ptoRequests": "mixed",
@@ -92,19 +91,13 @@ export const DEMO_ONLY: Readonly<Record<string, DemoReasonId>> = {
   "list:supplierPayments": "mixed",
   "list:timesheets": "mixed",
   "list:transfers": "mixed",
-  "list:users": "workspace",
   listCompanies: "workspace",
   listCompanyDirectory: "demoTools",
-  listMyNotifications: "outbox",
-  listOutbox: "outbox",
-  markNotificationsRead: "outbox",
   recordAdjustment: "adjustments",
   resetDemo: "demoTools",
   resetNotificationRule: "outbox",
-  retryOutbox: "outbox",
   reviewAdjustment: "adjustments",
   "save:jobs": "installation",
-  saveLocation: "locations",
   saveNotificationRule: "outbox",
   scheduleJob: "installation",
   signOffJob: "installation",
@@ -113,8 +106,6 @@ export const DEMO_ONLY: Readonly<Record<string, DemoReasonId>> = {
   startJob: "installation",
   testDatabaseConnection: "simulated",
   updateMyProfile: "locations",
-  updateSettings: "settings",
-  whoAmI: "mixed",
 };
 
 /**

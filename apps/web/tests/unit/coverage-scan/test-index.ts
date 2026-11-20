@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join } from "node:path/posix";
 import { FEATURE_KEYS } from "@workspace/shared";
 import { filesUnder, normalPath, readRepoFile, repoPath, withoutComments } from "./source";
 
@@ -186,14 +186,7 @@ export function indexTests(pages: readonly string[], routes: readonly string[]):
  * why. They credit no page or route, so the coverage list never counts a test that doesn't run
  * (MF-7). CV-9 fails on a spec with a `.fixme(` that isn't listed, and on a listed file without one.
  */
-export const PARKED_SPECS: Readonly<Record<string, string>> = {
-  "apps/web/tests/e2e-api/flows/f1-sales-quote-to-cut.spec.ts":
-    "F1 is fixme until B1, B2 and B3 are fixed (docs/STATUS.md; the flows' session log).",
-  "apps/web/tests/e2e-api/flows/f2-purchasing-receipt-to-payment.spec.ts":
-    "F2 is fixme until B2 is fixed (docs/STATUS.md; the flows' session log).",
-  "apps/web/tests/e2e-api/flows/f5-contract-retainage.spec.ts":
-    "F5 is fixme until B4 and B2 are fixed (docs/STATUS.md; the flows' session log).",
-};
+export const PARKED_SPECS: Readonly<Record<string, string>> = {};
 
 /** Whether a spec file declares a test as `fixme` (outside comments): it is then parked as a whole. */
 export function hasFixme(file: string): boolean {

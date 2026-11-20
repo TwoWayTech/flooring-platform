@@ -105,6 +105,8 @@ export const SPEC_FEATURES: Readonly<Record<string, readonly FeatureKey[]>> = {
 export const NO_FEATURE_PAGES: Readonly<Record<string, string>> = {
   "/[...missing]": "The not-found page inside the app shell.",
   "/accept-invite": "Accepting an invitation, before any company is open.",
+  "/account/security":
+    "The person's own sign-in security (passkeys and the authenticator, ADR 0060), from the user menu: everyone has it, so no switch hides it.",
   "/design": "The design sheet (docs/design-brief.md), not a product page.",
   "/forgot-password": "Password recovery, before sign-in.",
   "/login": "Sign-in.",

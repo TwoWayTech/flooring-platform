@@ -149,6 +149,16 @@
         "hr.commissions": "gating"
       }
     },
+    "GET /company": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
+    },
     "GET /company/standing": {
       "level": "session",
       "product": null,
@@ -367,7 +377,7 @@
     },
     "GET /ledger/trial-balance": {
       "level": "company",
-      "product": null,
+      "product": "flooring",
       "module": "core",
       "anyOf": [
         "reports.financial.view"
@@ -375,7 +385,9 @@
       "anyMember": false,
       "audited": false,
       "sensitiveKeys": null,
-      "features": {}
+      "features": {
+        "reports.hub": "gating"
+      }
     },
     "GET /lien-waivers": {
       "level": "company",
@@ -770,7 +782,11 @@
       "audited": false,
       "sensitiveKeys": null,
       "features": {
-        "reports.hub": "gating"
+        "reports.business": "shaping",
+        "reports.hub": "gating",
+        "reports.payments": "shaping",
+        "reports.pnl": "shaping",
+        "reports.sales-category": "shaping"
       }
     },
     "GET /reports/payments": {
@@ -862,6 +878,16 @@
       "features": {
         "inventory.rolls": "gating"
       }
+    },
+    "GET /settings": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [],
+      "anyMember": true,
+      "audited": false,
+      "sensitiveKeys": null,
+      "features": {}
     },
     "GET /settings/accounting": {
       "level": "company",
@@ -1758,6 +1784,20 @@
       "audited": true,
       "sensitiveKeys": null,
       "features": {}
+    },
+    "POST /locations": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.locations.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.locations": "gating"
+      }
     },
     "POST /meeting-requests": {
       "level": "company",
@@ -2728,6 +2768,20 @@
         "sales.team": "gating"
       }
     },
+    "PUT /locations/:id": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.locations.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.locations": "gating"
+      }
+    },
     "PUT /quotes/:id": {
       "level": "company",
       "product": null,
@@ -2779,6 +2833,202 @@
       "audited": true,
       "sensitiveKeys": null,
       "features": {}
+    },
+    "PUT /settings/branding": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.branding.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.branding": "gating"
+      }
+    },
+    "PUT /settings/email": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.notifications.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.notifications": "gating"
+      }
+    },
+    "PUT /settings/expenses": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.expenses.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
+    },
+    "PUT /settings/hr": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "settings.hr.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.hr": "gating"
+      }
+    },
+    "PUT /settings/inventory": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.locations.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "inventory.locations": "gating"
+      }
+    },
+    "PUT /settings/localization/currency": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.localization.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.localization": "gating"
+      }
+    },
+    "PUT /settings/localization/documents": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.localization.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.localization": "gating"
+      }
+    },
+    "PUT /settings/localization/payroll": {
+      "level": "company",
+      "product": null,
+      "module": "hr",
+      "anyOf": [
+        "settings.localization.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.localization": "gating"
+      }
+    },
+    "PUT /settings/localization/region": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.localization.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.localization": "gating"
+      }
+    },
+    "PUT /settings/localization/tax": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.tax.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.localization": "gating"
+      }
+    },
+    "PUT /settings/numbers": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.numbers.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.number-format": "gating"
+      }
+    },
+    "PUT /settings/payments": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.payments.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "sales.payments": "gating"
+      }
+    },
+    "PUT /settings/profile": {
+      "level": "company",
+      "product": null,
+      "module": null,
+      "anyOf": [
+        "settings.company.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "settings.company": "gating"
+      }
+    },
+    "PUT /settings/sharedCosts": {
+      "level": "company",
+      "product": null,
+      "module": "core",
+      "anyOf": [
+        "settings.expenses.manage"
+      ],
+      "anyMember": false,
+      "audited": true,
+      "sensitiveKeys": null,
+      "features": {
+        "finance.expenses": "gating"
+      }
     },
     "PUT /supplier-contacts/:id": {
       "level": "company",

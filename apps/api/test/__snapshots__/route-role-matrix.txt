@@ -10,6 +10,7 @@ GET /change-orders  flooring: owner manager accountant sales  hr: -
 GET /clock-entries  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 GET /commission-totals  flooring: owner manager accountant sales  hr: -
 GET /commissions  flooring: owner hr  hr: owner hr
+GET /company  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 GET /contract-billings  flooring: owner manager accountant sales  hr: -
 GET /contract-lines  flooring: owner manager accountant sales  hr: -
 GET /contractor-payments  flooring: owner accountant hr  hr: owner hr
@@ -51,6 +52,7 @@ GET /reports/sales-by-category  flooring: owner manager accountant sales  hr: -
 GET /reservations  flooring: owner manager accountant sales purchasing warehouse  hr: -
 GET /roles  flooring: owner manager hr  hr: owner hr
 GET /rolls  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /settings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 GET /settings/accounting  flooring: owner accountant  hr: -
 GET /stock-holds  flooring: owner manager accountant sales purchasing warehouse  hr: -
 GET /stock-movements  flooring: owner manager accountant sales purchasing warehouse  hr: -
@@ -112,6 +114,7 @@ POST /invoices/:id/sent  flooring: owner manager accountant sales  hr: -
 POST /invoices/:id/void  flooring: owner manager accountant  hr: -
 POST /invoices/:id/write-off  flooring: owner accountant  hr: -
 POST /ledger/period-close  flooring: owner  hr: -
+POST /locations  flooring: owner  hr: -
 POST /meeting-requests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 POST /meetings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
 POST /meetings/:id/attendees/:attendeeId/proposal  flooring: owner manager sales hr  hr: owner hr
@@ -175,10 +178,25 @@ PUT /employees/:id  flooring: owner hr  hr: owner hr
 PUT /expenses/:id  flooring: owner manager accountant  hr: -
 PUT /imports/mappings/:kind  flooring: owner  hr: owner
 PUT /invoices/:id/commission-split  flooring: owner manager accountant hr  hr: -
+PUT /locations/:id  flooring: owner  hr: -
 PUT /quotes/:id  flooring: owner manager sales  hr: -
 PUT /recurring-expenses/:id  flooring: owner manager accountant  hr: -
 PUT /roles/:id  flooring: owner  hr: owner
 PUT /settings/accounting  flooring: owner accountant  hr: -
+PUT /settings/branding  flooring: owner  hr: owner
+PUT /settings/email  flooring: owner  hr: owner
+PUT /settings/expenses  flooring: owner  hr: -
+PUT /settings/hr  flooring: owner hr  hr: owner hr
+PUT /settings/inventory  flooring: owner  hr: -
+PUT /settings/localization/currency  flooring: owner accountant  hr: owner
+PUT /settings/localization/documents  flooring: owner accountant  hr: -
+PUT /settings/localization/payroll  flooring: owner accountant  hr: owner
+PUT /settings/localization/region  flooring: owner accountant  hr: owner
+PUT /settings/localization/tax  flooring: owner accountant  hr: owner
+PUT /settings/numbers  flooring: owner accountant  hr: owner
+PUT /settings/payments  flooring: owner accountant  hr: -
+PUT /settings/profile  flooring: owner  hr: owner
+PUT /settings/sharedCosts  flooring: owner  hr: -
 PUT /supplier-contacts/:id  flooring: owner manager purchasing  hr: -
 PUT /suppliers/:id  flooring: owner manager purchasing  hr: -
 PUT /time-off-policies/:id  flooring: owner hr  hr: owner hr
