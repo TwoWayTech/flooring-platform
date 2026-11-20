@@ -9,6 +9,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
+import { dec } from "@workspace/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import request from "supertest";
 import { readFileSync } from "node:fs";
@@ -287,15 +288,10 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     // The manager works in the quote's branch and holds product cost.
     const managers = await listedFor(cookies.manager);
     expect(managers.lines[0].unitCost).toBe("2.1000");
-    // A cost sent with a save is ignored. The percents go as typed: the API answers them at
-    // numeric(18,8) scale, which its own percent check refuses (B6, session log 2026-11-16-2320).
-    const lines = managers.lines.map((line: Record<string, unknown>) => ({
-      ...line,
-      wastePct: "10",
-      unitCost: "0.0001",
-    }));
+    // A cost sent with a save is ignored.
+    const lines = managers.lines.map((line: Record<string, unknown>) => ({ ...line, unitCost: "0.0001" }));
     const edited = await call("put", `/quotes/${created.body.id}`, cookies.manager)
-      .send({ ...managers, depositPct: "50", lines })
+      .send({ ...managers, lines })
       .expect(200);
     expect(edited.body.lines[0].unitCost).toBe("2.1000");
     expect(await liveLineCosts()).toEqual(["2.1000"]);
@@ -304,6 +300,151 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
     expect(sentOut.body.lines[0]).not.toHaveProperty("unitCost");
+  });
+
+  it("takes back a saved quote as it answered it: percents at their stored scale or as typed, waste by value; a real waste change still needs the key (B6)", async () => {
+    type Json = Record<string, unknown>;
+    type Answer = Json & { lines: Json[] };
+    const status = (res: { status: number; body: unknown }, want: number, step: string) =>
+      expect(res.status, `B6 ${step}: ${JSON.stringify(res.body)}`).toBe(want);
+    const WASTE = "Your role does not allow changing waste.";
+    const FORMAT = "Enter a percent such as 10.";
+    const NO_PRODUCT = "Only someone who may change tax can add a line without a product.";
+    const TWICE = "Send each line once.";
+
+    // 0. A carpet product, for a line moved to another product (A.5e). Summit's carpet default is 12.
+    const handle = await harness.companyDb(company.id);
+    let carpet = "";
+    try {
+      const [product] = await handle.db
+        .insert(products)
+        .values({
+          sku: `C-${uuidv7()}`,
+          name: "Harbor Loop Carpet",
+          category: "carpet" as const,
+          unit: "sq_ft" as const,
+          price: "3.2500",
+          cost: "1.4000",
+        })
+        .returning();
+      carpet = product.id;
+    } finally {
+      await handle.close();
+    }
+
+    // 1. The rep's quote, answered at the columns' numeric(18,8) scale.
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ines Varga" }).expect(201);
+    const created = await call("post", "/quotes", cookies.salesA).send(quoteBody(customer.body.id, warehouse, tile));
+    status(created, 201, "A.1");
+    expect(created.body.depositPct).toBe("50.00000000");
+    expect(created.body.lines[0].wastePct).toBe("10.00000000");
+    const id = created.body.id as string;
+    const put = (body: Json, cookie = cookies.salesA) => call("put", `/quotes/${id}`, cookie).send(body);
+    // Line ids change on every save, so each step starts from the latest answer.
+    let current = created.body as Answer;
+    const withLine0 = (over: Json): Answer => ({
+      ...current,
+      lines: current.lines.map((line, index) => (index === 0 ? { ...line, ...over } : line)),
+    });
+
+    // 2. Sent back as answered.
+    let res = await put(current);
+    status(res, 200, "A.2");
+    expect(
+      res.body.lines.filter((line: Json) => "unitCost" in line),
+      "the rep's answer carries no cost",
+    ).toEqual([]);
+    expect(dec(res.body.depositPct).eq(50)).toBe(true);
+    expect(dec(res.body.lines[0].wastePct).eq(10)).toBe(true);
+    current = res.body as Answer;
+
+    // 3. The percents as typed: the same values, so no waste change.
+    res = await put({
+      ...current,
+      depositPct: "50",
+      lines: current.lines.map((line) => ({ ...line, wastePct: "10" })),
+    });
+    status(res, 200, "A.3");
+    current = res.body as Answer;
+
+    // 4. A new line at the tile's default, written another way.
+    const added = {
+      id: "draft-2",
+      productId: tile,
+      description: "Slate Tile",
+      category: "material",
+      unit: "sq_ft",
+      quantity: "20",
+      unitPrice: "4.50",
+      wastePct: "10.0",
+    };
+    res = await put({ ...current, lines: [...current.lines, added] });
+    status(res, 200, "A.4");
+    expect(res.body.lines).toHaveLength(2);
+    current = res.body as Answer;
+
+    // 5. A real change still needs sales.waste.view, however small.
+    const line0 = { ...current.lines[0] };
+    delete line0.wastePct;
+    const changes: [string, Answer][] = [
+      ["A.5a", withLine0({ wastePct: "10.0001" })],
+      ["A.5b", withLine0({ wastePct: "12" })],
+      ["A.5c", { ...current, lines: [line0, ...current.lines.slice(1)] }],
+      ["A.5d", { ...current, lines: [...current.lines, { ...added, id: "draft-3", wastePct: "12" }] }],
+      // A line moved to another product keeps no waste right: carpet starts from its own 12.
+      ["A.5e", withLine0({ productId: carpet })],
+    ];
+    for (const [step, body] of changes) {
+      res = await put(body);
+      status(res, 403, step);
+      expect(res.body.message, `B6 ${step}`).toBe(WASTE);
+    }
+    // A line sent without the product it had is a new line without a product, so it takes neither
+    // the saved line's waste nor its category and cost, and needs the tax key (review round 1).
+    const unproduced = { ...line0 };
+    delete unproduced.productId;
+    res = await put({ ...current, lines: [unproduced, ...current.lines.slice(1)] });
+    status(res, 403, "A.5f");
+    expect(res.body.message, "B6 A.5f").toBe(NO_PRODUCT);
+
+    // 6. No value past four decimals, nothing above 100, and bad text is 400, never 500.
+    const refusals: [string, Answer, string][] = [
+      ["A.6 waste 8dp", withLine0({ wastePct: "10.00000001" }), FORMAT],
+      ["A.6 waste 5dp", withLine0({ wastePct: "10.00001" }), FORMAT],
+      ["A.6 deposit 8dp", { ...current, depositPct: "100.00000001" }, FORMAT],
+      ["A.6 bound", { ...current, depositPct: "100.0001" }, "A percent is at most 100."],
+      ["A.6 abc", { ...current, depositPct: "abc" }, FORMAT],
+      ["A.6 empty", { ...current, depositPct: "" }, FORMAT],
+    ];
+    for (const [step, body, message] of refusals) {
+      res = await put(body);
+      status(res, 400, step);
+      expect(res.body.message, `B6 ${step}`).toBe(message);
+    }
+
+    // 7. The manager re-saves his own answer, cost included, and may change waste.
+    const managers = (await call("get", "/quotes", cookies.manager).expect(200)).body.find(
+      (quote: Json) => quote.id === id,
+    ) as Answer;
+    expect(managers.lines[0]?.unitCost).toBe("2.1000");
+    res = await put(managers, cookies.manager);
+    status(res, 200, "A.7");
+    current = res.body as Answer;
+    res = await put(withLine0({ wastePct: "12.5" }), cookies.manager);
+    status(res, 200, "A.7 waste");
+    expect(res.body.lines[0].wastePct).toBe("12.50000000");
+
+    // 8. The rep re-saves the manager's waste as she was answered it, but can't copy it onto a
+    // second line by sending the same line twice (review round 1).
+    current = (await call("get", "/quotes", cookies.salesA).expect(200)).body.find(
+      (quote: Json) => quote.id === id,
+    ) as Answer;
+    res = await put(current);
+    status(res, 200, "A.8");
+    current = res.body as Answer;
+    res = await put({ ...current, lines: [current.lines[0], ...current.lines] });
+    status(res, 400, "A.8 twice");
+    expect(res.body.message, "B6 A.8 twice").toBe(TWICE);
   });
 
   it("needs sales.waste.view to change waste and sales.tax.override to change tax", async () => {

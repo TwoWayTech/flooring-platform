@@ -543,6 +543,35 @@ describe("inventory part 2: issue and cut (P11, needs the local PostgreSQL)", ()
     ];
     expect((await call("put", url, cookies.owner).send({ split: two })).status).toBe(200);
     expect(await auditActions()).toContain("Changed commission split");
+    // The split as the API answered it, and as CommissionSplitDialog sends it back, is taken again (B6).
+    const status = (res: { status: number; body: unknown }, want: number, step: string) =>
+      expect(res.status, `B6 ${step}: ${JSON.stringify(res.body)}`).toBe(want);
+    const listed = (await call("get", "/invoices", cookies.owner).expect(200)).body.find(
+      (candidate: { id: string }) => candidate.id === invoice.id,
+    );
+    expect(listed.commissionSplit).toEqual([
+      { userId: salesUserId, pct: "60.00000000" },
+      { userId: hrUserId, pct: "40.00000000" },
+    ]);
+    status(await call("put", url, cookies.owner).send({ split: listed.commissionSplit }), 200, "D.answered");
+    // The dialog starts from the stored first share and sends String(100 - Number(it)), "40".
+    const dialog = [
+      { userId: salesUserId, pct: "60.00000000" },
+      { userId: hrUserId, pct: "40" },
+    ];
+    status(await call("put", url, cookies.owner).send({ split: dialog }), 200, "D.dialog");
+    // Still two decimals by value.
+    const pastTwo: [string, string][] = [
+      ["60.001", "39.999"],
+      ["60.00000001", "39.99999999"],
+    ];
+    for (const [first, second] of pastTwo) {
+      const split = [
+        { userId: salesUserId, pct: first },
+        { userId: hrUserId, pct: second },
+      ];
+      status(await call("put", url, cookies.owner).send({ split }), 400, `D.${first}`);
+    }
     // Roles holding sales.invoice.edit or hr.commission.manage may; the warehouse holds neither.
     expect((await call("put", url, cookies.warehouse).send({ split: two })).status).toBe(403);
     expect((await call("put", url, cookies.sales).send({ split: two })).status).toBe(403);

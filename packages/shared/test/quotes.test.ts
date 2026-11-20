@@ -10,6 +10,7 @@ import {
   nextNumber,
   quoteLineFor,
   remeasureLines,
+  savedQuoteLine,
   taxContextFor,
   type Customer,
   type DocLine,
@@ -139,6 +140,45 @@ describe("default waste (spec B3)", () => {
     expect(defaultWastePct({ category: "porcelain_tile" }, defaults)).toBe("10");
     expect(defaultWastePct({ category: "lvp" }, { ...defaults, lvp: "15" })).toBe("15");
     expect(defaultWastePct({ category: "service" }, defaults)).toBeUndefined();
+  });
+});
+
+describe("the saved line a sent quote line stands for (sales.md rule 8; B6 review round 1)", () => {
+  const tile: DocLine = {
+    id: "l1",
+    productId: "p-tile",
+    description: "Slate Tile",
+    category: "material",
+    unit: "sq_ft",
+    quantity: "110",
+    unitPrice: "4.50",
+    unitCost: "2.10",
+    wastePct: "10",
+  };
+  const haul: DocLine = {
+    id: "l2",
+    description: "Haul away",
+    category: "service",
+    unit: "each",
+    quantity: "1",
+    unitPrice: "50.00",
+    unitCost: "20.00",
+  };
+  const saved = [tile, haul];
+
+  it("is the saved line with the same id and product", () => {
+    expect(savedQuoteLine(saved, { id: "l1", productId: "p-tile" })).toBe(tile);
+    expect(savedQuoteLine(saved, { id: "l2" })).toBe(haul);
+    expect(savedQuoteLine(saved, { id: "l2", productId: "" })).toBe(haul);
+  });
+
+  it("is none for a line with another product, without the product it had, or with one it lacked", () => {
+    expect(savedQuoteLine(saved, { id: "l1", productId: "p-carpet" })).toBeUndefined();
+    expect(savedQuoteLine(saved, { id: "l1" })).toBeUndefined();
+    expect(savedQuoteLine(saved, { id: "l1", productId: "" })).toBeUndefined();
+    expect(savedQuoteLine(saved, { id: "l2", productId: "p-tile" })).toBeUndefined();
+    expect(savedQuoteLine(saved, { id: "l9", productId: "p-tile" })).toBeUndefined();
+    expect(savedQuoteLine(undefined, { id: "l1", productId: "p-tile" })).toBeUndefined();
   });
 });
 

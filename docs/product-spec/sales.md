@@ -245,7 +245,7 @@ pctOf(v, p)    = v * p / 100
    other quantity = gross.toDecimalPlaces(2, ROUND_CEIL)
    ```
 
-8. **Waste is internal.** A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` treats a save as a change when a saved line's waste differs, or a new line's waste differs from the category default. A change needs `sales.waste.view`. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
+8. **Waste is internal.** A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` and the API's `assertWaste` treat a save as a change when a saved line's waste differs in value, or a new line's waste differs in value from the category default: `10` and `10.00000000` are the same waste (`sameOptionalDecimal`; STATUS B6). The demo keeps waste as typed, so it also reads the same text (`12.`) as no change; any other text that isn't plain decimal is a change. A saved line is the same line only with the same id and product (`savedQuoteLine`); a line sent with another product is new and starts from that product's default, and a line sent without the product it had is a new line without a product, so it keeps no saved waste. On the API that line also needs `sales.tax.override`; DemoStore has no such tax rule. The API refuses a quote that sends one line twice. On the API a blank waste also differs from a number; the demo reads a line without waste as unchanged, and starts a line without a catalog product from a blank read as `0`. A change needs `sales.waste.view`. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
 9. **Typing a quantity.** `parseAreaEntry` in `units.ts` reads `500` as sq ft, and `22c`, `22 ctn` or `22 cartons` as `ceil(22) * sqFtPerCarton`.
 10. **Availability on a line.** `LineStock` in `apps/web/src/features/quotes/line-stock.tsx` shows `availableToSell` from `packages/shared/src/reservations.ts` at `lineWarehouse(line, quote.locationId)`:
 
@@ -481,7 +481,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | `jobSite` | Address | Picks the tax rule |
 | `rooms` | Room[] | |
 | `lines` | DocLine[] | |
-| `depositPct` | decimal string | Percent as 50, not 0.5 |
+| `depositPct` | decimal string | Percent as 50, not 0.5. Up to four decimals by value; the API answers it at numeric(18,8) scale (`50.00000000`) and takes that back |
 | `lumpSum` | boolean | Only seeded quotes are true |
 | `taxOverride` | TaxOverride or null | |
 | `invoiceId` | invoice id or null | |
@@ -508,7 +508,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | `quantity` | decimal string | Billed quantity, waste included |
 | `unitPrice` | decimal string | |
 | `unitCost` | decimal string | Sensitive by screen only in the demo. The API leaves it out without `inventory.product.view_sensitive` |
-| `wastePct` | decimal string, optional | Already inside the quantity |
+| `wastePct` | decimal string, optional | Already inside the quantity. Up to four decimals by value; the API answers `10.00000000` and takes it back |
 | `roomIds` | string[], optional | Rooms the line is measured from |
 | `rollId` | roll id, optional | Chosen roll on carpet lines |
 | `sqFtPerCarton` | decimal string, optional | For the carton hint |

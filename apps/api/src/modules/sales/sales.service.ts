@@ -11,6 +11,8 @@ import {
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
+  sameOptionalDecimal,
+  savedQuoteLine,
   taxContextFor,
   type Customer,
   type CustomerAddress,
@@ -439,6 +441,7 @@ export class SalesService {
   /**
    * Lines as stored: a line's cost comes from its product, or from the same saved line, never from
    * the request, so a person who cannot see cost can neither read nor set it (CLAUDE.md rule 5).
+   * The same saved line is the one with the same id and product (`savedQuoteLine`), as for waste.
    */
   private trustedLines(
     access: RequestAccess,
@@ -450,7 +453,7 @@ export class SalesService {
     return lines.map((line) => {
       const product = line.productId ? catalog.get(line.productId) : undefined;
       if (line.productId && !product) throw refuse("A product on the quote no longer exists.");
-      const saved = before?.lines.find((candidate) => candidate.id === line.id);
+      const saved = savedQuoteLine(before?.lines, line);
       if (product) {
         // The tax category and unit are the product's, so a line cannot be made untaxed by
         // calling a material labor (blueprint "Sales tax engine"; PR #14 security review).
@@ -462,8 +465,8 @@ export class SalesService {
           ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
         };
       }
-      // A line with no product keeps the category it was saved with; a new one, or a changed
-      // category, decides tax, so it needs the tax key.
+      // A line with no product keeps the category it was saved with; a new one, a changed
+      // category, or a line sent without the product it had decides tax, so it needs the tax key.
       if (!mayChangeTax && saved?.category !== line.category) {
         throw new ForbiddenException({
           code: "forbidden",
@@ -504,7 +507,13 @@ export class SalesService {
     }
   }
 
-  /** Spec rule 8: waste is internal; changing it from what the line had, or from the default, needs `sales.waste.view`. */
+  /**
+   * Spec rule 8: waste is internal; changing it from what the line had, or from the default, needs
+   * `sales.waste.view`. A saved line is the same line only with the same id and product; any other
+   * line starts from its product's default. Compared by value (STATUS B6): the API answers
+   * "10.00000000" and people type "10", which are the same waste; a blank and a number are not, and
+   * text that isn't plain decimal counts as a change.
+   */
   private assertWaste(
     access: RequestAccess,
     lines: readonly DocLine[],
@@ -514,11 +523,13 @@ export class SalesService {
   ): void {
     if (access.permissions.has("sales.waste.view")) return;
     const changed = lines.some((line) => {
-      const saved = before?.lines.find((candidate) => candidate.id === line.id);
-      if (saved) return (saved.wastePct ?? "") !== (line.wastePct ?? "");
+      // The same line only with the same id and product: the rep is answered every line's id and
+      // waste, so a line moved to another product is new and starts from that product's default.
+      const saved = savedQuoteLine(before?.lines, line);
+      if (saved) return !sameOptionalDecimal(saved.wastePct, line.wastePct);
       const product = line.productId ? catalog.get(line.productId) : undefined;
       const expected = product ? defaultWastePct(product, defaults) : undefined;
-      return (expected ?? "") !== (line.wastePct ?? "");
+      return !sameOptionalDecimal(expected, line.wastePct);
     });
     if (changed)
       throw new ForbiddenException({ code: "forbidden", message: "Your role does not allow changing waste." });

@@ -1,15 +1,17 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
+  dec,
   defaultNumberSettings,
   formatNumber,
   invoicesIn,
   salesTotals,
+  type Customer,
   type Product,
   type Quote,
   type ViewedInvoice,
 } from "@workspace/shared";
 import { MANAGER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
-import { addDays, addProduct, choose, companyToday, FIELDSTONE, waitForAnswer } from "./flows/kit";
+import { addDays, addProduct, choose, companyToday, FIELDSTONE, runId, waitForAnswer } from "./flows/kit";
 
 /** The quote builder's Summary panel. */
 function summaryOf(page: Page): Locator {
@@ -76,6 +78,49 @@ test.describe("sales (api mode)", () => {
 
     await expect(page.getByText("This screen stopped working.")).toHaveCount(0);
     expect(errors.filter((message) => message.includes("DecimalError"))).toEqual([]);
+  });
+
+  test("a salesperson re-opens a saved quote and saves it again (B6)", async ({ page }) => {
+    const customerName = `E2E Resave ${runId()}`;
+    await signInAs(page, SALES_EMAIL);
+    await page.goto("/sales/quotes/new");
+    await page.getByLabel("Fulfilled from").click();
+    await page.getByRole("option", { name: "Denver Central", exact: true }).click();
+    await page.getByLabel("Customer", { exact: true }).click();
+    await page.getByLabel("Search customers").fill(customerName);
+    await page.getByRole("option", { name: `Add “${customerName}” as a new customer` }).click();
+    const added = waitForAnswer<Customer>(page, "POST", /^\/api-proxy\/customers$/);
+    await page.getByRole("form", { name: "New customer" }).getByRole("button", { name: "Add customer" }).click();
+    await added;
+    // As F1 does: the picker shows the new customer before anything is saved, so "Save as draft"
+    // can't race the customer's dispatch and answer "Choose a customer…".
+    await expect(page.getByLabel("Customer", { exact: true })).toHaveText(customerName);
+    await addProduct(page, FIELDSTONE);
+    const drafted = waitForAnswer<Quote>(page, "POST", /^\/api-proxy\/quotes$/);
+    await page.getByRole("button", { name: "Save as draft" }).click();
+    const quote = await drafted;
+    await expect(page).toHaveURL(new RegExp(`/sales/quotes/${quote.id}$`));
+
+    // Re-opened, the builder starts from the API's own answer, percents at their stored scale.
+    const reread = waitForAnswer<Quote[]>(page, "GET", /^\/api-proxy\/quotes$/);
+    await page.goto(`/sales/quotes/${quote.id}`);
+    const stored = (await reread).find((candidate) => candidate.id === quote.id);
+    if (!stored) throw new Error(`${quote.number} is not in Priya's answer.`);
+    await expect(page.getByRole("heading", { name: `Quote ${quote.number}` })).toBeVisible();
+
+    const resaved = waitForAnswer<Quote>(page, "PUT", new RegExp(`^/api-proxy/quotes/${quote.id}$`));
+    const sent = page.waitForRequest(
+      (r) => r.method() === "PUT" && new URL(r.url()).pathname === `/api-proxy/quotes/${quote.id}`,
+    );
+    await page.getByRole("button", { name: "Save as draft" }).click();
+    const answer = await resaved;
+    // It sends back what it was given, so the API must take its own answer (B6).
+    const request = (await sent).postDataJSON() as Quote;
+    expect(request.depositPct).toBe(stored.depositPct);
+    expect(request.lines.map((line) => line.wastePct)).toEqual(stored.lines.map((line) => line.wastePct));
+    expect(dec(answer.depositPct).eq(stored.depositPct), `deposit ${answer.depositPct}`).toBe(true);
+    expect(answer.lines.filter((line) => "unitCost" in line).length, "answer lines carrying unitCost").toBe(0);
+    await expect(page.getByText(`Quote ${quote.number} saved`).first()).toBeVisible();
   });
 
   test("a manager sees a quote's margin and the cost under it from the API (B1)", async ({ page }) => {

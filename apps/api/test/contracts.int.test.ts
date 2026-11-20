@@ -94,6 +94,44 @@ describe("contracts register (contracts part 1)", () => {
     };
   }
 
+  /** A stored contract and its lines as the web's `contractBody` sends them back (B6). */
+  function asForm(contract: Json, lines: readonly Json[]): Json {
+    const pick = (from: Json, keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, from[key]]));
+    return {
+      ...pick(contract, [
+        "direction",
+        "kind",
+        "customerId",
+        "supplierId",
+        "title",
+        "scope",
+        "locationId",
+        "jobSite",
+        "startsAt",
+        "endsAt",
+        "renewal",
+        "retainagePct",
+        "storedRetainagePct",
+        "bondInLieu",
+        "taxTreatment",
+        "notes",
+      ]),
+      lines: lines.map((line) =>
+        pick(line, [
+          "code",
+          "description",
+          "category",
+          "billing",
+          "scheduledValue",
+          "retainagePct",
+          "storedRetainagePct",
+          "milestoneDueAt",
+          "estimatedCost",
+        ]),
+      ),
+    };
+  }
+
   function customerForm(over: Json = {}) {
     return form({ direction: "customer", customerId, supplierId: null, title: "Customer job", ...over });
   }
@@ -339,6 +377,54 @@ describe("contracts register (contracts part 1)", () => {
 
     await call("post", `/contracts/${id}/recall`, "owner").expect(201);
     expect((await call("put", `/contracts/${id}`, "owner").send(form({ title: "Again" }))).status).toBe(200);
+  });
+
+  it("takes back a draft as the API answered it, retainage at its stored scale (B6)", async () => {
+    const status = (res: { status: number; body: unknown }, want: number, step: string) =>
+      expect(res.status, `B6 ${step}: ${JSON.stringify(res.body)}`).toBe(want);
+    const made = await create(
+      "owner",
+      form({
+        title: "B6 resave",
+        retainagePct: "5",
+        storedRetainagePct: "2.5",
+        lines: [line({ code: "R1", retainagePct: "7.5", storedRetainagePct: "0" })],
+      }),
+    );
+    const id = made.id as string;
+    // Read back as the web does: the register and the contract's lines.
+    const stored = async () => {
+      const contract = ((await call("get", "/contracts", "owner").expect(200)).body as Json[]).find((c) => c.id === id);
+      if (!contract) throw new Error("B6: the draft is not in GET /contracts.");
+      return { contract, lines: await linesOf(id) };
+    };
+    const rates = ({ contract, lines }: { contract: Json; lines: Json[] }) =>
+      [contract.retainagePct, contract.storedRetainagePct, lines[0]?.retainagePct, lines[0]?.storedRetainagePct].map(
+        (rate) => dec(rate as string).toString(),
+      );
+    const before = await stored();
+    expect(before.contract).toMatchObject({ retainagePct: "5.00000000", storedRetainagePct: "2.50000000" });
+    expect(before.lines).toHaveLength(1);
+    expect(before.lines[0]).toMatchObject({ retainagePct: "7.50000000", storedRetainagePct: "0.00000000" });
+
+    const put = (body: Json) => call("put", `/contracts/${id}`, "owner").send(body);
+    status(await put(asForm(before.contract, before.lines)), 200, "C.resave");
+    const after = await stored();
+    expect(rates(after)).toEqual(["5", "2.5", "7.5", "0"]);
+
+    // Still four decimals by value and at most 100; bad text is 400, never 500.
+    const refusals: [string, string, string][] = [
+      ["C.5dp", "5.00001", "Enter a percent such as 5."],
+      ["C.8dp", "5.00000001", "Enter a percent such as 5."],
+      ["C.abc", "abc", "Enter a percent such as 5."],
+      ["C.empty", "", "Enter a percent such as 5."],
+      ["C.bound", "100.0001", "A percent is at most 100."],
+    ];
+    for (const [step, retainagePct, message] of refusals) {
+      const res = await put({ ...asForm(after.contract, after.lines), retainagePct });
+      status(res, 400, step);
+      expect(res.body.message, `B6 ${step}`).toBe(message);
+    }
   });
 
   it("sends only a draft that passes draftProblem, and recalls only a sent contract", async () => {

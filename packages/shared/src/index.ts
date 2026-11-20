@@ -10,6 +10,7 @@ export * from "./permissions/company-lifecycle";
 export * from "./permissions/lifecycle-dates";
 export * from "./auth-proxy";
 export * from "./money";
+export * from "./decimal-text";
 export * from "./units";
 export * from "./numbers";
 export * from "./documents";

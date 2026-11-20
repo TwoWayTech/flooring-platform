@@ -1,6 +1,8 @@
 import { DemoRuleError } from "./admin-rules";
 import {
   defaultWastePct,
+  sameOptionalDecimal,
+  savedQuoteLine,
   type CompanySettings,
   type PermissionKey,
   type Product,
@@ -110,8 +112,22 @@ export function settingsPermissions(section: keyof CompanySettings): readonly Pe
 }
 
 /**
+ * Whether a line's waste differs from what it had (sales.md rule 8). DemoStore keeps waste as
+ * typed, and the inputs only drop characters other than digits and points, so it can hold "12."
+ * or ".5": the same text is never a change. Other text is compared by value, plain decimal text
+ * only, so odd text still reads as a change (`sameOptionalDecimal`; STATUS B6, review round 2).
+ */
+function wasteDiffers(had: string, sent: string): boolean {
+  return had !== sent && !sameOptionalDecimal(had, sent);
+}
+
+/**
  * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
- * keeps its waste unless the person may see it; a new line must carry the company default.
+ * keeps its waste unless the person may see it; a new line must carry the company default. A saved
+ * line is the same line only with the same id and product (`savedQuoteLine`); waste is compared by
+ * value, as in the API's `assertWaste` (`wasteDiffers`; STATUS B6). A line without a catalog product,
+ * including a saved line sent without the product it had, starts from a blank, read as "0", so it
+ * keeps no saved waste (B6 review round 4).
  */
 export function wasteChanged(
   quote: Pick<Quote, "lines">,
@@ -121,10 +137,10 @@ export function wasteChanged(
 ): boolean {
   return quote.lines.some((line) => {
     if (line.wastePct === undefined) return false;
-    const saved = before?.lines.find((l) => l.id === line.id);
-    if (saved) return (saved.wastePct ?? "0") !== line.wastePct;
+    const saved = savedQuoteLine(before?.lines, line);
+    if (saved) return wasteDiffers(saved.wastePct ?? "0", line.wastePct);
     const product = products.find((p) => p.id === line.productId);
-    return !!product && (defaultWastePct(product, defaults) ?? "0") !== line.wastePct;
+    return wasteDiffers((product ? defaultWastePct(product, defaults) : undefined) ?? "0", line.wastePct);
   });
 }
 
