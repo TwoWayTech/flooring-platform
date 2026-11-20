@@ -1,3 +1,4 @@
+import { AUTH_BASE_PATH } from "@/lib/session/auth-cookie";
 import { ApiError } from "../errors";
 
 /** The error body every apps/api endpoint returns (docs/api-contract.md, Conventions). */
@@ -53,6 +54,7 @@ export class HttpTransport {
     private readonly baseUrl: string,
     private readonly fetcher: typeof fetch = (...args) => fetch(...args),
     private readonly reread: () => void = () => undefined,
+    private readonly authBaseUrl: string = AUTH_BASE_PATH,
   ) {}
 
   /**
@@ -83,7 +85,16 @@ export class HttpTransport {
 
   /** This transport, with `changed` called after every write the server answered (the router's re-read). */
   withRereads(changed: () => void): HttpTransport {
-    return new HttpTransport(this.baseUrl, this.fetcher, changed);
+    return new HttpTransport(this.baseUrl, this.fetcher, changed, this.authBaseUrl);
+  }
+
+  /**
+   * This transport on Better Auth's endpoints (`/api/auth`), the one route the web host's proxy
+   * vouches for with the client IP and its secret; `/api-proxy` refuses auth paths (auth-proxy.ts).
+   * Same fetcher and re-reads (ADR 0060).
+   */
+  auth(): HttpTransport {
+    return new HttpTransport(this.authBaseUrl, this.fetcher, this.reread, this.authBaseUrl);
   }
 
   /** Fetches a stored file's bytes, such as a payment's proof; failures are ApiErrors like any request. */

@@ -106,6 +106,7 @@ import type {
 import type { ImportBatchSummary, ImportOverview, ImportPreview, ImportResult } from "@workspace/shared";
 // GET /company (ADR 0051, "GET /company") keeps its own import, so the lists above stay as they are.
 import type { Access } from "@workspace/shared";
+import type { SignInSecurity } from "@/lib/session/passkeys";
 
 /**
  * The open company's facts the shell takes from `getWorkspace()` (ADR 0051, "GET /company"). The
@@ -951,6 +952,25 @@ export interface ApiClient {
    * 5 minutes; the demo accepts any 6 digits.
    */
   verifyStepUp(code: string): Promise<void>;
+  /**
+   * The signed-in person's two-step sign-in: whether their role needs it, the authenticator app,
+   * and their passkeys (ADR 0060). The demo keeps simulated passkeys in memory.
+   */
+  signInSecurity(): Promise<SignInSecurity>;
+  /**
+   * Confirms the person's password before a passkey is added (POST /api/auth/verify-password; good
+   * for 5 minutes on this session). A wrong one counts towards the lockout. The demo accepts any.
+   */
+  confirmPassword(password: string): Promise<void>;
+  /**
+   * Adds a passkey with the browser's prompt, after confirmPassword; the API emails the account.
+   * The demo adds a simulated one with no prompt.
+   */
+  addPasskey(name: string): Promise<void>;
+  /** Renames one of the person's passkeys (1 to 60 characters). */
+  renamePasskey(id: string, name: string): Promise<void>;
+  /** Removes one of the person's passkeys; refused for the last factor of a role that needs MFA (`mfa_required`). */
+  deletePasskey(id: string): Promise<void>;
   /** Saves a draft expense or records one with its receipt (spec F1). */
   saveExpense(input: ExpenseInput, files: File[]): Promise<Expense>;
   /** Approves or rejects an expense. */

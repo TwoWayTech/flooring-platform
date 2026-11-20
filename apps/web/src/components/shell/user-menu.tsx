@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, RotateCcw, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, RotateCcw, ShieldCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import {
   DropdownMenu,
@@ -30,7 +31,7 @@ export async function resetDemo() {
   toast.success("Demo data reset");
 }
 
-/** The avatar menu: who is signed in, their profile, reset demo data, sign out. */
+/** The avatar menu: who is signed in, their profile, sign-in and security, reset demo data, sign out. */
 export function UserMenu() {
   const { user, roles, product } = useWorkspace();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -38,6 +39,7 @@ export function UserMenu() {
   // Your profile is demo only; the API's default warehouse comes through GET /company (ADR 0051, D8).
   const hasWarehouses = featureOn("inventory.locations") && product.key === "flooring" && isDemoMode();
   const { signOut } = useSessionActions();
+  const router = useRouter();
   const roleNames = roles
     .filter((r) => user.roleIds.includes(r.id))
     .map((r) => r.name)
@@ -63,6 +65,10 @@ export function UserMenu() {
               Your profile
             </DropdownMenuItem>
           ) : null}
+          <DropdownMenuItem onSelect={() => router.push("/account/security")}>
+            <ShieldCheck />
+            Sign-in and security
+          </DropdownMenuItem>
           {featureOn("demo.reset") ? (
             <DropdownMenuItem onSelect={() => void resetDemo()}>
               <RotateCcw />

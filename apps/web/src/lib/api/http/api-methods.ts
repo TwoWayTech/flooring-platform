@@ -63,6 +63,13 @@ import {
 } from "@workspace/shared";
 import { businessReportPath, hubReportPath } from "./report-paths";
 import type { SessionContext } from "@/lib/session/api-context";
+import {
+  addPasskeyOn,
+  confirmPasswordOn,
+  deletePasskeyOn,
+  renamePasskeyOn,
+  signInSecurityOn,
+} from "@/lib/session/passkeys";
 import { HttpApiError } from "./transport";
 import type {
   ApiClient,
@@ -204,6 +211,13 @@ export const API_METHODS = {
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   // Changes no company data, and the write that follows it reads again.
   verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
+  // Sign-in and security (ADR 0060): Better Auth's endpoints, through /api/auth. Confirming the
+  // password only reads; adding, renaming and removing a passkey are writes.
+  signInSecurity: (http) => () => signInSecurityOn(http),
+  confirmPassword: (http) => (password) => confirmPasswordOn(http.auth(), password),
+  addPasskey: (http) => (name) => addPasskeyOn(http.auth(), name),
+  renamePasskey: (http) => (id, name) => renamePasskeyOn(http.auth(), id, name),
+  deletePasskey: (http) => (id) => deletePasskeyOn(http.auth(), id),
   // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
   // other section, Reset to default and resetSettings stay on DemoStore until their part moves.
   // `localization` is never sent whole: DemoStore refuses it, because Localization and tax saves one
