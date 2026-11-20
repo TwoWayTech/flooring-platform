@@ -94,3 +94,7 @@ Security review (six fresh read-only `security-reviewer` rounds on 29e8d42..HEAD
 - The demo's simulated passkeys cannot be reached in api mode (all five methods are routed; the re-read test classifies them).
 - Fixed along the way: stuck buttons on non-API failures, a way back from Passkey to the app at enrolment, the expired password check returning to the password step (e2e), `mfa_required` words, the 10-minute rule said up front, a page kept on a failed re-read, the passkey button hidden without WebAuthn (e2e), plain words after a passkey sign-in.
 - Recorded, not changed here: the API-side `checkNoDowngrade` race on simultaneous deletes; passkey names unbounded on the server (Q2); remove and rename needing only a session, with no email on removal (Q5).
+
+## Merge of the base branch
+
+- `git merge --no-ff origin/feat/inventory-stock-rules-api` (f3e9136: Stock rules through Settings parts 4b, 5 and 6) as d9d26eb: **no conflicts**, 42 files from the base, none of them this branch's files. ADR 0060 is still free on the base. After it: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck` and `pnpm test` all green (6/6, 6/6, 5/5). No API file conflicted, so the API integration suites were not run; no code was resolved by hand, so no new security review.
