@@ -1,5 +1,5 @@
 import { addDays } from "../dates";
-import { computeTotals, type DocLine, type TaxContext } from "../documents";
+import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxContext } from "../documents";
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
@@ -56,6 +56,55 @@ export function defaultWastePct(
   defaults: LocalizationSettings["documents"]["defaultWastePct"],
 ): string | undefined {
   return product.category === "service" ? undefined : defaults[product.category];
+}
+
+/**
+ * The saved line a sent quote line stands for (sales.md rule 8; STATUS B6): the one with the same
+ * id and the same product, or none. A line sent under a saved line's id with another product, or
+ * without the product it had, is a new line, so it keeps nothing that was checked for the saved
+ * line: not its waste, nor a line without a product's category and cost. The API's `trustedLines`
+ * and `assertWaste` and the demo's `wasteChanged` all use it, so they agree on which line is which.
+ */
+export function savedQuoteLine<T extends Pick<DocLine, "id" | "productId">>(
+  saved: readonly T[] | undefined,
+  line: Pick<DocLine, "id" | "productId">,
+): T | undefined {
+  return saved?.find((candidate) => candidate.id === line.id && (candidate.productId ?? "") === (line.productId ?? ""));
+}
+
+/** Whether a new line is measured from the rooms: anything sold per sq ft, goods and labor alike. */
+function measuredFromRooms(product: Pick<Product, "unit">): boolean {
+  return product.unit === "sq_ft";
+}
+
+/**
+ * A new quote line for a product (spec "Quote builder"): tied to every room when it is sold per sq ft
+ * and the quote has rooms, otherwise one unit. Its cost is the product's as the viewer received it:
+ * absent for a viewer without product cost, because the API strips it (CLAUDE.md rule 5). It is never
+ * filled in: the server costs the line from the catalog (`trustedLines`), and computeTotals leaves
+ * margin unknown (sales.md rule 13; ADR 0037, 2026-11-16).
+ */
+export function quoteLineFor(
+  product: Product,
+  lineId: string,
+  rooms: readonly Room[],
+  waste: LocalizationSettings["documents"]["defaultWastePct"],
+): DocLine {
+  const linked = rooms.length > 0 && measuredFromRooms(product);
+  return {
+    id: lineId,
+    productId: product.id,
+    description: product.category === "service" ? product.name : `${product.brand} ${product.name}`,
+    category: productTaxCategory(product),
+    unit: product.unit,
+    quantity: "1",
+    unitPrice: product.price,
+    // Absent when the API withheld it, and never a placeholder: a "0" would show a 100 % margin.
+    unitCost: product.cost,
+    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+    ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
+    ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
+  };
 }
 
 /** Total area of the given rooms in sq ft. */
@@ -170,6 +219,54 @@ export function invoiceFromQuote(
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
-    cost: totals.cost,
+    cost: storedCost(totals),
   };
+}
+
+/**
+ * The total the customer accepted on the quote an invoice came from, when the invoice's total
+ * differs; else null (owner's answer of 2026-11-20, ADR 0059; sales.md rule 18). An accepted quote
+ * keeps its total at conversion, while the invoice is taxed under the rule in force on its own day,
+ * so after a tax change the two can differ and the invoice says so. Lines are copied unchanged at
+ * conversion, so only tax makes them differ. Credit notes and other quotes never count.
+ */
+export function acceptedTotalIfDifferent(
+  invoice: Pick<Invoice, "quoteId" | "total" | "isReturn">,
+  quote: Pick<Quote, "id" | "total"> | undefined,
+): string | null {
+  if (!quote || invoice.isReturn || invoice.quoteId !== quote.id) return null;
+  return dec(quote.total).equals(dec(invoice.total)) ? null : quote.total;
+}
+
+/** What prices a quote: its customer, where the job is, its tax override and its lines, by value. */
+function pricingOf(quote: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">): string {
+  return JSON.stringify({
+    customerId: quote.customerId,
+    state: quote.jobSite.state,
+    county: quote.jobSite.county ?? "",
+    overridePct: quote.taxOverride ? dec(quote.taxOverride.ratePct).toFixed() : null,
+    lumpSum: quote.lumpSum,
+    lines: quote.lines.map((line) => [
+      line.productId ?? "",
+      line.category,
+      line.unit,
+      dec(line.quantity).toFixed(),
+      dec(line.unitPrice).toFixed(),
+    ]),
+  });
+}
+
+/**
+ * Whether a save of this quote keeps its stored total instead of pricing it again (owner's answer
+ * of 2026-11-20, ADR 0059; sales.md rule 18): an accepted quote keeps the total the customer
+ * accepted as long as the save changes nothing that prices it (customer, job site state and county,
+ * tax override, lump sum, and each line's product, category, unit, quantity and price), so editing
+ * its notes after a tax change can't rewrite what was agreed. A priced change is a new offer and is
+ * priced under the day's rule, as any save.
+ */
+export function keepsAcceptedTotal(
+  before: Quote | undefined,
+  next: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">,
+): boolean {
+  return before?.status === "accepted" && pricingOf(before) === pricingOf(next);
 }

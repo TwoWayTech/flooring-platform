@@ -4,8 +4,12 @@ import {
   CALIFORNIA_PENDING_NOTE,
   californiaPayOn,
   companyOvertimeRule,
+  FX_RATE_TEXT_MAX,
+  localizationTabProblem,
   OVERTIME_RULE_LABELS,
+  statesOfOperationChanged,
   US_STATES,
+  type HoldsKey,
   type LocalizationSettings,
   type OvertimeRule,
 } from "@workspace/shared";
@@ -42,7 +46,7 @@ const MONTHS = Object.fromEntries(
     "December",
   ].map((m, i) => [String(i + 1), m]),
 ) as Record<string, string>;
-const TIME_ZONES = {
+const TIME_ZONES: Readonly<Record<string, string>> = {
   "America/New_York": "Eastern",
   "America/Chicago": "Central",
   "America/Denver": "Mountain",
@@ -50,7 +54,16 @@ const TIME_ZONES = {
   "America/Los_Angeles": "Pacific",
 };
 
-/** Region: country, states, time zone, date format, week and fiscal year, area unit. */
+/** A time zone as the Region tab shows it: "Mountain (America/Denver)", or any other IANA zone as it is. */
+function zoneLabel(zone: string): string {
+  const name = TIME_ZONES[zone];
+  return name ? `${name} (${zone})` : zone;
+}
+
+/**
+ * Region: country, states, time zone, date format, week and fiscal year, area unit. The time zone is
+ * the company's own, set when the company is set up, so it is shown read only (ADR 0059, part 2b).
+ */
 export function RegionTab({ draft, setDraft, changed }: SectionProps<L["region"]>) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
@@ -67,15 +80,8 @@ export function RegionTab({ draft, setDraft, changed }: SectionProps<L["region"]
           />
         )}
       </SettingRow>
-      <SettingRow setting="region.timeZone" changed={changed("timeZone")}>
-        {(id) => (
-          <Choice
-            id={id}
-            value={draft.timeZone as keyof typeof TIME_ZONES}
-            options={TIME_ZONES}
-            onChange={(timeZone) => setDraft({ ...draft, timeZone })}
-          />
-        )}
+      <SettingRow setting="region.timeZone">
+        {(id) => <Input id={id} value={zoneLabel(draft.timeZone)} disabled aria-describedby={`${id}-hint`} />}
       </SettingRow>
       <SettingRow setting="region.dateFormat" changed={changed("dateFormat")}>
         {(id) => (
@@ -163,6 +169,7 @@ export function CurrencyTab({ draft, setDraft, changed }: SectionProps<L["curren
                   id={`fx-${x.code}`}
                   inputMode="decimal"
                   value={x.rate}
+                  maxLength={FX_RATE_TEXT_MAX}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
@@ -180,6 +187,41 @@ export function CurrencyTab({ draft, setDraft, changed }: SectionProps<L["curren
       </SettingRow>
     </div>
   );
+}
+
+/**
+ * What the Region and Currency forms add to their tab (ADR 0059, part 2b): Save first runs the
+ * shared rule and the extra key against the company's current tab (`localizationTabProblem`, the
+ * one DemoStore runs and the API answers), so a refused value never costs a code; Region asks for a
+ * code only when the states of operation change, Currency always (the page's TABS). Reset keeps
+ * what Settings can't change (the zone, country and locale; the base, its lock and the currencies),
+ * so a reset draft is never refused for them. `current` is the company's localization as the shell
+ * reads it, `original` the demo's originals, `holds` whether the person holds a key.
+ */
+export function regionCurrencyForms(current: L, original: L, holds: HoldsKey) {
+  return {
+    region: {
+      problem: (draft: L["region"]) => localizationTabProblem("region", draft, current.region, holds),
+      stepUp: (draft: L["region"]) => statesOfOperationChanged(draft, current.region),
+      defaults: {
+        ...original.region,
+        timeZone: current.region.timeZone,
+        country: current.region.country,
+        locale: current.region.locale,
+      },
+    },
+    currency: {
+      problem: (draft: L["currency"]) => localizationTabProblem("currency", draft, current.currency, holds),
+      defaults: {
+        ...original.currency,
+        base: current.currency.base,
+        locked: current.currency.locked,
+        extra: current.currency.extra.map(
+          (entry) => original.currency.extra.find((stored) => stored.code === entry.code) ?? entry,
+        ),
+      },
+    },
+  };
 }
 
 /** Payroll rules that follow the location: the overtime rule and the holiday calendar. Pay calendar is in Settings → HR. */

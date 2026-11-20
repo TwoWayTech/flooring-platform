@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Attendee, FeatureKey, FeatureRegister, GuestOption, Meeting, MyMeetings } from "@workspace/shared";
 import type { ApiClient, MeetingInput, MeetingMove } from "@/lib/api/contract";
-import { API_METHODS } from "@/lib/api/http/api-methods";
-import { routeClient } from "@/lib/api/http/router";
-import { HttpApiError, HttpTransport } from "@/lib/api/http/transport";
+import { HttpApiError } from "@/lib/api/http/transport";
+import { fakeApi, type FakeAnswer, type SentRequest } from "./fake-api";
 
 /** Switches these tests turn off; every other one keeps its real value (S6). */
 const OFF = vi.hoisted(() => new Set<string>());
@@ -67,33 +66,6 @@ function meeting(over: Partial<Meeting> = {}): Meeting {
   };
 }
 
-type Answer = { status: number; body?: unknown } | "network";
-
-interface Sent {
-  call: string;
-  body: unknown;
-}
-
-/**
- * The real API_METHODS over a fake fetch that records each request and answers per "METHOD path"
- * (200 with an empty object by default). `changes` counts the re-reads the screens were told to do.
- */
-function apiClient(answers: Record<string, Answer> = {}) {
-  const sent: Sent[] = [];
-  const fetcher = (async (url: string, init?: RequestInit) => {
-    const call = `${init?.method ?? "GET"} ${url.replace("http://api.test", "")}`;
-    sent.push({ call, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined });
-    const answer = answers[call] ?? { status: 200, body: {} };
-    if (answer === "network") throw new TypeError("fetch failed");
-    return new Response(JSON.stringify(answer.body ?? {}), { status: answer.status });
-  }) as unknown as typeof fetch;
-  const demo = { subscribe: () => () => undefined } as unknown as ApiClient;
-  const client = routeClient(demo, new HttpTransport("http://api.test", fetcher), API_METHODS);
-  let changes = 0;
-  client.subscribe(() => changes++);
-  return { client, sent, changes: () => changes, calls: () => sent.map((s) => s.call).sort() };
-}
-
 const OPTIONS: GuestOption[] = [{ kind: "staff", id: COLLEAGUE, name: "Priya Natarajan", email: "" }];
 const MINE: MyMeetings = {
   viewerUserId: VIEWER,
@@ -102,7 +74,7 @@ const MINE: MyMeetings = {
 };
 const CONTEXT = { user: { id: VIEWER, name: "Luis Ortega", email: "luis@summitfloor.example" } };
 
-const PAGE_ANSWERS: Record<string, Answer> = {
+const PAGE_ANSWERS: Record<string, FakeAnswer> = {
   "GET /meetings": { status: 200, body: [meeting()] },
   "GET /meeting-guests": { status: 200, body: OPTIONS },
   "GET /me/meetings": { status: 200, body: MINE },
@@ -111,7 +83,7 @@ const PAGE_ANSWERS: Record<string, Answer> = {
 
 describe("meetings on the API (ADR 0051 part 3)", () => {
   it("reads the Meetings page from /meetings, /meeting-guests and /me/meetings, with the viewer from /me/meetings and no /auth/context call", async () => {
-    const { client, calls, changes } = apiClient(PAGE_ANSWERS);
+    const { client, calls, changes } = fakeApi(PAGE_ANSWERS);
     expect(await client.meetingsData()).toEqual({
       viewerUserId: VIEWER,
       meetings: [meeting()],
@@ -125,7 +97,7 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
 
   it("asks /auth/context for the viewer only when /me/meetings gave no answer (403 or 404) or requests are off", async () => {
     for (const status of [403, 404]) {
-      const { client, calls } = apiClient({ ...PAGE_ANSWERS, "GET /me/meetings": { status } });
+      const { client, calls } = fakeApi({ ...PAGE_ANSWERS, "GET /me/meetings": { status } });
       const data = await client.meetingsData();
       expect(data.viewerUserId).toBe(VIEWER);
       expect(data.colleagues).toEqual([]);
@@ -133,20 +105,20 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
     }
     for (const off of ["meetings.requests", "meetings.invites"]) {
       OFF.add(off);
-      const { client, calls } = apiClient(PAGE_ANSWERS);
+      const { client, calls } = fakeApi(PAGE_ANSWERS);
       const data = await client.meetingsData();
       expect(data).toMatchObject({ viewerUserId: VIEWER, colleagues: [] });
       expect(calls()).toEqual(["GET /auth/context", "GET /meeting-guests", "GET /meetings"]);
       OFF.clear();
     }
     // A server failure there is not "no answer": the page shows the error rather than guess.
-    const { client } = apiClient({ ...PAGE_ANSWERS, "GET /me/meetings": { status: 500 } });
+    const { client } = fakeApi({ ...PAGE_ANSWERS, "GET /me/meetings": { status: 500 } });
     await expect(client.meetingsData()).rejects.toBeInstanceOf(HttpApiError);
   });
 
   it("reads no guests with invites off (404) or without create (403), and never saves new guests", async () => {
     for (const status of [403, 404]) {
-      const { client } = apiClient({ ...PAGE_ANSWERS, "GET /meeting-guests": { status } });
+      const { client } = fakeApi({ ...PAGE_ANSWERS, "GET /meeting-guests": { status } });
       const data = await client.meetingsData();
       expect(data.guests).toEqual([]);
       expect(data.newGuestHandling).toBe("none");
@@ -154,20 +126,20 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
   });
 
   it("reads My meetings from /me/meetings, and a 403 or 404 there as nothing to show", async () => {
-    const { client, calls } = apiClient(PAGE_ANSWERS);
+    const { client, calls } = fakeApi(PAGE_ANSWERS);
     expect(await client.myMeetings()).toEqual(MINE);
     expect(calls()).toEqual(["GET /me/meetings"]);
     for (const status of [403, 404]) {
-      const refused = apiClient({ "GET /me/meetings": { status } });
+      const refused = fakeApi({ "GET /me/meetings": { status } });
       expect(await refused.client.myMeetings()).toEqual({ viewerUserId: "", meetings: [], colleagues: [] });
     }
-    await expect(apiClient({ "GET /me/meetings": { status: 500 } }).client.myMeetings()).rejects.toBeInstanceOf(
+    await expect(fakeApi({ "GET /me/meetings": { status: 500 } }).client.myMeetings()).rejects.toBeInstanceOf(
       HttpApiError,
     );
   });
 
   it("sends a new meeting with only who each guest is: kind and id, and a new guest's address and name", async () => {
-    const { client, sent } = apiClient({ "POST /meetings": { status: 201, body: meeting() } });
+    const { client, sent } = fakeApi({ "POST /meetings": { status: 201, body: meeting() } });
     const input: MeetingInput = {
       title: "Site visit",
       start: "2026-12-07T10:00",
@@ -207,7 +179,7 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
   });
 
   it("sends Undo as the SEQUENCE the screen saw, to the meeting it moved, and nothing else", async () => {
-    const { client, sent } = apiClient();
+    const { client, sent } = fakeApi();
     await client.undoReschedule({
       previous: meeting({ sequence: 3, title: "A copy the server must not read", start: "2020-01-01T00:00" }),
       createdIds: ["0195f3a2-7b1c-7d4e-8f00-00000000aa02"],
@@ -216,7 +188,7 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
   });
 
   it("moves at /meetings/:id/reschedule with the move as the screen made it", async () => {
-    const { client, sent } = apiClient({
+    const { client, sent } = fakeApi({
       [`POST /meetings/${MEETING_ID}/reschedule`]: {
         status: 201,
         body: { meetings: [], conflicts: [], undo: { previous: meeting(), createdIds: [] } },
@@ -235,7 +207,7 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
 
   it("answers, decides, removes, cancels, edits, requests and downloads at the contract's paths and bodies", async () => {
     const proposal = { start: "2026-12-08T09:00", durationMin: 30, note: "Earlier?" };
-    const cases: [string, (client: ApiClient) => Promise<unknown>, Sent][] = [
+    const cases: [string, (client: ApiClient) => Promise<unknown>, SentRequest][] = [
       [
         "answer",
         (c) => c.respondToMeeting(MEETING_ID, { partStat: "tentative", note: "Maybe", proposal }),
@@ -295,7 +267,7 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
       ],
     ];
     for (const [name, call, expected] of cases) {
-      const { client, sent, changes } = apiClient();
+      const { client, sent, changes } = fakeApi();
       await call(client);
       expect(sent, name).toEqual([expected]);
       // Every write makes the screens read again; the download is a read.
@@ -306,20 +278,20 @@ describe("meetings on the API (ADR 0051 part 3)", () => {
   it("tells the screens to re-read after a write succeeds or the server refuses it (400, 403, 404, 409), and not after a network failure or a 500", async () => {
     const cancel = `POST /meetings/${MEETING_ID}/cancel`;
     for (const status of [200, 400, 403, 404, 409]) {
-      const { client, changes } = apiClient({ [cancel]: { status, body: { code: "x", message: "Refused." } } });
+      const { client, changes } = fakeApi({ [cancel]: { status, body: { code: "x", message: "Refused." } } });
       await client.cancelMeeting(MEETING_ID).catch(() => undefined);
       expect(changes(), `status ${status}`).toBe(1);
     }
-    for (const answer of ["network", { status: 401 }, { status: 429 }, { status: 500 }] as Answer[]) {
-      const { client, changes } = apiClient({ [cancel]: answer });
+    for (const answer of ["network", { status: 401 }, { status: 429 }, { status: 500 }] as FakeAnswer[]) {
+      const { client, changes } = fakeApi({ [cancel]: answer });
       await expect(client.cancelMeeting(MEETING_ID)).rejects.toBeInstanceOf(HttpApiError);
       expect(changes(), JSON.stringify(answer)).toBe(0);
     }
     // A refusal still reaches the screen, in the server's words, after the re-read was asked for.
-    const refused = apiClient({ [cancel]: { status: 400, body: { code: "invalid_request", message: "Already." } } });
+    const refused = fakeApi({ [cancel]: { status: 400, body: { code: "invalid_request", message: "Already." } } });
     await expect(refused.client.cancelMeeting(MEETING_ID)).rejects.toMatchObject({ status: 400, message: "Already." });
     // Reads never ask for a re-read, or a screen would read forever.
-    const reads = apiClient(PAGE_ANSWERS);
+    const reads = fakeApi(PAGE_ANSWERS);
     await reads.client.meetingsData();
     await reads.client.myMeetings();
     await reads.client.meetingCalendarFile(MEETING_ID);

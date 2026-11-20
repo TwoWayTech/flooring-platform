@@ -30,7 +30,7 @@ Code: `apps/web/src/lib/api/demo/notification-actions.ts` (actions), `packages/s
 
 | Action | Permission key | Default roles | Enforced in |
 | --- | --- | --- | --- |
-| Change sender name, reply-to, sign-off | `settings.notifications.manage` | Owner | `NotificationsSettingsPage`; `settingsPermissions("email")` in `apps/web/src/lib/api/demo/permission-rules.ts`, checked by `updateSettings` |
+| Change sender name, reply-to, sign-off | `settings.notifications.manage` | Owner | `NotificationsSettingsPage`; `SETTINGS_SECTIONS.email` in `packages/shared/src/settings/sections.ts`, checked by `updateSettings` |
 | Switch an event on or off, set channels, edit its template | `settings.notifications.manage` | Owner | `saveNotificationRule` |
 | Reset an event to its defaults | `settings.notifications.manage` | Owner | `resetNotificationRule` |
 | Open the whole Outbox | `settings.outbox.view` | Owner | `PageGate` with the item in `apps/web/src/products/settings-menu.ts`; `OutboxPage`; `listOutbox` |

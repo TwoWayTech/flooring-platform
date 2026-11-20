@@ -2,7 +2,6 @@
 
 import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
-import { isDemoMode } from "@/lib/data-source";
 import { AccessEditor } from "./access-editor";
 import { BackToCompanies } from "./company-admin-nav";
 
@@ -25,13 +24,7 @@ export function CompanyAccessPage({ companyId }: { companyId: string }) {
   return (
     <>
       <BackToCompanies />
-      {/* The demo store tells screens about its writes; a write over HTTP does not, so read again. */}
-      <AccessEditor
-        key={JSON.stringify(company)}
-        company={company}
-        directory={directory}
-        onSaved={isDemoMode() ? undefined : data.retry}
-      />
+      <AccessEditor key={JSON.stringify(company)} company={company} directory={directory} />
     </>
   );
 }

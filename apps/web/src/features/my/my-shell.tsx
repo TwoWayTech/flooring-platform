@@ -41,7 +41,8 @@ export function MyShell({ title, children }: { title: string; children: (portal:
   const can = useCan();
   const { company } = useWorkspace();
   const pathname = usePathname();
-  const data = useApiQuery((client) => client.myPortal(), []);
+  // Every portal write reads again; a failed re-read keeps the page, so a form holding typed hours stays.
+  const data = useApiQuery((client) => client.myPortal(), [], { keepDataOnError: true });
   if (!can("hr.portal.view")) return <NoAccess />;
   return (
     <>

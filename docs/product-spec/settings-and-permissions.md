@@ -26,24 +26,24 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change roles, disable, enable, reset MFA | `settings.users.manage` | Owner | `DemoStore.updateUser` |
 | Open Security roles | `settings.roles.view` or `settings.roles.manage` | Owner | `SETTINGS_MENU`, `PageGate`, `RolesPage` |
 | Create, duplicate, edit, reset, delete a role | `settings.roles.manage` | Owner | `DemoStore.saveRole`, `resetRole` (through `saveRole`), `deleteRole` |
-| View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx` |
-| Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `settingsPermissions` in `apps/web/src/lib/api/demo/permission-rules.ts` |
-| Change branding | `settings.branding.manage` | Owner | `updateSettings` |
-| Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings` |
-| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage` for the tabs; `updateSettings` for the save |
-| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateSettings` for the save |
-| Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings` |
-| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation`; `updateSettings` for section `inventory` |
-| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings` |
-| Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings` |
-| Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings` |
-| Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings`; `apps/web/src/lib/api/demo/notification-actions.ts` |
+| View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx`, with the rules in `apps/web/src/lib/view-as.ts`. Demo only, for an Owner or someone who manages roles; in api mode not offered (Real build, "The shell on the API") |
+| Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/profile` (ADR 0059). Data scope `all` |
+| Change branding | `settings.branding.manage` | Owner | `updateSettings`. Data scope `all` |
+| Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings`. On the API, `PUT /settings/numbers` (ADR 0059). Data scope `all` |
+| Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage`; `updateLocalization` with `LOCALIZATION_TABS` in packages/shared (one key per tab). On the API, `PUT /settings/localization/documents` (module `core`), `/payroll` (module `hr`), `/region` and `/currency` (ADR 0059, parts 2a and 2b). A change of the states of operation also needs `settings.tax.manage` and a step-up; Currency always needs a step-up. Data scope `all` |
+| Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateLocalization("tax")` with its own key. On the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. Data scope `all` |
+| Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
+| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode since ADR 0059 part 4a; data scope `all`); `updateSettings` for section `inventory` (Stock rules, still the browser's; data scope `all`) |
+| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval and `PUT /settings/sharedCosts` for shared costs (ADR 0059, part 4b). Data scope `all` |
+| Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings`. Data scope `all` |
+| Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings`. Data scope `all` |
+| Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings` (data scope `all`); `apps/web/src/lib/api/demo/notification-actions.ts` |
 | See every Outbox row | `settings.outbox.view` | Owner | `listOutbox` in `notification-actions.ts` |
 | Read the audit log | `settings.audit.view` | Owner, Manager, Accountant, HR manager | `AuditLogPage` in `apps/web/src/features/settings/audit-log-page.tsx` |
 | Read the company's billing (plan, period, limits; read only) | None: the Owner only | Owner | `BillingPage` in `apps/web/src/features/settings/billing/billing-page.tsx`, opened through the `ownerOnly` menu rule (`itemAllows` in `apps/web/src/products/index.ts`). `DemoStore.getCompanyBilling`; on the API, `GET /billing` (ADR 0054) |
 | Approve or revoke support access | None: the Owner only | Owner | `SupportAccessPanel` in `apps/web/src/features/settings/users/support-access-panel.tsx`, on Settings → Users. `DemoStore.approveSupportGrant` and `revokeSupportGrant`; on the API, `POST /support-grants/:id/approve` (with a step-up) and `/revoke` (ADR 0034, ADR 0054) |
 | Data import, Connect a database | `settings.import.manage` | Owner | `DemoStore.importScope`. See `docs/product-spec/import.md` |
-| Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile` |
+| Change own default warehouse | None | Everyone signed in | `DemoStore.updateMyProfile`. In api mode Your profile is not offered until a `PATCH /me` exists (Real build, "The shell on the API") |
 | Change a company's modules, ceiling and limits | None. Needs the platform session | Platform admin | `AdminLayout` in `apps/web/src/app/admin/layout.tsx` (`getPlatformGate`). `DemoStore.updatePlatformCompanyAccess` runs `accessPatchProblem`. On the API, `PlatformAdminGuard` with the platform `owner` role and a step-up (see Real build) |
 | Manage plans; suspend, reinstate or cancel a company | None. Needs the platform session and `admin.billing` | Platform admin (`owner` role; `support` reads) | `PlansPage` and `CompanyStatusPage` in `apps/web/src/features/admin/`, with `mayManageBilling` in packages/shared. `DemoStore` runs the shared `planProblem`, `planPatchProblem`, `statusActionBodyProblem`, `confirmNameProblem`, `staleStatusRefusal` and `statusAfter`. On the API, `PlatformAdminGuard` with `@PlatformFeature("admin.billing")`, the `owner` role and a step-up, and the admin's own row checked again under a lock (ADR 0056; see Real build) |
 
@@ -321,7 +321,7 @@ stateDiagram-v2
 
 ### Workflows
 
-**Invite a user.** Settings, Users, Invite user. `InviteDialog` collects name, email, title, roles and branch. `inviteUser` checks the permission and the seat limit, creates the user and writes the audit entry. No email goes out.
+**Invite a user.** Settings, Users, Invite user. `InviteDialog` collects name, email, title, roles and branch. The Branch field starts at the inviter's own branch; an inviter whose data scope is narrower than `all` sees only their own branch (`inviteBranches` in `apps/web/src/features/settings/users/invite-branches.ts`). That is the screen only: the API's own check that a branch-scoped admin invites into their own branch is still pending (docs/STATUS.md). `inviteUser` checks the permission and the seat limit, creates the user and writes the audit entry. No email goes out.
 
 **Change a user's roles.** `ChangeRolesDialog` asks for a step-up code, then calls `updateUser` with `roleIds`. Only newly added roles go through `assertCanAssign`. A role the user already holds is not re-checked.
 
@@ -335,9 +335,9 @@ stateDiagram-v2
 
 **Delete a role.** Only a non-system role that nobody holds. There is no step-up code.
 
-**View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`.
+**View as.** `ViewAsSwitcher` lists every role except Owner. `setViewAs` stores the role id in `sessionStorage` under `fp-view-as:<companyId>` and calls `api.setViewer`. A stored choice applies only to someone who may view as (`viewAsRoleFor` in `apps/web/src/lib/view-as.ts`): when someone who may not view as signs in on the same tab, the shell opens as that person and the stored choice is cleared. The choice is kept per company, not per person, so another person who may view as and signs in on the same tab sees it, with its banner and "Stop viewing as". In api mode View as is not offered, because the API answers for the signed-in person only (Real build, "The shell on the API").
 
-**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. `DemoStore.resetSettings` exists, but no screen calls it.
+**Save settings.** `SettingsForm` in `apps/web/src/features/settings/form/settings-form.tsx` keeps a draft, marks changed fields and shows a sticky Save and Discard bar. Reset to default only loads the original values into the draft. Save calls `updateSettings`, which replaces the whole section. Localization and tax and Sales and documents save one tab at a time through `updateLocalization`; only that tab is replaced. A refused save shows its message in a toast and keeps the draft, with or without a step-up (`saveSection` in `apps/web/src/features/settings/form/save-section.ts`). `DemoStore.resetSettings` exists, but no screen calls it. Localization and tax is never saved whole: `updateSettings("localization")` and `resetSettings("localization")` are refused in both modes with "Localization and tax saves one tab at a time." (ADR 0059, part 3b).
 
 **Change company access.** Platform admin, Company. `AccessEditor` in `apps/web/src/features/admin/access-editor.tsx`, loaded by `company-access-page.tsx`, edits modules, ceiling, user limit and branch limit, with a live preview. Save access sends only the parts that changed through `updatePlatformCompanyAccess`. It applies at once. A ticked Users, Security roles or Audit log key can't be unticked ("Every company keeps this permission"), and the shared check runs before anything is sent. In api mode it asks for a step-up first and reads the company again after the save, and the platform `support` role sees the page read only (see Real build).
 
@@ -410,7 +410,7 @@ Formulas below are copied from the code.
    | --- | --- |
    | `roles` | `settings.roles.manage` |
    | `users` | `settings.users.manage` |
-   | `locations` | `settings.locations.manage` |
+   | `locations` | nobody: the generic save refuses it; locations change only through `saveLocation`, which runs rule 29 (ADR 0059, part 4a) |
    | `products` | `inventory.product.create`, `inventory.product.edit` |
    | `rolls` | `inventory.roll.edit`, and `assertRollEditOnly` refuses a change of length, warehouse or cuts |
    | `customers` | `customers.customer.create`, `customers.customer.edit` |
@@ -422,20 +422,32 @@ Formulas below are copied from the code.
    | `bonuses` | `hr.payroll.approve` |
    | Every other collection | None. Written only by domain actions |
 
-7. **Settings sections.** `SETTINGS_PERMISSIONS` in `permission-rules.ts`.
+7. **Settings sections.** `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`, which DemoStore and the API both read (ADR 0059). Each section names the keys that save it (any one; Localization and tax's two only reach its refusal, below), the feature switch of the page that saves it, the module whose absence refuses the save, and the audit label. Payments is in `core` although its key is a `platform` key: the payments feature belongs to Flooring, and `/settings/accounting` takes the same key with module `core`.
 
-   | Section | Keys, any of |
-   | --- | --- |
-   | `branding` | `settings.branding.manage` |
-   | `localization` | `settings.localization.manage`, `settings.tax.manage` |
-   | `numbers` | `settings.numbers.manage` |
-   | `profile` | `settings.company.manage` |
-   | `payments` | `settings.payments.manage` |
-   | `inventory` | `settings.locations.manage` |
-   | `expenses`, `sharedCosts` | `settings.expenses.manage` |
-   | `hr` | `settings.hr.manage` |
-   | `meetings` | `settings.meetings.manage` |
-   | `email` | `settings.notifications.manage` |
+   | Section | Keys, any of | Feature | Module |
+   | --- | --- | --- | --- |
+   | `branding` | `settings.branding.manage` | `settings.branding` | `platform` |
+   | `localization` | `settings.localization.manage`, `settings.tax.manage` (only reach the whole-section refusal; saves go per tab, below) | `settings.localization` | `platform` |
+   | `numbers` | `settings.numbers.manage` | `settings.number-format` | `platform` |
+   | `profile` | `settings.company.manage` | `settings.company` | `platform` |
+   | `payments` | `settings.payments.manage` | `sales.payments` | `core` |
+   | `inventory` | `settings.locations.manage` | `inventory.locations` | `core` |
+   | `expenses`, `sharedCosts` | `settings.expenses.manage` | `finance.expenses` | `core` |
+   | `hr` | `settings.hr.manage` | `settings.hr` | `hr` |
+   | `meetings` | `settings.meetings.manage` | `settings.meetings` | `meetings` |
+   | `email` | `settings.notifications.manage` | `settings.notifications` | `platform` |
+
+   Localization and tax and the Sales and documents page save one tab at a time (`LOCALIZATION_TABS` in the same file; ADR 0059, part 2a). Each tab has exactly one key:
+
+   | Tab | Key | Feature | Module | Audit target |
+   | --- | --- | --- | --- | --- |
+   | `region` | `settings.localization.manage` | `settings.localization` | `platform` | Region |
+   | `currency` | `settings.localization.manage` | `settings.localization` | `platform` | Currency |
+   | `tax` | `settings.tax.manage` | `settings.localization` | `platform` | Sales tax |
+   | `payroll` | `settings.localization.manage` | `settings.localization` | `hr` | Payroll rules |
+   | `documents` | `settings.localization.manage` | `settings.localization` | `core` | Sales and documents |
+
+   `updateSettings` and `updateLocalization` check, in this order, the same as the API: the module ("This part of the product is not switched on for your company."), the keys (the role message), the switch ("This feature is switched off."), data scope `all` ("Company settings cover the whole company."), then the content rules (`settingsSectionProblem` in `packages/shared/src/settings/section-rules.ts`; per tab `localizationTabProblem` in `localization-rules.ts`). Localization and tax is saved only per tab (`LOCALIZATION_TABS`), by screens, DemoStore and the API. Its section keys only decide who reaches the whole-section refusal: `updateSettings("localization")` and `resetSettings("localization")` check the module, either key, the switch and scope, then refuse with "Localization and tax saves one tab at a time." in both modes, storing and auditing nothing; the API has no whole-section route (ADR 0059, part 3b). Region also refuses a change of the time zone, country or locale, and a change of the states of operation needs `settings.tax.manage` after the content rules (`regionKeyProblem`, run by `localizationTabProblem`; ADR 0059, part 2b).
 
 8. **Private collections.** `PRIVATE_COLLECTIONS` in `store.ts`. `list` returns an empty array without the key.
 
@@ -452,7 +464,7 @@ Formulas below are copied from the code.
    | Field | Key | Hidden by |
    | --- | --- | --- |
    | Product cost | `inventory.product.view_sensitive` | Screens, through `can(SENSITIVE.productCost)` |
-   | Sales margin | `sales.margin.view_sensitive` | Screens |
+   | Sales margin | `sales.margin.view_sensitive` | Screens: every margin a screen works out from cost (a quote, the dashboard, Best sellers, Sales → Team) also needs product cost (`seesMargin`), since it gives the cost away. The server's commission margin bases need the margin key only (ADR 0048; owner question) |
    | Job margin | `installation.job.view_sensitive` | Screens |
    | Credit limit | `customers.customer.view_sensitive` | Screens |
    | Pay rate | `hr.employee.view_sensitive` | `DemoStore.list`, which returns `payRate: "0.00"` |
@@ -536,11 +548,11 @@ Formulas below are copied from the code.
 
 22. **View as limits saves.** `granter` in `store.ts` uses `viewerAccess` with the viewed role, so saves are limited too. `scopeSubject` in `scope.ts` borrows the first active user who holds the role, so "own" means that persona's records. The audit entry still names the real person.
 
-23. **Step-up.** `StepUpDialog` in `apps/web/src/components/step-up-dialog.tsx` accepts `/^\d{6}$/`. It guards: save role, change a user's roles, reset MFA, and the Currency and Sales tax tabs (`stepUp: true` in `apps/web/src/features/settings/localization/localization-page.tsx`). With `auth.step-up` off it confirms at once.
+23. **Step-up.** `StepUpDialog` in `apps/web/src/components/step-up-dialog.tsx` accepts `/^\d{6}$/`. It guards: save role, change a user's roles, reset MFA, the Currency and Sales tax tabs (`stepUp: true` in `apps/web/src/features/settings/localization/localization-page.tsx`) and Region when the states of operation change (`stepUp` as a function of the draft), and saving Settings → Payments (`stepUp` on the form in `apps/web/src/features/settings/payments/payments-page.tsx`; on the API `PUT /settings/payments` always needs it, ADR 0059). On the API `PUT /settings/localization/currency` always needs it, and `/region` when the states of operation change (ADR 0059, part 2b). On the API `PUT /settings/localization/tax` always needs it, after the content checks (part 3a). The Region, Currency and Sales tax tabs run their shared rule first, so a refused value never costs a code. With `auth.step-up` off it confirms at once in the demo.
 
 24. **Effective access preview.** `AccessPreview` in `apps/web/src/components/access-preview.tsx` runs `resolveAccess` for a role or a person against a ceiling and modules. The platform admin passes the draft, so the result shows before saving. It lists pages, actions, sensitive fields and data scope.
 
-25. **Tax rule resolution.** `resolveTaxRule` in `packages/shared/src/us-pack/tax-defaults.ts`. Order: a county rate for the job site, else the state default, else the company default in states of operation only, else not collected. A county rate needs a state or company rule under it, keeps that rule's taxability and replaces only the rate. Among several valid rules, the latest `validFrom` wins. `validOn` is:
+25. **Tax rule resolution.** `resolveTaxRule` in `packages/shared/src/us-pack/tax-defaults.ts`. Order: a county rate for the job site, else the state default, else the company default in states of operation only, else not collected. A county rate needs a state or company rule under it, keeps that rule's taxability and replaces only the rate. Among several valid rules, the latest `validFrom` wins, then the higher version, then the higher id, so the Sales tax tab and the engine pick the same row (ADR 0059, part 3a). A change of the states of operation is a tax change: it needs `settings.tax.manage` and a step-up, in both modes, and it also changes the tax of an accepted quote when it is invoiced, because the invoice recomputes tax at conversion (ADR 0059, part 2b). A change of a state rule or county rate starts on the company's day as a new row, and every row of that state or county reaching that day ends the day before; a changed state rule takes the next version of its state; nothing is edited in place or deleted, so an issued invoice keeps its rate (ADR 0059, part 3a). `validOn` is:
 
     ```ts
     r.validFrom <= on && (!r.validTo || r.validTo >= on)
@@ -562,11 +574,13 @@ Formulas below are copied from the code.
 
     A value that rounds to zero at the shown precision has no sign. `displayDecimals` clamps a per-column change to the same limits.
 
+    The number format keeps the company's own locale and currency: a save that changes either is refused (`numberSettingsProblem` in `packages/shared/src/settings/section-rules.ts`), compared with the company's stored format or, when none is stored, the US pack's `defaultNumberSettings()`. No page edits them.
+
 27. **Brand color.** `checkBrandColor` in `packages/shared/src/color.ts`. The color must be 6-digit hex, and `contrastRatio(hex, NEUTRALS.light.surface)` must be at least 3. `BrandingPage` passes this as `canSave`. A logo may be up to 300 KB (`MAX_LOGO_BYTES`) and is stored as a data URL.
 
-28. **Company profile.** `ProfileSchema` in `apps/web/src/features/settings/company-profile-page.tsx`. Legal name required. EIN matches `^\d{2}-\d{7}$`. Phone has at least 7 characters. Valid email. Street and city required. State is a US code. ZIP matches `ZIP_PATTERN`. The store does not repeat these checks.
+28. **Company profile.** `companyProfileProblem` in `packages/shared/src/settings/section-rules.ts`, run by DemoStore and the API; the page's `ProfileSchema` in `apps/web/src/features/settings/company-profile-page.tsx` builds its inline checks from the same patterns and `PROFILE_MESSAGES`. Legal name required. EIN matches `^\d{2}-\d{7}$`. Phone has at least 7 characters. Email matches `EMAIL_TEXT`. Website is empty or `http://` or `https://` (`WEBSITE_TEXT`). Street and city required. State is a US code. ZIP matches `ZIP_PATTERN`.
 
-29. **Locations.** `saveLocation` in `store.ts`. A location holding stock cannot become a showroom. A showroom cannot be the default. One warehouse must stay the default. Saving a new default clears the old one.
+29. **Locations.** `saveLocation`: `POST /locations` and `PUT /locations/:id` on the API (`locations.service.ts`), `store.ts` in the demo, both through `packages/shared/src/settings/location-rules.ts` with the same words and order (ADR 0059, part 4a). It needs module `core`, `settings.locations.manage`, the `inventory.locations` switch and data scope `all`, in that order. Then the first problem is answered: a name (trimmed, 1 to 80 characters); a kind (warehouse or showroom); a new location needs a live branch of the company (an unknown one is refused, never stored as none), and an edit keeps the branch it was added to, because expense scope and a quote's branch are read from it; the company profile's address rule (rule 28); display samples whole 0 to 100,000, only on a showroom (a warehouse has 0); a floor area blank (stored as none) or sq ft with up to 3 decimals; a name no other live location has, compared as the stock import finds a warehouse by name (trimmed, any case, runs of spaces, dashes and underscores as one space; the refusal names the stored name); a showroom cannot be the default; one warehouse must stay the default. **A warehouse becomes a showroom** only while it holds no stock (a roll with length left, in transit or not, or boxed stock not zero), has no transfer in transit from or to it, holds no stock for an invoice (an active reservation with a quantity above zero; a short row holds nothing and doesn't block), and no open quote ships from it, by header or by a line. A showroom may always become a warehouse. Saving a new default clears the old one. On the API every save runs under the stock lock, so these checks see every stock change. Each saved row is audited, the cleared default too, a save that changes nothing too. No location is removed or deactivated.
 
 30. **Audit entries.** `appendAudit` in `store.ts` stamps who and when. `diffSummary` in `admin-rules.ts` names up to three changed fields, then adds `and N more`. `permissionDiff` lists added and removed keys. The `audit` collection refuses generic saves.
 
@@ -580,7 +594,7 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `id` | `"summit" \| "keystone" \| "harbor"` | |
+| `id` | `"summit" \| "keystone" \| "harbor"` | In api mode still the DemoStore company's id: the API never takes a company id, and the API's company is `GET /company`'s (Real build, "The shell on the API") |
 | `name`, `city`, `state` | string | |
 | `product` | `flooring` or `hr` | One per company in the demo |
 | `modules` | `ModuleKey[]` | Set by the platform admin |
@@ -684,9 +698,9 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `country` | `"US"` | |
-| `primaryState`, `statesOfOperation` | string, `string[]` | `statesOfOperation` limits the company default rate |
-| `timeZone`, `locale` | string | |
+| `country` | `"US"` | The stored value, not editable |
+| `primaryState`, `statesOfOperation` | string, `string[]` | `statesOfOperation` limits the company default rate. Each a US state code; at least one state of operation, each once; a change of the states needs `settings.tax.manage` and a step-up (ADR 0059, part 2b) |
+| `timeZone`, `locale` | string | `timeZone` is the company's zone, set at provisioning in the control database (`tenants.time_zone`); the API answers it from there and refuses a change; read only on the Region tab, in both modes. `locale` is the stored value, not editable |
 | `dateFormat` | `MM/dd/yyyy`, `yyyy-MM-dd`, `MMM d, yyyy` | Seeded `MMM d, yyyy` |
 | `firstDayOfWeek` | `sunday`, `monday` | Seeded `monday` |
 | `fiscalYearStartMonth` | number | Seeded 1 |
@@ -695,28 +709,28 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `base` | `"USD"` | |
-| `locked` | boolean | Seeded true |
-| `extra` | `{ code, rate, asOf }[]` | Keystone seeds CAD |
+| `base` | `"USD"` | Not editable |
+| `locked` | boolean | Seeded true. Not editable |
+| `extra` | `{ code, rate, asOf }[]` | Keystone seeds CAD. The codes are fixed (none added, removed, renamed or reordered); `rate` is plain decimal text above 0 with up to 8 decimals; `asOf` is set by the save, the company's day, when the rate's value changes (ADR 0059, part 2b) |
 
 **`localization.tax`**
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `pricesInclude` | `exclusive`, `inclusive` | Seeded `exclusive` |
+| `pricesInclude` | `exclusive`, `inclusive` | Seeded `exclusive`. Can't be turned on (nothing applies `inclusive`); may go back to `exclusive` (ADR 0059, part 3a) |
 | `rounding` | `line`, `invoice` | Seeded `invoice` |
-| `rules` | `TaxRule[]` | State defaults |
-| `jurisdictions` | `JurisdictionRate[]` | County rates |
-| `companyDefault` | `CompanyDefaultRate` or null | |
-| `filing` | `{ state, frequency }[]` | `monthly`, `quarterly`, `annual` |
-| `certificateTypes` | `string[]` | |
+| `rules` | `TaxRule[]` | State defaults. One per state in force; a change is a new version from the company's day |
+| `jurisdictions` | `JurisdictionRate[]` | County rates. One per county in force, matched by state and county; a change is a new row from the company's day |
+| `companyDefault` | `CompanyDefaultRate` or null | Dated the company's day when it changes; earlier values in the audit log |
+| `filing` | `{ state, frequency }[]` | `monthly`, `quarterly`, `annual`. Not edited on the tab |
+| `certificateTypes` | `string[]` | Not edited on the tab |
 
 **`TaxRule`** (`packages/shared/src/us-pack/tax.ts`)
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `state`, `jurisdiction` | string | |
-| `ratePct` | string | Combined rate in percent |
+| `ratePct` | string | Combined rate in percent. `TAX_RATE_TEXT`: below 100, up to 4 decimals by value; answered at numeric(18,8) scale |
 | `taxable` | `Record<TaxCategory, boolean>` | `material`, `labor`, `freight`, `service` |
 | `lumpSumLaborTaxable` | boolean | |
 | `validFrom`, `validTo` | date, optional date | |
@@ -729,7 +743,7 @@ Formulas below are copied from the code.
 | --- | --- | --- |
 | `id`, `state`, `name` | string | |
 | `county` | string | Without the word County, case ignored |
-| `ratePct` | string | |
+| `ratePct` | string | `TAX_RATE_TEXT`: below 100, up to 4 decimals by value; answered at numeric(18,8) scale |
 | `validFrom`, `validTo` | date, date or null | |
 
 **`CompanyDefaultRate`**
@@ -795,8 +809,8 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue` |
-| `fixedPct` | `Record<string, string>` | Percent per location id |
+| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue`; never saved = `revenue` |
+| `fixedPct` | `Record<string, string>` | Percent per live location id, each `PERCENT_TEXT` from 0 to 100, kept whatever the rule; with `fixed` they add up to exactly 100 (a location with none counts 0). `sharedCostsProblem`, both modes (ADR 0059, part 4b) |
 
 **`hr`**
 
@@ -836,17 +850,17 @@ Formulas below are copied from the code.
 | --- | --- | --- | --- | --- |
 | `Changed company access` | `ceiling` | Company name | `updatePlatformCompanyAccess`, demo only, and only when the save changes something (ADR 0053). Actor is `Platform admin`, role `Super-admin`. The API writes `company.access_changed` to `platform_audit_log` instead (see Real build) | `store.ts` |
 | `Changed branding` | `settings` | `Branding` | `updateSettings("branding")` | `store.ts` |
-| `Changed localization and tax` | `settings` | `Localization and tax` | `updateSettings("localization")` | `store.ts` |
+| `Changed localization and tax` | `settings` | The tab's label: `Region`, `Currency`, `Sales tax`, `Payroll rules` or `Sales and documents` (`Localization and tax` on entries of the whole-section save before part 3b) | `updateLocalization(tab)`. On the API, `PUT /settings/localization/documents` and `/payroll` (ADR 0059, part 2a), `/region` and `/currency` (part 2b), `/tax` (part 3a) | `store.ts`, `settings.service.ts` |
 | `Changed number format` | `settings` | `Number format` | `updateSettings("numbers")` | `store.ts` |
 | `Changed company profile` | `settings` | `Company profile` | `updateSettings("profile")` | `store.ts` |
 | `Changed payments` | `settings` | `Payments` | `updateSettings("payments")` | `store.ts` |
 | `Changed stock rules` | `settings` | `Stock rules` | `updateSettings("inventory")` | `store.ts` |
 | `Changed expense approval` | `settings` | `Expense approval` | `updateSettings("expenses")` | `store.ts` |
-| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")` | `store.ts` |
+| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")`; on the API `PUT /settings/sharedCosts`, before and after as stored | `store.ts`, `settings.service.ts` |
 | `Changed hr` | `settings` | `HR` | `updateSettings("hr")` | `store.ts` |
 | `Changed meetings` | `settings` | `Meetings` | `updateSettings("meetings")` | `store.ts` |
 | `Changed email and notifications` | `settings` | `Email and notifications` | `updateSettings("email")` | `store.ts` |
-| `Added location`, `Changed location` | `settings` | Location name | `saveLocation` | `store.ts` |
+| `Added location`, `Changed location` | `settings` | Location name | `saveLocation`; a new default also writes `Changed location` for the location it cleared | `locations.service.ts`, `store.ts` |
 | `Invited user` | `user` | User name | `inviteUser` | `store.ts` |
 | `Changed user` | `user`, or `security` when `mfaEnrolled` is set false | User name | `updateUser` | `store.ts` |
 | `Changed own profile` | `user` | User name | `updateMyProfile` | `store.ts` |
@@ -874,7 +888,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Company status has no effect beyond sign-in in the demo.** The sign-in list filters on it and the companies page shows it. Nothing else reads it: the demo has no life cycle, so its standing is always full use and its billing has no notice. A status set on the console's Status tab (ADR 0056) shows in the console and its audit log only: the company keeps working on its own side and stays on the sign-in list. In api mode the life cycle applies (ADR 0033), and since ADR 0054 the shell shows it: see "Real build", parts 2 and 4.
 - **The generic `save` skips the role and user rules.** `save("roles", ...)` and `save("users", ...)` check only the collection's key. They skip the Owner lock, escalation, last Owner and seat checks. No screen calls them for these collections. The real API must not offer them.
 - **Closed by ADR 0052: "`updateCompanyAccess` has no check in the store."** The method is now `updatePlatformCompanyAccess`, and the store runs the API's own check (`accessPatchProblem` in packages/shared), so a patch that drops `platform`, names a hidden or foreign module or key, or leaves out a Users, Security roles or Audit log key is refused.
-- **`settings.tax.manage` is enough to save all of `localization`.** The section is one record, and `SETTINGS_PERMISSIONS` accepts either key. Only the tabs separate them.
+- **Closed (ADR 0059, parts 2a and 3b): "`settings.tax.manage` is enough to save all of `localization`."** Each tab checks its own key in both modes (`LOCALIZATION_TABS`), and the whole section is refused (part 3b).
 - **Most sensitive fields are hidden by the screens alone.** Product cost, margin and credit limit stay in the records `list` returns. Only pay rate and contract line estimated cost are removed by the store.
 - **The audit log is not a private collection.** `list("audit")` answers any viewer. Only the page checks `settings.audit.view`.
 - **`useCanViewAs` reads a role's raw permissions**, not the effective ones, so it ignores the ceiling. The View as banner's note reads raw permissions as well.
@@ -882,12 +896,22 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **Fourteen permission keys are never checked.** They are listed under Permission keys.
 - **Installation is hidden, not removed.** Its 8 keys stay in the catalog, the role templates and the ceilings. Summit still has the module. `visibleModules` hides it from the matrix and the access page.
 - **`inventory.stock.adjust` and `inventory.stock.approve` have no page.** `inventory.adjustments` is removed. The Stock rules form on `/settings/locations` still shows its threshold.
-- **Settings are not validated by the store.** `updateSettings` stores the section as given. Validation is in the forms.
-- **A section is replaced whole.** Two people editing different tabs of `localization` would overwrite each other. The demo has one user at a time.
+- **The company's time zone can't be changed in Settings** (both modes): it is set when the company is set up, and every date the API checks is read in it (ADR 0059, part 2b).
+- **Currencies can't be added or removed;** only their rates change.
+- **Tax dates are set by the save** (the company's day): no back-dating or scheduling (ADR 0059, part 3a).
+- **A rule or county rate changed twice in one day** keeps an empty range for the earlier change of that day; invoices issued under it keep its snapshot.
+- **A snapshot's rule version identifies state rules only;** county and company-default snapshots keep the rate, with the state rule's version or 1.
+- **Saved demo data typed before part 3a:** the demo answers the Sales tax tab in force on today, as the API does, so rows dated later (or ended before today) are not shown and drop out on the tab's first save; rates the rule refuses must be retyped before the tab saves.
+- **Profile, number format, payments, expense approval, Sales and documents, Payroll rules, Region, Currency and Sales tax are validated by the shared rules in both modes** (`settingsSectionProblem`, `localizationTabProblem`; ADR 0059). Other sections are validated by their forms until their part moves to the API.
+- **A role with a scope narrower than the whole company can't save settings,** in either mode, and neither can View as such a role.
+- **A refused settings save shows its message and keeps the draft,** on every settings page, with or without a step-up.
+- **Amounts on Payments and Expenses** are plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign or bare point) or empty, and the payment and refund prefixes must differ (refunds have no unique number index).
+- **A section is replaced whole,** except Localization and tax and Sales and documents, which save one tab at a time (on the API under the row's lock, so two people saving different tabs keep both changes). The demo has one user at a time.
+- **Sales and documents percents** (late fee, default deposit, each default waste) follow the quote's percent rule: plain decimal text from 0 to 100, no sign, bare point or exponent. Days are whole (quotes valid 1 to 365, balance due 0 to 365), the default waste covers exactly the product categories, the quote, invoice and purchase order prefixes differ from each other (without case) and none starts with the credit notes' `CR-` (in any case), and the legal footer is at most 1,000 characters. Payroll rules refuse the California rule while its switch is off and a holiday state that isn't a US state code.
 - **Feature switches are global.** A change needs a code edit and a redeploy.
 - **Stored data lives in the browser.** Settings, roles and users are kept per company in localStorage under `fp-demo:v2:`, so they do not carry to another device.
 
-## Real build (ADR 0052, ADR 0053, ADR 0054 and ADR 0056)
+## Real build (ADR 0051, ADR 0052, ADR 0053, ADR 0054, ADR 0056 and ADR 0059)
 
 Part 1 of the platform console is on the API: the platform guard, the companies list and detail, "Change company access", a restricted company directory, and the support-access request. Part 3 (ADR 0053) adds the platform audit log, support requests in the console, the database error code and the read-only access page for the support role. Part 4 (ADR 0054) adds the company side: the standing screens, the Owner's banner, the Billing page and the Owner's Support access panel. Part 2 (ADR 0056) adds plans as data and suspend, reinstate and cancel, behind the new switch `admin.billing`. In api mode the /admin pages read and write it; demo mode works as described above, plus part 3's pages. The routes are in docs/api-contract.md, "Platform admin (real build, ADR 0052, ADR 0053 and ADR 0056)", and the draft spec is docs/specs/platform-admin.md.
 
@@ -923,10 +947,81 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Support tab (/admin/companies/:id/support).** The company's support requests the admin may see (the `owner` role every admin's, the `support` role its own), with status pending, approved, revoked or expired, and "Ask for support access" with a reason of 10 to 500 characters and 1 to 72 hours, after a step-up. One open request per admin and company (409), and at most 10 per admin in 24 hours (429). Approved access still opens nothing.
 - **The demo** has the same pages, keeps its audit rows and requests in the browser, and writes nothing for a save that changes nothing.
 
+**The shell on the API (ADR 0051, "GET /company"):**
+- **Who sees what.** On every full page load, and after every write the server answered, the app asks `GET /company`. Every member gets the company's name, city, state, time zone, modules and live branches; their own profile, exactly as Settings → Users shows it; the roles they hold, with their keys; their effective access exactly as the API's guards worked it out for that request; and a names list of the company's people (id and name of active colleagues; disabled colleagues too, marked disabled, only for holders of `settings.users.view` or `settings.users.manage`; invited people are left out; owner's answer of 2026-11-20). Nothing else about another person is sent. The ceiling goes only to holders of `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage`, the keys that open Security roles and Users, which are the only screens that read it. No plan, status, limits or feature switches: billing facts stay on the Owner's `GET /billing` (ADR 0054), and switches are the same build on both sides.
+- **Buttons follow the API.** Every menu, page gate and button reads that access, so in api mode a role, ceiling or module changed on the API shows on the next load or after the person's next write. Unknown keys and modules from a newer API are dropped (fail closed).
+- **View as and Your profile are not offered in api mode.** The API answers for the signed-in person only, and there is no `PATCH /me` yet. Settings → Security roles' access preview shows what a role may do. In the demo View as stays, only for an Owner or someone who manages roles.
+- **Names.** Names beside records (quotes, invoices, transfers, rolls, customers), Sales → Team and the commission split picker read `GET /company`'s people. A disabled colleague's name shows beside their history only to Settings → Users' readers; everyone else sees no name there, as for anyone the screen can't name (reports print "Former employee"). So an Accountant, who reads commissions but not Users, sees a disabled rep's commission rows without a name (open question, STATUS). The demo answers `list("users")` the same way.
+- **A refused first load.** When `GET /company` is refused before the app has opened (a disabled member, a role that needs two-step sign-in without a factor, the company under maintenance, unavailable or locked), the app shows one full page instead: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's own words. Both offer Try again and Sign out. A later refused re-read keeps the last data, and the page shows its own error.
+- **Settings → Users** shows the API's branches in its Branch column and invite dialog (Invite a user, above). **Settings → Locations** reads the API's warehouses and showrooms and names their branches from the shell's (GET /company's) since ADR 0059, part 4a.
+
+**Settings on the API, part 1 (ADR 0059):**
+- **Who reads what.** On every full page load, after every write the server answered, and on the invoice and quote pages, the app asks `GET /settings` with `GET /company`. Every member gets the company profile (printed on documents) and the number format (every number on screen). The EIN is blank for anyone without `settings.company.manage`: only Company profile shows it, and no document prints it. The payment rules go to people who see invoices (`sales.invoice.view`) or manage payments: the payment sheet's "Status after" and Update status's Write off read them. Expense approval goes to holders of `settings.expenses.manage`. Payments and expense approval are left out while their module (`core`) or product switch (`sales.payments`, `finance.expenses`) is off; the profile and number format stay, because documents and every number use them. The number format's decimals travel as a list of `{ kind, places }`, because `unitCost` is a reserved name for product cost.
+- **Which pages save on the API.** Company profile (`PUT /settings/profile`), Number format (`PUT /settings/numbers`), Payments (`PUT /settings/payments`) and the approval half of Expenses (`PUT /settings/expenses`). Payments and Expenses first need module `core`; then each needs its own key, its page's switch (404 when off), data scope `all`, a body with exactly the section's fields, and the shared content rules, checked in that order; one audit entry ("Changed company profile", "Changed number format", "Changed payments", "Changed expense approval") is written with the change under a row lock, with the section before and after.
+- **The step-up.** Saving Payments asks for a fresh authenticator code, in both modes. The page runs the shared content rules before it asks, and shows a refused value's message without the code dialog; the API checks the code after the same rules. So a refused value never costs a code, on screen or through the API. Expense approval runs its rule before it sends, too. The two-person check, the threshold and the write-off limit govern customer payments, write-offs and supplier payments on the server.
+- **A company that never saved a section** gets what the API acts on: the US number format, expense approval off, a blank profile, and payments "every payment waits, nothing can be written off" (the API refuses payments until Payments is saved).
+- **The demo** applies the same module, key, switch, scope and content rules in the same order (module first, as the API), and reads every section in full from the browser.
+
+**Settings on the API, part 2a (ADR 0059): Sales and documents and Payroll rules:**
+- **Who reads what.** `GET /settings` also answers `localization.documents` to people who see quotes (`sales.quote.view`: the builder's deposit, default waste and expiry), invoices (`sales.invoice.view`: the invoice and receipt footer) or purchase orders (`purchasing.order.view`: the PO footer), and to holders of `settings.localization.manage`; and `localization.payroll` to people who see timesheets (`hr.timesheet.view`, every default role of a company with HR), the HR overview, Settings → HR or the tab. Documents needs module `core` and payroll module `hr`; neither is hidden by the `settings.localization` page switch, because other screens read them. Sales tax was not answered until part 3a (below), and a company that never saved localization gets no `localization` at all.
+- **Which tabs save on the API.** Sales and documents (`PUT /settings/localization/documents`, module `core`) and Payroll rules (`PUT /settings/localization/payroll`, module `hr`), each with `settings.localization.manage`, the `settings.localization` switch (404 when off), data scope `all`, a body with exactly the tab's fields, and the shared rules, in that order. Only that tab of the stored localization changes, under the row's lock, with one audit entry ("Changed localization and tax", target "Sales and documents" or "Payroll rules"). No step-up. A company with no localization settings gets 409 `settings_missing`, and nothing is created.
+- **Sales tax** still saved in the browser in api mode, with its own key (`settings.tax.manage`), until part 3a (below).
+- **A waste default changed while a salesperson's quote builder is open.** Lines she added before the change keep the old default; she can't see or edit their waste, and the server compares each new line with the current default, so every save of that draft is refused ("Your role does not allow changing waste.") until she removes and re-adds those lines or reloads. A builder opened after the change starts from the new default.
+- **The demo** applies the same keys, module, switch, scope and content rules in the same order, and names the tab in the audit log.
+
+**Settings on the API, part 2b (ADR 0059): Region and Currency:**
+- **Who reads what.** `GET /settings` also answers `localization.region` to every member (every screen's dates, the invoice document and receipts, a new quote's job-site state and the address dialogs, the quote builder's tax preview) and `localization.currency` to holders of `settings.localization.manage` (only its own tab reads it), left out while the `settings.localization` switch is off. Region's time zone is always the company's zone from the control database (`tenants.time_zone`, the zone every date the API checks is read in), never the row's copy.
+- **Which tabs save on the API.** Region (`PUT /settings/localization/region`) and Currency (`PUT /settings/localization/currency`), each with `settings.localization.manage` (module `platform`), the `settings.localization` switch (404 when off), data scope `all`, a body with exactly the tab's fields, then, under the localization row's lock, the shared rules against the stored tab. Only that tab changes, with one audit entry ("Changed localization and tax", target "Region" or "Currency"). A company with no localization settings, or whose row lacks the tab, gets 409 `settings_missing`.
+- **Region.** The time zone must be the company's own: any other zone is refused ("The company's time zone is set when the company is set up. Ask us to change it."), in both modes, and the tab shows it read only. Country and locale must stay the stored ones. At least one state of operation, each a US state code once; the primary state a US state code; the date format and week start from the tab's options; the fiscal month a whole 1 to 12. **A change of the states of operation** (compared as sets, so a reorder is no change) moves where the company default rate applies, so it also needs `settings.tax.manage` (403 with "Changing the states of operation changes where sales tax is collected, so it also needs the sales tax permission.") and a step-up. The API's quote tax follows a saved change at once, and so does the invoice of a quote accepted earlier (tax is recomputed at conversion). The page asks for a code only when the states change.
+- **Currency.** Always a step-up, after the content checks. The base currency and its lock stay; the other currencies can't be added, removed, renamed or reordered; each rate is plain decimal text above 0 with up to 8 decimals. A rate whose value changed is dated the company's day by the save; an unchanged one keeps its date; a sent `asOf` is never stored.
+- **Every check that reads the stored tab runs under the row's lock,** so a save is judged against the row it replaces.
+- **Reset to default** keeps what Settings can't change from the company's own copy: Region's zone, country and locale, and Currency's base, lock and currencies.
+- **The quote builder's tax preview** read the API's states of operation and the demo's tax rules until Sales tax moved (part 3a, below).
+- **The demo** applies the same keys, switch, scope, rules and words in the same order, refuses a zone change against its own copy, checks `settings.tax.manage` for a states change and dates a changed rate with its today; its step-up is the dialog.
+
+**Settings on the API, part 3a (ADR 0059): Sales tax:**
+- **Who reads what.** `GET /settings` also answers `localization.tax` to people who see quotes (`sales.quote.view`: the quote builder's tax preview and its job-site state list) and to holders of `settings.tax.manage` (the tab), not hidden by the `settings.localization` switch, **as in force on the company's day**: the stored block (whether prices include tax, rounding, the company default, filing, certificate types) with, per state, the rule in force and, per county, the rate in force, read from `tax_rules` and `tax_jurisdictions`, sorted by state, then county. Rates are answered at the columns' scale (`8.81000000`). So the quote builder's preview follows the server's rules.
+- **The save.** `PUT /settings/localization/tax`, with `settings.tax.manage` (module `platform`), the `settings.localization` switch (404 when off), data scope `all`, a body with exactly the tab's fields, then, under the localization row's lock, the shared rules against the tab in force, then always a step-up (after the rules, so a refused value never costs a code). One audit entry ("Changed localization and tax", target "Sales tax", before and after the tab in force). A company with no localization settings, or whose row has no tax block, gets 409 `settings_missing`.
+- **Versions, never edits.** A sent state rule is compared with the one in force by state, a county rate by state and county (never by the id the page sends), each by value (rates as numbers, so `8.81` and `8.81000000` are the same). An unchanged row stays as it is. For a changed or removed state or county, every live row of it whose range reaches the company's day ends the day before, and a changed or new row starts that day with no end; a changed state rule takes the next version of its state (one above the highest it ever used). No row is changed except to end it, and none is deleted. Issued invoices keep their tax (each stores its rule's state, jurisdiction, rate and version); a quote's stored total follows the rule of the day it is saved, sent or converted.
+- **What the tab can't change.** Whether prices include tax can't be turned on (nothing applies tax-inclusive prices; it may go back to "before tax"); filing frequencies and certificate types. The dates are set by the save and shown read only; so is whether prices include tax. The company default stays in the block, dated the company's day when it changes.
+- **Rates** are `TAX_RATE_TEXT`: below 100, up to 4 decimals by value (up to 8 written, zeros after the fourth). Jurisdiction and county-rate names up to 100 characters, a county up to 60, a rule's note up to 500, at most 200 county rates, one rule per state, one county rate per county of a state.
+- **The page** runs the shared rule before the code, keeps filing and certificate types from the company's own copy on Reset to default (unchanged rows stay as they are, because they are matched by state and county), and shows what the save stored right after it.
+- **The demo** applies the same keys, switch, scope, rules, words and versioning (through the same shared functions) and keeps only what is in force; its history is the audit log and each invoice's snapshot. Its day is the browser's; its step-up is the dialog.
+
+**Settings on the API, part 3b (ADR 0059): the whole section.**
+- `updateSettings("localization")` and `resetSettings("localization")` are refused in both modes ("Localization and tax saves one tab at a time.") after the module, keys, switch and scope checks; nothing is stored or audited.
+- The API has no whole-section route (404). Every tab saves on its own route with its own key.
+
+**Settings on the API, part 4a (ADR 0059): Warehouses and showrooms:**
+- **Who reads.** `GET /locations` stays every member's (every module picks a location) and stays answered while `inventory.locations` is off; the switch hides the page and its writes. In api mode `list("locations")` and `get("locations")` read it, so every screen that lists locations reads the API's ids.
+- **The routes.** `POST /locations` (201) and `PUT /locations/:id` (200, any UUID: the seed's are v5), with module `core`, `settings.locations.manage`, then the `inventory.locations` switch (404), data scope `all` (403, "Company settings cover the whole company."), a body with exactly a location's fields and never an id (400), then, under the stock lock, an unknown, deleted or other company's id (404) and rule 29 (400 with its words). The answer is the location as `GET /locations` lists it (the floor area at scale, `2400.000`). No step-up.
+- **What editing may do** is rule 29: the name, address, samples, floor area and default change; the branch is fixed; a warehouse becomes a showroom only when nothing holds it there. Nothing removes or deactivates a location.
+- **Converting a quote** also refuses, under the stock lock, a quote whose warehouse (the header's or a line's) is no longer a live warehouse: "Fulfil the quote from a warehouse." (sales.md rule 19).
+- **The page** names branches from the shell, runs rule 29 before sending, shows the branch read only on an edit, takes the floor area at scale, and its inputs stop at the rule's and the API's lengths.
+- **The demo** applies the same module, key, switch, scope, rules, holds and words in the same order on its own records, stores a blank floor area as none, audits the cleared default, and refuses the generic save of locations.
+
+**Settings on the API, part 4b (ADR 0059): Shared costs:**
+- **Who reads.** `GET /settings` also answers `sharedCosts` to holders of `settings.expenses.manage` (only Settings → Expenses reads it), left out while `finance.expenses` is off or the company has no `core`. A company that never saved it gets revenue share, what the Business report acts on. The report reads the stored row on the server.
+- **The save.** `PUT /settings/sharedCosts`, with module `core`, `settings.expenses.manage`, the `finance.expenses` switch (404), data scope `all` (403), a body with exactly `rule` and `fixedPct` (strings only, 400), then, inside the save under the row's lock, the shared rule against the company's live locations (400 with its words): a known rule; every share names a live location of the company and is a percent from 0 to 100, whatever the rule; with `fixed`, the shares add up to exactly 100. No step-up: nothing posts to the ledger (ADR 0059, part 4b, D3). One audit entry, "Changed shared costs", before and after as stored.
+- **The page** runs the same rule before it sends (the refusal shows on the page and in a toast, and nothing is sent); its percent inputs stop at 12 characters; a cleared share is dropped (the location counts 0), never sent blank.
+- **The demo** applies the same module, key, switch, scope, rule and words against its own live locations.
+- **The Business report** reads a blank or malformed stored floor area or share as 0 and never fails on one; fixed shares weigh in ten-thousandths of a percent, so every share the rule takes splits exactly.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
-- **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes when Settings → Locations moves to the API.
-- **The company app can look stale.** It still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403.
+- **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes with a branch editor (locations aren't branches; ADR 0059, part 4a).
+- **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
+- **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
+- **The shell's branding** is still the demo's (`getSettings()`) until Settings part 6; the number format and the profile are the API's (ADR 0059).
+- **Settings pages not yet on the API save in the browser only:** Branding, HR settings, Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Locations (part 4a).** A location added in the wrong branch can be renamed but not moved or removed, and stays in every picker. A company with no branch can't add a location until a branch editor exists. Short rows stay at a location that became a showroom (they hold nothing). A quote saved at the moment its warehouse becomes a showroom stays open there; its conversion is refused until its warehouse is changed. The dashboard's warehouse filter reads the API's locations while its quotes are still the demo's, so with a warehouse picked its pending quotes read 0. Shared costs on the Expenses page list the API's locations but still save in the browser until part 4b. Saved demo data with an empty floor area breaks the demo's Business report until that location is saved again.
+- **Reset to default** reads the demo's original values, which the API was seeded with; Region and Currency keep the time zone, country, locale, base currency, its lock and the currencies from the company's own copy (ADR 0059, part 2b); Sales tax keeps filing and certificate types from the company's own copy (part 3a).
+- **The Sales tax tab shows rates at the columns' scale** (`8.81000000`).
+- **The quote builder's tax preview uses the browser's day** until `today()` reads the company's zone: a browser a day behind the company finds no rule for a state changed today and previews "Not collected" or the company default, while the server prices the new rule.
+- **Installation-job invoices** stay on DemoStore and use its tax rules, which the Sales tax tab no longer writes in api mode.
+- **A Sales tax page left open** saves its view back (the last save wins; both are audited), as every settings section.
+- **The console's legal name** (`tenants.legal_name`) is the one given at sign-up; the company profile's legal name is the one documents print.
+- **The bell's and Outbox's money format** is still the demo's until the bell and Outbox move.
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.

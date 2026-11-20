@@ -10,8 +10,8 @@ import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { SettingsForm } from "../form/settings-form";
-import { CurrencyTab, PayrollTab, RegionTab } from "./simple-tabs";
-import { TaxTab } from "./tax-tab";
+import { CurrencyTab, PayrollTab, regionCurrencyForms, RegionTab } from "./simple-tabs";
+import { taxForm, TaxTab } from "./tax-tab";
 
 /** The tabs: title, the sentence saying what each controls (spec A4), and whether it needs step-up. */
 const TABS = {
@@ -40,7 +40,10 @@ type Tab = keyof typeof TABS;
 
 /**
  * Settings: Localization and tax (blueprint "Localization, currency and tax settings"): the place
- * for everything that changes a company's calculations. Each tab saves on its own.
+ * for everything that changes a company's calculations. Each tab saves on its own. Region asks for
+ * a code only when the states of operation change, Currency always; both run their shared rule
+ * first (ADR 0059, part 2b). Sales tax runs its shared rule before the code, keeps what it can't
+ * change on Reset, and remounts when the tab in force changes, so a save shows its own dates (part 3a).
  */
 export function LocalizationPage() {
   const can = useCan();
@@ -59,7 +62,7 @@ export function LocalizationPage() {
   const save =
     <K extends keyof LocalizationSettings>(key: K) =>
     async (value: LocalizationSettings[K]) => {
-      await api.updateSettings("localization", { ...settings.localization, [key]: value });
+      await api.updateLocalization(key, value);
     };
   const form = <K extends Tab>(key: K) => ({
     ...TABS[key],
@@ -67,6 +70,10 @@ export function LocalizationPage() {
     defaults: original[key],
     onSave: save(key),
   });
+  // Region and Currency replace `defaults` and, for Region, `stepUp` (ADR 0059, part 2b).
+  const forms = regionCurrencyForms(loc, original, can);
+  // Sales tax replaces `defaults` and remounts after a save (ADR 0059, part 3a, D27).
+  const { revision, ...tax } = taxForm(loc.tax, original.tax, can);
 
   return (
     <Panel bodyClassName="flex flex-col gap-5">
@@ -83,17 +90,17 @@ export function LocalizationPage() {
           </TabsList>
         </div>
         <TabsContent value="region" className="pt-4">
-          <SettingsForm {...form("region")}>
+          <SettingsForm {...form("region")} {...forms.region}>
             {(draft, setDraft, changed) => <RegionTab draft={draft} setDraft={setDraft} changed={changed} />}
           </SettingsForm>
         </TabsContent>
         <TabsContent value="currency" className="pt-4">
-          <SettingsForm {...form("currency")}>
+          <SettingsForm {...form("currency")} {...forms.currency}>
             {(draft, setDraft, changed) => <CurrencyTab draft={draft} setDraft={setDraft} changed={changed} />}
           </SettingsForm>
         </TabsContent>
         <TabsContent value="tax" className="pt-4">
-          <SettingsForm {...form("tax")}>
+          <SettingsForm key={revision} {...form("tax")} {...tax}>
             {(draft, setDraft, changed) => <TaxTab draft={draft} setDraft={setDraft} changed={changed} />}
           </SettingsForm>
         </TabsContent>

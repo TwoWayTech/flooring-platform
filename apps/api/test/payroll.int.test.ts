@@ -23,6 +23,7 @@ import type { Response } from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { NO_HOURS } from "./support/timesheet-week";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -194,6 +195,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
         employeeId,
         weekStart: week(weeksAgo),
         days: days.map(String),
+        expectedDays: NO_HOURS,
       });
       status(saved, 200);
       status(await call("post", `/timesheets/${saved.body.id}/submit`, cookies.hr), 201);
@@ -330,6 +332,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     cookies.sales = await harness.signIn(emails.sales);
     cookies.wes = await harness.signIn(emails.wes);
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({
         costingMethod: "average",
@@ -550,6 +553,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
       employeeId: ids.wes,
       weekStart: week(6),
       days: ["8", "8", "8", "8", "8", "0", "0"],
+      expectedDays: NO_HOURS,
     });
     status(edit, 400);
     expect(edit.body.message).toContain("locked");

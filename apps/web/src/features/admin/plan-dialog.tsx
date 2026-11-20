@@ -295,8 +295,6 @@ export function PlanFormFields({ target, draft, error, onChange }: PlanFormField
 interface PlanDialogProps {
   target: PlanDialogTarget;
   onClose: () => void;
-  /** Reads the plans again, where the data layer does not tell screens itself. */
-  onSaved: () => void;
 }
 
 /**
@@ -305,7 +303,7 @@ interface PlanDialogProps {
  * for. In api mode the step-up follows, as every platform write needs; the demo saves at once. A
  * refusal shows its message and brings the form back with what was typed.
  */
-export function PlanDialog({ target, onClose, onSaved }: PlanDialogProps) {
+export function PlanDialog({ target, onClose }: PlanDialogProps) {
   const [draft, setDraft] = useState<PlanDraft>(() =>
     target.kind === "edit" ? planDraftOf(target.plan) : emptyPlanDraft(),
   );
@@ -321,7 +319,6 @@ export function PlanDialog({ target, onClose, onSaved }: PlanDialogProps) {
     try {
       await call();
       toast.success(editing ? "Plan saved." : "Plan created.");
-      onSaved();
       onClose();
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : "The plan was not saved.";

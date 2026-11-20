@@ -192,16 +192,14 @@ export function PlansView({ role, plans, fallback, onNew, onEdit, onActive }: Pl
 }
 
 /**
- * The Plans page: reads the plans, then opens the plan dialog or the retire and restore dialog. After
- * a write the list is read again in place, because a write over HTTP doesn't tell screens itself.
+ * The Plans page: reads the plans, then opens the plan dialog or the retire and restore dialog. Every
+ * write reads the list again in place (ADR 0051, 2026-11-16).
  */
 export function PlansPage() {
   const role = usePlatformRole();
-  const [reads, setReads] = useState(0);
-  const query = useApiQuery((client) => client.listPlatformPlans(), [reads]);
+  const query = useApiQuery((client) => client.listPlatformPlans(), []);
   const [editing, setEditing] = useState<PlanDialogTarget | null>(null);
   const [activeChange, setActiveChange] = useState<PlatformPlan | null>(null);
-  const reread = () => setReads((n) => n + 1);
   const onEdit = useCallback((plan: PlatformPlan) => setEditing({ kind: "edit", plan }), []);
   const onActive = useCallback((plan: PlatformPlan) => setActiveChange(plan), []);
   return (
@@ -214,10 +212,8 @@ export function PlansPage() {
         onEdit={onEdit}
         onActive={onActive}
       />
-      {editing ? <PlanDialog target={editing} onClose={() => setEditing(null)} onSaved={reread} /> : null}
-      {activeChange ? (
-        <PlanActiveDialog plan={activeChange} onClose={() => setActiveChange(null)} onChanged={reread} />
-      ) : null}
+      {editing ? <PlanDialog target={editing} onClose={() => setEditing(null)} /> : null}
+      {activeChange ? <PlanActiveDialog plan={activeChange} onClose={() => setActiveChange(null)} /> : null}
     </>
   );
 }

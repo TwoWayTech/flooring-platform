@@ -61,6 +61,8 @@ stateDiagram-v2
 
 The person picks one of the current and seven earlier weeks. Save calls `saveTimesheet`. Submit saves and then calls `submitTimesheet`. The form locks while the sheet is `submitted` or `approved`. A sent-back sheet shows the reason and can be corrected and submitted again. The person may instead download a template for themselves and upload it, as a dry run first.
 
+Saved hours that arrive while the form is open (an upload, the clock, another tab) replace the form's hours when it has no edits. When it has edits, the form shows the newer hours and asks: use the saved hours, or keep mine. A save made from hours that changed since the form opened is refused, and nothing is submitted (hr.md "Create or edit hours"; 2026-11-16).
+
 ### Time off
 
 The person sees balances per policy with waiting hours, and their requests. Request time off opens `RequestTimeOffDialog`. Cancel is offered on pending requests only.

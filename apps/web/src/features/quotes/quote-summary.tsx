@@ -6,7 +6,7 @@ import {
   depositAmount,
   dec,
   EXAMPLE_RULE_NOTE,
-  SENSITIVE,
+  seesMargin,
   stateName,
   type DocumentTotals,
   type TaxContext,
@@ -56,6 +56,15 @@ function taxNote(ctx: TaxContext, state: string): string {
   return `${source}Installation labor is ${labor ? "taxed" : "not taxed"} in ${stateName(state)}. ${EXAMPLE_RULE_NOTE}.`;
 }
 
+/** The margin row's values, or null when the viewer may not see margin or a line's cost was withheld. */
+function shownMargin(
+  totals: DocumentTotals,
+  allowed: boolean,
+): { cost: string; margin: string; marginPct: string } | null {
+  if (!allowed || totals.cost === null || totals.margin === null || totals.marginPct === null) return null;
+  return { cost: totals.cost, margin: totals.margin, marginPct: totals.marginPct };
+}
+
 interface QuoteSummaryProps {
   totals: DocumentTotals;
   ctx: TaxContext;
@@ -73,7 +82,9 @@ interface QuoteSummaryProps {
 
 /**
  * The quote summary (design brief wireframe): materials, labor, tax for the job-site state,
- * deposit and total, all from the shared calculator. Cost and margin need view_sensitive.
+ * deposit and total, all from the shared calculator. Margin and the cost under it need the margin and
+ * product-cost keys (`seesMargin`) and show only when every line carries its cost (sales.md rule
+ * 13; ADR 0037, 2026-11-16).
  */
 export function QuoteSummary({
   totals,
@@ -90,6 +101,7 @@ export function QuoteSummary({
   const can = useCan();
   const [changingTax, setChangingTax] = useState(false);
   const deposit = depositAmount(totals.total, depositPct || "0");
+  const margin = shownMargin(totals, seesMargin(can));
   return (
     <div className="flex flex-col gap-4">
       <dl className="divide-hairline divide-y text-sm">
@@ -179,16 +191,16 @@ export function QuoteSummary({
         <Row label="Balance on completion">
           <Num kind="money" value={dec(totals.total).minus(deposit).toString()} />
         </Row>
-        {can(SENSITIVE.margin) ? (
+        {margin ? (
           <Row
             label="Margin"
             note={
               <>
-                Cost <Num kind="money" value={totals.cost} />
+                Cost <Num kind="money" value={margin.cost} />
               </>
             }
           >
-            <Num kind="money" value={totals.margin} /> (<Num kind="percent" value={totals.marginPct} />)
+            <Num kind="money" value={margin.margin} /> (<Num kind="percent" value={margin.marginPct} />)
           </Row>
         ) : null}
       </dl>

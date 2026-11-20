@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Locator, type Page } from "@playwright/test";
 import {
   dec,
   roundMoney,
@@ -15,6 +15,7 @@ import {
   type TimesheetWire,
 } from "@workspace/shared";
 import type { MyPortal, PayPeriodReview } from "@/lib/api/contract";
+import { nextCode } from "../accounts";
 import { companyToday, PDF_PROOF, waitForAnswer } from "./kit";
 import { ledgerDelta, ledgerMismatches, type ExpectedMoves, type TrialBalance } from "./ledger";
 
@@ -221,8 +222,8 @@ export type PortalAnswer = Omit<MyPortal, "timesheets"> & { timesheets: Timeshee
 
 /**
  * Opens the employee portal page at `path` (My timesheet, My time off) and returns the GET /me/portal
- * answer it shows. Opening it again is a reload: in api mode a screen reads again only after a
- * meetings write (STATUS B2), so a flow loads the page afresh to see its own write.
+ * answer it shows. Opening it again is a reload, for a write made by another persona or through the
+ * API (no live updates); a screen reads again after its own writes (ADR 0051, 2026-11-16).
  */
 export async function openMyPortal(page: Page, path: string): Promise<PortalAnswer> {
   const answer = waitForAnswer<PortalAnswer>(page, "GET", /^\/api-proxy\/me\/portal$/);
@@ -274,6 +275,84 @@ function auditTime(at: string): number {
   return Date.parse(`${at}:00Z`);
 }
 
+/** The audit entries `actor` made with `action` from `since`'s minute on, read through the API as `request`'s person. */
+export async function auditEntriesBy(
+  request: APIRequestContext,
+  action: string,
+  actor: string,
+  since: number,
+): Promise<AuditEntry[]> {
+  const from = Math.floor(since / 60_000) * 60_000;
+  const entries = await readAs<AuditEntry[]>(request, "/audit");
+  return entries.filter((entry) => entry.action === action && entry.actorName === actor && auditTime(entry.at) >= from);
+}
+
+/**
+ * How many audit entries `actor` made with `action` from `since`'s minute on (the log keeps
+ * minutes). Settings specs compare a count taken right after their heal with one taken at the end,
+ * so a heal in the same minute doesn't count (ADR 0059 B9).
+ */
+export async function auditBy(
+  request: APIRequestContext,
+  action: string,
+  actor: string,
+  since: number,
+): Promise<number> {
+  return (await auditEntriesBy(request, action, actor, since)).length;
+}
+
+/**
+ * A JSON value with its object keys sorted, so two answers compare whatever order jsonb kept: a
+ * settings spec heals a section or tab only when `GET /settings` answers something else (ADR 0059).
+ */
+export function canonical(value: unknown): string {
+  const sorted = (inner: unknown): unknown =>
+    Array.isArray(inner)
+      ? inner.map(sorted)
+      : inner && typeof inner === "object"
+        ? Object.fromEntries(
+            Object.entries(inner)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => [key, sorted(item)]),
+          )
+        : inner;
+  return JSON.stringify(sorted(value));
+}
+
+/**
+ * Puts one localization tab back to `value` unless `GET /settings` already answers it, through
+ * `PUT /settings/localization/<tab>`. With `secret`, a save the API asks a step-up for (Currency
+ * always, Region when the states of operation change; ADR 0059, part 2b) steps up and is sent again.
+ * Returns the last answer, the read when nothing needed changing. The answer is read loosely, so the
+ * settings specs build on code with or without a tab.
+ */
+export async function healTab(
+  request: APIRequestContext,
+  tab: string,
+  value: object,
+  secret?: string | null,
+): Promise<APIResponse> {
+  const read = await request.get("/api-proxy/settings");
+  expect(read.status(), `GET /settings answered ${read.status()}: ${await read.text()}`).toBe(200);
+  const answer = (await read.json()) as { localization?: Record<string, unknown> };
+  if (canonical(answer.localization?.[tab]) === canonical(value)) return read;
+  const path = `/settings/localization/${tab}`;
+  return secret ? putWithStepUp(request, secret, path, value) : request.put(`/api-proxy${path}`, { data: value });
+}
+
+/** `healTab` that throws unless the API answered 200, so a refused restore fails the clean-up. */
+export async function healTabOrThrow(
+  request: APIRequestContext,
+  tab: string,
+  value: object,
+  secret?: string | null,
+): Promise<APIResponse> {
+  const response = await healTab(request, tab, value, secret);
+  if (response.status() !== 200)
+    throw new Error(`Putting ${tab} back answered ${response.status()}: ${await response.text()}`);
+  return response;
+}
+
 /**
  * Asserts the audit log holds each of `actions` on a target containing `search`, made at or after
  * `since` (an epoch ms), first in the page's GET /audit answer, then on screen after searching
@@ -297,4 +376,63 @@ export async function expectAuditRows(
   await page.getByPlaceholder("Search the audit log").fill(search);
   for (const action of actions)
     await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: search }).first()).toBeVisible();
+}
+
+/** Milliseconds until the next 30-second authenticator step starts, plus a second. */
+export function untilNextStep(): number {
+  return 30_000 - (Date.now() % 30_000) + 1_000;
+}
+
+/** A step-up with the next code; when the API refuses that code (used already), the next step's code. */
+export async function stepUp(request: APIRequestContext, secret: string): Promise<void> {
+  let response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
+  if (response.status() !== 204) {
+    await new Promise((resolve) => setTimeout(resolve, untilNextStep()));
+    response = await request.post("/api-proxy/auth/step-up", { data: { code: nextCode(secret) } });
+  }
+  expect(response.status(), `POST /auth/step-up answered ${response.status()}: ${await response.text()}`).toBe(204);
+}
+
+/**
+ * A PUT to an `/api-proxy` route that needs a step-up: sent once, and when the API answers 403
+ * `step_up_required`, stepped up with the next code and sent again. Returns the last answer.
+ */
+export async function putWithStepUp(
+  request: APIRequestContext,
+  secret: string,
+  path: string,
+  data: object,
+): Promise<APIResponse> {
+  const put = () => request.put(`/api-proxy${path}`, { data });
+  const first = await put();
+  if (first.status() !== 403 || (await first.json()).code !== "step_up_required") return first;
+  await stepUp(request, secret);
+  return put();
+}
+
+/**
+ * Confirms the open step-up dialog with the next authenticator code and waits for it to close.
+ * When the API refuses the code because it was used already ("That code is not right"), it waits
+ * for the next 30-second step and confirms once more with that step's code.
+ */
+export async function confirmStepUp(page: Page, secret: string): Promise<void> {
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  const refused = dialog.getByText(/^That code is not right/);
+  await dialog.getByLabel("Authenticator code").fill(nextCode(secret));
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+  // Each wait settles either way, so the one that loses the race is never an unhandled rejection.
+  const closed = dialog.waitFor({ state: "hidden" }).then(
+    () => "closed" as const,
+    () => "unsettled" as const,
+  );
+  const wrong = refused.waitFor({ state: "visible" }).then(
+    () => "refused" as const,
+    () => "unsettled" as const,
+  );
+  if ((await Promise.race([closed, wrong])) === "refused") {
+    await new Promise((resolve) => setTimeout(resolve, untilNextStep()));
+    await dialog.getByLabel("Authenticator code").fill(nextCode(secret));
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+  }
+  await expect(dialog).toBeHidden();
 }

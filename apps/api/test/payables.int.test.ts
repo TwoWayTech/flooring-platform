@@ -494,6 +494,7 @@ describe("payables API (needs the local PostgreSQL)", () => {
   });
 
   it("credits the bank account claiming the payment's method, and a void credits it back", async () => {
+    await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({
         costingMethod: "average",

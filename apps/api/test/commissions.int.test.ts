@@ -650,6 +650,7 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     cookies.branchAll = await enrolled(emails.branchAll);
     cookies.otherOwner = await enrolled(await harness.addUser({ companyIds: [other.id], roles: ["owner"] }));
     cookies.hrSuiteOwner = await enrolled(await harness.addUser({ companyIds: [hrSuite.id], roles: ["owner"] }));
+    await harness.grantStepUp(cookies.accountant);
     await call("put", "/settings/accounting", cookies.accountant)
       .send({
         costingMethod: "average",

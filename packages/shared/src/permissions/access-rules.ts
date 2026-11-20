@@ -103,6 +103,18 @@ export const SENSITIVE_FIELDS: Readonly<Record<string, PermissionKey>> = {
   estimatedCost: "contracts.contract.view_sensitive",
 };
 
+/**
+ * Whether a viewer may see a margin: on a quote, the dashboard, Best sellers and Sales → Team
+ * (sales.md "Who uses it"; ADR 0037, 2026-11-16 and 2026-11-17), and in reports (ADR 0055 S17,
+ * through `reportVisibility`). It needs the margin key and the product-cost key: margin is revenue
+ * less cost, so it gives the cost away (CLAUDE.md rule 5). A screen also shows it only when every
+ * cost under it is known; a contract invoice whose cost the viewer can't see arrives without it
+ * (`contractCostShown`). No default role changes in a company with its modules on.
+ */
+export function seesMargin(has: (key: PermissionKey) => boolean): boolean {
+  return has(SENSITIVE.margin) && has(SENSITIVE.productCost);
+}
+
 /** A snake_case column name as the camelCase property name it stands for (`unit_cost` → `unitCost`). */
 function camelCase(field: string): string {
   return field.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());

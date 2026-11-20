@@ -31,6 +31,13 @@ export const PURCHASING_EMAIL = "renata.kowalski@summitfloor.example";
  */
 export const INSTALLER_EMAIL = "marcus.bell@summitfloor.example";
 
+/**
+ * Summit's sales rep Victor Sims, seeded disabled: he signs in and holds nothing, so `GET /company`
+ * refuses him (ADR 0051, "GET /company"). Not in SEEDED_EMAILS: no test changes him, and only
+ * company.spec.ts signs him in, resetting his sign-in state around itself.
+ */
+export const DISABLED_EMAIL = "victor.sims@summitfloor.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,

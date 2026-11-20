@@ -96,6 +96,10 @@ test.describe("real sign-in with MFA (api mode)", () => {
     await page.getByLabel("Authenticator code").fill(totpCode(secret));
     await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByText("Roles updated for Priya Natarajan")).toBeVisible();
+    // The change makes the page read the users again (ADR 0051, 2026-11-16). Wait until her row shows
+    // it: the table draws its cells afresh when the page renders again, which would close a row menu
+    // opened before that read lands.
+    await expect(page.getByRole("row").filter({ hasText: "Priya Natarajan" })).toContainText("Accountant");
     // Put Priya back, so the next run and the specs after this one (meetings.spec.ts signs her in as
     // Sales) start from the seed. Wait for the server's answer: the first change's toast may still
     // show, and a test that ends first closes the page before the change is sent.

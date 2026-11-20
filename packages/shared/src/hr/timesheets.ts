@@ -1,5 +1,5 @@
 import { addDays } from "../dates";
-import { dec } from "../money";
+import { dec, type DecimalInput } from "../money";
 import type { Employee, PtoRequest, Timesheet } from "../types";
 
 /** Weekday names by number, 0 = Sunday, for the workweek setting. */
@@ -50,6 +50,34 @@ export function hoursTextProblem(days: readonly string[]): string | null {
   }
   return null;
 }
+
+/**
+ * Whether two weeks hold the same hours, day by day, by value: "7", 7 and "7.000" match. Takes
+ * numbers or decimal strings already checked (`hoursTextProblem`, the API's `expectedDays` shape,
+ * stored numeric). Never raw typed text: decimal.js throws on "" or "7..5".
+ */
+export function sameWeekHours(a: readonly DecimalInput[], b: readonly DecimalInput[]): boolean {
+  return a.length === b.length && a.every((hours, i) => dec(hours).eq(b[i]!));
+}
+
+/**
+ * Whether saving `days` would write over hours saved since the form opened (hr.md "Create or edit
+ * hours"; ADR 0051, "Re-reading after every write", 2026-11-16): the stored week differs from the
+ * hours the form started from (`expected`) and from the hours being saved. A save of the hours
+ * already stored changes nothing, so it is taken. The API and the demo both refuse with
+ * TIMESHEET_CHANGED_MESSAGE, so an upload, the clock or another tab is never overwritten unseen.
+ */
+export function overwritesNewerHours(
+  stored: readonly DecimalInput[],
+  expected: readonly DecimalInput[],
+  days: readonly DecimalInput[],
+): boolean {
+  return !sameWeekHours(stored, expected) && !sameWeekHours(stored, days);
+}
+
+/** The refusal when a week's hours changed after the form opened (`overwritesNewerHours`; 409 `timesheet_changed`). */
+export const TIMESHEET_CHANGED_MESSAGE =
+  "This week's hours changed after you opened it, so nothing was saved. Check the hours now shown, then save or submit again.";
 
 /** `hoursTextProblem` for the screens' numbers (the shared Timesheet type keeps `days` as numbers). */
 export function hoursProblem(days: readonly number[]): string | null {

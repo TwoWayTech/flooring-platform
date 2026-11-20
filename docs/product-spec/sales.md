@@ -49,7 +49,8 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Change tax on a document | `sales.tax.override` | Owner, Accountant | Store: `saveQuote`. Link in `QuoteSummary` |
 | Draw rooms on the canvas | `retail.room.measure` (Retail module) | Owner, Manager, Sales | Screen only: `QuoteBuilder` |
 | Start a transfer from a short line | `inventory.transfer.create` | Owner, Manager, Warehouse | Button in `QuoteBuilder`. The transfer call has its own check, see `docs/product-spec/inventory.md` |
-| See margin on a quote | `sales.margin.view_sensitive` | Owner, Manager, Accountant | Screen only: `QuoteSummary` |
+| See margin on a quote | `sales.margin.view_sensitive` and `inventory.product.view_sensitive` | Owner, Manager, Accountant | Screen only: `QuoteSummary` through `seesMargin`; it also shows only when every line carries its cost |
+| See margin on the dashboard, Best sellers and Sales → Team | `sales.margin.view_sensitive` and `inventory.product.view_sensitive` | Owner, Manager, Accountant | Screen only: `FigureRow`, `RevenuePanel`, `BestSellers`, `TeamTable` through `seesMargin`; each also shows only when every invoice it adds up carries its cost (a contract invoice arrives without it for anyone without contract cost) |
 | Convert a quote to an invoice | `sales.invoice.create` | Owner, Manager, Accountant, Sales | Store: `convertQuoteToInvoice` |
 | Create an invoice for a roll cut | `sales.invoice.create` | Owner, Manager, Accountant, Sales | Store: `createRollInvoice` |
 | Open the invoice list or an invoice | `sales.invoice.view` | Owner, Manager, Accountant, Sales | Screen only: `pages.ts`, `SalesPage`, `InvoicePage` |
@@ -70,9 +71,9 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Add a customer | `customers.customer.create` | Owner, Manager, Sales | Store: `createCustomer` |
 | Edit a customer or their addresses | `customers.customer.edit` | Owner, Manager, Sales | Store: `saveCustomer`. Screen: `CustomerAddresses`, `CustomerDrawer` |
 | See a credit limit | `customers.customer.view_sensitive` | Owner, Manager, Accountant | Screen only: `CustomersTable`, `CustomerDrawer` |
-| Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `settingsPermissions`. Screen: `PaymentsSettingsPage` |
-| Settings > Sales and documents | `settings.localization.manage` to open the page. The store accepts it or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings`. Screen: `apps/web/src/products/settings-menu.ts` |
-| Tax rates in Settings > Localization | `settings.localization.manage` or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings` |
+| Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `SETTINGS_SECTIONS.payments` in `packages/shared/src/settings/sections.ts`; on the API, `PUT /settings/payments` (ADR 0059). Data scope `all` and a step-up. Screen: `PaymentsSettingsPage` |
+| Settings > Sales and documents | `settings.localization.manage` (to open the page and to save it; `settings.tax.manage` alone saves nothing here) | Owner, Accountant | Store: `updateLocalization("documents")`; on the API `PUT /settings/localization/documents` (ADR 0059, part 2a). The whole section is never saved (part 3b). Screen: `DocumentsPage`; menu `apps/web/src/products/settings-menu.ts` |
+| Tax rates in Settings > Localization | `settings.tax.manage` | Owner, Accountant | Store: `updateLocalization("tax")`; on the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. The whole section is never saved (part 3b) |
 
 Data scope, from `apps/web/src/lib/api/demo/scope.ts`, applied by `DemoStore.list` and `DemoStore.get`:
 
@@ -244,7 +245,7 @@ pctOf(v, p)    = v * p / 100
    other quantity = gross.toDecimalPlaces(2, ROUND_CEIL)
    ```
 
-8. **Waste is internal.** A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` treats a save as a change when a saved line's waste differs, or a new line's waste differs from the category default. A change needs `sales.waste.view`. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
+8. **Waste is internal, not sensitive.** Waste is not a sensitive field (owner, 2026-11-20): the API answers `wastePct` to every quote and invoice reader and never strips it, unlike cost, margin, pay rate and credit limit (CLAUDE.md rule 5). Only changing it needs `sales.waste.view`, and the builder hides the column from people without that key. A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` and the API's `assertWaste` treat a save as a change when a saved line's waste differs in value, or a new line's waste differs in value from the category default: `10` and `10.00000000` are the same waste (`sameOptionalDecimal`; STATUS B6). The demo keeps waste as typed, so it also reads the same text (`12.`) as no change; any other text that isn't plain decimal is a change. A saved line is the same line only with the same id and product (`savedQuoteLine`); a line sent with another product is new and starts from that product's default, and a line sent without the product it had is a new line without a product, so it keeps no saved waste. On the API that line also needs `sales.tax.override`; DemoStore has no such tax rule. The API refuses a quote that sends one line twice. On the API a blank waste also differs from a number; the demo reads a line without waste as unchanged, and starts a line without a catalog product from a blank read as `0`. A change needs `sales.waste.view`. The default a new line starts from is the company's Sales and documents setting, the one the server compares with: in api mode `GET /settings` answers it to every quote reader (ADR 0059, part 2a). A builder open across a change of that default keeps the old default on lines already added, so the server refuses a salesperson's save of that draft until she re-adds those lines or reloads. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
 9. **Typing a quantity.** `parseAreaEntry` in `units.ts` reads `500` as sq ft, and `22c`, `22 ctn` or `22 cartons` as `ceil(22) * sqFtPerCarton`.
 10. **Availability on a line.** `LineStock` in `apps/web/src/features/quotes/line-stock.tsx` shows `availableToSell` from `packages/shared/src/reservations.ts` at `lineWarehouse(line, quote.locationId)`:
 
@@ -277,6 +278,10 @@ pctOf(v, p)    = v * p / 100
     ```
 
     The seed uses `rounding: "invoice"` for every company.
+
+    A line without `unitCost` (the API leaves it out for a viewer without product cost) has no known cost: `cost`, `margin` and `marginPct` are null for the whole document, never a partial sum or zero. Amounts, tax and total don't depend on cost. A new line keeps the product's cost as received and never fills one in (`quoteLineFor`); the server costs it from the catalog. A document being stored takes its cost through `storedCost`, which refuses a null (ADR 0037, 2026-11-16).
+
+    The invoice-level figures (`monthlyPnl`, `pnlTotals`, `salesTotals`, `marginSeries`, `bestSellersIn`, `teamStats`) follow the same rule through `sumKnown`: an invoice without `cost`, or a counted line without `unitCost`, makes the set's cost and margin unknown (ADR 0037, 2026-11-17).
 14. **What is taxable.** `isLineTaxable` in `documents.ts`:
 
     ```
@@ -285,18 +290,18 @@ pctOf(v, p)    = v * p / 100
     otherwise                                              -> rule.taxable[category]
     ```
 
-15. **Which rule applies.** `resolveTaxRule` in `tax-defaults.ts`, for the job site on a date. A rule is valid when `validFrom <= date` and `validTo` is empty or `validTo >= date`. The newest valid one wins.
+15. **Which rule applies.** `resolveTaxRule` in `tax-defaults.ts`, for the job site on a date. A rule is valid when `validFrom <= date` and `validTo` is empty or `validTo >= date`. The newest valid one wins: the latest `validFrom`, then the higher version, then the higher id. Rules and county rates in force come from versioned rows: a change starts on the company's day and the rows it replaces end the day before (ADR 0059, part 3a).
     - A county rate for the site's county, when a state or company rule exists to build on. It replaces only the rate and keeps that rule's taxability. County names match without case and without the word "County". Source `jurisdiction`.
     - Else the state rule. Source `state`.
-    - Else the company default, only in the company's states of operation. Source `company`.
+    - Else the company default, only in the company's states of operation. Source `company`. A change of the states also reaches an accepted quote when it is invoiced (tax is recomputed at conversion).
     - Else nothing is collected. Source `none`.
 16. **Exemption.** `taxContextFor` in `quotes.ts`: `customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on`.
 17. **Changing tax on one document.** `withOverride` in `tax-defaults.ts` keeps the resolved rule's taxability and swaps the rate. With no rule at all it taxes materials only. Source `override`. `TaxOverrideDialog` requires a rate matching `^\d{1,2}(\.\d{1,4})?$` and a reason of at least 3 characters. `saveQuote` requires `sales.tax.override` when `taxOverride` changed, and writes an audit entry.
-18. **Invoices keep the tax they used.** `invoiceFromQuote` in `quotes.ts` recomputes under the rule valid on the issue date. It stores `taxRule` (state, jurisdiction, rate, version), `taxSource`, `taxOverride` and `taxExempt`, so later rule changes never alter it. The builder previews with today's date.
+18. **Invoices keep the tax they used.** `invoiceFromQuote` in `quotes.ts` recomputes under the rule valid on the issue date. It stores `taxRule` (state, jurisdiction, rate, version), `taxSource`, `taxOverride` and `taxExempt`, so later rule changes never alter it. The builder previews with today's date. An accepted quote converted after a rule change is taxed under the new rule, but **the quote keeps the total the customer accepted** (owner's answer of 2026-11-20; awaiting the client's accountant). Saving an accepted quote keeps that total too unless the save changes something that prices it (the customer, the job site's state or county, the tax override, lump sum, or a line's product, category, unit, quantity or price): `keepsAcceptedTotal` in `quotes.ts`, on the API and in DemoStore. A priced change is a new offer and is priced under the day's rule. When the invoice's total differs from it, the invoice prints a note on screen and in the PDF: "Sales tax follows the rate in force on <issue date>, so this total differs from the <accepted total> accepted on quote <number>." (`acceptedTotalIfDifferent` in `quotes.ts`; the model's `taxNote`). A sent or accepted quote opened in the builder previews today's rule (ADR 0059, part 3a).
 
 ### Conversion and invoices
 
-19. **Conversion.** `DemoStore.convertQuoteToInvoice` refuses a quote that is not `accepted`, needs `sales.invoice.create`, refuses one already invoiced, and runs `quoteSendProblems`. It then builds the invoice with `invoiceFromQuote`, calls `reserveFor`, marks the quote `converted`, and sets the quote's `invoiceId` and `total`. Reservations are planned by `planReservations`; a short line is recorded as short and does not block the sale. See `docs/product-spec/inventory.md`.
+19. **Conversion.** `DemoStore.convertQuoteToInvoice` refuses a quote that is not `accepted`, needs `sales.invoice.create`, refuses one already invoiced, and runs `quoteSendProblems`. It then builds the invoice with `invoiceFromQuote`, calls `reserveFor`, marks the quote `converted` and sets the quote's `invoiceId`. The quote's `total` stays the accepted one (rule 18). The API's conversion audit row records both `acceptedTotal` and the invoice's `total`. On the API the conversion also refuses, under the stock lock, a quote whose warehouse (the header's or a line's) is no longer a live warehouse: "Fulfil the quote from a warehouse." (ADR 0059, part 4a, D21). Quote saves check the kind without that lock, so a warehouse can become a showroom while a quote is being saved; in the demo it can't (one browser). Reservations are planned by `planReservations`; a short line is recorded as short and does not block the sale. See `docs/product-spec/inventory.md`.
 20. **Other ways an invoice is created.** `createRollInvoice` in `inventory-actions.ts` makes one line from a roll using `invoiceFromRoll` and reserves it. `contractInvoice` in `packages/shared/src/contracts/documents.ts` makes a contract billing invoice with no reservation. The import makes opening invoices with one untaxed line (`packages/shared/src/import/kinds/opening.ts`). `createInvoiceFromJob` exists but no screen reaches it while `installation.calendar` is off.
 21. **Due dates (plan K-3).** `invoiceDueDate` in `quotes.ts`:
 
@@ -310,7 +315,7 @@ pctOf(v, p)    = v * p / 100
     ```
 
     `PAYMENT_TERM_DAYS`: `due_on_receipt` 0, `net_15` 15, `net_30` 30, `net_45` 45. `holdUntilInstalled` is `featureOn("installation.calendar") && company.modules.includes("installation")`. That feature is `removed`, so it is always false and every new invoice from a quote has a date. Seed `balanceDueDays` is 30. Roll and contract invoices use `dueDate(issuedAt, customer.terms)`. A credit note is due the day it is issued.
-22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` from 5001. `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
+22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` (`CREDIT_NOTE_PREFIX`) from 5001, numbered after the highest `CR-` number among all invoices, not only the credit notes, because they share the invoices' number index. No quote, invoice or purchase order prefix may start with `CR-`, in any case (Settings part 2a, review round 1). `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
 23. **The ledger.** `invoiceLedger` in `ledger.ts`:
 
     ```
@@ -363,7 +368,7 @@ pctOf(v, p)    = v * p / 100
     `needsApproval` is in `payments.ts`. `recordedByOwnScopeRole` is in `payment-actions.ts` (plan N-1). Seed settings: Summit `approvalRequired` true with threshold `1000.00`; Keystone false. `reviewPayment` refuses the person who recorded it, needs a pending payment, and a rejection needs a reason of at least 3 characters.
 29. **Payments to verify.** `PaymentsQueue` in `apps/web/src/features/finance/payments-queue.tsx` lists pending customer payments for holders of `sales.payment.approve`, beside pending supplier payments for holders of `purchasing.payment.approve`. Proof opens in place. The recorder's own rows show "Someone else verifies it" with no buttons. Needs attention counts only payments the viewer did not record (`verify-payments` in `apps/web/src/lib/attention.ts`).
 30. **Recording helpers on the screen.** `RecordPaymentSheet` prefills `max(balance - pending, 0)` and warns when money is already waiting. The Deposit shortcut is offered when the deposit percent is above 0, nothing is confirmed, and the deposit is below the balance. It sets `kind: "deposit"`. Typing an amount resets `kind` to `payment`.
-31. **Settings > Payments.** `PaymentSettings` holds `approvalRequired`, `approvalThreshold`, `writeOffMax`, `paymentPrefix`, `refundPrefix`. Seed values for the last three: `5.00`, `PAY-`, `RF-`.
+31. **Settings > Payments.** `PaymentSettings` holds `approvalRequired`, `approvalThreshold`, `writeOffMax`, `paymentPrefix`, `refundPrefix`. Seed values for the last three: `5.00`, `PAY-`, `RF-`. `paymentSettingsProblem` in `packages/shared/src/settings/section-rules.ts` refuses a save in both modes: each amount is empty or plain money text (`MONEY_TEXT`: digits with up to two decimals, no sign, exponent or bare point), each prefix is 1 to 10 letters, digits or hyphens, and the payment and refund prefixes differ, compared without case. Saving asks for a step-up after those checks, so a refused value never costs a code. The same settings govern supplier payments (purchasing.md rule 28). Settings on the API: settings-and-permissions.md, Real build, and ADR 0059.
 
 ### Corrections
 
@@ -476,7 +481,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | `jobSite` | Address | Picks the tax rule |
 | `rooms` | Room[] | |
 | `lines` | DocLine[] | |
-| `depositPct` | decimal string | Percent as 50, not 0.5 |
+| `depositPct` | decimal string | Percent as 50, not 0.5. Up to four decimals by value; the API answers it at numeric(18,8) scale (`50.00000000`) and takes that back |
 | `lumpSum` | boolean | Only seeded quotes are true |
 | `taxOverride` | TaxOverride or null | |
 | `invoiceId` | invoice id or null | |
@@ -502,8 +507,8 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | `unit` | enum: sq_ft, each, step, ft, hour | |
 | `quantity` | decimal string | Billed quantity, waste included |
 | `unitPrice` | decimal string | |
-| `unitCost` | decimal string | Sensitive by screen only |
-| `wastePct` | decimal string, optional | Already inside the quantity |
+| `unitCost` | decimal string | Sensitive by screen only in the demo. The API leaves it out without `inventory.product.view_sensitive` |
+| `wastePct` | decimal string, optional | Already inside the quantity. Up to four decimals by value; the API answers `10.00000000` and takes it back |
 | `roomIds` | string[], optional | Rooms the line is measured from |
 | `rollId` | roll id, optional | Chosen roll on carpet lines |
 | `sqFtPerCarton` | decimal string, optional | For the carton hint |
@@ -606,19 +611,21 @@ A credit note is an `Invoice` with `isReturn: true`.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `payments.approvalRequired` | boolean | |
-| `payments.approvalThreshold` | decimal string | Empty means every payment waits |
-| `payments.writeOffMax` | decimal string | Empty means no limit |
-| `payments.paymentPrefix`, `payments.refundPrefix` | string | |
-| `localization.documents.defaultTerms` | PaymentTerms | New customers |
-| `localization.documents.defaultDepositPct` | decimal string | New quotes |
-| `localization.documents.quoteExpiryDays` | number | Suggested expiry |
-| `localization.documents.balanceDueDays` | number | Rule 21 |
-| `localization.documents.quotePrefix`, `invoicePrefix` | string | |
-| `localization.documents.defaultWastePct` | map by category | |
-| `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it |
-| `localization.documents.legalFooter` | string | Printed on invoices |
-| `localization.tax.rounding` | enum: line, invoice | |
-| `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | |
+| `payments.approvalThreshold` | decimal string | Empty means every payment waits. Otherwise `MONEY_TEXT` (rule 31) |
+| `payments.writeOffMax` | decimal string | Empty means no limit. Otherwise `MONEY_TEXT` (rule 31) |
+| `payments.paymentPrefix`, `payments.refundPrefix` | string | 1 to 10 letters, digits or hyphens, starting with a letter or digit; the two differ, compared without case (rule 31) |
+| `localization.documents.defaultTerms` | PaymentTerms | New customers. A known payment term; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.defaultDepositPct` | decimal string | New quotes. The quote's percent (0 to 100, `PERCENT_TEXT`); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.quoteExpiryDays` | number | Suggested expiry. Whole days, 1 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.balanceDueDays` | number | Rule 21. Whole days, 0 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.quotePrefix`, `invoicePrefix`, `poPrefix` | string | `DOCUMENT_PREFIX_TEXT`; the three differ, compared without case, and none starts with the credit notes' `CR-` (rule 22); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.defaultWastePct` | map by category | Exactly the waste categories, each the quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it. The quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.legalFooter` | string | Printed on invoices, receipts and purchase orders. At most 1,000 characters; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.region.statesOfOperation` | `string[]` | Where the company default rate applies (rule 15). At least one US state code, each once; a change needs `settings.tax.manage` and a step-up; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
+| `localization.region.primaryState` | string | A new quote's job-site state. A US state code; saved by `PUT /settings/localization/region` in api mode (ADR 0059, part 2b) |
+| `localization.tax.rounding` | enum: line, invoice | Saved by `PUT /settings/localization/tax` in api mode (ADR 0059, part 3a) |
+| `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | Rates `TAX_RATE_TEXT` (below 100, up to 4 decimals by value); saved by `PUT /settings/localization/tax` in api mode as new rows from the company's day, never edited (ADR 0059, part 3a) |
 
 ### Derived, never stored
 
@@ -672,7 +679,7 @@ Exact `action` strings. The default category inside an `ActionContext` is `payme
 | `Applied customer credit` | payment | `applyCredit` |
 | `Refunded customer credit` | payment | `refundCredit` |
 | `Changed payments` | settings | `updateSettings("payments", ...)` |
-| `Changed localization and tax` | settings | `updateSettings("localization", ...)` |
+| `Changed localization and tax` | settings | `updateLocalization("documents")` (Sales and documents) or `updateLocalization("tax")` (Sales tax); never the whole section (part 3b) |
 
 `keepNewGuest` writes no audit entry of its own for a lead or a customer contact.
 
@@ -696,7 +703,7 @@ Attachments are links. The app makes invoice and receipt PDFs on those pages. It
 | Report or export | Feature key | Permission | Source | Notes |
 | --- | --- | --- | --- | --- |
 | Business report | `reports.business` | `reports.financial.view`, `reports.financial.export` | `businessReport` in `packages/shared/src/business-report.ts` | Revenue placed by `soldAt`. Tax charged, write-offs as bad debts, Customers owe. See `docs/product-spec/reports.md` |
-| Profit and loss | `reports.pnl` | `reports.financial.view`, `reports.financial.export` | `monthlyPnl` in `analytics.ts`, `pnlReport` | Signed `subtotal` and `cost`. Voided invoices left out |
+| Profit and loss | `reports.pnl` | `reports.financial.view`, `reports.financial.export` | `monthlyPnl` in `analytics.ts`, `pnlReport` | Signed `subtotal` and `cost`. Voided invoices left out. `pnlReport` reads stored invoices only, through `storedPnl` |
 | Sales by category | `reports.sales-category` | `reports.sales.view`, `reports.sales.export` | `salesByCategory` in `analytics.ts`, `salesByCategoryReport` | Reads invoice lines. Cost and margin columns need `SENSITIVE.productCost` |
 | Payments received | `reports.payments` | `reports.financial.view`, `reports.financial.export` | `paymentsReport` in `apps/web/src/features/reports/report-model.ts` | Confirmed payments by payment date |
 | Receivables aging | `reports.receivables-aging` | Switched off in batch 3 | `agingReport`, `agingSummary` | Code kept |
@@ -744,7 +751,7 @@ Attachments are links. The app makes invoice and receipt PDFs on those pages. It
 **Access**
 
 - Store actions check permissions but not data scope. They read records with `ctx.db.get`, so a call can act on a record outside the caller's scope. Screens prevent this by loading through the scoped `list`.
-- `DemoStore.list` strips no sales fields. `unitCost`, `cost`, `wastePct` and `creditLimit` reach every viewer's browser and are hidden only on screen. The real API must strip them.
+- `DemoStore.list` strips no sales fields. `unitCost`, `cost` and `creditLimit` reach every viewer's browser and are hidden only on screen; the real API strips them. `wastePct` is not sensitive (rule 8, owner 2026-11-20) and reaches every reader in both modes.
 - The generic `save` accepts `quotes`, `invoices` and `customers` for holders of their create or edit keys and applies none of the rules above. No screen calls it for these collections. The real API should not expose it for them.
 
 **Other**

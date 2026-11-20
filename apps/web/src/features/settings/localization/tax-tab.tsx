@@ -3,9 +3,13 @@
 import { Plus, Trash2 } from "lucide-react";
 import {
   EXAMPLE_RULE_NOTE,
+  localizationTabProblem,
   stateName,
   TAX_CATEGORY_LABELS,
+  TAX_NAME_MAX,
+  TAX_RATE_TEXT_MAX,
   US_STATES,
+  type HoldsKey,
   type LocalizationSettings,
   type StateCode,
   type TaxCategory,
@@ -23,8 +27,29 @@ import { CompanyDefaultRow, JurisdictionsTable } from "./tax-defaults-section";
 
 type Tax = LocalizationSettings["tax"];
 const CATEGORIES: TaxCategory[] = ["material", "labor", "freight", "service"];
+/** How documents apply tax, in the words the tab shows it (read only, ADR 0059, part 3a, D9). */
+const PRICES: Record<Tax["pricesInclude"], string> = {
+  exclusive: "Before tax (tax added on top)",
+  inclusive: "Tax included",
+};
 
-/** A new rule for a state: materials taxed at 0 % until the accountant confirms the rate. */
+/**
+ * What the Sales tax form adds to its tab (ADR 0059, part 3a): Save first runs the shared rule
+ * against the company's tab (`localizationTabProblem`, the one DemoStore runs and the API answers),
+ * so a refused value never costs a code; Reset keeps what this tab can't change (filing frequencies,
+ * certificate types) from the company's own copy; `revision` changes whenever the tab in force
+ * changes, so the page remounts the form after a save and it shows the save's dates, versions and
+ * ids (D27).
+ */
+export function taxForm(current: Tax, original: Tax, holds: HoldsKey) {
+  return {
+    revision: JSON.stringify(current),
+    problem: (draft: Tax) => localizationTabProblem("tax", draft, current, holds),
+    defaults: { ...original, filing: current.filing, certificateTypes: current.certificateTypes },
+  };
+}
+
+/** A new rule for a state: materials taxed at 0 % until the accountant confirms the rate; the save dates it. */
 function newRule(state: StateCode): TaxRule {
   return {
     state,
@@ -41,7 +66,8 @@ function newRule(state: StateCode): TaxRule {
 /**
  * The Sales tax tab (blueprint "Localization, currency and tax settings", spec A5): state default
  * rules with a combined rate, what is taxable and from when, county rates on top, and a company
- * default. Documents resolve job site → county → state → company default.
+ * default. Documents resolve job site → county → state → company default. Dates are set by the
+ * save and shown read only; whether prices include tax is shown, not edited (ADR 0059, part 3a).
  */
 export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
   const setRule = (i: number, rule: TaxRule) =>
@@ -52,14 +78,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
     <>
       <div className="grid gap-4 sm:grid-cols-2">
         <SettingRow setting="tax.pricesInclude" changed={changed("pricesInclude")}>
-          {(id) => (
-            <Choice
-              id={id}
-              value={draft.pricesInclude}
-              options={{ exclusive: "Before tax (tax added on top)", inclusive: "Tax included" }}
-              onChange={(pricesInclude) => setDraft({ ...draft, pricesInclude })}
-            />
-          )}
+          {(id) => <Input id={id} value={PRICES[draft.pricesInclude]} disabled aria-describedby={`${id}-hint`} />}
         </SettingRow>
         <SettingRow setting="tax.rounding" changed={changed("rounding")}>
           {(id) => (
@@ -74,6 +93,10 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
       </div>
       <p className="bg-warning/14 text-warning-ink rounded-md px-3 py-2 text-sm">
         {EXAMPLE_RULE_NOTE}. Rates and taxability are examples.
+      </p>
+      <p className="text-muted-foreground text-xs">
+        A change takes effect today: the old rule ends yesterday and the new one starts today, so issued invoices keep
+        the tax they were issued with.
       </p>
       <CompanyDefaultRow draft={draft} setDraft={setDraft} changed={changed} />
       <ScrollRegion label="Tax rules by state" className="border-hairline rounded-md border">
@@ -111,6 +134,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
                 <td className="px-3 py-2">
                   <Input
                     aria-label={`${stateName(rule.state)} jurisdiction`}
+                    maxLength={TAX_NAME_MAX}
                     value={rule.jurisdiction}
                     onChange={(e) => setRule(i, { ...rule, jurisdiction: e.target.value })}
                     className="h-8"
@@ -121,6 +145,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
                     <Input
                       aria-label={`${stateName(rule.state)} rate in percent`}
                       inputMode="decimal"
+                      maxLength={TAX_RATE_TEXT_MAX}
                       value={rule.ratePct}
                       onChange={(e) => setRule(i, { ...rule, ratePct: e.target.value.replace(/[^\d.]/g, "") || "0" })}
                       className="h-8 w-20 text-right tabular-nums"
@@ -133,7 +158,7 @@ export function TaxTab({ draft, setDraft, changed }: SectionProps<Tax>) {
                     type="date"
                     aria-label={`${stateName(rule.state)} valid from`}
                     value={rule.validFrom}
-                    onChange={(e) => setRule(i, { ...rule, validFrom: e.target.value })}
+                    disabled
                     className="h-8 w-40"
                   />
                 </td>

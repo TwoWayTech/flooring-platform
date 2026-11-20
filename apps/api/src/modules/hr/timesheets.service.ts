@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { clockEntries, employees, timeEntries, timesheets } from "@workspace/db/company";
 import {
@@ -11,8 +11,10 @@ import {
   IMPORT_HANDLERS,
   needsTimesheet,
   overtimeRuleFor,
+  overwritesNewerHours,
   planImport,
   splitOvertime,
+  TIMESHEET_CHANGED_MESSAGE,
   timesheetFromWire,
   withClockedHoursText,
   workweekStartOf,
@@ -64,11 +66,15 @@ import {
   type PersonScope,
 } from "./hr-records";
 
-/** A week of hours as the form sends it: seven decimal strings (CLAUDE.md rule 6; ADR 0046). */
+/**
+ * A week of hours as the form sends it: seven decimal strings (CLAUDE.md rule 6; ADR 0046), and the
+ * seven the form started from, so a save over newer hours is refused (ADR 0051, 2026-11-16).
+ */
 export interface TimesheetFields {
   employeeId: string;
   weekStart: string;
   days: string[];
+  expectedDays: string[];
 }
 
 /** A decision on submitted sheets; a rejection needs a reason. */
@@ -128,7 +134,10 @@ export class TimesheetsService {
   /**
    * Saves a week's hours (hr.md "Create or edit hours"): for someone who uses timesheets, valid
    * hours, a real workweek start that is not in the future. A submitted or approved week is
-   * locked (blueprint-delta 2026-11-14: the approver must decide the hours that were sent).
+   * locked (blueprint-delta 2026-11-14: the approver must decide the hours that were sent). A save
+   * made from hours that changed since the form opened is refused with nothing written (409
+   * `timesheet_changed`; blueprint-delta 2026-11-16). The answer is read before the commit, so it
+   * shows exactly the hours this save wrote, never those of a writer that was waiting on the lock.
    */
   async save(tenant: TenantContext, actor: Actor, input: TimesheetFields): Promise<TimesheetWire> {
     const problem = hoursTextProblem(input.days);
@@ -139,7 +148,7 @@ export class TimesheetsService {
       throw refuse("Choose the first day of the company's workweek.");
     }
     if (input.weekStart > clock.day) throw refuse("Hours can't be entered for a future week.");
-    const id = await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const scope = await personScope(tx, actor.access);
       const isSelf = await selfCheck(tx, actor);
       const employee = await this.lockForEdit(tx, actor.access, scope, isSelf, input.employeeId);
@@ -151,6 +160,12 @@ export class TimesheetsService {
       if (await weekClosed(tx, input.weekStart)) throw refuse(CLOSED_WEEK);
       // The audit keeps the hours this save replaces (fifth security review of PR #25).
       const previous = existing ? ((await this.daysOf(tx, [existing])).get(existing.id) ?? null) : null;
+      // Never over hours saved since the form opened (an upload, the clock, another tab), compared by
+      // value under the employee lock and the sheet's FOR UPDATE, so no writer of hours can slip in
+      // between; a save of the stored hours is taken (hr.md "Create or edit hours"; ADR 0051, 2026-11-16).
+      if (overwritesNewerHours(previous ?? EMPTY_WEEK, input.expectedDays, input.days)) {
+        throw new ConflictException({ code: "timesheet_changed", message: TIMESHEET_CHANGED_MESSAGE });
+      }
       const sheetId = await this.putSheet(
         tx,
         actor.access.userId,
@@ -171,9 +186,11 @@ export class TimesheetsService {
         before: previous ? { days: previous } : null,
         after: { days: input.days.map((h) => hoursText(h)) },
       });
-      return sheetId;
+      // Inside the transaction: My timesheet takes these hours as the ones its form started from, so
+      // after the commit an upload or a clock-out waiting on the lock could put its own hours here,
+      // and the next save would replace them unseen (ADR 0051, 2026-11-16, review round 1).
+      return this.one(tx, sheetId);
     });
-    return this.one(db, id);
   }
 
   /** Sends a sheet for approval and tells the people who decide sheets, in the app (hr.md "To submitted"). */

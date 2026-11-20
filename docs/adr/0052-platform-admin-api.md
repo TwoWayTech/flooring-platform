@@ -145,7 +145,7 @@ All six are `@SessionOnly()` and carry `PlatformAdminGuard` at class level (`app
 - **Company Owners no longer see access changes** in their own log in api mode.
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be got round by disabling and re-enabling someone.
 - **The branch limit is not enforced.**
-- **The api-mode company shell** still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403.
+- **The api-mode company shell** still reads modules and the ceiling from DemoStore until `GET /company` moves, so after a console change a button may look enabled while the API refuses it with 403. (Closed by `GET /company`, ADR 0051: the shell reads modules and the ceiling from the API, and a console change shows on the person's next load or write.)
 - **Closed by ADR 0053: the support role saw the editor.** The console now knows the admin's role from `GET /platform/me`, and the access page is read only for the support role (no Save, no step-up).
 - **Nothing links to /admin in api mode;** an admin types the address.
 - **The list costs about ten small control queries per company,** one company after another. Fine at today's count; a follow-up.

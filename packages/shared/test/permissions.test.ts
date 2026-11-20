@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_PERMISSION_KEYS,
   PRODUCT_MODULES,
+  branchManageDenial,
+  branchPlacementDenial,
   canAssignRole,
   canGrant,
   canManageHolder,
@@ -158,5 +160,55 @@ describe("data scope and managing holders (PR #11 security review)", () => {
     expect(canManageHolder(manager, [asRole("sales")], FULL_CEILING, FLOORING)).toBeNull();
     expect(canManageHolder(manager, [asRole("owner")], FULL_CEILING, FLOORING)).toBe("owner_only");
     expect(canManageHolder(manager, [asRole("accountant")], FULL_CEILING, FLOORING)).not.toBeNull();
+  });
+});
+
+describe("branch placement (D18 server half, ADR 0051 2026-11-20)", () => {
+  const north = "0190a000-0000-7000-8000-000000000001";
+  const south = "0190a000-0000-7000-8000-000000000002";
+
+  it("lets an all-scope admin place anyone in any branch or none", () => {
+    const admin = { dataScope: "all" as const, branchId: null };
+    expect(branchPlacementDenial(admin, south)).toBeNull();
+    expect(branchPlacementDenial(admin, null, north)).toBeNull();
+  });
+
+  it("keeps a branch admin's invitations to their own branch", () => {
+    const admin = { dataScope: "branch" as const, branchId: north };
+    expect(branchPlacementDenial(admin, north)).toBeNull();
+    expect(branchPlacementDenial(admin, south)).toBe("branch_other");
+    expect(branchPlacementDenial(admin, null)).toBe("branch_other");
+  });
+
+  it("moves only people from and to the branch admin's own branch", () => {
+    const admin = { dataScope: "branch" as const, branchId: north };
+    expect(branchPlacementDenial(admin, north, north)).toBeNull();
+    expect(branchPlacementDenial(admin, north, south)).toBe("branch_other");
+    expect(branchPlacementDenial(admin, north, null)).toBe("branch_other");
+    expect(branchPlacementDenial(admin, south, north)).toBe("branch_other");
+  });
+
+  it("lets a narrower admin without a branch place nobody, own scope included", () => {
+    expect(branchPlacementDenial({ dataScope: "branch", branchId: null }, null)).toBe("branch_other");
+    expect(branchPlacementDenial({ dataScope: "own", branchId: north }, north)).toBeNull();
+    expect(branchPlacementDenial({ dataScope: "own", branchId: north }, south)).toBe("branch_other");
+  });
+});
+
+describe("branch management (ADR 0051 2026-11-20, review)", () => {
+  const north = "0190a000-0000-7000-8000-000000000001";
+  const south = "0190a000-0000-7000-8000-000000000002";
+
+  it("lets an all-scope admin change anyone", () => {
+    expect(branchManageDenial({ dataScope: "all", branchId: null }, south)).toBeNull();
+    expect(branchManageDenial({ dataScope: "all", branchId: north }, null)).toBeNull();
+  });
+
+  it("lets a branch admin change only people in their own branch", () => {
+    const admin = { dataScope: "branch" as const, branchId: north };
+    expect(branchManageDenial(admin, north)).toBeNull();
+    expect(branchManageDenial(admin, south)).toBe("branch_other");
+    expect(branchManageDenial(admin, null)).toBe("branch_other");
+    expect(branchManageDenial({ dataScope: "branch", branchId: null }, null)).toBe("branch_other");
   });
 });

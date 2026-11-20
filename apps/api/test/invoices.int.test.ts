@@ -1,6 +1,7 @@
 import {
   auditLog,
   branches,
+  invoices,
   locations,
   products,
   rolePermissions,
@@ -11,7 +12,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { dec } from "@workspace/shared";
+import { CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -445,6 +446,36 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     ).toBe(400);
   });
 
+  it("numbers a credit note past every CR- number, an invoice's too, so the two series never collide", async () => {
+    // An invoice holding the number the credit notes alone would take next, as an import or an old
+    // prefix could leave one: credit notes share `invoices_number_uidx` (review round 1).
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ilse Brandt" }).expect(201);
+    const legacy = await invoiced(cookies.salesA, customer.body.id);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const handle = await harness.companyDb(company.id);
+    let taken = "";
+    try {
+      const notes = await handle.db
+        .select({ number: invoices.number })
+        .from(invoices)
+        .where(eq(invoices.isReturn, true));
+      taken = nextNumber(
+        CREDIT_NOTE_PREFIX,
+        notes.map((row) => row.number),
+        FIRST_CREDIT_NOTE,
+      );
+      await handle.db.update(invoices).set({ number: taken }).where(eq(invoices.id, legacy.invoice.id));
+    } finally {
+      await handle.close();
+    }
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+      subtotal: "45.00",
+      reason: "One carton returned",
+    });
+    expect(note.status, JSON.stringify(note.body)).toBe(201);
+    expect(note.body.number).toBe(`${CREDIT_NOTE_PREFIX}${Number(taken.slice(CREDIT_NOTE_PREFIX.length)) + 1}`);
+  });
+
   it("posts every event to a ledger that stays in balance, and refuses a closed period", async () => {
     const before = (await call("get", "/ledger/trial-balance", cookies.owner).expect(200)).body as {
       balanced: boolean;
@@ -514,6 +545,35 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("get", "/payments", cookies.dispatcher)).status).toBe(403);
     expect((await call("get", "/refunds", cookies.dispatcher)).status).toBe(403);
     expect((await call("get", `/files/${uuidv7()}`, cookies.dispatcher)).status).toBe(403);
+  });
+
+  it("lists invoices for a salesperson without `cost` or any line's `unitCost`, and for the Owner with both (B5)", async () => {
+    // The contract the web's dashboard relies on (CLAUDE.md rule 5; ADR 0037, 2026-11-17): a viewer
+    // without product cost gets no invoice cost at all, so the web must treat it as unknown.
+    type Listed = { id: string; cost?: string; lines: { unitCost?: string }[] };
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Mina Park" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const listed = async (cookie: string) =>
+      ((await call("get", "/invoices", cookie).expect(200)).body as Listed[]).find((i) => i.id === invoice.id);
+
+    const mine = await listed(cookies.salesA);
+    expect(mine).toBeDefined();
+    expect(mine).not.toHaveProperty("cost");
+    expect(mine!.lines.length).toBeGreaterThan(0);
+    expect(mine!.lines.filter((line) => "unitCost" in line)).toEqual([]);
+
+    const handle = await harness.companyDb(company.id);
+    let stored = "";
+    try {
+      const [row] = await handle.db.select({ cost: invoices.cost }).from(invoices).where(eq(invoices.id, invoice.id));
+      stored = row!.cost;
+    } finally {
+      await handle.close();
+    }
+    const owners = await listed(cookies.owner);
+    expect(owners?.cost).toBe(stored);
+    expect(owners!.lines).toHaveLength(mine!.lines.length);
+    expect(owners!.lines.every((line) => typeof line.unitCost === "string")).toBe(true);
   });
 
   it("never reaches another company's invoices, payments or files", async () => {

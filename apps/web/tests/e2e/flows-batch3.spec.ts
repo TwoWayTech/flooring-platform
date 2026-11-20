@@ -165,7 +165,9 @@ test.describe("end-to-end flows (spec G3)", () => {
         .setInputFiles({ name: "my-week.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
       await expect(page.getByRole("status")).toContainText("with errors");
       await page.getByRole("button", { name: "Save hours" }).click();
-      await page.reload();
+      // No reload: the unedited form takes the uploaded hours, so Submit sends them (ADR 0051,
+      // 2026-11-16). Only Monday: Tuesday is a future day when the run is on a Monday.
+      await expect(page.getByLabel("Mon", { exact: true })).toHaveValue("6.5");
       await page.getByRole("button", { name: "Submit" }).click();
       await expect(page.getByText("Timesheet submitted")).toBeVisible();
 

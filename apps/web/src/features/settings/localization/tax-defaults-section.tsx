@@ -4,6 +4,9 @@ import { Plus, Trash2 } from "lucide-react";
 import {
   stateName,
   TAX_CATEGORY_LABELS,
+  TAX_COUNTY_MAX,
+  TAX_NAME_MAX,
+  TAX_RATE_TEXT_MAX,
   US_STATES,
   type JurisdictionRate,
   type LocalizationSettings,
@@ -22,7 +25,7 @@ type Tax = LocalizationSettings["tax"];
 const CATEGORIES: TaxCategory[] = ["material", "labor", "freight", "service"];
 const rate = (value: string) => value.replace(/[^\d.]/g, "") || "0";
 
-/** The company default rate (spec A5): on or off, its rate, what it taxes and from when. */
+/** The company default rate (spec A5): on or off, its rate, what it taxes and from when; dates are the save's (part 3a). */
 export function CompanyDefaultRow({ draft, setDraft, changed }: SectionProps<Tax>) {
   const current = draft.companyDefault;
   return (
@@ -55,6 +58,7 @@ export function CompanyDefaultRow({ draft, setDraft, changed }: SectionProps<Tax
                 <Input
                   aria-label="Company default rate in percent"
                   inputMode="decimal"
+                  maxLength={TAX_RATE_TEXT_MAX}
                   value={current.ratePct}
                   onChange={(e) =>
                     setDraft({ ...draft, companyDefault: { ...current, ratePct: rate(e.target.value) } })
@@ -67,7 +71,7 @@ export function CompanyDefaultRow({ draft, setDraft, changed }: SectionProps<Tax
                 type="date"
                 aria-label="Company default rate valid from"
                 value={current.validFrom}
-                onChange={(e) => setDraft({ ...draft, companyDefault: { ...current, validFrom: e.target.value } })}
+                disabled
                 className="h-8 w-40"
               />
               {CATEGORIES.map((c) => (
@@ -105,7 +109,7 @@ function newJurisdiction(state: StateCode): JurisdictionRate {
   };
 }
 
-/** County rates that replace a state default, each with its own effective dates (spec A5). */
+/** County rates that replace a state default, each with its own effective dates (spec A5); dates are the save's (part 3a). */
 export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Tax>) {
   const setRow = (i: number, row: JurisdictionRate) =>
     setDraft({ ...draft, jurisdictions: draft.jurisdictions.map((j, k) => (k === i ? row : j)) });
@@ -152,6 +156,7 @@ export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Ta
                       <td className="px-3 py-2">
                         <Input
                           aria-label={`${label} county`}
+                          maxLength={TAX_COUNTY_MAX}
                           value={row.county}
                           onChange={(e) => setRow(i, { ...row, county: e.target.value })}
                           className="h-8 w-32"
@@ -160,6 +165,7 @@ export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Ta
                       <td className="px-3 py-2">
                         <Input
                           aria-label={`${label} name`}
+                          maxLength={TAX_NAME_MAX}
                           value={row.name}
                           onChange={(e) => setRow(i, { ...row, name: e.target.value })}
                           className="h-8"
@@ -170,6 +176,7 @@ export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Ta
                           <Input
                             aria-label={`${label} rate in percent`}
                             inputMode="decimal"
+                            maxLength={TAX_RATE_TEXT_MAX}
                             value={row.ratePct}
                             onChange={(e) => setRow(i, { ...row, ratePct: rate(e.target.value) })}
                             className="h-8 w-20 text-right tabular-nums"
@@ -182,7 +189,7 @@ export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Ta
                           type="date"
                           aria-label={`${label} valid from`}
                           value={row.validFrom}
-                          onChange={(e) => setRow(i, { ...row, validFrom: e.target.value })}
+                          disabled
                           className="h-8 w-40"
                         />
                       </td>
@@ -191,7 +198,7 @@ export function JurisdictionsTable({ draft, setDraft, changed }: SectionProps<Ta
                           type="date"
                           aria-label={`${label} valid to`}
                           value={row.validTo ?? ""}
-                          onChange={(e) => setRow(i, { ...row, validTo: e.target.value || null })}
+                          disabled
                           className="h-8 w-40"
                         />
                       </td>

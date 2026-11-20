@@ -36,7 +36,7 @@ export const SETTINGS = {
   },
   "region.timeZone": {
     label: "Time zone",
-    helper: "Dates, reminders and today's jobs follow this zone.",
+    helper: "Set when the company is set up: dates, reminders and today's jobs follow it. Ask us to change it.",
     href: REGION,
   },
   "region.dateFormat": { label: "Date format", helper: "How dates read on every screen and document.", href: REGION },
@@ -52,7 +52,8 @@ export const SETTINGS = {
   },
   "region.statesOfOperation": {
     label: "States of operation",
-    helper: "Where you sell; the company default tax rate applies only in these states.",
+    helper:
+      "Where you sell; the company default tax rate applies only in these states, so a change also needs the sales tax permission and a code.",
     href: REGION,
   },
   "currency.base": { label: "Base currency", helper: "Locked after the first posted document.", href: CURRENCY },
@@ -63,13 +64,14 @@ export const SETTINGS = {
   },
   "tax.pricesInclude": {
     label: "Prices are",
-    helper: "Whether prices in the catalog already include sales tax.",
+    helper: "Documents add sales tax on top of prices; this can't be changed here yet.",
     href: TAX,
   },
   "tax.rounding": { label: "Round tax", helper: "Round on each line, or once on the document total.", href: TAX },
   "tax.rules": {
     label: "Rules by state",
-    helper: "What is taxable where, at which rate. Every rule is an example: confirm with your accountant.",
+    helper:
+      "What is taxable where, at which rate. A change starts today and issued invoices keep their tax. Every rule is an example: confirm with your accountant.",
     href: TAX,
   },
   "tax.companyDefault": {
@@ -79,7 +81,7 @@ export const SETTINGS = {
   },
   "tax.jurisdictions": {
     label: "County rates",
-    helper: "Replace the state rate for job sites in one county, from a start date.",
+    helper: "Replace the state rate for job sites in one county. A change starts today.",
     href: TAX,
   },
   "payroll.overtimeRule": {

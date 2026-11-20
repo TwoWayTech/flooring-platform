@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ConflictException } from "@nestjs/common";
 import { linkedOnce } from "../src/modules/hr/people.service";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { NO_HOURS } from "./support/timesheet-week";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -513,6 +514,7 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
         employeeId,
         weekStart: week(5),
         days: ["8", "8", "8", "8", "8", "0", "0"],
+        expectedDays: NO_HOURS,
       });
       status(saved, 200);
     }

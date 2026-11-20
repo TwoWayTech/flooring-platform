@@ -51,7 +51,7 @@ The web app adds no auth library. Its four calls (sign in, choose company, sessi
 - `set-active` is checked against membership before Better Auth runs, because Better Auth's own refusal would also clear the open company. It takes only a company id: `null` (no company, so the default timeouts instead of the company's) and `organizationSlug` are refused with 400 `company_id_required`. On a host that names a company, only that company can be opened (403 `wrong_host`). Deleted companies never open (PR #2 review).
 
 ### The web app in api mode
-- `getSession()` reads `GET /auth/context` and bridges it to the existing workspace session. The company is matched by slug and the user by email to their seeded profile, because screens still read DemoStore until Settings → Users moves to the API (P10). An account without a profile sees "Your account is ready, but not this workspace".
+- `getSession()` reads `GET /auth/context` and bridges it to the existing workspace session. The company is matched by slug and the user by email to their seeded profile, because screens still read DemoStore until Settings → Users moves to the API (P10). An account without a profile sees "Your account is ready, but not this workspace". The bridge stays for DemoStore's half; since `GET /company` (ADR 0051) the shell's person, roles, access, modules and branches come from the API.
 - The login page keeps the demo's frame, now `LoginLayout`, shared by both modes.
 
 ## Part 2: MFA, passkeys, lockout and rate limits (2026-11-13)

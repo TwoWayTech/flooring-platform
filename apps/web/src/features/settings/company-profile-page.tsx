@@ -5,7 +5,15 @@ import { useForm } from "react-hook-form";
 import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { US_STATES, ZIP_PATTERN, type CompanyProfile } from "@workspace/shared";
+import {
+  EIN_PATTERN,
+  EMAIL_TEXT,
+  PROFILE_MESSAGES,
+  US_STATES,
+  WEBSITE_TEXT,
+  ZIP_PATTERN,
+  type CompanyProfile,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
@@ -26,19 +34,26 @@ function countDirty(dirty: object): number {
 
 const STATE_CODES = US_STATES.map(([code]) => code) as [string, ...string[]];
 
-/** What a valid profile looks like; messages say what to fix (design brief "Copy"). */
+/**
+ * What a valid profile looks like, inline as the person types; messages say what to fix (design
+ * brief "Copy"). The patterns and words are the shared `companyProfileProblem`'s, which DemoStore
+ * and the API run on save (spec rule 28; ADR 0059), so the page and the server can't drift.
+ */
 const ProfileSchema = z.object({
-  legalName: z.string().trim().min(1, "Enter the legal name on your tax filings."),
+  legalName: z.string().trim().min(1, PROFILE_MESSAGES.legalName),
   dba: z.string().trim(),
-  ein: z.string().regex(/^\d{2}-\d{7}$/, "Enter the EIN as 12-3456789."),
-  phone: z.string().trim().min(7, "Enter a phone number customers can call."),
-  email: z.email("Enter a valid email address."),
-  website: z.string().trim(),
+  ein: z.string().regex(EIN_PATTERN, PROFILE_MESSAGES.ein),
+  phone: z.string().trim().min(7, PROFILE_MESSAGES.phone),
+  email: z.string().trim().regex(EMAIL_TEXT, PROFILE_MESSAGES.email),
+  website: z
+    .string()
+    .trim()
+    .refine((value) => value === "" || WEBSITE_TEXT.test(value), PROFILE_MESSAGES.website),
   address: z.object({
-    street: z.string().trim().min(1, "Enter the street address."),
-    city: z.string().trim().min(1, "Enter the city."),
-    state: z.enum(STATE_CODES, "Use a two-letter state code, for example CO."),
-    zip: z.string().regex(ZIP_PATTERN, "Enter a ZIP such as 80202 or 80202-1234."),
+    street: z.string().trim().min(1, PROFILE_MESSAGES.street),
+    city: z.string().trim().min(1, PROFILE_MESSAGES.city),
+    state: z.enum(STATE_CODES, PROFILE_MESSAGES.state),
+    zip: z.string().regex(ZIP_PATTERN, PROFILE_MESSAGES.zip),
     county: z.string().trim().optional(),
   }),
 });

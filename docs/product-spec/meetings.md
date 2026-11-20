@@ -39,7 +39,7 @@ The nine default roles are Owner, Manager, Accountant, Sales, Purchasing, Wareho
 | Accept or decline a proposed time | `meetings.meeting.edit`; the screen also needs the viewer to be the organiser | Owner, Manager, HR manager, Sales | `decideProposal`; `MeetingAnswers` |
 | Simulate reply | `meetings.meeting.view` for the organiser, otherwise `settings.outbox.view` | All nine for their own meetings; Owner for any | `simulateReply` |
 | Delete a meeting | `meetings.meeting.delete` | Owner, Manager, HR manager | Not enforced anywhere. The key exists and no action checks it. There is no delete. |
-| Change Settings > Meetings | `settings.meetings.manage` | Owner | `MeetingsSettingsPage`; `settingsPermissions("meetings")` in `apps/web/src/lib/api/demo/permission-rules.ts` |
+| Change Settings > Meetings | `settings.meetings.manage` | Owner | `MeetingsSettingsPage`; `SETTINGS_SECTIONS.meetings` in `packages/shared/src/settings/sections.ts`, read by `DemoStore.updateSettings` |
 
 Who sees which meeting (`FILTERS.meetings` in `scope.ts`, applied at every data scope; since part 3 the shared `seesMeeting` through `visibleMeetings` in `meeting-sight.ts`, and `FILTERS.meetings` is gone, ADR 0051):
 
@@ -491,7 +491,7 @@ Permissions and answers:
 Other:
 
 - A cancelled meeting disappears from the calendar. Its rows stay in the Outbox.
-- `timezoneBlock` in `calendar/ics.ts` has seven US zones. A file can't be written for any other zone (rule 15). Every zone the demo's Localization offers is one of the seven.
+- `timezoneBlock` in `calendar/ics.ts` has seven US zones. A file can't be written for any other zone (rule 15). The company's zone is set at setup and shown read only on Localization (ADR 0059, part 2b); every fixture zone is one of the seven.
 - Times are not converted between zones (ADR 0018).
 - A lead saved from a meeting has no Lead label in the customer list (U-52).
 - With `newGuestHandling: contact`, the picker preselects the first customer, so an unchanged form saves the guest under it.

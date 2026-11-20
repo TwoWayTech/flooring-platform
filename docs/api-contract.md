@@ -9,7 +9,7 @@ The tenant always comes from the session, never from a parameter, as it will on 
 - **Moving a module.** With `NEXT_PUBLIC_DATA_SOURCE=api`, `apps/web/src/lib/api/index.ts` routes each `ApiClient` method listed in `API_METHODS` (`lib/api/http/api-methods.ts`) to apps/api through `HttpTransport`. Every other method stays on DemoStore. A module's pull request adds its methods there. The persona picker and `/api/demo/*` exist only in demo mode.
 - **URLs.** No version prefix. Resources are plural and kebab-case (`/purchase-orders`, `/supplier-payments`). `GET /:resource` lists and `GET /:resource/:id` reads. A business action is `POST /:resource/:id/<action>` (`/invoices/:id/void`), never a PATCH of a status field. `/me/...` is the signed-in person's own data.
 - **Tenant.** It comes only from the verified session, never from a path, query or body. The API picks the company database through `TenantConnectionService` (P9).
-- **Bodies.** JSON with camelCase fields. Every body is checked with a Zod schema from `packages/shared`. Money, quantities and rates are decimal strings, never JSON numbers. Area is in sq ft and length in ft. Dates are `YYYY-MM-DD` and moments are ISO 8601 in UTC.
+- **Bodies.** JSON with camelCase fields. Every body is checked with a Zod schema from `packages/shared`. Money, quantities and rates are decimal strings, never JSON numbers. Their text is not canonical: the same amount may arrive as `"0"`, `"0.00"` or `"0.000"` (a numeric(14,3) column keeps its scale), so clients compare them by value with decimal.js, never as text (STATUS B3). A write takes back the percents the API answers at numeric(18,8) scale (`"50.00000000"`): a quote's deposit and waste and a contract's retainage with up to four decimals by value, a commission share with up to two, and the places past them may only be zeros. The quote's waste check compares waste by value, never as text (`sameOptionalDecimal`; ADR 0037, 2026-11-17). Not every change check does: the quote's `taxOverride` is compared as text, so a client sends back the override it was answered, unchanged. Amounts in settings (the payment and expense approval thresholds, the write-off limit) are `MONEY_TEXT` strings (digits with up to two decimals, no sign, exponent or bare point) or empty, stored as sent; the number format's decimals travel as a list of `{ kind, places }`, because `unitCost` is a reserved sensitive name (ADR 0059). Area is in sq ft and length in ft. Dates are `YYYY-MM-DD` and moments are ISO 8601 in UTC.
 - **Errors.** Every failure returns `{ code, message, details? }`. `message` is written for the person and shown as it is.
 
   | Status | Code | When |
@@ -24,8 +24,9 @@ The tenant always comes from the session, never from a parameter, as it will on 
   | 500 | `internal_error` | Unexpected; details are logged on the server only |
 
   The web client turns all of these into `ApiError`, so screens handle them as they handle a DemoStore rule error.
+- **Re-reading after a write.** In api mode the HTTP transport tells the screens to read again after every non-GET request the server answered, a success or a 400, 403, 404, 409 or 422 refusal, once the response is OK or refused and before its body is parsed. A GET never does, and neither do a network failure, 401, 429 or 5xx. A POST that only reads goes through `requestAsRead` and never re-reads: `POST /auth/step-up`, `POST /imports/check`, `POST /pay-periods` (it runs inside a read) and the timesheet upload's dry run. A method factory can't re-read on its own (ADR 0051, 2026-11-16).
 - **Lists.** Filtered by data scope on the server. Pagination arrives when a module needs it, as `?limit=&cursor=` returning `{ items, nextCursor }`.
-- **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md).
+- **Sensitive fields.** Cost, margin, pay rate and credit limit are removed by the server without `view_sensitive`. Hiding them on screen is not enough (sales.md, inventory.md). A client treats a field the server left out as unknown, never as zero: no margin without cost (`computeTotals`, `monthlyPnl`, `salesTotals`, `bestSellersIn`, `teamStats`; ADR 0037, 2026-11-16 and 2026-11-17).
 - **Uploads.** Files go to storage through a signed URL from the StorageProvider. The API stores an `attachments` row and checks the real file type.
 - **Docs.** OpenAPI is generated from the controllers at `/docs` (browsable) and `/docs/openapi.json`. `GET /health` is public.
 
@@ -77,7 +78,7 @@ The company always comes from the verified session. A `companyId` or `tenantId` 
 
 ## Permissions, sensitive fields and audit (real build, P10, ADR 0031)
 
-Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
+Every company route declares what it needs: `@RequirePermission(...keys)` (any one key from the packages/shared catalog), optionally `@RequireModule(module)`, or `@AnyCompanyMember()` for a person's own information. Three `@AnyCompanyMember()` routes answer more than that: `GET /locations` (shared reference data), `GET /company` (the company's reference data and a names directory, ADR 0051 "GET /company") and `GET /settings` (the company's settings, cut per person, ADR 0059). Effective permissions are role permissions ∩ the company ceiling ∩ enabled modules, worked out by the shared engine on every request.
 
 | Status and code | When |
 | --- | --- |
@@ -96,8 +97,8 @@ Draft spec: docs/specs/settings-users-access.md.
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /users` | `settings.users.view` or `settings.users.manage` | Everyone with a profile in the company (`User`) |
-| `POST /users/invite` | `settings.users.manage` | `{ name, email, title, roleIds, branchId }`: account, membership, profile `invited`, roles, and an emailed link (7 days, once). 409 `seat_limit`, `already_member`; 403 `not_held`, `owner_only`; 429 `email_limit` |
-| `PATCH /users/:id` | `settings.users.manage` | `{ roleIds?, status?, branchId?, title?, mfaEnrolled?: false }`. Roles and MFA reset need a step-up. 409 `last_owner`, `shared_account` (MFA reset of an account in another company) |
+| `POST /users/invite` | `settings.users.manage` | `{ name, email, title, roleIds, branchId }`: account, membership, profile `invited`, roles, and an emailed link (7 days, once). A step-up. `branchId` is empty for no branch or one of the company's live branches, else 400 `unknown_branch`; below data scope `all` only the inviter's own branch, else 403 `branch_other`; the audit row records the stored branch (ADR 0051, 2026-11-20). 409 `seat_limit`, `already_member`; 403 `not_held`, `owner_only`; 429 `email_limit` |
+| `PATCH /users/:id` | `settings.users.manage` | `{ roleIds?, status?, branchId?, title?, mfaEnrolled?: false }`. Roles, status, branch and MFA reset need a step-up. `branchId` as on invite (400 `unknown_branch`). Below data scope `all` an admin changes only people in their own branch (oneself excepted) and moves them only to that branch (403 `branch_other`). 409 `last_owner`, `shared_account` (MFA reset of an account in another company) |
 | `GET /roles` | `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage` | The company's roles with their keys |
 | `POST /roles`, `PUT /roles/:id` | `settings.roles.manage` and a step-up | `{ name, description, dataScope, permissions }`. 403 `not_held` (adds a key the editor lacks), `owner_locked` |
 | `POST /roles/:id/reset` | `settings.roles.manage` and a step-up | Back to the shipped template, limited to the products. 409 `not_default` |
@@ -235,6 +236,124 @@ It never says why (no billing reason, date, plan, status word or maintenance rea
 
 **Support access** stays on the routes in "Users, roles, step-up, invitations and support access", unchanged. The Owner's panel in Settings → Users lists, approves (step-up) and revokes; while standing is `read_only` it shows no actions, because TenantGuard refuses both writes then.
 
+## Company and the shell (real build, ADR 0051 "GET /company")
+
+The web shell's person, roles, access, modules and branches. Spec: docs/product-spec/settings-and-permissions.md, Real build, "The shell on the API". The route takes no company id: the company is the verified session's, and a `companyId` or `tenantId` in the path, query, body or headers is never read.
+
+| Route | Access | Who | Answer |
+| --- | --- | --- | --- |
+| `GET /company` | A company route: SessionGuard, TenantGuard and PermissionGuard (`@AnyCompanyMember()`); no module and no feature switch | Any member whose profile is active | `CompanyAnswer`, `Cache-Control: no-store`. Not audited |
+
+**`CompanyAnswer`** (`packages/shared/src/platform/company-answer.ts`) is `{ company, me, roles, access, people }`:
+- `company`: `{ id, slug, name, city, state, timeZone, modules, ceiling, branches }`. `id` is the session's tenant id; `timeZone` is `tenants.time_zone`, the zone the API's own date checks use (`GET /settings`' `localization.region.timeZone` is the same value; ADR 0059, part 2b); `modules` are the enabled modules; `branches` are the live ones by name, each `{ id, name, city, state }`. `ceiling` is the company's permission ceiling, sorted, only for someone holding `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage` (`seesCeiling`); `null` for everyone else;
+- `me`: the caller's own `User`, exactly as `GET /users` shapes it;
+- `roles`: only the roles the caller holds, as `GET /roles` shapes them;
+- `access`: `{ permissions, dataScope, isOwner }`, PermissionGuard's own effective access for this request (keys sorted), never worked out a second time;
+- `people`: `{ id, name, status }` for every live profile with an account, by name. Everyone gets active colleagues; disabled ones (`status` `disabled`) only holders of `settings.users.view` or `settings.users.manage` (`seesDisabledPeople`; ADR 0051, "2026-11-20"). Invited people are left out.
+
+**Refusals** are the guards' own: 401 `unauthenticated` or `session_expired`; 403 `mfa_enrolment_required` (SessionGuard, or PermissionGuard for a role that needs a factor not yet set up); TenantGuard's 403 `company_required`, `not_a_member`, `product_not_enabled` and `company_suspended`, and 503 `company_maintenance` and `company_unavailable`; 403 `forbidden`, "Your role does not allow this. Ask an Owner to change your security role.", for a disabled profile, and for a profile with no account. A read-only company still answers.
+
+**Never returned:** another company's anything; another person's email, title, roles, branch, MFA, sign-in time, employee link or default warehouse; a role the caller doesn't hold; the ceiling without one of the four keys; billing facts (plan, status, limits; `GET /billing` keeps them); feature switches (the same build on both sides); any `SENSITIVE_FIELDS` name.
+
+**The web:**
+- `getWorkspace()` reads it and drops keys and modules the web doesn't know (fail closed). The shell lays its name, place, modules, ceiling and branches over `getCompany()`, which still holds the plan, status, limits and product, and uses its access as is.
+- `list("users")` and `get("users")` give its people (id, name and status filled; every other field empty); `whoAmI()` is `GET /auth/context`'s `user.id`.
+- View as and Your profile are not offered in api mode.
+- A refused first read shows a full page: the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's words, each with Try again and Sign out.
+
+## Settings, part 1 (real build, ADR 0059)
+
+The company profile, number format, payment rules and expense approval. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 1". The company is the verified session's; nothing in the path, query, body or headers names it. No control-database write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `GET /settings` | `@AnyCompanyMember()`; no module, no switch | none | `SettingsAnswer` for this person, `Cache-Control: no-store`. Not audited |
+| `PUT /settings/profile` | `settings.company.manage` | switch `settings.company` (404), data scope `all` (403), strict body (400), `companyProfileProblem` (400) | the saved `CompanyProfile`. Audited |
+| `PUT /settings/numbers` | `settings.numbers.manage` | switch `settings.number-format`, scope, strict body (each kind once), `numberSettingsProblem` against the stored format (the locale and currency can't change) | the saved `NumberSettingsWire`. Audited |
+| `PUT /settings/payments` | module `core` (checked first), then `settings.payments.manage` | switch `sales.payments`, scope, strict body, `paymentSettingsProblem`, then under the row's lock Owner-only loosening (403 `owner_only`, `paymentControlsLoosened`; ADR 0059 "2026-11-20"), then a step-up (403 `step_up_required`) | the saved `PaymentSettings`. Audited |
+| `PUT /settings/expenses` | module `core` (checked first), then `settings.expenses.manage` | switch `finance.expenses`, scope, strict body, `expenseSettingsProblem` | the saved `ExpenseSettings`. Audited |
+| `PUT /settings/sharedCosts` | module `core` (checked first), then `settings.expenses.manage` | switch `finance.expenses`, scope, strict body (`rule` and `fixedPct`, strings only; outer bounds with the rule's words), then inside the save under the row's lock `sharedCostsProblem` against the company's live locations (400 with its words). No step-up (part 4b, D3) | the saved `SharedCostSettings`. Audited, "Changed shared costs" (part 4b) |
+
+- **Keys, module and switch** come from `SETTINGS_SECTIONS` (packages/shared). The guards answer first: 401 `unauthenticated`; 403 `company_required`, `not_a_member`, `product_not_enabled`, `company_suspended`, `company_read_only` (a PUT), `mfa_enrolment_required`, `module_not_enabled` or `forbidden`; 503 `company_maintenance`. Then the handler's checks above. The scope refusal is 403 `forbidden`, "Company settings cover the whole company."; a content refusal is 400 `invalid_request` with the first problem's words (each names its field). An unknown section is 404; `/settings/accounting` is ADR 0040's (Ledger, below).
+- **The save** locks the group's row (`FOR UPDATE`), replaces the section whole and writes one `audit_log` entry in the same transaction: "Changed company profile", "Changed number format", "Changed payments" or "Changed expense approval", with `before` and `after` as answered (`null` before a first save). The last save wins.
+- **Who reads what.** `profile` and `numbers`: every member; the `ein` is `""` without `settings.company.manage`. `payments`: `sales.invoice.view` or `settings.payments.manage`. `expenses` and `sharedCosts` (part 4b): `settings.expenses.manage`. Payments and expenses are left out while module `core` or their product switch (`sales.payments`, `finance.expenses`) is off; profile and numbers stay while their page's switch is off. A section left out is absent from the answer, not empty.
+- **Never saved.** A section with no row is answered as the API acts on it: the US pack's number format, expense approval off, a blank profile, and payments `{ approvalRequired: true, approvalThreshold: "", writeOffMax: "0.00", paymentPrefix: "PAY-", refundPrefix: "RF-" }` (every payment waits, nothing is written off; payments themselves are refused with 409 until the row exists).
+- **Numbers as a list.** `NumberSettingsWire` is `NumberSettings` with `decimals: { kind, places }[]`, every kind once. The stored row keeps the record. A client ignores a kind it doesn't know and defaults one that is missing (`numbersFromWire`).
+- **The web.** `getSettings()` reads `GET /settings` and lays its sections over DemoStore's copy (only the sections in `API_SETTINGS_SECTIONS`; anything else in the answer is ignored). `updateSettings()` sends those sections to their `PUT` and reads again; every other section stays on DemoStore until its part; `updateSettings("localization")` stays on DemoStore, which refuses it (Localization and tax saves one tab at a time, part 3b). The shell reads `GET /settings` with `GET /company`, so a save shows on the saver's own screens at once. A refused or failed first read shows the full-page refusal (deploy the API before the web).
+
+## Settings, part 2a (real build, ADR 0059, 2026-11-17)
+
+Sales and documents and the Payroll rules tab of Localization and tax, one tab at a time. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 2a". The company is the verified session's. No control-database read or write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/localization/documents` | module `core` (checked first), then `settings.localization.manage` | switch `settings.localization` (404), data scope `all` (403), strict body (400), `documentsProblem` (400) | the saved tab (`DocumentsInput`). Audited |
+| `PUT /settings/localization/payroll` | module `hr` (checked first), then `settings.localization.manage` | switch `settings.localization` (404), data scope `all` (403), strict body (400), `payrollProblem` (400) | the saved tab (`PayrollInput`). Audited |
+
+- **One key per tab.** Keys, module, switch and audit label come from `LOCALIZATION_TABS` (packages/shared); a tab never takes the section's any-of keys, so `settings.tax.manage` alone saves neither; the whole section is refused in both modes (part 3b). No step-up. The guards' refusals are part 1's.
+- **Bodies.** Exactly the tab's fields; an unknown field is 400. Percents (`lateFeePct`, `defaultDepositPct`, each `defaultWastePct` value) are strings as the quote API takes them (`PERCENT_TEXT`, at most 100), never JSON numbers; `quoteExpiryDays` (1 to 365) and `balanceDueDays` (0 to 365) are whole numbers; `defaultWastePct` holds exactly the waste categories; `quotePrefix`, `invoicePrefix` and `poPrefix` follow `DOCUMENT_PREFIX_TEXT`, differ without case and none starts with the credit notes' `CR-` (any case; `CREDIT_NOTE_PREFIX`); `legalFooter` is at most 1,000 characters; `overtimeRule` is refused as `overtimeRuleProblem` says (California while `hr.payroll.california` is off) and `holidayState` must be a US state code. A refusal is 400 `invalid_request`. The body is checked for shape first: types, unknown fields and outer lengths (20 characters for each short string and waste value, 10,000 for the footer), each length refused with its field's words from the shared rule. Then the tab's rule answers its first problem, with the words and in the order the demo uses. The page's inputs stop at the rule's own lengths (`DOCUMENT_PREFIX_MAX`, `PERCENT_TEXT_MAX`), so from the screen both modes name the same problem; only a direct caller that sends a string past an outer length together with another problem can get a different field named.
+- **The save** locks the `localization` row (`FOR UPDATE`), replaces only that tab (the other tabs and the stored tax block stay; the tax tables are untouched) and writes one `audit_log` entry in the same transaction: "Changed localization and tax", target "Sales and documents" or "Payroll rules", `before` and `after` that tab only. A company with no `localization` row gets 409 `settings_missing`; nothing is created.
+- **Who reads which tab.** `GET /settings` adds `localization: { documents?, payroll? }`: documents to holders of `sales.quote.view`, `sales.invoice.view`, `purchasing.order.view` or `settings.localization.manage` while module `core` is on; payroll to holders of `hr.timesheet.view`, `hr.overview.view`, `settings.hr.manage` or `settings.localization.manage` while module `hr` is on. Neither is hidden by the `settings.localization` switch. Each tab is answered as stored; a company with no row gets no `localization`, and a person who reads neither tab gets none.
+- **Not routes yet:** `PUT /settings/localization` (the whole section) answers 404 and is never a route: the section saves one tab at a time; the web's `updateSettings("localization")` is refused by DemoStore with "Localization and tax saves one tab at a time." (part 3b). Region and Currency became routes in part 2b and Sales tax in part 3a (below).
+- **The web.** `updateLocalization(tab, value)` sends `documents` and `payroll` to their `PUT` and reads again; Sales tax stayed on DemoStore, which checks its own key, until part 3a (Region and Currency moved in part 2b). `getSettings()` takes only the served tabs from the answer.
+
+## Settings, part 2b (real build, ADR 0059, 2026-11-17)
+
+The Region and Currency tabs of Localization and tax, one tab at a time, on part 2a's pattern. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 2b". The company is the verified session's. The control database is read (the company's time zone, `tenants.time_zone`, by the session's tenant id), never written.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/localization/region` | `settings.localization.manage` (module `platform`: no module guard) | switch `settings.localization` (404), data scope `all` (403), strict body (400); then under the row lock: no row or no Region tab (409 `settings_missing`), `regionProblem` against the stored region (400), for a change of the states of operation `settings.tax.manage` (403 `forbidden`) and then a step-up (403 `step_up_required`) | the saved tab (`RegionInput`). Audited |
+| `PUT /settings/localization/currency` | `settings.localization.manage` (module `platform`) | switch `settings.localization` (404), data scope `all` (403), strict body (400); then under the row lock: no row or no Currency tab (409 `settings_missing`), `currencyProblem` against the stored currency (400), then always a step-up (403 `step_up_required`) | the saved tab with its dated rates (`CurrencyInput`). Audited |
+
+- **Keys, switch and label** come from `LOCALIZATION_TABS`, one key per tab; `settings.tax.manage` alone saves neither. The guards' refusals are part 1's. A step-up refusal is `step_up_required`, or `step_up_mfa_required` for a person with no factor (as part 1's Payments).
+- **Region's body** is exactly `{ country, primaryState, statesOfOperation, timeZone, locale, dateFormat, firstDayOfWeek, fiscalYearStartMonth }`. `timeZone` must be the company's zone as `GET /settings` answers it (`tenants.time_zone`), sent back unchanged: any other is 400 "The company's time zone is set when the company is set up. Ask us to change it." `country` and `locale` must equal the stored ones. `primaryState` is a US state code; `statesOfOperation` at least one US state code, each once; `dateFormat` one of `MMM d, yyyy`, `MM/dd/yyyy`, `yyyy-MM-dd`; `firstDayOfWeek` `monday` or `sunday`; `fiscalYearStartMonth` a whole 1 to 12. A change of the states of operation, compared as sets (a reorder is none), is a tax change: after the content rules it needs `settings.tax.manage` ("Changing the states of operation changes where sales tax is collected, so it also needs the sales tax permission.") and a step-up. The API's tax follows at once, also when a quote accepted earlier is invoiced (the invoice recomputes tax at conversion). The saved region stores control's zone in the row's copy.
+- **Currency's body** is exactly `{ base, locked, extra: { code, rate, asOf }[] }`. `base` and `locked` equal the stored ones; the codes are the stored codes in their order (none added, removed, renamed or reordered); each `rate` is a string of plain decimal text above 0 with up to 10 digits and 8 decimals (`FX_RATE_TEXT`), never a JSON number. `asOf` is taken for its shape and never stored: a rate whose value changed is dated the company's day (`tenants.time_zone`), an unchanged one keeps its stored entry. A step-up is always needed, after the content checks, so a refused value never asks for a code.
+- **Outer lengths.** The body is checked for shape first: types, unknown fields (400) and outer lengths, each refused with its field's shared words (zone 64, each state and the primary state 10, at most 100 states, date format and week start 20, each currency code 10, at most 50 currencies). Country, locale, the base, rates and `asOf` have no outer length: the rule's words name the stored values or the code, and the JSON body limit bounds the request. Then the tab's rule answers its first problem, with the demo's words and order.
+- **The save** locks the `localization` row (`FOR UPDATE`) and runs every check that reads the stored tab under that lock, so a save is judged against the row it replaces; it replaces only that tab (the other tabs and the stored tax block stay; the tax tables are untouched) and writes one `audit_log` entry in the same transaction: "Changed localization and tax", target "Region" or "Currency", `before` the tab as answered (Region with control's zone), `after` as stored. A company with no `localization` row, or a row without that tab, gets 409 `settings_missing`; nothing is created.
+- **Who reads which tab.** `GET /settings` adds `localization.region` for every member (not hidden by the `settings.localization` switch), with `timeZone` from `tenants.time_zone`, never the row's copy; and `localization.currency` for holders of `settings.localization.manage` while the `settings.localization` switch is on. A company with no row gets no `localization`.
+- **The web.** `updateLocalization("region" | "currency", value)` sends the tab to its `PUT` and reads again, with no transport change (part 2a's routing and merge follow `API_LOCALIZATION_TABS`). The page runs each tab's shared rule and the tax key before the code dialog; Region asks for a code only when the states change, Currency always. Reset to default keeps the zone, country, locale, base, lock and codes from the company's own copy.
+
+## Settings, part 3a: Sales tax (real build, ADR 0059, 2026-11-17)
+
+The Sales tax tab of Localization and tax, on part 2b's pattern, with versioned rule and county-rate rows. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 3a". The company is the verified session's. The control database is read (the company's day, from `tenants.time_zone`), never written.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/localization/tax` | `settings.tax.manage` (an MFA key; module `platform`: no module guard) | switch `settings.localization` (404), data scope `all` (403), strict body (400); then under the `localization` row's lock: no row or no tax block (409 `settings_missing`), `taxProblem` against the tab in force (400), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the tab now in force, read back (the same shape as `GET /settings`' `localization.tax`). Audited |
+
+- **Keys, switch and label** come from `LOCALIZATION_TABS`: `settings.localization.manage` alone can't save Sales tax, and `settings.tax.manage` alone saves only Sales tax. The guards' refusals are part 1's.
+- **The body** is exactly `{ pricesInclude, rounding, rules, jurisdictions, companyDefault, filing, certificateTypes }`:
+  - `rules`: `{ state, jurisdiction, ratePct, taxable: { material, labor, freight, service }, lumpSumLaborTaxable, validFrom, validTo?, version, rationale }[]`, at most one per US state;
+  - `jurisdictions`: `{ id, state, county, name, ratePct, validFrom, validTo }[]`, at most 200;
+  - `companyDefault`: `{ ratePct, taxable, validFrom }` or `null` (required, so a body that leaves it out can't remove it);
+  - `filing` (`{ state, frequency }[]`) and `certificateTypes` (`string[]`) are required and must equal the stored ones: the tab doesn't change them.
+  Every rate is a string `TAX_RATE_TEXT` takes (0 to 99.9999 by value: up to two whole digits and four decimals, then only zeros up to eight, so the answer's `"8.81000000"` can be sent back), never a JSON number. `pricesInclude` may stay as stored or go back to `exclusive`; `inclusive` is refused ("Whether prices include sales tax can't be changed yet: documents add tax on top of prices."). `rounding` is `invoice` or `line`. Each state rule needs a US state code once, a jurisdiction (1 to 100 characters), a rate and a note (`rationale`) of at most 500. Each county rate needs a US state code, a county (1 to 60), a name (1 to 100) and a rate; no two rates for one county of a state, compared without case and without the word "County". A county rate with no rule under it is taken (it applies nowhere until a rule exists).
+- **Taken for their shape only:** each rule's `validFrom`, `validTo` and `version`, each county rate's `id`, `validFrom` and `validTo`, and the company default's `validFrom`. The save sets them; no id a body sends ever selects a row.
+- **Outer lengths.** The body is checked for shape first: types, unknown fields (400) and outer lengths, each refused with its field's shared words (each state 10, rounding and the prices setting 20, at most 51 rules and 200 county rates, the county 1,000, the company default's rate 100, filing and certificate types their own). The jurisdiction, name, rates and note have no outer length, because their words name a state or a county, and the never-stored id, dates and version none either; the JSON body limit bounds the request. Then `taxProblem` answers its first problem, with the demo's words and order.
+- **Versions, never edits.** Each sent state rule is matched with the one in force by state, each county rate by state and county, never by id, and compared by value (rates with `sameOptionalDecimal`). An unchanged row is kept as it is, dates and version included. For a changed or removed state or county, every live row of it whose range reaches the company's day (`valid_to` empty or on or after it) ends the day before (`valid_to` and `updated_at` are the only columns ever updated); a changed or new row is inserted from that day with no end, a state rule with one above the highest version its state ever used (soft-deleted rows included), a county rate with a new uuid v7 id. Nothing is deleted. A second change on one day leaves the first that day with an empty range. The company default, stored in the `localization` row's `tax` block, is dated the company's day when it changes. Issued invoices keep their tax snapshot; nothing re-taxes them.
+- **The save** locks the `localization` row (`FOR UPDATE`) and runs every check and every version number under that lock, so two saves serialize and the second is judged against the first's result. It stores the block without the rules and county rates (they live in `tax_rules` and `tax_jurisdictions`), and writes one `audit_log` entry in the same transaction: "Changed localization and tax", target "Sales tax", `before` and `after` the tab in force.
+- **Who reads it.** `GET /settings` adds `localization.tax` for holders of `sales.quote.view` (the quote builder's tax preview and job-site states) or `settings.tax.manage`, not hidden by the `settings.localization` switch, as in force on the company's day: the block with, per state, the rule in force and, per county, the rate in force, sorted by state, then county. Rates are answered at the column's scale (`"8.81000000"`). Among rows valid on one day the latest `validFrom` wins, then the higher version, then the higher id, as in the tax engine.
+- **The web.** `updateLocalization("tax", value)` sends the tab to its `PUT` and reads again, with no transport change (part 2a's routing and merge follow `API_LOCALIZATION_TABS`). The page runs `taxProblem` before the code dialog, shows the dates and the prices setting read only, and remounts the form after a save, so it shows what the save stored. Reset to default keeps filing and certificate types from the company's own copy; unchanged rows stay as they are, because rows are matched by state and county.
+
+## Settings, part 4a: warehouses and showrooms (real build, ADR 0059, 2026-11-20)
+
+Settings → Warehouses and showrooms saves on the API, beside `GET /locations` in the inventory module (class guard: module `core`). Spec: docs/product-spec/settings-and-permissions.md rule 29 and Real build, "Settings on the API, part 4a"; inventory.md rule 24.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `POST /locations` | `settings.locations.manage` (`LOCATION_RULE`, Stock rules' key; module `core`) | switch `inventory.locations` (404), data scope `all` (403 `forbidden`, "Company settings cover the whole company."), strict body (400); then, under the stock lock, rule 29 (400 `invalid_request` with its words) | 201, the location as `GET /locations` lists it, with a server UUID v7 id |
+| `PUT /locations/:id` | the same | the same, then an unknown, deleted or other company's id (404 `not_found`) before rule 29; the path takes any UUID (the seed's are v5), anything else 400 | 200, the location as listed |
+
+- **The body** is exactly `{ name, kind, branchId, address: { street, city, state, zip, county?, lat?, lng? }, isDefault, displaySamples, floorAreaSqFt? }`, never an id. Outer bounds: the name 800 and the floor area 140 characters with the rule's words, the kind with the rule's words, the branch 100; the address takes the company profile's bounds (street 200, city 100, state 2, ZIP 10, county 100) without words, where the page's inputs stop. `displaySamples` is a JSON number, `floorAreaSqFt` a string.
+- **Rule 29** (`locationProblem`, `locationHolds`, `locationHoldsProblem` in packages/shared `settings/location-rules.ts`): the name trimmed, 1 to 80 characters, not another live location's name once both are folded as the stock import folds them ("Another location is already called Denver Central."); a new location needs a live branch of this company (a demo id or another company's branch gets "Choose the branch this location belongs to."), an edit keeps its branch; the company profile's address rule; samples whole 0 to 100,000, 0 on a warehouse; the floor area blank or `QUANTITY_TEXT` (up to 3 decimals, so the answer's `"2400.000"` saves back); one default warehouse. A warehouse becomes a showroom only with no stock (rolls with length left, in transit or not; boxed stock not zero), no transfer in transit from or to it, no active reservation above zero (a short row doesn't count) and no open quote shipping from it by header or line, each refused naming the location.
+- **The save** takes the stock lock (`lockStock`, the advisory lock every stock writer takes), so the holds, the default and the names are judged against every stock change and every other location save. A new default clears the old in the same transaction. The branch column is never updated. The stored name is trimmed; a blank floor area is stored as none (null) and left out of the answer.
+- **Audit.** "Added location" or "Changed location", category `settings`, target the name, `before` and `after` the location as answered (null before an add); the cleared default gets its own "Changed location". Every saved row is audited, a save that changes nothing too; refusals write nothing. No step-up.
+- **`GET /locations` is not switched** (D3): every module picks a location, so it stays answered while `inventory.locations` is off; the switch hides the page and its writes.
+- **Converting a quote** (`POST /quotes/:id/invoice`) refuses, right after it takes the stock lock and before anything is posted or held, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (D21).
+- **The web.** `list("locations")` and `get("locations")` read `GET /locations` in api mode (HR Suite's 403 reads as none); `saveLocation` sends `PUT /locations/:id` for a UUID and `POST /locations` otherwise, with the id never in the body, then reads again. The page names branches from the shell (`GET /company`'s) and runs rule 29 before sending.
+- **The demo** runs the same checks in the same order on its own records; the generic `save("locations")` is refused.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
@@ -244,7 +363,7 @@ Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are str
 | `GET /products` | `inventory.product.view` | The catalog (`Product`) |
 | `GET /rolls` | `inventory.roll.view` | Rolls and remnants with their cuts (`Roll`) |
 | `GET /stock-movements` | `inventory.product.view` | The boxed-stock ledger (`StockMovement`) |
-| `GET /locations` | Any company member | Warehouses and showrooms (`Location`). Shared reference data every module picks from, so `@AnyCompanyMember` here does not mean the person's own records |
+| `GET /locations` | Any company member | Warehouses and showrooms (`Location`). Shared reference data every module picks from, so `@AnyCompanyMember` here does not mean the person's own records. Answered while `inventory.locations` is off (Settings part 4a, D3) |
 | `GET /transfers` | `inventory.transfer.view` | Transfers with their lines, newest first |
 | `POST /transfers` | `inventory.transfer.create` | `{ fromId, toId, lines: [{ productId, rollId, quantity }], note }`. 400 `invalid_transfer` (same warehouse, a showroom, more than on hand, a part carton, a roll elsewhere or already travelling) |
 | `POST /transfers/:id/receive` | `inventory.transfer.receive` | 409 `already_received` |
@@ -280,7 +399,7 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 | `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }` |
 | `PUT /customers/:id` | `customers.customer.edit` | Name, contact, terms and addresses; credit, exemption and rep are never taken from the request |
 | `GET /quotes` | `sales.quote.view` | Quotes within scope, with rooms and lines |
-| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. 403 for a waste change without `sales.waste.view` or a tax change without `sales.tax.override`. 409 `quote_closed`, `settings_missing` |
+| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default; the default is the company's Sales and documents setting, which `GET /settings` answers to every quote reader, ADR 0059 part 2a) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 409 `quote_closed`, `settings_missing` |
 | `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
@@ -289,12 +408,12 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split |
+| `GET /invoices` | `sales.invoice.view` | Invoices and credit notes within scope, with lines and commission split. Invoice `cost` and each line's `unitCost` are left out without `inventory.product.view_sensitive`, and a contract invoice's also without `contracts.contract.view_sensitive` (`contractCostShown`); the web treats them as unknown (ADR 0037, 2026-11-17) |
 | `GET /payments` | `sales.payment.view` or `sales.payment.approve` | Payments on invoices within scope, with their files |
 | `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
 | `GET /refunds` | `sales.payment.view` or `sales.payment.refund` | Refunds to customers within scope |
 | `GET /reservations` | `inventory.product.view`, `inventory.roll.view` or `sales.invoice.view` | Every hold for stock viewers; otherwise the holds of invoices within scope |
-| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing` |
+| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing`. Refuses, under the stock lock, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (Settings part 4a, D21) |
 | `POST /invoices/:id/sent` | `sales.invoice.edit` or `sales.invoice.create` | Marks it sent once and emails `invoice.sent` |
 | `POST /invoices/:id/void` | `sales.invoice.void` | `{ reason }`; refused once money is confirmed or a credit note's credit is spent; voids pending payments and releases holds |
 | `POST /invoices/:id/credit-notes` | `sales.invoice.void` | `{ subtotal, reason }`; up to what is not yet credited; tax and cost in proportion |
@@ -316,8 +435,8 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 | `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
 | `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
-| `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040) |
-| `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited |
+| `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040). Unchanged by Settings part 1; in the finance module |
+| `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited. A step-up after the body is read (403 `step_up_required`; ADR 0040, 2026-11-20) |
 
 Cash lines post to the bank account for the payment's method, or to Cash and Bank when no bank account claims it. A void credits the account the payment first posted to (ADR 0040).
 
@@ -347,7 +466,7 @@ Behind the `purchasing.orders` switch. No data scope. Files are base64 in the bo
 | `GET /bills` | `purchasing.bill.view` | `Bill[]`: order, pay-later and (later) subcontract bills |
 | `GET /supplier-payments` | `purchasing.bill.view` or a payment key | `SupplierPayment[]` with allocations |
 | `POST /purchase-orders/:id/bills` | `purchasing.bill.create` | `{ number, issuedAt, total, files }`: bills every unbilled receipt of the order, stores match issues, posts. Audited |
-| `POST /supplier-payments` | `purchasing.payment.record` | `{ supplierId, amount, date, method, reference, note, billIds?, files }`: oldest due first, never more than unpaid; waits above the payment approval rule; posts when confirmed. Audited |
+| `POST /supplier-payments` | `purchasing.payment.record` | `{ supplierId, amount, date, method, reference, note, billIds?, files }`: oldest due first, never more than unpaid; waits above the payment approval rule (`settings.payments`, which `PUT /settings/payments` writes); posts when confirmed. Audited |
 | `POST /supplier-payments/:id/review` | `purchasing.payment.approve` | `{ action: "confirm" }` or `{ action: "reject", reason }`; never the recorder. Audited |
 | `POST /supplier-payments/:id/void` | `purchasing.payment.void` | `{ reason }`: a confirmed one posts its reversal. Audited |
 
@@ -401,7 +520,7 @@ Module `hr`, so the same routes serve Flooring Suite companies with HR and HR Su
 | `POST /employees/:id/documents` | `hr.employee.edit` | `{ files }` base64, at most 3 per upload. Read through `GET /files/:id` with `hr.employee.view`, or with `hr.portal.view` for one's own (ADR 0049). Audited |
 | `GET /timesheets` | `hr.timesheet.view` | `TimesheetWire[]` in scope (`days` as decimal strings) |
 | `GET /clock-entries` | `hr.timesheet.view` | `ClockEntry[]`: own below scope `all` |
-| `PUT /timesheets` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | `{ employeeId, weekStart, days }`: a workweek start not in the future, valid hours, someone who uses timesheets; refused when the week is submitted or approved. Audited |
+| `PUT /timesheets` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | `{ employeeId, weekStart, days, expectedDays }`: a workweek start not in the future, valid hours, someone who uses timesheets; refused when the week is submitted or approved. `expectedDays` are the seven hours the form started from (seven `"0"` for a week with no sheet), checked by shape only; a missing or malformed one is 400 "Reload the page, then save your hours again.". When the stored week differs by value from `expectedDays` and from `days`, it answers 409 `timesheet_changed` and writes nothing (ADR 0051, 2026-11-16). The answer is the week as this save wrote it, read before the commit. Audited |
 | `POST /timesheets/:id/submit` | `hr.timesheet.edit` (own) or `hr.timesheet.approve` | Draft or sent back to submitted; tells the approvers whose access and scope cover the person, in the app. Audited |
 | `POST /timesheets/decisions` | `hr.timesheet.approve` | `{ action: "approve" \| "reject", ids, reason? }`: all or none, submitted only, never one's own; a rejection needs a reason. Emails the employee. Audited with the overtime split |
 | `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | `{ reason }`: approved to draft unless an approved or exported pay period overlaps; never one's own. Audited |
@@ -415,7 +534,7 @@ Module `hr`, so the same routes serve Flooring Suite companies with HR and HR Su
 | `POST /time-off-adjustments` | `hr.pto.approve` | `{ employeeId, policyId, hours, note }`: signed hours, a reason, never one's own balance. Audited |
 | `POST /time-off-policies`, `PUT /time-off-policies/:id` | `settings.hr.manage` | A policy without `id`; the California carryover guard applies. Audited as settings |
 
-Hours and the clock need the company's Settings → HR and payroll rule; without them they answer 409 `settings_missing`.
+Hours and the clock need the company's Settings → HR and payroll rule; without them they answer 409 `settings_missing`. The payroll rule is saved by `PUT /settings/localization/payroll` (ADR 0059, part 2a), which refuses the California rule while its switch is off.
 
 HR part 2 first steps (ADR 0047): `PUT /timesheets`, `POST /timesheets/:id/submit`, the upload and `POST /pto-requests` for someone else also need a sign-in linked to a live employee unless it is the Owner's; nobody but the Owner decides a sheet they saved, uploaded or submitted (each history step carries `byUserId`; `"saved"` is a new history action) or a request they made for someone else; time off whose days overlap an approved or exported pay period can't be requested, approved or (once approved) cancelled; a clock-out into a submitted or approved week closes the punch, adds no hours and answers with a `note`; the `Saved timesheet hours` audit entry keeps the replaced days as `before`.
 
@@ -523,7 +642,7 @@ Parts 1 to 3. These routes are in module `meetings` (403 `module_not_enabled` wi
   - `meetingsData` reads `GET /meetings`, `GET /meeting-guests` (403 or 404 → no guests) and, while `meetings.requests` and `meetings.invites` are on, `GET /me/meetings` (403 or 404 → no colleagues). The reader's id is `viewerUserId` of `GET /me/meetings`, or `user.id` of `GET /auth/context` only when that gave no answer. `newGuestHandling` is always `none`;
   - `myMeetings` reads `GET /me/meetings`, and a 403 or 404 there as nothing to show;
   - `simulateReply`, and `list` and `get` of `meetings` (read only by Simulate reply on the demo Outbox's rows), stay on DemoStore, as do the Outbox and the bell. Settings → Meetings is hidden in api mode until part 4, so `updateSettings("meetings")` is never sent;
-  - after a routed write the server answered, a success or a 400, 403, 404 or 409 refusal, the screens read again; a network failure, 401, 429 or 5xx triggers no re-read.
+  - after a routed write the server answered, a success or a 400, 403, 404, 409 or 422 refusal, the screens read again; a network failure, 401, 429 or 5xx triggers no re-read (since 2026-11-16 the rule for every routed write; see Conventions).
 
 ## Reports (real build, ADR 0055)
 
@@ -650,9 +769,9 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
 | `openCompany(companyId, viewer)` | none (session) | Loads the company the session names. |
-| `setViewer(viewer)` | none (session) | Switches "View as role". Data scope then follows that role's first active user. |
+| `setViewer(viewer)` | none (session) | Switches "View as role". Data scope then follows that role's first active user. Demo only, and only for someone who may view as: in api mode View as is not offered (ADR 0051, "GET /company"). |
 | `subscribe(listener)` | WebSocket or polling | Called after every change, so screens refresh. |
-| `today()` | server date | Today's date as the data sees it. |
+| `today()` | server date | Today's date as the data sees it. In api mode still the browser's day; `GET /company` carries the company's zone for the later change. |
 | `resetDemo()` | none | Demo only: restores the fixtures. |
 | `takeNotices()` | none | Messages for the person once, such as saved demo changes from an older version that had to be reset. Reading clears them. |
 
@@ -687,11 +806,13 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
-| `getCompany()` | `GET /company` | The open company's platform record. |
-| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. |
-| `updateSettings(section, value)` | `PUT /settings/:section` | Replaces one section; audited with a before/after summary. |
-| `getDefaultSettings()` | `GET /settings/defaults` | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`. |
-| `resetSettings(section)` | `DELETE /settings/:section` | Restores one section to the company's original values; audited. |
+| `getCompany()` | none yet | The open company's platform record as DemoStore holds it (plan, status, limits, product), until Settings and billing move. The shell's facts come from `getWorkspace()`; Settings → Locations names branches from the shell's since Settings part 4a. |
+| `getWorkspace()` | `GET /company` | `WorkspaceFacts` `{ company, user, roles, access }`: the company's name, city, state, modules, ceiling (`[]` when kept back) and branches, the person, the roles and the person's effective access, read through `workspaceFromAnswer`, which drops unknown keys and modules. The demo answers from DemoStore with the same ceiling rule and lists every role, for View as (ADR 0051, "GET /company"). |
+| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. Part 1 (ADR 0059): profile, numbers, payments and expenses come from the API, each to its readers, and part 2a the documents and payroll tabs of `localization`, each to its readers, and part 2b `region` (every member; the zone is `tenants.time_zone`) and `currency` (`settings.localization.manage`, hidden while the page is off), and part 3a `tax` (`sales.quote.view` and `settings.tax.manage`, as in force on the company's day, with its rule and county-rate rows); the other sections are still DemoStore's. |
+| `updateSettings(section, value)` | `PUT /settings/profile`, `/numbers`, `/payments`, `/expenses` | Replaces one section; audited with a before/after summary. Other sections stay on DemoStore until their part (ADR 0059). `localization` is refused in both modes ("Localization and tax saves one tab at a time."), after the module, keys, switch and scope checks (ADR 0059, part 3b). |
+| `updateLocalization(tab, value)` | `PUT /settings/localization/documents`, `/payroll`, `/region`, `/currency`, `/tax` | Replaces one tab of Localization and tax, or the Sales and documents page, with that tab's own key (`LOCALIZATION_TABS`); audited with the tab as target. Every tab is on the API since part 3a; Sales tax versions its rule and county-rate rows instead of replacing them. The whole `localization` section is never sent and is refused (part 3b). |
+| `getDefaultSettings()` | none yet | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`, or through `updateLocalization` per tab for Localization and tax and Sales and documents. In api mode DemoStore's fixture originals, which the API was seeded with (ADR 0059 D7); Region and Currency's Reset keeps the zone, country, locale, base, lock and codes from the company's own copy (part 2b). |
+| `resetSettings(section)` | none yet | Restores one section to the company's original values; audited. No screen calls it; DemoStore only. `localization` is refused (part 3b). |
 | `getCompanyStanding()` | `GET /company/standing` | `CompanyStanding` `{ state }`, read through `companyStandingFromWire`: an unknown or missing state reads `unavailable`, extra fields are dropped. The (app) layout also asks it on the server, with the host's product header. The demo always answers `{ state: "full" }` (ADR 0054). |
 | `getCompanyBilling()` | `GET /billing` | `CompanyBilling`, the Owner's only. The demo shows the stand-in plan with standing `current` and no notice, reads no clock, and refuses with "This feature is switched off." or "Only an Owner can see billing.". |
 
@@ -701,9 +822,9 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 
 | Method | Real endpoint | Behaviour |
 | --- | --- | --- |
-| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments, credits, write-offs, refunds and customers of the user as sales rep (payments and adjustments follow their invoice, refunds their customer); jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. Meetings follow the meeting rules instead of the scope filter: those `GET /meetings` gives, shaped for the reader (ADR 0051 part 3). |
+| `list(collection)` | `GET /:collection` | Filtered by data scope. Own: quotes, invoices, payments, credits, write-offs, refunds and customers of the user as sales rep (payments and adjustments follow their invoice, refunds their customer); jobs led by the user; the user's own timesheets, PTO, commissions and meetings. Branch: sales documents and customers of the user's branch. All: everything. Meetings follow the meeting rules instead of the scope filter: those `GET /meetings` gives, shaped for the reader (ADR 0051 part 3). In api mode `list("users")` and `get("users")` give `GET /company`'s people: id, name and status only; `list` and `get` of `locations` read `GET /locations` (Settings part 4a). |
 | `get(collection, id)` | `GET /:collection/:id` | Undefined when missing or outside scope. |
-| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `stockMovements`, `transfers`, `reservations`, `stockAdjustments`, `payments`, `invoiceAdjustments`, `refunds`, `expenses`, `commissions`, `meetings` and `audit` are written only by domain actions. Invoices store no status or paid amount: both come from the ledger (`packages/shared/src/ledger.ts`, ADR 0013). |
+| `save(collection, item, audit?)` | `PUT /:collection/:id` | Creates or replaces; writes the audit entry when given. Refused unless the viewer holds one of the collection's write permissions (`lib/api/demo/permission-rules.ts`); `locations` (only `saveLocation`, which runs rule 29; Settings part 4a), `stockMovements`, `transfers`, `reservations`, `stockAdjustments`, `payments`, `invoiceAdjustments`, `refunds`, `expenses`, `commissions`, `meetings` and `audit` are written only by domain actions. Invoices store no status or paid amount: both come from the ledger (`packages/shared/src/ledger.ts`, ADR 0013). |
 
 ## Users and roles
 
@@ -758,7 +879,7 @@ Added with their screens below.
 | `reviewSupplierPayment(id, decision)` / `voidSupplierPayment(id, reason)` | `POST /supplier-payments/:id/review`, `/void` | `purchasing.payment.approve` by someone else, or `purchasing.payment.void` with a reason. Audited. |
 | `createTransfer(input)` | `POST /transfers` | Needs `inventory.transfer.create`. Both ends must be different warehouses; boxed quantities whole and no more than the sender holds; rolls at the sender and not travelling. Boxed stock leaves the sender at once; rolls are marked in transit. Numbered TR-1001 up. Audited. |
 | `receiveTransfer(id)` | `POST /transfers/:id/receive` | Needs `inventory.transfer.receive`. Boxed stock arrives at the receiver; rolls move there to bin Receiving. Audited. |
-| `saveLocation(location)` | `PUT /locations/:id` | Needs `settings.locations.manage`. Keeps exactly one default, which must be a warehouse; a location holding stock cannot become a showroom. Audited. |
+| `saveLocation(location)` | `POST /locations` for an id the API didn't make, else `PUT /locations/:id` (any UUID); the body never carries the id | Needs `settings.locations.manage`, the `inventory.locations` switch and data scope `all`. Rule 29: a folded unique name, a fixed branch, exactly one default warehouse, and a warehouse becomes a showroom only when it holds nothing (Settings part 4a). Audited, the cleared default too. |
 | `updateMyProfile(patch)` | `PATCH /me` | The signed-in person's own default warehouse (a warehouse, or null for the company default). Audited. |
 
 ## Feature batch 3 actions
@@ -767,7 +888,7 @@ Every call added by feature batch 3 (docs/specs/feature-batch-03.md), with what 
 
 | Method and input | Output | Real endpoint | Permission | Behaviour |
 | --- | --- | --- | --- | --- |
-| `whoAmI()` | `string` | `GET /me/id` | Any signed-in user | The signed-in user's id. |
+| `whoAmI()` | `string` | `GET /auth/context` (`user.id`) | Any signed-in user | The signed-in user's id: the API's own in api mode, the demo persona's in the demo. |
 | `saveExpense(input: ExpenseInput, files: File[])` | `Expense` | `PUT /expenses/:id (multipart)` | `finance.expense.create` | Saves a draft, or records an expense: leaving draft needs a receipt, and a large one waits for approval (spec F1). |
 | `reviewExpense(id: string, decision: ExpenseDecision)` | `Expense` | `POST /expenses/:id/review` | `finance.expense.approve` | Approves or rejects an expense; nobody approves their own, and a rejection needs a reason (ADR 0023). |
 | `voidExpense(id: string, reason: string)` | `Expense` | `POST /expenses/:id/void` | `finance.expense.void` | Voids a confirmed expense with a reason; a pay-later one with payments can't be voided (ADR 0023). |
@@ -809,7 +930,7 @@ Every call added by feature batch 3 (docs/specs/feature-batch-03.md), with what 
 | `startOffboarding(employeeId: string)` | `Employee` | `POST /employees/:id/offboarding` | `hr.employee.edit` | Starts offboarding: the checklist appears and the person is marked as having left (ADR 0024). |
 | `addEmployeeDocuments(employeeId: string, files: File[])` | `void` | `POST /employees/:id/documents (multipart)` | `hr.employee.edit` | Adds documents to a person's file (spec C1 People). |
 | `updateMyEmployeeProfile(patch: MyProfilePatch)` | `Employee` | `PATCH /me/employee` | `hr.portal.view`; the signed-in person, on their own record | The person's own contact details in the portal. |
-| `saveTimesheet(input: TimesheetInput)` | `Timesheet` | `PUT /timesheets/:id` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again. |
+| `saveTimesheet(input: TimesheetInput)` | `Timesheet` | `PUT /timesheets` with `expectedDays` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Saves a week's hours (spec C1, C2). A rejected sheet keeps its status until it is submitted again. |
 | `submitTimesheet(id: string)` | `Timesheet` | `POST /timesheets/:id/submit` | `hr.timesheet.edit` on one's own sheet, `hr.timesheet.approve` on anyone else's | Sends a sheet for approval and tells the people who can decide it (spec C2). |
 | `decideTimesheets(ids: readonly string[], decision: TimesheetDecision)` | `void` | `POST /timesheets/decisions` | `hr.timesheet.approve` | Approves or rejects submitted sheets (spec C1, ADR 0024). A rejection needs a reason and never changes the hours; nobody decides their own sheet, the same two-person idea as payments. |
 | `reopenTimesheet(id: string, reason: string)` | `Timesheet` | `POST /timesheets/:id/reopen` | `hr.timesheet.approve` | Reopens an approved sheet with a reason, until its pay period is exported (ADR 0024). |

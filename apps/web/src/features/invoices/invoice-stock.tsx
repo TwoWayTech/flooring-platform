@@ -5,6 +5,8 @@ import { useState } from "react";
 import { PackageCheck, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import {
+  dec,
+  isShort,
   locationName,
   mayIssue,
   STOCK_UNIT_LABELS,
@@ -89,7 +91,7 @@ export function InvoiceStock({
               const line = invoice.lines.find((l) => l.id === r.lineId);
               const roll = rolls.find((x) => x.id === r.rollId);
               const unit = STOCK_UNIT_LABELS[(product && stockUnit(product)) || "each"];
-              const short = r.shortBy !== "0";
+              const short = isShort(r);
               return (
                 <tr key={r.id} className="border-hairline border-b">
                   <td className="py-2 pr-3">{line?.description ?? product?.name}</td>
@@ -129,7 +131,7 @@ export function InvoiceStock({
                     )}
                   </td>
                   <td className="py-2 text-right">
-                    {r.status === "active" && Number(r.quantity) > 0 && canCut ? (
+                    {r.status === "active" && dec(r.quantity).gt(0) && canCut ? (
                       paid ? (
                         <Button
                           size="sm"

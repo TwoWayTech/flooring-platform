@@ -2,7 +2,7 @@
 
 import { useReducedMotion } from "motion/react";
 import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis, type TooltipContentProps } from "recharts";
-import { formatNumber, type PnlMonth } from "@workspace/shared";
+import { formatNumber } from "@workspace/shared";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@workspace/ui/components/chart";
 import { Num } from "@workspace/ui/components/num";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
@@ -15,6 +15,16 @@ const CONFIG = {
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/**
+ * One month of the 12-month panel, as decimal strings. The margin figures are present only for a
+ * viewer who sees margins with every cost known; otherwise they are absent, not blanked (ADR 0037,
+ * 2026-11-17).
+ */
+export type ChartMonth = { month: string; revenue: string; grossMargin?: string; grossMarginPct?: string };
+
+/** A chart row: the plotted values and the axis label. */
+type ChartRow = { revenue: number; grossMargin?: number; label: string };
+
 /** "2026-03" as "Mar". */
 export function monthLabel(month: string): string {
   return MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month;
@@ -22,19 +32,23 @@ export function monthLabel(month: string): string {
 
 function Tip({ active, payload, label }: Partial<TooltipContentProps<number, string>>) {
   if (!active || !payload?.length) return null;
-  const row = payload[0]!.payload as PnlMonth;
+  const row = payload[0]!.payload as ChartRow;
   return (
     <div className="bg-surface border-hairline rounded-panel min-w-44 border px-3 py-2 text-xs shadow-lg">
       <p className="mb-1.5 font-semibold">{label}</p>
-      {payload.map((p) => (
-        <p key={String(p.dataKey)} className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-2 rounded-xs" style={{ background: p.color }} />
-            {CONFIG[p.dataKey as keyof typeof CONFIG].label}
-          </span>
-          <Num kind="money" value={row[p.dataKey as "revenue" | "grossMargin"]} />
-        </p>
-      ))}
+      {payload.map((p) => {
+        // Recharts passes only the series it draws, so a margin is always there; this narrows the type.
+        const value = row[p.dataKey as "revenue" | "grossMargin"];
+        return value === undefined ? null : (
+          <p key={String(p.dataKey)} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden="true" className="size-2 rounded-xs" style={{ background: p.color }} />
+              {CONFIG[p.dataKey as keyof typeof CONFIG].label}
+            </span>
+            <Num kind="money" value={value} />
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -54,15 +68,15 @@ function endLabel(name: string, last: number) {
 
 /**
  * Revenue as an area and gross margin as a line on one dollar axis (spec "Dashboard"). The
- * margin line only renders for viewers who may see margins.
+ * margin line only renders for viewers who may see margins, and a month without a margin never
+ * plots one, so an unknown is never drawn as zero.
  */
-export function RevenueChart({ months, showMargin }: { months: PnlMonth[]; showMargin: boolean }) {
+export function RevenueChart({ months, showMargin }: { months: readonly ChartMonth[]; showMargin: boolean }) {
   const settings = useNumberSettings();
   const reduced = useReducedMotion();
-  const data = months.map((m) => ({
-    ...m,
+  const data = months.map((m): ChartRow => ({
     revenue: Number(m.revenue),
-    grossMargin: Number(m.grossMargin),
+    ...(m.grossMargin === undefined ? {} : { grossMargin: Number(m.grossMargin) }),
     label: monthLabel(m.month),
   }));
   const last = data.length - 1;

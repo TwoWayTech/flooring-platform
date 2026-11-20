@@ -10,11 +10,13 @@ Drafted by Claude on 2026-11-13 for P10 part 2. docs/product-spec/settings-and-p
 | List roles | `list("roles")` | `GET /roles` | `settings.roles.view`, `settings.roles.manage`, `settings.users.view` or `settings.users.manage` |
 | Audit log | `list("audit")` | `GET /audit` | `settings.audit.view` |
 | Invite user | `inviteUser` | `POST /users/invite` | `settings.users.manage` |
-| Change roles, status, branch, title, reset MFA | `updateUser` | `PATCH /users/:id` | `settings.users.manage`; step-up for roles and MFA reset |
+| Change roles, status, branch, title, reset MFA | `updateUser` | `PATCH /users/:id` | `settings.users.manage`; step-up for roles, status, branch and MFA reset |
 | Create or edit a role | `saveRole` | `POST /roles`, `PUT /roles/:id` | `settings.roles.manage` and step-up |
 | Reset a role | `resetRole` | `POST /roles/:id/reset` | `settings.roles.manage` and step-up |
 | Delete a role | `deleteRole` | `DELETE /roles/:id` | `settings.roles.manage` and step-up |
 | Step-up code | `verifyStepUp` | `POST /auth/step-up` | a signed-in session |
+
+**Branches (ADR 0051, 2026-11-20).** An invitation or a change names no branch or one of the company's live branches; anything else is refused (400 `unknown_branch`), never stored as no branch. Someone whose data scope is below `all` invites only into their own branch, changes only people in their own branch (roles, status, title, branch, MFA reset; oneself excepted), and moves them only to their own branch (403 `branch_other`; `branchPlacementDenial` and `branchManageDenial` in packages/shared, applied by the API and DemoStore). The invite dialog says so before the code is asked for when such an admin has no branch. The invite's audit row records the branch stored.
 
 The spec's business rules 10 to 15 apply on the server:
 - **No escalation (rules 10 and 11):** a role save may add only keys the granter holds; it may keep keys the role already had. Assigning a role needs every active key of that role, and only an Owner can make an Owner.

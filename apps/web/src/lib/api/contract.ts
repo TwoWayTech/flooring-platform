@@ -46,6 +46,7 @@ import type {
   Invoice,
   Quote,
   CompanySettings,
+  LocalizationSettings,
   Transfer,
   TransferInput,
   Location,
@@ -102,6 +103,22 @@ import type {
 } from "@workspace/shared";
 // Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
 import type { ImportBatchSummary, ImportOverview, ImportPreview, ImportResult } from "@workspace/shared";
+// GET /company (ADR 0051, "GET /company") keeps its own import, so the lists above stay as they are.
+import type { Access } from "@workspace/shared";
+
+/**
+ * The open company's facts the shell takes from `getWorkspace()` (ADR 0051, "GET /company"). The
+ * rest of `Company` (id, product, plan, status, limits) is still `getCompany()`'s.
+ */
+export type CompanyFacts = Pick<Company, "name" | "city" | "state" | "modules" | "ceiling" | "branches">;
+
+/** Who is signed in to the open company and what they may do, as the shell shows it (`getWorkspace`). */
+export interface WorkspaceFacts {
+  company: CompanyFacts;
+  user: User;
+  roles: Role[];
+  access: Access;
+}
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
 export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "settings">;
@@ -127,6 +144,12 @@ export interface TimesheetInput {
   employeeId: string;
   weekStart: string;
   days: number[];
+  /**
+   * The hours the form started from (zeros for a week with no sheet). A save is refused when the
+   * stored week has changed from them meanwhile, unless it sends the stored hours (hr.md "Create or
+   * edit hours"; ADR 0051, 2026-11-16).
+   */
+  expectedDays: number[];
 }
 
 /** What a template upload would do, or did: each row, with its errors. */
@@ -841,14 +864,48 @@ export interface ApiClient {
 
   /** The open company's record (modules, ceiling, limits). */
   getCompany(): Promise<Company>;
-  /** The open company's settings. */
+  /**
+   * Who is signed in and what they may do in the open company, as the shell shows it (GET /company):
+   * the company's modules, ceiling and branches, the person, the roles the shell may list and the
+   * person's own effective access. The demo lists every role (View as); the API only the person's
+   * own, with the guard's own access. The rest of `Company` (plan, status, limits) is still
+   * `getCompany()`'s.
+   */
+  getWorkspace(): Promise<WorkspaceFacts>;
+  /**
+   * The open company's settings. In api mode the sections in `API_SETTINGS_SECTIONS` come from
+   * `GET /settings`, cut to what the person reads (ADR 0059); the rest are still DemoStore's.
+   */
   getSettings(): Promise<CompanySettings>;
-  /** Replaces one settings section and audits the change. */
+  /**
+   * Replaces one settings section and audits the change. In api mode a served section is
+   * `PUT /settings/<section>`; other sections stay on DemoStore. Localization and tax saves per tab
+   * through `updateLocalization`: `updateSettings("localization")` is refused in both modes
+   * ("Localization and tax saves one tab at a time."), after the module, keys, switch and scope
+   * checks (ADR 0059, part 3b).
+   */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
+  /**
+   * Saves one tab of Localization and tax (Region, Currency, Sales tax, Payroll rules) or the Sales
+   * and documents page, and audits it. Each tab checks its own key (LOCALIZATION_TABS), so a person who
+   * manages only sales tax can't save the other tabs. In api mode every tab is
+   * `PUT /settings/localization/<tab>` (API_LOCALIZATION_TABS, all five since part 3a; ADR 0059, parts 2a
+   * to 3a).
+   */
+  updateLocalization<T extends keyof LocalizationSettings>(
+    tab: T,
+    value: LocalizationSettings[T],
+  ): Promise<CompanySettings>;
 
-  /** The company's original settings, for Reset to default on settings pages (spec A4). */
+  /**
+   * The company's original settings, for Reset to default on settings pages (spec A4). Still
+   * DemoStore's in api mode: the fixture's originals, which the API was seeded with (ADR 0059 D7).
+   */
   getDefaultSettings(): Promise<CompanySettings>;
-  /** Restores one settings section to the company's original values and audits it. */
+  /**
+   * Restores one settings section to the company's original values and audits it; `localization` is
+   * refused, as by `updateSettings` (ADR 0059, part 3b). No screen calls it; DemoStore only.
+   */
   resetSettings(section: keyof CompanySettings): Promise<CompanySettings>;
 
   /** Records of a collection, limited to the viewer's data scope. */
@@ -1228,8 +1285,12 @@ export interface ApiClient {
   /** Receives a transfer at its destination. Needs inventory.transfer.receive. Audited. */
   receiveTransfer(transferId: string): Promise<Transfer>;
   /**
-   * Creates or changes a warehouse or showroom (spec A1). Exactly one warehouse is the company
-   * default, and a location holding stock cannot become a showroom. Needs settings.locations.manage. Audited.
+   * Creates or changes a warehouse or showroom (spec A1; ADR 0059, part 4a). A new location is one
+   * whose id the API didn't make. The name is unique as the stock import compares names; the branch
+   * is fixed once added; exactly one warehouse is the company default; a warehouse becomes a showroom
+   * only while it holds no stock, no transfer in transit, no stock held for an invoice and no open
+   * quote. Needs settings.locations.manage, the `inventory.locations` switch and data scope `all`.
+   * Audited, the cleared default too.
    */
   saveLocation(location: Location): Promise<Location>;
   /** Changes the signed-in person's own profile, such as their default warehouse. Audited. */

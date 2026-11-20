@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { StepUpDialog } from "@/components/step-up-dialog";
 import { SaveBar } from "./save-bar";
+import { nextSaveStep, saveSection } from "./save-section";
 
 /** Whether two settings values differ; settings are plain data, so JSON compares them fully. */
 export function differs(a: unknown, b: unknown): boolean {
@@ -30,10 +31,19 @@ interface SettingsFormProps<T> {
   initial: T;
   /** The company's original values, for Reset to default. */
   defaults: T;
-  /** Base currency and tax changes need a step-up code (blueprint "Localization", rule 4). */
-  stepUp?: boolean;
+  /**
+   * The save needs a step-up code: base currency and tax (blueprint "Localization", rule 4), Payments
+   * (ADR 0059 D5); or, as a function of the draft, only for some changes (Region's states of
+   * operation, ADR 0059 part 2b).
+   */
+  stepUp?: boolean | ((draft: T) => boolean);
   /** Extra condition for saving, such as a passing contrast check. */
   canSave?: (draft: T) => boolean;
+  /**
+   * Why the draft can't be saved, or null: the section's shared content rule. Save runs it before
+   * the step-up, so a refused value shows the API's own words and never costs a code (ADR 0059 D5).
+   */
+  problem?: (draft: T) => string | null;
   onSave: (value: T) => Promise<void>;
   /** The rows, given the draft, its setter and whether a top-level field has changed. */
   children: (draft: T, setDraft: (next: T) => void, changed: (key: keyof T) => boolean) => ReactNode;
@@ -42,7 +52,7 @@ interface SettingsFormProps<T> {
 /**
  * One settings section (spec A4): title and one sentence, the rows with changed ones marked,
  * Reset to default, and the sticky Save / Discard bar. Saving goes through the ApiClient, which
- * writes the change to the audit log.
+ * writes the change to the audit log; a refused save shows its message and keeps the draft.
  */
 export function SettingsForm<T>({
   title,
@@ -52,6 +62,7 @@ export function SettingsForm<T>({
   stepUp = false,
   showTitle = true,
   canSave,
+  problem,
   onSave,
   children,
 }: SettingsFormProps<T>) {
@@ -65,13 +76,18 @@ export function SettingsForm<T>({
   async function save() {
     setSaving(true);
     try {
-      await onSave(draft);
-      setSaved(draft);
-      toast.success(`${title} saved`);
+      // A refusal shows its words and keeps the draft, so the bar still shows the change (D16).
+      if (await saveSection(draft, onSave, title, toast)) setSaved(draft);
     } finally {
       setSaving(false);
       setConfirming(false);
     }
+  }
+
+  function requestSave() {
+    const step = nextSaveStep(draft, problem, stepUp, toast);
+    if (step === "step-up") setConfirming(true);
+    else if (step === "save") void save();
   }
 
   return (
@@ -100,7 +116,7 @@ export function SettingsForm<T>({
         saveLabel={`Save ${title.toLowerCase()}`}
         saving={saving}
         canSave={canSave ? canSave(draft) : true}
-        onSave={() => (stepUp ? setConfirming(true) : void save())}
+        onSave={requestSave}
         onDiscard={() => setDraft(saved)}
       />
       {stepUp ? (

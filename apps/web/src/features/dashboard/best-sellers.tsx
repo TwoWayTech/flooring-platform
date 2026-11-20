@@ -5,10 +5,11 @@ import { BarChart3, Table2 } from "lucide-react";
 import {
   addDays,
   bestSellersIn,
-  type Invoice,
+  seesMargin,
   type Product,
   type ProductCategory,
   type SellerMetric,
+  type ViewedInvoice,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -26,15 +27,17 @@ type Window = keyof typeof WINDOWS;
 
 /**
  * Best sellers (spec E1): its own period (7, 30, 90 days, 12 months or custom), ranked by revenue,
- * quantity or margin (margin needs view_sensitive), one category or all, as bars with the value
- * beside each or as a table. Follows the dashboard's warehouse filter.
+ * quantity or margin, one category or all, as bars with the value beside each or as a table. Follows
+ * the dashboard's warehouse filter. Margin needs both keys and a known cost (`seesMargin`; every row's
+ * margin is known or none is): without them the Margin option and column are left out and the
+ * ranking is by revenue (CLAUDE.md rule 5; ADR 0037, 2026-11-17).
  */
 export function BestSellers({
   invoices,
   products,
   locationId,
 }: {
-  invoices: Invoice[];
+  invoices: readonly ViewedInvoice[];
   products: Product[];
   locationId: string | null;
 }) {
@@ -46,19 +49,29 @@ export function BestSellers({
   const [category, setCategory] = useState("all");
   const [asTable, setAsTable] = useState(false);
   const range = window === "custom" ? custom : { from: addDays(today, -Number(window) + 1), to: today };
+  const allowed = seesMargin(can);
+  // Without margin sight the ranking is by revenue too, so the bars' order always matches what they show.
   const rows = bestSellersIn(invoices, products, {
     ...range,
-    metric,
+    metric: metric === "margin" && !allowed ? "revenue" : metric,
     category: category === "all" ? null : category,
     locationId,
     limit: 5,
   });
-  const top = Math.max(...rows.map((r) => Math.abs(Number(r[metric]))), 1);
-  const kind = metric === "quantity" ? "quantity" : "money";
+  const marginShown = allowed && rows.every((r) => r.margin !== null);
+  const shownMetric: SellerMetric = metric === "margin" && !marginShown ? "revenue" : metric;
+  const top = Math.max(
+    ...rows.flatMap((r) => {
+      const value = r[shownMetric];
+      return value === null ? [] : [Math.abs(Number(value))];
+    }),
+    1,
+  );
+  const kind = shownMetric === "quantity" ? "quantity" : "money";
   const metrics: (readonly [SellerMetric, string])[] = [
     ["revenue", "Revenue"],
     ["quantity", "Quantity"],
-    ...(can("sales.margin.view_sensitive") ? [["margin", "Margin"] as const] : []),
+    ...(marginShown ? [["margin", "Margin"] as const] : []),
   ];
   const product = (id: string) => products.find((p) => p.id === id);
   return (
@@ -109,7 +122,7 @@ export function BestSellers({
         <Segmented
           size="sm"
           label="Rank by"
-          value={metric}
+          value={shownMetric}
           options={metrics}
           onChange={(v) => setMetric(v as SellerMetric)}
         />
@@ -150,7 +163,7 @@ export function BestSellers({
               <th scope="col" className="py-1 text-right font-medium">
                 Quantity
               </th>
-              {can("sales.margin.view_sensitive") ? (
+              {marginShown ? (
                 <th scope="col" className="py-1 text-right font-medium">
                   Margin
                 </th>
@@ -167,7 +180,7 @@ export function BestSellers({
                 <td className="py-1.5 text-right">
                   <Num kind="quantity" value={r.quantity} />
                 </td>
-                {can("sales.margin.view_sensitive") ? (
+                {marginShown && r.margin !== null ? (
                   <td className="py-1.5 text-right">
                     <Num kind="money" value={r.margin} />
                   </td>
@@ -180,17 +193,20 @@ export function BestSellers({
         <ol className="flex flex-col gap-3">
           {rows.map((r) => {
             const p = product(r.productId);
+            // A shown value is never null (margin shows only when every row has one); this narrows the type.
+            const value = r[shownMetric];
+            if (value === null) return null;
             return (
               <li key={r.productId} className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   {p ? <Swatch color={p.swatch} label={p.colorName} /> : null}
                   <span className="min-w-0 flex-1 truncate">{p?.name}</span>
-                  <Num kind={kind} value={r[metric]} className="font-medium" />
+                  <Num kind={kind} value={value} className="font-medium" />
                 </div>
                 <span className="bg-raised h-1.5 overflow-hidden rounded-full" aria-hidden="true">
                   <span
                     className="bg-chart-1 block h-full rounded-full"
-                    style={{ width: `${(Math.abs(Number(r[metric])) / top) * 100}%` }}
+                    style={{ width: `${(Math.abs(Number(value)) / top) * 100}%` }}
                   />
                 </span>
               </li>

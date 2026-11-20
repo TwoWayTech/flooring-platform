@@ -7,6 +7,7 @@ import {
   boxedOnHand,
   dec,
   availableToSell,
+  isShort,
   mayIssue,
   stockAcrossWarehouses,
   planReservations,
@@ -96,6 +97,11 @@ describe("reservations (spec C2)", () => {
     expect(adjustmentNeedsApproval("-60", "50")).toBe(true);
     expect(adjustmentNeedsApproval("-20", "50")).toBe(false);
     expect(adjustmentNeedsApproval("-500", "")).toBe(false);
+  });
+
+  it("reads a shortfall by value, at any scale the API or the demo sends (STATUS B3)", () => {
+    for (const shortBy of ["0", "0.00", "0.000"]) expect(isShort({ shortBy }), shortBy).toBe(false);
+    for (const shortBy of ["0.001", "12.500", "158.4"]) expect(isShort({ shortBy }), shortBy).toBe(true);
   });
 
   for (const f of [summit, keystone]) {

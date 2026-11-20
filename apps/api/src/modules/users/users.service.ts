@@ -22,6 +22,8 @@ import {
 } from "@workspace/db/control";
 import type { EmailProvider } from "@workspace/providers";
 import {
+  branchManageDenial,
+  branchPlacementDenial,
   canAssignRole,
   canManageHolder,
   hasActiveOwner,
@@ -99,6 +101,28 @@ export class UsersService {
   async list(tenant: TenantContext): Promise<User[]> {
     const db = await this.tenancy.db(tenant);
     const profiles = await db.select().from(userProfiles).where(isNull(userProfiles.deletedAt));
+    return this.usersOf(tenant, db, profiles);
+  }
+
+  /**
+   * One person exactly as `list` shapes them (GET /company's `me`; ADR 0051, "GET /company"), reading
+   * only their own profile, account, passkeys and roles; null without a live profile and an account.
+   */
+  async one(tenant: TenantContext, userId: string): Promise<User | null> {
+    const db = await this.tenancy.db(tenant);
+    const profiles = await db
+      .select()
+      .from(userProfiles)
+      .where(and(eq(userProfiles.userId, userId), isNull(userProfiles.deletedAt)));
+    return (await this.usersOf(tenant, db, profiles))[0] ?? null;
+  }
+
+  /** These profiles as `User`s, with their accounts' names, emails and MFA state and their live roles. */
+  private async usersOf(
+    tenant: TenantContext,
+    db: CompanyDb,
+    profiles: readonly (typeof userProfiles.$inferSelect)[],
+  ): Promise<User[]> {
     if (profiles.length === 0) return [];
     const ids = profiles.map((profile) => profile.userId);
     const [accounts, keys, held] = await Promise.all([
@@ -146,6 +170,7 @@ export class UsersService {
     await this.stepUp.require(actor.session);
     const db = await this.tenancy.db(tenant);
     const branchId = await knownBranch(db, input.branchId);
+    if (branchPlacementDenial(actor.access, branchId)) throw new ForbiddenException(BRANCH_REFUSALS.invite);
     const email = input.email.trim().toLowerCase();
     const allRoles = await loadRoles(db);
     this.assertCanAssign(actor.access, allRoles, input.roleIds, []);
@@ -238,7 +263,7 @@ export class UsersService {
           targetType: "user",
           targetId: userId,
           targetLabel: email,
-          after: { roleIds: input.roleIds, branchId: input.branchId, title: input.title },
+          after: { roleIds: input.roleIds, branchId, title: input.title },
         },
         tx,
       );
@@ -276,15 +301,22 @@ export class UsersService {
     const allRoles = await loadRoles(db);
     const held = await heldRoles(db);
     const current = held.get(userId) ?? [];
-    if (userId !== actor.access.userId) this.assertCanManage(actor.access, allRoles, current);
+    if (userId !== actor.access.userId) {
+      this.assertCanManage(actor.access, allRoles, current);
+      if (branchManageDenial(actor.access, profile.branchId)) throw new ForbiddenException(BRANCH_REFUSALS.change);
+    }
     if (patch.roleIds !== undefined) this.assertCanAssign(actor.access, allRoles, patch.roleIds, current);
     await this.assertOwnerRemains(db, allRoles, held, userId, patch);
     if (patch.mfaEnrolled === false) await this.assertMfaResettable(tenant, userId);
+    const branchId = patch.branchId === undefined ? undefined : await knownBranch(db, patch.branchId);
+    if (branchId !== undefined && branchPlacementDenial(actor.access, branchId, profile.branchId)) {
+      throw new ForbiddenException(BRANCH_REFUSALS.change);
+    }
 
     await db.transaction(async (tx) => {
       const changes: Partial<typeof userProfiles.$inferInsert> = {};
       if (patch.status !== undefined) changes.status = patch.status;
-      if (patch.branchId !== undefined) changes.branchId = await knownBranch(tx, patch.branchId);
+      if (branchId !== undefined) changes.branchId = branchId;
       if (patch.title !== undefined) changes.title = patch.title.trim();
       if (Object.keys(changes).length > 0) {
         await tx.update(userProfiles).set(changes).where(eq(userProfiles.userId, userId));
@@ -304,7 +336,7 @@ export class UsersService {
             branchId: profile.branchId,
             title: profile.title,
           },
-          after: patch,
+          after: branchId === undefined ? patch : { ...patch, branchId },
         },
         tx,
       );
@@ -440,19 +472,37 @@ export class UsersService {
   }
 }
 
+const UNKNOWN_BRANCH = {
+  code: "unknown_branch",
+  message: "That branch is not one of your company's branches. Reload the page and pick another.",
+} as const;
+
 /**
- * The branch id to store: one of the company's live branches, or null. In api mode the screens
- * still read branches from the demo until Settings → Locations moves, so an unknown id is stored as
- * no branch rather than refused (STATUS).
+ * The branch id to store (ADR 0051, "2026-11-20"): an empty id is no branch; anything else must be
+ * one of the company's live branches, or the request is refused (400), never stored as no branch.
  */
 async function knownBranch(db: CompanyDb, branchId: string): Promise<string | null> {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) return null;
+  if (branchId === "") return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchId)) {
+    throw new BadRequestException(UNKNOWN_BRANCH);
+  }
   const [row] = await db
     .select({ id: branches.id })
     .from(branches)
     .where(and(eq(branches.id, branchId), isNull(branches.deletedAt)));
-  return row?.id ?? null;
+  if (!row) throw new BadRequestException(UNKNOWN_BRANCH);
+  return row.id;
 }
+
+/**
+ * What a branch-scoped admin is told (the server half of D18; `branchPlacementDenial` and
+ * `branchManageDenial` in packages/shared): they invite into their own branch only, and change only
+ * people in their own branch, keeping them there.
+ */
+const BRANCH_REFUSALS = {
+  invite: { code: "branch_other", message: "You can only invite people to your own branch." },
+  change: { code: "branch_other", message: "You can only change people in your own branch, and keep them in it." },
+} as const;
 
 /** The audit action for a user change, in words. */
 function describePatch(patch: UserPatchInput): string {

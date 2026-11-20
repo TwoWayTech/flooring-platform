@@ -3,6 +3,8 @@ import {
   approvedHoursInYear,
   clockedHours,
   dec,
+  overwritesNewerHours,
+  sameWeekHours,
   seesPersonRecords,
   timeOffRequestProblem,
   withClockedHours,
@@ -115,5 +117,23 @@ describe("the clock (spec C2)", () => {
 
   it("adds hours to one day of the week", () => {
     expect(withClockedHours([1, 2.25, 0, 0, 0, 0, 0], 1, 0.33)).toEqual([1, 2.58, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("a save never writes over newer hours (hr.md Create or edit hours; ADR 0051, 2026-11-16)", () => {
+  const week = (...days: (string | number)[]) => [...days, ...Array<string>(7 - days.length).fill("0")];
+
+  it("compares a week's hours by value, as numbers or checked decimal strings", () => {
+    expect(sameWeekHours(week("7"), week(7))).toBe(true);
+    expect(sameWeekHours(week("7.000", "6.5"), week(7, 6.5))).toBe(true);
+    expect(sameWeekHours(week("7"), week("7.5"))).toBe(false);
+    expect(sameWeekHours(week("7"), ["7", "0", "0"])).toBe(false);
+  });
+
+  it("takes a save made from the stored hours, or one that sends the stored hours, and refuses any other", () => {
+    const stored = week("6.5");
+    expect(overwritesNewerHours(stored, week("6.5"), week("8"))).toBe(false);
+    expect(overwritesNewerHours(stored, week("0"), week("6.50"))).toBe(false);
+    expect(overwritesNewerHours(stored, week("0"), week("8"))).toBe(true);
   });
 });

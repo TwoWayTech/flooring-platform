@@ -22,12 +22,15 @@ import { Panel } from "@workspace/ui/components/panel";
  */
 export function LocationsPage() {
   const can = useCan();
-  const { company } = useWorkspace();
   const [editing, setEditing] = useState<Location | "new" | null>(null);
+  // The shell's branches: GET /company's in api mode, DemoStore's in the demo, the same source as
+  // the locations in each (ADR 0051 "GET /company" D7, closed by ADR 0059, part 4a, D15).
+  const { company } = useWorkspace();
+  const branches = company.branches;
   const data = useApiQuery((client) => client.list("locations"), []);
   if (!can("settings.locations.manage")) return <NoAccess />;
 
-  const branchName = (id: string) => company.branches.find((b) => b.id === id)?.name ?? "";
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "";
   const columns: ColumnSpec<Location>[] = [
     {
       id: "name",
@@ -88,7 +91,8 @@ export function LocationsPage() {
       {editing ? (
         <LocationDialog
           location={editing === "new" ? null : editing}
-          branches={company.branches}
+          branches={branches}
+          locations={data.data ?? []}
           onClose={() => setEditing(null)}
         />
       ) : null}

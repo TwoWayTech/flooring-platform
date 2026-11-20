@@ -39,8 +39,11 @@ type FieldName = "reason" | "hours";
 interface SupportRequestDialogProps {
   company: { id: string; name: string };
   onClose: () => void;
-  /** Reads the list again, where the data layer does not tell screens itself. */
-  onRequested: () => void;
+  /**
+   * Reads the list again after a limit refusal: the transport doesn't re-read after a 429
+   * `rate_limited` (ADR 0051, 2026-11-16), and the Request button depends on the limit.
+   */
+  onRefused: () => void;
 }
 
 /**
@@ -52,7 +55,7 @@ interface SupportRequestDialogProps {
  * the form and reads the list again; any other failure shows its message and brings the form back
  * with what was typed.
  */
-export function SupportRequestDialog({ company, onClose, onRequested }: SupportRequestDialogProps) {
+export function SupportRequestDialog({ company, onClose, onRefused }: SupportRequestDialogProps) {
   const settings = useNumberSettings();
   const [reason, setReason] = useState("");
   const [hours, setHours] = useState(DEFAULT_HOURS);
@@ -71,14 +74,13 @@ export function SupportRequestDialog({ company, onClose, onRequested }: SupportR
     try {
       await api.requestSupportAccess(request());
       toast.success(`Support access requested. ${company.name}'s Owner approves it in Settings.`);
-      onRequested();
       onClose();
     } catch (failure) {
       const message = failure instanceof Error ? failure.message : "The request was not sent.";
       toast.error(message);
       if (LIMIT_REFUSALS.includes(message)) {
         // Another tab or admin session asked meanwhile, so the list (and the button) is read again.
-        onRequested();
+        onRefused();
         onClose();
       } else {
         setStage("form");

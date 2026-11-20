@@ -194,7 +194,7 @@ All functions below are in `packages/shared/src/hr/commission-plans.ts` unless a
 
 15. **Signature.** `acknowledgePlan`. The typed name must equal the user's name, ignoring case and surrounding spaces. Commission accrues whether or not the plan is signed.
 
-16. **Issuing a credit note.** `issueCreditNote`, `commission-actions.ts`. The invoice must be live. The amount must be above 0, and with earlier credits must not exceed the invoice subtotal. The number is `CR-` from 5001 up.
+16. **Issuing a credit note.** `issueCreditNote`, `commission-actions.ts`. The invoice must be live. The amount must be above 0, and with earlier credits must not exceed the invoice subtotal. The number is `CR-` from 5001 up, after the highest `CR-` number among all invoices (sales.md rule 22).
 
     ```ts
     const share = (field: "tax" | "cost") => roundMoney(dec(invoice[field]).times(amount).dividedBy(invoice.subtotal));
@@ -330,7 +330,7 @@ No real email is sent. `notify` writes an Outbox row.
 
 | Output | Source | Who |
 | --- | --- | --- |
-| Sales, Team CSV, `commissions` | `DataTable` in `team-table.tsx`, from `teamStats`. The margin column is left out without `sales.margin.view_sensitive` | `sales.commission.view` |
+| Sales, Team CSV, `commissions` | `DataTable` in `team-table.tsx`, from `teamStats`. The margin column needs `sales.margin.view_sensitive` and `inventory.product.view_sensitive` (`seesMargin`) and shows only when every salesperson's margin in the table is known | `sales.commission.view` |
 | Statements CSV, `commission-<month>` | `DataTable` in `commissions-page.tsx` | `hr.commission.view` |
 | People on plans CSV, `commission-plans-assigned` | `DataTable` in `commissions-page.tsx` | `hr.commission.view` |
 | Pay period lines and summary CSV | `commissionPay`, in `docs/product-spec/hr.md` | `hr.payroll.view`, `hr.payroll.export` |

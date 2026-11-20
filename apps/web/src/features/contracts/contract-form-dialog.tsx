@@ -104,6 +104,8 @@ export function ContractFormDialog({
           supplierId: null,
           title: "",
           scope: "",
+          // The demo files a new contract under this branch. The API files it under its creator's own
+          // and is never sent one (api-methods.ts `contractBody`; ADR 0044).
           branchId: user.branchId,
           locationId: locations[0]?.id ?? "",
           jobSite: { ...site },

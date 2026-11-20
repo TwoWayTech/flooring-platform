@@ -234,7 +234,7 @@ As built:
 
 - **Seat limit.** It is checked only on invite. Enabling a disabled user does not check it, so someone can get round a lowered limit by disabling and re-enabling a person.
 - **Branch limit.** It is stored, not enforced, until Settings → Locations moves to the API (blueprint p24 asks for enforcement).
-- **The api-mode company shell.** It reads modules and the ceiling from the demo store until `GET /company` moves to the API. After a change, a button may still look enabled while the API refuses it with 403.
+- **The api-mode company shell.** It reads modules and the ceiling from the demo store until `GET /company` moves to the API. After a change, a button may still look enabled while the API refuses it with 403. (Closed by `GET /company`, ADR 0051: the shell reads modules and the ceiling from the API, and a change shows on the person's next load or write.)
 - **Two admins saving at once.** The last save wins. Both saves are in the platform audit log.
 - **A broken company database.** A company whose database failed a migration, or that is in maintenance, still shows and saves, because only the control database is used.
 - **The session the console runs on.** With no admin host, the console runs on a company host with the home company's session and timeouts. The step-up protects writes; reads are open to that session.

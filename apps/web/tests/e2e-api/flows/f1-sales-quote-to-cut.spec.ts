@@ -39,37 +39,6 @@ import {
 } from "./kit";
 import { CASH, movedBy } from "./ledger";
 
-/**
- * The product bugs that stop this flow in step 1 (session log 2026-11-16-0200, "For STATUS"). Until
- * they are fixed the flow is `fixme`, written to the behaviour the spec asks for; a throwaway run
- * that worked around them passed every later step (session log, stage 3).
- */
-const BLOCKED_BY = [
-  {
-    type: "issue",
-    description:
-      "api mode: a salesperson's quote builder stops working ('This screen stopped working', [DecimalError] Invalid " +
-      "argument: undefined) once the quote has a product line. The API strips `cost` and `unitCost` for anyone " +
-      "without product cost (rule 5), so the line's `unitCost` is undefined when a product is added, in the saved " +
-      "answer and in every saved quote, and computeTotals multiplies by it (use-quote-draft.ts lineFor; " +
-      "documents.ts). STATUS follow-up.",
-  },
-  {
-    type: "issue",
-    description:
-      "api mode: only the meetings writes in api-methods.ts call `changed`, so no other write makes the screens read " +
-      "again (routeClient; ADR 0051 'Re-reading after a write'). A customer added from the quote builder never shows " +
-      "as chosen and the job-site picker stays disabled; the invoice's status after a payment or a void, and Ready to " +
-      "cut after a cut, change only on reload. STATUS follow-up.",
-  },
-  {
-    type: "issue",
-    description:
-      "api mode: the invoice's Stock panel reads every held line as 'Short by 0.00 ft, not reserved', because it " +
-      'tests `shortBy !== "0"` and the API answers numeric(14,3) as "0.000" (invoice-stock.tsx). STATUS follow-up.',
-  },
-];
-
 /** Every payment the flow records waits, because the Sales role's data scope is own (payments.service.ts). */
 const WAITS: PaymentOutcome = {
   status: "pending",
@@ -120,16 +89,18 @@ function rowsWith(report: Report, reference: string): Record<string, string>[] {
  * Pending → Accepted → invoice with a roll on hold; her deposit and final payment each wait (own
  * scope) until the accountant confirms them; the warehouse cuts the roll; the accountant then voids
  * the deposit. The ledger, the bell, the stock, Payments received and the audit log are checked
- * after each step, all from the answers. It registers no clean-ups yet: while it is `fixme` it never
- * runs, so none could be proved. Once B1 to B3 are fixed, register what a stopped run must undo (the
- * payments, the invoice and its hold) with `personas.onCleanup`, as the other flows do.
+ * after each step, all from the answers. Rule 5 is checked the other way too: Priya's quote request
+ * and its answer carry no cost, and her summary shows no margin (B1, session log 2026-11-16-2320). A
+ * run that stops midway is undone by three clean-ups, newest first: a final payment still waiting is
+ * rejected, the deposit is voided, and the invoice is voided, which releases its hold. A complete run
+ * leaves them all refused as already done (400), so its books stay as step 8 checked them.
  */
 flowTest.describe("flow F1: sales from a new customer to the cut and a voided deposit", () => {
   resetAuthAround([ACCOUNTANT_EMAIL, SALES_EMAIL, WAREHOUSE_EMAIL]);
 
-  flowTest.fixme(
+  flowTest(
     "quote to invoice, deposit and final payment confirmed by a second person, roll cut, deposit voided",
-    { tag: FLOW_TAG, annotation: BLOCKED_BY },
+    { tag: FLOW_TAG },
     async ({ personas }) => {
       flowTest.setTimeout(180_000);
       const run = runId();
@@ -188,8 +159,21 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         await page.getByLabel("Deposit percent").blur();
 
         const drafted = waitForAnswer<Quote>(page, "POST", /^\/api-proxy\/quotes$/);
+        const sent = page.waitForRequest(
+          (r) => r.method() === "POST" && new URL(r.url()).pathname === "/api-proxy/quotes",
+        );
         await page.getByRole("button", { name: "Save as draft" }).click();
         const quote = await drafted;
+        // Rule 5 the other way: the browser sends no cost it was never given, and gets none back (B1).
+        const request = (await sent).postDataJSON() as Quote;
+        expect(request.lines.filter((line) => "unitCost" in line).length, "request lines carrying unitCost").toBe(0);
+        expect(quote.lines.filter((line) => "unitCost" in line).length, "answer lines carrying unitCost").toBe(0);
+        await expect(
+          page
+            .getByRole("region", { name: "Summary" })
+            .locator("dt")
+            .filter({ hasText: /^Margin$/ }),
+        ).toHaveCount(0);
         await expect(page).toHaveURL(new RegExp(`/sales/quotes/${quote.id}$`));
         await expect(quoteStatus(page)).toHaveText("Draft");
         await page.getByRole("button", { name: "Send / mark pending" }).click();
@@ -201,6 +185,9 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
         const converted = waitForAnswer<Invoice>(page, "POST", new RegExp(`^/api-proxy/quotes/${quote.id}/invoice$`));
         await page.getByRole("button", { name: "Convert to invoice" }).click();
         const made = await converted;
+        personas.onCleanup(`void ${made.number}`, () =>
+          grace.request.post(`/api-proxy/invoices/${made.id}/void`, { data: { reason: "e2e flow clean-up" } }),
+        );
         expect(dec(made.depositPct).eq(60), `a 60 % deposit, not ${made.depositPct}`).toBe(true);
         await expect(page).toHaveURL(new RegExp(`/sales/invoices/${made.id}$`));
         await expect(invoicePills(page)).toHaveText(["Open"]);
@@ -230,6 +217,9 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
           page.getByRole("dialog", { name: "Record deposit" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(deposit);
         const payment = await savePayment(page, invoice.number, depositRef, WAITS);
+        personas.onCleanup(`void ${payment.number}`, () =>
+          grace.request.post(`/api-proxy/payments/${payment.id}/void`, { data: { reason: "e2e flow clean-up" } }),
+        );
         expect(payment.kind).toBe("deposit");
         expect(payment.amount).toBe(deposit);
         await expect(invoicePills(page)).toHaveText(["Pending verification"]);
@@ -318,6 +308,12 @@ flowTest.describe("flow F1: sales from a new customer to the cut and a voided de
           page.getByRole("dialog", { name: "Record payment" }).getByLabel("Amount", { exact: true }),
         ).toHaveValue(rest);
         const payment = await savePayment(page, invoice.number, finalRef, WAITS);
+        // Rejected only while it waits: voiding a confirmed one would post entries after a passing run.
+        personas.onCleanup(`reject ${payment.number} if it still waits`, () =>
+          grace.request.post(`/api-proxy/payments/${payment.id}/review`, {
+            data: { action: "reject", reason: "e2e flow clean-up" },
+          }),
+        );
         expect(payment.kind).toBe("payment");
         expect(payment.amount).toBe(rest);
         await expect(invoicePills(page)).toHaveText(["Pending verification", "Deposit paid"]);

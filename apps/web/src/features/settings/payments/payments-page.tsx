@@ -1,6 +1,11 @@
 "use client";
 
-import type { PaymentSettings } from "@workspace/shared";
+import {
+  PAYMENT_CONTROLS_OWNER_ONLY,
+  paymentControlsLoosened,
+  paymentSettingsProblem,
+  type PaymentSettings,
+} from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
 import { Switch } from "@workspace/ui/components/switch";
@@ -70,11 +75,17 @@ function PaymentsSection({ draft, setDraft, changed }: SectionProps<PaymentSetti
 
 /**
  * Settings: Payments (spec Appendix A): whether payments wait for a second person, above which
- * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes.
+ * amount, the largest leftover that may be written off, and the PAY- and RF- prefixes. These are
+ * fraud controls over money in and out, so saving asks for a step-up code once the shared rule has
+ * passed the draft, and a refused value never costs one (ADR 0059 D5). Loosening a control is the
+ * Owner's alone, refused here too before the code (ADR 0059, "2026-11-20").
  */
 export function PaymentsSettingsPage() {
   const can = useCan();
-  const { settings } = useWorkspace();
+  const { settings, access } = useWorkspace();
+  const problem = (draft: PaymentSettings) =>
+    paymentSettingsProblem(draft) ??
+    (!access.isOwner && paymentControlsLoosened(draft, settings.payments) ? PAYMENT_CONTROLS_OWNER_ONLY : null);
   const defaults = useApiQuery((client) => client.getDefaultSettings(), []);
   if (!can("settings.payments.manage")) return <NoAccess />;
   if (defaults.status !== "ready") return <QueryFallback query={defaults} className="h-96" label="Loading settings" />;
@@ -82,10 +93,12 @@ export function PaymentsSettingsPage() {
     <Panel bodyClassName="flex flex-col gap-8">
       <SettingsForm
         showTitle={false}
+        stepUp
         title="Payments"
         description="The two-person check on customer payments, small write-offs, and payment and refund numbering."
         initial={settings.payments}
         defaults={defaults.data.payments}
+        problem={problem}
         onSave={(payments) => api.updateSettings("payments", payments).then(() => {})}
       >
         {(draft, setDraft, changed) => <PaymentsSection draft={draft} setDraft={setDraft} changed={changed} />}

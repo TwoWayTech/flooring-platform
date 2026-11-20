@@ -39,7 +39,7 @@ Default roles come from `packages/shared/src/permissions/roles.ts`. "All nine" m
 | Read pay periods, bonuses and contractor payments | `hr.payroll.view` | Owner, Accountant, HR manager | `PRIVATE_COLLECTIONS` and `listPayPeriods` in `store.ts`; `reviewPayPeriod` in `pay-actions.ts` |
 | Leave someone out, approve a run, reopen a run | `hr.payroll.approve` | Owner, HR manager | `setPayExclusion`, `approvePayPeriod`, `reopenPayPeriod` |
 | Export a run | `hr.payroll.export` | Owner, Accountant, HR manager | `exportPayPeriod` |
-| Change Settings, HR and time-off policies | `settings.hr.manage` | Owner, HR manager | `settingsPermissions` in `permission-rules.ts`; `saveTimeOffPolicy`; `HrSettingsPage` |
+| Change Settings, HR and time-off policies | `settings.hr.manage` | Owner, HR manager | `SETTINGS_SECTIONS.hr` in `packages/shared/src/settings/sections.ts`, read by `DemoStore.updateSettings`; `saveTimeOffPolicy`; `HrSettingsPage` |
 
 Data scope, from `applyScope`:
 
@@ -82,7 +82,7 @@ stateDiagram-v2
 
 | Transition | Function in `apps/web/src/lib/api/demo/timesheet-actions.ts` | Guards |
 | --- | --- | --- |
-| Create or edit hours | `saveTimesheet` | Person passes `needsTimesheet`. `hoursProblem` is null. `weekStart` is not after today. Status is not `approved`. Keeps the current status, so a rejected sheet stays rejected until submitted again |
+| Create or edit hours | `saveTimesheet` | Person passes `needsTimesheet`. `hoursProblem` is null. `weekStart` is not after today. Status is not `approved`. The hours stored for the week equal the hours the form started from (`expectedDays`), or the hours being saved; otherwise refused with nothing saved (`overwritesNewerHours`, 2026-11-16). Keeps the current status, so a rejected sheet stays rejected until submitted again |
 | To `submitted` | `submitTimesheet` | Status is not `submitted` or `approved`. Clears `rejectionReason`, adds a history event, tells approvers |
 | To `approved` or `rejected` | `decideTimesheets` | Status is `submitted`. The sheet is not the decider's own. A rejection needs a reason of at least 3 characters. Hours never change |
 | `approved` to `draft` | `reopenTimesheet` | Reason of at least 3 characters. No pay period with status `approved` or `exported` overlaps the week |
@@ -465,7 +465,7 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `showTeamCalendarToEmployees` | boolean | false |
 | `clockEnabled` | boolean | Keystone false, others true |
 
-The overtime rule is `localization.payroll.overtimeRule`, changed under Settings, Localization, Payroll. The HR page shows it with a link.
+The overtime rule is `localization.payroll.overtimeRule`, changed under Settings, Localization, Payroll. The HR page shows it with a link. The tab saves on its own (`updateLocalization("payroll")`, `settings.localization.manage`, module `hr`); on the API `PUT /settings/localization/payroll`, which refuses the California rule while its switch is off and a holiday state that isn't a US state code (ADR 0059, part 2a).
 
 ## Events and audit entries
 

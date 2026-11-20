@@ -11,9 +11,11 @@ import {
 } from "@workspace/db/company";
 import {
   adjustmentPosting,
+  CREDIT_NOTE_PREFIX,
   creditNotePosting,
   dec,
   defaultAddress,
+  FIRST_CREDIT_NOTE,
   invoiceFromQuote,
   invoiceFromRoll,
   invoicePosting,
@@ -26,6 +28,7 @@ import {
   rollAvailable,
   roundMoney,
   sum,
+  warehousesOf,
   type Invoice,
   type InvoiceAdjustment,
   type Payment,
@@ -42,7 +45,7 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
+import { loadLocations, loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { lockStock } from "../inventory/stock-lock";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
 import { insertInvoice, takeInvoiceNumber } from "./invoice-writes";
@@ -57,10 +60,6 @@ import {
 } from "./invoice-records";
 import { companyClock, notFound, refuse, seesCustomer, seesDocument, type CompanyClock } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
-
-/** The credit note series (`CR-5001`, spec rule 22). */
-const CREDIT_PREFIX = "CR-";
-const FIRST_CREDIT = 5001;
 
 /** What a credit note carries (spec rule 38): the amount before tax and why. */
 export interface CreditNoteRequest {
@@ -149,7 +148,8 @@ export class InvoicesService {
    * Converts an accepted quote into an invoice dated today (spec rule 19): the quote must still
    * pass every send check, totals are computed again here under the job site's tax rule on the
    * company's date, and the stock is held under the stock lock. A short line is recorded as short
-   * and does not block the sale.
+   * and does not block the sale. The quote keeps the total the customer accepted, even when the
+   * invoice's tax differs (owner's answer of 2026-11-20, ADR 0059; sales.md rule 18).
    */
   async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
     const db = await this.tenancy.db(tenant);
@@ -184,6 +184,16 @@ export class InvoicesService {
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
       // Stock before the ledger's shared locks, the order every path takes (PR #22 review).
       await lockStock(tx);
+      // Under the stock lock, which every location save takes, so a warehouse that became a showroom
+      // after the quote was saved is seen here: a showroom never holds stock for an invoice
+      // (ADR 0059, part 4a, D21; inventory.md rule 24). Quote saves don't take this lock.
+      const warehouses = new Set(warehousesOf(await loadLocations(tx)).map((location) => location.id));
+      const shipsFrom = [
+        quote.locationId,
+        ...quote.lines.flatMap((line) => (line.locationId ? [line.locationId] : [])),
+      ];
+      if (!shipsFrom.every((locationId) => warehouses.has(locationId)))
+        throw refuse("Fulfil the quote from a warehouse.");
       await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       const [products, rolls, movements, held] = await Promise.all([
         loadProducts(tx),
@@ -216,7 +226,6 @@ export class InvoicesService {
         .set({
           status: "converted",
           sentAt: quote.sentAt ? undefined : new Date(),
-          total: invoice.total,
           updatedAt: new Date(),
         })
         .where(eq(quotes.id, quoteId));
@@ -233,6 +242,7 @@ export class InvoicesService {
           before: { quote: quote.number, status: quote.status },
           after: {
             quote: quote.number,
+            acceptedTotal: quote.total,
             total: invoice.total,
             tax: invoice.tax,
             taxRule: invoice.taxRule,
@@ -626,14 +636,17 @@ export class InvoicesService {
       const taxLeft = dec(invoice.tax).minus(sum(notes.map((n) => n.tax)));
       const tax = amount.plus(already).eq(invoice.subtotal) ? taxLeft : minDec(share(invoice.tax), taxLeft);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
-      const used = await tx.select({ number: invoices.number }).from(invoices).where(eq(invoices.isReturn, true));
+      // Every invoice number counts, not only the notes': the series shares `invoices_number_uidx`
+      // with invoices, so an invoice numbered `CR-…` (an import, a legacy prefix) is never reused
+      // (sales.md rule 22; ADR 0059 part 2a review round 1).
+      const used = await tx.select({ number: invoices.number }).from(invoices);
       const note: Invoice = {
         ...invoice,
         id,
         number: nextNumber(
-          CREDIT_PREFIX,
+          CREDIT_NOTE_PREFIX,
           used.map((row) => row.number),
-          FIRST_CREDIT,
+          FIRST_CREDIT_NOTE,
         ),
         quoteId: null,
         isReturn: true,

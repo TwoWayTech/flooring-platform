@@ -23,6 +23,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { PurchasingModule } from "./modules/purchasing/purchasing.module";
 import { SalesModule } from "./modules/sales/sales.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { UsersModule } from "./modules/users/users.module";
 
 /**
@@ -53,6 +54,7 @@ export class AppModule {
         NotificationsModule,
         BrandingModule,
         UsersModule,
+        SettingsModule,
         PlatformModule,
         BillingModule,
         InventoryModule,

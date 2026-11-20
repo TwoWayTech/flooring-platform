@@ -1,7 +1,8 @@
 import { DemoRuleError } from "./admin-rules";
 import {
   defaultWastePct,
-  type CompanySettings,
+  sameOptionalDecimal,
+  savedQuoteLine,
   type PermissionKey,
   type Product,
   type Quote,
@@ -18,7 +19,8 @@ import type { CollectionName } from "../contract";
 const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   roles: ["settings.roles.manage"],
   users: ["settings.users.manage"],
-  locations: ["settings.locations.manage"],
+  // Locations change only through `saveLocation`, which runs the shared rules (ADR 0059, part 4a, D16).
+  locations: [],
   products: ["inventory.product.create", "inventory.product.edit"],
   rolls: ["inventory.roll.edit"],
   stockMovements: [],
@@ -90,28 +92,23 @@ export function savePermissions(collection: CollectionName): readonly Permission
 /** A key no role holds, so a collection with no writers refuses every generic save. */
 const NOBODY: readonly PermissionKey[] = ["store.internal.manage"];
 
-const SETTINGS_PERMISSIONS: Record<keyof CompanySettings, readonly PermissionKey[]> = {
-  branding: ["settings.branding.manage"],
-  localization: ["settings.localization.manage", "settings.tax.manage"],
-  numbers: ["settings.numbers.manage"],
-  profile: ["settings.company.manage"],
-  payments: ["settings.payments.manage"],
-  inventory: ["settings.locations.manage"],
-  expenses: ["settings.expenses.manage"],
-  sharedCosts: ["settings.expenses.manage"],
-  hr: ["settings.hr.manage"],
-  meetings: ["settings.meetings.manage"],
-  email: ["settings.notifications.manage"],
-};
-
-/** Permissions that allow changing one settings section. */
-export function settingsPermissions(section: keyof CompanySettings): readonly PermissionKey[] {
-  return SETTINGS_PERMISSIONS[section];
+/**
+ * Whether a line's waste differs from what it had (sales.md rule 8). DemoStore keeps waste as
+ * typed, and the inputs only drop characters other than digits and points, so it can hold "12."
+ * or ".5": the same text is never a change. Other text is compared by value, plain decimal text
+ * only, so odd text still reads as a change (`sameOptionalDecimal`; STATUS B6, review round 2).
+ */
+function wasteDiffers(had: string, sent: string): boolean {
+  return had !== sent && !sameOptionalDecimal(had, sent);
 }
 
 /**
  * Whether a save changes waste % (spec B3: only with sales.waste.view): a line that was saved
- * keeps its waste unless the person may see it; a new line must carry the company default.
+ * keeps its waste unless the person may see it; a new line must carry the company default. A saved
+ * line is the same line only with the same id and product (`savedQuoteLine`); waste is compared by
+ * value, as in the API's `assertWaste` (`wasteDiffers`; STATUS B6). A line without a catalog product,
+ * including a saved line sent without the product it had, starts from a blank, read as "0", so it
+ * keeps no saved waste (B6 review round 4).
  */
 export function wasteChanged(
   quote: Pick<Quote, "lines">,
@@ -121,10 +118,10 @@ export function wasteChanged(
 ): boolean {
   return quote.lines.some((line) => {
     if (line.wastePct === undefined) return false;
-    const saved = before?.lines.find((l) => l.id === line.id);
-    if (saved) return (saved.wastePct ?? "0") !== line.wastePct;
+    const saved = savedQuoteLine(before?.lines, line);
+    if (saved) return wasteDiffers(saved.wastePct ?? "0", line.wastePct);
     const product = products.find((p) => p.id === line.productId);
-    return !!product && (defaultWastePct(product, defaults) ?? "0") !== line.wastePct;
+    return wasteDiffers((product ? defaultWastePct(product, defaults) : undefined) ?? "0", line.wastePct);
   });
 }
 

@@ -59,6 +59,7 @@ import { businessReportPath, hubReportPath } from "./report-paths";
 import type { SessionContext } from "@/lib/session/api-context";
 import { HttpApiError } from "./transport";
 import type {
+  ApiClient,
   CollectionName,
   Collections,
   CommissionData,
@@ -100,15 +101,31 @@ import {
   type ImportResult,
 } from "@workspace/shared";
 import { importBody } from "./import-body";
+// GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
+import type { CompanyAnswer } from "@workspace/shared";
+import { peopleAsUsers, workspaceFromAnswer } from "./company-answer";
+// Settings, part 1 (ADR 0059) keeps its own imports, so the lists above stay as they are.
+import {
+  isApiLocalizationTab,
+  isApiSettingsSection,
+  numbersToWire,
+  type CompanySettings,
+  type LocalizationSettings,
+  type NumberSettings,
+  type SettingsAnswer,
+} from "@workspace/shared";
+import { settingsFromAnswer } from "./settings-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
 /**
  * Collections the real API lists through `list`, with their endpoints (docs/api-contract.md).
- * Users and roles are not here: many screens read them for names and pickers next to demo
- * records, so Settings reads them through its own methods instead (ADR 0034). Invoices and what
- * settles them move with sales, part 2 (ADR 0038), so every balance on every screen comes from
- * one place.
+ * Users and roles are not here. `list("users")` gives GET /company's people (id, name and status,
+ * for names beside records; ADR 0051, "GET /company"), and Settings reads full users and roles
+ * through its own methods (ADR 0034). Roles stay DemoStore's: their two screen reads are unused.
+ * Invoices and what settles them move with sales, part 2 (ADR 0038), so every balance on every
+ * screen comes from one place. Locations moved with Settings part 4a (ADR 0059), so every screen that
+ * lists warehouses and showrooms reads the API's ids.
  */
 const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   audit: "/audit",
@@ -121,6 +138,9 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   payPeriods: "/pay-periods",
   bonuses: "/bonuses",
   contractorPayments: "/contractor-payments",
+  // Settings part 4a (ADR 0059): warehouses and showrooms, for every member; an HR Suite company
+  // answers 403, read as none (`seen`).
+  locations: "/locations",
 };
 
 /**
@@ -128,11 +148,16 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
  * pull request adds its methods here, with the endpoints from docs/api-contract.md, and its
  * Playwright tests run against the API. `list` and `get` go to the API only for the collections
  * in SERVED_LISTS; the rest stay on the demo client until their module moves.
+ *
+ * Every request but a GET makes the screens read again once the server answered it (the transport;
+ * ADR 0051, "Re-reading after every write", 2026-11-16). A POST that only reads goes through
+ * `requestAsRead`. `api-rereads.test.ts` classifies every method here, by name.
  */
-export const API_METHODS: HttpRoutes = {
+export const API_METHODS = {
   list:
     (http, demo) =>
     <K extends CollectionName>(collection: K) => {
+      if (collection === "users") return companyPeople(http) as Promise<Collections[K]>;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.list(collection);
       return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
@@ -140,11 +165,17 @@ export const API_METHODS: HttpRoutes = {
   get:
     (http, demo) =>
     async <K extends CollectionName>(collection: K, id: string) => {
+      if (collection === "users")
+        return (await companyPeople(http)).find((user) => user.id === id) as ItemOf<K> | undefined;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
       const all = await seen(http.request<ItemOf<K>[]>("GET", path));
       return all.find((item) => (item as { id: string }).id === id);
     },
+  // The shell's person, roles, access and company facts (ADR 0051, "GET /company").
+  getWorkspace: (http) => async () => workspaceFromAnswer(await http.request<CompanyAnswer>("GET", "/company")),
+  // The API's own id for the session, the read `meetingsData` makes too; never the demo persona's.
+  whoAmI: (http) => async () => (await http.request<SessionContext>("GET", "/auth/context")).user.id,
   listSettingsUsers: (http) => () => http.request<User[]>("GET", "/users"),
   listSettingsRoles: (http) => () => http.request<Role[]>("GET", "/roles"),
   inviteUser: (http) => (input) => http.request<User>("POST", "/users/invite", input),
@@ -162,7 +193,31 @@ export const API_METHODS: HttpRoutes = {
   },
   resetRole: (http) => (roleId) => http.request<Role>("POST", `/roles/${roleId}/reset`),
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
-  verifyStepUp: (http) => (code) => http.request<void>("POST", "/auth/step-up", { code }),
+  // Changes no company data, and the write that follows it reads again.
+  verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
+  // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
+  // other section, Reset to default and resetSettings stay on DemoStore until their part moves.
+  // `localization` is never sent whole: DemoStore refuses it, because Localization and tax saves one
+  // tab at a time through updateLocalization (ADR 0059, part 3b, D37).
+  getSettings: (http, demo) => () => readSettings(http, demo),
+  updateSettings:
+    (http, demo) =>
+    async <K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) => {
+      if (!isApiSettingsSection(section)) return demo.updateSettings(section, value);
+      // `section` names the value's type; the number format travels with its decimals as a list (D6).
+      const body = section === "numbers" ? numbersToWire(value as NumberSettings) : value;
+      await http.request<unknown>("PUT", `/settings/${section}`, body);
+      return readSettings(http, demo);
+    },
+  // Settings, parts 2a, 2b and 3a (ADR 0059): every tab in API_LOCALIZATION_TABS, all of them since
+  // part 3a, saves on the API; Sales tax checks its own key.
+  updateLocalization:
+    (http, demo) =>
+    async <T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) => {
+      if (!isApiLocalizationTab(tab)) return demo.updateLocalization(tab, value);
+      await http.request<unknown>("PUT", `/settings/localization/${tab}`, value);
+      return readSettings(http, demo);
+    },
   // The platform console (docs/specs/platform-admin.md, part 1). PlatformAdminGuard decides who may
   // call these. The demo's switcher, palette and sign-in keep `listCompanies` on DemoStore.
   listPlatformCompanies: (http) => () => http.request<PlatformCompanySummary[]>("GET", "/platform/companies"),
@@ -259,8 +314,8 @@ export const API_METHODS: HttpRoutes = {
   // A quote the API has saved has a number; a draft from the screen does not yet.
   saveQuote: (http) => (quote) =>
     quote.number
-      ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quote)
-      : http.request<Quote>("POST", "/quotes", quote),
+      ? http.request<Quote>("PUT", `/quotes/${quote.id}`, quoteBody(quote))
+      : http.request<Quote>("POST", "/quotes", quoteBody(quote)),
   updateQuoteStatus: (http) => (quoteId, change) => http.request<Quote>("POST", `/quotes/${quoteId}/status`, change),
   convertQuoteToInvoice: (http) => (quoteId) => http.request<Invoice>("POST", `/quotes/${quoteId}/invoice`),
   markInvoiceSent: (http) => (invoiceId) => http.request<Invoice>("POST", `/invoices/${invoiceId}/sent`),
@@ -331,21 +386,22 @@ export const API_METHODS: HttpRoutes = {
   paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
   // Data import, part 1 (ADR 0057): customers, addresses, suppliers and products on the API. The
   // company is the session's, so `companyId` is never sent; only the chosen columns travel
-  // (`importBody`); writes go through `wrote`, so the history and the record lists read again.
+  // (`importBody`); every write makes the history and the record lists read again (ADR 0051, 2026-11-16).
   // The API asks for a step-up on the commit and on Undo, which the screens give before calling.
   // `testDatabaseConnection` stays on the demo (simulated).
   importOverview: (http) => () => http.request<ImportOverview>("GET", "/imports"),
+  // The dry run writes nothing (ADR 0057), so it never makes the screens read again.
   previewImport: (http) => async (_companyId, request) =>
-    http.request<ImportPreview>("POST", "/imports/check", importBody(request)),
-  runImport: (http, _demo, changed) => async (_companyId, request) =>
-    wrote(changed, http.request<ImportResult>("POST", "/imports", importBody(request, request.expected))),
+    http.requestAsRead<ImportPreview>("POST", "/imports/check", importBody(request)),
+  runImport: (http) => async (_companyId, request) =>
+    http.request<ImportResult>("POST", "/imports", importBody(request, request.expected)),
   // A batch the API made has a UUID; any other id names no import there, so nothing is sent.
-  undoImport: (http, _demo, changed) => async (_companyId, batchId) => {
+  undoImport: (http) => async (_companyId, batchId) => {
     if (!isSaved(batchId)) throw new ApiError(IMPORT_WORDS.gone);
-    return wrote(changed, http.request<ImportBatchSummary>("POST", `/imports/${batchId}/undo`));
+    return http.request<ImportBatchSummary>("POST", `/imports/${batchId}/undo`);
   },
-  saveImportMapping: (http, _demo, changed) => async (_companyId, kind, columns) =>
-    wrote(changed, http.request<ImportMapping>("PUT", `/imports/mappings/${kind}`, { columns })),
+  saveImportMapping: (http) => async (_companyId, kind, columns) =>
+    http.request<ImportMapping>("PUT", `/imports/mappings/${kind}`, { columns }),
   enterBill: (http) => async (poId, input, files) =>
     http.request<Bill>("POST", `/purchase-orders/${poId}/bills`, { ...input, files: await encodeFiles(files) }),
   recordSupplierPayment: (http) => async (input, files) =>
@@ -396,6 +452,14 @@ export const API_METHODS: HttpRoutes = {
   moveRoll: (http) => (rollId, bin) => http.request<Roll>("PATCH", `/rolls/${rollId}`, { bin }),
   createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
   receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
+  // A location the API made (or the seed: UUID v5) has a UUID; a new one from the dialog doesn't. The
+  // id never travels in the body (ADR 0059, part 4a, D14).
+  saveLocation: (http) => (location) => {
+    const { id, ...body } = location;
+    return isSaved(id)
+      ? http.request<Location>("PUT", `/locations/${id}`, body)
+      : http.request<Location>("POST", "/locations", body);
+  },
   correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
   // Ready to cut, issuing and cutting, the roll quick invoice and the split moved in inventory part 2 (ADR 0043).
   listStockHolds: (http) => () => seen(http.request<StockHold[]>("GET", "/stock-holds")),
@@ -595,6 +659,7 @@ export const API_METHODS: HttpRoutes = {
         employeeId: input.employeeId,
         weekStart: input.weekStart,
         days: hoursToWire(input.days),
+        expectedDays: hoursToWire(input.expectedDays),
       }),
     ),
   submitTimesheet: (http) => async (id) =>
@@ -604,13 +669,13 @@ export const API_METHODS: HttpRoutes = {
   },
   reopenTimesheet: (http) => async (id, reason) =>
     timesheetFromWire(await http.request<TimesheetWire>("POST", `/timesheets/${id}/reopen`, { reason })),
-  uploadTimesheets: (http) => (input) =>
-    http.request<TimesheetUploadResult>("POST", "/timesheets/upload", {
-      table: input.table,
-      fileName: input.fileName,
-      apply: input.apply,
-      own: input.own,
-    }),
+  uploadTimesheets: (http) => (input) => {
+    const body = { table: input.table, fileName: input.fileName, apply: input.apply, own: input.own };
+    // The dry run (`apply: false`) saves nothing, so only saving the good rows makes the screens read again.
+    return input.apply
+      ? http.request<TimesheetUploadResult>("POST", "/timesheets/upload", body)
+      : http.requestAsRead<TimesheetUploadResult>("POST", "/timesheets/upload", body);
+  },
   requestTimeOff: (http) => (input) =>
     http.request<PtoRequest>("POST", "/pto-requests", {
       employeeId: input.employeeId,
@@ -639,8 +704,9 @@ export const API_METHODS: HttpRoutes = {
   // HR part 2 (ADR 0047): pay periods. Bonuses and contractor payments have API routes but no screen yet.
   listPayPeriods: (http) => async () => {
     // Listing opens the period holding today, as the demo does (hr.md "Pay periods", Create). A
-    // company that can't write (read-only, no pay schedule yet) still lists what it has.
-    await http.request<PayPeriod>("POST", "/pay-periods", {}).catch((failure: unknown) => {
+    // company that can't write (read-only, no pay schedule yet) still lists what it has. This runs
+    // inside a read, so its POST must never make the screens read again, or the read would loop.
+    await http.requestAsRead<PayPeriod>("POST", "/pay-periods", {}).catch((failure: unknown) => {
       if (!(failure instanceof HttpApiError) || failure.status < 400 || failure.status >= 500) throw failure;
     });
     return http.request<PayPeriod[]>("GET", "/pay-periods");
@@ -681,7 +747,7 @@ export const API_METHODS: HttpRoutes = {
     await http.request<unknown>("POST", "/clock/out");
   },
   // Meetings (ADR 0051 part 3): the Meetings page, its drawer and dialogs, and My meetings. Every
-  // write goes through `wrote`, so the screens read again. `simulateReply`, `list` and `get` of
+  // write makes the screens read again (the transport; ADR 0051, 2026-11-16). `simulateReply`, `list` and `get` of
   // "meetings" (Simulate reply reads the demo Outbox's rows) and `updateSettings("meetings")` (the
   // page is hidden in api mode until part 4) stay on DemoStore.
   meetingsData: (http) => async () => {
@@ -704,78 +770,58 @@ export const API_METHODS: HttpRoutes = {
       meetings: [],
       colleagues: [],
     },
-  createMeeting: (http, _demo, changed) => (input) =>
-    wrote(changed, http.request<Meeting>("POST", "/meetings", meetingBody(input))),
-  updateMeeting: (http, _demo, changed) => (id, patch) =>
-    wrote(changed, http.request<Meeting>("PATCH", `/meetings/${encodeURIComponent(id)}`, patchBody(patch))),
-  cancelMeeting: (http, _demo, changed) => (id) =>
-    wrote(changed, http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/cancel`)),
-  removeGuest: (http, _demo, changed) => (meetingId, attendeeId) =>
-    wrote(
-      changed,
-      http.request<Meeting>(
-        "DELETE",
-        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}`,
-      ),
+  createMeeting: (http) => (input) => http.request<Meeting>("POST", "/meetings", meetingBody(input)),
+  updateMeeting: (http) => (id, patch) =>
+    http.request<Meeting>("PATCH", `/meetings/${encodeURIComponent(id)}`, patchBody(patch)),
+  cancelMeeting: (http) => (id) => http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/cancel`),
+  removeGuest: (http) => (meetingId, attendeeId) =>
+    http.request<Meeting>(
+      "DELETE",
+      `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}`,
     ),
-  respondToMeeting: (http, _demo, changed) => (id, reply) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/response`, {
-        partStat: reply.partStat,
-        note: reply.note,
-        proposal: reply.proposal
-          ? { start: reply.proposal.start, durationMin: reply.proposal.durationMin, note: reply.proposal.note }
-          : null,
-      }),
-    ),
-  decideProposal: (http, _demo, changed) => (meetingId, attendeeId, accept) =>
-    wrote(
-      changed,
-      http.request<Meeting>(
-        "POST",
-        `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}/proposal`,
-        { accept },
-      ),
+  respondToMeeting: (http) => (id, reply) =>
+    http.request<Meeting>("POST", `/meetings/${encodeURIComponent(id)}/response`, {
+      partStat: reply.partStat,
+      note: reply.note,
+      proposal: reply.proposal
+        ? { start: reply.proposal.start, durationMin: reply.proposal.durationMin, note: reply.proposal.note }
+        : null,
+    }),
+  decideProposal: (http) => (meetingId, attendeeId, accept) =>
+    http.request<Meeting>(
+      "POST",
+      `/meetings/${encodeURIComponent(meetingId)}/attendees/${encodeURIComponent(attendeeId)}/proposal`,
+      { accept },
     ),
   // The server fixes a request's length and place (MEETING_REQUEST_DEFAULTS), so they are not sent.
-  requestMeeting: (http, _demo, changed) => (input) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", "/meeting-requests", {
-        withUserId: input.withUserId,
-        title: input.title,
-        start: input.start,
-        note: input.note,
-        private: input.private,
-      }),
-    ),
+  requestMeeting: (http) => (input) =>
+    http.request<Meeting>("POST", "/meeting-requests", {
+      withUserId: input.withUserId,
+      title: input.title,
+      start: input.start,
+      note: input.note,
+      private: input.private,
+    }),
   meetingCalendarFile: (http) => (id) =>
     http.request<{ fileName: string; text: string }>("GET", `/meetings/${encodeURIComponent(id)}/calendar.ics`),
-  rescheduleMeeting: (http, _demo, changed) => (move) =>
-    wrote(
-      changed,
-      http.request<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>(
-        "POST",
-        `/meetings/${encodeURIComponent(move.meetingId)}/reschedule`,
-        {
-          meetingId: move.meetingId,
-          planned: move.planned,
-          start: move.start,
-          durationMin: move.durationMin,
-          scope: move.scope,
-        },
-      ),
+  rescheduleMeeting: (http) => (move) =>
+    http.request<{ meetings: Meeting[]; conflicts: Conflict[]; undo: MeetingUndo }>(
+      "POST",
+      `/meetings/${encodeURIComponent(move.meetingId)}/reschedule`,
+      {
+        meetingId: move.meetingId,
+        planned: move.planned,
+        start: move.start,
+        durationMin: move.durationMin,
+        scope: move.scope,
+      },
     ),
   // Only the SEQUENCE the screen saw: the API rebuilds the meeting from its own record (critic B3).
-  undoReschedule: (http, _demo, changed) => (undo) =>
-    wrote(
-      changed,
-      http.request<Meeting>("POST", `/meetings/${encodeURIComponent(undo.previous.id)}/reschedule/undo`, {
-        sequence: undo.previous.sequence,
-      }),
-    ),
-};
+  undoReschedule: (http) => (undo) =>
+    http.request<Meeting>("POST", `/meetings/${encodeURIComponent(undo.previous.id)}/reschedule/undo`, {
+      sequence: undo.previous.sequence,
+    }),
+} satisfies HttpRoutes;
 
 /**
  * A new meeting as the API takes it (ADR 0051 "Part 3"): only what the server reads. A picked guest
@@ -811,26 +857,6 @@ function patchBody(patch: MeetingPatch): MeetingPatch {
   return body;
 }
 
-/** Statuses that mean the server answered and the screen may be stale (S2): a refusal reads the meeting again. */
-const ANSWERED_REFUSALS = new Set([400, 403, 404, 409]);
-
-/**
- * A routed write for meetings (ADR 0051 "Part 3") and data import (ADR 0057): the screens read again
- * after it succeeds, and after the server refuses it, since a refusal often means the screen showed
- * something stale. A request
- * that never reached the server, a 401, a 429 or a server failure triggers no re-read.
- */
-async function wrote<T>(changed: () => void, request: Promise<T>): Promise<T> {
-  try {
-    const saved = await request;
-    changed();
-    return saved;
-  } catch (failure) {
-    if (failure instanceof HttpApiError && ANSWERED_REFUSALS.has(failure.status)) changed();
-    throw failure;
-  }
-}
-
 /**
  * An answer the person may not have: 403 (no key, or the module off) or 404 (a switched-off
  * feature) is null, so the caller falls back. A network error or a server failure still throws.
@@ -842,6 +868,14 @@ async function orNone<T>(request: Promise<T>): Promise<T | null> {
     if (failure instanceof HttpApiError && (failure.status === 403 || failure.status === 404)) return null;
     throw failure;
   }
+}
+
+/**
+ * The settings the screens read in api mode: `GET /settings` merged over DemoStore's (ADR 0059). The
+ * read comes before DemoStore's, so a refused read never touches it.
+ */
+async function readSettings(http: HttpTransport, demo: ApiClient): Promise<CompanySettings> {
+  return settingsFromAnswer(await http.request<SettingsAnswer>("GET", "/settings"), await demo.getSettings());
 }
 
 /**
@@ -884,8 +918,9 @@ function employeeBody(input: EmployeeInput) {
 
 /**
  * A contract as the API takes it: only the form's fields, since an edit starts from the whole
- * stored contract. The rep is always the creator on the server, and an estimated cost the person
- * can't see is left out so the stored one is kept (ADR 0044).
+ * stored contract. The rep and the branch are the server's (ADR 0044, "New contracts"): a new
+ * contract is filed under its creator's own branch and an edit keeps both, so neither is sent. An
+ * estimated cost the person can't see is left out so the stored one is kept.
  */
 function contractBody(input: ContractInput) {
   return {
@@ -895,7 +930,6 @@ function contractBody(input: ContractInput) {
     supplierId: input.supplierId || null,
     title: input.title,
     scope: input.scope,
-    branchId: input.branchId || null,
     locationId: input.locationId,
     jobSite: input.jobSite,
     startsAt: input.startsAt,
@@ -989,6 +1023,23 @@ async function encodeFiles(files: readonly File[]): Promise<{ name: string; data
       return { name: file.name, data: btoa(binary) };
     }),
   );
+}
+
+/**
+ * A quote as the API takes it: everything but the rep and the branch, which the server sets (the
+ * creator, and the fulfilment location's branch; ADR 0037), as `contractBody` does for contracts
+ * (ADR 0051, "GET /company", D9). Keeping them off the wire lets the API's schema become strict.
+ */
+function quoteBody(quote: Quote): Omit<Quote, "salesRepId" | "branchId"> {
+  const body: Partial<Quote> = { ...quote };
+  delete body.salesRepId;
+  delete body.branchId;
+  return body as Omit<Quote, "salesRepId" | "branchId">;
+}
+
+/** GET /company's people as users: id, name and status only (`peopleAsUsers`; ADR 0051, "GET /company"). */
+async function companyPeople(http: HttpTransport): Promise<User[]> {
+  return peopleAsUsers(await http.request<CompanyAnswer>("GET", "/company"));
 }
 
 /** An id the API made (a UUID); a draft from the screen or a demo record has another kind of id. */

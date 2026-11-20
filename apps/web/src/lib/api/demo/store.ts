@@ -1,17 +1,25 @@
 import { format } from "date-fns";
 import {
+  branchManageDenial,
+  PAYMENT_CONTROLS_OWNER_ONLY,
+  paymentControlsLoosened,
+  branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  keepsAcceptedTotal,
   permissionsForModules,
   featureOn,
-  overtimeRuleProblem,
   PRODUCT_MODULES,
   roleTemplate,
-  boxedStock,
-  dec,
+  becomesShowroom,
+  LOCATION_RULE,
+  locationHolds,
+  locationHoldsProblem,
+  locationProblem,
+  locationStored,
   locationName,
   receiveTransfer,
   startTransfer,
@@ -31,6 +39,7 @@ import {
   type CompanyId,
   type CompanySettings,
   type PermissionKey,
+  seesDisabledPeople,
   SENSITIVE,
   type BusinessFilters,
   type PaymentsReportQuery,
@@ -66,6 +75,15 @@ import {
   type PlatformAccessPatch,
   type PlatformAuditQuery,
   type SupportRequestInput,
+  SETTINGS_SCOPE_MESSAGE,
+  SETTINGS_SECTIONS,
+  settingsSectionProblem,
+  LOCALIZATION_TABS,
+  localizationTabProblem,
+  localizationTabStored,
+  taxInForce,
+  type LocalizationSettings,
+  type SettingsSectionRule,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -162,6 +180,9 @@ import { DEMO_PLANS_KEY, demoFixturePlans, demoPlans, demoPlanStore, type DemoPl
 import { DEMO_STATUS_KEY, demoConsoleStanding, demoStatusFacts, demoStatusStore } from "./platform-status";
 // Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
 import { FULL_IMPORT_HOLDER, type ImportHolder } from "@workspace/shared";
+// GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
+import { seesCeiling } from "@workspace/shared";
+import type { WorkspaceFacts } from "../contract";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -178,7 +199,7 @@ import {
   saveNotificationRule,
   simulateBounce,
 } from "./notification-actions";
-import { assertRollEditOnly, savePermissions, settingsPermissions, wasteChanged } from "./permission-rules";
+import { assertRollEditOnly, savePermissions, wasteChanged } from "./permission-rules";
 import { indexedDbFileStore, type FileStore } from "./file-store";
 import { createInvoiceFromJob, scheduleJob, signOffJob, startJob } from "./job-actions";
 import {
@@ -306,19 +327,6 @@ const PLATFORM_KEY = "platform";
 /** The demo's platform audit log and support requests (docs/specs/platform-admin.md, part 3, "Demo mode"). */
 const PLATFORM_AUDIT_KEY = "platform-audit";
 const PLATFORM_SUPPORT_KEY = "platform-support";
-const SETTINGS_LABELS: Record<keyof CompanySettings, string> = {
-  branding: "Branding",
-  localization: "Localization and tax",
-  numbers: "Number format",
-  profile: "Company profile",
-  payments: "Payments",
-  inventory: "Stock rules",
-  expenses: "Expense approval",
-  sharedCosts: "Shared costs",
-  hr: "HR",
-  meetings: "Meetings",
-  email: "Email and notifications",
-};
 
 /** Collections that need a permission even to read: an API would answer 403 for the whole list. */
 const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
@@ -819,35 +827,107 @@ export class DemoStore implements ApiClient {
     return (await this.listCompanies()).find((c) => c.id === db.companyId)!;
   }
 
-  async getSettings() {
-    return this.open().settings;
+  /**
+   * The shell's facts from exactly what the shell read before GET /company (ADR 0051, "GET /company"):
+   * the company, every role (for View as) and the person's own access. View as is the shell's, so
+   * it never changes this answer. The ceiling follows the API's rule (`seesCeiling`, D4).
+   */
+  async getWorkspace(): Promise<WorkspaceFacts> {
+    const [company, roles, users] = await Promise.all([this.getCompany(), this.list("roles"), this.list("users")]);
+    const user = users.find((candidate) => candidate.id === this.viewer!.userId);
+    if (!user) throw new DemoRuleError("Your profile is not in this company.");
+    const access = viewerAccess(company, roles, user, null);
+    const { name, city, state, modules, ceiling, branches } = company;
+    const shown = seesCeiling((key) => access.permissions.has(key)) ? ceiling : [];
+    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access };
   }
 
+  async getSettings() {
+    return this.answered(this.open().settings);
+  }
+
+  /**
+   * Settings as the API answers every read and write of them (ADR 0059, part 3a): the Sales tax tab
+   * in force on today (`taxInForce`), as `GET /settings` answers it on the company's day. Rows that
+   * ended before today or start later (saved demo data typed before part 3a) are neither shown nor
+   * sent back, so the tab saves and they drop out of the stored copy on its next save (spec, known
+   * limits). Pricing reads the stored copy, with every row, as before.
+   */
+  private answered(settings: CompanySettings): CompanySettings {
+    const { localization } = settings;
+    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, this.todayIso) } };
+  }
+
+  /**
+   * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
+   * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
+   * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
+   * Owner-only loosening (`paymentControlsLoosened`). Localization
+   * and tax is never replaced whole: after those checks it is refused with "Localization and tax
+   * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
+   * `updateLocalization` (ADR 0059, part 3b, D34).
+   */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
-    await this.assertCan(db, settingsPermissions(section));
-    if (section === "localization") {
-      // California only while its switch is on (ADR 0050).
-      const problem = overtimeRuleProblem((value as CompanySettings["localization"]).payroll.overtimeRule);
-      if (problem) throw new DemoRuleError(problem);
+    const rule = SETTINGS_SECTIONS[section];
+    const access = await this.assertSettingsSave(db, rule);
+    const problem = settingsSectionProblem(section, value, db.settings[section], { locations: db.list("locations") });
+    if (problem) throw new DemoRuleError(problem);
+    // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
+    const payments = { [section]: value } as Partial<CompanySettings>;
+    if (payments.payments && !access.isOwner && paymentControlsLoosened(payments.payments, db.settings.payments)) {
+      throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
     }
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);
     this.appendAudit(db, {
       category: "settings",
-      action: `Changed ${SETTINGS_LABELS[section].toLowerCase()}`,
-      target: SETTINGS_LABELS[section],
+      action: `Changed ${rule.label.toLowerCase()}`,
+      target: rule.label,
       ...diff,
     });
     this.emit();
-    return db.settings;
+    return this.answered(db.settings);
+  }
+
+  /**
+   * Replaces one tab of Localization and tax, or the Sales and documents page, with its own key
+   * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule against
+   * the stored tab. Region refuses a zone, country or locale change and needs Sales tax's key for a
+   * change of the states of operation (View as limits the keys, spec rule 22); Currency keeps its
+   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). Sales tax starts
+   * a changed rule or county rate today, a changed rule taking its state's next version, and keeps
+   * only what is in force (part 3a). The step-up is the dialog alone, as everywhere in the demo.
+   * Only that tab changes, and the audit entry names it.
+   */
+  async updateLocalization<T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) {
+    const db = this.open();
+    const rule = LOCALIZATION_TABS[tab];
+    const access = await this.assertSettingsSave(db, rule);
+    const current = db.settings.localization[tab];
+    const problem = localizationTabProblem(tab, value, current, (key) => access.permissions.has(key));
+    if (problem) throw new DemoRuleError(problem);
+    const stored = localizationTabStored(tab, value, current, this.todayIso);
+    db.settings = { ...db.settings, localization: { ...db.settings.localization, [tab]: stored } };
+    this.appendAudit(db, {
+      category: "settings",
+      action: `Changed ${SETTINGS_SECTIONS.localization.label.toLowerCase()}`,
+      target: rule.label,
+      ...diffSummary(current, stored),
+    });
+    this.emit();
+    return this.answered(db.settings);
   }
 
   async getDefaultSettings() {
     return this.open().defaultSettings;
   }
 
+  /**
+   * Restores one section to the company's original values through `updateSettings`, with its checks
+   * and rules, so Localization and tax is refused here too (ADR 0059, part 3b). No screen calls it.
+   */
   async resetSettings(section: keyof CompanySettings) {
     return this.updateSettings(section, this.open().defaultSettings[section]);
   }
@@ -871,6 +951,12 @@ export class DemoStore implements ApiClient {
       return (items as ContractLine[]).map((l) => ({ ...l, estimatedCost: "0.00" })) as unknown as Collections[K];
     }
     if (collection === "audit") return (await this.auditAsSeen(db, items as AuditEntry[])) as unknown as Collections[K];
+    // Who has left is HR's business: disabled colleagues only for Settings → Users' readers, as
+    // GET /company's directory (ADR 0051, "2026-11-20"). View as narrows it too.
+    const { access } = await this.granter(db);
+    if (collection === "users" && !seesDisabledPeople((key) => access.permissions.has(key))) {
+      return (items as User[]).filter((u) => u.status !== "disabled") as unknown as Collections[K];
+    }
     return items;
   }
 
@@ -893,6 +979,7 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
+    await this.assertBranchInvite(db, input.branchId);
     assertSeatAvailable(db.list("users"), company.userLimit);
     const user: User = {
       id: newId(db.companyId, "usr"),
@@ -920,12 +1007,15 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
-    assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
+    // The API's order: whom the admin may change, the roles, the last Owner, then the branch.
+    await this.assertBranchManage(db, before);
     if (patch.roleIds)
       await this.assertCanAssign(
         db,
         patch.roleIds.filter((id) => !before.roleIds.includes(id)),
       );
+    assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
+    if (patch.branchId !== undefined) await this.assertBranchMove(db, before, patch.branchId);
     const after = { ...before, ...patch };
     db.put("users", after);
     const describe = (u: User) => `${u.status}, ${this.roleNames(db, u.roleIds)}, MFA ${u.mfaEnrolled ? "on" : "off"}`;
@@ -1074,6 +1164,8 @@ export class DemoStore implements ApiClient {
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
       invoiceId: before?.invoiceId ?? null,
+      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      total: before && keepsAcceptedTotal(before, input) ? before.total : input.total,
     };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
     if (wasteChanged(quote, before, db.list("products"), db.settings.localization.documents.defaultWastePct)) {
@@ -1179,7 +1271,6 @@ export class DemoStore implements ApiClient {
       status: "converted",
       sentAt: quote.sentAt ?? this.todayIso,
       invoiceId: invoice.id,
-      total: invoice.total,
     });
     this.appendAudit(db, {
       category: "data",
@@ -1895,34 +1986,54 @@ export class DemoStore implements ApiClient {
     return result.transfer;
   }
 
+  /**
+   * Adds or changes a warehouse or showroom with the API's checks in the API's order (ADR 0059, part
+   * 4a, D16): module, key, switch, scope (`assertSettingsSave`), then the shared rule, then, for a
+   * warehouse that becomes a showroom, the holds on its own records; stored as both modes store it;
+   * one audit entry per saved row (the cleared default too). Its ids come from the dialog, so an id
+   * it doesn't hold is a new location.
+   */
   async saveLocation(location: Location) {
     const db = this.open();
-    await this.assertCan(db, ["settings.locations.manage"]);
-    const before = db.get("locations", location.id);
-    const holdsStock =
-      db.list("rolls").some((r) => r.locationId === location.id && dec(r.remainingLengthFt).gt(0)) ||
-      [...boxedStock(db.list("stockMovements"), location.id).values()].some((q) => !q.isZero());
-    if (location.kind === "showroom" && holdsStock) {
-      throw new DemoRuleError(`${location.name} holds stock. Transfer it out before making it a showroom.`);
-    }
-    const others = db.list("locations").filter((l) => l.id !== location.id);
-    if (location.kind === "showroom" && location.isDefault) {
-      throw new DemoRuleError("The default must be a warehouse; showrooms hold no sellable stock.");
-    }
-    if (!location.isDefault && !others.some((l) => l.isDefault)) {
-      throw new DemoRuleError("Keep one warehouse as the company default.");
-    }
-    const saved = { ...location, name: location.name.trim() };
-    if (saved.isDefault)
-      for (const l of others.filter((o) => o.isDefault)) db.put("locations", { ...l, isDefault: false });
+    await this.assertSettingsSave(db, LOCATION_RULE);
+    const { branches } = await this.getCompany();
+    const { id, ...input } = location;
+    const live = db.list("locations");
+    const before = live.find((l) => l.id === id);
+    const others = live.filter((l) => l.id !== id);
+    const records = {
+      rolls: db.list("rolls"),
+      movements: db.list("stockMovements"),
+      transfers: db.list("transfers"),
+      reservations: db.list("reservations"),
+      quotes: db.list("quotes"),
+    };
+    const problem =
+      locationProblem(input, { before, others, branches }) ??
+      (before && becomesShowroom(before, input)
+        ? locationHoldsProblem(input.name.trim(), locationHolds(id, records))
+        : null);
+    if (problem) throw new DemoRuleError(problem);
+    const saved: Location = { id, ...locationStored(input) };
+    const cleared = saved.isDefault ? others.filter((l) => l.isDefault) : [];
+    for (const l of cleared) db.put("locations", { ...l, isDefault: false });
     db.put("locations", saved);
     this.appendAudit(db, {
       category: "settings",
       action: before ? "Changed location" : "Added location",
       target: saved.name,
-      before: before ? `${before.kind}${before.isDefault ? ", default" : ""}` : null,
-      after: `${saved.kind}${saved.isDefault ? ", default" : ""}`,
+      // An add keeps the kind and default; a change names what changed (diffSummary, as updateSettings).
+      ...(before
+        ? diffSummary(before, saved)
+        : { before: null, after: `${saved.kind}${saved.isDefault ? ", default" : ""}` }),
     });
+    for (const l of cleared)
+      this.appendAudit(db, {
+        category: "settings",
+        action: "Changed location",
+        target: l.name,
+        ...diffSummary(l, { ...l, isDefault: false }),
+      });
     this.emit();
     return saved;
   }
@@ -2103,6 +2214,23 @@ export class DemoStore implements ApiClient {
   }
 
   /**
+   * The checks every settings save makes before its content rules, in the API's order (ADR 0059):
+   * the module first, as `permissionDecision` in apps/api's permission guard, then the keys, the
+   * page's switch and data scope `all` (View as limits it too, spec rule 22). Gives the viewer's
+   * access back for the checks that follow (Region's tax key, ADR 0059 part 2b).
+   */
+  private async assertSettingsSave(db: CompanyDb, rule: Pick<SettingsSectionRule, "keys" | "module" | "feature">) {
+    const { access, company } = await this.granter(db);
+    // The API's own words (`PERMISSION_REFUSALS.module_not_enabled` in apps/api's permission guard).
+    if (!company.modules.includes(rule.module))
+      throw new DemoRuleError("This part of the product is not switched on for your company.");
+    await this.assertCan(db, rule.keys);
+    if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
+    if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
+    return access;
+  }
+
+  /**
    * The save logic's own permission check (CLAUDE.md rule 2, spec section 0.4): the screen hides
    * what a role cannot do, and the store refuses it anyway. Passes when any listed key is held.
    */
@@ -2131,6 +2259,38 @@ export class DemoStore implements ApiClient {
       if (denial === "not_held")
         throw new DemoRuleError("You can only assign roles whose permissions you hold yourself.");
     }
+  }
+
+  /** The API's invite-branch rule (ADR 0051, "2026-11-20"): a known branch, the admin's own below scope `all`. */
+  private async assertBranchInvite(db: CompanyDb, to: string) {
+    const actor = await this.branchActor(db, to);
+    if (branchPlacementDenial(actor, branchOf(to)))
+      throw new DemoRuleError("You can only invite people to your own branch.");
+  }
+
+  /**
+   * The API's first change rule (ADR 0051, "2026-11-20"): below scope `all` an admin changes only
+   * people in their own branch (`branchManageDenial`); changes to oneself follow the other rules.
+   */
+  private async assertBranchManage(db: CompanyDb, person: User) {
+    if (person.id === this.viewer!.userId) return;
+    if (branchManageDenial(await this.branchActor(db, ""), branchOf(person.branchId)))
+      throw new DemoRuleError(BRANCH_CHANGE);
+  }
+
+  /** The API's move rule: a known branch, and below scope `all` from and to the admin's own (`branchPlacementDenial`). */
+  private async assertBranchMove(db: CompanyDb, person: User, to: string) {
+    const actor = await this.branchActor(db, to);
+    if (branchPlacementDenial(actor, branchOf(to), branchOf(person.branchId))) throw new DemoRuleError(BRANCH_CHANGE);
+  }
+
+  /** The viewer's scope and branch for the branch rules, after refusing a branch that isn't the company's. */
+  private async branchActor(db: CompanyDb, to: string) {
+    const { access, company } = await this.granter(db);
+    if (to !== "" && !company.branches.some((branch) => branch.id === to)) {
+      throw new DemoRuleError("That branch is not one of your company's branches. Reload the page and pick another.");
+    }
+    return { dataScope: access.dataScope, branchId: branchOf(db.get("users", this.viewer!.userId)?.branchId ?? "") };
   }
 
   private roleNames(db: CompanyDb, roleIds: readonly string[]) {
@@ -2170,3 +2330,11 @@ export class DemoStore implements ApiClient {
     for (const listener of this.listeners) listener();
   }
 }
+
+/** A stored branch id as the shared branch rules take it: the demo's empty id is no branch. */
+function branchOf(id: string): string | null {
+  return id === "" ? null : id;
+}
+
+/** The API's words when a branch-scoped admin changes someone outside their branch, or moves them out. */
+const BRANCH_CHANGE = "You can only change people in your own branch, and keep them in it.";

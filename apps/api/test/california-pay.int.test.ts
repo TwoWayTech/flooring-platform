@@ -7,6 +7,7 @@ import type { Response } from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 import { withCaliforniaRules } from "./california-switch";
+import { NO_HOURS } from "./support/timesheet-week";
 
 /** Today in the test company's time zone (America/Chicago), the day the API dates by. */
 function companyDay(): string {
@@ -77,6 +78,7 @@ describe("California pay rules switch (needs the local PostgreSQL)", () => {
       employeeId: ids.carla,
       weekStart: week(weeksAgo),
       days: days.map(String),
+      expectedDays: NO_HOURS,
     });
     status(saved, 200);
     status(await call("post", `/timesheets/${saved.body.id}/submit`, cookies.hr), 201);

@@ -24,6 +24,9 @@ describe("contracts register (contracts part 1)", () => {
   let locationA = "";
   let branchA = "";
   let branchB = "";
+  let ownerId = "";
+  let managerId = "";
+  let salesId = "";
   const cookies: Record<Who, string> = {
     owner: "",
     manager: "",
@@ -91,6 +94,44 @@ describe("contracts register (contracts part 1)", () => {
     };
   }
 
+  /** A stored contract and its lines as the web's `contractBody` sends them back (B6). */
+  function asForm(contract: Json, lines: readonly Json[]): Json {
+    const pick = (from: Json, keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, from[key]]));
+    return {
+      ...pick(contract, [
+        "direction",
+        "kind",
+        "customerId",
+        "supplierId",
+        "title",
+        "scope",
+        "locationId",
+        "jobSite",
+        "startsAt",
+        "endsAt",
+        "renewal",
+        "retainagePct",
+        "storedRetainagePct",
+        "bondInLieu",
+        "taxTreatment",
+        "notes",
+      ]),
+      lines: lines.map((line) =>
+        pick(line, [
+          "code",
+          "description",
+          "category",
+          "billing",
+          "scheduledValue",
+          "retainagePct",
+          "storedRetainagePct",
+          "milestoneDueAt",
+          "estimatedCost",
+        ]),
+      ),
+    };
+  }
+
   function customerForm(over: Json = {}) {
     return form({ direction: "customer", customerId, supplierId: null, title: "Customer job", ...over });
   }
@@ -137,6 +178,34 @@ describe("contracts register (contracts part 1)", () => {
     }
   }
 
+  /** Sets a person's branch in the company for one step; access is read on every request, so it applies at once. */
+  async function setBranch(userId: string, branchId: string | null): Promise<void> {
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db.update(userProfiles).set({ branchId }).where(eq(userProfiles.userId, userId));
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /** Adds a branch straight to a company's database, for the branches no screen can offer. */
+  async function addBranch(companyId: string, values: typeof branches.$inferInsert): Promise<string> {
+    const handle = await harness.companyDb(companyId);
+    try {
+      const [row] = await handle.db.insert(branches).values(values).returning();
+      return row!.id;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /** The body without its `branchId` key: what the web sends since B4. */
+  function withoutBranch(body: Json): Json {
+    const copy = { ...body };
+    delete copy.branchId;
+    return copy;
+  }
+
   beforeAll(async () => {
     await harness.start();
     company = await harness.provisionCompany("ctr");
@@ -181,13 +250,15 @@ describe("contracts register (contracts part 1)", () => {
       warehouse: await harness.addUser({ companyIds: [company.id], roles: ["warehouse"] }),
       otherManager: await harness.addUser({ companyIds: [other.id], roles: ["manager"] }),
     };
+    ownerId = await harness.userIdOf(emails.owner);
+    managerId = await harness.userIdOf(emails.manager);
     const handle2 = await harness.companyDb(company.id);
     try {
       for (const key of ["manager", "sales"] as const) {
         const id = await harness.userIdOf(emails[key]);
         await handle2.db.update(userProfiles).set({ branchId: branchA }).where(eq(userProfiles.userId, id));
       }
-      const salesId = await harness.userIdOf(emails.sales);
+      salesId = await harness.userIdOf(emails.sales);
       await handle2.db.update(customers).set({ salesRepId: salesId }).where(eq(customers.id, customerId));
     } finally {
       await handle2.close();
@@ -306,6 +377,54 @@ describe("contracts register (contracts part 1)", () => {
 
     await call("post", `/contracts/${id}/recall`, "owner").expect(201);
     expect((await call("put", `/contracts/${id}`, "owner").send(form({ title: "Again" }))).status).toBe(200);
+  });
+
+  it("takes back a draft as the API answered it, retainage at its stored scale (B6)", async () => {
+    const status = (res: { status: number; body: unknown }, want: number, step: string) =>
+      expect(res.status, `B6 ${step}: ${JSON.stringify(res.body)}`).toBe(want);
+    const made = await create(
+      "owner",
+      form({
+        title: "B6 resave",
+        retainagePct: "5",
+        storedRetainagePct: "2.5",
+        lines: [line({ code: "R1", retainagePct: "7.5", storedRetainagePct: "0" })],
+      }),
+    );
+    const id = made.id as string;
+    // Read back as the web does: the register and the contract's lines.
+    const stored = async () => {
+      const contract = ((await call("get", "/contracts", "owner").expect(200)).body as Json[]).find((c) => c.id === id);
+      if (!contract) throw new Error("B6: the draft is not in GET /contracts.");
+      return { contract, lines: await linesOf(id) };
+    };
+    const rates = ({ contract, lines }: { contract: Json; lines: Json[] }) =>
+      [contract.retainagePct, contract.storedRetainagePct, lines[0]?.retainagePct, lines[0]?.storedRetainagePct].map(
+        (rate) => dec(rate as string).toString(),
+      );
+    const before = await stored();
+    expect(before.contract).toMatchObject({ retainagePct: "5.00000000", storedRetainagePct: "2.50000000" });
+    expect(before.lines).toHaveLength(1);
+    expect(before.lines[0]).toMatchObject({ retainagePct: "7.50000000", storedRetainagePct: "0.00000000" });
+
+    const put = (body: Json) => call("put", `/contracts/${id}`, "owner").send(body);
+    status(await put(asForm(before.contract, before.lines)), 200, "C.resave");
+    const after = await stored();
+    expect(rates(after)).toEqual(["5", "2.5", "7.5", "0"]);
+
+    // Still four decimals by value and at most 100; bad text is 400, never 500.
+    const refusals: [string, string, string][] = [
+      ["C.5dp", "5.00001", "Enter a percent such as 5."],
+      ["C.8dp", "5.00000001", "Enter a percent such as 5."],
+      ["C.abc", "abc", "Enter a percent such as 5."],
+      ["C.empty", "", "Enter a percent such as 5."],
+      ["C.bound", "100.0001", "A percent is at most 100."],
+    ];
+    for (const [step, retainagePct, message] of refusals) {
+      const res = await put({ ...asForm(after.contract, after.lines), retainagePct });
+      status(res, 400, step);
+      expect(res.body.message, `B6 ${step}`).toBe(message);
+    }
   });
 
   it("sends only a draft that passes draftProblem, and recalls only a sent contract", async () => {
@@ -873,5 +992,74 @@ describe("contracts register (contracts part 1)", () => {
     const codes = (await linesOf(id)).map((entry) => entry.code as string);
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes).toContain("CO-1.1-2");
+  });
+
+  it("files a new contract under its creator's own branch whatever the body says; only a branchless creator with all scope picks one (B4)", async () => {
+    const NO_BRANCH = "You have no branch, so the contract can't be filed. Ask an Owner to set your branch.";
+    const CHOOSE = "Choose the branch.";
+    const ownerCount = async () => ((await call("get", "/contracts", "owner").expect(200)).body as Json[]).length;
+    async function refused(who: Who, body: Json, message: string): Promise<void> {
+      const response = await call("post", "/contracts", who).send(body);
+      expect(response.status, JSON.stringify(response.body)).toBe(400);
+      expect(response.body.message).toBe(message);
+    }
+
+    // 1. Sales (own scope, branch A): another branch, a null one or none at all, always A.
+    const salesBodies: [string, Json][] = [
+      ["branch B sent", customerForm({ title: "B4 sales sends B", branchId: branchB })],
+      ["null sent", customerForm({ title: "B4 sales sends null", branchId: null })],
+      ["no branch key", withoutBranch(customerForm({ title: "B4 sales sends none" }))],
+    ];
+    for (const [label, body] of salesBodies) {
+      const made = await create("sales", body);
+      expect(made.branchId, label).toBe(branchA);
+      expect(made.salesRepId, label).toBe(salesId);
+    }
+
+    // 2. Manager (branch scope, branch A): files under A, and an edit can't move it.
+    const managed = await create("manager", form({ title: "B4 manager sends B", branchId: branchB }));
+    expect(managed.branchId).toBe(branchA);
+    expect(managed.salesRepId).toBe(managerId);
+    const moved = await call("put", `/contracts/${managed.id}`, "manager").send(
+      form({ title: "B4 manager moves to B", branchId: branchB }),
+    );
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.body.branchId).toBe(branchA);
+
+    // 3. Owner (no branch, all scope): picks only a live branch of this company.
+    const before = await ownerCount();
+    await refused("owner", withoutBranch(form({ title: "B4 owner sends none" })), NO_BRANCH);
+    await refused("owner", form({ title: "B4 owner sends null", branchId: null }), NO_BRANCH);
+    await refused("owner", form({ title: "B4 owner sends unknown", branchId: uuidv7() }), CHOOSE);
+    const closed = await addBranch(company.id, { name: "Closed", city: "Boulder", state: "CO", deletedAt: new Date() });
+    await refused("owner", form({ title: "B4 owner sends closed", branchId: closed }), CHOOSE);
+    const elsewhere = await addBranch(other.id, { name: "Elsewhere", city: "Austin", state: "TX" });
+    await refused("owner", form({ title: "B4 owner sends elsewhere", branchId: elsewhere }), CHOOSE);
+    const picked = await create("owner", form({ title: "B4 owner picks B", branchId: branchB }));
+    expect(picked.branchId).toBe(branchB);
+    expect(picked.salesRepId).toBe(ownerId);
+    expect(await ownerCount()).toBe(before + 1);
+
+    // 4. An all-scope creator who has a branch still files under it.
+    await setBranch(ownerId, branchA);
+    try {
+      const own = await create("owner", form({ title: "B4 owner with A sends B", branchId: branchB }));
+      expect(own.branchId, "an all-scope creator with a branch").toBe(branchA);
+    } finally {
+      await setBranch(ownerId, null);
+    }
+
+    // 5. A branch-scope creator with no branch can't pick one.
+    await setBranch(managerId, null);
+    try {
+      await refused("manager", form({ title: "B4 branchless manager sends A", branchId: branchA }), NO_BRANCH);
+    } finally {
+      await setBranch(managerId, branchA);
+    }
+
+    // 6. The original symptom: DemoStore's branch id is refused before any write.
+    const beforeDemoId = await ownerCount();
+    await refused("owner", form({ title: "B4 demo branch id", branchId: "sm-br-denver" }), "Invalid UUID");
+    expect(await ownerCount()).toBe(beforeDemoId);
   });
 });

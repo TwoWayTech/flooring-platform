@@ -62,7 +62,7 @@ Owner decision, 2026-11-13 (ADR 0029, part 2):
 | Entity | Database | Blueprint table | Key fields | Relationships |
 | --- | --- | --- | --- | --- |
 | Branch (`Company.branches`) | Company | `branches` | `id`, `name`, `city`, `state` | Referenced by `User.branchId`, `Location.branchId`, `Quote.branchId`, `Invoice.branchId`, `Contract.branchId`. Branch drives data scope |
-| Location (`locations`) | Company | `locations` | `id`, `name`, `kind` (`warehouse`, `showroom`), `branchId`, `address`, `isDefault`, `displaySamples`, `floorAreaSqFt` | `branchId -> Branch`. Referenced by stock, documents, expenses, `User.defaultLocationId` and `Employee.homeLocationId` |
+| Location (`locations`) | Company | `locations` | `id`, `name`, `kind` (`warehouse`, `showroom`), `branchId`, `address`, `isDefault`, `displaySamples`, `floorAreaSqFt` | `branchId -> Branch`, fixed once added. Referenced by stock, documents, expenses, `User.defaultLocationId` and `Employee.homeLocationId`. One default warehouse and unique (folded) names are kept by the API's rule under the stock lock, not by an index (ADR 0059, part 4a) |
 | Role (`roles`) | Company | `roles`, `role_permissions` | `id`, `companyId`, `key`, `name`, `permissions`, `dataScope` (`own`, `branch`, `all`), `system`, `owner` | Linked to users through `User.roleIds` |
 | User, profile part (`users`) | Company | `user_profiles`, `user_roles` | `title`, `roleIds`, `branchId`, `employeeId`, `defaultLocationId` | `roleIds -> Role`, `branchId -> Branch`, `employeeId -> Employee`, `defaultLocationId -> Location`. A user id is the target of `salesRepId`, `recordedById`, `buyerId`, `ownerUserId` and similar fields |
 
@@ -240,16 +240,16 @@ Real build (ADR 0051):
 | Group | Database | Blueprint table |
 | --- | --- | --- |
 | `branding` | Control | `tenant_branding` |
-| `localization.region` | Company | `locale_settings` |
-| `localization.currency` | Company | `currencies_enabled`, `exchange_rates` |
-| `localization.tax.rules` | Company | `tax_rules` |
-| `localization.tax.jurisdictions` | Company | `tax_jurisdictions` |
-| `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |
-| `localization.payroll` | Company | `overtime_rules`, `holiday_calendars` |
-| `localization.documents` | Company | `document_defaults` |
-| `numbers` | Company | `number_format` |
-| `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint |
-| `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold |
+| `localization.region` | Company | `locale_settings`. `timeZone` is a copy of control `tenants.time_zone`, which the API answers instead and writes into the row on a Region save; never read on the API. Written one tab at a time by `PUT /settings/localization/region` under the row's lock (ADR 0059, part 2b) |
+| `localization.currency` | Company | `currencies_enabled`, `exchange_rates`. `extra[].asOf` is set by the save (the company's day, when the rate's value changes). Written one tab at a time by `PUT /settings/localization/currency` under the row's lock (ADR 0059, part 2b) |
+| `localization.tax.rules` | Company | `tax_rules`. Written by `PUT /settings/localization/tax`: a change ends every live row of the state reaching the company's day (`valid_to` the day before) and inserts the next version from that day; never edited otherwise or deleted (ADR 0059, part 3a) |
+| `localization.tax.jurisdictions` | Company | `tax_jurisdictions`. Written by `PUT /settings/localization/tax`, matched by state and county: a change ends every live row of the county reaching the company's day and inserts a new row with a new id from that day (ADR 0059, part 3a) |
+| `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them: stored in the `localization` row's `tax` block with `pricesInclude` and `rounding`. The company default is dated the company's day when it changes; filing and certificate types are not edited (ADR 0059, part 3a) |
+| `localization.payroll` | Company | `overtime_rules`, `holiday_calendars`. Written one tab at a time by `PUT /settings/localization/payroll` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a) |
+| `localization.documents` | Company | `document_defaults`. Written one tab at a time by `PUT /settings/localization/documents` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a). A prefix change doesn't touch `document_sequences` |
+| `numbers` | Company | `number_format`. Stored in `settings`; written by `PUT /settings/numbers` (ADR 0059), where `decimals` travel as a list of `{ kind, places }` (the row keeps the record) |
+| `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint. Written by `PUT /settings/profile` (ADR 0059); `tenants.legal_name` is not updated by it |
+| `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold. `payments` and `expenses` are written by `PUT /settings/payments` and `PUT /settings/expenses` (ADR 0059); `payments` is read by customer payments, write-offs and supplier payments |
 | `accounting` | Company | `settings`. Real-build group (ADR 0040): `costingMethod`, `salesTaxBasis`, `bankAccounts` (name and methods only; each one is a `ledger_accounts` row keyed `bank:<uuid>`, code 1010 to 1099) |
 | `sharedCosts`, `hr`, `meetings`, `email` | Company | `settings`. New groups in this demo |
 
@@ -320,7 +320,7 @@ Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to 
 | `approvals`, `approval_rules`, `sod_rules` | Reviewer fields on each record and thresholds in settings. Who may review is coded in the actions |
 | `tax_categories`, `invoice_tax_lines` | `TaxCategory` is a fixed list. `Invoice` keeps a `taxRule` snapshot and one `tax` amount |
 | `accounts`, `journal_entries`, `journal_lines`, `fiscal_periods` | Derived expense journal only |
-| `document_sequences` | `nextNumber` |
+| `document_sequences` | `nextNumber`. The real build seeds it, but nothing reads it (the API numbers each kind from its own table under a lock), and a Sales and documents prefix change doesn't update it (ADR 0059, part 2a) |
 
 ## Points for the real build
 
