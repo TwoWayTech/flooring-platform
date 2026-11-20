@@ -195,7 +195,7 @@ Documents must reach every quote reader, so a builder opened after a change star
 - **Not planned without the owner:** scheduling or back-dating a change (Q1), a versioned company default (Q2, a table), tax-inclusive prices (Q3), a stale-page refusal (Q9), and the two schema changes: pricing an accepted quote's tax at acceptance (Q8) and a county version or id in invoice snapshots (Q10).
 
 ### Consequences
-- **Issued invoices never change,** and credit notes pro-rate the invoice's stored tax. **A quote's stored total follows the day it is saved, sent or converted:** converting an accepted quote after a change taxes it under the new rule and overwrites its stored total with the invoice's (sales.md rules 18 and 19; existing and intended; Q8). Under a contract's `on_release` treatment the retained part is taxed under its release day's rule (contracts.md rule 13).
+- **Issued invoices never change,** and credit notes pro-rate the invoice's stored tax. **A quote's stored total follows the day it is saved or sent:** converting an accepted quote after a change taxes the invoice under the new rule. Since 2026-11-20 conversion no longer overwrites the quote's stored total, and the invoice notes the difference (section "2026-11-20"; sales.md rules 18 and 19). Under a contract's `on_release` treatment the retained part is taxed under its release day's rule (contracts.md rule 13).
 - **A snapshot keeps its rate; its version identifies state rules only:** a county-rate snapshot carries the state rule's version and a company-default one version 1 (Q10).
 - The tables grow by one row per change, two per same-day change; the api-mode e2e adds Texas versions on every run.
 - One more read (the row again and both tables) per `GET /settings` for tax readers.

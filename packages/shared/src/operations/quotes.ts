@@ -222,3 +222,18 @@ export function invoiceFromQuote(
     cost: storedCost(totals),
   };
 }
+
+/**
+ * The total the customer accepted on the quote an invoice came from, when the invoice's total
+ * differs; else null (owner's answer of 2026-11-20, ADR 0059; sales.md rule 18). An accepted quote
+ * keeps its total at conversion, while the invoice is taxed under the rule in force on its own day,
+ * so after a tax change the two can differ and the invoice says so. Lines are copied unchanged at
+ * conversion, so only tax makes them differ. Credit notes and other quotes never count.
+ */
+export function acceptedTotalIfDifferent(
+  invoice: Pick<Invoice, "quoteId" | "total" | "isReturn">,
+  quote: Pick<Quote, "id" | "total"> | undefined,
+): string | null {
+  if (!quote || invoice.isReturn || invoice.quoteId !== quote.id) return null;
+  return dec(quote.total).equals(dec(invoice.total)) ? null : quote.total;
+}

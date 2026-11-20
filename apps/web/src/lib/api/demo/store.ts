@@ -1254,7 +1254,6 @@ export class DemoStore implements ApiClient {
       status: "converted",
       sentAt: quote.sentAt ?? this.todayIso,
       invoiceId: invoice.id,
-      total: invoice.total,
     });
     this.appendAudit(db, {
       category: "data",

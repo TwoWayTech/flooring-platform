@@ -138,6 +138,7 @@ export function InvoiceDocument({ model, logoUrl }: { model: InvoiceModel; logoU
             {model.writtenOff ? <TotalRow label="Written off" value={model.writtenOff} /> : null}
             <TotalRow label="Balance due" value={model.balanceDue} strong />
           </dl>
+          {model.taxNote ? <p className="text-muted-foreground pt-2 text-xs">{model.taxNote}</p> : null}
           {model.taxSource ? (
             <p className="text-muted-foreground pt-2 text-xs print:hidden">Tax rate: {model.taxSource}</p>
           ) : null}

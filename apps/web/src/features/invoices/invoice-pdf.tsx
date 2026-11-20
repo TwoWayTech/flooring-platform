@@ -102,6 +102,7 @@ export function InvoicePdf({ model }: { model: InvoiceModel }) {
             <Text>Balance due</Text>
             <Text>{model.balanceDue}</Text>
           </View>
+          {model.taxNote ? <Text style={styles.note}>{model.taxNote}</Text> : null}
         </View>
 
         {model.payments.length > 0 ? (

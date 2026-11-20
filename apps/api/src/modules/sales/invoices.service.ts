@@ -147,7 +147,8 @@ export class InvoicesService {
    * Converts an accepted quote into an invoice dated today (spec rule 19): the quote must still
    * pass every send check, totals are computed again here under the job site's tax rule on the
    * company's date, and the stock is held under the stock lock. A short line is recorded as short
-   * and does not block the sale.
+   * and does not block the sale. The quote keeps the total the customer accepted, even when the
+   * invoice's tax differs (owner's answer of 2026-11-20, ADR 0059; sales.md rule 18).
    */
   async convert(tenant: TenantContext, actor: Actor, quoteId: string): Promise<Invoice> {
     const db = await this.tenancy.db(tenant);
@@ -214,7 +215,6 @@ export class InvoicesService {
         .set({
           status: "converted",
           sentAt: quote.sentAt ? undefined : new Date(),
-          total: invoice.total,
           updatedAt: new Date(),
         })
         .where(eq(quotes.id, quoteId));
@@ -231,6 +231,7 @@ export class InvoicesService {
           before: { quote: quote.number, status: quote.status },
           after: {
             quote: quote.number,
+            acceptedTotal: quote.total,
             total: invoice.total,
             tax: invoice.tax,
             taxRule: invoice.taxRule,

@@ -29,6 +29,7 @@ export const styles = StyleSheet.create({
   num: { width: 80, textAlign: "right" },
   totals: { width: 220, marginLeft: "auto", marginTop: 16 },
   totalRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
+  note: { color: MUTED, fontSize: 8, marginTop: 6 },
   footer: {
     position: "absolute",
     left: 40,

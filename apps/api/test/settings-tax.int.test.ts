@@ -917,8 +917,8 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     const late = await convert(q2.id);
     expect([late.tax, late.total]).toEqual(["38.25", "488.25"]);
     expect(late.taxRule).toMatchObject({ state: "CO", version: 2 });
-    // Conversion overwrites the accepted quote's stored total with the invoice's (sales.md rules 18 and 19).
-    expect(await storedTotal(q2.id)).toBe("488.25");
+    // The accepted quote keeps the total the customer accepted (owner, 2026-11-20; sales.md rule 18).
+    expect(await storedTotal(q2.id)).toBe("489.65");
     const b2 = await invoiceOf(await bill(contract.id, contract.line, "700.00"));
     expect([b2.subtotal, b2.tax, b2.total]).toEqual(["300.00", "25.50", "295.50"]);
     expect(b2.taxRule).toMatchObject({ state: "CO", version: 2 });
