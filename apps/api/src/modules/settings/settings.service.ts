@@ -471,7 +471,11 @@ export class SettingsService {
     });
   }
 
-  /** The row of a settings group, locked until the transaction ends: it orders two saves of one group (ADR 0059). */
+  /**
+   * The row of a settings group, locked until the transaction ends: it orders two saves of one group
+   * (ADR 0059). No `deleted_at` filter: settings rows are never soft-deleted (D20), and the unique
+   * group index allows one row per group, so this is the row every loader reads.
+   */
   private async lockGroup(tx: CompanyDb, group: SettingsGroup): Promise<{ id: string; value: unknown } | undefined> {
     const [row] = await tx
       .select({ id: settings.id, value: settings.value })

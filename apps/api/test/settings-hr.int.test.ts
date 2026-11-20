@@ -645,7 +645,7 @@ describe("Settings → HR on the API (needs the local PostgreSQL)", () => {
     const monday = new Date();
     monday.setUTCDate(monday.getUTCDate() - 21 - ((monday.getUTCDay() + 6) % 7));
     const day = monday.toISOString().slice(0, 10);
-    const uploaded = await whileWorkweekMoves(company, () =>
+    const send = () =>
       call("post", "/timesheets/upload", worker.cookie).send({
         table: {
           headers: ["employee_email", "employee_external_id", "employee_name", "work_date", "hours_worked", "note"],
@@ -654,14 +654,18 @@ describe("Settings → HR on the API (needs the local PostgreSQL)", () => {
         fileName: "hours.csv",
         apply: true,
         own: true,
-      }),
-    );
+      });
+    const uploaded = await whileWorkweekMoves(company, send);
     expect(refusal(uploaded)).toEqual([409, "conflict", HR_CHANGED]);
     expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toEqual([]);
     const uploads = await withCompanyDb(company, (db) =>
       db.select().from(auditLog).where(eq(auditLog.action, "Uploaded timesheet hours")),
     );
     expect(uploads).toEqual([]);
+    // The same upload, sent again on the new workweek, is saved: the refusal was the race, not the rows.
+    const again = await send();
+    expect(again.status, JSON.stringify(again.body)).toBeLessThan(300);
+    expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toHaveLength(1);
   });
 
   it("H19 a clock-out while the clock is switched off waits for the change and is refused; the punch stays open", async () => {
