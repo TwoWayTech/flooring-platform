@@ -1,6 +1,8 @@
+import { sharedCostsProblem } from "../cost-sharing";
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { Address } from "../types/company";
+import type { Location } from "../types/locations";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
@@ -154,9 +156,18 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 export const LOCALIZATION_SECTION_MESSAGE = "Localization and tax saves one tab at a time.";
 
 /**
+ * What a section's rule judges against beyond its own stored value: the company's live locations,
+ * which Shared costs' shares must name (ADR 0059, part 4b, D8).
+ */
+export interface SettingsRuleContext {
+  locations: readonly Pick<Location, "id" | "name">[];
+}
+
+/**
  * Why a settings section can't be saved, or null: the content rules both modes run, with the same
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
- * refuse a change that no page makes. Localization and tax is refused by its name, whatever the
+ * refuse a change that no page makes. Shared costs are judged against `context`'s live locations; a
+ * call without them throws, so no caller can skip that check (part 4b, D8). Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
  * rule 7; ADR 0059, part 3b, D33). Every other section gets its rules when its part moves to the API.
  */
@@ -164,6 +175,7 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
   value: CompanySettings[K],
   current: CompanySettings[K],
+  context?: SettingsRuleContext,
 ): string | null {
   // By the name, not the value, so no value of any shape is stored whole (ADR 0059, part 3b, D33).
   if (section === "localization") return LOCALIZATION_SECTION_MESSAGE;
@@ -174,5 +186,9 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.numbers) return numberSettingsProblem(settings.numbers, current as NumberSettings);
   if (settings.payments) return paymentSettingsProblem(settings.payments);
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
+  if (settings.sharedCosts) {
+    if (!context) throw new Error("Shared costs are judged against the company's live locations.");
+    return sharedCostsProblem(settings.sharedCosts, context.locations);
+  }
   return null;
 }
