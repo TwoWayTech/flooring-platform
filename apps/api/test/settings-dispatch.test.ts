@@ -42,11 +42,13 @@ const TENANT = {} as TenantContext;
  * section impossible.
  */
 describe("GET /settings answers each served section under its own name", () => {
-  it("X1 each of the six served sections is answered under its own key (part 4b adds shared costs, part 5 HR)", async () => {
-    READABLE.sections = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr"];
+  it("X1 each company-database section is answered under its own key (part 4b shared costs, part 5 HR, the bell Email)", async () => {
+    // Branding is answered from the control row, which this fake doesn't hold; its own file covers it.
+    READABLE.sections = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr", "email"];
     const { profile, numbers, payments, expenses, hr } = SUMMIT.settings;
     const sharedCosts = { rule: "fixed", fixedPct: { a: "70", b: "30" } };
-    const service = serviceOver({ profile, numbers, payments, expenses, sharedCosts, hr });
+    const email = { senderName: "Summit Billing", replyTo: "billing@summit.example", signature: "Thanks." };
+    const service = serviceOver({ profile, numbers, payments, expenses, sharedCosts, hr, email });
     const answer = await service.answer(TENANT, ACCESS);
     expect(answer).toEqual({
       profile: profileFor(profile, ACCESS.permissions),
@@ -55,6 +57,7 @@ describe("GET /settings answers each served section under its own name", () => {
       expenses,
       sharedCosts,
       hr,
+      email,
     });
   });
 
