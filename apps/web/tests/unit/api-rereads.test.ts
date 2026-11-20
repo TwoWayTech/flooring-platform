@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultNumberSettings, type BusinessFilters, type ImportRequest } from "@workspace/shared";
 import type { ApiClient } from "@/lib/api/contract";
 import { API_METHODS } from "@/lib/api/http/api-methods";
 import { fakeApi, type FakeAnswer } from "./fake-api";
+
+// The browser's passkey prompt does not exist here; the API calls around it are what count.
+vi.mock("@/lib/session/webauthn", () => ({ createPasskey: async () => ({}), signWithPasskey: async () => ({}) }));
 
 /**
  * Every routed method, classified (ADR 0051, "Re-reading after every write", 2026-11-16): a write
@@ -60,6 +63,11 @@ const CASES = {
   resetRole: write((c) => c.resetRole(ID)),
   deleteRole: write((c) => c.deleteRole(ID)),
   verifyStepUp: read((c) => c.verifyStepUp("123456"), "POST /auth/step-up"),
+  signInSecurity: read((c) => c.signInSecurity()),
+  confirmPassword: read((c) => c.confirmPassword("a password"), "POST /api/auth/verify-password"),
+  addPasskey: write((c) => c.addPasskey("Chrome on Windows")),
+  renamePasskey: write((c) => c.renamePasskey(ID, "Office laptop")),
+  deletePasskey: write((c) => c.deletePasskey(ID)),
   listPlatformCompanies: read((c) => c.listPlatformCompanies()),
   getPlatformCompany: read((c) => c.getPlatformCompany(ID)),
   updatePlatformCompanyAccess: write((c) => c.updatePlatformCompanyAccess(ID, {})),
@@ -120,6 +128,7 @@ const CASES = {
   pnlReport: read((c) => c.pnlReport(stub({ range: "month" }))),
   salesByCategoryReport: read((c) => c.salesByCategoryReport(stub({ range: "month" }))),
   paymentsReport: read((c) => c.paymentsReport(stub({ range: "month" }))),
+  trialBalance: read((c) => c.trialBalance("2026-10-31")),
   importOverview: read((c) => c.importOverview("summit")),
   previewImport: read((c) => c.previewImport("summit", IMPORT), "POST /imports/check"),
   runImport: write((c) => c.runImport("summit", { ...IMPORT, expected: "c" })),
@@ -243,8 +252,9 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(158);
-    expect(WRITES).toHaveLength(113);
+    // 158 and 113 before: the passkey screens add 5 (3 writes), the trial balance 1 read.
+    expect(READS.length + WRITES.length).toBe(164);
+    expect(WRITES).toHaveLength(116);
     expect(LOCALS.map((c) => c.name).sort()).toEqual(["closeCompany", "openCompany", "today"]);
   });
 

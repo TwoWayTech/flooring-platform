@@ -48,6 +48,7 @@ export const FLOORING_SCREENS = [
   "/my/documents",
   "/my/meetings",
   "/my/profile",
+  "/account/security",
   "/sales?view=team",
   "/settings/audit",
   "/settings/import",
@@ -68,6 +69,7 @@ export const HR_SCREENS = [
   "/my",
   "/my/timesheet",
   "/my/pay",
+  "/account/security",
 ];
 
 /** Platform admin screens. */

@@ -90,6 +90,7 @@ import {
   taxInForce,
   type LocalizationSettings,
   type SettingsSectionRule,
+  type TrialBalance,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -145,6 +146,7 @@ import type {
   Viewer,
 } from "../contract";
 import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, permissionDiff } from "./admin-rules";
+import { DemoPasskeys } from "./passkeys";
 import { demoAuditAsSeen } from "./audit-view";
 import { demoAuditPage, type DemoPlatformAuditRow } from "./platform-audit";
 import { demoAccessDiff, demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
@@ -380,6 +382,8 @@ export class DemoStore implements ApiClient {
   private notices: string[] = [];
   /** Each meeting's last move, for Undo; in memory only (ADR 0051 "Part 3", B.6 item 6). */
   private readonly meetingMoves = new MeetingMoveMemo();
+  /** Simulated passkeys, in memory for this tab (ADR 0060). */
+  private readonly passkeys = new DemoPasskeys();
 
   /** Proof files live outside the overlay, behind the FileStore interface (spec Appendix A). */
   constructor(private readonly files: FileStore = indexedDbFileStore) {}
@@ -1549,6 +1553,35 @@ export class DemoStore implements ApiClient {
     if (!/^\d{6}$/.test(code)) throw new DemoRuleError("Enter the 6-digit code from your authenticator app.");
   }
 
+  async signInSecurity() {
+    const db = this.open();
+    return this.passkeys.security(this.personKey(), db.get("users", this.viewer!.userId)!, db.list("roles"));
+  }
+
+  async confirmPassword(password: string) {
+    this.passkeys.confirmPassword(password);
+  }
+
+  async addPasskey(name: string) {
+    this.passkeys.add(this.personKey(), name, new Date().toISOString());
+    this.emit();
+  }
+
+  async renamePasskey(id: string, name: string) {
+    this.passkeys.rename(this.personKey(), id, name);
+    this.emit();
+  }
+
+  async deletePasskey(id: string) {
+    this.passkeys.remove(this.personKey(), id, await this.signInSecurity());
+    this.emit();
+  }
+
+  /** Whose simulated passkeys: the signed-in person in the open company, never a View as role. */
+  private personKey(): string {
+    return `${this.open().companyId}:${this.viewer!.userId}`;
+  }
+
   async saveExpense(input: ExpenseInput, files: File[]) {
     return this.act((ctx) => saveExpense(ctx, input, files));
   }
@@ -1593,6 +1626,15 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["reports.financial.view"]);
     return demoPaymentsReport(db, await this.reportViewer(db), query);
+  }
+
+  /**
+   * The demo keeps no journal: its "ledger" is each invoice's balance, so a trial balance made up
+   * from the documents would disagree with the API's postings. The hub never offers it in the demo
+   * (`reportAccess` without `books`), and asking anyway is refused (ADR 0055 "Trial balance").
+   */
+  async trialBalance(): Promise<TrialBalance> {
+    throw new DemoRuleError("The demo keeps no journal, so it has no trial balance.");
   }
 
   // Meetings follow the shared rules the API uses (ADR 0051 "Part 3"); what stays demo-only is in

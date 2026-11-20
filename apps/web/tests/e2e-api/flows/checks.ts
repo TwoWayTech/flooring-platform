@@ -39,7 +39,7 @@ export async function postAs<T>(request: APIRequestContext, path: string, data?:
 
 /**
  * The trial balance as the person sees it (GET /ledger/trial-balance; needs `reports.financial.view`
- * at scope all, so Grace or the Owner). No screen shows it yet (STATUS "Later").
+ * at scope all and the cost and pay sight its figures reveal, so Grace or the Owner; ADR 0055).
  */
 export function trialBalance(request: APIRequestContext): Promise<TrialBalance> {
   return readAs<TrialBalance>(request, "/ledger/trial-balance");

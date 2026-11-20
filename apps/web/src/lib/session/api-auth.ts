@@ -1,5 +1,8 @@
+import { apiErrorCode, ApiError } from "@/lib/api/errors";
+import { HttpTransport } from "@/lib/api/http/transport";
 import type { SessionContext } from "./api-context";
 import { API_PROXY_PATH, AUTH_BASE_PATH } from "./auth-cookie";
+import { signInWithPasskeyOn } from "./passkeys";
 
 /**
  * What a sign-in attempt led to. `second-factor`: the password was right and the account has an
@@ -101,20 +104,38 @@ export async function signInWithPassword(email: string, password: string): Promi
 /** The signed-in user's context from apps/api; throws when the session is missing or ended. */
 export async function fetchSessionContext(): Promise<SessionContext> {
   const response = await fetch(`${API_PROXY_PATH}/auth/context`, { credentials: "same-origin", cache: "no-store" });
-  if (!response.ok) throw new Error(messageFor(await errorBody(response)));
+  if (!response.ok) throw new ApiError(messageFor(await errorBody(response)));
   return (await response.json()) as SessionContext;
 }
 
 /** Opens one of the user's companies in the session; the API refuses a company they do not belong to. */
 export async function openCompany(companyId: string): Promise<void> {
   const response = await post(`${AUTH_BASE_PATH}/organization/set-active`, { organizationId: companyId });
-  if (!response.ok) throw new Error(messageFor(await errorBody(response)));
+  if (!response.ok) throw new ApiError(messageFor(await errorBody(response)));
 }
 
 /** Ends the real session. */
 export async function signOutOfApi(): Promise<void> {
   await post(`${AUTH_BASE_PATH}/sign-out`, {});
 }
+
+/**
+ * Signs in with a passkey: the browser's prompt, checked by the API. A passkey needs user
+ * verification, so it is the whole sign-in with no code after it (ADR 0029, part 2; ADR 0060). A
+ * required user whose only factor is a passkey must sign in this way (`passkey_required`).
+ */
+export async function signInWithPasskey(): Promise<AuthStep> {
+  try {
+    await signInWithPasskeyOn(new HttpTransport(AUTH_BASE_PATH));
+    return { ok: true };
+  } catch (failure) {
+    if (apiErrorCode(failure) === "PASSKEY_NOT_FOUND") return { ok: false, message: UNKNOWN_PASSKEY_MESSAGE };
+    return { ok: false, message: failure instanceof ApiError ? failure.message : "Sign-in failed. Try again." };
+  }
+}
+
+const UNKNOWN_PASSKEY_MESSAGE =
+  "That passkey does not belong to an account here. Choose another passkey, or sign in with your password.";
 
 /**
  * Finishes a sign-in with the second factor: the authenticator code, or one of the backup codes.

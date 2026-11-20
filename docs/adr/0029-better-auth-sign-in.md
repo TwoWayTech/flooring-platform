@@ -87,7 +87,7 @@ The owner decided the four marked "(owner)". The rest are the safest options for
 `GET /public/branding?host=` returns only display fields (name, monogram, colour, pattern, theme) for the company the host's subdomain names. It answers 404 for no live company. The logo URL comes with the branding upload through StorageProvider (P11), because the API has no storage wiring yet.
 
 ### Web (api mode)
-The login page has the code step (authenticator code or backup code), and set-up for required users: the password again, the setup key in groups of four with a copy button, the first code, then the backup codes shown once. A session that must set up MFA opens the login page, not the app. Passkey screens and a QR code are B's (STATUS), because they need `@simplewebauthn/browser` in the web app.
+The login page has the code step (authenticator code or backup code), and set-up for required users: the password again, the setup key in groups of four with a copy button, the first code, then the backup codes shown once. A session that must set up MFA opens the login page, not the app. Passkey screens and a QR code are B's (STATUS), because they need `@simplewebauthn/browser` in the web app. (Built on 2026-11-20 without it: ADR 0060.)
 
 ## Left for later
 - **P9:**
