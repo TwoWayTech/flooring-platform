@@ -161,13 +161,27 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
         validFrom: "2025-01-01",
         version: 1,
       });
-      Object.assign(ids, { main: main.id, north: north.id, a: a.id, b: b.id, s: s.id, tile: tile.id, carpet: carpet.id });
+      Object.assign(ids, {
+        main: main.id,
+        north: north.id,
+        a: a.id,
+        b: b.id,
+        s: s.id,
+        tile: tile.id,
+        carpet: carpet.id,
+      });
     });
     await withCompanyDb(otherco, async (db) => {
       const [branch] = await db.insert(branches).values({ name: "Other", city: "Austin", state: "TX" }).returning();
       const [a] = await db
         .insert(locations)
-        .values({ name: "Other Warehouse", kind: "warehouse" as const, branchId: branch.id, address: ADDRESS, isDefault: true })
+        .values({
+          name: "Other Warehouse",
+          kind: "warehouse" as const,
+          branchId: branch.id,
+          address: ADDRESS,
+          isDefault: true,
+        })
         .returning();
       ids.otherBranch = branch.id;
       ids.otherA = a.id;
@@ -630,7 +644,9 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
     try {
       await put(owner.cookie, ids.s, body()).expect(200);
     } finally {
-      await withCompanyDb(floorco, (db) => db.update(branches).set({ deletedAt: null }).where(eq(branches.id, ids.main)));
+      await withCompanyDb(floorco, (db) =>
+        db.update(branches).set({ deletedAt: null }).where(eq(branches.id, ids.main)),
+      );
     }
   });
 
@@ -702,8 +718,9 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
     const lineId = await withCompanyDb(
       floorco,
       async (db) =>
-        (await db.select({ id: invoiceLines.id }).from(invoiceLines).where(eq(invoiceLines.invoiceId, invoice.body.id)))[0]
-          .id,
+        (
+          await db.select({ id: invoiceLines.id }).from(invoiceLines).where(eq(invoiceLines.invoiceId, invoice.body.id))
+        )[0].id,
     );
     const w5 = await freshWarehouse("LNA12 held");
     const hold = (quantity: string, shortBy: string) =>
@@ -817,9 +834,10 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
   it("LNA15 every member of a company with core reads the saved locations", async () => {
     const north = (await listed()).find((location) => location.name === "North Showroom")!;
     for (const key of ["sales", "warehouse"])
-      expect((await listed(people.get(`flooring:${key}`)!.cookie)).map((location) => location.id), key).toContain(
-        north.id,
-      );
+      expect(
+        (await listed(people.get(`flooring:${key}`)!.cookie)).map((location) => location.id),
+        key,
+      ).toContain(north.id);
     expect((await call("get", "/locations", people.get("hr:owner")!.cookie)).status).toBe(403);
   });
 
@@ -868,7 +886,10 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
     await refusedConversion(line);
     await setLocation(w3, { deletedAt: null });
     const lines = await withCompanyDb(floorco, (db) =>
-      db.select({ id: locations.id }).from(locations).where(inArray(locations.id, [w2, w3])),
+      db
+        .select({ id: locations.id })
+        .from(locations)
+        .where(inArray(locations.id, [w2, w3])),
     );
     expect(lines).toHaveLength(2);
   });

@@ -192,7 +192,10 @@ flowTest.describe("the company shell from GET /company (api mode)", () => {
         // (ADR 0059): the Branch cell, matched exactly, since the name and City cells say Denver too.
         await page.goto("/settings/locations");
         await expect(
-          page.getByRole("row", { name: /Denver Central/ }).first().getByRole("cell", { name: "Denver", exact: true }),
+          page
+            .getByRole("row", { name: /Denver Central/ })
+            .first()
+            .getByRole("cell", { name: "Denver", exact: true }),
         ).toBeVisible();
       },
     );

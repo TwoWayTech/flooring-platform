@@ -230,8 +230,8 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(152);
-    expect(WRITES).toHaveLength(109);
+    expect(READS.length + WRITES.length).toBe(153);
+    expect(WRITES).toHaveLength(110);
   });
 
   it("sends at least one request in every case, so no case passes without reaching the API", async () => {

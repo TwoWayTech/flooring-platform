@@ -48,6 +48,18 @@ export const TAX_RATE_TEXT = /^\d{1,2}(\.\d{1,4}0{0,4})?$/;
 export const TAX_RATE_TEXT_MAX = 11;
 
 /**
+ * A quantity as a write takes it (CLAUDE.md rules 6 and 8: quantities are numeric(14,3)): up to ten
+ * digits and three decimals, as such a column is answered ("18000.000"), so a client that sends back
+ * what it read is taken. Transfer and count quantities (the inventory controller's `QUANTITY`) and a
+ * location's floor area in sq ft (ADR 0059, part 4a, D11, D23). No bare point, sign, exponent or
+ * space. Blank is the caller's to decide.
+ */
+export const QUANTITY_TEXT = /^\d{1,10}(\.\d{1,3})?$/;
+
+/** The longest text `QUANTITY_TEXT` takes ("9999999999.999"), where a quantity input stops typing. */
+export const QUANTITY_TEXT_MAX = 14;
+
+/**
  * Plain decimal text: digits with an optional fraction. No sign, exponent, radix prefix ("0x0a"),
  * bare point ("10.", ".5") or space, all of which decimal.js would otherwise read as a number.
  */

@@ -1285,8 +1285,12 @@ export interface ApiClient {
   /** Receives a transfer at its destination. Needs inventory.transfer.receive. Audited. */
   receiveTransfer(transferId: string): Promise<Transfer>;
   /**
-   * Creates or changes a warehouse or showroom (spec A1). Exactly one warehouse is the company
-   * default, and a location holding stock cannot become a showroom. Needs settings.locations.manage. Audited.
+   * Creates or changes a warehouse or showroom (spec A1; ADR 0059, part 4a). A new location is one
+   * whose id the API didn't make. The name is unique as the stock import compares names; the branch
+   * is fixed once added; exactly one warehouse is the company default; a warehouse becomes a showroom
+   * only while it holds no stock, no transfer in transit, no stock held for an invoice and no open
+   * quote. Needs settings.locations.manage, the `inventory.locations` switch and data scope `all`.
+   * Audited, the cleared default too.
    */
   saveLocation(location: Location): Promise<Location>;
   /** Changes the signed-in person's own profile, such as their default warehouse. Audited. */

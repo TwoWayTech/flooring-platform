@@ -1,4 +1,5 @@
 import {
+  ADDRESS_MAX,
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
@@ -35,6 +36,23 @@ import { z } from "zod";
 
 const KINDS = Object.keys(NUMBER_KINDS) as [NumberKind, ...NumberKind[]];
 
+/**
+ * An address as Company profile and Warehouses and showrooms send it (ADR 0059, part 4a, D10): part
+ * 1's bounds from `ADDRESS_MAX`, with no words of their own (the inputs stop typing there), a state of
+ * two characters (the shared rule checks the code), and a map position of finite numbers or none.
+ */
+export const ADDRESS_INPUT = z
+  .object({
+    street: z.string().max(ADDRESS_MAX.street),
+    city: z.string().max(ADDRESS_MAX.city),
+    state: z.string().max(2),
+    zip: z.string().max(ADDRESS_MAX.zip),
+    county: z.string().max(ADDRESS_MAX.county).optional(),
+    lat: z.number().finite().optional(),
+    lng: z.number().finite().optional(),
+  })
+  .strict();
+
 /** A company profile as Settings → Company profile sends it. */
 export const PROFILE_INPUT: z.ZodType<CompanyProfile> = z
   .object({
@@ -44,17 +62,7 @@ export const PROFILE_INPUT: z.ZodType<CompanyProfile> = z
     phone: z.string().max(50),
     email: z.string().max(320),
     website: z.string().max(200),
-    address: z
-      .object({
-        street: z.string().max(200),
-        city: z.string().max(100),
-        state: z.string().max(2),
-        zip: z.string().max(10),
-        county: z.string().max(100).optional(),
-        lat: z.number().finite().optional(),
-        lng: z.number().finite().optional(),
-      })
-      .strict(),
+    address: ADDRESS_INPUT,
   })
   .strict();
 

@@ -66,7 +66,8 @@ async function springsOf(request: APIRequestContext): Promise<ApiLocation> {
 /** Puts a location back through `PUT /locations/:id`, failing unless the API takes it. */
 async function restoreOrThrow(request: APIRequestContext, id: string, body: object) {
   const response = await request.put(`/api-proxy/locations/${id}`, { data: body });
-  if (response.status() !== 200) throw new Error(`PUT /locations/${id} answered ${response.status()}: ${await response.text()}`);
+  if (response.status() !== 200)
+    throw new Error(`PUT /locations/${id} answered ${response.status()}: ${await response.text()}`);
   return response;
 }
 
@@ -116,7 +117,10 @@ flowTest.describe("Settings part 4a on the API (api mode)", () => {
       await expect(page.getByRole("row", { name: /Denver Central/ }).first()).toContainText("Default");
 
       // 2. Edit Southgate: the branch is read only; the floor area reads at scale.
-      await page.getByRole("row", { name: /Southgate Showroom/ }).first().click();
+      await page
+        .getByRole("row", { name: /Southgate Showroom/ })
+        .first()
+        .click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.getByRole("combobox", { name: "Branch" })).toBeDisabled();
       await expect(dialog.getByLabel("Floor area, sq ft")).toHaveValue("2400.000");
@@ -157,7 +161,10 @@ flowTest.describe("Settings part 4a on the API (api mode)", () => {
       expect(audited.map((entry) => entry.target)).toEqual(["Southgate Showroom E2E"]);
 
       // 6. A warehouse with stock stays one.
-      await page.getByRole("row", { name: /Colorado Springs/ }).first().click();
+      await page
+        .getByRole("row", { name: /Colorado Springs/ })
+        .first()
+        .click();
       await dialog.getByRole("group", { name: "Type" }).getByRole("button", { name: "Showroom" }).click();
       const refused = page.waitForResponse(
         (response) =>
@@ -198,7 +205,10 @@ flowTest.describe("Settings part 4a on the API (api mode)", () => {
       expect((await locationsOf(dana.request)).map((location) => location.name)).not.toContain("E2E Annex");
 
       // 8. Put back through the page.
-      await page.getByRole("row", { name: /Southgate Showroom E2E/ }).first().click();
+      await page
+        .getByRole("row", { name: /Southgate Showroom E2E/ })
+        .first()
+        .click();
       await dialog.getByLabel("Name", { exact: true }).fill("Southgate Showroom");
       await dialog.getByLabel("Floor area, sq ft").fill("2400");
       await dialog.getByLabel("Display samples").fill("96");

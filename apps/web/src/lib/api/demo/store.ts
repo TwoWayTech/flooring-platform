@@ -14,8 +14,12 @@ import {
   featureOn,
   PRODUCT_MODULES,
   roleTemplate,
-  boxedStock,
-  dec,
+  becomesShowroom,
+  LOCATION_RULE,
+  locationHolds,
+  locationHoldsProblem,
+  locationProblem,
+  locationStored,
   locationName,
   receiveTransfer,
   startTransfer,
@@ -1981,34 +1985,54 @@ export class DemoStore implements ApiClient {
     return result.transfer;
   }
 
+  /**
+   * Adds or changes a warehouse or showroom with the API's checks in the API's order (ADR 0059, part
+   * 4a, D16): module, key, switch, scope (`assertSettingsSave`), then the shared rule, then, for a
+   * warehouse that becomes a showroom, the holds on its own records; stored as both modes store it;
+   * one audit entry per saved row (the cleared default too). Its ids come from the dialog, so an id
+   * it doesn't hold is a new location.
+   */
   async saveLocation(location: Location) {
     const db = this.open();
-    await this.assertCan(db, ["settings.locations.manage"]);
-    const before = db.get("locations", location.id);
-    const holdsStock =
-      db.list("rolls").some((r) => r.locationId === location.id && dec(r.remainingLengthFt).gt(0)) ||
-      [...boxedStock(db.list("stockMovements"), location.id).values()].some((q) => !q.isZero());
-    if (location.kind === "showroom" && holdsStock) {
-      throw new DemoRuleError(`${location.name} holds stock. Transfer it out before making it a showroom.`);
-    }
-    const others = db.list("locations").filter((l) => l.id !== location.id);
-    if (location.kind === "showroom" && location.isDefault) {
-      throw new DemoRuleError("The default must be a warehouse; showrooms hold no sellable stock.");
-    }
-    if (!location.isDefault && !others.some((l) => l.isDefault)) {
-      throw new DemoRuleError("Keep one warehouse as the company default.");
-    }
-    const saved = { ...location, name: location.name.trim() };
-    if (saved.isDefault)
-      for (const l of others.filter((o) => o.isDefault)) db.put("locations", { ...l, isDefault: false });
+    await this.assertSettingsSave(db, LOCATION_RULE);
+    const { branches } = await this.getCompany();
+    const { id, ...input } = location;
+    const live = db.list("locations");
+    const before = live.find((l) => l.id === id);
+    const others = live.filter((l) => l.id !== id);
+    const records = {
+      rolls: db.list("rolls"),
+      movements: db.list("stockMovements"),
+      transfers: db.list("transfers"),
+      reservations: db.list("reservations"),
+      quotes: db.list("quotes"),
+    };
+    const problem =
+      locationProblem(input, { before, others, branches }) ??
+      (before && becomesShowroom(before, input)
+        ? locationHoldsProblem(input.name.trim(), locationHolds(id, records))
+        : null);
+    if (problem) throw new DemoRuleError(problem);
+    const saved: Location = { id, ...locationStored(input) };
+    const cleared = saved.isDefault ? others.filter((l) => l.isDefault) : [];
+    for (const l of cleared) db.put("locations", { ...l, isDefault: false });
     db.put("locations", saved);
     this.appendAudit(db, {
       category: "settings",
       action: before ? "Changed location" : "Added location",
       target: saved.name,
-      before: before ? `${before.kind}${before.isDefault ? ", default" : ""}` : null,
-      after: `${saved.kind}${saved.isDefault ? ", default" : ""}`,
+      // An add keeps the kind and default; a change names what changed (diffSummary, as updateSettings).
+      ...(before
+        ? diffSummary(before, saved)
+        : { before: null, after: `${saved.kind}${saved.isDefault ? ", default" : ""}` }),
     });
+    for (const l of cleared)
+      this.appendAudit(db, {
+        category: "settings",
+        action: "Changed location",
+        target: l.name,
+        ...diffSummary(l, { ...l, isDefault: false }),
+      });
     this.emit();
     return saved;
   }

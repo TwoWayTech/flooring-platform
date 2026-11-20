@@ -51,7 +51,10 @@ test.describe("warehouses and transfers (spec A1)", () => {
     page,
   }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/locations");
-    await page.getByRole("row", { name: /Southgate Showroom/ }).first().click();
+    await page
+      .getByRole("row", { name: /Southgate Showroom/ })
+      .first()
+      .click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("combobox", { name: "Branch" })).toBeDisabled();
     await dialog.getByLabel("Name", { exact: true }).fill("denver central");
