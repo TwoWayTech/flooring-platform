@@ -1,14 +1,14 @@
 import { format } from "date-fns";
 import {
   branchManageDenial,
-  PAYMENT_CONTROLS_OWNER_ONLY,
-  paymentControlsLoosened,
   branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  PAYMENT_CONTROLS_OWNER_ONLY,
+  paymentControlsLoosened,
   permissionsForModules,
   featureOn,
   PRODUCT_MODULES,
@@ -855,7 +855,8 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Screens save `localization` per tab through `updateLocalization`.
+   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Screens save
+   * `localization` per tab through `updateLocalization`.
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
@@ -864,8 +865,9 @@ export class DemoStore implements ApiClient {
     const problem = settingsSectionProblem(section, value, db.settings[section]);
     if (problem) throw new DemoRuleError(problem);
     // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
-    const payments = { [section]: value } as Partial<CompanySettings>;
-    if (payments.payments && !access.isOwner && paymentControlsLoosened(payments.payments, db.settings.payments)) {
+    // One key is set, so reading `payments` narrows the value to Payments when that is the section.
+    const bySection = { [section]: value } as Partial<CompanySettings>;
+    if (bySection.payments && !access.isOwner && paymentControlsLoosened(bySection.payments, db.settings.payments)) {
       throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
     }
     const before = db.settings[section];
