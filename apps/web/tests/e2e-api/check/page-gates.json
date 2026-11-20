@@ -428,24 +428,12 @@
       "hr",
       "employee"
     ],
-    "/contracts": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/contracts": [],
     "/contracts/*": [],
-    "/finance": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/finance": [],
     "/finance?view=expenses": [],
     "/finance?view=payments": [],
-    "/hr": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/hr": [],
     "/hr/commissions": [
       "owner",
       "hr"
@@ -466,16 +454,8 @@
       "owner",
       "hr"
     ],
-    "/installation": [
-      "owner",
-      "hr",
-      "employee"
-    ],
-    "/inventory": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/installation": [],
+    "/inventory": [],
     "/inventory/rolls/*": [],
     "/inventory?view=products": [],
     "/inventory?view=ready": [],
@@ -541,23 +521,11 @@
       "hr",
       "employee"
     ],
-    "/purchasing": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/purchasing": [],
     "/purchasing?view=bills": [],
     "/purchasing?view=orders": [],
-    "/reports": [
-      "owner",
-      "hr",
-      "employee"
-    ],
-    "/sales": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/reports": [],
+    "/sales": [],
     "/sales/invoices/*": [],
     "/sales/quotes/*": [],
     "/sales/quotes/new": [],
@@ -590,16 +558,8 @@
     "/settings/database": [
       "owner"
     ],
-    "/settings/documents": [
-      "owner",
-      "hr",
-      "employee"
-    ],
-    "/settings/expenses": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/settings/documents": [],
+    "/settings/expenses": [],
     "/settings/hr": [
       "owner",
       "hr"
@@ -610,11 +570,7 @@
     "/settings/localization": [
       "owner"
     ],
-    "/settings/locations": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/settings/locations": [],
     "/settings/meetings": [
       "owner"
     ],
@@ -627,11 +583,7 @@
     "/settings/outbox": [
       "owner"
     ],
-    "/settings/payments": [
-      "owner",
-      "hr",
-      "employee"
-    ],
+    "/settings/payments": [],
     "/settings/roles": [
       "owner"
     ],
