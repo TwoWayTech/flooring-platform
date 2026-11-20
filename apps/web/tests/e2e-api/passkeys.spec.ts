@@ -47,6 +47,26 @@ async function signOut(page: Page) {
   await expect(page).toHaveURL(/\/login$/);
 }
 
+const EXPIRED_WORDS =
+  "Your password check has run out. Confirm your password again, then add the passkey within 5 minutes.";
+
+/**
+ * Makes the next request for registration options answer as the API does once the password check
+ * has run out (403 `password_confirmation_required`), without waiting the 5 minutes.
+ */
+async function expirePasswordCheckOnce(page: Page) {
+  await page.route(
+    "**/api/auth/passkey/generate-register-options",
+    (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "password_confirmation_required", message: "raw" }),
+      }),
+    { times: 1 },
+  );
+}
+
 /** The auth calls the page sends, in order, as "METHOD path". */
 function recordAuthCalls(page: Page): string[] {
   const calls: string[] = [];
@@ -85,6 +105,13 @@ test.describe("passkeys (api mode)", () => {
       await page.getByRole("radio", { name: /^Passkey/ }).check();
       await page.getByLabel("Confirm your password").fill(seedPassword());
       await page.getByRole("button", { name: "Continue" }).click();
+      // A password check that ran out sends her back to the password, with the passkey still chosen.
+      await expirePasswordCheckOnce(page);
+      await page.getByRole("button", { name: "Create passkey" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: /./ })).toHaveText(EXPIRED_WORDS);
+      await expect(page.getByRole("radio", { name: /^Passkey/ })).toBeChecked();
+      await page.getByLabel("Confirm your password").fill(seedPassword());
+      await page.getByRole("button", { name: "Continue" }).click();
       await page.getByLabel("Passkey name").fill("Work laptop");
       await page.getByRole("button", { name: "Create passkey" }).click();
       await expect(page.getByText("Two-step sign-in is on. Next time, choose Sign in with a passkey")).toBeVisible();
@@ -92,10 +119,10 @@ test.describe("passkeys (api mode)", () => {
       expect(credentials).toHaveLength(1);
       // The password was confirmed before registration began, and no new session was asked for.
       const verify = calls.lastIndexOf("POST /verify-password");
-      const options = calls.indexOf("GET /passkey/generate-register-options");
+      const options = calls.lastIndexOf("GET /passkey/generate-register-options");
       expect(verify).toBeGreaterThanOrEqual(0);
       expect(options).toBeGreaterThan(verify);
-      expect(calls.indexOf("POST /passkey/verify-registration")).toBeGreaterThan(options);
+      expect(calls.lastIndexOf("POST /passkey/verify-registration")).toBeGreaterThan(options);
       await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
     });
@@ -136,6 +163,11 @@ test.describe("passkeys (api mode)", () => {
 
     await test.step("adding asks for the password first; the same device is refused in plain words", async () => {
       await page.getByRole("button", { name: "Add a passkey" }).click();
+      await page.getByLabel("Your password").fill(seedPassword());
+      await page.getByRole("button", { name: "Continue" }).click();
+      await expirePasswordCheckOnce(page);
+      await page.getByRole("button", { name: "Create passkey" }).click();
+      await expect(page.getByRole("dialog").getByRole("alert")).toHaveText(EXPIRED_WORDS);
       await page.getByLabel("Your password").fill(seedPassword());
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByLabel("Passkey name").fill("Second key");

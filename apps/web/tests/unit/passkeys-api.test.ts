@@ -218,3 +218,12 @@ describe("failureWords", () => {
     expect(failureWords("boom")).toBe("Something went wrong. Try again.");
   });
 });
+
+describe("refusal words by code", () => {
+  it("PK14 a code named like an object property keeps the server's own words", async () => {
+    for (const code of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const fake = fakeApi({ "POST /api/auth/passkey/delete-passkey": refusal(400, code, "Refused.") });
+      await expect(fake.client.deletePasskey("pk-1"), code).rejects.toMatchObject({ message: "Refused.", code });
+    }
+  });
+});

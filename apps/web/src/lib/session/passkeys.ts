@@ -94,7 +94,7 @@ const RATE_LIMITED = "Too many attempts from this network. Wait a minute, then t
  */
 export function authRefusal(failure: unknown): Error {
   if (!(failure instanceof HttpApiError)) return failure instanceof Error ? failure : new ApiError(String(failure));
-  const words = REFUSAL_WORDS[failure.code];
+  const words = Object.hasOwn(REFUSAL_WORDS, failure.code) ? REFUSAL_WORDS[failure.code] : undefined;
   if (words) return new HttpApiError(words, failure.status, failure.code);
   if (failure.status === 429 && failure.code === "error") return new HttpApiError(RATE_LIMITED, 429, "rate_limited");
   return failure;
