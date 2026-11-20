@@ -265,7 +265,7 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     expect(quote.total).not.toBe(late.total);
   });
 
-  it("TD11 an accepted quote saved after a tax change keeps its accepted total unless the save reprices it", async () => {
+  it("TD12 an accepted quote saved after a tax change keeps its accepted total unless the save reprices it", async () => {
     const store = await open("summit", DANA);
     const accepted = (await store.list("quotes")).find((each) => each.id === AFTER_QUOTE)!;
     expect(accepted.status).toBe("accepted");
