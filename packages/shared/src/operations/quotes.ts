@@ -3,7 +3,7 @@ import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxCo
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
-import { quantityForArea, roomAreaSqFt } from "../units";
+import { cartonPack, quantityForArea, roomAreaSqFt } from "../units";
 import { resolveTaxRule, withOverride, type TaxOverride, type TaxSource } from "../us-pack/tax-defaults";
 
 /** Days until payment is due, per payment term. */
@@ -91,6 +91,7 @@ export function quoteLineFor(
   waste: LocalizationSettings["documents"]["defaultWastePct"],
 ): DocLine {
   const linked = rooms.length > 0 && measuredFromRooms(product);
+  const pack = cartonPack(product.sqFtPerCarton);
   return {
     id: lineId,
     productId: product.id,
@@ -98,11 +99,11 @@ export function quoteLineFor(
     category: productTaxCategory(product),
     unit: product.unit,
     // A boxed line starts at one whole carton, never a part one (ADR 0027; the API refuses part cartons, F-m).
-    quantity: product.sqFtPerCarton ? dec(product.sqFtPerCarton).toString() : "1",
+    quantity: pack ? dec(pack).toString() : "1",
     unitPrice: product.price,
     // Absent when the API withheld it, and never a placeholder: a "0" would show a 100 % margin.
     unitCost: product.cost,
-    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+    ...(pack ? { sqFtPerCarton: pack } : {}),
     ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
     ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
   };
@@ -132,7 +133,7 @@ export function remeasureLines(
       return line.unit === "sq_ft" ? { ...line, quantity: area.toDecimalPlaces(2).toString() } : line;
     }
     const product = products.find((p) => p.id === line.productId);
-    const quantity = quantityForArea(area, line.wastePct ?? "0", product?.sqFtPerCarton);
+    const quantity = quantityForArea(area, line.wastePct ?? "0", cartonPack(product?.sqFtPerCarton));
     return { ...line, quantity: quantity.toString() };
   });
 }

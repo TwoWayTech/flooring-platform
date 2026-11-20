@@ -228,6 +228,13 @@ describe("a new quote line (spec Quote builder)", () => {
   it("starts a boxed line at one whole carton, so a new line is never a part carton (F-m, ADR 0027)", () => {
     expect(quoteLineFor(product({ sqFtPerCarton: "23.640" }), "draft-1", [], waste).quantity).toBe("23.64");
     expect(quoteLineFor(product({}), "draft-1", [], waste).quantity).toBe("1");
+    // A pack that is no carton (zero) is no pack: one unit, no carton size, and remeasuring doesn't throw.
+    const zero = product({ sqFtPerCarton: "0.000" });
+    const line = quoteLineFor(zero, "draft-1", [], waste);
+    expect(line.quantity).toBe("1");
+    expect(line).not.toHaveProperty("sqFtPerCarton");
+    const measured = remeasureLines([{ ...line, roomIds: ["living"] }], rooms, [zero]);
+    expect(measured[0]!.quantity).not.toBe("1");
   });
 
   it("ties installation sold per sq ft to the rooms, with no waste, by its name and taxed as labor", () => {
