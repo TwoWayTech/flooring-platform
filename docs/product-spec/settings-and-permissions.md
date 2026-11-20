@@ -28,13 +28,13 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Create, duplicate, edit, reset, delete a role | `settings.roles.manage` | Owner | `DemoStore.saveRole`, `resetRole` (through `saveRole`), `deleteRole` |
 | View as a role | Owner role, or a held role listing `settings.roles.manage` | Owner | `useCanViewAs` in `apps/web/src/components/shell/view-as.tsx`, with the rules in `apps/web/src/lib/view-as.ts`. Demo only, for an Owner or someone who manages roles; in api mode not offered (Real build, "The shell on the API") |
 | Change company profile | `settings.company.manage` | Owner | `DemoStore.updateSettings` through `SETTINGS_SECTIONS` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/profile` (ADR 0059). Data scope `all` |
-| Change branding | `settings.branding.manage` | Owner | `updateSettings`. Data scope `all` |
+| Change branding | `settings.branding.manage` | Owner | `updateSettings`. On the API, `PUT /settings/branding`, into the control `tenant_branding` row, always after a step-up (ADR 0059, part 6). Data scope `all` |
 | Change number format | `settings.numbers.manage` | Owner, Accountant | `updateSettings`. On the API, `PUT /settings/numbers` (ADR 0059). Data scope `all` |
 | Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage`; `updateLocalization` with `LOCALIZATION_TABS` in packages/shared (one key per tab). On the API, `PUT /settings/localization/documents` (module `core`), `/payroll` (module `hr`), `/region` and `/currency` (ADR 0059, parts 2a and 2b). A change of the states of operation also needs `settings.tax.manage` and a step-up; Currency always needs a step-up. Data scope `all` |
 | Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateLocalization("tax")` with its own key. On the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. Data scope `all` |
 | Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
 | Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode since ADR 0059 part 4a; data scope `all`); `updateSettings` for section `inventory` (Stock rules; on the API `PUT /settings/inventory`, ADR 0059, the Stock rules part; data scope `all`). Raising or clearing the adjustment approval quantity is the Owner's alone, with a step-up |
-| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval (ADR 0059); shared costs stay on `updateSettings` until their part. Data scope `all` |
+| Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval and `PUT /settings/sharedCosts` for shared costs (ADR 0059, part 4b). Data scope `all` |
 | Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings`, with a step-up. On the API, `PUT /settings/hr` (module `hr`; ADR 0059, part 5). The pay frequency, the day periods count from and the workweek are fixed once pay or hours are recorded. Data scope `all` |
 | Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings`. Data scope `all` |
 | Change sender details and notification rules | `settings.notifications.manage` | Owner | `updateSettings` (data scope `all`); `apps/web/src/lib/api/demo/notification-actions.ts` |
@@ -576,7 +576,7 @@ Formulas below are copied from the code.
 
     The number format keeps the company's own locale and currency: a save that changes either is refused (`numberSettingsProblem` in `packages/shared/src/settings/section-rules.ts`), compared with the company's stored format or, when none is stored, the US pack's `defaultNumberSettings()`. No page edits them.
 
-27. **Brand color.** `checkBrandColor` in `packages/shared/src/color.ts`. The color must be 6-digit hex, and `contrastRatio(hex, NEUTRALS.light.surface)` must be at least 3. `BrandingPage` passes this as `canSave`. A logo may be up to 300 KB (`MAX_LOGO_BYTES`) and is stored as a data URL.
+27. **Branding.** `brandingProblem` in `packages/shared/src/settings/branding-rules.ts`, run by DemoStore and the API with the same words, and by the page before it asks for a step-up code (ADR 0059, part 6). The display name is not blank, at most 80 characters (`BRANDING_NAME_MAX`) as stored, on one line with no control characters or invisible format characters such as bidi overrides and zero-width marks (it is printed in email subjects and the sender name). The monogram is 1 or 2 capital letters or digits. The brand color is exactly `#` and six hex digits, and `checkBrandColor` in `packages/shared/src/color.ts` must pass: `contrastRatio(hex, NEUTRALS.light.surface)` at least 3, with its own words; `BrandingPage` also passes it as `canSave`. The pattern and default theme are their options. In the demo a logo is a PNG, SVG or JPEG data URL of at most 300 KB (`LOGO_MAX_BYTES`); on the API there is no logo yet and the monogram stands in. Saving always asks for a step-up code.
 
 28. **Company profile.** `companyProfileProblem` in `packages/shared/src/settings/section-rules.ts`, run by DemoStore and the API; the page's `ProfileSchema` in `apps/web/src/features/settings/company-profile-page.tsx` builds its inline checks from the same patterns and `PROFILE_MESSAGES`. Legal name required. EIN matches `^\d{2}-\d{7}$`. Phone has at least 7 characters. Email matches `EMAIL_TEXT`. Website is empty or `http://` or `https://` (`WEBSITE_TEXT`). Street and city required. State is a US code. ZIP matches `ZIP_PATTERN`.
 
@@ -809,8 +809,8 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue` |
-| `fixedPct` | `Record<string, string>` | Percent per location id |
+| `rule` | `revenue`, `floor_area`, `equal`, `fixed` | One rule per company; seeded `revenue`; never saved = `revenue` |
+| `fixedPct` | `Record<string, string>` | Percent per live location id, each `PERCENT_TEXT` from 0 to 100, kept whatever the rule; with `fixed` they add up to exactly 100 (a location with none counts 0). `sharedCostsProblem`, both modes (ADR 0059, part 4b) |
 
 **`hr`**
 
@@ -849,14 +849,14 @@ Formulas below are copied from the code.
 | Action | Category | Target | Trigger | Where |
 | --- | --- | --- | --- | --- |
 | `Changed company access` | `ceiling` | Company name | `updatePlatformCompanyAccess`, demo only, and only when the save changes something (ADR 0053). Actor is `Platform admin`, role `Super-admin`. The API writes `company.access_changed` to `platform_audit_log` instead (see Real build) | `store.ts` |
-| `Changed branding` | `settings` | `Branding` | `updateSettings("branding")` | `store.ts` |
+| `Changed branding` | `settings` | `Branding` | `updateSettings("branding")`. On the API, `PUT /settings/branding` (ADR 0059, part 6): the company's audit log records the control row's change | `store.ts`, `settings.service.ts` |
 | `Changed localization and tax` | `settings` | The tab's label: `Region`, `Currency`, `Sales tax`, `Payroll rules` or `Sales and documents` (`Localization and tax` on entries of the whole-section save before part 3b) | `updateLocalization(tab)`. On the API, `PUT /settings/localization/documents` and `/payroll` (ADR 0059, part 2a), `/region` and `/currency` (part 2b), `/tax` (part 3a) | `store.ts`, `settings.service.ts` |
 | `Changed number format` | `settings` | `Number format` | `updateSettings("numbers")` | `store.ts` |
 | `Changed company profile` | `settings` | `Company profile` | `updateSettings("profile")` | `store.ts` |
 | `Changed payments` | `settings` | `Payments` | `updateSettings("payments")` | `store.ts` |
 | `Changed stock rules` | `settings` | `Stock rules` | `updateSettings("inventory")` | `store.ts` |
 | `Changed expense approval` | `settings` | `Expense approval` | `updateSettings("expenses")` | `store.ts` |
-| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")` | `store.ts` |
+| `Changed shared costs` | `settings` | `Shared costs` | `updateSettings("sharedCosts")`; on the API `PUT /settings/sharedCosts`, before and after as stored | `store.ts`, `settings.service.ts` |
 | `Changed hr` | `settings` | `HR` | `updateSettings("hr")` | `store.ts` |
 | `Changed meetings` | `settings` | `Meetings` | `updateSettings("meetings")` | `store.ts` |
 | `Changed email and notifications` | `settings` | `Email and notifications` | `updateSettings("email")` | `store.ts` |
@@ -1000,6 +1000,13 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The page** names branches from the shell, runs rule 29 before sending, shows the branch read only on an edit, takes the floor area at scale, and its inputs stop at the rule's and the API's lengths.
 - **The demo** applies the same module, key, switch, scope, rules, holds and words in the same order on its own records, stores a blank floor area as none, audits the cleared default, and refuses the generic save of locations.
 
+**Settings on the API, part 4b (ADR 0059): Shared costs:**
+- **Who reads.** `GET /settings` also answers `sharedCosts` to holders of `settings.expenses.manage` (only Settings → Expenses reads it), left out while `finance.expenses` is off or the company has no `core`. A company that never saved it gets revenue share, what the Business report acts on. The report reads the stored row on the server.
+- **The save.** `PUT /settings/sharedCosts`, with module `core`, `settings.expenses.manage`, the `finance.expenses` switch (404), data scope `all` (403), a body with exactly `rule` and `fixedPct` (strings only, 400), then, inside the save under the row's lock, the shared rule against the company's live locations (400 with its words): a known rule; every share names a live location of the company and is a percent from 0 to 100, whatever the rule; with `fixed`, the shares add up to exactly 100. No step-up: nothing posts to the ledger (ADR 0059, part 4b, D3). One audit entry, "Changed shared costs", before and after as stored.
+- **The page** runs the same rule before it sends (the refusal shows on the page and in a toast, and nothing is sent); its percent inputs stop at 12 characters; a cleared share is dropped (the location counts 0), never sent blank.
+- **The demo** applies the same module, key, switch, scope, rule and words against its own live locations.
+- **The Business report** reads a blank or malformed stored floor area or share as 0 and never fails on one; fixed shares weigh in ten-thousandths of a percent, so every share the rule takes splits exactly.
+
 **Settings on the API, part 5 (ADR 0059): HR:**
 - **Who reads what.** `GET /settings` also answers `hr`, as stored, to people who see HR Home (`hr.overview.view`: upcoming holidays), timesheets (`hr.timesheet.view`, every default role of a company with HR: the week grid), Time off (`hr.pto.view`) or My time off (`hr.portal.view`: the team calendar's weeks), and to holders of `settings.hr.manage`, while module `hr` is on; not hidden by the `settings.hr` page switch. A company that never saved Settings → HR gets no `hr` (the API acts on none: hours and pay periods answer 409 until it is saved). Pay periods, timesheets, the clock and the portal read the stored section on the server.
 - **The save.** `PUT /settings/hr`, with module `hr`, `settings.hr.manage`, the `settings.hr` switch (404 when off), data scope `all`, a body with exactly the section's fields, and the shared rules: the workweek a whole 0 (Sunday) to 6; the frequency weekly, biweekly, semimonthly or monthly; the day periods count from a real date in 2000 to 2099; at most 100 holidays, each a real date in those years with a name of 1 to 80 characters, each date once; the five switches on or off. Then, under the `hr` row's lock (the one opening a pay period takes), the schedule lock and the monthly rule, then always a step-up. One audit entry, "Changed hr", target "HR", with the section before (null for a first save) and after.
@@ -1007,6 +1014,13 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Monthly and California.** A change to monthly is refused while a non-terminated California non-exempt employee exists ("California non-exempt staff must be paid at least twice a month."), whatever the California switch says (ADR 0050). A company already on monthly can still save its holidays and switches; approving a run still refuses it.
 - **The page** runs the content rule before the code dialog, so a refused value never costs a code; the schedule lock is judged by the store or the API and its words show after the code. The overtime rule stays on Payroll rules.
 - **The demo** applies the same keys, module, switch, scope, rules and words in the same order, and the schedule lock against its own pay periods, timesheets and clock punches; its step-up is the dialog.
+
+**Settings on the API, part 6 (ADR 0059): Branding:**
+- **The route.** `PUT /settings/branding` with `settings.branding.manage` (module `platform`, so the HR Suite too), then the `settings.branding` switch (404), data scope `all` (403, "Company settings cover the whole company."), a body with exactly Branding's fields (400), rule 27 (400 with its words), then always a step-up (403), then the save. Approved by the owner on 2026-11-20.
+- **Where it is stored.** The company's control `tenant_branding` row, found by the session's company, never by anything the request names; only the name, monogram, color, pattern and default theme change. The company's own audit log gets "Changed branding" with before and after. A company with no live branding row is refused (409) and nothing is created.
+- **Who reads it.** Every member, through `GET /settings`, whatever the page switch says: the shell's color, pattern, theme, name and monogram, and the name on invoices, receipts and purchase orders. The login page, the platform console and the emails' company name read the same row, so a save shows there at once. The sign-up name in the console (`tenants.name`) is not changed.
+- **The logo** isn't on the API yet: `GET /settings` answers none, so the monogram stands in, a logo sent to the API is refused with "Logos can't be uploaded yet. The monogram stands in for a logo.", and in api mode the page shows those words instead of the upload. The demo keeps its logo upload.
+- **The demo** runs the same key, switch, scope and rule 27 with the same words; its step-up is the dialog alone.
 
 **Settings on the API, the bell and Outbox part (ADR 0059): Email:**
 - **Who reads what.** `GET /settings` also answers `email` (sender name, reply-to, sign-off) to holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, the three fields are empty, and an empty sender name sends as the company's name.
@@ -1024,8 +1038,8 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes with a branch editor (locations aren't branches; ADR 0059, part 4a).
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
-- **The shell's branding** is still the demo's (`getSettings()`) until Settings part 6; the number format and the profile are the API's (ADR 0059).
-- **Settings pages not yet on the API save in the browser only:** Branding, Shared costs (on the Expenses page), the event rules on Email and notifications (the sender is on the API) and Meetings. Their parts follow ADR 0059's order.
+- **The shell's branding** is the API's since Settings part 6, without a logo: the monogram stands in until logo upload is built (ADR 0059, part 6, Q1). The number format and the profile are the API's too (ADR 0059).
+- **Settings pages not yet on the API save in the browser only:** the event rules on Email and notifications (the sender is on the API) and Meetings. Their parts follow ADR 0059's order.
 - **Locations (part 4a).** A location added in the wrong branch can be renamed but not moved or removed, and stays in every picker. A company with no branch can't add a location until a branch editor exists. Short rows stay at a location that became a showroom (they hold nothing). A quote saved at the moment its warehouse becomes a showroom stays open there; its conversion is refused until its warehouse is changed. The dashboard's warehouse filter reads the API's locations while its quotes are still the demo's, so with a warehouse picked its pending quotes read 0. Shared costs on the Expenses page list the API's locations but still save in the browser until part 4b. Saved demo data with an empty floor area breaks the demo's Business report until that location is saved again.
 - **Reset to default** reads the demo's original values, which the API was seeded with; Region and Currency keep the time zone, country, locale, base currency, its lock and the currencies from the company's own copy (ADR 0059, part 2b); Sales tax keeps filing and certificate types from the company's own copy (part 3a).
 - **The Sales tax tab shows rates at the columns' scale** (`8.81000000`).

@@ -3,7 +3,15 @@
 import type { ChangeEvent } from "react";
 import { CircleCheck, TriangleAlert, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { checkBrandColor, type Branding, type FloorPattern } from "@workspace/shared";
+import {
+  BRANDING_MESSAGES,
+  BRANDING_NAME_MAX,
+  brandingProblem,
+  checkBrandColor,
+  LOGO_MAX_BYTES,
+  type Branding,
+  type FloorPattern,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Panel } from "@workspace/ui/components/panel";
@@ -12,6 +20,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
+import { isDemoMode } from "@/lib/data-source";
 import { Choice } from "../form/choice";
 import { SettingRow } from "../form/setting-row";
 import { SettingsForm } from "../form/settings-form";
@@ -24,8 +33,6 @@ const PATTERNS: Record<FloorPattern, string> = {
   basketweave: "Basketweave",
 };
 const THEMES = { system: "Follow the device", light: "Light", dark: "Dark" } as const;
-/** Logos are kept in this browser's demo storage, so they stay small. */
-const MAX_LOGO_BYTES = 300_000;
 
 /** The branding rows, with a live preview that only ever shows a readable color. */
 function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Branding> & { saved: Branding }) {
@@ -34,7 +41,8 @@ function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Brand
   function onLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size > MAX_LOGO_BYTES) {
+    // Logos are kept in this browser's demo storage, so they stay small (spec rule 27; the shared rule checks it too).
+    if (file.size > LOGO_MAX_BYTES) {
       toast.error("That logo is larger than 300 KB. Use a smaller PNG or SVG.");
       return;
     }
@@ -53,6 +61,7 @@ function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Brand
               id={id}
               aria-describedby={`${id}-hint`}
               value={draft.displayName}
+              maxLength={BRANDING_NAME_MAX}
               onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
             />
           )}
@@ -118,30 +127,37 @@ function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Brand
           )}
         </SettingRow>
         <SettingRow setting="branding.logo" changed={changed("logoDataUrl")}>
-          {(id) => (
-            <div id={id} className="flex flex-wrap items-center gap-2">
-              <Button asChild variant="outline" size="sm">
-                <label>
-                  <Upload />
-                  Upload logo
-                  <input
-                    type="file"
-                    accept="image/png,image/svg+xml,image/jpeg"
-                    className="sr-only"
-                    onChange={onLogo}
-                  />
-                </label>
-              </Button>
-              {draft.logoDataUrl ? (
-                <Button variant="ghost" size="sm" onClick={() => setDraft({ ...draft, logoDataUrl: null })}>
-                  <X />
-                  Use the monogram
+          {(id) =>
+            // The API keeps no logo yet, so in api mode the monogram stands in (ADR 0059, part 6, D5).
+            isDemoMode() ? (
+              <div id={id} className="flex flex-wrap items-center gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <label>
+                    <Upload />
+                    Upload logo
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/jpeg"
+                      className="sr-only"
+                      onChange={onLogo}
+                    />
+                  </label>
                 </Button>
-              ) : (
-                <span className="text-muted-foreground text-xs">PNG, SVG or JPEG up to 300 KB</span>
-              )}
-            </div>
-          )}
+                {draft.logoDataUrl ? (
+                  <Button variant="ghost" size="sm" onClick={() => setDraft({ ...draft, logoDataUrl: null })}>
+                    <X />
+                    Use the monogram
+                  </Button>
+                ) : (
+                  <span className="text-muted-foreground text-xs">PNG, SVG or JPEG up to 300 KB</span>
+                )}
+              </div>
+            ) : (
+              <p id={id} className="text-muted-foreground text-sm">
+                {BRANDING_MESSAGES.logoNotOnApi}
+              </p>
+            )
+          }
         </SettingRow>
         <SettingRow setting="branding.defaultTheme" changed={changed("defaultTheme")}>
           {(id) => (
@@ -160,7 +176,10 @@ function BrandingSection({ draft, setDraft, changed, saved }: SectionProps<Brand
 
 /**
  * Settings: Branding (spec Tier 1, A4): logo, brand color with a live preview and contrast check,
- * pattern and default theme. Saving applies the branding across the shell at once.
+ * pattern and default theme. Saving applies the branding across the shell at once. Save runs the
+ * shared rule, then asks for a step-up code (ADR 0059, part 6, approved by the owner on
+ * 2026-11-20), so a refused value never costs one; in api mode it writes the company's control
+ * branding row, which the login page and emails read too.
  */
 export function BrandingPage() {
   const can = useCan();
@@ -177,6 +196,8 @@ export function BrandingPage() {
         initial={settings.branding}
         defaults={defaults.data.branding}
         canSave={(draft) => checkBrandColor(draft.brandColor).ok}
+        problem={brandingProblem}
+        stepUp
         onSave={(branding) => api.updateSettings("branding", branding).then(() => {})}
       >
         {(draft, setDraft, changed) => (

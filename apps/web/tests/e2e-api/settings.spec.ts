@@ -336,8 +336,8 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         expect((await readAs<SettingsAnswer>(dana.request, "/settings")).profile?.ein).toBe(start.profile?.ein);
         expect(start.profile?.ein).toMatch(/^\d{2}-\d{7}$/);
 
-        // 3. A refused amount says why and sends nothing; then expense approval saves alone, and
-        //    Shared costs stays in the browser.
+        // 3. A refused amount says why and sends nothing; then expense approval saves alone: the
+        //    page sends no shared costs with it (Shared costs save on their own, part 4b: SCE1).
         const sharedCosts: string[] = [];
         const expensePuts: string[] = [];
         dana.page.on("request", (request) => {

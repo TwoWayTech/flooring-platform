@@ -216,13 +216,15 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(read.decimals.fxRate).toBe(NUMBER_KINDS.fxRate.default);
   });
 
-  it("R7 the served sections: exactly seven (part 5 adds HR, the bell and Outbox part Email, the Stock rules part inventory), each with a rule and a reader rule", () => {
+  it("R7 the served sections: exactly nine (part 4b adds shared costs, part 5 HR, part 6 branding, the bell and Outbox part Email, the Stock rules part inventory), each with a rule and a reader rule", () => {
     expect([...API_SETTINGS_SECTIONS]).toEqual([
       "profile",
       "numbers",
       "payments",
       "expenses",
+      "sharedCosts",
       "hr",
+      "branding",
       "email",
       "inventory",
     ]);
@@ -287,42 +289,58 @@ describe("Settings sections on the API (ADR 0059)", () => {
   it("R10 readableSections: each section only to its readers, while its module and product switch are on", () => {
     const of = (product: ProductKey, key: DefaultRoleKey, on?: (key: FeatureKey) => boolean) =>
       readableSections(readerOf(product, key), on).sort();
-    expect(of("flooring", "owner")).toEqual(["email", "expenses", "hr", "inventory", "numbers", "payments", "profile"]);
-    // Only the Owner holds settings.locations.manage, and only Flooring has core (the Stock rules part, D6).
-    for (const key of PRODUCT_ROLES.flooring)
-      expect(of("flooring", key).includes("inventory"), key).toBe(key === "owner");
-    expect(of("flooring", "owner", without("inventory.locations"))).not.toContain("inventory");
-    // Stock adjustments being off doesn't hide the section: its page is Warehouses and showrooms (D9).
-    expect(of("flooring", "owner", without("inventory.adjustments"))).toContain("inventory");
-    expect(of("flooring", "accountant")).toEqual(["hr", "numbers", "payments", "profile"]);
-    expect(of("flooring", "sales")).toEqual(["hr", "numbers", "payments", "profile"]);
-    expect(of("flooring", "warehouse")).toEqual(["hr", "numbers", "profile"]);
-    // Every default role holds hr.timesheet.view (its own timesheet), so every one reads Settings → HR (part 5, D6).
-    for (const key of PRODUCT_ROLES.flooring)
-      expect(of("flooring", key), key).toEqual(expect.arrayContaining(["hr", "numbers", "profile"]));
-    // Only the Owner holds settings.notifications.manage, in both products (the bell and Outbox part, D9).
-    for (const key of PRODUCT_ROLES.hr)
-      expect(of("hr", key), key).toEqual(
-        key === "owner" ? ["email", "hr", "numbers", "profile"] : ["hr", "numbers", "profile"],
-      );
-    for (const key of PRODUCT_ROLES.flooring) expect(of("flooring", key).includes("email"), key).toBe(key === "owner");
-    expect(of("flooring", "owner", without("settings.notifications"))).toEqual([
+    expect(of("flooring", "owner")).toEqual([
+      "branding",
+      "email",
       "expenses",
       "hr",
       "inventory",
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
+    ]);
+    // Only the Owner holds settings.locations.manage, and only Flooring has core (the Stock rules part, D6).
+    for (const key of PRODUCT_ROLES.flooring)
+      expect(of("flooring", key).includes("inventory"), key).toBe(key === "owner");
+    expect(of("flooring", "owner", without("inventory.locations"))).not.toContain("inventory");
+    // Stock adjustments being off doesn't hide the section: its page is Warehouses and showrooms (D9).
+    expect(of("flooring", "owner", without("inventory.adjustments"))).toContain("inventory");
+    expect(of("flooring", "accountant")).toEqual(["branding", "hr", "numbers", "payments", "profile"]);
+    expect(of("flooring", "sales")).toEqual(["branding", "hr", "numbers", "payments", "profile"]);
+    expect(of("flooring", "warehouse")).toEqual(["branding", "hr", "numbers", "profile"]);
+    // Every default role holds hr.timesheet.view (its own timesheet), so every one reads Settings → HR (part 5, D6).
+    for (const key of PRODUCT_ROLES.flooring)
+      expect(of("flooring", key), key).toEqual(expect.arrayContaining(["branding", "hr", "numbers", "profile"]));
+    // Only the Owner holds settings.notifications.manage, in both products (the bell and Outbox part, D9).
+    for (const key of PRODUCT_ROLES.hr)
+      expect(of("hr", key), key).toEqual(
+        key === "owner" ? ["branding", "email", "hr", "numbers", "profile"] : ["branding", "hr", "numbers", "profile"],
+      );
+    for (const key of PRODUCT_ROLES.flooring) expect(of("flooring", key).includes("email"), key).toBe(key === "owner");
+    expect(of("flooring", "owner", without("settings.notifications"))).toEqual([
+      "branding",
+      "expenses",
+      "hr",
+      "inventory",
+      "numbers",
+      "payments",
+      "profile",
+      "sharedCosts",
     ]);
     expect(of("flooring", "owner", without("sales.payments"))).toEqual([
+      "branding",
       "email",
       "expenses",
       "hr",
       "inventory",
       "numbers",
       "profile",
+      "sharedCosts",
     ]);
+    // Shared costs ride the Expenses switch (part 4b, D1): off, neither is answered.
     expect(of("flooring", "owner", without("finance.expenses"))).toEqual([
+      "branding",
       "email",
       "hr",
       "inventory",
@@ -332,6 +350,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
     ]);
     // The HR page switch gates only the save: HR Home, Timesheets and the calendars read it whatever it says.
     expect(of("flooring", "owner", without("settings.hr"))).toEqual([
+      "branding",
       "email",
       "expenses",
       "hr",
@@ -339,8 +358,12 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
     ]);
+    // Branding is read by every screen, so its page switch hides only the save (part 6, D6).
+    expect(of("flooring", "warehouse", without("settings.branding"))).toEqual(["branding", "hr", "numbers", "profile"]);
     expect(of("flooring", "owner", without("settings.company", "settings.number-format"))).toEqual([
+      "branding",
       "email",
       "expenses",
       "hr",
@@ -348,6 +371,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "numbers",
       "payments",
       "profile",
+      "sharedCosts",
     ]);
     const noCore = {
       permissions: new Set<PermissionKey>([
@@ -358,20 +382,20 @@ describe("Settings sections on the API (ADR 0059)", () => {
       ]),
       modules: ["platform", "hr"] as ModuleKey[],
     };
-    expect(readableSections(noCore).sort()).toEqual(["numbers", "profile"]);
+    expect(readableSections(noCore).sort()).toEqual(["branding", "numbers", "profile"]);
     // A Settings → HR reader in a company without the hr module reads nothing of it.
     const noHr = {
       permissions: new Set<PermissionKey>(["settings.hr.manage", "hr.timesheet.view"]),
       modules: ["platform", "core"] as ModuleKey[],
     };
-    expect(readableSections(noHr).sort()).toEqual(["numbers", "profile"]);
+    expect(readableSections(noHr).sort()).toEqual(["branding", "numbers", "profile"]);
     expect(
       readableSections({
         ...noHr,
         permissions: new Set<PermissionKey>(["sales.invoice.view"]),
         modules: ["platform", "hr"] as ModuleKey[],
       }).sort(),
-    ).toEqual(["numbers", "profile"]);
+    ).toEqual(["branding", "numbers", "profile"]);
     expect(readableSections(noCore)).toEqual(
       API_SETTINGS_SECTIONS.filter((section) => readableSections(noCore).includes(section)),
     );

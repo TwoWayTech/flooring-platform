@@ -135,3 +135,16 @@ Checked sound: module `hr` then `settings.hr.manage` from packages/shared; switc
 | demo e2e | `E2E_WORKERS=2 npx playwright test` hr-workspace, hr, portal, settings, screens, a11y `--project=flooring --project=hr` | 195 passed (4.4m) |
 
 No product code changed in the merge or the e2e step (one spec file only), so no further security review round was needed.
+
+## Independent security review (coordinator) and its fixes
+
+The independent review of part 5 passed (0 blocking) with two should-fix items and two notes.
+
+- **Should-fix 1: race tests for the upload and the clock-out.** Added **H18** (a timesheet upload while the workweek changes: 409, no timesheet, no "Uploaded timesheet hours" entry; the same upload sent again afterwards is saved, so the refusal came from the race and not from the rows) and **H19** (a clock-out while the clock is switched off: 409, the punch stays open, timesheets unchanged). The test employee now carries its sign-in's email so an own upload finds them. Mutations with `mutate-hr5.mjs` (my own runner; the shared scratchpad's `mutate.mjs` had been replaced by part 4b's session, and it was not used on this tree): removing the upload's hold fails H18 (HM25); removing the clock-out's hold fails H17 and H19 (HM24). Each file was restored.
+- **Should-fix 2: `holdHrRules` reads the live row.** The `FOR SHARE` select now filters `isNull(settings.deletedAt)`, as `loadHrRules` and `loadPaySchedule` do. `lockGroup` keeps no filter, and its JSDoc now says why (settings rows are never soft-deleted, D20; the unique group index allows one row per group).
+- **Note (kept): the monthly rule reads employees without locking them.** An employee moved to California non-exempt in the same instant as a change to monthly can pass the save; approving the run still refuses it (`lockPayable` judges the locked people with `payFrequencyProblem`).
+- **Note (kept): in api mode a company that never saved HR sees DemoStore's copy on the page,** and the page's monthly gate compares with it. This is display only: the API judges against no row and the server's HR loaders answer 409 until the first save (D7).
+
+Checks: `pnpm typecheck`, `pnpm lint` clean; API integration settings-hr, hr (the timesheet and clock cases), portal with `--maxWorkers=2`: 92 passed; settings-hr again after H18's success case: 31 passed. No e2e, `next build` or Playwright (ports 3000/4000 belong to another builder).
+
+**Security review round 3** (fresh read-only security-reviewer, on `0bb7424..3a8ee79`): **clean**, no blocking or should-fix finding. Its notes were applied: H18 now ends with a successful upload, and `lockGroup` explains why it doesn't filter `deleted_at`.

@@ -42,22 +42,32 @@ const TENANT = {} as TenantContext;
  * section impossible.
  */
 describe("GET /settings answers each served section under its own name", () => {
-  it("X1 each of the four served sections is answered under its own key", async () => {
-    READABLE.sections = ["profile", "numbers", "payments", "expenses"];
-    const { profile, numbers, payments, expenses } = SUMMIT.settings;
-    const answer = await serviceOver({ profile, numbers, payments, expenses }).answer(TENANT, ACCESS);
+  it("X1 each company-database section is answered under its own key (part 4b shared costs, part 5 HR, the bell Email, Stock rules)", async () => {
+    // Branding is answered from the control row, which this fake doesn't hold; its own file covers it.
+    READABLE.sections = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr", "email", "inventory"];
+    const { profile, numbers, payments, expenses, hr } = SUMMIT.settings;
+    const sharedCosts = { rule: "fixed", fixedPct: { a: "70", b: "30" } };
+    const email = { senderName: "Summit Billing", replyTo: "billing@summit.example", signature: "Thanks." };
+    const inventory = { adjustmentApprovalQty: "75.5" };
+    const service = serviceOver({ profile, numbers, payments, expenses, sharedCosts, hr, email, inventory });
+    const answer = await service.answer(TENANT, ACCESS);
     expect(answer).toEqual({
       profile: profileFor(profile, ACCESS.permissions),
       numbers: numbersToWire(numbers),
       payments,
       expenses,
+      sharedCosts,
+      hr,
+      email,
+      inventory,
     });
   });
 
   it("X2 a section the dispatch doesn't name is refused, never answered as expenses", async () => {
-    READABLE.sections = ["expenses", "branding"];
-    const { expenses, branding } = SUMMIT.settings;
-    const service = serviceOver({ expenses, branding });
-    await expect(service.answer(TENANT, ACCESS)).rejects.toThrow('GET /settings has no answer for "branding".');
+    // Meeting settings are not served (HR is since part 5; branding since part 6, from the control row).
+    READABLE.sections = ["expenses", "meetings"];
+    const { expenses, meetings } = SUMMIT.settings;
+    const service = serviceOver({ expenses, meetings });
+    await expect(service.answer(TENANT, ACCESS)).rejects.toThrow('GET /settings has no answer for "meetings".');
   });
 });

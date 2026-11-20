@@ -2,7 +2,8 @@
 
 import {
   expenseSettingsProblem,
-  fixedPctProblem,
+  PERCENT_TEXT_MAX,
+  sharedCostsProblem,
   type ExpenseSettings,
   type Location,
   type SharedCostSettings,
@@ -57,13 +58,26 @@ function ApprovalSection({ draft, setDraft, changed }: SectionProps<ExpenseSetti
   );
 }
 
+/**
+ * The shares with one location's typed share: digits and a point only, and a cleared input drops the
+ * share, so the location counts 0 and no blank is ever sent (ADR 0059, part 4b, D4).
+ */
+function withShare(shares: Record<string, string>, id: string, typed: string): Record<string, string> {
+  const share = typed.replace(/[^\d.]/g, "");
+  const next = { ...shares };
+  if (share === "") delete next[id];
+  else next[id] = share;
+  return next;
+}
+
 function SharingSection({
   draft,
   setDraft,
   changed,
   locations,
 }: SectionProps<SharedCostSettings> & { locations: readonly Location[] }) {
-  const problem = fixedPctProblem(draft, locations);
+  // The shared rule both modes and the API run, with their words (ADR 0059, part 4b, D4).
+  const problem = sharedCostsProblem(draft, locations);
   return (
     <div className="flex flex-col gap-4">
       <SettingRow setting="sharedCosts.rule" changed={changed("rule")}>
@@ -80,10 +94,9 @@ function SharingSection({
                 aria-label={`${l.name} percent`}
                 inputMode="decimal"
                 className="w-24 text-right tabular-nums"
+                maxLength={PERCENT_TEXT_MAX}
                 value={draft.fixedPct[l.id] ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, fixedPct: { ...draft.fixedPct, [l.id]: e.target.value.replace(/[^\d.]/g, "") } })
-                }
+                onChange={(e) => setDraft({ ...draft, fixedPct: withShare(draft.fixedPct, l.id, e.target.value) })}
               />
             </label>
           ))}
@@ -131,7 +144,7 @@ export function ExpensesSettingsPage() {
           description="How company-wide costs are split across locations in the business report."
           initial={settings.sharedCosts}
           defaults={defaults.sharedCosts}
-          canSave={(draft) => fixedPctProblem(draft, locations) === null}
+          problem={(draft) => sharedCostsProblem(draft, locations)}
           onSave={(sharedCosts) => api.updateSettings("sharedCosts", sharedCosts).then(() => {})}
         >
           {(draft, setDraft, changed) => (
