@@ -60,6 +60,17 @@ describe("Stock rules (ADR 0059, the Stock rules part)", () => {
     expect(loosened("", "")).toBe(false);
   });
 
+  it("SR3b compared by value, never as text: zeros before or after don't change the quantity", () => {
+    expect(loosened("050", "50")).toBe(false);
+    expect(loosened("50", "050")).toBe(false);
+    expect(loosened("1000.000", "1000")).toBe(false);
+    expect(loosened("0.000", "0")).toBe(false);
+    expect(loosened("0", "0.000")).toBe(false);
+    expect(loosened("9", "10")).toBe(false);
+    expect(loosened("10", "9")).toBe(true);
+    expect(loosened("100", "99.999")).toBe(true);
+  });
+
   it("SR4 a stored quantity the rule refuses can't be compared: any change counts as loosening", () => {
     expect(loosened("0", "abc")).toBe(true);
     expect(loosened("", "1.2.3")).toBe(true);

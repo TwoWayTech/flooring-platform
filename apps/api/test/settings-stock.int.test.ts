@@ -18,8 +18,12 @@ import {
   type SettingsAnswer,
 } from "@workspace/shared";
 import { asc, count, eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { v7 as uuidv7 } from "uuid";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { isAudited, permissionRequirement } from "../src/core/access/permission.decorators";
+import type { Actor } from "../src/core/access/request-actor";
+import { TenantContext } from "../src/core/tenancy/tenant-context";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import { AuthHarness } from "./auth-harness";
 import { platformHelpers } from "./support/platform-admins";
 
@@ -400,6 +404,66 @@ describe("Stock rules on the API (needs the local PostgreSQL)", () => {
     expect(entries[0]!.before).toBeNull();
     if (entries[1]) expect(entries[1].before).toEqual(entries[0]!.after);
     expect(await stockOf(company)).toEqual(entries.at(-1)!.after);
+  });
+
+  it("MS14 an Owner changing a malformed stored row is asked for a code; the read still answers it as stored", async () => {
+    const owner = await member(floorco, ["owner"]);
+    for (const odd of [{ adjustmentApprovalQty: "abc" }, null]) {
+      await seedStock(floorco, odd);
+      const audits = await auditCount(floorco);
+      expect(outcome(await put(owner.cookie, { adjustmentApprovalQty: "0" })), JSON.stringify(odd)).toEqual([
+        403,
+        "step_up_required",
+      ]);
+      await expectNothingChanged(floorco, odd, audits);
+      const read = await call("get", "/settings", owner.cookie);
+      expect(read.status, JSON.stringify(read.body)).toBe(200);
+      expect((read.body as SettingsAnswer).inventory).toEqual(odd);
+    }
+    await stepUp(owner);
+    await put(owner.cookie, STOCK).expect(200);
+    expect(await stockOf(floorco)).toEqual(STOCK);
+  });
+
+  it("MS15 a first save whose row appears after its judgement is a 409 that stores and audits nothing", async () => {
+    const company: TestCompany = { ...(await harness.provisionCompany("stockfirstco")), product: "flooring" };
+    const tenant = TenantContext.forJob({
+      id: company.id,
+      status: "trial",
+      products: [company.product],
+      maintenanceMode: false,
+      phase: "full",
+      databaseStatus: "ready",
+    });
+    // The write refuses before the audit entry, so the actor needs only its id.
+    const actor = { access: { userId: uuidv7() } } as unknown as Actor;
+    const theirs = { adjustmentApprovalQty: "5" };
+    const audits = await auditCount(company);
+    const saving = harness.app.get(SettingsService).save(
+      tenant,
+      actor,
+      "inventory",
+      NEVER_SAVED,
+      (value) => value,
+      async (current) => {
+        expect(current).toEqual(NEVER_SAVED);
+        // Another save commits its first row on its own connection between the judgement and the write.
+        await seedStock(company, theirs);
+      },
+      "refuse",
+    );
+    await expect(saving).rejects.toMatchObject({ status: 409, response: { code: "conflict" } });
+    expect(await stockOf(company)).toEqual(theirs);
+    expect(await auditCount(company)).toBe(audits);
+    // PUT /settings/inventory saves that way.
+    const spy = vi.spyOn(harness.app.get(SettingsService), "save");
+    try {
+      await put(people.get("flooring:owner")!.cookie, await stockOf(floorco)).expect(200);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]!.at(-1)).toBe("refuse");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("MS8 the Warehouses and showrooms switch off answers the PUT 404 and leaves the section out of the read; adjustments off changes nothing", async () => {
