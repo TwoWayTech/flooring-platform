@@ -147,6 +147,13 @@ describe("sensitiveKeyFor", () => {
     expect(sensitiveKeyFor("credit_limit")).toBe(SENSITIVE_FIELDS.creditLimit);
     expect(sensitiveKeyFor("name")).toBeUndefined();
   });
+
+  it("matches only the map's own names, never Object.prototype's (finding F-l)", () => {
+    const inherited = ["constructor", "toString", "to_string", "valueOf", "hasOwnProperty", "__proto__"];
+    for (const field of [...inherited, "isPrototypeOf", "__defineGetter__"]) {
+      expect(sensitiveKeyFor(field), field).toBeUndefined();
+    }
+  });
 });
 
 /**
