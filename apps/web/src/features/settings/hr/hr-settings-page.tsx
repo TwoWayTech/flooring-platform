@@ -8,8 +8,9 @@ import {
   californiaPayNote,
   californiaPayOn,
   companyOvertimeRule,
+  hrFrequencyProblem,
+  hrSettingsProblem,
   OVERTIME_RULE_LABELS,
-  payFrequencyProblem,
   WEEKDAY_LABELS,
   type HrSettings,
   type TimeOffPolicy,
@@ -158,7 +159,13 @@ function HrSection({
   );
 }
 
-/** Settings → HR (spec C1, audit U-30). */
+/**
+ * Settings → HR (spec C1, audit U-30). Saving asks for a step-up code, after the shared content rule
+ * has passed the draft, so a refused value never costs one (ADR 0059, part 5, D3). Monthly is refused
+ * with California non-exempt staff only on a change of frequency (D5). What recorded pay forbids (the
+ * schedule lock, D4) is judged by the store or the API against its own records, and its words show
+ * in the toast.
+ */
 export function HrSettingsPage() {
   const can = useCan();
   const { settings } = useWorkspace();
@@ -182,7 +189,9 @@ export function HrSettingsPage() {
         description="The pay calendar, holidays and what employees see in their portal."
         initial={saved.hr}
         defaults={defaults.hr}
-        canSave={(hr) => payFrequencyProblem(hr.payFrequency, employees) === null}
+        stepUp
+        problem={hrSettingsProblem}
+        canSave={(hr) => hrFrequencyProblem(hr, saved.hr, employees) === null}
         onSave={(hr) => api.updateSettings("hr", hr).then(() => {})}
       >
         {(draft, setDraft, changed) => (
@@ -190,7 +199,7 @@ export function HrSettingsPage() {
             draft={draft}
             setDraft={setDraft}
             changed={changed}
-            frequencyProblem={payFrequencyProblem(draft.payFrequency, employees)}
+            frequencyProblem={hrFrequencyProblem(draft, saved.hr, employees)}
           />
         )}
       </SettingsForm>

@@ -465,6 +465,8 @@ A blocker is a workweek ending in the period, for a person who needs timesheets 
 | `showTeamCalendarToEmployees` | boolean | false |
 | `clockEnabled` | boolean | Keystone false, others true |
 
+Settings → HR saves on the API with `PUT /settings/hr` (`settings.hr.manage`, module `hr`, a step-up), with `hrSettingsProblem` and the schedule lock above in both modes; a change to monthly is refused with California non-exempt staff (rule 16) (ADR 0059, part 5).
+
 The overtime rule is `localization.payroll.overtimeRule`, changed under Settings, Localization, Payroll. The HR page shows it with a link. The tab saves on its own (`updateLocalization("payroll")`, `settings.localization.manage`, module `hr`); on the API `PUT /settings/localization/payroll`, which refuses the California rule while its switch is off and a holiday state that isn't a US state code (ADR 0059, part 2a).
 
 ## Events and audit entries
@@ -557,5 +559,5 @@ Workweek CSV columns, in order: `employee_external_id` (falls back to email), `w
 - **Allocation differs from ADR 0024.** `commissionAllocations` reads all statement lines, including waived reversals. Adjustments and draw top-ups are in `commissionPay` but are not allocated, so they carry no true-up.
 - **Straddling weeks.** Straight pay follows approved days inside the period. Premium and true-up follow the week's end date. A week straddling two periods shows `straddleNote` on the earlier one.
 - **Unpaid leave and weekends.** Leave hours are spread over calendar days, including weekends, so a request across a weekend can split differently between two periods.
-- **Changing the workweek start or pay frequency.** Existing timesheets and periods keep their dates. A new frequency creates a new period beside any that already cover those dates.
+- **Changing the workweek start or pay frequency.** Refused once pay or hours are recorded, in both modes (ADR 0059, part 5): the pay frequency and `payPeriodAnchor` can't change once a pay period exists, and `workweekStartDay` can't change once a timesheet, a clock punch or a pay period exists, so no day is cut into two periods and no workweek is re-cut under recorded hours. Changing the schedule on purpose (from a chosen date) is not modelled.
 - **Not modelled.** Taxes, net pay, minimum wage checks, other states' rules, California alternative workweeks, meal and rest premiums. Every California rule needs counsel's review before real use, as ADR 0024 records.

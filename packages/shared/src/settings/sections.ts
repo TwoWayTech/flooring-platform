@@ -6,6 +6,7 @@ import type {
   CompanyProfile,
   CompanySettings,
   ExpenseSettings,
+  HrSettings,
   LocalizationSettings,
   PaymentSettings,
   SharedCostSettings,
@@ -95,9 +96,9 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then.
+ * DemoStore in api mode until then. Part 4b adds shared costs and part 5 Settings → HR.
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "sharedCosts"] as const;
+export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr"] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -136,6 +137,11 @@ export interface SettingsReadRule {
  * - `expenses`: only Settings → Expenses reads it.
  * - `sharedCosts`: only Settings → Expenses reads it (ADR 0059, part 4b, D1). The Business report
  *   reads the stored row on the server in api mode (`loadSharedCosts`), never this answer.
+ * - `hr` (part 5, D6): HR Home's holidays (`hr.overview.view`), Timesheets' workweek
+ *   (`hr.timesheet.view`), the team calendar on Time off (`hr.pto.view`) and on My time off
+ *   (`hr.portal.view`), and Settings → HR (`settings.hr.manage`). Those screens read it whatever
+ *   the `settings.hr` page switch says, so it is not hidden while that switch is off. Pay periods,
+ *   timesheets, the clock and the portal read the stored row on the server.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -147,6 +153,10 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
   payments: { readers: ["sales.invoice.view", "settings.payments.manage"], hiddenWhenOff: true },
   expenses: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
   sharedCosts: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
+  hr: {
+    readers: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view", "hr.portal.view", "settings.hr.manage"],
+    hiddenWhenOff: false,
+  },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -249,6 +259,8 @@ export interface SettingsAnswer {
   expenses?: ExpenseSettings;
   /** How company-wide costs are split across locations, as stored (ADR 0059, part 4b). */
   sharedCosts?: SharedCostSettings;
+  /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
+  hr?: HrSettings;
   /**
    * Present only when the company has saved localization and the person reads at least one served
    * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is

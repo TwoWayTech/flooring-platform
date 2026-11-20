@@ -42,17 +42,19 @@ const TENANT = {} as TenantContext;
  * section impossible.
  */
 describe("GET /settings answers each served section under its own name", () => {
-  it("X1 each of the five served sections is answered under its own key (part 4b adds shared costs)", async () => {
-    READABLE.sections = ["profile", "numbers", "payments", "expenses", "sharedCosts"];
-    const { profile, numbers, payments, expenses } = SUMMIT.settings;
+  it("X1 each of the six served sections is answered under its own key (part 4b adds shared costs, part 5 HR)", async () => {
+    READABLE.sections = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr"];
+    const { profile, numbers, payments, expenses, hr } = SUMMIT.settings;
     const sharedCosts = { rule: "fixed", fixedPct: { a: "70", b: "30" } };
-    const answer = await serviceOver({ profile, numbers, payments, expenses, sharedCosts }).answer(TENANT, ACCESS);
+    const service = serviceOver({ profile, numbers, payments, expenses, sharedCosts, hr });
+    const answer = await service.answer(TENANT, ACCESS);
     expect(answer).toEqual({
       profile: profileFor(profile, ACCESS.permissions),
       numbers: numbersToWire(numbers),
       payments,
       expenses,
       sharedCosts,
+      hr,
     });
   });
 

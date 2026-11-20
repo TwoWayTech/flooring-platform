@@ -130,10 +130,14 @@ export const SETTINGS = {
   },
   "hr.workweekStartDay": {
     label: "Workweek starts on",
-    helper: "Overtime is worked out on this fixed seven-day week.",
+    helper: "Overtime is worked out on this fixed seven-day week. It can't change once hours are recorded.",
     href: HR,
   },
-  "hr.payFrequency": { label: "Pay frequency", helper: "How often pay periods close.", href: HR },
+  "hr.payFrequency": {
+    label: "Pay frequency",
+    helper: "How often pay periods close. It can't change once a pay period exists.",
+    href: HR,
+  },
   "hr.showPayToEmployees": { label: "Show pay to employees", helper: "Adds My pay to the portal.", href: HR },
   "hr.showCommissionToEmployees": {
     label: "Show commission to employees",

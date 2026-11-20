@@ -354,6 +354,23 @@ Settings → Warehouses and showrooms saves on the API, beside `GET /locations` 
 - **The web.** `list("locations")` and `get("locations")` read `GET /locations` in api mode (HR Suite's 403 reads as none); `saveLocation` sends `PUT /locations/:id` for a UUID and `POST /locations` otherwise, with the id never in the body, then reads again. The page names branches from the shell (`GET /company`'s) and runs rule 29 before sending.
 - **The demo** runs the same checks in the same order on its own records; the generic `save("locations")` is refused.
 
+## Settings, part 5: HR (real build, ADR 0059, 2026-11-20)
+
+Settings → HR on part 1's pattern, with checks against recorded pay. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 5". The company is the verified session's. No control-database read or write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/hr` | module `hr` (checked first), then `settings.hr.manage` (an MFA key) | switch `settings.hr` (404), data scope `all` (403), strict body (400), `hrSettingsProblem` (400); then under `FOR UPDATE` on the `hr` row: the schedule lock (409 `conflict`, `hrScheduleProblem`), the monthly rule on a change of frequency (400, `hrFrequencyProblem`), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `HrSettings`. Audited |
+
+- **Keys, module, switch and label** come from `SETTINGS_SECTIONS.hr`. The guards' refusals are part 1's.
+- **The body** is exactly `{ workweekStartDay, payFrequency, payPeriodAnchor, holidays: { date, name }[], showPayToEmployees, showCommissionToEmployees, showRatesToEmployees, showTeamCalendarToEmployees, clockEnabled }`. The shape is checked first: types, unknown fields at either level and outer lengths (frequency and anchor 20, each date 20, each name 800, at most 1,000 holidays), each refused with its field's words. Then `hrSettingsProblem`: `workweekStartDay` a whole 0 (Sunday) to 6; `payFrequency` `weekly`, `biweekly`, `semimonthly` or `monthly`; `payPeriodAnchor` a real `yyyy-MM-dd` day in 2000 to 2099; at most 100 holidays, each a real day in those years, its name 1 to 80 characters once trimmed (stored as sent), each date once. A refusal is 400 `invalid_request` with the first problem's words.
+- **The schedule lock** is judged on the locked row, so no pay period can be opened between the check and the write (`POST /pay-periods` takes the same lock). A change of `payFrequency` or `payPeriodAnchor` while a live pay period exists, and a change of `workweekStartDay` while a live timesheet, clock entry or pay period exists, are 409 `conflict` with the rule's words. A company that never saved the section counts every field as changed. Holidays and the switches always save.
+- **Monthly:** a change to `monthly` while a live, non-terminated employee works in California as non-exempt is 400 `invalid_request` ("California non-exempt staff must be paid at least twice a month."), whatever `hr.payroll.california` says (ADR 0050). An unchanged frequency is not judged again.
+- **Hours writers wait for it.** `PUT /timesheets`, `POST /timesheets/upload`, `POST /clock/in` and `POST /clock/out` take the `hr` row `FOR SHARE` first; if the workweek or the clock setting changed since they read it, they answer 409 `conflict` ("Settings → HR changed while this was being saved. Try again.").
+- **The save** writes the row (or inserts it, with `null` before; a first save that finds the row taken meanwhile is 409 `conflict`, "Someone else saved these settings meanwhile. Open them again and redo the change.") and one `audit_log` entry in the same transaction: "Changed hr", target "HR", `before` the locked row and `after` the saved section. The last save wins.
+- **Who reads it.** `GET /settings` adds `hr`, as stored, for holders of `hr.overview.view`, `hr.timesheet.view`, `hr.pto.view`, `hr.portal.view` or `settings.hr.manage` while module `hr` is on, not hidden by the `settings.hr` switch; a company with no `hr` row gets none.
+- **The web.** `updateSettings("hr", value)` sends the section to its `PUT` and reads again, with no transport change (`API_SETTINGS_SECTIONS`). The page runs `hrSettingsProblem` before the code dialog.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.

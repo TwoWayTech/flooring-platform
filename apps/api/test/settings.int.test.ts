@@ -307,7 +307,11 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        const expected = readableSections({ permissions: held, modules: enabledModules([company.product], null, []) });
+        // All but HR: these companies never saved Settings → HR, which part 5's own file reads (H1).
+        const expected = readableSections({
+          permissions: held,
+          modules: enabledModules([company.product], null, []),
+        }).filter((section): section is Served | "sharedCosts" => section !== "hr");
         expect(Object.keys(body).sort()).toEqual([...expected].sort());
         for (const section of expected) {
           // Nothing seeds shared costs here: never saved, they are answered as the report acts on them (part 4b, D9).

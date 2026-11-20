@@ -49,6 +49,10 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
       case "sharedCosts":
         merged.sharedCosts = answer.sharedCosts ?? demo.sharedCosts;
         break;
+      case "hr":
+        // Left out while the company never saved it (ADR 0059, part 5, D7): DemoStore's copy stays.
+        merged.hr = answer.hr ?? demo.hr;
+        break;
       default:
         throw unservedSection(section);
     }

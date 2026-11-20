@@ -45,6 +45,11 @@ function served(): Required<Pick<SettingsAnswer, ApiSettingsSection>> {
     payments: { ...demo.payments, approvalThreshold: "10.00" },
     expenses: { approvalRequired: false, approvalThreshold: "" },
     sharedCosts: { rule: "floor_area", fixedPct: {} },
+    hr: {
+      ...demo.hr,
+      showRatesToEmployees: !demo.hr.showRatesToEmployees,
+      holidays: [{ date: "2026-12-24", name: "Shop closed" }],
+    },
   };
 }
 
@@ -64,7 +69,7 @@ function keysOf(value: unknown): string[] {
   return [];
 }
 
-const UNSERVED = ["localization", "branding", "hr", "email", "inventory", "meetings"] as const;
+const UNSERVED = ["localization", "branding", "email", "inventory", "meetings"] as const;
 
 describe("Settings part 1 in api mode (ADR 0059)", () => {
   it("W1 getSettings reads GET /settings: the served sections are the API's, the rest DemoStore's", async () => {
@@ -78,6 +83,7 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     // Part 4b: shared costs are the API's too.
     expect(settings.sharedCosts).toEqual(answer.sharedCosts);
     expect(settings.sharedCosts).not.toEqual(demo.sharedCosts);
+    expect(settings.hr).toEqual(answer.hr);
     expect(settings.numbers).toEqual({
       ...demo.numbers,
       negativeStyle: "parens",
@@ -97,6 +103,8 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(hr.expenses).toEqual(demo.expenses);
     expect(hr.sharedCosts).toEqual(demo.sharedCosts);
     expect(hr.profile).toEqual(narrow.profile);
+    // Settings → HR left out (never saved, or no reader): DemoStore's copy stays (ADR 0059, part 5, D7).
+    expect(hr.hr).toEqual(demo.hr);
   });
 
   it("W3 the number kinds are read tolerantly: an unknown kind is dropped, a missing one takes its default", async () => {
@@ -125,8 +133,8 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(result.localization).toEqual(demo.localization);
   });
 
-  it("W5 updateSettings sends the profile, payments, expenses and shared costs unchanged to their own route", async () => {
-    for (const section of ["profile", "payments", "expenses", "sharedCosts"] as const) {
+  it("W5 updateSettings sends the profile, payments, expenses, shared costs and HR unchanged to their own route", async () => {
+    for (const section of ["profile", "payments", "expenses", "sharedCosts", "hr"] as const) {
       const api = client(served());
       const value = demo[section];
       await api.client.updateSettings(section, value);

@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
+import { Body, ConflictException, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
   companyProfileProblem,
@@ -6,6 +6,9 @@ import {
   datedRates,
   documentsProblem,
   expenseSettingsProblem,
+  hrFrequencyProblem,
+  hrScheduleProblem,
+  hrSettingsProblem,
   LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
@@ -24,6 +27,7 @@ import {
   type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
+  type HrSettings,
   type LocalizationSettings,
   type NumberSettingsWire,
   type PaymentSettings,
@@ -47,6 +51,7 @@ import {
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
   EXPENSES_INPUT,
+  HR_INPUT,
   NUMBERS_INPUT,
   PAYMENTS_INPUT,
   PAYROLL_INPUT,
@@ -81,7 +86,9 @@ function check(problem: string | null): void {
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
- * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock.
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
+ * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
+ * whose checks against recorded pay run under the `hr` row's lock.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -239,6 +246,41 @@ export class SettingsController {
       async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
     );
     return sharedCosts;
+  }
+
+  /**
+   * PUT /settings/hr: Settings → HR (ADR 0059, part 5): the workweek, the pay calendar, holidays and
+   * what employees see. `settings.hr.manage` (an MFA key), module `hr`; the page's switch (404),
+   * scope `all` (403), a strict body and `hrSettingsProblem` (400). Then, under the `hr` row's lock
+   * (the one opening a pay period takes): the schedule lock against recorded pay periods, timesheets
+   * and clock punches (409 `conflict`, D4), the monthly rule on a change of frequency (400, D5), and
+   * always a step-up after them (403 `step_up_required`, D3; Payments' order, so a refused value never
+   * costs a code). The overtime rule is Payroll rules', untouched here (ADR 0050). Answers it as saved.
+   */
+  @Put("hr")
+  @RequirePermission(...SETTINGS_SECTIONS.hr.keys)
+  @RequireModule(SETTINGS_SECTIONS.hr.module)
+  @Audited()
+  async saveHr(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<HrSettings> {
+    requireFeature(SETTINGS_SECTIONS.hr.feature);
+    requireWholeCompany(access);
+    const input = parse(HR_INPUT, body);
+    check(hrSettingsProblem(input));
+    // `hrSettingsProblem` passed, so the frequency is one of `PAY_FREQUENCIES`.
+    const hr = input as HrSettings;
+    return this.settings.saveHr(tenant, actorOf(access, session, request), async (current, records) => {
+      const locked = hrScheduleProblem(hr, current, records.facts);
+      if (locked) throw new ConflictException({ code: "conflict", message: locked });
+      check(hrFrequencyProblem(hr, current, records.employees));
+      await this.stepUp.require(session);
+      return hr;
+    });
   }
 
   /**
