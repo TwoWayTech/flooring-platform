@@ -92,4 +92,27 @@ describe("demo whole cartons on purchase orders", () => {
     const lines = quote.lines.map((line, i) => (i === index ? { ...bare, quantity: part } : line));
     await expect(store.saveQuote({ ...quote, lines })).rejects.toThrow("sell whole cartons, multiples of");
   });
+
+  it("WC3 a seeded quote saves again unchanged and keeps the product's pack; a missing product is refused (review round 5)", async () => {
+    const store = new DemoStore(noFiles);
+    await store.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+    const quote = (await store.list("quotes")).find(
+      (q) => q.status === "draft" && q.lines.some((l) => l.sqFtPerCarton),
+    );
+    expect(quote, "Summit has a draft quote with a boxed line").toBeDefined();
+    const index = quote!.lines.findIndex((l) => l.sqFtPerCarton);
+    const pack = quote!.lines[index]!.sqFtPerCarton;
+    const again = await store.saveQuote(quote!);
+    expect(again.total).toBe(quote!.total);
+    // A pack sent on a line is replaced by the product's; a line without a product keeps none.
+    const loose = { ...quote!.lines[index]!, id: "loose", productId: undefined, sqFtPerCarton: "7" };
+    const sentLines = quote!.lines.map((line, i) => (i === index ? { ...line, sqFtPerCarton: "1" } : line));
+    const stored = await store.saveQuote({ ...quote!, lines: [...sentLines, loose] });
+    expect(stored.lines[index]!.sqFtPerCarton).toBe(pack);
+    expect(stored.lines.find((line) => line.id === "loose")?.sqFtPerCarton).toBeUndefined();
+    const gone = quote!.lines.map((line, i) => (i === index ? { ...line, productId: "prd-missing" } : line));
+    await expect(store.saveQuote({ ...quote!, lines: gone })).rejects.toThrow(
+      "A product on the quote no longer exists.",
+    );
+  });
 });
