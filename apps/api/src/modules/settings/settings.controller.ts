@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
+import { Body, ConflictException, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
   brandingProblem,
@@ -7,6 +7,9 @@ import {
   datedRates,
   documentsProblem,
   expenseSettingsProblem,
+  hrFrequencyProblem,
+  hrScheduleProblem,
+  hrSettingsProblem,
   LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
@@ -18,6 +21,7 @@ import {
   regionProblem,
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
+  sharedCostsProblem,
   statesOfOperationChanged,
   taxProblem,
   type Branding,
@@ -25,12 +29,14 @@ import {
   type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
+  type HrSettings,
   type LocalizationSettings,
   type NumberSettingsWire,
   type PaymentSettings,
   type PayrollInput,
   type RegionInput,
   type SettingsAnswer,
+  type SharedCostSettings,
 } from "@workspace/shared";
 import type { Request } from "express";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -41,17 +47,20 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
   BRANDING_INPUT,
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
   EXPENSES_INPUT,
+  HR_INPUT,
   NUMBERS_INPUT,
   PAYMENTS_INPUT,
   PAYROLL_INPUT,
   PROFILE_INPUT,
   REGION_INPUT,
+  SHARED_COSTS_INPUT,
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
@@ -80,8 +89,10 @@ function check(problem: string | null): void {
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
- * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 6
- * adds Branding, the one save that writes the control database: the company's own branding row.
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
+ * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
+ * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
+ * save that writes the control database: the company's own branding row.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -203,6 +214,77 @@ export class SettingsController {
     check(expenseSettingsProblem(expenses));
     await this.settings.save(tenant, actorOf(access, session, request), "expenses", expenses, (value) => value);
     return expenses;
+  }
+
+  /**
+   * PUT /settings/sharedCosts: how the Business report splits company-wide costs across locations
+   * (ADR 0023; ADR 0059, part 4b). Expense approval's key, module `core` and switch; scope `all`; a
+   * strict body; then, inside the save's transaction under the row's lock, the shared rule against the
+   * company's live locations read there (D2, D4), so a share can only name a location the company has
+   * and a fixed split adds up to 100. No step-up (D3): nothing posts to the ledger, the key is not an
+   * MFA key, and every save is audited with before and after. Answers the section as saved.
+   */
+  @Put("sharedCosts")
+  @RequirePermission(...SETTINGS_SECTIONS.sharedCosts.keys)
+  @RequireModule(SETTINGS_SECTIONS.sharedCosts.module)
+  @Audited()
+  async saveSharedCosts(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<SharedCostSettings> {
+    requireFeature(SETTINGS_SECTIONS.sharedCosts.feature);
+    requireWholeCompany(access);
+    const input = parse(SHARED_COSTS_INPUT, body);
+    // The cast is what the guard proves: `SettingsService.save` runs the guard (the shared rule, which
+    // refuses an unknown rule) before it writes anything, and a refusal rolls the save back.
+    const sharedCosts = input as SharedCostSettings;
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "sharedCosts",
+      sharedCosts,
+      (value) => value,
+      async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
+    );
+    return sharedCosts;
+  }
+
+  /**
+   * PUT /settings/hr: Settings → HR (ADR 0059, part 5): the workweek, the pay calendar, holidays and
+   * what employees see. `settings.hr.manage` (an MFA key), module `hr`; the page's switch (404),
+   * scope `all` (403), a strict body and `hrSettingsProblem` (400). Then, under the `hr` row's lock
+   * (the one opening a pay period takes): the schedule lock against recorded pay periods, timesheets
+   * and clock punches (409 `conflict`, D4), the monthly rule on a change of frequency (400, D5), and
+   * always a step-up after them (403 `step_up_required`, D3; Payments' order, so a refused value never
+   * costs a code). The overtime rule is Payroll rules', untouched here (ADR 0050). Answers it as saved.
+   */
+  @Put("hr")
+  @RequirePermission(...SETTINGS_SECTIONS.hr.keys)
+  @RequireModule(SETTINGS_SECTIONS.hr.module)
+  @Audited()
+  async saveHr(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<HrSettings> {
+    requireFeature(SETTINGS_SECTIONS.hr.feature);
+    requireWholeCompany(access);
+    const input = parse(HR_INPUT, body);
+    check(hrSettingsProblem(input));
+    // `hrSettingsProblem` passed, so the frequency is one of `PAY_FREQUENCIES`.
+    const hr = input as HrSettings;
+    return this.settings.saveHr(tenant, actorOf(access, session, request), async (current, records) => {
+      const locked = hrScheduleProblem(hr, current, records.facts);
+      if (locked) throw new ConflictException({ code: "conflict", message: locked });
+      check(hrFrequencyProblem(hr, current, records.employees));
+      await this.stepUp.require(session);
+      return hr;
+    });
   }
 
   /**

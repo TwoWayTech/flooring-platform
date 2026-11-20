@@ -31,7 +31,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 | Approve or reject an expense | `finance.expense.approve` | Owner, Manager, Accountant | `reviewExpense` in `expense-actions.ts`. The recorder is refused. |
 | Void an expense | `finance.expense.void` | Owner, Accountant | `voidExpense` in `expense-actions.ts` |
 | Export the expenses table | `finance.expense.export` exists in the catalog | Owner, Accountant | Not enforced. `apps/web/src/components/data-table/data-table.tsx` shows Export CSV whenever `csvName` is set. |
-| Change the approval rule or the shared-cost rule | `settings.expenses.manage` | Owner | `apps/web/src/features/settings/expenses/expenses-settings-page.tsx`, `DemoStore.updateSettings` through `SETTINGS_SECTIONS.expenses` and `SETTINGS_SECTIONS.sharedCosts` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/expenses` for the approval rule (ADR 0059). Data scope `all` |
+| Change the approval rule or the shared-cost rule | `settings.expenses.manage` | Owner | `apps/web/src/features/settings/expenses/expenses-settings-page.tsx`, `DemoStore.updateSettings` through `SETTINGS_SECTIONS.expenses` and `SETTINGS_SECTIONS.sharedCosts` in `packages/shared/src/settings/sections.ts`. On the API, `PUT /settings/expenses` for the approval rule and `PUT /settings/sharedCosts` for the shared-cost rule (ADR 0059, part 4b). Data scope `all` |
 
 The collections `expenses` and `recurringExpenses` have no writers in the generic `save` (`SAVE_PERMISSIONS` in `permission-rules.ts`). They change only through the store calls above.
 
@@ -394,7 +394,7 @@ Audit entries, all from `expense-actions.ts` with category `data` unless noted. 
 | `Added recurring expense` | `saveRecurringExpense`, new. Target is the category label. | null | amount |
 | `Edited recurring expense` | `saveRecurringExpense`, existing. Target is the category label. | the prior amount | amount |
 | `Changed expense approval` | `DemoStore.updateSettings("expenses", ...)`, including Reset to default. Category `settings`, target `Expense approval`. | diff from `diffSummary` | diff |
-| `Changed shared costs` | `DemoStore.updateSettings("sharedCosts", ...)`, including Reset to default. Category `settings`, target `Shared costs`. | diff from `diffSummary` | diff |
+| `Changed shared costs` | `DemoStore.updateSettings("sharedCosts", ...)`, including Reset to default; on the API `PUT /settings/sharedCosts` (before and after as stored). Category `settings`, target `Shared costs`. | diff from `diffSummary` | diff |
 
 Raising a recurring draft writes no audit entry. Creating or removing the linked bill writes no entry of its own.
 
@@ -426,7 +426,7 @@ None.
 - **`dayOfMonth` is limited on the screen only.** `saveRecurringExpense` does not check it.
 - **A raised draft runs for whoever opens the company.** `raiseRecurringDrafts` needs no permission and writes no audit entry.
 - **Shared costs are derived live.** Changing the rule, or voiding an old invoice under the revenue rule, rewrites past months. ADR 0023 says the real build must freeze shares when a period closes and give the rule effective dates.
-- **Fixed percentages can go stale.** A location added later has no percentage, gets weight 0 and receives no share. `updateSettings` does not run `fixedPctProblem`.
+- **Fixed percentages can go stale.** A location added later has no percentage, gets weight 0 and receives no share. Every save runs `sharedCostsProblem` in both modes and on the API (ADR 0059, part 4b), so the next save of the page re-checks the split.
 - **File limit message.** The fourth file on an expense fails with "A payment keeps at most 3 files."
 - **No future-date check.** `expenseProblem` only requires a date.
 - **Differences from ADR 0023.** Rules per category were left out (`SharedCostSettings` has no `categoryRules`). Pay later raises the bill at confirmation, and the form has no due-date field. The plan's `Bill.expenseId` does not exist.

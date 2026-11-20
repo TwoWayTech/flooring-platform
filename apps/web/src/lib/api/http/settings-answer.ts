@@ -46,6 +46,13 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
       case "expenses":
         merged.expenses = answer.expenses ?? demo.expenses;
         break;
+      case "sharedCosts":
+        merged.sharedCosts = answer.sharedCosts ?? demo.sharedCosts;
+        break;
+      case "hr":
+        // Left out while the company never saved it (ADR 0059, part 5, D7): DemoStore's copy stays.
+        merged.hr = answer.hr ?? demo.hr;
+        break;
       case "branding":
         // The control row's, without a logo: the monogram stands in on the API (ADR 0059, part 6, D5).
         merged.branding = answer.branding ?? demo.branding;

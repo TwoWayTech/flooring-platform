@@ -72,6 +72,31 @@ export async function loadHrRules(db: CompanyDb): Promise<HrRules> {
 }
 
 /**
+ * Holds Settings → HR for the rest of a transaction that records hours (a timesheet save, an upload,
+ * a clock punch) and checks it still says what the caller read before the transaction: the `hr` row
+ * `FOR SHARE`, so a Settings → HR save (which takes it `FOR UPDATE` and refuses a workweek change once
+ * hours exist) waits for this write and then sees its hours, and this write waits for a save in
+ * progress. A workweek or clock setting that changed meanwhile refuses with 409, to be tried again
+ * (ADR 0059, part 5, security review round 1). Taken first in the transaction, before any employee
+ * lock, the order every writer of the `hr` row keeps.
+ */
+export async function holdHrRules(tx: CompanyDb, read: HrRules): Promise<void> {
+  // The live row, as `loadHrRules` and `loadPaySchedule` read it.
+  await tx
+    .select({ id: settings.id })
+    .from(settings)
+    .where(and(eq(settings.group, "hr"), isNull(settings.deletedAt)))
+    .for("share");
+  const held = await loadHrRules(tx);
+  if (held.workweekStartDay !== read.workweekStartDay || held.clockEnabled !== read.clockEnabled) {
+    throw new ConflictException({
+      code: "conflict",
+      message: "Settings → HR changed while this was being saved. Try again.",
+    });
+  }
+}
+
+/**
  * The stored company overtime rule, or federal when Settings → Localization → Payroll was never
  * saved. For notes only (ADR 0050); pay reads `loadHrRules`, which refuses a missing rule.
  */

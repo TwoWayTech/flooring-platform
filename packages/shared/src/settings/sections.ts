@@ -7,8 +7,10 @@ import type {
   CompanyProfile,
   CompanySettings,
   ExpenseSettings,
+  HrSettings,
   LocalizationSettings,
   PaymentSettings,
+  SharedCostSettings,
 } from "../types/settings";
 
 /**
@@ -95,9 +97,18 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then.
+ * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR and part 6
+ * Branding.
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "branding"] as const;
+export const API_SETTINGS_SECTIONS = [
+  "profile",
+  "numbers",
+  "payments",
+  "expenses",
+  "sharedCosts",
+  "hr",
+  "branding",
+] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -134,6 +145,13 @@ export interface SettingsReadRule {
  * - `payments`: the invoice page (`sales.invoice.view`), for the payment sheet's approval line and
  *   Update status's write-off, and the Payments page.
  * - `expenses`: only Settings → Expenses reads it.
+ * - `sharedCosts`: only Settings → Expenses reads it (ADR 0059, part 4b, D1). The Business report
+ *   reads the stored row on the server in api mode (`loadSharedCosts`), never this answer.
+ * - `hr` (part 5, D6): HR Home's holidays (`hr.overview.view`), Timesheets' workweek
+ *   (`hr.timesheet.view`), the team calendar on Time off (`hr.pto.view`) and on My time off
+ *   (`hr.portal.view`), and Settings → HR (`settings.hr.manage`). Those screens read it whatever
+ *   the `settings.hr` page switch says, so it is not hidden while that switch is off. Pay periods,
+ *   timesheets, the clock and the portal read the stored row on the server.
  * - `branding`: every member: the shell paints every screen with its color, pattern and theme and
  *   shows its name and monogram, and invoices, receipts and purchase orders print it (part 6, D6).
  *   Its page switch gates only the save. The API answers it from the control `tenant_branding` row.
@@ -147,6 +165,11 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
   numbers: { readers: "everyone", hiddenWhenOff: false },
   payments: { readers: ["sales.invoice.view", "settings.payments.manage"], hiddenWhenOff: true },
   expenses: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
+  sharedCosts: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
+  hr: {
+    readers: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view", "hr.portal.view", "settings.hr.manage"],
+    hiddenWhenOff: false,
+  },
   branding: { readers: "everyone", hiddenWhenOff: false },
 };
 
@@ -248,6 +271,10 @@ export interface SettingsAnswer {
   numbers?: NumberSettingsWire;
   payments?: PaymentSettings;
   expenses?: ExpenseSettings;
+  /** How company-wide costs are split across locations, as stored (ADR 0059, part 4b). */
+  sharedCosts?: SharedCostSettings;
+  /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
+  hr?: HrSettings;
   /**
    * From the control `tenant_branding` row (ADR 0059, part 6, D6); left out when the company has no
    * live row. `logoDataUrl` is always null on the API: the monogram stands in for a logo (D5).

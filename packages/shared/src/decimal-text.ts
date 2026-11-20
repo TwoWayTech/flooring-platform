@@ -62,8 +62,9 @@ export const QUANTITY_TEXT_MAX = 14;
 /**
  * Plain decimal text: digits with an optional fraction. No sign, exponent, radix prefix ("0x0a"),
  * bare point ("10.", ".5") or space, all of which decimal.js would otherwise read as a number.
+ * The Business report reads stored weights through it (ADR 0059, part 4b, D7).
  */
-const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
+export const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
 
 /** Whether an optional decimal string is blank: absent, null or "". */
 function isBlank(value: string | null | undefined): value is null | undefined | "" {

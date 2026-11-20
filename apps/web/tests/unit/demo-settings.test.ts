@@ -5,7 +5,9 @@ import {
   overtimeRuleProblem,
   PAYMENT_MESSAGES,
   SETTINGS_SCOPE_MESSAGE,
+  SHARED_COST_MESSAGES,
   type CompanyId,
+  type CompanySettings,
   type FeatureKey,
   type FeatureRegister,
   type Role,
@@ -188,6 +190,59 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     const kept = { ...canadian, negativeStyle: "parens" as const };
     await store.updateSettings("numbers", kept);
     expect((await store.getSettings()).numbers).toEqual(kept);
+  });
+});
+
+describe("DemoStore saves shared costs with the API's rule (ADR 0059, part 4b)", () => {
+  /** Summit's first two live locations, as Settings → Expenses lists them. */
+  async function twoLocations(store: DemoStore) {
+    const [a, b] = await store.list("locations");
+    return { a, b };
+  }
+
+  it("SCD1 the Owner saves a fixed split over live locations, stored and audited once with the API's label", async () => {
+    const store = await open("summit", DANA);
+    const { a, b } = await twoLocations(store);
+    const value = { rule: "fixed" as const, fixedPct: { [a.id]: "60", [b.id]: "40.00000000" } };
+    const seen = new Set((await store.list("audit")).map((row) => row.id));
+    await store.updateSettings("sharedCosts", value);
+    expect((await store.getSettings()).sharedCosts).toEqual(value);
+    const added = (await store.list("audit")).filter((row) => !seen.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ category: "settings", action: "Changed shared costs", target: "Shared costs" });
+  });
+
+  it("SCD2 the same refusals as the API, with its words; nothing stored or audited (plan note (b))", async () => {
+    const store = await open("summit", DANA);
+    const { a, b } = await twoLocations(store);
+    const before = (await store.getSettings()).sharedCosts;
+    const audits = (await store.list("audit")).length;
+    const cases: [unknown, string][] = [
+      [{ rule: "weighted", fixedPct: {} }, SHARED_COST_MESSAGES.rule],
+      [{ rule: "fixed", fixedPct: { [a.id]: "60", [b.id]: "30" } }, SHARED_COST_MESSAGES.total("90")],
+      [{ rule: "fixed", fixedPct: { [a.id]: "1.2.3", [b.id]: "40" } }, SHARED_COST_MESSAGES.shareOf(a.name)],
+      [{ rule: "revenue", fixedPct: { [a.id]: "" } }, SHARED_COST_MESSAGES.shareOf(a.name)],
+      [{ rule: "equal", fixedPct: { "kn-loc-01": "0" } }, SHARED_COST_MESSAGES.unknownLocation],
+    ];
+    for (const [value, words] of cases)
+      await expect(
+        store.updateSettings("sharedCosts", value as CompanySettings["sharedCosts"]),
+        JSON.stringify(value),
+      ).rejects.toThrow(words);
+    expect((await store.getSettings()).sharedCosts).toEqual(before);
+    expect(await store.list("audit")).toHaveLength(audits);
+  });
+
+  it("SCD3 the key, the Expenses switch and the module, in the API's order", async () => {
+    const value = { rule: "equal" as const, fixedPct: {} };
+    await expect((await open("summit", PRIYA)).updateSettings("sharedCosts", value)).rejects.toThrow(ROLE_REFUSAL);
+    await expect((await open("harbor", HARBOR_OWNER)).updateSettings("sharedCosts", value)).rejects.toThrow(
+      MODULE_REFUSAL,
+    );
+    OFF.add("finance.expenses");
+    await expect((await open("summit", DANA)).updateSettings("sharedCosts", value)).rejects.toThrow(
+      "This feature is switched off.",
+    );
   });
 });
 
