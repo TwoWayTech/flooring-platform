@@ -10,6 +10,7 @@ import {
   roles,
   settings,
   timesheets,
+  userProfiles,
 } from "@workspace/db/company";
 import { tenantModuleOverrides } from "@workspace/db/control";
 import {
@@ -36,6 +37,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isAudited, permissionRequirement } from "../src/core/access/permission.decorators";
+import { SAVED_MEANWHILE } from "../src/modules/settings/settings.service";
 import { AuthHarness } from "./auth-harness";
 import { platformHelpers } from "./support/platform-admins";
 
@@ -44,6 +46,7 @@ const SUMMIT = JSON.parse(
   readFileSync(createRequire(import.meta.url).resolve("@workspace/shared/fixtures/summit.json"), "utf8"),
 ) as { settings: CompanySettings };
 const HR: HrSettings = SUMMIT.settings.hr;
+const HR_CHANGED = "Settings → HR changed while this was being saved. Try again.";
 const MONTHLY_WORDS = "California non-exempt staff must be paid at least twice a month.";
 
 /** One company of the test: its tenant id and slug, and its product. */
@@ -532,5 +535,107 @@ describe("Settings → HR on the API (needs the local PostgreSQL)", () => {
     await put(hrManager.cookie, value).expect(200);
     expect(await hrOf(peopleco)).toEqual(value);
     expect((await answerOf(people.get("hr:employee")!.cookie)).hr).toEqual(value);
+  });
+
+  it("H15 two first saves at once: the one that finds the row taken meanwhile is refused (409), never written over it", async () => {
+    const company: TestCompany = { ...(await harness.provisionCompany("hrfirst")), product: "flooring" };
+    const owner = await member(company, ["owner"]);
+    await stepUp(owner);
+    const first = { ...HR, payFrequency: "weekly" as const };
+    // The first save's insert, not yet committed: the second finds no row to lock, passes its
+    // checks, and waits on the unique group index; without the refusal it would overwrite the first.
+    const waiting = await withCompanyDb(company, (db) =>
+      db.transaction(async (tx) => {
+        await tx.insert(settings).values({ group: "hr", value: first });
+        const save = put(owner.cookie, HR).then((response) => response);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return { save };
+      }),
+    );
+    expect(refusal(await waiting.save)).toEqual([409, "conflict", SAVED_MEANWHILE]);
+    expect(await hrOf(company)).toEqual(first);
+    expect(await hrAudits(company)).toEqual([]);
+  });
+
+  /** A company whose Settings → HR and payroll rule are saved, and an employee signed in and linked to their record. */
+  async function hoursCompany(name: string): Promise<{ company: TestCompany; worker: Member }> {
+    const company: TestCompany = { ...(await harness.provisionCompany(name)), product: "flooring" };
+    await withCompanyDb(company, (db) =>
+      db.insert(settings).values([
+        { group: "hr", value: { ...HR, clockEnabled: true } },
+        { group: "localization", value: { payroll: { overtimeRule: "federal", holidayState: "CO" } } },
+      ]),
+    );
+    const employeeId = await addEmployee(company);
+    const worker = await member(company, ["employee"]);
+    const userId = await harness.userIdOf(worker.email);
+    await withCompanyDb(company, (db) =>
+      db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId)),
+    );
+    return { company, worker };
+  }
+
+  /**
+   * Runs `write` while a Settings → HR save holds the `hr` row and moves the workweek, then commits
+   * that save: the write waits for it and is refused, so no hours land on the old week.
+   */
+  async function whileWorkweekMoves(company: TestCompany, write: () => Promise<{ status: number; body: object }>) {
+    const waiting = await withCompanyDb(company, (db) =>
+      db.transaction(async (tx) => {
+        await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "hr")).for("update");
+        await tx
+          .update(settings)
+          .set({ value: { ...HR, clockEnabled: true, workweekStartDay: 0 } })
+          .where(eq(settings.group, "hr"));
+        const pending = write().then((response) => response);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return { pending };
+      }),
+    );
+    return waiting.pending;
+  }
+
+  it("H16 a timesheet saved while the workweek changes waits for the change and is refused, so no sheet lands on the old week", async () => {
+    const { company, worker } = await hoursCompany("hrsheetrace");
+    const employeeId = (await withCompanyDb(company, (db) => db.select({ id: employees.id }).from(employees)))[0]!.id;
+    const monday = new Date();
+    monday.setUTCDate(monday.getUTCDate() - 21 - ((monday.getUTCDay() + 6) % 7));
+    const weekStart = monday.toISOString().slice(0, 10);
+    const saved = await whileWorkweekMoves(company, () =>
+      call("put", "/timesheets", worker.cookie).send({
+        employeeId,
+        weekStart,
+        days: ["8", "8", "8", "8", "8", "0", "0"],
+        expectedDays: ["0", "0", "0", "0", "0", "0", "0"],
+      }),
+    );
+    expect(refusal(saved)).toEqual([409, "conflict", HR_CHANGED]);
+    expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toEqual([]);
+  });
+
+  it("H17 a clock-in while the workweek changes waits for the change and is refused", async () => {
+    const { company, worker } = await hoursCompany("hrclockrace");
+    const punched = await whileWorkweekMoves(company, () => call("post", "/clock/in", worker.cookie).send({}));
+    expect(refusal(punched)).toEqual([409, "conflict", HR_CHANGED]);
+    expect(await withCompanyDb(company, (db) => db.select().from(clockEntries))).toEqual([]);
+    // Clocked in on the new workweek, then out while it moves back: the punch stays open, to retry.
+    await call("post", "/clock/in", worker.cookie).send({}).expect(201);
+    const out = await withCompanyDb(company, (db) =>
+      db.transaction(async (tx) => {
+        await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "hr")).for("update");
+        await tx
+          .update(settings)
+          .set({ value: { ...HR, clockEnabled: true } })
+          .where(eq(settings.group, "hr"));
+        const pending = call("post", "/clock/out", worker.cookie)
+          .send({})
+          .then((response) => response);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return { pending };
+      }),
+    );
+    expect(refusal(await out.pending)).toEqual([409, "conflict", HR_CHANGED]);
+    const [punch] = await withCompanyDb(company, (db) => db.select().from(clockEntries));
+    expect(punch!.outAt).toBeNull();
   });
 });

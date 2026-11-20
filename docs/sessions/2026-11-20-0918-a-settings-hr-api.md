@@ -86,4 +86,26 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Q1. Changing the schedule on purpose.** Taken: refused once a pay period exists (frequency, anchor) or hours or a period exist (workweek). A company that must change its pay frequency or workweek has no path but support. Build "a new schedule from a chosen date" (close the open period, start the new cadence the day after, record the change for the FLSA records)?
 - **Q2. A step-up on every HR save,** holidays and the portal switches included. Taken: yes (payroll-relevant). Ask for it only when the workweek, frequency, anchor or a pay-visibility switch changes?
 - **Q3. Show the schedule lock on the page.** Taken: the page runs the content rule before the code, but the lock is judged by the store or the API, so its words show after the code (the step-up stays valid 5 minutes). Add a light read (whether a pay period or hours exist) so the page can show the fields as fixed?
-- **Q4. The first timesheet in the same instant as a workweek change.** Taken: accepted as a residual risk. Timesheet saves, uploads and clock punches read the workweek without the `hr` row's lock, so the company's very first sheet, saved in the same instant as a workweek change, can land on the old week. Close it by having those writes take `FOR SHARE` on the `hr` row (an HR module change)?
+- **Q4. Hours writers and a workweek change at once.** Taken (security review round 1, the safest option): timesheet saves, uploads, clock-in and clock-out take the `hr` row `FOR SHARE` first and answer 409 when the workweek or clock setting changed under them. This touches the HR module (`timesheets.service.ts`, `hr-records.ts`). Keep it, or accept the narrow race instead?
+
+## Security review
+
+**Round 1** (fresh read-only security-reviewer, on `9669b21`): no blocking finding.
+- *Should-fix:* timesheet saves, uploads, clock-in and clock-out read the workweek before their transaction and never lock the `hr` row, so a company's first hours could land on a workweek changed meanwhile, and the schedule lock would then keep the bad sheet. **Fixed (D11):** `holdHrRules` (hr-records.ts) takes the row `FOR SHARE` first in each of the four transactions and refuses with 409 if the workweek or clock setting changed. Tests H16 (timesheet save), H17 (clock-in, clock-out); mutations HM22 to HM24 caught. The upload has no race test of its own (the same one-line call).
+- *Note 2:* two first saves at once: the second passed its checks on no row and then overwrote the first through `ON CONFLICT DO UPDATE`. **Fixed (D12):** Settings → HR's first save inserts with `ON CONFLICT DO NOTHING` and refuses with 409 (`SAVED_MEANWHILE`). Test H15; mutation HM21 caught.
+- *Note 3:* `lockGroup` doesn't filter `deleted_at` while the HR loaders do. Kept: settings rows are never soft-deleted (ADR 0059 D20), as every settings save already does.
+- *Note 4:* in api mode, for a company that never saved HR, the page's monthly gate compares with DemoStore's copy while the API compares with nothing. Kept: it fails closed (the API answers 400 with the same words).
+
+## For STATUS (the orchestrator applies these)
+
+- **Done (on merge):** "Settings part 5 (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-20 part 5 section). Settings → HR saves on the API (`PUT /settings/hr`, `settings.hr.manage`, module `hr`, scope `all`, a step-up, one audit entry) with the same rules and words in DemoStore. The pay frequency and anchor are fixed once a pay period exists and the workweek once hours or a period exist (409, under the `hr` row's lock); monthly with California non-exempt staff is refused on a change. Timesheet and clock writes hold the `hr` row and answer 409 if it changed under them. No schema, migration or dependency change."
+- **Change:** part 1's residual risk list loses "HR settings" from the sections still saving in the browser in api mode.
+- **Owner questions:** "Owner questions (Settings part 5; none blocks)" with Q1 to Q4 above.
+- **BRANCHES:** a `feat/settings-hr-api` row: "A (Claude)", "Queue item 2, task 2, Settings part 5: Settings → HR on the API (worktree `C:\dev\fp-5`; stacked on #60)", the state at handoff, the PR once opened, "see the branch".
+
+## Reviewer summary (ready to paste with `gh pr review <n> --comment --body-file`)
+
+Security review (security-reviewer, read-only), Settings part 5, Settings → HR on the API.
+Round 1: no blocking finding. One should-fix: timesheet and clock writes didn't hold the `hr` row, so a company's first hours could land on a workweek changed meanwhile. Fixed: they take it `FOR SHARE` and answer 409 if it changed (H16, H17). Note 2: two first saves at once could overwrite each other. Fixed: 409 (H15). Notes 3 and 4 kept: settings rows are never soft-deleted, and the page's never-saved monthly gate fails closed.
+Round 2: (see below)
+Checked sound: module `hr` then `settings.hr.manage` from packages/shared; switch, scope `all`, strict body and content rules before any database work; the schedule lock, monthly rule and step-up under the same `FOR UPDATE` that opening a pay period takes; one audit entry with the locked `before`; the company only from the session; ADR 0050 unaffected; no `SENSITIVE_FIELDS` name answered; DemoStore applies the same rules and words.

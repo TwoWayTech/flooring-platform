@@ -56,6 +56,7 @@ import {
 import {
   loadClockEntries,
   loadEmployees,
+  holdHrRules,
   loadHrRules,
   hoursText,
   loadTimesheets,
@@ -149,6 +150,7 @@ export class TimesheetsService {
     }
     if (input.weekStart > clock.day) throw refuse("Hours can't be entered for a future week.");
     return db.transaction(async (tx) => {
+      await holdHrRules(tx, rules);
       const scope = await personScope(tx, actor.access);
       const isSelf = await selfCheck(tx, actor);
       const employee = await this.lockForEdit(tx, actor.access, scope, isSelf, input.employeeId);
@@ -406,6 +408,7 @@ export class TimesheetsService {
       return { rows: dry.rows, counts: dry.counts };
     }
     const saved = await db.transaction(async (tx) => {
+      await holdHrRules(tx, rules);
       await tx
         .select({ id: employees.id })
         .from(employees)
@@ -449,6 +452,7 @@ export class TimesheetsService {
     const [clock, rules] = await Promise.all([companyClock(this.control.db, tenant), loadHrRules(db)]);
     if (!rules.clockEnabled) throw refuse("This company does not use the clock.");
     const id = await db.transaction(async (tx) => {
+      await holdHrRules(tx, rules);
       const employee = await this.ownEmployee(tx, actor.access);
       // Someone who has left no longer clocks in (second security review of PR #25).
       if (employee.status === "terminated") throw refuse("Someone who has left can't clock in.");
@@ -486,6 +490,7 @@ export class TimesheetsService {
     // limits; ADR 0049). A punch left open while the clock is off closes once it is back on.
     if (!rules.clockEnabled) throw refuse("This company does not use the clock.");
     const { id, note } = await db.transaction(async (tx) => {
+      await holdHrRules(tx, rules);
       const employee = await this.ownEmployee(tx, actor.access);
       const open = await this.openPunch(tx, employee.id);
       if (!open) throw refuse("You are not clocked in.");

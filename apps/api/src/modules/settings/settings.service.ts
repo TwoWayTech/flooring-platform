@@ -68,6 +68,9 @@ export interface HrRecords {
   employees: Pick<Employee, "state" | "flsaStatus" | "status">[];
 }
 
+/** Why a first save is refused when another first save of the section won meanwhile (part 5, security review round 1). */
+export const SAVED_MEANWHILE = "Someone else saved these settings meanwhile. Open them again and redo the change.";
+
 /** Whether a table holds a live row: one row read at most. */
 async function anyLive(
   tx: CompanyDb,
@@ -272,7 +275,7 @@ export class SettingsService {
       // The jsonb row as every HR loader reads it (`loadPaySchedule`, `loadHrRules`).
       const current = row?.value as Partial<HrSettings> | undefined;
       const value = await settle(current, await loadHrRecords(tx));
-      await this.write(tx, tenant, actor, "hr", row?.id, value, { before: current ?? null, after: value });
+      await this.write(tx, tenant, actor, "hr", row?.id, value, { before: current ?? null, after: value }, "refuse");
       return value;
     });
   }
@@ -280,7 +283,10 @@ export class SettingsService {
   /**
    * Writes one section's row, or inserts it when there is none, and its audit entry "Changed
    * <label>", in the caller's transaction after the caller locked the row (ADR 0059). Two first saves
-   * at once both find no row: the unique group index makes the second an update.
+   * at once both find no row: the unique group index makes the second an update, or, with
+   * `firstSave: "refuse"`, a 409 to be tried again, because its checks judged no row and what the first
+   * save stored may since have been acted on (Settings → HR: a pay period opened on it; part 5,
+   * security review round 1).
    */
   private async write<S extends ApiSettingsSection>(
     tx: CompanyDb,
@@ -290,17 +296,22 @@ export class SettingsService {
     rowId: string | undefined,
     value: StoredSection<S>,
     audit: { before: unknown; after: unknown },
+    firstSave: "upsert" | "refuse" = "upsert",
   ): Promise<void> {
     const { label } = SETTINGS_SECTIONS[section];
     let id = rowId;
     if (id) {
       await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, id));
     } else {
-      const [saved] = await tx
+      const insert = tx
         .insert(settings)
-        .values({ id: uuidv7(), group: section, value, createdBy: actor.access.userId })
-        .onConflictDoUpdate({ target: settings.group, set: { value, updatedAt: new Date() } })
-        .returning({ id: settings.id });
+        .values({ id: uuidv7(), group: section, value, createdBy: actor.access.userId });
+      const [saved] = await (
+        firstSave === "refuse"
+          ? insert.onConflictDoNothing({ target: settings.group })
+          : insert.onConflictDoUpdate({ target: settings.group, set: { value, updatedAt: new Date() } })
+      ).returning({ id: settings.id });
+      if (!saved) throw new ConflictException({ code: "conflict", message: SAVED_MEANWHILE });
       id = saved.id;
     }
     await this.auditLog.record(
