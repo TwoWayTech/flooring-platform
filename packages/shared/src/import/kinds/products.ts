@@ -19,8 +19,6 @@ const TOO_LARGE = dec("10000000000");
 
 const refuse = (field: string, message: string): RowOutcome => ({ problems: [{ field, message }] });
 
-/** A stored coverage the plan may divide by: more than 0, else none. */
-
 /**
  * Coverage and width the product's unit needs (spec section 4): cartons need sq ft per carton in
  * every category, adhesives and trims included (ADR 0057 S-18), and broadloom a width.

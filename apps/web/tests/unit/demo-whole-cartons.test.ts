@@ -53,6 +53,29 @@ describe("demo whole cartons on purchase orders", () => {
         asDraft: true,
       });
     await expect(order("7")).rejects.toThrow(`${product.name}: order whole cartons, multiples of`);
+    // A pack sent on the line is not the product's: 7 sq ft "of a 7 sq ft carton" is still refused.
+    await expect(
+      createPurchaseOrder(ctx, {
+        supplierId: fixtures.suppliers[0]!.id,
+        contactId: null,
+        supplierRef: "",
+        placedVia: null,
+        expectedAt: fixtures.anchorDate,
+        locationId: fixtures.locations.find((l) => l.kind === "warehouse")!.id,
+        lines: [
+          {
+            id: "l1",
+            productId: product.id,
+            description: product.name,
+            quantity: "7",
+            unit: "sq_ft",
+            unitCost: product.cost,
+            sqFtPerCarton: "7",
+          },
+        ],
+        asDraft: true,
+      }),
+    ).rejects.toThrow("order whole cartons");
     const saved = await order(dec(pack).times(3).toString());
     expect(saved.lines[0]!.quantity).toBe(dec(pack).times(3).toString());
   });
