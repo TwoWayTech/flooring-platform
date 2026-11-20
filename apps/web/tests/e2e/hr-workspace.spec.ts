@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { featureOn, HR_MESSAGES } from "@workspace/shared";
-import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, HR_TAG, signInAs, summitDay, SUMMIT_OWNER } from "./helpers";
 
 const SUMMIT_HR = { companyId: "summit", userId: "sm-usr-07", roleKey: "hr" } as const;
 const HARBOR_HR = { companyId: "harbor", userId: "hb-usr-02", roleKey: "hr" } as const;
@@ -61,7 +61,7 @@ test.describe("HR workspace (spec C1)", () => {
   test("uploads hours from the template and reports bad rows", async ({ page }) => {
     await signInAs(page, SUMMIT_HR, "/hr/timesheets");
     await page.getByRole("button", { name: "Upload hours" }).click();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = summitDay();
     const csv = `employee_email,employee_external_id,employee_name,work_date,hours_worked,note\nnobody@example.com,,Nobody,${today},8,\n`;
     await page
       .getByLabel("Timesheet file")

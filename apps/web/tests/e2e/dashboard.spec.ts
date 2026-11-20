@@ -13,15 +13,14 @@ import {
   sum,
   type CompanyFixtures,
 } from "@workspace/shared";
-import { signInAs, SUMMIT_OWNER } from "./helpers";
+import { signInAs, summitDay, SUMMIT_OWNER } from "./helpers";
 
 /** The Owner's 12-month figures computed straight from the fixtures, as the dashboard should show them. */
 function expectedFigures() {
   const raw = JSON.parse(
     readFileSync(fileURLToPath(new URL("../../../../packages/shared/fixtures/summit.json", import.meta.url)), "utf8"),
   ) as CompanyFixtures;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const today = summitDay();
   const f = shiftDates(raw, dateShift(raw.anchorDate, today));
   const months = storedPnl(monthlyPnl(last12Months(today), f.invoices, f.expenses));
   const revenue = sum(months.map((m) => m.revenue));

@@ -18,6 +18,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
 import { Switch } from "@workspace/ui/components/switch";
 import { ScrollRegion } from "@/components/scroll-region";
+import { api } from "@/lib/api";
 import { SettingRow } from "../form/setting-row";
 import type { SectionProps } from "./simple-tabs";
 
@@ -44,7 +45,7 @@ export function CompanyDefaultRow({ draft, setDraft, changed }: SectionProps<Tax
                     ? {
                         ratePct: "0",
                         taxable: { material: true, labor: false, freight: false, service: false },
-                        validFrom: new Date().toISOString().slice(0, 10),
+                        validFrom: api.today(),
                       }
                     : null,
                 })
@@ -104,7 +105,7 @@ function newJurisdiction(state: StateCode): JurisdictionRate {
     county: "",
     name: "",
     ratePct: "0",
-    validFrom: new Date().toISOString().slice(0, 10),
+    validFrom: api.today(),
     validTo: null,
   };
 }

@@ -836,7 +836,7 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | `openCompany(companyId, viewer)` | none (session) | Loads the company the session names. |
 | `setViewer(viewer)` | none (session) | Switches "View as role". Data scope then follows that role's first active user. Demo only, and only for someone who may view as: in api mode View as is not offered (ADR 0051, "GET /company"). |
 | `subscribe(listener)` | WebSocket or polling | Called after every change, so screens refresh. |
-| `today()` | server date | Today's date as the data sees it. In api mode still the browser's day; `GET /company` carries the company's zone for the later change. |
+| `today()` | none (computed) | Today's date as the data sees it: the company's day in its own time zone, worked out on every call so it rolls over at the company's midnight. In api mode the zone is `GET /company`'s `company.timeZone`, kept from every answer; before the first answer (sign-in, platform pages) it is the browser's day. DemoStore uses the open company's `localization.region.timeZone`, or the browser's day with no company open (ADR 0051, "The company's day on the web"). |
 | `resetDemo()` | none | Demo only: restores the fixtures. |
 | `takeNotices()` | none | Messages for the person once, such as saved demo changes from an older version that had to be reset. Reading clears them. |
 

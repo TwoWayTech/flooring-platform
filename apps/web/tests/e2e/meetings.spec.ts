@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, summitDay, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const SUMMIT_SALES: Persona = { companyId: "summit", userId: "sm-usr-03", roleKey: "sales" };
 const SUMMIT_HR: Persona = { companyId: "summit", userId: "sm-usr-07", roleKey: "hr" };
@@ -93,11 +93,9 @@ test.describe("meetings calendar (spec F)", () => {
   });
 });
 
-/** A day as the demo's own YYYY-MM-DD, `n` days from the machine's today (the browser uses the machine's zone). */
+/** A day as the demo's own YYYY-MM-DD, `n` days from Summit's today in Denver (the app's `today()`). */
 function inDays(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return summitDay(n);
 }
 
 /** The first day at least `minDays` from today that falls on `dow` (0 is Sunday). */

@@ -1,5 +1,5 @@
 import { devices, expect, test, type Page } from "@playwright/test";
-import { featureOn, type FeatureKey } from "@workspace/shared";
+import { dayInZone, featureOn, type FeatureKey } from "@workspace/shared";
 
 /**
  * Skips the current describe or test while a feature's switch is off (spec section 0.6: a
@@ -7,6 +7,19 @@ import { featureOn, type FeatureKey } from "@workspace/shared";
  */
 export function skipIfFeatureOff(key: FeatureKey) {
   test.skip(!featureOn(key), `${key} is switched off`);
+}
+
+/** The zone Summit keeps its day in (its fixture `region.timeZone`); the config runs the browser there too. */
+export const SUMMIT_ZONE = "America/Denver";
+
+/**
+ * Summit's day, "YYYY-MM-DD", `offset` days from today in Denver: the day the app's `today()` gives
+ * Summit's forms wherever the test machine is (ADR 0051, "The company's day on the web", 2026-11-20).
+ */
+export function summitDay(offset = 0): string {
+  const day = new Date(`${dayInZone(new Date(), SUMMIT_ZONE)}T12:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + offset);
+  return day.toISOString().slice(0, 10);
 }
 
 /** A persona to sign in as, by company and role. */
