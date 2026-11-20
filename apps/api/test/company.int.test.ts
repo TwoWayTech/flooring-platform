@@ -193,12 +193,19 @@ describe("GET /company (needs the local PostgreSQL)", () => {
     expect(body.company.branches[0]).toMatchObject({ city: "Boulder", state: "CO" });
   });
 
-  it("C3 people: active and disabled with their status, never invited or deleted, each exactly id, name and status", async () => {
+  it("C3 people: active colleagues for everyone; disabled ones only for Settings → Users' readers; never invited or deleted", async () => {
     const { cookie } = await member(floorco, ["warehouse"]);
     const body = await answerOf(cookie);
     const byId = new Map(body.people.map((person) => [person.id, person]));
     expect(byId.get(added.active)?.status).toBe("active");
-    expect(byId.get(added.disabled)?.status).toBe("disabled");
+    expect(byId.has(added.disabled)).toBe(false);
+    expect(body.people.every((person) => person.status === "active")).toBe(true);
+    // The Manager holds settings.users.view, the Owner everything (ADR 0051, "2026-11-20").
+    for (const reader of [(await member(floorco, ["manager"])).cookie, owners.flooring]) {
+      const seen = new Map((await answerOf(reader)).people.map((person) => [person.id, person]));
+      expect(seen.get(added.disabled)?.status).toBe("disabled");
+      expect(seen.has(added.invited)).toBe(false);
+    }
     expect(byId.has(added.invited)).toBe(false);
     expect(byId.has(added.deleted)).toBe(false);
     for (const person of body.people) expect(Object.keys(person).sort()).toEqual(["id", "name", "status"]);
