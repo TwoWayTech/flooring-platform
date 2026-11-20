@@ -123,6 +123,14 @@ async function loadHrRecords(tx: CompanyDb): Promise<HrRecords> {
  */
 const NEVER_SAVED_EMAIL: CompanySettings["email"] = { senderName: "", replyTo: "", signature: "" };
 
+/**
+ * Stock rules never saved (ADR 0059, the Stock rules part, D5): the strictest quantity, so every
+ * non-zero adjustment would wait for a second person, as Payments' never-saved answer is the
+ * strictest; a save is judged against it, so only an Owner can loosen it. Nothing on the API acts on
+ * it while stock adjustments are switched off.
+ */
+const NEVER_SAVED_INVENTORY: CompanySettings["inventory"] = { adjustmentApprovalQty: "0" };
+
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
   legalName: "",
@@ -252,6 +260,9 @@ export class SettingsService {
         case "email":
           answer.email = await read(section);
           break;
+        case "inventory":
+          answer.inventory = await read(section);
+          break;
         default:
           throw unservedSection(section);
       }
@@ -282,6 +293,8 @@ export class SettingsService {
    * `guard` runs every check that reads the stored section or other rows, inside the transaction
    * and under the lock (`tx`; Shared costs read the live locations there: ADR 0059, part 4b, D2), and
    * refuses by throwing, which rolls back.
+   * `firstSave: "refuse"` makes a first save that finds the row taken meanwhile a 409, for a section
+   * whose `guard` judged the never-saved answer (Stock rules, security review round 1).
    */
   async save<S extends DefaultedSection>(
     tenant: TenantContext,
@@ -290,6 +303,7 @@ export class SettingsService {
     value: StoredSection<S>,
     answered: (value: StoredSection<S>) => unknown,
     guard?: (current: StoredSection<S>, tx: CompanyDb) => Promise<void>,
+    firstSave: "upsert" | "refuse" = "upsert",
   ): Promise<void> {
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
@@ -297,10 +311,16 @@ export class SettingsService {
       // Checks that compare with what is stored run under the row's lock, against the never-saved
       // answer when nothing is (ADR 0059 D10), so two saves at once can't both pass on a stale value.
       if (guard) await guard(await this.valueOf(tx, section, row?.value), tx);
-      await this.write(tx, tenant, actor, section, row?.id, value, {
-        before: row ? answered(row.value as StoredSection<S>) : null,
-        after: answered(value),
-      });
+      await this.write(
+        tx,
+        tenant,
+        actor,
+        section,
+        row?.id,
+        value,
+        { before: row ? answered(row.value as StoredSection<S>) : null, after: answered(value) },
+        firstSave,
+      );
     });
   }
 
@@ -630,6 +650,7 @@ export class SettingsService {
       // Exactly how the Business report reads a missing row: by revenue share (ADR 0023; part 4b, D9).
       sharedCosts: async () => DEFAULT_SHARED_COSTS,
       email: async () => NEVER_SAVED_EMAIL,
+      inventory: async () => NEVER_SAVED_INVENTORY,
     };
     return (await never[section]()) as StoredSection<S>;
   }

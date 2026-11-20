@@ -33,7 +33,7 @@ Role names are the default roles in `packages/shared/src/permissions/roles.ts`.
 | Change region, currency, payroll rules, Sales and documents | `settings.localization.manage` | Owner, Accountant | `LocalizationPage` and `DocumentsPage`; `updateLocalization` with `LOCALIZATION_TABS` in packages/shared (one key per tab). On the API, `PUT /settings/localization/documents` (module `core`), `/payroll` (module `hr`), `/region` and `/currency` (ADR 0059, parts 2a and 2b). A change of the states of operation also needs `settings.tax.manage` and a step-up; Currency always needs a step-up. Data scope `all` |
 | Change sales tax | `settings.tax.manage` | Owner, Accountant | `LocalizationPage` for the tab; `updateLocalization("tax")` with its own key. On the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. Data scope `all` |
 | Change payment settings | `settings.payments.manage` | Owner, Accountant | `updateSettings`, with a step-up; it also governs supplier payments. On the API, `PUT /settings/payments` (ADR 0059). Data scope `all` |
-| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode since ADR 0059 part 4a; data scope `all`); `updateSettings` for section `inventory` (Stock rules, still the browser's; data scope `all`) |
+| Change warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode since ADR 0059 part 4a; data scope `all`); `updateSettings` for section `inventory` (Stock rules; on the API `PUT /settings/inventory`, ADR 0059, the Stock rules part; data scope `all`). Raising or clearing the adjustment approval quantity is the Owner's alone, with a step-up |
 | Change expense approval and shared costs | `settings.expenses.manage` | Owner | `updateSettings`. On the API, `PUT /settings/expenses` for expense approval and `PUT /settings/sharedCosts` for shared costs (ADR 0059, part 4b). Data scope `all` |
 | Change HR settings | `settings.hr.manage` | Owner, HR manager | `updateSettings`, with a step-up. On the API, `PUT /settings/hr` (module `hr`; ADR 0059, part 5). The pay frequency, the day periods count from and the workweek are fixed once pay or hours are recorded. Data scope `all` |
 | Change meeting settings | `settings.meetings.manage` | Owner | `updateSettings`. Data scope `all` |
@@ -796,7 +796,7 @@ Formulas below are copied from the code.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `adjustmentApprovalQty` | string | Seeded `1000`; empty means no approval |
+| `adjustmentApprovalQty` | string | Seeded `1000`; empty means no approval. Empty or a plain quantity of up to 3 decimals (`inventorySettingsProblem`); raising or clearing it is the Owner's alone, with a step-up (`stockRulesLoosened`) |
 
 **`expenses`**
 
@@ -895,7 +895,7 @@ None as a report. The audit log has a CSV of its filtered rows, `csvName="audit-
 - **View as depends on a persona.** With no active user in that role, "own" falls back to the signed-in person.
 - **Fourteen permission keys are never checked.** They are listed under Permission keys.
 - **Installation is hidden, not removed.** Its 8 keys stay in the catalog, the role templates and the ceilings. Summit still has the module. `visibleModules` hides it from the matrix and the access page.
-- **`inventory.stock.adjust` and `inventory.stock.approve` have no page.** `inventory.adjustments` is removed. The Stock rules form on `/settings/locations` still shows its threshold.
+- **`inventory.stock.adjust` and `inventory.stock.approve` have no page.** `inventory.adjustments` is removed, and the API has no adjustment routes (ADR 0059, the Stock rules part, D1). The Stock rules form on `/settings/locations` still shows its threshold, and in api mode saves it on the API, where nothing acts on it until adjustments come back.
 - **The company's time zone can't be changed in Settings** (both modes): it is set when the company is set up, and every date the API checks is read in it (ADR 0059, part 2b).
 - **Currencies can't be added or removed;** only their rates change.
 - **Tax dates are set by the save** (the company's day): no back-dating or scheduling (ADR 0059, part 3a).
@@ -1027,13 +1027,19 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The save.** `PUT /settings/email`, with `settings.notifications.manage`, the `settings.notifications` switch (404 when off), data scope `all`, a body with exactly the three fields, and the shared rule (`emailSettingsProblem`): the sender name at most 80 characters with no line break, quote, backslash, angle bracket, `@` or text-direction mark; the reply-to empty or one plain mailbox; the sign-off at most 500 characters. Then always a step-up: who mail seems to come from and where customers' answers go are a phishing lever. One audit entry, "Changed email and notifications".
 - **The demo** applies the same key, switch, scope, rule and words; its step-up is the dialog.
 
+**Settings on the API, the Stock rules part (ADR 0059): Stock rules:**
+- **Who reads what.** `GET /settings` also answers `inventory` (the adjustment approval quantity) to holders of `settings.locations.manage` while module `core` and `inventory.locations` are on; never saved, it is `"0"`, the strictest (every non-zero adjustment would wait).
+- **The save.** `PUT /settings/inventory`, with module `core`, `settings.locations.manage`, the `inventory.locations` switch (404 when off), data scope `all`, a body with exactly `adjustmentApprovalQty` as a string, and the shared rule (`inventorySettingsProblem`): empty or a plain quantity of up to 3 decimals ("Enter the approval quantity as a number such as 50, or leave it empty."). Then, judged against the stored section under its lock: raising the quantity or clearing it loosens the two-person check on adjustments, so it is the Owner's alone ("Only an Owner can raise or clear the quantity above which adjustments need approval.", 403 `owner_only`) and needs a step-up, both after the content rule. Keeping or lowering it, or setting one where there was none, needs only the key and no code. One audit entry, "Changed stock rules".
+- **Stock adjustments stay switched off** (`removed`); no adjustment route exists on the API, so nothing acts on the section until the owner brings them back.
+- **The page and the demo** apply the same rule, Owner-only words and order; the code is asked only for a loosening, and the demo's step-up is the dialog.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes with a branch editor (locations aren't branches; ADR 0059, part 4a).
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
 - **The shell's branding** is the API's since Settings part 6, without a logo: the monogram stands in until logo upload is built (ADR 0059, part 6, Q1). The number format and the profile are the API's too (ADR 0059).
-- **Settings pages not yet on the API save in the browser only:** the event rules on Email and notifications (the sender is on the API), Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Settings pages not yet on the API save in the browser only:** the event rules on Email and notifications (the sender is on the API) and Meetings. Their parts follow ADR 0059's order.
 - **Locations (part 4a).** A location added in the wrong branch can be renamed but not moved or removed, and stays in every picker. A company with no branch can't add a location until a branch editor exists. Short rows stay at a location that became a showroom (they hold nothing). A quote saved at the moment its warehouse becomes a showroom stays open there; its conversion is refused until its warehouse is changed. The dashboard's warehouse filter reads the API's locations while its quotes are still the demo's, so with a warehouse picked its pending quotes read 0. Shared costs on the Expenses page list the API's locations but still save in the browser until part 4b. Saved demo data with an empty floor area breaks the demo's Business report until that location is saved again.
 - **Reset to default** reads the demo's original values, which the API was seeded with; Region and Currency keep the time zone, country, locale, base currency, its lock and the currencies from the company's own copy (ADR 0059, part 2b); Sales tax keeps filing and certificate types from the company's own copy (part 3a).
 - **The Sales tax tab shows rates at the columns' scale** (`8.81000000`).

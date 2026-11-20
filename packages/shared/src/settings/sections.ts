@@ -9,6 +9,7 @@ import type {
   CompanySettings,
   ExpenseSettings,
   HrSettings,
+  InventorySettings,
   LocalizationSettings,
   PaymentSettings,
   SharedCostSettings,
@@ -99,7 +100,8 @@ export const SETTINGS_SECTIONS = {
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
  * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR, part 6
- * Branding, and the bell and Outbox part Settings → Email (`email`, the sender details).
+ * Branding, the bell and Outbox part Settings → Email (`email`, the sender details), and the Stock
+ * rules part `inventory`.
  */
 export const API_SETTINGS_SECTIONS = [
   "profile",
@@ -110,6 +112,7 @@ export const API_SETTINGS_SECTIONS = [
   "hr",
   "branding",
   "email",
+  "inventory",
 ] as const;
 
 /** A section the API serves. */
@@ -160,6 +163,9 @@ export interface SettingsReadRule {
  * - `email` (the bell and Outbox part, D9): only Settings → Email and notifications reads it, so only
  *   `settings.notifications.manage`, and it is hidden while that page's switch is off. The API's
  *   sender reads the stored row whatever is answered.
+ * - `inventory` (the Stock rules part, D6): only the Stock rules form on Warehouses and showrooms
+ *   reads it, so only `settings.locations.manage`, and it is hidden while that page's switch
+ *   (`inventory.locations`) is off. Nothing on the API acts on it while stock adjustments are off.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -177,6 +183,7 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
   },
   branding: { readers: "everyone", hiddenWhenOff: false },
   email: { readers: ["settings.notifications.manage"], hiddenWhenOff: true },
+  inventory: { readers: ["settings.locations.manage"], hiddenWhenOff: true },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -283,6 +290,8 @@ export interface SettingsAnswer {
   hr?: HrSettings;
   /** Settings → Email as stored, or all three fields empty when never saved (the bell and Outbox part, D10). */
   email?: EmailSettings;
+  /** Stock rules as stored, or the strictest quantity (`"0"`) when never saved (the Stock rules part, D5). */
+  inventory?: InventorySettings;
   /**
    * From the control `tenant_branding` row (ADR 0059, part 6, D6); left out when the company has no
    * live row. `logoDataUrl` is always null on the API: the monogram stands in for a logo (D5).

@@ -322,14 +322,16 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        // All but HR, which these companies never saved and part 5's own file reads (H1), and Email,
-        // never saved here either, whose own file reads it (settings-email.int, ME1).
+        // All but HR, which these companies never saved and part 5's own file reads (H1), and Email and
+        // Stock rules, never saved here either, whose own files read them (settings-email.int ME1,
+        // settings-stock.int MS1).
         const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
         const readable = readableSections(reader);
+        const ownFiles: string[] = ["hr", "email", "inventory"];
         const expected = readable.filter(
-          (section): section is Served | "sharedCosts" | "branding" => section !== "hr" && section !== "email",
+          (section): section is Served | "sharedCosts" | "branding" => !ownFiles.includes(section),
         );
-        const others = readable.includes("email") ? ["email"] : [];
+        const others = readable.filter((section) => section === "email" || section === "inventory");
         expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
           // Branding is the control row's (part 6; its own cases are in settings-branding.int.test.ts).
@@ -357,6 +359,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
             "branding",
             "email",
             "expenses",
+            "inventory",
             "numbers",
             "payments",
             "profile",
@@ -782,6 +785,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
             "branding",
             "email",
             "expenses",
+            "inventory",
             "numbers",
             "payments",
             "profile",
@@ -847,6 +851,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
       "branding",
       "email",
       "expenses",
+      "inventory",
       "numbers",
       "payments",
       "profile",

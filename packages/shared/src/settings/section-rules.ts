@@ -9,6 +9,7 @@ import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { brandingProblem } from "./branding-rules";
 import { hrSettingsProblem } from "./hr-rules";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
+import { inventorySettingsProblem } from "./stock-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
 export const EIN_PATTERN = /^\d{2}-\d{7}$/;
@@ -246,8 +247,9 @@ export interface SettingsRuleContext {
  * call without them throws, so no caller can skip that check (part 4b, D8). Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
  * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5), Branding
- * `brandingProblem` (part 6), Settings → Email `emailSettingsProblem` (the bell and Outbox part).
- * Every other section gets its rules when its part moves to the API.
+ * `brandingProblem` (part 6), Settings → Email `emailSettingsProblem` (the bell and Outbox part),
+ * Stock rules `inventorySettingsProblem` (the Stock rules part). Every other section gets its rules
+ * when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -272,5 +274,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.hr) return hrSettingsProblem(settings.hr);
   if (settings.branding) return brandingProblem(settings.branding);
   if (settings.email) return emailSettingsProblem(settings.email);
+  if (settings.inventory) return inventorySettingsProblem(settings.inventory);
   return null;
 }

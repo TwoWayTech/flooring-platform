@@ -33,6 +33,7 @@ import {
   SETTINGS_READERS,
   SETTINGS_SECTIONS,
   settingsSectionProblem,
+  STOCK_RULES_MESSAGES,
   type CompanySettings,
   type DefaultRoleKey,
   type FeatureKey,
@@ -215,7 +216,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(read.decimals.fxRate).toBe(NUMBER_KINDS.fxRate.default);
   });
 
-  it("R7 the served sections: exactly eight (part 4b adds shared costs, part 5 HR, part 6 branding, the bell and Outbox part Email), each with a rule and a reader rule", () => {
+  it("R7 the served sections: exactly nine (part 4b adds shared costs, part 5 HR, part 6 branding, the bell and Outbox part Email, the Stock rules part inventory), each with a rule and a reader rule", () => {
     expect([...API_SETTINGS_SECTIONS]).toEqual([
       "profile",
       "numbers",
@@ -225,6 +226,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "hr",
       "branding",
       "email",
+      "inventory",
     ]);
     for (const section of API_SETTINGS_SECTIONS) {
       expect(SETTINGS_SECTIONS[section], section).toBeDefined();
@@ -257,6 +259,10 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(settingsSectionProblem("expenses", { ...SUMMIT.expenses, approvalThreshold: "-1" }, SUMMIT.expenses)).toBe(
       EXPENSE_MESSAGES.approvalThreshold,
     );
+    expect(settingsSectionProblem("inventory", SUMMIT.inventory, SUMMIT.inventory)).toBeNull();
+    expect(settingsSectionProblem("inventory", { adjustmentApprovalQty: "1.2.3" }, SUMMIT.inventory)).toBe(
+      STOCK_RULES_MESSAGES.adjustmentApprovalQty,
+    );
   });
 
   it("WS1 the whole Localization and tax section is refused by its name, whatever it holds (ADR 0059, part 3b)", async () => {
@@ -288,11 +294,18 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "email",
       "expenses",
       "hr",
+      "inventory",
       "numbers",
       "payments",
       "profile",
       "sharedCosts",
     ]);
+    // Only the Owner holds settings.locations.manage, and only Flooring has core (the Stock rules part, D6).
+    for (const key of PRODUCT_ROLES.flooring)
+      expect(of("flooring", key).includes("inventory"), key).toBe(key === "owner");
+    expect(of("flooring", "owner", without("inventory.locations"))).not.toContain("inventory");
+    // Stock adjustments being off doesn't hide the section: its page is Warehouses and showrooms (D9).
+    expect(of("flooring", "owner", without("inventory.adjustments"))).toContain("inventory");
     expect(of("flooring", "accountant")).toEqual(["branding", "hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "sales")).toEqual(["branding", "hr", "numbers", "payments", "profile"]);
     expect(of("flooring", "warehouse")).toEqual(["branding", "hr", "numbers", "profile"]);
@@ -309,6 +322,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "branding",
       "expenses",
       "hr",
+      "inventory",
       "numbers",
       "payments",
       "profile",
@@ -319,6 +333,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "email",
       "expenses",
       "hr",
+      "inventory",
       "numbers",
       "profile",
       "sharedCosts",
@@ -328,6 +343,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "branding",
       "email",
       "hr",
+      "inventory",
       "numbers",
       "payments",
       "profile",
@@ -338,6 +354,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "email",
       "expenses",
       "hr",
+      "inventory",
       "numbers",
       "payments",
       "profile",
@@ -350,6 +367,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       "email",
       "expenses",
       "hr",
+      "inventory",
       "numbers",
       "payments",
       "profile",
@@ -359,6 +377,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
       permissions: new Set<PermissionKey>([
         "settings.payments.manage",
         "settings.expenses.manage",
+        "settings.locations.manage",
         "sales.invoice.view",
       ]),
       modules: ["platform", "hr"] as ModuleKey[],

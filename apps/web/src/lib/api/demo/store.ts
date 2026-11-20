@@ -5,6 +5,8 @@ import {
   hrFrequencyProblem,
   hrScheduleProblem,
   paymentControlsLoosened,
+  STOCK_RULES_OWNER_ONLY,
+  stockRulesLoosened,
   branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
@@ -865,10 +867,11 @@ export class DemoStore implements ApiClient {
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
    * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
-   * Owner-only loosening (`paymentControlsLoosened`) and Settings → HR's schedule lock and monthly
-   * rule against the demo's own records (part 5). Localization and tax is never replaced whole:
-   * after those checks it is refused with "Localization and tax saves one tab at a time." and nothing
-   * is stored or audited; screens save it per tab through `updateLocalization` (ADR 0059, part 3b, D34).
+   * and Stock rules' Owner-only loosening (`paymentControlsLoosened`, `stockRulesLoosened`) and
+   * Settings → HR's schedule lock and monthly rule against the demo's own records (part 5).
+   * Localization and tax is never replaced whole: after those checks it is refused with
+   * "Localization and tax saves one tab at a time." and nothing is stored or audited; screens save
+   * it per tab through `updateLocalization` (ADR 0059, part 3b, D34).
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
@@ -881,6 +884,10 @@ export class DemoStore implements ApiClient {
     // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
     if (next.payments && !access.isOwner && paymentControlsLoosened(next.payments, db.settings.payments)) {
       throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
+    }
+    // So is raising or clearing the adjustment approval quantity (ADR 0059, the Stock rules part, D4).
+    if (next.inventory && !access.isOwner && stockRulesLoosened(next.inventory, db.settings.inventory)) {
+      throw new DemoRuleError(STOCK_RULES_OWNER_ONLY);
     }
     // Settings → HR doesn't re-cut recorded pay, as on the API (ADR 0059, part 5, D4 and D5).
     const hrProblem = next.hr ? this.hrRecordsProblem(db, next.hr) : null;

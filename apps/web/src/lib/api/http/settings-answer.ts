@@ -62,6 +62,11 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
         // DemoStore's copy, which none of their screens reads.
         merged.email = answer.email ?? demo.email;
         break;
+      case "inventory":
+        // Only Stock rules' manager reads it (the Stock rules part, D6); anyone else keeps DemoStore's
+        // copy, which none of their screens reads.
+        merged.inventory = answer.inventory ?? demo.inventory;
+        break;
       default:
         throw unservedSection(section);
     }

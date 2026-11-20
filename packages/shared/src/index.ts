@@ -94,3 +94,4 @@ export * from "./settings/tax-settings";
 export * from "./settings/location-rules";
 export * from "./settings/hr-rules";
 export * from "./settings/branding-rules";
+export * from "./settings/stock-rules";
