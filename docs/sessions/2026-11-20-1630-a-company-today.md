@@ -34,3 +34,15 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 ## Steps
 
 1. Plan (this log).
+2. `614e14f` **Shared helper.** `dayInZone` and `isKnownTimeZone` in `packages/shared/src/calendar/zones.ts` (tests: Denver's evening against Tokyo and UTC, the exact midnight, summer time, Intl agreement for the seven meeting zones across a year, an unknown zone). The API's `dayIn` is now `dayInZone` (`apps/api/test/company-day.test.ts` unchanged and green).
+3. `5d4d635` **The web.**
+   - `apps/web/src/lib/api/company-day.ts`: `browserDay`, `CompanyDay` (`learn`, `today`) and `companyDayOf(client)`, one per api-mode client (a WeakMap keyed by its demo store, since the routes are built per client from the static `API_METHODS`).
+   - `api-methods.ts`: `today` routed; `getWorkspace` and the people list read `GET /company` through `companyAnswer`, which learns the zone. `api-rereads.test.ts` gains the kind `local` (sends nothing, asks no re-read) for `today`.
+   - `demo/store.ts`: `todayIso` removed; `today()`, `dayOf(db)`, `stampOf(db)` (the company's wall clock replaces `nowStamp`); fixtures shifted to the company's own day; the quote status and conversion read the day once per action; the platform's billing, standing and console keep the browser's day.
+   - The Sales tax tab's three placeholders use `api.today()`.
+   - `tests/unit/company-day.test.ts` (CD1 to CD5, AD1 to AD6, DD1 to DD4): fake clock at 23:30 and 00:30 in Denver, the process in Tokyo, UTC or Los Angeles. **Red first:** with the old DemoStore DD2, DD3 and DD4 fail; with `today` unrouted the six AD tests fail.
+4. `f9ef2f3` **E2E (not run yet: the ports belong to another builder).**
+   - New `tests/e2e-api/company-day.spec.ts`: the browser on Pacific/Kiritimati (UTC+14); a new expense's Date is Denver's day (`companyToday()`), and recording it succeeds.
+   - Demo: `playwright.config.ts` runs the browser in America/Denver (as the api config); `helpers.ts` gains `SUMMIT_ZONE` and `summitDay(offset)`; `dashboard`, `flows-batch3`, `hr-workspace`, `credit-notes`, `meetings` and `settings` specs compute Summit's day with it instead of the test machine's.
+   - `playwright.api.config.ts`: the Denver zone stays (the specs' own clocks); its comment no longer calls it a workaround.
+5. `4f41751` **Docs.** ADR 0051 "2026-11-20: the company's day on the web"; blueprint-delta row (2026-11-20); docs/api-contract.md's `today()` row; settings-and-permissions.md drops the known limit "The quote builder's tax preview uses the browser's day"; meetings.md's demo-only line names the company's day.
