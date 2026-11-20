@@ -98,13 +98,22 @@ flowTest.describe("the bell, the Outbox and Settings → Email on the API (api m
 
         // 3. The Owner's whole-company Outbox has the invite, redacted: the meeting is private.
         const dana = await personas.open(OWNER_EMAIL, { mfa: true });
+        // Priya, its guest, reads her invite whole; its ids find it in the Owner's view, where a redacted
+        // row keeps no source id.
+        const hers = (await readAs<OutboxRow[]>(priya.request, "/outbox")).filter(
+          (row) => row.sourceId === meeting.id && row.eventKey === "meeting.invite",
+        );
+        expect(hers.length, "Priya's invite is in her own Outbox").toBeGreaterThan(0);
+        const ids = new Set(hers.map((row) => row.id));
         const rows = await readAs<OutboxRow[]>(dana.request, "/outbox?all=true");
-        const invites = rows.filter((row) => row.sourceId === meeting.id && row.eventKey === "meeting.invite");
-        expect(invites.length, "the invite is in the whole company's Outbox").toBeGreaterThan(0);
-        for (const row of invites) expect([row.subject, row.attachments]).toEqual(["Restricted message", []]);
+        const invites = rows.filter((row) => ids.has(row.id));
+        expect(invites.length, "the invite is in the whole company's Outbox").toBe(ids.size);
+        for (const row of invites)
+          expect([row.subject, row.attachments, row.sourceId]).toEqual(["Restricted message", [], ""]);
+        expect(rows.some((row) => row.sourceId === meeting.id)).toBe(false);
         // Her own Outbox leaves another's rows out, whatever she holds.
         const own = await readAs<OutboxRow[]>(dana.request, "/outbox");
-        expect(own.some((row) => row.sourceId === meeting.id)).toBe(false);
+        expect(own.some((row) => ids.has(row.id))).toBe(false);
         await dana.page.goto("/settings/outbox");
         await expect(dana.page.getByRole("cell", { name: "Restricted message" }).first()).toBeVisible();
         await expect(dana.page.getByText(title)).toHaveCount(0);

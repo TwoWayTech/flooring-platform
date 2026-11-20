@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { EMAIL_MESSAGES, messageMoney, REDACTED_OUTBOX, type Invoice, type OutboxMessage } from "@workspace/shared";
+import {
+  EMAIL_MESSAGES,
+  messageMoney,
+  REDACTED_OUTBOX,
+  SETTINGS_SCOPE_MESSAGE,
+  type Invoice,
+  type OutboxMessage,
+  type Role,
+} from "@workspace/shared";
 import type { FileStore } from "@/lib/api/demo/file-store";
 import { DemoStore } from "@/lib/api/demo/store";
 
@@ -7,6 +15,8 @@ import { DemoStore } from "@/lib/api/demo/store";
 const DANA = "sm-usr-01";
 const PRIYA = "sm-usr-03";
 const TAMARA = "sm-usr-07";
+/** Summit's store manager, at branch scope. */
+const LUIS = "sm-usr-02";
 const ROLE_REFUSAL = "Your role does not allow this. Ask an Owner to change your security role.";
 
 const noFiles: FileStore = {
@@ -27,6 +37,8 @@ async function open(userId: string): Promise<DemoStore> {
 interface StoreDb {
   put(collection: "outboxMessages", row: OutboxMessage): OutboxMessage;
   put(collection: "invoices", row: Invoice): Invoice;
+  put(collection: "roles", row: Role): Role;
+  get(collection: "roles", id: string): Role | undefined;
 }
 
 /** Writes Outbox rows straight into one store. */
@@ -194,5 +206,17 @@ describe("DemoStore notifications and Settings → Email (ADR 0059, bell and Out
     await dana.markInvoiceSent(invoice.id);
     const [message] = (await dana.listOutbox(true)).filter((m) => m.sourceId === invoice.id);
     expect(message?.fromName).toBe(settings.branding.displayName);
+  });
+
+  it("DN6 the key below data scope all reads no whole-company Outbox and can't send again (security review round 2)", async () => {
+    const luis = await open(LUIS);
+    const db = (luis as unknown as { open(): StoreDb }).open();
+    const manager = db.get("roles", "sm-role-manager")!;
+    expect(manager.dataScope).not.toBe("all");
+    db.put("roles", { ...manager, permissions: [...manager.permissions, "settings.outbox.view"] });
+    const theirs = rows(luis).put(row({ actorUserId: PRIYA }));
+    expect((await luis.listOutbox(true)).some((m) => m.id === theirs.id)).toBe(false);
+    await expect(luis.retryOutbox(theirs.id)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
+    await expect(luis.cancelOutbox(theirs.id)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
   });
 });

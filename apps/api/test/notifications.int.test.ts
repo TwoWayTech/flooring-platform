@@ -216,11 +216,13 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       ).toBe(false);
     }
     const all = await call("get", "/outbox?all=true", viewer).expect(200);
-    const restricted = all.body.find((row: { sourceId: string }) => row.sourceId === sourceId);
+    // Found by its recipient: a redacted row keeps no source id (security review round 2).
+    const restricted = all.body.find((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`);
     expect(restricted).toMatchObject({
       subject: "Restricted message",
       bodyText: "Only the people involved can read this.",
       attachments: [],
+      sourceId: "",
     });
     // The sender snapshot the drawer shows comes back; the template values never do.
     expect(Object.keys(restricted).sort()).toEqual(
@@ -250,7 +252,36 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     );
     // Without settings.outbox.view, ?all=true is still only one's own rows.
     const plainAll = await call("get", "/outbox?all=true", plain).expect(200);
-    expect(plainAll.body.some((row: { sourceId: string }) => row.sourceId === sourceId)).toBe(false);
+    expect(plainAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(
+      false,
+    );
+
+    // The key below data scope all: no whole-company Outbox, and no Send again or Cancel (round 2).
+    const branchEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
+    const branchId = await harness.userIdOf(branchEmail);
+    const db = await harness.companyDb(company.id);
+    try {
+      const [role] = await db.db
+        .insert(roles)
+        .values({ key: `outbox-branch-${uuidv7().slice(-6)}`, name: "Branch Outbox reader", dataScope: "branch" })
+        .returning();
+      await db.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.outbox.view" });
+      await db.db.insert(userRoles).values({ userId: branchId, roleId: role.id });
+    } finally {
+      await db.close();
+    }
+    const branch = await harness.signIn(branchEmail);
+    const branchAll = await call("get", "/outbox?all=true", branch).expect(200);
+    expect(branchAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(
+      false,
+    );
+    for (const action of ["retry", "cancel"]) {
+      const refused = await call("post", `/outbox/${restricted.id}/${action}`, branch);
+      expect([refused.status, refused.body]).toEqual([
+        403,
+        { code: "forbidden", message: "Company settings cover the whole company." },
+      ]);
+    }
     // Nothing that would undo the redaction comes back: no template values, dedupe key or provider id (PR #9 review).
     for (const row of all.body as Record<string, unknown>[]) {
       expect(row).not.toHaveProperty("values");

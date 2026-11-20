@@ -251,14 +251,14 @@ export async function resetNotificationRule(ctx: ActionContext, key: Notificatio
 /**
  * The Outbox as a person may see it, through the shared `outboxSight` the API applies too (ADR
  * 0020; ADR 0059, bell and Outbox part, D2): their own rows, or all with `all` and
- * settings.outbox.view; another's restricted row is redacted without hr.employee.view, and a private
- * meeting's for everyone it does not involve.
+ * settings.outbox.view and data scope `all` (`wholeCompany`); another's restricted row is redacted
+ * without hr.employee.view, and a private meeting's for everyone it does not involve, its source id too.
  */
-export async function listOutbox(ctx: ActionContext, all: boolean): Promise<OutboxMessage[]> {
+export async function listOutbox(ctx: ActionContext, all: boolean, wholeCompany: boolean): Promise<OutboxMessage[]> {
   const reader = {
     userId: ctx.actor.id,
     email: ctx.actor.email,
-    admin: all && (await ctx.can("settings.outbox.view")),
+    admin: all && wholeCompany && (await ctx.can("settings.outbox.view")),
     hrView: await ctx.can("hr.employee.view"),
   };
   return ctx.db
@@ -276,7 +276,7 @@ export async function listOutbox(ctx: ActionContext, all: boolean): Promise<Outb
         reader,
       );
       if (sight === "hidden") return [];
-      return [sight === "redacted" ? { ...m, ...REDACTED_OUTBOX, attachments: [] } : m];
+      return [sight === "redacted" ? { ...m, ...REDACTED_OUTBOX, sourceId: "", attachments: [] } : m];
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

@@ -402,9 +402,18 @@ describe("meetings (needs the local PostgreSQL)", () => {
     status(await call("patch", `/meetings/${made.id}`, cookies.owner).send({ title: "Seen" }), 404);
     const outbox = await call("get", "/outbox?all=true", cookies.owner);
     status(outbox, 200);
-    const rowsSeen = (outbox.body as { sourceId: string; subject: string; attachments: unknown[] }[]).filter(
-      (row) => row.sourceId === made.id,
+    // A redacted row keeps no source id (security review round 2), so the rows are found by their ids.
+    const written = new Set(
+      (
+        await rows((db) =>
+          db.select({ id: outboxMessages.id }).from(outboxMessages).where(eq(outboxMessages.sourceId, made.id)),
+        )
+      ).map((row) => row.id),
     );
+    const rowsSeen = (
+      outbox.body as { id: string; sourceId: string; subject: string; attachments: unknown[] }[]
+    ).filter((row) => written.has(row.id));
+    expect(rowsSeen.every((row) => row.sourceId === "")).toBe(true);
     expect(rowsSeen.length).toBeGreaterThan(0);
     expect(rowsSeen.every((row) => row.subject === "Restricted message" && row.attachments.length === 0)).toBe(true);
     const [entry] = await rows((db) =>

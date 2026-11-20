@@ -35,8 +35,8 @@ Code: `apps/web/src/lib/api/demo/notification-actions.ts` (actions), `packages/s
 | Reset an event to its defaults | `settings.notifications.manage` | Owner | `resetNotificationRule` |
 | Open the whole Outbox | `settings.outbox.view` | Owner | `PageGate` with the item in `apps/web/src/products/settings-menu.ts`; `OutboxPage`; `listOutbox` |
 | Open your own Outbox | None | Every signed-in user | `/outbox` has no page rule, so `canOpenPage` in `apps/web/src/products/pages.ts` lets everyone open it; `listOutbox` limits the rows |
-| Send again on a failed row | `settings.outbox.view` (since 2026-11-20; one's own row was enough before) | Owner | `retryOutbox`; `POST /outbox/:id/retry`; the drawer shows the button only with the key |
-| Cancel a scheduled row | `settings.outbox.view` (since 2026-11-20; one's own row was enough before) | Owner | `cancelOutbox`; `POST /outbox/:id/cancel`; the drawer shows the button only with the key |
+| Send again on a failed row | `settings.outbox.view` and data scope `all` (since 2026-11-20; one's own row was enough before) | Owner | `retryOutbox`; `POST /outbox/:id/retry`; the drawer shows the button only with the key |
+| Cancel a scheduled row | `settings.outbox.view` and data scope `all` (since 2026-11-20; one's own row was enough before) | Owner | `cancelOutbox`; `POST /outbox/:id/cancel`; the drawer shows the button only with the key |
 | Simulate bounce | `settings.outbox.view` | Owner | `simulateBounce`; the button appears only in the whole-company view, and only in the demo |
 | Simulate reply on a meeting invite | `meetings.meeting.view` for the organiser, otherwise `settings.outbox.view` | See `docs/product-spec/meetings.md` | `simulateReply` |
 | Read the bell | None | Every signed-in user | `Notifications` in `apps/web/src/components/shell/notifications.tsx` |
@@ -46,7 +46,7 @@ Each Needs attention check has its own permission. See rule 15.
 
 ### Who can see which Outbox row
 
-Since 2026-11-20 both modes apply one rule, `outboxSight` in `packages/shared/src/notifications/outbox-sight.ts` (the API's `GET /outbox` and DemoStore's `listOutbox`). It is the demo's rule below with two changes: the address is compared without case, and a private meeting's row is redacted for every reader it does not involve, `hr.employee.view` included. The demo's code as it was:
+Since 2026-11-20 both modes apply one rule, `outboxSight` in `packages/shared/src/notifications/outbox-sight.ts` (the API's `GET /outbox` and DemoStore's `listOutbox`). It is the demo's rule below with two changes: the address is compared without case, and a private meeting's row is redacted for every reader it does not involve, `hr.employee.view` included. A redacted row also loses its `sourceId`, and the whole-company list needs data scope `all` besides `settings.outbox.view`. The demo's code as it was:
 
 ```ts
 const admin = all && (await ctx.can("settings.outbox.view"));

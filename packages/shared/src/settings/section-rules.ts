@@ -62,18 +62,36 @@ export const EMAIL_MESSAGES = {
 } as const;
 
 /**
- * What a sender name may not hold (security review round 1): what the From header could not carry as
- * typed (control characters, quotes, backslashes, angle brackets), an @, so the name can't pass for an
- * address in a mail app that shows only the name, and the Unicode line separators and text-direction
- * marks that can make a name display as something else.
+ * What a sender name may not hold (security review rounds 1 and 2), checked on its NFKC form so a
+ * look-alike such as the fullwidth `＠` counts as the character it shows: what the From header could
+ * not carry as typed (control characters, quotes, backslashes, angle brackets); an @, so the name
+ * can't pass for an address in a mail app that shows only the name; and the zero-width characters,
+ * Unicode line separators and text-direction marks that can make a name display as something else.
  */
-const SENDER_NAME_REFUSED = /[\u0000-\u001f\u007f-\u009f"\\<>@\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+const SENDER_NAME_REFUSED =
+  /[\u0000-\u001f\u007f-\u009f"\\<>@\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
 
 /**
- * A reply-to address as one plain mailbox (security review round 1): `EMAIL_TEXT` without the
- * characters that give an address a display name, a comment or a second address (`"<>,;()[]\`).
+ * A reply-to address as one plain mailbox (security review rounds 1 and 2): `EMAIL_TEXT` without
+ * control characters or the characters that give an address a display name, a comment or a second
+ * address (`"<>,;()[]\`).
  */
-const REPLY_TO_TEXT = /^[^\s@"<>,;()[\]\\]+@[^\s@"<>,;()[\]\\]+\.[^\s@"<>,;()[\]\\]+$/;
+const REPLY_TO_TEXT =
+  /^[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+@[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+\.[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+$/;
+
+/**
+ * Whether a sender name is plain: nothing `SENDER_NAME_REFUSED` names, judged on its NFKC form. The
+ * save rule and the Outbox worker both ask it, so a stored row the rule never saw can't reach the
+ * From header (security review round 2).
+ */
+export function isPlainSenderName(name: string): boolean {
+  return !SENDER_NAME_REFUSED.test(name.normalize("NFKC"));
+}
+
+/** Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`); the save rule and the Outbox worker both ask it. */
+export function isPlainReplyTo(address: string): boolean {
+  return REPLY_TO_TEXT.test(address);
+}
 
 /** What Number format says about what it refuses that no single kind's range covers. */
 export const NUMBER_MESSAGES = {
@@ -180,9 +198,9 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
  */
 export function emailSettingsProblem(email: EmailSettings): string | null {
   if (email.senderName.length > EMAIL_MAX.senderName) return EMAIL_MESSAGES.senderName;
-  if (SENDER_NAME_REFUSED.test(email.senderName)) return EMAIL_MESSAGES.senderNameCharacters;
+  if (!isPlainSenderName(email.senderName)) return EMAIL_MESSAGES.senderNameCharacters;
   if (email.replyTo.length > EMAIL_MAX.replyTo) return EMAIL_MESSAGES.replyTo;
-  if (email.replyTo !== "" && !REPLY_TO_TEXT.test(email.replyTo)) return EMAIL_MESSAGES.replyTo;
+  if (email.replyTo !== "" && !isPlainReplyTo(email.replyTo)) return EMAIL_MESSAGES.replyTo;
   if (email.signature.length > EMAIL_MAX.signature) return EMAIL_MESSAGES.signature;
   return null;
 }

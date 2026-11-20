@@ -36,8 +36,8 @@ import {
   emailAttachments,
   EXPIRES_AT_VALUE,
   failureNotice,
-  fromHeader,
   oneLine,
+  senderHeaders,
   visibleOutboxRow,
 } from "./notification-rules";
 
@@ -467,9 +467,8 @@ export class NotificationService implements OnApplicationBootstrap {
       sentId = (
         await withTimeout(
           this.email.send({
-            from: fromHeader(row.fromName, this.emailFrom),
+            ...senderHeaders(row.fromName, row.replyTo, this.emailFrom),
             to: [row.recipientEmail],
-            ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
             subject: oneLine(row.subject),
             text: row.bodyText,
             ...(files.length > 0 ? { attachments: files } : {}),

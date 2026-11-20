@@ -62,6 +62,12 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
   2. The reply-to took display-name and list syntax (`x"<a@b.c>`, `a,b@c.d`). **Fixed:** `REPLY_TO_TEXT`, one plain mailbox without `"<>,;()[]\`; R12 and ME4 cases.
   3. The API read `{ ids: [] }` as "mark all". **Fixed:** an empty list marks none, no list marks all; the notifications int case checks both.
   4. The quote email's expiry is `yyyy-MM-dd`, not the company's date format. **Not changed:** dates in message variables are `yyyy-MM-dd` in both modes (spec "Edge cases": "Dates in variables are stored as YYYY-MM-DD"); a company date format in messages is recorded as Q3.
+- **Round 2** (fresh reviewer on `0bb7424..50f3d68`): **nothing blocking**; three Low, two informational.
+  1. Look-alike `@` (U+FF20, U+FE6B), LRM/RLM/ALM and zero-width characters passed the sender name. **Fixed:** the name is judged on its NFKC form and the class adds U+061C, U+200B to U+200F and U+FEFF (`isPlainSenderName`); R12 cases.
+  2. The worker trusted the stored row (a row written before the rule, or the company display name as sender). **Fixed:** `senderHeaders` applies `isPlainSenderName` and `isPlainReplyTo` at send time; a failing name sends as the platform address alone, a failing reply-to is left out; unit cases in `notification-rules.test.ts`.
+  3. The reply-to pattern let control characters through. **Fixed:** `REPLY_TO_TEXT` excludes U+0000 to U+001F and U+007F to U+009F; R12 cases.
+  4. (Info) The whole-company Outbox and Retry/Cancel ignored data scope (CLAUDE.md rule 3). **Fixed, the safest option:** both need data scope `all` besides `settings.outbox.view`, 403 with the settings words, on the API and in DemoStore; notifications int and DN6 cases. No default role changes (only the Owner holds the key).
+  5. (Info) A redacted row still showed `sourceId`. **Fixed:** empty on a redacted row in both modes; the meetings, notifications and api-mode e2e cases now find the rows by id or recipient.
 
 ## For STATUS (the orchestrator applies these)
 

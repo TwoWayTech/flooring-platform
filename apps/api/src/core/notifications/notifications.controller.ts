@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Body,
   Controller,
   Get,
@@ -9,7 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { featureOn, type FeatureKey } from "@workspace/shared";
+import { featureOn, SETTINGS_SCOPE_MESSAGE, type FeatureKey } from "@workspace/shared";
 import { z } from "zod";
 import type { RequestAccess } from "../access/access.service";
 import { AnyCompanyMember, RequirePermission } from "../access/permission.decorators";
@@ -21,6 +22,15 @@ import { NotificationService } from "./notification.service";
 
 /** The body of POST /notifications/read: optional note ids (Zod at the boundary). */
 const MARK_READ = z.object({ ids: z.array(z.string().uuid()).max(200).optional() });
+
+/**
+ * The whole company's Outbox, and Send again and Cancel on any of its rows, need data scope `all`
+ * besides `settings.outbox.view` (CLAUDE.md rule 3; security review round 2), as Settings saves do:
+ * anyone narrower gets 403 with the settings words. Only the Owner holds the key by default.
+ */
+function requireWholeCompany(access: RequestAccess): void {
+  if (access.dataScope !== "all") throw new ForbiddenException({ code: "forbidden", message: SETTINGS_SCOPE_MESSAGE });
+}
 
 /** A switched-off feature is hidden from the API too (CLAUDE.md rule 13): its routes answer 404. */
 function requireFeature(key: FeatureKey): void {
@@ -82,7 +92,7 @@ export class OutboxController {
     return this.notifications.listOutbox(tenant, {
       userId: access.userId,
       email: session.user.email,
-      admin: all === "true" && access.permissions.has("settings.outbox.view"),
+      admin: all === "true" && access.permissions.has("settings.outbox.view") && access.dataScope === "all",
       hrView: access.permissions.has("hr.employee.view"),
     });
   }
@@ -90,8 +100,13 @@ export class OutboxController {
   /** POST /outbox/:id/retry: sends a failed message again (spec `retryOutbox`). */
   @Post(":id/retry")
   @RequirePermission("settings.outbox.view")
-  async retry(@CurrentTenant() tenant: TenantContext, @Param("id", ParseUUIDPipe) id: string) {
+  async retry(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
     requireFeature("settings.outbox");
+    requireWholeCompany(access);
     await this.notifications.retry(tenant, id);
     return { ok: true };
   }
@@ -99,8 +114,13 @@ export class OutboxController {
   /** POST /outbox/:id/cancel: cancels a scheduled message (spec `cancelOutbox`). */
   @Post(":id/cancel")
   @RequirePermission("settings.outbox.view")
-  async cancel(@CurrentTenant() tenant: TenantContext, @Param("id", ParseUUIDPipe) id: string) {
+  async cancel(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
     requireFeature("settings.outbox");
+    requireWholeCompany(access);
     await this.notifications.cancel(tenant, id);
     return { ok: true };
   }
