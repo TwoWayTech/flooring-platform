@@ -63,8 +63,6 @@ const RUNTIME_MISMATCHES: Readonly<Record<string, string>> = {
   "employee /settings: refused, page-gates.json says open": SETTINGS_HOME,
   "installer /settings: refused, page-gates.json says open": SETTINGS_HOME,
   "purchasing /settings: refused, page-gates.json says open": SETTINGS_HOME,
-  "sales /: could not load ([DecimalError] Invalid argument: undefined), page-gates.json says open":
-    "Finding F-s: the dashboard's data (use-dashboard-data.ts) runs monthlyPnl over invoices whose cost the API strips for Sales (CLAUDE.md rule 5), and dec(undefined) throws, so the whole dashboard fails. The same kind of defect as the flows' B1; cost and margin code, so followed up, not fixed.",
   "sales /settings: refused, page-gates.json says open": SETTINGS_HOME,
   "warehouse /settings: refused, page-gates.json says open": SETTINGS_HOME,
 };
