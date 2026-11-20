@@ -566,22 +566,36 @@ function demoCompanyNames(): { slugs: ReadonlySet<string>; emails: ReadonlySet<s
 }
 
 /**
- * Throws unless a database URL is on this machine. The URL itself is never put in the message,
- * because it holds a password. A `host` or `hostaddr` option would override the URL's host, so
- * either one is refused too.
- */
-/**
  * The only query option a test database URL may carry. postgres.js reads `host`, `hostaddr` and
  * `port` from the query over the URL's own, and parses `#` differently from WHATWG URL, so any
  * other option or a `#` could send a guarded helper elsewhere (security review, 2026-11-20).
  */
 const ALLOWED_URL_OPTIONS: ReadonlySet<string> = new Set(["sslmode"]);
 
-/** Whether a URL carries a fragment or a query option the guards don't allow. */
+/** Control characters, spaces and backslashes: WHATWG URL drops or rewrites them, postgres.js doesn't. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point here
+const UNSAFE_URL_CHARACTERS = /[\u0000-\u0020\u007f\\]/;
+
+/**
+ * Whether a database URL could make postgres.js connect somewhere other than what WHATWG URL
+ * reads: a fragment, a query option other than `sslmode`, a control character, space or backslash
+ * (which WHATWG drops or rewrites before parsing and postgres.js keeps), or a scheme not followed
+ * at once by `//` (postgres.js takes the authority after the first `://` it finds). The guards
+ * refuse such a URL rather than reason about it (security reviews, 2026-11-20).
+ */
 export function redirectableUrl(url: string, parsed: URL): boolean {
-  return url.includes("#") || [...parsed.searchParams.keys()].some((key) => !ALLOWED_URL_OPTIONS.has(key));
+  return (
+    url.includes("#") ||
+    UNSAFE_URL_CHARACTERS.test(url) ||
+    !url.startsWith(`${parsed.protocol}//`) ||
+    [...parsed.searchParams.keys()].some((key) => !ALLOWED_URL_OPTIONS.has(key))
+  );
 }
 
+/**
+ * Throws unless a database URL is on this machine and can't be redirected (`redirectableUrl`).
+ * The URL itself is never put in the message, because it holds a password.
+ */
 function refuseRemoteDatabase(helper: string, label: string, url: string): void {
   let parsed: URL;
   try {

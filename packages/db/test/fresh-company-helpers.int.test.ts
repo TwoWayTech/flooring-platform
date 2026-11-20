@@ -223,7 +223,20 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
       ],
       [
         "provision with a fragment",
-        () => provisionTestCompany({ ...server, adminUrl: `${server.adminUrl}#@db.example.com:5432/x` }, company),
+        () =>
+          provisionTestCompany(
+            { ...server, adminUrl: "postgres://postgres:postgres@localhost:5432#@db.example.com:5432/x" },
+            company,
+          ),
+        /this machine.*adminUrl/,
+      ],
+      [
+        "provision with a tab before the authority",
+        () =>
+          provisionTestCompany(
+            { ...server, adminUrl: "postgres:\t//postgres:postgres@localhost:5432/x://db.example.com:5432/postgres" },
+            company,
+          ),
         /this machine.*adminUrl/,
       ],
       ["invite summit", () => inviteTestOwner(control.url, "summit"), /demo company summit/],
@@ -331,18 +344,24 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
       deletedAt: age,
     });
     await admin.db.execute(sql.raw(`create database "${companyDatabaseName(stranger)}"`));
-    const old = await provision("h");
-    await handle.db.update(tenants).set({ createdAt: age }).where(eq(tenants.id, old.tenantId));
-    expect(await databaseExists(companyDatabaseName(orphan.slug))).toBe(true);
+    try {
+      const old = await provision("h");
+      await handle.db.update(tenants).set({ createdAt: age }).where(eq(tenants.id, old.tenantId));
+      expect(await databaseExists(companyDatabaseName(orphan.slug))).toBe(true);
 
-    await expect(sweepTestCompanies(server, 2 * HOUR)).rejects.toThrow(
-      new RegExp(`^sweepTestCompanies could not finish:\\n${ownerless.slug}: `),
-    );
-    expect(await deletedStamps(old.tenantId), "retired despite the failure").toEqual({ tenant: true, database: true });
-    expect(await databaseExists(companyDatabaseName(old.slug))).toBe(false);
-    expect(await databaseExists(companyDatabaseName(orphan.slug)), "the leftover database is dropped").toBe(false);
-    expect(await databaseExists(companyDatabaseName(stranger)), "a stranger's database is left alone").toBe(true);
-    await admin.db.execute(sql.raw(`drop database "${companyDatabaseName(stranger)}"`));
-    await handle.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.slug, ownerless.slug));
+      await expect(sweepTestCompanies(server, 2 * HOUR)).rejects.toThrow(
+        new RegExp(`^sweepTestCompanies could not finish:\\n${ownerless.slug}: `),
+      );
+      expect(await deletedStamps(old.tenantId), "retired despite the failure").toEqual({
+        tenant: true,
+        database: true,
+      });
+      expect(await databaseExists(companyDatabaseName(old.slug))).toBe(false);
+      expect(await databaseExists(companyDatabaseName(orphan.slug)), "the leftover database is dropped").toBe(false);
+      expect(await databaseExists(companyDatabaseName(stranger)), "a stranger's database is left alone").toBe(true);
+    } finally {
+      await admin.db.execute(sql.raw(`drop database if exists "${companyDatabaseName(stranger)}"`));
+      await handle.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.slug, ownerless.slug));
+    }
   }, 60_000);
 });
