@@ -2,7 +2,7 @@ import { PRODUCT_HEADER, type AccountingSettings, type PaymentMethod, type Produ
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import type { AuthHarness } from "../auth-harness";
-import { decimalProblems } from "./json-walk";
+import { decimalProblems, reusedNamePaths } from "./json-walk";
 import type { TrialBalance } from "./ledger-read";
 import { NO_HOURS } from "./timesheet-week";
 
@@ -51,6 +51,8 @@ export class MoneyApi {
   answered = 0;
   /** Each decimal problem seen, as `VERB /path: field problem at $.path`. */
   readonly decimalIssues: string[] = [];
+  /** The NAME_REUSED_AT places the answers held, so an entry no answer carries shows as stale. */
+  readonly reusedSeen = new Set<string>();
 
   constructor(private readonly harness: AuthHarness) {}
 
@@ -65,7 +67,9 @@ export class MoneyApi {
     const response = await pending;
     const answer: Answer = { call, status: response.status, body: response.body as unknown };
     this.answered += 1;
-    for (const problem of decimalProblems(answer.body)) {
+    const route = `${call.verb.toUpperCase()} ${call.path}`;
+    for (const place of reusedNamePaths(answer.body, route)) this.reusedSeen.add(place);
+    for (const problem of decimalProblems(answer.body, route)) {
       this.decimalIssues.push(
         `${call.verb.toUpperCase()} ${call.path}: ${problem.field} ${problem.problem} at ${problem.path}`,
       );

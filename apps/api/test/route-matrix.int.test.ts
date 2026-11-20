@@ -696,11 +696,11 @@ describe("route matrix: the guard chain against the shared engine (whole-product
           for (const leak of leaks(response.body, held, route.sensitiveKeys)) {
             problems.push(`${where}: ${leak.field} sent at ${leak.path}`);
           }
-          for (const found of decimalProblems(response.body)) {
+          for (const found of decimalProblems(response.body, route.name)) {
             const key = `${route.name}: ${found.field} ${found.problem}`;
             if (!decimals.has(key)) decimals.set(key, `${key} (${found.path})`);
           }
-          for (const path of reusedNamePaths(response.body)) reusedSeen.add(path);
+          for (const place of reusedNamePaths(response.body, route.name)) reusedSeen.add(place);
           if (role === "owner") for (const name of strippableNames(response.body)) shownToOwner.add(name);
         }
       }
@@ -719,7 +719,8 @@ describe("route matrix: the guard chain against the shared engine (whole-product
     it("MI-DEC: every body PM-7 read sends money, quantities and rates as decimal strings", () => {
       expect(bodiesRead).toBeGreaterThan(0);
       expect([...decimals.values()].sort(byCodeUnit)).toEqual([]);
-      const stale = Object.keys(NAME_REUSED_AT).filter((path) => !reusedSeen.has(path));
+      // PM-7 reads GET routes only; the entries for write answers are met by the fresh company (FS).
+      const stale = Object.keys(NAME_REUSED_AT).filter((place) => place.startsWith("GET ") && !reusedSeen.has(place));
       expect(stale, "no body holds it any more: remove it from NAME_REUSED_AT").toEqual([]);
     });
   });

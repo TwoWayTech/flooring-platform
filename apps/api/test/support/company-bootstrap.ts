@@ -20,8 +20,11 @@ export const CARPET = { price: "3.0000", cost: "1.4000", widthFt: "12" } as cons
 /** The Colorado rate the one tax rule carries (material taxable, labor and services not). */
 export const TAX_RATE_PCT = "8.81";
 
-/** Summit's settings as the shared fixtures hold them, the data the seed writes. */
-const SUMMIT_SETTINGS = (
+/**
+ * Summit's settings as the shared fixtures hold them, the data the seed writes, and the values Reset to
+ * default reads (ADR 0059 D7).
+ */
+export const SUMMIT_SETTINGS = (
   JSON.parse(
     readFileSync(createRequire(import.meta.url).resolve("@workspace/shared/fixtures/summit.json"), "utf8"),
   ) as { settings: CompanySettings }
@@ -52,6 +55,22 @@ export interface BootstrappedCompany {
 }
 
 /**
+ * Summit's Localization (packages/shared fixtures) as a fresh company's settings row: without its
+ * tax tables (those are rows of their own) and in the given time zone, the company's own. It stands
+ * in for settings at provisioning (G2): with no row, no Localization tab can be saved on its own.
+ */
+export function localizationRow(zone: string): { group: SettingsGroup; value: unknown } {
+  const { region, tax } = SUMMIT_SETTINGS.localization;
+  const taxWithoutTables = Object.fromEntries(
+    Object.entries(tax).filter(([key]) => key !== "rules" && key !== "jurisdictions"),
+  );
+  return {
+    group: "localization",
+    value: { ...SUMMIT_SETTINGS.localization, region: { ...region, timeZone: zone }, tax: taxWithoutTables },
+  };
+}
+
+/**
  * Summit's settings groups (packages/shared fixtures, the data the seed writes), as a fresh company's
  * settings rows: localization without its tax tables (those are rows of their own) and in the
  * provisioned company's time zone, payments with the money tests' approval threshold. Branding is
@@ -63,12 +82,7 @@ function summitSettings(): { group: SettingsGroup; value: unknown }[] {
   for (const group of Object.keys(fixture) as (keyof CompanySettings)[]) {
     if (group === "branding") continue;
     if (group === "localization") {
-      const { region, tax } = fixture.localization;
-      const taxWithoutTables = Object.fromEntries(
-        Object.entries(tax).filter(([key]) => key !== "rules" && key !== "jurisdictions"),
-      );
-      const value = { ...fixture.localization, region: { ...region, timeZone: BOOTSTRAP_ZONE }, tax: taxWithoutTables };
-      rows.push({ group, value });
+      rows.push(localizationRow(BOOTSTRAP_ZONE));
     } else if (group === "payments") {
       rows.push({ group, value: { ...fixture.payments, approvalThreshold: APPROVAL_THRESHOLD } });
     } else {

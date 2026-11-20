@@ -191,18 +191,24 @@ export const INTEGER_KEYS: Reviewed = {
 };
 
 /**
- * Places where a MONEY_KEYS name holds something that is not money, by JSON path, each with what it
- * holds there. The name stays in MONEY_KEYS for every other place, so a new reuse fails MI-DEC
- * until it is reviewed here.
+ * Places where a MONEY_KEYS name holds something that is not money, as `VERB /path $.json.path`,
+ * each with what it holds there. The name stays in MONEY_KEYS for every other route and place, so a
+ * new reuse fails MI-DEC until it is reviewed here.
  */
 export const NAME_REUSED_AT: Reviewed = {
-  "$.localization.currency.base":
-    "GET /settings: the company's base currency code (ISO 4217, such as USD), not an amount.",
+  "GET /settings $.localization.currency.base":
+    "The company's base currency code (ISO 4217, such as USD), not an amount.",
+  "POST /imports $.batch.mapping.cost": "The import's column mapping: the header the Cost field was read from.",
+  "POST /imports $.batch.mapping.price": "The import's column mapping: the header the Price field was read from.",
+  "PUT /settings/localization/currency $.base":
+    "The saved Currency tab's base currency code (ISO 4217), not an amount.",
 };
 
-/** The NAME_REUSED_AT paths a body holds, so an entry no answer carries any more shows as stale. */
-export function reusedNamePaths(body: unknown): string[] {
-  return [...jsonNodes(body)].map((node) => node.path).filter((path) => own(NAME_REUSED_AT, path) !== undefined);
+/** The NAME_REUSED_AT entries a route's body holds, so an entry no answer carries any more shows as stale. */
+export function reusedNamePaths(body: unknown, route: string): string[] {
+  return [...jsonNodes(body)]
+    .map((node) => `${route} ${node.path}`)
+    .filter((place) => own(NAME_REUSED_AT, place) !== undefined);
 }
 
 /** Why a JSON number that is not a whole count is listed: outside rule 6, or a rule-6 finding to follow up. */
@@ -245,7 +251,7 @@ export interface DecimalProblem {
  * OTHER_NUMBER_KEYS, or a MONEY_KEYS field that is not a decimal string or null. One entry per
  * field and problem, at its first place.
  */
-export function decimalProblems(body: unknown): DecimalProblem[] {
+export function decimalProblems(body: unknown, route: string): DecimalProblem[] {
   const found = new Map<string, DecimalProblem>();
   const note = (node: JsonNode, problem: string) => {
     const field = node.field ?? "(root)";
@@ -262,7 +268,7 @@ export function decimalProblems(body: unknown): DecimalProblem[] {
       }
     } else if (
       MONEY_KEYS.has(field) &&
-      own(NAME_REUSED_AT, node.path) === undefined &&
+      own(NAME_REUSED_AT, `${route} ${node.path}`) === undefined &&
       node.value !== null &&
       typeof node.value !== "object"
     ) {
