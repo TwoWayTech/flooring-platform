@@ -132,7 +132,7 @@ describe("the trial balance on the API and in the demo", () => {
       const options = await store.reportOptions();
       expect(options.reports).not.toContain("trial-balance");
       expect(options.exports).not.toContain("trial-balance");
-      await expect(store.trialBalance(null)).rejects.toThrow("The demo keeps no journal");
+      await expect((store as ApiClient).trialBalance(null)).rejects.toThrow("The demo keeps no journal");
     }
   });
 });

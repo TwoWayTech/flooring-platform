@@ -16,6 +16,16 @@ test.describe("reports hub", () => {
     expect((await pdf).suggestedFilename()).toMatch(/^pnl-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 
+  test("the demo, which keeps no journal, never offers the Trial balance (ADR 0055 Trial balance)", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports?report=trial-balance");
+    const nav = page.getByRole("navigation", { name: "Reports" }).getByRole("button");
+    await expect(nav).toHaveText(["Business report", "Profit and loss", "Sales by category", "Payments received"]);
+    // The address asks for a report the person may not open, so the Business report shows (rule 1).
+    await expect(nav.filter({ hasText: "Business report" })).toHaveAttribute("aria-current", "page");
+  });
+
   test("sales tax report reads the jurisdiction each invoice stored", async ({ page }) => {
     skipIfFeatureOff("reports.tax-jurisdiction");
     await signInAs(page, SUMMIT_OWNER, "/reports?report=tax");
