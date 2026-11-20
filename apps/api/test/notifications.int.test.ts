@@ -307,25 +307,78 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     }
   });
 
-  it("answers a retry of a message that doesn't exist with words for the person (finding F-i)", async () => {
-    const email = await harness.addUser({ companyIds: [company.id], roles: [] });
+  /** A signed-in person whose own role holds settings.outbox.view with data scope all, in that company. */
+  async function outboxKeeper(companyId: string): Promise<string> {
+    const email = await harness.addUser({ companyIds: [companyId], roles: [] });
     const userId = await harness.userIdOf(email);
-    const handle = await harness.companyDb(company.id);
+    const handle = await harness.companyDb(companyId);
     try {
       const [role] = await handle.db
         .insert(roles)
-        .values({ key: `outbox-gone-${uuidv7().slice(-6)}`, name: "Outbox keeper", dataScope: "all" })
+        .values({ key: `outbox-keeper-${uuidv7().slice(-6)}`, name: "Outbox keeper", dataScope: "all" })
         .returning();
       await handle.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.outbox.view" });
       await handle.db.insert(userRoles).values({ userId, roleId: role.id });
     } finally {
       await handle.close();
     }
-    const missing = await call("post", `/outbox/${uuidv7()}/retry`, await harness.signIn(email)).send({});
+    return harness.signIn(email);
+  }
+
+  it("answers a retry of a message that doesn't exist with words for the person (finding F-i)", async () => {
+    const missing = await call("post", `/outbox/${uuidv7()}/retry`, await outboxKeeper(company.id)).send({});
     expect([missing.status, missing.body]).toEqual([
       404,
       { code: "not_found", message: "This message no longer exists." },
     ]);
+  });
+
+  it("retries a failed message and cancels a scheduled one over HTTP, each once, and never another company's (F-q)", async () => {
+    const keeper = await outboxKeeper(company.id);
+    const failedSource = uuidv7();
+    await service().notify(tenant, null, quoteSent(failedSource, "not-an-address"));
+    const [failed] = await rowsOf(failedSource);
+    expect(failed.status).toBe("failed");
+    const heldSource = uuidv7();
+    await service().notify(
+      tenant,
+      null,
+      quoteSent(heldSource, "held@example.test", { scheduledFor: new Date(Date.now() + 3_600_000) }),
+    );
+    const [held] = await rowsOf(heldSource);
+    expect(held.status).toBe("scheduled");
+    // Another company's Outbox keeper reaches neither row, and neither row changes.
+    const other = await harness.provisionCompany("notecoother");
+    const outsider = await outboxKeeper(other.id);
+    const foreignRetry = await call("post", `/outbox/${failed.id}/retry`, outsider);
+    expect([foreignRetry.status, foreignRetry.body.message]).toEqual([404, "This message no longer exists."]);
+    const foreignCancel = await call("post", `/outbox/${held.id}/cancel`, outsider);
+    expect([foreignCancel.status, foreignCancel.body.code]).toEqual([409, "not_scheduled"]);
+    expect((await rowsOf(failedSource))[0].status).toBe("failed");
+    expect((await rowsOf(heldSource))[0].status).toBe("scheduled");
+    // The address is fixed, so the retry sends; a second retry finds nothing waiting.
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db
+        .update(outboxMessages)
+        .set({ recipientEmail: "fixed@example.test" })
+        .where(eq(outboxMessages.id, failed.id));
+    } finally {
+      await handle.close();
+    }
+    const retried = await call("post", `/outbox/${failed.id}/retry`, keeper);
+    expect([retried.status, retried.body]).toEqual([201, { ok: true }]);
+    await eventually(
+      async () => ((await rowsOf(failedSource))[0]?.status === "sent" ? true : undefined),
+      "the retried send",
+    );
+    const again = await call("post", `/outbox/${failed.id}/retry`, keeper);
+    expect([again.status, again.body.code]).toEqual([409, "not_failed"]);
+    const cancelled = await call("post", `/outbox/${held.id}/cancel`, keeper);
+    expect([cancelled.status, cancelled.body]).toEqual([201, { ok: true }]);
+    expect((await rowsOf(heldSource))[0].status).toBe("cancelled");
+    const twice = await call("post", `/outbox/${held.id}/cancel`, keeper);
+    expect([twice.status, twice.body.code]).toEqual([409, "not_scheduled"]);
   });
 
   it("refuses retry and cancel without settings.outbox.view", async () => {

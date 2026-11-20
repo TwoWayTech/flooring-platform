@@ -144,6 +144,76 @@ describe("purchasing part 1 (P11, needs the local PostgreSQL)", () => {
     await harness.stop();
   });
 
+  it("edits a contact in place, moving the primary, and only within its own supplier and company (F-q)", async () => {
+    const { supplier, contact } = await supplierWithContact(cookies.purchasing, "Ridgeway Stone");
+    const other = await supplierWithContact(cookies.purchasing, "Lakeside Tile");
+    const edit = {
+      supplierId: supplier,
+      name: "Sonny Reyes",
+      role: "account_manager",
+      mobile: "(555) 010-3000",
+      officePhone: "",
+      email: "sonny.reyes@example.test",
+      whatsapp: true,
+      preferredMethod: "whatsapp",
+      notes: "Prefers mornings",
+      isPrimary: true,
+    };
+    const second = await call("post", "/supplier-contacts", cookies.purchasing)
+      .send({ ...edit, name: "Ada Accounts", role: "accounts_receivable", isPrimary: false })
+      .expect(201);
+    const saved = await call("put", `/supplier-contacts/${second.body.id}`, cookies.purchasing).send(edit).expect(200);
+    expect(saved.body).toMatchObject({
+      id: second.body.id,
+      supplierId: supplier,
+      name: "Sonny Reyes",
+      role: "account_manager",
+      mobile: "(555) 010-3000",
+      whatsapp: true,
+      preferredMethod: "whatsapp",
+      notes: "Prefers mornings",
+      isPrimary: true,
+    });
+    const contacts = (await call("get", "/supplier-contacts", cookies.purchasing).expect(200)).body as {
+      id: string;
+      supplierId: string;
+      isPrimary: boolean;
+    }[];
+    expect(contacts.filter((c) => c.supplierId === supplier && c.isPrimary).map((c) => c.id)).toEqual([second.body.id]);
+    expect(contacts.find((c) => c.id === contact)?.isPrimary).toBe(false);
+    expect(contacts.find((c) => c.id === other.contact)?.isPrimary).toBe(true);
+    // A contact can't be moved to another supplier, nor reached from another company or without the key.
+    const moved = await call("put", `/supplier-contacts/${second.body.id}`, cookies.purchasing).send({
+      ...edit,
+      supplierId: other.supplier,
+    });
+    expect([moved.status, moved.body.message]).toEqual([404, "This contact no longer exists."]);
+    const elsewhere = await call("put", `/supplier-contacts/${second.body.id}`, cookies.otherPurchasing).send(edit);
+    expect([elsewhere.status, elsewhere.body.message]).toEqual([404, "This supplier no longer exists."]);
+    const theirs = await supplierWithContact(cookies.otherPurchasing, "Far Range Supply");
+    const viaTheirs = await call("put", `/supplier-contacts/${second.body.id}`, cookies.otherPurchasing).send({
+      ...edit,
+      supplierId: theirs.supplier,
+    });
+    expect([viaTheirs.status, viaTheirs.body.message]).toEqual([404, "This contact no longer exists."]);
+    const noKey = await call("put", `/supplier-contacts/${second.body.id}`, cookies.sales).send(edit);
+    expect([noKey.status, noKey.body.code]).toEqual([403, "forbidden"]);
+    const unchanged = (await call("get", "/supplier-contacts", cookies.purchasing).expect(200)).body.find(
+      (c: { id: string }) => c.id === second.body.id,
+    );
+    expect(unchanged).toMatchObject({ supplierId: supplier, name: "Sonny Reyes", isPrimary: true });
+    const handle = await harness.companyDb(company.id);
+    try {
+      const rows = await handle.db
+        .select({ action: auditLog.action, targetId: auditLog.targetId })
+        .from(auditLog)
+        .where(eq(auditLog.targetId, second.body.id));
+      expect(rows.map((row) => row.action).sort()).toEqual(["Added supplier contact", "Edited supplier contact"]);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("keeps one primary contact per supplier, and passes it on when the primary leaves", async () => {
     const { supplier, contact } = await supplierWithContact(cookies.purchasing, "Northline Mills");
     const first = (await call("get", "/supplier-contacts", cookies.purchasing)).body.find(

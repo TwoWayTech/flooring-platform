@@ -62,7 +62,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `purchasing.suppliers` | Done | Suppliers and contacts (8 routes) | `POST /suppliers/:id/status` and `PUT /supplier-contacts/:id` have no integration test (F-q) | F2, FA-3 |
+| `purchasing.suppliers` | Done | Suppliers and contacts (8 routes) | Every route has an integration test (F-q fixed 2026-11-20) | F2, FA-3 |
 | `purchasing.orders` | Done | Orders, receipts, bills, supplier payments (12 routes) | — | F2, MI-1, FS-6 |
 | `finance.payments-queue` | Done | Reads payments and supplier payments | — | `expenses.spec.ts` |
 | `finance.expenses` | Done | Expenses, recurring, approval, void, files (10 routes) | Settings → Expenses' Reset to default reads DemoStore | F7, MI-1, FA-6 |

@@ -29,7 +29,7 @@ The owner's step 3 (STATUS "Next three tasks"): compare the specs, the feature r
 
 ### Coverage
 
-From `docs/coverage.md`. The mixed pages (G5) are the dashboard (17 DemoStore lists), Sales, Inventory and the roll page, the invoice page, the Outbox and the settings pages whose Reset to default still reads DemoStore. Routes no screen calls (18): bonuses and contractor payments, clock entries, the period close and accounting settings, `POST /time-off-adjustments`, and the session and public routes the sign-in code calls directly. Routes no API test names (4): the outbox pair (tested through a computed path), `POST /payments/:id/files` and `PUT /supplier-contacts/:id` (F-q); `POST /roles/:id/reset` is named since 2026-11-20 only by F-h's switch test. Pages on the API with no api-mode e2e: 16, among them `/hr/employees`, `/settings/roles` and `/account/security`.
+From `docs/coverage.md`. The mixed pages (G5) are the dashboard (17 DemoStore lists), Sales, Inventory and the roll page, the invoice page, the Outbox and the settings pages whose Reset to default still reads DemoStore. Routes no screen calls (18): bonuses and contractor payments, clock entries, the period close and accounting settings, `POST /time-off-adjustments`, and the session and public routes the sign-in code calls directly. Routes no API test names: none since 2026-11-20 (F-q fixed: the outbox pair, `POST /payments/:id/files`, `PUT /supplier-contacts/:id` and `POST /roles/:id/reset` each have an integration test). Pages on the API with no api-mode e2e: 16, among them `/hr/employees`, `/settings/roles` and `/account/security`.
 
 ### Money
 
@@ -105,7 +105,7 @@ Every finding, with evidence, is in the session log's "Findings"; the ones to fi
 - **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons); F-o (float money in the UI); "payroll paid" posting (Q3).
 - **T3, real-company readiness:** G1 to G4, G7, then G6.
 - **T4, robustness and operations:** F-g (no CI on main since 2026-11-14), F-c (retirement and migrations), F-b (Turbo), F-r (dates).
-- **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates), F-q (five routes without API tests), F-k (JSON-number quantities).
+- **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates; fixed 2026-11-20, P9), F-q (five routes without API tests; fixed 2026-11-20, P10), F-k (JSON-number quantities).
 
 ## Owner questions
 

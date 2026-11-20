@@ -396,6 +396,74 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     expect((await call("get", "/support-grants", owner.cookie)).body[0].status).toBe("revoked");
   });
 
+  it("resets a changed default role to its shipped keys, audited; never the Owner role or a custom one (F-q)", async () => {
+    await stepUp(owner);
+    const salesId = await roleId("sales");
+    const shipped = async () =>
+      ((await call("get", "/roles", owner.cookie).expect(200)).body as { id: string; permissions: string[] }[])
+        .find((role) => role.id === salesId)!
+        .permissions.slice()
+        .sort();
+    const before = await shipped();
+    const removed = before[0]!;
+    const handle = await harness.companyDb(company.id);
+    let custom = "";
+    let audited = 0;
+    try {
+      await handle.db
+        .delete(rolePermissions)
+        .where(and(eq(rolePermissions.roleId, salesId), eq(rolePermissions.permissionKey, removed)));
+      const [row] = await handle.db
+        .insert(roleTable)
+        .values({ key: "reset-custom", name: "Reset custom", dataScope: "own" as const })
+        .returning({ id: roleTable.id });
+      custom = row.id;
+      const [admin] = await handle.db
+        .insert(roleTable)
+        .values({ key: "reset-admin", name: "Reset admin", dataScope: "all" as const })
+        .returning({ id: roleTable.id });
+      await handle.db.insert(rolePermissions).values(
+        (["settings.roles.view", "settings.roles.manage"] as const).map((permissionKey) => ({
+          roleId: admin.id,
+          permissionKey,
+        })),
+      );
+      audited = (await handle.db.select().from(auditLog).where(eq(auditLog.targetId, salesId))).length;
+    } finally {
+      await handle.close();
+    }
+    expect(await shipped()).not.toContain(removed);
+    // A role admin who doesn't hold Sales's keys: first the step-up, then no escalation (rule 4).
+    const roleAdmin = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["reset-admin"] }));
+    const noStepUp = await call("post", `/roles/${salesId}/reset`, roleAdmin.cookie);
+    expect([noStepUp.status, noStepUp.body.code]).toEqual([403, "step_up_required"]);
+    await stepUp(roleAdmin);
+    const escalation = await call("post", `/roles/${salesId}/reset`, roleAdmin.cookie);
+    expect(escalation.status).toBe(403);
+    expect(escalation.body.code).toMatch(/^role_/);
+    expect(await shipped()).not.toContain(removed);
+    await stepUp(owner);
+    const reset = await call("post", `/roles/${salesId}/reset`, owner.cookie).expect(201);
+    expect([...(reset.body.permissions as string[])].sort()).toEqual(before);
+    expect(await shipped()).toEqual(before);
+    const after = await harness.companyDb(company.id);
+    try {
+      const rows = await after.db.select().from(auditLog).where(eq(auditLog.targetId, salesId));
+      expect(rows).toHaveLength(audited + 1);
+      const ownerId = await harness.userIdOf(owner.email);
+      expect(rows.filter((row) => row.action === "Changed role" && row.actorUserId === ownerId)).toHaveLength(1);
+    } finally {
+      await after.close();
+    }
+    const ownerRole = await call("post", `/roles/${await roleId("owner")}/reset`, owner.cookie);
+    expect([ownerRole.status, ownerRole.body.code]).toEqual([403, "owner_locked"]);
+    const notDefault = await call("post", `/roles/${custom}/reset`, owner.cookie);
+    expect([notDefault.status, notDefault.body.code]).toEqual([409, "not_default"]);
+    const sales = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
+    const refused = await call("post", `/roles/${salesId}/reset`, sales);
+    expect([refused.status, refused.body.code]).toEqual([403, "forbidden"]);
+  });
+
   it("records the changes in the audit log the Owner can read", async () => {
     const entries = await call("get", "/audit", owner.cookie).expect(200);
     const actions = entries.body.map((entry: { action: string }) => entry.action);
