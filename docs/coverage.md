@@ -84,7 +84,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `units.square-feet` | demo | — | 0 | 0 | 0 | 0 | 0 |
-| `inventory.products` | demo | `/inventory` (mixed) | 2 | 1 | 6 | 9 | 6 |
+| `inventory.products` | demo | `/inventory` (mixed) | 2 | 1 | 7 | 9 | 6 |
 | `inventory.rolls` | demo | `/inventory` (mixed), `/inventory/rolls/*` (mixed) | 3 | 1 | 6 | 12 | 5 |
 | `inventory.transfers` | demo | `/inventory` (mixed) | 3 | 1 | 2 | 9 | 5 |
 | `inventory.adjustments` | removed | `/inventory` (mixed) | 0 | 2 | 0 | 9 | 5 |
@@ -328,7 +328,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `GET /platform/me` | session | — | — | — | — | — | `platform.int.test.ts` | — |
 | `GET /platform/plans` | session | — | — | — | — | `/admin/plans` | `platform-audit.int.test.ts`, `platform-plans.int.test.ts` | — |
 | `GET /platform/support-grants` | session | — | — | — | — | `/admin/companies/*/support` | `platform-audit.int.test.ts`, `platform-support.int.test.ts`, `platform.int.test.ts`, `users.int.test.ts` | — |
-| `GET /products` | company | `inventory.product.view` | core | — | `inventory.products gating` | `/finance`, `/inventory`, `/inventory/rolls/*`, `/purchasing`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `fresh-setup.int.test.ts`, `imports.int.test.ts`, `inventory.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `sales.int.test.ts` | `company.spec.ts`, `f2-purchasing-receipt-to-payment.spec.ts`, `sales.spec.ts` |
+| `GET /products` | company | `inventory.product.view` | core | — | `inventory.products gating` | `/finance`, `/inventory`, `/inventory/rolls/*`, `/purchasing`, `/sales/invoices/*`, `/sales/quotes/*`, `/sales/quotes/new` | `fresh-setup.int.test.ts`, `imports.int.test.ts`, `inventory.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `sales.int.test.ts`, `sensitive-fields.int.test.ts` | `company.spec.ts`, `f2-purchasing-receipt-to-payment.spec.ts`, `sales.spec.ts` |
 | `GET /pto-requests` | company | `hr.pto.view` | hr | — | `hr.time-off gating` | `/`, `/hr`, `/hr/employees`, `/hr/time-off`, `/hr/timesheets`, `/my/time-off`, `/my/timesheet`, `/settings/hr` | `hr.int.test.ts`, `payroll.int.test.ts` | `f4-time-off-balance-and-pay.spec.ts` |
 | `GET /public/branding` | public | — | — | — | — | — | `branding.int.test.ts`, `settings-branding.int.test.ts` | — |
 | `GET /public/invitations/:token` | public | — | — | — | — | — | `users.int.test.ts` | — |
