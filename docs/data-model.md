@@ -240,8 +240,8 @@ Real build (ADR 0051):
 | Group | Database | Blueprint table |
 | --- | --- | --- |
 | `branding` | Control | `tenant_branding` |
-| `localization.region` | Company | `locale_settings` |
-| `localization.currency` | Company | `currencies_enabled`, `exchange_rates` |
+| `localization.region` | Company | `locale_settings`. `timeZone` is a copy of control `tenants.time_zone`, which the API answers instead and writes into the row on a Region save; never read on the API. Written one tab at a time by `PUT /settings/localization/region` under the row's lock (ADR 0059, part 2b) |
+| `localization.currency` | Company | `currencies_enabled`, `exchange_rates`. `extra[].asOf` is set by the save (the company's day, when the rate's value changes). Written one tab at a time by `PUT /settings/localization/currency` under the row's lock (ADR 0059, part 2b) |
 | `localization.tax.rules` | Company | `tax_rules` |
 | `localization.tax.jurisdictions` | Company | `tax_jurisdictions` |
 | `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |

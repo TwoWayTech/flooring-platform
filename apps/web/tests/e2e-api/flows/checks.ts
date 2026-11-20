@@ -320,6 +320,40 @@ export function canonical(value: unknown): string {
 }
 
 /**
+ * Puts one localization tab back to `value` unless `GET /settings` already answers it, through
+ * `PUT /settings/localization/<tab>`. With `secret`, a save the API asks a step-up for (Currency
+ * always, Region when the states of operation change; ADR 0059, part 2b) steps up and is sent again.
+ * Returns the last answer, the read when nothing needed changing. The answer is read loosely, so the
+ * settings specs build on code with or without a tab.
+ */
+export async function healTab(
+  request: APIRequestContext,
+  tab: string,
+  value: object,
+  secret?: string | null,
+): Promise<APIResponse> {
+  const read = await request.get("/api-proxy/settings");
+  expect(read.status(), `GET /settings answered ${read.status()}: ${await read.text()}`).toBe(200);
+  const answer = (await read.json()) as { localization?: Record<string, unknown> };
+  if (canonical(answer.localization?.[tab]) === canonical(value)) return read;
+  const path = `/settings/localization/${tab}`;
+  return secret ? putWithStepUp(request, secret, path, value) : request.put(`/api-proxy${path}`, { data: value });
+}
+
+/** `healTab` that throws unless the API answered 200, so a refused restore fails the clean-up. */
+export async function healTabOrThrow(
+  request: APIRequestContext,
+  tab: string,
+  value: object,
+  secret?: string | null,
+): Promise<APIResponse> {
+  const response = await healTab(request, tab, value, secret);
+  if (response.status() !== 200)
+    throw new Error(`Putting ${tab} back answered ${response.status()}: ${await response.text()}`);
+  return response;
+}
+
+/**
  * Asserts the audit log holds each of `actions` on a target containing `search`, made at or after
  * `since` (an epoch ms), first in the page's GET /audit answer, then on screen after searching
  * for `search`. Labels such as "Bri Alvarez, week of …" repeat across runs, hence the time bound:

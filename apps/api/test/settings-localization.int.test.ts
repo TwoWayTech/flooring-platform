@@ -13,8 +13,9 @@ import {
   taxRules,
   userProfiles,
 } from "@workspace/db/company";
-import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
+import { tenantModuleOverrides, tenantPermissionCeiling, tenants } from "@workspace/db/control";
 import {
+  API_LOCALIZATION_TABS,
   CATEGORY_LABELS,
   CREDIT_NOTE_PREFIX,
   dec,
@@ -226,6 +227,15 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     });
   }
 
+  /** The company's zone in the control database (`tenants.time_zone`), which GET /settings answers as Region's (part 2b). */
+  async function zoneOf(company: TestCompany): Promise<string> {
+    const [row] = await harness.control.db
+      .select({ timeZone: tenants.timeZone })
+      .from(tenants)
+      .where(eq(tenants.id, company.id));
+    return row!.timeZone;
+  }
+
   /** How many audit entries a company has. */
   function auditCount(company: TestCompany): Promise<number> {
     return withCompanyDb(company, async (db) => (await db.select({ n: count() }).from(auditLog))[0].n);
@@ -331,39 +341,56 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
         getHandler: () => (SettingsController.prototype as unknown as Record<string, unknown>)[handler],
         getClass: () => SettingsController,
       }) as unknown as ExecutionContext;
-    const handlers: Record<ApiLocalizationTab, string> = { documents: "saveDocuments", payroll: "savePayroll" };
-    for (const tab of ["documents", "payroll"] as const) {
+    const handlers: Record<ApiLocalizationTab, string> = {
+      documents: "saveDocuments",
+      payroll: "savePayroll",
+      region: "saveRegion",
+      currency: "saveCurrency",
+    };
+    // Every served tab has its handler, and every handler below is checked (part 2b adds two).
+    expect(Object.keys(handlers).sort()).toEqual([...API_LOCALIZATION_TABS].sort());
+    for (const tab of Object.keys(handlers) as ApiLocalizationTab[]) {
       const requirement = permissionRequirement(reflector, context(handlers[tab]), "PUT");
-      expect(requirement.permissions, tab).toEqual(LOCALIZATION_TABS[tab].keys);
+      const rule = LOCALIZATION_TABS[tab];
+      expect(requirement.permissions, tab).toEqual(rule.keys);
       expect(requirement.permissions, tab).toEqual(["settings.localization.manage"]);
-      expect(requirement.module, tab).toBe(LOCALIZATION_TABS[tab].module);
+      // A `platform` route declares no module (part 1's A0): every company has it.
+      expect(requirement.module, tab).toBe(rule.module === "platform" ? undefined : rule.module);
       expect(isAudited(reflector, context(handlers[tab])), tab).toBe(true);
     }
     expect(LOCALIZATION_TABS.documents.module).toBe("core");
     expect(LOCALIZATION_TABS.payroll.module).toBe("hr");
+    // Part 2b: Region and Currency are every company's.
+    expect(LOCALIZATION_TABS.region.module).toBe("platform");
+    expect(LOCALIZATION_TABS.currency.module).toBe("platform");
   });
 
   for (const company of [floorco, peopleco]) {
     for (const key of PRODUCT_ROLES[company.product]) {
-      it(`L1 ${company.product} ${key}: GET /settings answers each localization tab the role reads, as stored`, async () => {
+      it(`L1 ${company.product} ${key}: GET /settings answers each localization tab the role reads, as stored, Region with the control zone`, async () => {
         const person = people.get(`${company.product}:${key}`)!;
         const before = await auditCount(company);
         const body = await answerOf(person.cookie);
         const held = new Set(expectedPermissions(company.product, key));
         const expected = readableTabs({ permissions: held, modules: enabledModules([company.product], null, []) });
         const stored = (await rowOf(company))!;
+        // Part 2b: Region is answered with the company's control zone, never the row's copy.
+        const answered = { ...stored, region: { ...stored.region, timeZone: await zoneOf(company) } };
         if (expected.length === 0) expect(body).not.toHaveProperty("localization");
         else {
           expect(Object.keys(body.localization ?? {}).sort()).toEqual([...expected].sort());
-          for (const tab of expected) expect(body.localization?.[tab], tab).toEqual(stored[tab]);
+          for (const tab of expected) expect(body.localization?.[tab], tab).toEqual(answered[tab]);
         }
-        for (const tab of ["region", "currency", "tax"]) expect(body.localization ?? {}).not.toHaveProperty(tab);
+        expect(body.localization ?? {}).not.toHaveProperty("tax");
         expect(keysOf(body.localization ?? {}).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         const tabs = Object.keys(body.localization ?? {}).sort();
-        if (company === floorco && (key === "owner" || key === "sales")) expect(tabs).toEqual(["documents", "payroll"]);
-        if (company === floorco && (key === "installer" || key === "hr")) expect(tabs).toEqual(["payroll"]);
-        if (company === peopleco && (key === "owner" || key === "employee")) expect(tabs).toEqual(["payroll"]);
+        if (company === floorco && key === "owner")
+          expect(tabs).toEqual(["currency", "documents", "payroll", "region"]);
+        if (company === floorco && key === "sales") expect(tabs).toEqual(["documents", "payroll", "region"]);
+        if (company === floorco && (key === "installer" || key === "hr")) expect(tabs).toEqual(["payroll", "region"]);
+        if (company === peopleco && key === "owner") expect(tabs).toEqual(["currency", "payroll", "region"]);
+        if (company === peopleco && key === "employee") expect(tabs).toEqual(["payroll", "region"]);
       });
     }
   }
@@ -685,7 +712,12 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
       expect(outcome(await put("payroll", owner.cookie, stored.payroll))).toEqual([403, "module_not_enabled"]);
       expect((await answerOf(owner.cookie)).localization ?? {}).not.toHaveProperty("payroll");
     });
-    expect(Object.keys((await answerOf(owner.cookie)).localization ?? {}).sort()).toEqual(["documents", "payroll"]);
+    expect(Object.keys((await answerOf(owner.cookie)).localization ?? {}).sort()).toEqual([
+      "currency",
+      "documents",
+      "payroll",
+      "region",
+    ]);
   });
 
   it("L10 a ceiling below the role binds the Owner too, and the read still answers", async () => {
@@ -796,7 +828,7 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     ).toEqual(["Payroll rules", "Sales and documents"]);
   });
 
-  it("L14 one key per tab, never the section's any-of: settings.tax.manage alone saves neither tab", async () => {
+  it("L14 one key per tab, never the section's any-of: settings.tax.manage alone saves none of the served tabs", async () => {
     const roleKey = "tax-only";
     await withCompanyDb(floorco, async (db) => {
       const [role] = await db
@@ -807,18 +839,18 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     });
     const person = await member(floorco, [roleKey], true);
     const stored = (await rowOf(floorco))!;
-    for (const tab of ["documents", "payroll"] as const)
+    // Part 2b's tabs too: the guard refuses Currency before any step-up.
+    for (const tab of ["documents", "payroll", "region", "currency"] as const)
       expect(outcome(await put(tab, person.cookie, stored[tab])), tab).toEqual([403, "forbidden"]);
     expect(await rowOf(floorco)).toEqual(stored);
   });
 
-  it("L16 the tabs not built here and the whole section are not routes", async () => {
+  it("L16 Sales tax and the whole section are not routes", async () => {
     const owner = people.get("flooring:owner")!;
     await stepUp(owner);
     const stored = (await rowOf(floorco))!;
     const audits = await auditCount(floorco);
-    for (const tab of ["region", "currency", "tax"] as const)
-      expect((await put(tab, owner.cookie, stored[tab])).status, tab).toBe(404);
+    expect((await put("tax", owner.cookie, stored.tax)).status).toBe(404);
     expect((await call("put", "/settings/localization", owner.cookie).send(stored)).status).toBe(404);
     expect(await rowOf(floorco)).toEqual(stored);
     expect(await auditCount(floorco)).toBe(audits);

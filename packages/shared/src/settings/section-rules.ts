@@ -1,6 +1,12 @@
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
-import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
+import type {
+  CompanyProfile,
+  CompanySettings,
+  ExpenseSettings,
+  LocalizationSettings,
+  PaymentSettings,
+} from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { DOCUMENT_PREFIX_TEXT, localizationProblem } from "./localization-rules";
 
@@ -131,20 +137,22 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 /**
  * Why a settings section can't be saved, or null: the content rules both modes run, with the same
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
- * refuse a change that no page makes. Localization runs its tabs' rules (`localization-rules.ts`;
- * ADR 0059 part 2a); every other section gets its rules when its part moves to the API.
+ * refuse a change that no page makes. Localization runs its tabs' rules against the stored section
+ * (`localization-rules.ts`; ADR 0059 parts 2a and 2b); every other section gets its rules when its
+ * part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
   value: CompanySettings[K],
   current: CompanySettings[K],
 ): string | null {
-  // One key is set, so reading a section's property narrows the value to that section's type.
+  // One key is set, so reading a section's property narrows the value to that section's type;
+  // `current` is that same section's stored value.
   const settings = { [section]: value } as Partial<CompanySettings>;
   if (settings.profile) return companyProfileProblem(settings.profile);
   if (settings.numbers) return numberSettingsProblem(settings.numbers, current as NumberSettings);
   if (settings.payments) return paymentSettingsProblem(settings.payments);
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
-  if (settings.localization) return localizationProblem(settings.localization);
+  if (settings.localization) return localizationProblem(settings.localization, current as LocalizationSettings);
   return null;
 }

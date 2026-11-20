@@ -36,7 +36,7 @@ export const SETTINGS = {
   },
   "region.timeZone": {
     label: "Time zone",
-    helper: "Dates, reminders and today's jobs follow this zone.",
+    helper: "Set when the company is set up: dates, reminders and today's jobs follow it. Ask us to change it.",
     href: REGION,
   },
   "region.dateFormat": { label: "Date format", helper: "How dates read on every screen and document.", href: REGION },
@@ -52,7 +52,8 @@ export const SETTINGS = {
   },
   "region.statesOfOperation": {
     label: "States of operation",
-    helper: "Where you sell; the company default tax rate applies only in these states.",
+    helper:
+      "Where you sell; the company default tax rate applies only in these states, so a change also needs the sales tax permission and a code.",
     href: REGION,
   },
   "currency.base": { label: "Base currency", helper: "Locked after the first posted document.", href: CURRENCY },

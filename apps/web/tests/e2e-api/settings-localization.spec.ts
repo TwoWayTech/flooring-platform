@@ -1,7 +1,7 @@
-import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
+import { expect, type APIRequestContext } from "@playwright/test";
 import { californiaPayOn, dec, type Invoice, type Quote, type SettingsAnswer } from "@workspace/shared";
 import { ACCOUNTANT_EMAIL, HR_EMAIL, OWNER_EMAIL, SALES_EMAIL } from "./accounts";
-import { auditBy, auditEntriesBy, canonical, readAs } from "./flows/checks";
+import { auditBy, auditEntriesBy, canonical, healTab, healTabOrThrow, readAs } from "./flows/checks";
 import { addProduct, choose, FIELDSTONE, flowTest, resetAuthAround, runId, waitForAnswer } from "./flows/kit";
 
 /**
@@ -37,28 +37,6 @@ const ACTION = "Changed localization and tax";
 const LATE_FEE_MESSAGE = "Enter the late fee per month as a percent such as 1.5, from 0 to 100.";
 const CALIFORNIA_MESSAGE = "California pay rules are switched off until a payroll review. Choose the federal rule.";
 
-type Tab = "documents" | "payroll";
-
-/**
- * Puts one localization tab back to `value` unless `GET /settings` already answers it, through
- * `PUT /settings/localization/<tab>`. Returns the last answer, the read when nothing needed changing.
- */
-async function healTab(request: APIRequestContext, tab: Tab, value: object): Promise<APIResponse> {
-  const read = await request.get("/api-proxy/settings");
-  expect(read.status(), `GET /settings answered ${read.status()}: ${await read.text()}`).toBe(200);
-  const answer = (await read.json()) as SettingsAnswer;
-  if (canonical(answer.localization?.[tab]) === canonical(value)) return read;
-  return request.put(`/api-proxy/settings/localization/${tab}`, { data: value });
-}
-
-/** `healTab` that throws unless the API answered 200, so a refused restore fails the clean-up. */
-async function healTabOrThrow(request: APIRequestContext, tab: Tab, value: object): Promise<APIResponse> {
-  const response = await healTab(request, tab, value);
-  if (response.status() !== 200)
-    throw new Error(`Putting ${tab} back answered ${response.status()}: ${await response.text()}`);
-  return response;
-}
-
 /** The targets of the audit entries `actor` made with ACTION from `since`'s minute on. */
 async function targetsBy(request: APIRequestContext, actor: string, since: number): Promise<string[]> {
   return (await auditEntriesBy(request, ACTION, actor, since)).map((entry) => entry.target);
@@ -68,7 +46,7 @@ async function targetsBy(request: APIRequestContext, actor: string, since: numbe
  * Settings part 2a on the API (ADR 0059; spec settings-and-permissions.md, Real build, "Settings on
  * the API, part 2a"): Sales and documents and the Payroll rules tab read and save through
  * `GET /settings` and `PUT /settings/localization/<tab>`, the screens that read them follow, and what
- * a role isn't offered the API refuses. Region still saves in the browser. Each test heals what it
+ * a role isn't offered the API refuses. Each test heals what it
  * changes first, puts it back as its last step, and registers a clean-up that repeats the restore
  * and fails if the API refuses it.
  */
@@ -159,7 +137,9 @@ flowTest.describe("Settings part 2a on the API (api mode)", () => {
         expect(dec(line!.wastePct ?? "0").eq(13)).toBe(true);
         const priyas = await readAs<SettingsAnswer>(priya.request, "/settings");
         expect(priyas.localization?.documents?.defaultWastePct.carpet).toBe("13");
-        expect(priyas.localization ?? {}).not.toHaveProperty("region");
+        // Part 2b: every member reads Region; Currency only its managers.
+        expect(priyas.localization).toHaveProperty("region");
+        expect(priyas.localization ?? {}).not.toHaveProperty("currency");
 
         // 4. The invoice prints the new footer.
         const invoice = (await readAs<Invoice[]>(grace.request, "/invoices")).find((each) => each.voidedAt === null);
@@ -192,7 +172,7 @@ flowTest.describe("Settings part 2a on the API (api mode)", () => {
     resetAuthAround([OWNER_EMAIL, HR_EMAIL]);
 
     flowTest(
-      "E2 Payroll rules on the API; California is refused while its switch is off; HR without the key is refused; Region still saves in the browser",
+      "E2 Payroll rules on the API; California is refused while its switch is off; HR without the key is refused",
       async ({ personas }) => {
         flowTest.setTimeout(120_000);
         const dana = await personas.open(OWNER_EMAIL, { mfa: true });
@@ -235,20 +215,8 @@ flowTest.describe("Settings part 2a on the API (api mode)", () => {
         expect(hers?.payroll?.holidayState).toBe("WY");
         expect(hers ?? {}).not.toHaveProperty("documents");
 
-        // 4. Region still saves in the browser in part 2a: nothing is sent to the API.
-        const sent: string[] = [];
-        dana.page.on("request", (request) => {
-          const path = new URL(request.url()).pathname;
-          if (path.startsWith("/api-proxy/settings/localization/")) sent.push(`${request.method()} ${path}`);
-        });
-        await dana.page.goto("/settings/localization?tab=region");
-        await dana.page.getByLabel("Date format").click();
-        await dana.page.getByRole("option", { name: /^\d{4}-\d{2}-\d{2}$/ }).click();
-        await dana.page.getByRole("button", { name: "Save region" }).click();
-        await expect(dana.page.getByText("Region saved")).toBeVisible();
-        expect(sent).toEqual([]);
-
-        // 5. Put back; two saves audited as Dana, each naming the tab.
+        // 4. Put back; two saves audited as Dana, each naming the tab. (Region moved to the API in
+        //    part 2b: settings-region-currency.spec.ts.)
         expect((await healTabOrThrow(dana.request, "payroll", SUMMIT_PAYROLL)).status()).toBe(200);
         expect(await auditBy(dana.request, ACTION, "Dana Whitfield", since)).toBe(audited + 2);
         expect(new Set(await targetsBy(dana.request, "Dana Whitfield", since))).toEqual(new Set(["Payroll rules"]));

@@ -136,6 +136,105 @@ test.describe("settings saved one tab at a time (ADR 0059, part 2a)", () => {
   });
 });
 
+test.describe("Region and Currency (ADR 0059, part 2b)", () => {
+  /** Confirms the open step-up dialog with any six digits, when the switch asks for one. */
+  async function confirmCode(page: Page) {
+    if (!featureOn("auth.step-up")) return;
+    const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Authenticator code").fill("123456");
+    await dialog.getByRole("button", { name: "Confirm" }).click();
+  }
+
+  /** Whether the audit log has a row with `action` naming `target`. */
+  async function expectAuditRow(page: Page, action: string, target: string) {
+    await page.goto("/settings/audit");
+    await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: target }).first()).toBeVisible();
+  }
+
+  test("S4 Region: the time zone is read only, a date format change saves without a code, a states change asks for one", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/localization?tab=region");
+    const zone = page.getByLabel("Time zone");
+    await expect(zone).toBeDisabled();
+    await expect(zone).toHaveValue(/America\/Denver/);
+
+    await page.getByLabel("Date format").click();
+    await page.getByRole("option", { name: /^\d{4}-\d{2}-\d{2}$/ }).click();
+    await page.getByRole("button", { name: "Save region" }).click();
+    const saved = page.getByText("Region saved");
+    await expect(saved).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await expect(saved).toBeHidden();
+
+    await page.getByRole("checkbox", { name: "Wyoming", exact: true }).click();
+    await page.getByRole("button", { name: "Save region" }).click();
+    await confirmCode(page);
+    await expect(page.getByText("Region saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("checkbox", { name: "Wyoming", exact: true })).not.toBeChecked();
+
+    await expectAuditRow(page, "Changed localization and tax", "Region");
+  });
+
+  test("S5 Currency: a refused rate says why before any code; a changed rate saves", async ({ page }) => {
+    await signInAs(page, KEYSTONE_OWNER, "/settings/localization?tab=currency");
+    const rate = page.getByLabel("per 1 USD");
+    await rate.fill("0");
+    await page.getByRole("button", { name: "Save currency" }).click();
+    const toast = page.getByText("Enter the rate for CAD as a number above 0 with up to 8 decimals, such as 1.3870.");
+    await expect(toast).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("1 unsaved change");
+    await page.mouse.move(0, 0);
+    await expect(toast).toBeHidden();
+
+    // The input stops at the longest rate the shared rule takes (D23).
+    await expect(rate).toHaveAttribute("maxlength", "19");
+    await rate.fill("1.3950");
+    await page.getByRole("button", { name: "Save currency" }).click();
+    await confirmCode(page);
+    await expect(page.getByText("Currency saved")).toBeVisible();
+    await expectAuditRow(page, "Changed localization and tax", "Currency");
+  });
+
+  test("S6 a role without the sales tax key can't change the states of operation, and is told why before any code", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/roles");
+    await page.getByRole("button", { name: /^Purchasing/ }).click();
+    await page.getByRole("checkbox", { name: "Manage localization" }).check();
+    await page.getByRole("button", { name: "Save role" }).click();
+    await confirmCode(page);
+    await expect(page.getByText("Role Purchasing saved")).toBeVisible();
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Purchasing");
+    await page.getByRole("option", { name: "View as Purchasing" }).click();
+
+    await page.goto("/settings/localization?tab=region");
+    await page.getByRole("checkbox", { name: "Wyoming", exact: true }).click();
+    await page.getByRole("button", { name: "Save region" }).click();
+    const toast = page.getByText(
+      "Changing the states of operation changes where sales tax is collected, so it also needs the sales tax permission.",
+    );
+    await expect(toast).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+    const bar = page.getByRole("region", { name: "Unsaved changes" });
+    await expect(bar).toContainText("1 unsaved change");
+    await page.mouse.move(0, 0);
+    await expect(toast).toBeHidden();
+    await bar.getByRole("button", { name: "Discard" }).click();
+
+    await page.getByLabel("Date format").click();
+    await page.getByRole("option", { name: /^\d{4}-\d{2}-\d{2}$/ }).click();
+    await page.getByRole("button", { name: "Save region" }).click();
+    await expect(page.getByText("Region saved")).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+  });
+});
+
 test.describe("HR Suite settings", () => {
   test("shows only the groups an HR company uses @hr", async ({ page }) => {
     await signInAs(page, HARBOR_OWNER, "/settings");
