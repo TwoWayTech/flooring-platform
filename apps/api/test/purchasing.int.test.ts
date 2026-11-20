@@ -357,6 +357,38 @@ describe("purchasing part 1 (P11, needs the local PostgreSQL)", () => {
     expect(cancel.body.code).toBe("has_receipts");
   });
 
+  it("F-m orders and receives boxed goods only in whole cartons (rule 7, ADR 0027; inventory.md rule 4)", async () => {
+    const { supplier } = await supplierWithContact(cookies.purchasing, "Carton Works");
+    const body = orderBody(supplier, null, catalog);
+    const partOrder = await call("post", "/purchase-orders", cookies.purchasing).send({
+      ...body,
+      lines: body.lines.map((line) => (line.productId === catalog.tile ? { ...line, quantity: "150" } : line)),
+    });
+    expect(partOrder.status).toBe(400);
+    expect(partOrder.body).toMatchObject({
+      code: "invalid_request",
+      message: "Slate Tile: order whole cartons, multiples of 20 sq ft.",
+    });
+    const order = await call("post", "/purchase-orders", cookies.purchasing).send(body).expect(201);
+    const tileLine = (order.body.lines as { id: string; productId: string }[]).find(
+      (line) => line.productId === catalog.tile,
+    )!;
+    const before = await onHand(company.id, catalog.tile);
+    for (const [received, damaged] of [
+      ["30", "0"],
+      ["20", "5"],
+    ]) {
+      const partReceipt = await call("post", `/purchase-orders/${order.body.id}/receipts`, cookies.warehouse).send({
+        locationId: "",
+        note: "",
+        lines: [{ poLineId: tileLine.id, productId: catalog.tile, received, damaged, rolls: [] }],
+      });
+      expect(partReceipt.status).toBe(400);
+      expect(partReceipt.body.message).toBe("Slate Tile: receive whole cartons, multiples of 20 sq ft.");
+    }
+    expect(await onHand(company.id, catalog.tile)).toBe(before);
+  });
+
   it("sends a draft, cancels one with a reason, and refuses a showroom or a second receipt of a cancelled order", async () => {
     const { supplier } = await supplierWithContact(cookies.purchasing, "Quarry Path");
     const draft = await call("post", "/purchase-orders", cookies.purchasing)

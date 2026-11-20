@@ -8,6 +8,14 @@ import { fileURLToPath } from "node:url";
  * expressions, so they add no dependency and read code exactly as it is committed.
  */
 
+/**
+ * How long a scan may take. A scan reads hundreds of files synchronously: about 3 s alone, but under
+ * `pnpm test`, where Turbo runs the shared, API and web tests at once and vitest fills every core,
+ * the coverage model took 7 to 17 s (measured 2026-11-20, on origin/main too), past vitest's 10 s hook
+ * and 5 s test defaults. The suites wait longer rather than fail on a busy machine.
+ */
+export const SCAN_TIMEOUT_MS = 60_000;
+
 /** The repository root, with a trailing separator. */
 export const REPO = fileURLToPath(new URL("../../../../../", import.meta.url));
 

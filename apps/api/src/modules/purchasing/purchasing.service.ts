@@ -21,6 +21,7 @@ import {
   moneyString,
   nextNumber,
   nextPaymentNumber,
+  partCartonProblem,
   poTotal,
   receiptProblem,
   receiptPosting,
@@ -375,6 +376,9 @@ export class PurchasingService {
         const product = catalog.get(line.productId)!;
         return { ...line, unit: product.unit, sqFtPerCarton: product.sqFtPerCarton };
       });
+      // Cartons are ordered whole (ADR 0027): refused, never rounded (F-m).
+      const cartons = partCartonProblem(lines, "order");
+      if (cartons) throw refuse(cartons);
       const total = poTotal(lines);
       // numeric(14,2): a total this large is a typing mistake, refused rather than failing in the database.
       if (dec(total).gte("1e12")) throw refuse("This order's total is too large. Check the quantities and costs.");

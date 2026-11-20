@@ -7,6 +7,7 @@ import {
   productTaxCategory,
   defaultWastePct,
   nextNumber,
+  partCartonProblem,
   QUOTE_ACTION_STATUS,
   quoteActions,
   quoteDraftProblem,
@@ -273,6 +274,9 @@ export class SalesService {
       const localization = await loadLocalization(tx);
       const catalog = new Map((await loadProducts(tx)).map((product) => [product.id, product]));
       const lines = this.trustedLines(actor.access, input.lines, before, catalog);
+      // Boxed lines are whole cartons (ADR 0027): refused, never rounded, so the quantity is the one sent (F-m).
+      const cartons = partCartonProblem(lines, "sell");
+      if (cartons) throw refuse(cartons);
       await this.assertReferences(tx, lines, input.soldAtLocationId);
       this.assertRooms(actor.access, input.rooms, before);
       this.assertWaste(actor.access, lines, before, catalog, localization.documents.defaultWastePct);
@@ -475,7 +479,8 @@ export class SalesService {
           category: productTaxCategory(product),
           unit: product.unit,
           unitCost: product.cost,
-          ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+          // The pack is the product's, never the request's, so a line can't claim smaller cartons (F-m).
+          sqFtPerCarton: product.sqFtPerCarton,
         };
       }
       // A line with no product keeps the category it was saved with; a new one, a changed
@@ -486,7 +491,8 @@ export class SalesService {
           message: "Only someone who may change tax can add a line without a product.",
         });
       }
-      return { ...line, unitCost: saved?.unitCost ?? "0" };
+      // A carton is a product's packaging; a line without a product has none, whatever was sent.
+      return { ...line, sqFtPerCarton: undefined, unitCost: saved?.unitCost ?? "0" };
     });
   }
 

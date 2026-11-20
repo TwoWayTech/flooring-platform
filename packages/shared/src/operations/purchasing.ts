@@ -1,6 +1,7 @@
 import { addDays, daysBetween } from "../dates";
 import { dec, maxDec, minDec, moneyString, roundMoney, roundUnitCost, sum, type Dec } from "../money";
 import { isBoxed, stockUnit } from "../stock";
+import { partCartonProblem } from "../units";
 import type {
   Bill,
   GoodsReceipt,
@@ -94,6 +95,17 @@ export function receiptProblem(
     if (received.plus(damaged).gt(0)) any = true;
     const open = dec(ordered.quantity).minus(got.get(ordered.id) ?? 0);
     if (received.plus(damaged).gt(open)) return `${ordered.description}: only ${open.toString()} is still to come.`;
+    // Cartons arrive whole, damaged or not, in the order line's pack (F-m, ADR 0027).
+    const pack = ordered.sqFtPerCarton;
+    const cartons = partCartonProblem(
+      [received, damaged].map((quantity) => ({
+        description: ordered.description,
+        quantity: quantity.toString(),
+        sqFtPerCarton: pack,
+      })),
+      "receive",
+    );
+    if (cartons) return cartons;
   }
   return any ? null : "Enter what arrived on at least one line.";
 }

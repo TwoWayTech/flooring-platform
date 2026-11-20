@@ -5,6 +5,7 @@ import { canOpenPage, pageList } from "@/products/pages";
 import { buildCoverage, samplePath, type CoverageModel } from "./coverage-scan/model";
 import { subPageRules, trialAccess } from "./coverage-scan/page-rules";
 import { routeRoles } from "./coverage-scan/route-snapshots";
+import { SCAN_TIMEOUT_MS } from "./coverage-scan/source";
 import { TOLERATED_REFUSALS } from "./coverage-scan/tolerated-refusals";
 
 /**
@@ -29,7 +30,7 @@ let model: CoverageModel;
 
 beforeAll(async () => {
   model = await buildCoverage();
-});
+}, SCAN_TIMEOUT_MS);
 
 afterAll(restoreDataSource);
 

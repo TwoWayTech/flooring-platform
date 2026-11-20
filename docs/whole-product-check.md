@@ -9,7 +9,7 @@ The owner's step 3 (STATUS "Next three tasks"): compare the specs, the feature r
 | Coverage list (generated) | Pass | 65 pages: 35 on the API, 22 mixed, 1 demo-only, 7 no data (incl. `/[...missing]`); 225 routes, 207 reached by a screen; 168 screen calls on the API, 38 reviewed on DemoStore | G5 |
 | Real-build coverage (hand-written) | Written | 72 features: 39 done, 21 partly, 1 missing, 11 not on the API by design; 37 demo-script steps: 22, 12, 0, 3 | G1 to G7 |
 | Permission matrix | Pass, no leak | 201 company routes × 12 default roles = 2,412 pairs against the shared engine, 201 wrong-host checks, every company route refused on another product's host, switches traced, data scope on 9 lists, sensitive fields on every list read | F-j (F-h fixed 2026-11-20) |
-| Money integrity | Pass, every equality exact | E1 to E15 after every step of 5 seeds × 108 steps (opt-in) or 58 steps (default); R1 to R6; contracts, payroll, immutability, closed period, banks | F-a (by design), F-m |
+| Money integrity | Pass, every equality exact | E1 to E15 after every step of 5 seeds × 108 steps (opt-in) or 58 steps (default); R1 to R6; contracts, payroll, immutability, closed period, banks | F-a (by design); F-m fixed (2026-11-20) |
 | Bare new company (FA) | Pass | 13 tests: what a provisioned company can and can't do | G2, G3, G4 |
 | Fresh company from the setup script with sample CSV data (FS) | Pass | 6 tests: the real script, every settings tab and section, two locations, four CSV files, a purchase and a sale with the ledger agreeing to the cent | G2, G3, G4 |
 | Fresh company in the browser (FC) | Pass | 1 test, 5 steps: invitation, password, MFA, then G1; nothing left live on 5433 | G1 |
@@ -102,7 +102,7 @@ Every finding, with evidence, is in the session log's "Findings"; the ones to fi
 ## Follow-ups ranked for P13
 
 - **T1, security:** F-h (switches on users, roles, audit, support grants; fixed 2026-11-20, P1); F-l (prototype names in field stripping; fixed 2026-11-20, P2); F-j (outbox writes on a view key); the trial balance and contract amounts visible only with the right sight (fixed in #67, re-checked by PM-7).
-- **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons); F-o (float money in the UI); "payroll paid" posting (Q3).
+- **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons, fixed 2026-11-20: the API refuses them); F-o (float money in the UI); "payroll paid" posting (Q3).
 - **T3, real-company readiness:** G1 to G4, G7, then G6.
 - **T4, robustness and operations:** F-g (no CI on main since 2026-11-14), F-c (retirement and migrations), F-b (Turbo), F-r (dates).
 - **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates; fixed 2026-11-20, P9), F-q (five routes without API tests; fixed 2026-11-20, P10), F-k (JSON-number quantities).

@@ -56,6 +56,43 @@ export function wholeCartonArea(areaSqFt: DecimalInput, sqFtPerCarton: DecimalIn
 }
 
 /**
+ * True when an area is a whole number of cartons (ADR 0027, CLAUDE.md rule 7): boxed stock is
+ * only ever whole cartons, so every document, receipt, count and transfer of a boxed good is too.
+ */
+export function isWholeCartons(areaSqFt: DecimalInput, sqFtPerCarton: DecimalInput): boolean {
+  const per = dec(sqFtPerCarton);
+  if (per.lte(0)) throw new Error("Coverage per carton must be positive");
+  // Exact by construction: a remainder, not a quotient rounded to decimal.js's precision.
+  return dec(areaSqFt).mod(per).isZero();
+}
+
+/** The carton size when a pack is one (above zero), or undefined: a blank or zero pack holds no cartons. */
+export function cartonPack(sqFtPerCarton: string | null | undefined): string | undefined {
+  return sqFtPerCarton && dec(sqFtPerCarton).gt(0) ? sqFtPerCarton : undefined;
+}
+
+/** What a person does with a boxed line, for the words of `partCartonProblem`. */
+export type CartonAction = "sell" | "order" | "receive";
+
+/**
+ * The first boxed line whose sq ft is not whole cartons, in words, or null (F-m, ADR 0027). The
+ * screens round boxed lines up; the API refuses rather than change a quantity it was sent. The
+ * pack is the line's own, copied from the product when the line was written; a line whose pack
+ * is blank or not above zero holds no cartons, so it is no part carton either.
+ */
+export function partCartonProblem(
+  lines: readonly { description: string; quantity: string; sqFtPerCarton?: string | null }[],
+  action: CartonAction,
+): string | null {
+  const line = lines.find((l) => {
+    const pack = cartonPack(l.sqFtPerCarton);
+    return pack !== undefined && !isWholeCartons(l.quantity || "0", pack);
+  });
+  if (!line) return null;
+  return `${line.description}: ${action} whole cartons, multiples of ${dec(line.sqFtPerCarton!).toString()} sq ft.`;
+}
+
+/**
  * Billed quantity in sq ft for a material line from a room area (spec A1, plan N-2). Waste is
  * applied first; boxed goods then round up to whole cartons, because cartons are sold whole.
  */

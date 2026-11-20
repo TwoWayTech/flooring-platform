@@ -5,6 +5,7 @@ import { CLIENT_LOCAL, DEMO_ONLY } from "./coverage-scan/demo-only";
 import { buildCoverage, type CoverageModel } from "./coverage-scan/model";
 import { REGENERATE, renderMarkdown, renderPageCoverage } from "./coverage-scan/render";
 import { NO_FEATURE_PAGES, SHELL_GROUP, SPEC_FEATURES, specFiles } from "./coverage-scan/spec-features";
+import { SCAN_TIMEOUT_MS } from "./coverage-scan/source";
 import { CROSS_CUTTING, hasFixme, PARKED_SPECS } from "./coverage-scan/test-index";
 
 /**
@@ -22,7 +23,7 @@ let model: CoverageModel;
 
 beforeAll(async () => {
   model = await buildCoverage();
-});
+}, SCAN_TIMEOUT_MS);
 
 /** Where each offending target is called, as `target  file:line` lines. */
 function whereCalled(targets: readonly string[]): string[] {

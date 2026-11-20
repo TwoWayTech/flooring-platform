@@ -446,11 +446,11 @@ Every route needs the `core` module. Line costs (`unitCost`) are stripped withou
 | `POST /supplier-contacts`, `PUT /supplier-contacts/:id` | create, edit | One primary per supplier |
 | `POST /supplier-contacts/:id/status` | `purchasing.supplier.edit` | A leaving primary is replaced |
 | `GET /purchase-orders` | `purchasing.order.view` | Orders with their lines, newest first |
-| `POST /purchase-orders` | `purchasing.order.create` | `NewPurchaseOrderInput`; a draft, or ordered (emails the rep) |
+| `POST /purchase-orders` | `purchasing.order.create` | `NewPurchaseOrderInput`; a draft, or ordered (emails the rep). 400 "<line>: order whole cartons, multiples of <pack> sq ft." for a boxed line that isn't whole cartons (F-m) |
 | `POST /purchase-orders/:id/order` | `purchasing.order.create` | `{ via }`. 409 `not_draft` |
 | `POST /purchase-orders/:id/cancel` | `purchasing.order.create` | `{ reason }`. 409 `has_receipts`, `already_cancelled` |
 | `GET /receipts` | `purchasing.order.view` | Goods receipts with their lines |
-| `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, or a roll number already in stock |
+| `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, a roll number already in stock, or a boxed quantity received or damaged that isn't whole cartons of the order line's pack ("<line>: receive whole cartons, multiples of <pack> sq ft.", F-m) |
 
 ## Sales, part 1 (real build, P11, ADR 0037)
 
@@ -462,7 +462,7 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 | `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }`. 409 `settings_missing`, "Finish Settings → Localization and tax before adding customers.", until the company has Localization (the default terms come from it) |
 | `PUT /customers/:id` | `customers.customer.edit` | Name, contact, terms and addresses; credit, exemption and rep are never taken from the request |
 | `GET /quotes` | `sales.quote.view` | Quotes within scope, with rooms and lines |
-| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default; the default is the company's Sales and documents setting, which `GET /settings` answers to every quote reader, ADR 0059 part 2a) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 409 `quote_closed`, `settings_missing` |
+| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default; the default is the company's Sales and documents setting, which `GET /settings` answers to every quote reader, ADR 0059 part 2a) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 400 "<line>: sell whole cartons, multiples of <pack> sq ft." for a boxed line that isn't whole cartons of its product's pack: refused, never rounded; a pack sent on a product line is ignored (F-m, ADR 0027). 409 `quote_closed`, `settings_missing` |
 | `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
@@ -476,7 +476,7 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 | `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
 | `GET /refunds` | `sales.payment.view` or `sales.payment.refund` | Refunds to customers within scope |
 | `GET /reservations` | `inventory.product.view`, `inventory.roll.view` or `sales.invoice.view` | Every hold for stock viewers; otherwise the holds of invoices within scope |
-| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing`. Refuses, under the stock lock, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (Settings part 4a, D21) |
+| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing`. Refuses, under the stock lock, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (Settings part 4a, D21). 400 "<line>: sell whole cartons, multiples of <pack> sq ft." for a quote saved with a part carton before the API checked (F-m) |
 | `POST /invoices/:id/sent` | `sales.invoice.edit` or `sales.invoice.create` | Marks it sent once and emails `invoice.sent` |
 | `POST /invoices/:id/void` | `sales.invoice.void` | `{ reason }`; refused once money is confirmed or a credit note's credit is spent; voids pending payments and releases holds |
 | `POST /invoices/:id/credit-notes` | `sales.invoice.void` | `{ subtotal, reason }`; up to what is not yet credited; tax and cost in proportion |
