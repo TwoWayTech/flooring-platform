@@ -403,6 +403,12 @@ describe("Settings sections on the API (ADR 0059)", () => {
       [{ replyTo: "billing@\u202eelpmaxe.summit" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: "bil\u00adling@summit.example" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: "billing@summit.example\u2028" }, EMAIL_MESSAGES.replyTo],
+      // Round 5: no look-alike letters from another alphabet; the sign-off has no invisible characters.
+      [{ replyTo: "billing@summ\u0456tfloor.example" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "b\u00e9atrice@summit.example" }, EMAIL_MESSAGES.replyTo],
+      [{ signature: "Thanks,\n\u202eThe team" }, EMAIL_MESSAGES.signatureCharacters],
+      [{ signature: "Pay to\u200b account" }, EMAIL_MESSAGES.signatureCharacters],
+      [{ signature: "Merci, l\u2019équipe" }, null],
       [{ replyTo: "a@b.co\nBcc: c@d.co" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: `${"a".repeat(250)}@b.co` }, EMAIL_MESSAGES.replyTo],
       [{ signature: "x".repeat(EMAIL_MAX.signature) }, null],

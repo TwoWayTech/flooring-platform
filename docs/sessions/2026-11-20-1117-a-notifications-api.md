@@ -53,7 +53,7 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Q1. Retry and Cancel on one's own rows.** The spec lets anyone send again or cancel their own message; the API keeps ADR 0032's `settings.outbox.view` and DemoStore now matches it. Widen it?
 - **Q2. Notification rules in api mode.** Event switches, channels and templates (`saveNotificationRule`, `list("notificationRules")`) still save in the browser only in api mode, while the API reads its own `notification_rules`. A follow-up PR.
 - **Q3. Dates in messages.** Message variables carry dates as `yyyy-MM-dd` (both modes, the spec's known behaviour); money now follows the company's number format. Format dates with the company's date format too?
-- **Q4. The sender name's characters.** Taken: no `@`, quotes, backslashes, angle brackets, control characters, line separators or text-direction marks (security review round 1), so a name can't pass for an address. Too strict for any company's real name?
+- **Q4. The sender's characters.** Taken (security review rounds 1 to 5): the sender name refuses `@` (look-alikes too), quotes, backslashes, angle brackets and every control, format and separator character, so it can't pass for an address; the reply-to is one plain mailbox in printable ASCII, so an internationalised address (`béatrice@…`, a non-Latin domain) is refused; the sign-off refuses invisible and text-direction characters. Too strict for any company?
 
 ## Security review
 
@@ -75,6 +75,9 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Round 4** (fresh reviewer on `0bb7424..5523be0`): **nothing blocking**; two Low.
   1. The reply-to let format characters through (zero-width, text-direction marks, soft hyphen), which could hide where replies go from the page and the audit log. **Fixed:** `isPlainReplyTo` also refuses every `Cf`, `Zl` and `Zp` character; R12 and ME4 cases.
   2. The data-scope check was copied a third time. **Fixed:** one `requireWholeCompany` in `apps/api/src/core/access/whole-company.ts`, used by Settings, Warehouses and showrooms and the Outbox (the reports' check keeps its own words).
+- **Round 5** (fresh reviewer on `0bb7424..d6a78aa`): **nothing blocking**; two Low.
+  1. The reply-to took letters from other alphabets that look like Latin ones (`summіtfloor` with a Cyrillic `і`), hiding another domain from the page and the audit log. **Fixed:** the reply-to is printable ASCII only (`isPlainReplyTo`, so the worker and DemoStore follow); R12, ME4 and `senderHeaders` cases. An internationalised address is refused (Q4).
+  2. The sign-off took invisible and text-direction characters (body text only, no injection). **Fixed:** refused with their own words (`signatureCharacters`); line breaks stay allowed; R12 and ME4 cases.
 
 ## For STATUS (the orchestrator applies these)
 

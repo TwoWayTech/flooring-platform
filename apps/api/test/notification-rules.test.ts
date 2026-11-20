@@ -106,7 +106,7 @@ describe("senderHeaders (security review round 2: the worker applies the save ru
   it("drops a stored name that could pass for an address or hide text, and a reply-to that is not one plain mailbox", () => {
     for (const name of ["billing@bank.example", "billing\uff20bank.example", "Summit \u202egnilliB", "Sum\u200bmit"])
       expect(senderHeaders(name, "", "mail@platform.example").from, name).toBe("mail@platform.example");
-    for (const replyTo of ['x"<a@b.co>', "a,b@c.co", "a;b@c.co", "a\u0000@b.co", "office"])
+    for (const replyTo of ['x"<a@b.co>', "a,b@c.co", "a;b@c.co", "a\u0000@b.co", "office", "b@summ\u0456t.example"])
       expect(senderHeaders("Summit", replyTo, "mail@platform.example"), replyTo).not.toHaveProperty("replyTo");
   });
 });

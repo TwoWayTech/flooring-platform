@@ -59,6 +59,7 @@ export const EMAIL_MESSAGES = {
     "Use a plain name for the sender: no @, quotes, backslashes, angle brackets, line breaks or text-direction marks.",
   replyTo: "Enter the reply-to address as name@example.com, or leave it empty.",
   signature: `Keep the sign-off to ${EMAIL_MAX.signature} characters.`,
+  signatureCharacters: "Leave invisible and text-direction characters out of the sign-off.",
 } as const;
 
 /**
@@ -91,13 +92,17 @@ export function isPlainSenderName(name: string): boolean {
 /** Format characters and line or paragraph separators, which can hide what an address really is (round 4). */
 const INVISIBLE = /[\p{Cf}\p{Zl}\p{Zp}]/u;
 
+/** Printable ASCII only: a reply-to can't use a letter from another alphabet that looks like a Latin one (round 5). */
+const PRINTABLE_ASCII = /^[\x21-\x7e]+$/;
+
 /**
- * Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`) with no invisible or text-direction
- * character, so the address the page and the audit log show is where replies go (security review
- * round 4); the save rule and the Outbox worker both ask it.
+ * Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`) in printable ASCII, with no invisible or
+ * text-direction character, so the address the page and the audit log show is where replies go and
+ * no look-alike letter can hide another domain (security review rounds 4 and 5); the save rule and
+ * the Outbox worker both ask it. An internationalised address is refused (session log Q4).
  */
 export function isPlainReplyTo(address: string): boolean {
-  return REPLY_TO_TEXT.test(address) && !INVISIBLE.test(address);
+  return REPLY_TO_TEXT.test(address) && PRINTABLE_ASCII.test(address) && !INVISIBLE.test(address);
 }
 
 /** What Number format says about what it refuses that no single kind's range covers. */
@@ -201,7 +206,7 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
  * Outbox part, D8). The sender name is at most 80 characters with nothing the From header would
  * have to strip, so what the page shows is what recipients see; empty sends as the company's name.
  * The reply-to is empty or one plain mailbox (`REPLY_TO_TEXT`), where customers' answers to invoices
- * and receipts go. The sign-off is at most 500 characters. Fields are stored as sent.
+ * and receipts go. The sign-off is at most 500 characters with no invisible or text-direction character (round 5; line breaks are fine). Fields are stored as sent.
  */
 export function emailSettingsProblem(email: EmailSettings): string | null {
   if (email.senderName.length > EMAIL_MAX.senderName) return EMAIL_MESSAGES.senderName;
@@ -209,6 +214,7 @@ export function emailSettingsProblem(email: EmailSettings): string | null {
   if (email.replyTo.length > EMAIL_MAX.replyTo) return EMAIL_MESSAGES.replyTo;
   if (email.replyTo !== "" && !isPlainReplyTo(email.replyTo)) return EMAIL_MESSAGES.replyTo;
   if (email.signature.length > EMAIL_MAX.signature) return EMAIL_MESSAGES.signature;
+  if (INVISIBLE.test(email.signature)) return EMAIL_MESSAGES.signatureCharacters;
   return null;
 }
 
