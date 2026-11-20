@@ -320,6 +320,7 @@ describe("Settings → Email on the API (needs the local PostgreSQL)", () => {
       [{ replyTo: "a@b.co, c@d.co" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: "a@b.co\r\nBcc: c@d.co" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: 'x"<a@b.co>' }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "billing@summit\u200b.example" }, EMAIL_MESSAGES.replyTo],
       [{ senderName: "billing@yourbank.example" }, EMAIL_MESSAGES.senderNameCharacters],
       [{ senderName: "Summit \u202egnilliB" }, EMAIL_MESSAGES.senderNameCharacters],
       [{ signature: "x".repeat(501) }, EMAIL_MESSAGES.signature],

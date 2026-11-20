@@ -67,11 +67,14 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
   2. The worker trusted the stored row (a row written before the rule, or the company display name as sender). **Fixed:** `senderHeaders` applies `isPlainSenderName` and `isPlainReplyTo` at send time; a failing name sends as the platform address alone, a failing reply-to is left out; unit cases in `notification-rules.test.ts`.
   3. The reply-to pattern let control characters through. **Fixed:** `REPLY_TO_TEXT` excludes U+0000 to U+001F and U+007F to U+009F; R12 cases.
   4. (Info) The whole-company Outbox and Retry/Cancel ignored data scope (CLAUDE.md rule 3). **Fixed, the safest option:** both need data scope `all` besides `settings.outbox.view`, 403 with the settings words, on the API and in DemoStore; notifications int and DN6 cases. No default role changes (only the Owner holds the key).
-  5. (Info) A redacted row still showed `sourceId`.
+  5. (Info) A redacted row still showed `sourceId`. **Fixed:** empty on a redacted row in both modes; the meetings, notifications and api-mode e2e cases now find the rows by id or recipient.
 - **Round 3** (fresh reviewer on `0bb7424..c9ce309`): **nothing blocking**; two Low, one informational.
   1. Invisible or blank-looking characters NFKC keeps (U+00AD, U+034F, Hangul fillers, U+180E, U+2060 to U+2064, tag characters) passed the sender name. **Fixed:** the class is now every `Cc`, `Cf`, `Zl` and `Zp` character plus U+034F and the Hangul fillers (`/u`); R12 cases.
   2. DemoStore's rows showed a stored sender the API's worker would drop. **Fixed:** `demoSender` applies `isPlainSenderName` and `isPlainReplyTo` when the row is written; DN7.
-  3. (Info) The personal Outbox matches the account email; safe while Better Auth has no email change (it has none). Recorded for the day email change is enabled: it must verify the new address. **Fixed:** empty on a redacted row in both modes; the meetings, notifications and api-mode e2e cases now find the rows by id or recipient.
+  3. (Info) The personal Outbox matches the account email; safe while Better Auth has no email change (it has none). Recorded for the day email change is enabled: it must verify the new address.
+- **Round 4** (fresh reviewer on `0bb7424..5523be0`): **nothing blocking**; two Low.
+  1. The reply-to let format characters through (zero-width, text-direction marks, soft hyphen), which could hide where replies go from the page and the audit log. **Fixed:** `isPlainReplyTo` also refuses every `Cf`, `Zl` and `Zp` character; R12 and ME4 cases.
+  2. The data-scope check was copied a third time. **Fixed:** one `requireWholeCompany` in `apps/api/src/core/access/whole-company.ts`, used by Settings, Warehouses and showrooms and the Outbox (the reports' check keeps its own words).
 
 ## For STATUS (the orchestrator applies these)
 

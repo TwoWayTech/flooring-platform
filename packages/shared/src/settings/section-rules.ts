@@ -88,9 +88,16 @@ export function isPlainSenderName(name: string): boolean {
   return !SENDER_NAME_REFUSED.test(name.normalize("NFKC"));
 }
 
-/** Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`); the save rule and the Outbox worker both ask it. */
+/** Format characters and line or paragraph separators, which can hide what an address really is (round 4). */
+const INVISIBLE = /[\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/**
+ * Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`) with no invisible or text-direction
+ * character, so the address the page and the audit log show is where replies go (security review
+ * round 4); the save rule and the Outbox worker both ask it.
+ */
 export function isPlainReplyTo(address: string): boolean {
-  return REPLY_TO_TEXT.test(address);
+  return REPLY_TO_TEXT.test(address) && !INVISIBLE.test(address);
 }
 
 /** What Number format says about what it refuses that no single kind's range covers. */

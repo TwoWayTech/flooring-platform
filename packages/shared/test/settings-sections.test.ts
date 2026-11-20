@@ -398,6 +398,11 @@ describe("Settings sections on the API (ADR 0059)", () => {
       [{ replyTo: "office+billing@summit.example" }, null],
       [{ replyTo: "a\u0000@b.co" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: "a@b\u0085.co" }, EMAIL_MESSAGES.replyTo],
+      // Round 4: no invisible or text-direction characters in the reply-to either.
+      [{ replyTo: "billing@summit\u200b.example" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "billing@\u202eelpmaxe.summit" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "bil\u00adling@summit.example" }, EMAIL_MESSAGES.replyTo],
+      [{ replyTo: "billing@summit.example\u2028" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: "a@b.co\nBcc: c@d.co" }, EMAIL_MESSAGES.replyTo],
       [{ replyTo: `${"a".repeat(250)}@b.co` }, EMAIL_MESSAGES.replyTo],
       [{ signature: "x".repeat(EMAIL_MAX.signature) }, null],
