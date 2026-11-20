@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { featureOn } from "@workspace/shared";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+import { HARBOR_OWNER, signInAs, summitDay, SUMMIT_OWNER, type Persona } from "./helpers";
 
 /** Keystone Flooring Supply's Owner, as invoice-lifecycle.spec.ts signs in: Keystone has a CAD rate. */
 const KEYSTONE_OWNER: Persona = { companyId: "keystone", userId: "ks-usr-01", roleKey: "owner" };
@@ -236,20 +236,12 @@ test.describe("Region and Currency (ADR 0059, part 2b)", () => {
 });
 
 test.describe("Sales tax (ADR 0059, part 3a)", () => {
-  /** The browser's own day, which the demo dates a save with (DemoStore's today). */
-  function browserDay(page: Page): Promise<string> {
-    return page.evaluate(() => {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    });
-  }
-
   test("S7 Sales tax: a changed rate is a new version from today; the dates are read only", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/localization?tab=tax");
     const validFrom = page.getByLabel("Colorado valid from");
     await expect(validFrom).toBeDisabled();
-    const today = await browserDay(page);
+    // Summit's day in Denver, which the demo dates a save with (DemoStore's today).
+    const today = summitDay();
     const started = await validFrom.inputValue();
     expect(started).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(started).not.toBe(today);

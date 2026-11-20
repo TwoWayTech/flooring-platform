@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { addDays, dec, moneyString, type CompanyFixtures, type Payment } from "@workspace/shared";
-import { signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+import { signInAs, summitDay, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const summit = JSON.parse(
   readFileSync(fileURLToPath(new URL("../../../../packages/shared/fixtures/summit.json", import.meta.url)), "utf8"),
@@ -31,7 +31,9 @@ const paidInFull = live.find((i) => {
 })!;
 const unpaid = live.find((i) => summit.payments.every((p) => p.invoiceId !== i.id))!;
 
-const thisMonth = () => new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
+/** "November 2026": the month of Summit's day in Denver. */
+const thisMonth = () =>
+  new Date(`${summitDay()}T12:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
 async function openAction(page: import("@playwright/test").Page, name: string) {
   await page.getByRole("button", { name: "Update status" }).click();
