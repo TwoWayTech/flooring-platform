@@ -41,6 +41,8 @@ describe("branding rules (ADR 0059, part 6)", () => {
   it("BR2 the display name: not blank, at most 80 characters as stored, on one line", () => {
     expect(BRANDING_NAME_MAX).toBe(80);
     expect(brandingProblem({ ...SUMMIT, displayName: "x".repeat(80) })).toBeNull();
+    for (const displayName of ["O'Neil & Sons, LLC", "Café Floors", "Smith\u00A0Floors", "Floors “Plus” – Denver"])
+      expect(brandingProblem({ ...SUMMIT, displayName }), displayName).toBeNull();
     for (const displayName of [
       "",
       "   ",
@@ -56,6 +58,9 @@ describe("branding rules (ADR 0059, part 6)", () => {
       "A\u2066B",
       "\uFEFFSummit",
       "A\u200FB",
+      "Summit\u061CFloors",
+      "Sum\u00ADmit",
+      "A\u{E0041}B",
     ])
       expect(brandingProblem({ ...SUMMIT, displayName }), JSON.stringify(displayName)).toBe(
         BRANDING_MESSAGES.displayName,

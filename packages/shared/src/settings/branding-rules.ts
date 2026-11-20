@@ -20,12 +20,12 @@ export const BRAND_COLOR_TEXT = /^#[0-9A-Fa-f]{6}$/;
 export const MONOGRAM_TEXT = /^[A-Z0-9]{1,2}$/;
 
 /**
- * Line breaks, other control characters, and invisible format characters (zero-width and bidi marks,
- * overrides and isolates), refused in the display name: it is printed in email subjects, the sender
+ * Line breaks, other control characters (Unicode Cc), and invisible format characters (Cf: zero-width
+ * and bidi marks, overrides and isolates, the soft hyphen, tag characters), refused in the display name: it is printed in email subjects, the sender
  * name and documents, where a line break would split a header or a line and a bidi override could
- * show a reversed or spoofed name (ADR 0059, part 6, D4; review round 1).
+ * show a reversed or spoofed name (ADR 0059, part 6, D4; review rounds 1 and 2).
  */
-const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/;
+const CONTROL_CHARACTERS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 
 /** A logo as the demo keeps it: a base64 PNG, SVG or JPEG data URL (spec rule 27). */
 const LOGO_DATA_URL = /^data:image\/(png|svg\+xml|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/;
