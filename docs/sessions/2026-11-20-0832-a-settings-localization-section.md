@@ -45,6 +45,8 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 - **A2. The fixture patch is a function, not a partial tax block.** DemoStore moves every fixture date by the anchor-to-today shift (`shiftDates`), so TD11's rows dated later must be built from the raw fixture (a date after its `anchorDate`), not from the shifted tax a store answers. `SUMMIT_TAX.value` is `(tax, anchorDate) => tax`; TD9 uses `(tax) => ({ ...tax, pricesInclude: "inclusive" })`, the plan's patch in function form.
 - **A3. TD11's first assertion moves.** It used to prove the seeding by reading the saved copy right after the whole-section save. Now nothing is saved until the first save, so it reads the saved copy after the Payroll rules save (which stores the section with every tax row) and proves the later rows are there; the Sales tax save then drops them, as before.
 - **A4. A blueprint-delta row is added** although plan D43 said none: 2a, 2b and 3a each have one, the orchestrator's done-list names one, and the owner questions are recorded there.
+- **A5. WM3's anchor** is `const access = await this.assertSettingsSave(db, rule);` (the save now keeps the access for the payments check), not the plan's bare `await`; the mutation is the same.
+- **A6. The mutation runner is Node** (`mutate.mjs`): this laptop has no Python. Same behaviour as the plan's `mutate.py`: one mutation at a time, a saved copy restored after each, `--check` for the anchors.
 
 ## Owner questions (none blocks; each with its safest default taken)
 
@@ -58,7 +60,32 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 | Stage | Command | Result |
 | --- | --- | --- |
 | 0 | the plan's stage 0 greps (above) | one extra caller, TD11 (A1) |
+| 0 | commit `9463378` (log, settings-and-permissions.md, sales.md) | pushed |
+| 1 | `pnpm --filter @workspace/shared exec vitest run test/settings-sections.test.ts test/localization-rules.test.ts test/region-currency-rules.test.ts` | red as planned: R8 (null, not the words) and WS1 (the constant undefined); 26 others pass, LR6 and RG7 among them |
+| 1 | `apps/web: npx vitest run` demo-localization, demo-region-currency, demo-settings, demo-tax, settings-answer | red as planned, 6 of 65: LD13, WD1 (at the tax-only line, `:246`), WD2 and WW1 (the whole save resolved), RD10 (the zone's words), D5 (the overtime words). TD9 and TD11 pass: the fixture patch applies |
+| 1 | commit `de9b41f` (the tests) | pushed |
+| 2 | `packages/shared: npx vitest run` | 80 files, 1178 tests passed |
+| 2 | the same 5 web files | 65 passed |
+| 2 | `pnpm typecheck`, `pnpm --filter api typecheck` (uncached), `pnpm lint` (with Prettier) | all pass; the API compiles without `localizationProblem` |
+| 2 | `git grep -n localizationProblem -- apps packages` | only WS1's assertion that it is gone |
+| 2 | commit `35d2b8a` (the 6 product files; Prettier reformatted two of the new tests) | pushed after the mutations |
+| 2 | mutations WM1 to WM6 (`settings3b/mutate.mjs` in the scratchpad: a saved copy restored after each) | all caught, all restored, tree clean (below) |
+
+### Mutations (stage 2, on the committed change `35d2b8a`)
+
+```
+WM1 (drop the name check)            caught by WS1, R8, LD13, WD1, WD2, RD10, D5, WW1   restored=true caught=true
+WM2 (refuse by the narrowed value)   caught by WS1 (the undefined value)                 restored=true caught=true
+WM3 (content rules before the keys)  caught by WD1 (Priya got the section's words)       restored=true caught=true
+WM4 (resetSettings bypasses updateSettings) caught by WD2                                 restored=true caught=true
+WM5 (api mode sends localization)    caught by WW1 and W6                                restored=true caught=true
+WM6 (3a's TM40: refuse every pricesInclude change) caught by TD9                          restored=true caught=true
+```
+
+## Stages 0 to 2: outcome
+
+Red for the stated reasons, then green; every mutation caught. No screen, flow or e2e calls the whole-section save; only unit tests did.
 
 ## What's left
 
-Stages 1 to 5.
+Stages 3 to 5.
