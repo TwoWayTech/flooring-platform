@@ -119,3 +119,19 @@ Checked sound: module `hr` then `settings.hr.manage` from packages/shared; switc
 - Api mode: `apps/web/tests/e2e-api/settings-hr.spec.ts` (E1 HR saves a switch with a step-up, the employee reads it, a duplicate holiday is refused before any code; E2 the pay frequency is fixed once a pay period exists, on screen and on the API, and Sales is refused). Each restores Summit's section as it found it.
 - Demo: `apps/web/tests/e2e/hr-workspace.spec.ts` (the existing "Settings → HR changes what employees see" now confirms the code; the schedule lock; a duplicate holiday refused before any code).
 - Commands, when allowed: api mode through the orchestrator's runner for `tests/e2e-api/settings-hr.spec.ts` plus `settings.spec.ts` (part 1's shared answer); demo: `pnpm build` with `NEXT_PUBLIC_DATA_SOURCE=demo`, then `pnpm --filter web exec playwright test tests/e2e/hr-workspace.spec.ts --project=flooring --project=hr --workers=2`.
+
+## Stacked on part 4a, and the e2e runs (coordinator's go-ahead)
+
+| Step | Command | Result |
+| --- | --- | --- |
+| merge | `git fetch -q origin`, `git merge origin/feat/settings-locations-api` (head `3c3a04b`, a real merge) | conflicts only where both parts added text: `packages/shared/src/index.ts` (both exports), ADR 0059 (the "Later parts" rows: 4a's row 4, part 5's row 5; both sections, 4a first), api-contract, settings-and-permissions, blueprint-delta (both kept, 4a first). No code conflict; `API_SETTINGS_SECTIONS` and `SETTINGS_READERS` untouched by 4a. Merge commit `04a2760`; part 5's ADR status now says it stacks on 4a |
+| checks | `pnpm typecheck`, `pnpm lint`, `pnpm test` | clean; shared 1201, web 449, api 126, db 18, providers 11 passed |
+| API | `npx vitest run --project integration --maxWorkers=4` settings-hr, settings, settings-locations, settings-localization, permissions, isolation, hr, portal, payroll, california-pay, imports, inventory | 12 files, 300 tests passed |
+| ports | `netstat -ano` for :3000 and :4000 before and after every run | nothing listening each time |
+| builds | `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build`, `pnpm --filter api build` | both exit 0 |
+| api e2e | `e2e-api.mjs C:/dev/fp-5 tests/e2e-api/settings-hr.spec.ts tests/e2e-api/settings.spec.ts` | first run 4 passed, 1 failed: E2 found Tamara already enrolled by E1 (`resetAuthAround` resets per describe). Fixed in the spec only (`6f08ce5`): each test in its own describe with its own reset. Rerun: 5 passed |
+| api e2e | `e2e-api.mjs C:/dev/fp-5 tests/e2e-api` (the whole api-mode suite) | 59 passed (6.8m) |
+| demo build | `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build` | exit 0 |
+| demo e2e | `E2E_WORKERS=2 npx playwright test` hr-workspace, hr, portal, settings, screens, a11y `--project=flooring --project=hr` | 195 passed (4.4m) |
+
+No product code changed in the merge or the e2e step (one spec file only), so no further security review round was needed.
