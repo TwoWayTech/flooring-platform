@@ -54,7 +54,13 @@ import type {
 } from "@workspace/shared";
 import { featureOn, hoursToWire, timesheetFromWire } from "@workspace/shared";
 // Reports (ADR 0055) keep their own imports.
-import { EMPTY_REPORT_OPTIONS, type BusinessReport, type Report, type ReportOptions } from "@workspace/shared";
+import {
+  EMPTY_REPORT_OPTIONS,
+  type BusinessReport,
+  type Report,
+  type ReportOptions,
+  type TrialBalance,
+} from "@workspace/shared";
 import { businessReportPath, hubReportPath } from "./report-paths";
 import type { SessionContext } from "@/lib/session/api-context";
 import { HttpApiError } from "./transport";
@@ -397,6 +403,11 @@ export const API_METHODS = {
   salesByCategoryReport: (http) => (query) =>
     http.request<Report>("GET", hubReportPath("/reports/sales-by-category", query)),
   paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
+  trialBalance: (http) => (through) =>
+    http.request<TrialBalance>(
+      "GET",
+      through ? `/ledger/trial-balance?${new URLSearchParams({ through }).toString()}` : "/ledger/trial-balance",
+    ),
   // Data import, part 1 (ADR 0057): customers, addresses, suppliers and products on the API. The
   // company is the session's, so `companyId` is never sent; only the chosen columns travel
   // (`importBody`); every write makes the history and the record lists read again (ADR 0051, 2026-11-16).

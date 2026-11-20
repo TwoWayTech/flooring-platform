@@ -743,7 +743,7 @@ describe("reports (needs the local PostgreSQL)", () => {
   });
 
   it("offers each default role its reports, exports and pickers (R-ROLE-3; S1, S15)", async () => {
-    const all = ["business", "pnl", "sales", "payments"];
+    const all = ["business", "pnl", "sales", "payments", "trial-balance"];
     const names = ["Colorado Springs", "Denver Central", "Southgate Showroom", "Summit Design Studio"];
     for (const cookie of [cookies.owner!, cookies.accountant!]) {
       const options = await ok<ReportOptions>(PATHS.options, cookie);
@@ -904,7 +904,7 @@ describe("reports (needs the local PostgreSQL)", () => {
     }
     await withFeatureOff("reports.business", async () => {
       const options = await ok<ReportOptions>(PATHS.options, cookies.owner!);
-      expect(options.reports).toEqual(["pnl", "sales", "payments"]);
+      expect(options.reports).toEqual(["pnl", "sales", "payments", "trial-balance"]);
       expect(options.salespeople).toEqual([]);
       expect(options.vendors).toEqual([]);
     });

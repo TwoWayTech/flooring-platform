@@ -89,6 +89,7 @@ import {
   taxInForce,
   type LocalizationSettings,
   type SettingsSectionRule,
+  type TrialBalance,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -1574,6 +1575,15 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["reports.financial.view"]);
     return demoPaymentsReport(db, await this.reportViewer(db), query);
+  }
+
+  /**
+   * The demo keeps no journal: its "ledger" is each invoice's balance, so a trial balance made up
+   * from the documents would disagree with the API's postings. The hub never offers it in the demo
+   * (`reportAccess` without `books`), and asking anyway is refused (ADR 0055 "Trial balance").
+   */
+  async trialBalance(): Promise<TrialBalance> {
+    throw new DemoRuleError("The demo keeps no journal, so it has no trial balance.");
   }
 
   // Meetings follow the shared rules the API uses (ADR 0051 "Part 3"); what stays demo-only is in

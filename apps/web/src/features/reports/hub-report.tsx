@@ -38,12 +38,12 @@ import { shownAnswer, type KeyedAnswer } from "./report-answer";
 import { ReportFallback } from "./report-fallback";
 import { useDebouncedValue } from "./use-debounced-value";
 
-/** The three reports beside the Business report (spec rule 24). */
-export type HubReportKey = Exclude<ReportKey, "business">;
+/** The three reports beside the Business report (spec rule 24); the trial balance has its own view. */
+export type HubReportKey = Exclude<ReportKey, "business" | "trial-balance">;
 
 /** Whether a report the server lists is one of the three hub reports. */
 export function isHubReport(key: ReportKey): key is HubReportKey {
-  return key !== "business";
+  return key !== "business" && key !== "trial-balance";
 }
 
 const ALL = "all";

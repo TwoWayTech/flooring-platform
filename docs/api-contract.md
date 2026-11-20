@@ -491,13 +491,15 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
+| `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all`, and the trial balance's sight rule (below) | `TrialBalance` (packages/shared): every account's debits, credits and balance through a day (all time without one), the totals, and `balanced`. 404 while `reports.hub` is off; `Cache-Control: private, no-store`; read in one read-only snapshot. The Reports hub's Trial balance (ADR 0055, "Trial balance") |
 | `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
 | `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040). Unchanged by Settings part 1; in the finance module |
 | `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited. A step-up after the body is read (403 `step_up_required`; ADR 0040, 2026-11-20) |
 
 Cash lines post to the bank account for the payment's method, or to Cash and Bank when no bank account claims it. A void credits the account the payment first posted to (ADR 0040).
+
+**The trial balance's sight rule** (`seesTrialBalance` in packages/shared; ADR 0055, "Trial balance", 2026-11-20). Flooring Suite only. In order: 401, 403 for the product (`product_not_enabled`), the module or the key, 404 for the hub switch, 403 "The books cover the whole company." below scope `all`, 400 for a bad `through`, then 403 `forbidden` "The trial balance shows cost of goods and pay, which your access doesn't include." unless the person holds `sales.margin.view_sensitive` and `inventory.product.view_sensitive`, plus `contracts.contract.view_sensitive` once a contract billing has posted and `hr.payroll.view` once pay has posted (a pay-run, contractor-payment or commission-statement entry, or a line on Wages, Accrued Payroll, Commissions or Contract Labor). The facts are read over all time, whatever `through` is.
 
 ## Expenses (real build, P12 part 2, ADR 0041)
 
@@ -709,7 +711,7 @@ Flooring Suite only and module `core`: an HR Suite company gets 403 `product_not
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /reports/options` | `reports.sales.view` or `reports.financial.view` | `ReportOptions` `{ reports, exports, locations, salespeople, vendors }`: the reports the person may open (`business`, `pnl`, `sales`, `payments`, by key, switch and, for the first two, data scope `all`), those they may also export (`reports.financial.export`, `reports.sales.export`), the live locations `{ id, name, kind }`, and, only when `business` is listed, the Business report's pickers: everyone who is the rep on a live invoice ("Former employee" when unknown) and the live suppliers, by name. Takes no parameter |
+| `GET /reports/options` | `reports.sales.view` or `reports.financial.view` | `ReportOptions` `{ reports, exports, locations, salespeople, vendors }`: the reports the person may open (`business`, `pnl`, `sales`, `payments`, by key, switch and, for the first two, data scope `all`; and `trial-balance` only when `GET /ledger/trial-balance` would answer them: `reports.financial.view`, scope `all` and the sight rule under "Ledger"), those they may also export (`reports.financial.export`, `reports.sales.export`), the live locations `{ id, name, kind }`, and, only when `business` is listed, the Business report's pickers: everyone who is the rep on a live invoice ("Former employee" when unknown) and the live suppliers, by name. Takes no parameter |
 | `GET /reports/business?from=&to=&locationIds=&productCategory=&expenseCategory=&salesRepId=&supplierId=` | `reports.financial.view`, data scope `all` | `BusinessReport` (spec rules 2 to 23). `from` and `to` are required; `locationIds` is comma-separated, at most 50, each a live location; `productCategory` a product category; `expenseCategory` one of the picker's categories (`payroll` refused); `salesRepId` and `supplierId` UUIDs (an unknown one matches nothing). Drill lists at most 200 records per row, newest first; a cut row has `recordCount` |
 | `GET /reports/pnl?range=&locationId=` | `reports.financial.view`, data scope `all` | `Report`: profit and loss by month (rule 24). `range` is `12m` (default), `3m`, `1m` or `ytd`; `locationId` a live warehouse |
 | `GET /reports/sales-by-category?range=&locationId=&category=` | `reports.sales.view` | `Report` over the invoices in the person's data scope, by the rules of `GET /invoices` (own by rep, branch by the invoice's branch). `category` is a product category other than `service` |
@@ -727,7 +729,7 @@ Flooring Suite only and module `core`: an HR Suite company gets 403 `product_not
 - **Snapshot:** each answer is read in one `READ ONLY`, `REPEATABLE READ` transaction, so all its figures come from one moment. Write-off and goods-receipt moments count on the company's day in its time zone.
 - **Exports:** there is no export route. CSV and PDF are built in the browser from these answers, and the buttons follow `exports`. Any future export route (Excel, emailed reports) checks the export key on the server.
 - **Removed reports:** sales tax by jurisdiction, inventory valuation and the two aging reports have no route.
-- **The web client** routes `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport` and `paymentsReport` (`API_METHODS`). It sends only the filters that are set, never a company id, and reads a 403 `forbidden` or a 404 on `GET /reports/options` as no reports (`EMPTY_REPORT_OPTIONS`); any other failure surfaces as elsewhere.
+- **The web client** routes `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport`, `paymentsReport` and, since 2026-11-20, `trialBalance` (`GET /ledger/trial-balance`) (`API_METHODS`). The demo keeps no journal, so `DemoStore.trialBalance` refuses and the demo's options never list `trial-balance`. It sends only the filters that are set, never a company id, and reads a 403 `forbidden` or a 404 on `GET /reports/options` as no reports (`EMPTY_REPORT_OPTIONS`); any other failure surfaces as elsewhere.
 
 ## Data import, part 1 (real build, ADR 0057)
 
