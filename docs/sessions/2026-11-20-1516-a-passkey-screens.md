@@ -69,7 +69,7 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 | Check | Result |
 | --- | --- |
-| `pnpm --filter web lint`, `typecheck` | clean |
+| `pnpm lint`, `pnpm typecheck`, `pnpm test` (repo-wide, Turborepo) | all green (6/6, 6/6, 5/5 tasks) |
 | Web unit tests (vitest) | 69 files, 499 tests passed (new: webauthn WA1-10, qr-matrix QR1-3, passkeys-api PK1-15, demo-passkeys DP1-5; api-rereads classifies the 5 new methods) |
 | Prettier on changed files | clean |
 | API integration | not run: the API does not change (its mfa.int.test.ts already covers the rules) |
