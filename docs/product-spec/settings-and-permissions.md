@@ -1010,7 +1010,7 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 
 **Settings on the API, the bell and Outbox part (ADR 0059): Email:**
 - **Who reads what.** `GET /settings` also answers `email` (sender name, reply-to, sign-off) to holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, the three fields are empty, and an empty sender name sends as the company's name.
-- **The save.** `PUT /settings/email`, with `settings.notifications.manage`, the `settings.notifications` switch (404 when off), data scope `all`, a body with exactly the three fields, and the shared rule (`emailSettingsProblem`): the sender name at most 80 characters with no line break, quote, backslash or angle bracket; the reply-to empty or one plain address; the sign-off at most 500 characters. Then always a step-up: who mail seems to come from and where customers' answers go are a phishing lever. One audit entry, "Changed email and notifications".
+- **The save.** `PUT /settings/email`, with `settings.notifications.manage`, the `settings.notifications` switch (404 when off), data scope `all`, a body with exactly the three fields, and the shared rule (`emailSettingsProblem`): the sender name at most 80 characters with no line break, quote, backslash, angle bracket, `@` or text-direction mark; the reply-to empty or one plain mailbox; the sign-off at most 500 characters. Then always a step-up: who mail seems to come from and where customers' answers go are a phishing lever. One audit entry, "Changed email and notifications".
 - **The demo** applies the same key, switch, scope, rule and words; its step-up is the dialog.
 
 **Known limits in api mode:**

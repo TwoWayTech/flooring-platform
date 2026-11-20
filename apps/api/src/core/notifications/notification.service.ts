@@ -407,14 +407,18 @@ export class NotificationService implements OnApplicationBootstrap {
       .limit(50);
   }
 
-  /** Marks the person's own unread notes read: the given ones, or all of them. */
+  /**
+   * Marks the person's own unread notes read: the given ones, or all of them when no list is given.
+   * An empty list marks none (security review round 1), as the web's contract means it.
+   */
   async markRead(tenant: TenantContext, userId: string, ids?: readonly string[]): Promise<void> {
+    if (ids && ids.length === 0) return;
     const db = await this.tenancy.db(tenant);
     const mine = and(eq(notifications.userId, userId), isNull(notifications.readAt));
     await db
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(ids && ids.length > 0 ? and(mine, inArray(notifications.id, [...ids])) : mine);
+      .where(ids ? and(mine, inArray(notifications.id, [...ids])) : mine);
   }
 
   /**

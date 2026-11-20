@@ -55,13 +55,25 @@ export const EMAIL_MAX = { senderName: 80, replyTo: 254, signature: 500 } as con
 /** What Settings → Email says about each field it refuses, the same words in both modes. */
 export const EMAIL_MESSAGES = {
   senderName: `Keep the sender name to ${EMAIL_MAX.senderName} characters.`,
-  senderNameCharacters: "Leave line breaks, quotes, backslashes and angle brackets out of the sender name.",
+  senderNameCharacters:
+    "Use a plain name for the sender: no @, quotes, backslashes, angle brackets, line breaks or text-direction marks.",
   replyTo: "Enter the reply-to address as name@example.com, or leave it empty.",
   signature: `Keep the sign-off to ${EMAIL_MAX.signature} characters.`,
 } as const;
 
-/** What the From header could not carry as typed: line breaks and other control characters, quotes, backslashes, angle brackets. */
-const SENDER_NAME_REFUSED = /[\u0000-\u001f\u007f"\\<>]/;
+/**
+ * What a sender name may not hold (security review round 1): what the From header could not carry as
+ * typed (control characters, quotes, backslashes, angle brackets), an @, so the name can't pass for an
+ * address in a mail app that shows only the name, and the Unicode line separators and text-direction
+ * marks that can make a name display as something else.
+ */
+const SENDER_NAME_REFUSED = /[\u0000-\u001f\u007f-\u009f"\\<>@\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
+
+/**
+ * A reply-to address as one plain mailbox (security review round 1): `EMAIL_TEXT` without the
+ * characters that give an address a display name, a comment or a second address (`"<>,;()[]\`).
+ */
+const REPLY_TO_TEXT = /^[^\s@"<>,;()[\]\\]+@[^\s@"<>,;()[\]\\]+\.[^\s@"<>,;()[\]\\]+$/;
 
 /** What Number format says about what it refuses that no single kind's range covers. */
 export const NUMBER_MESSAGES = {
@@ -163,14 +175,14 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
  * Why Settings → Email can't be saved, or null (notifications.md "EmailSettings"; ADR 0059, bell and
  * Outbox part, D8). The sender name is at most 80 characters with nothing the From header would
  * have to strip, so what the page shows is what recipients see; empty sends as the company's name.
- * The reply-to is empty or one plain address (`EMAIL_TEXT`), where customers' answers to invoices
+ * The reply-to is empty or one plain mailbox (`REPLY_TO_TEXT`), where customers' answers to invoices
  * and receipts go. The sign-off is at most 500 characters. Fields are stored as sent.
  */
 export function emailSettingsProblem(email: EmailSettings): string | null {
   if (email.senderName.length > EMAIL_MAX.senderName) return EMAIL_MESSAGES.senderName;
   if (SENDER_NAME_REFUSED.test(email.senderName)) return EMAIL_MESSAGES.senderNameCharacters;
   if (email.replyTo.length > EMAIL_MAX.replyTo) return EMAIL_MESSAGES.replyTo;
-  if (email.replyTo !== "" && !EMAIL_TEXT.test(email.replyTo)) return EMAIL_MESSAGES.replyTo;
+  if (email.replyTo !== "" && !REPLY_TO_TEXT.test(email.replyTo)) return EMAIL_MESSAGES.replyTo;
   if (email.signature.length > EMAIL_MAX.signature) return EMAIL_MESSAGES.signature;
   return null;
 }

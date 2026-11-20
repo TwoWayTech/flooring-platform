@@ -400,7 +400,7 @@ describe("meetings (needs the local PostgreSQL)", () => {
     expect((ownerList.body as Meeting[]).some((m) => m.id === made.id)).toBe(false);
     status(await call("get", `/meetings/${made.id}/calendar.ics`, cookies.owner), 404);
     status(await call("patch", `/meetings/${made.id}`, cookies.owner).send({ title: "Seen" }), 404);
-    const outbox = await call("get", "/outbox", cookies.owner);
+    const outbox = await call("get", "/outbox?all=true", cookies.owner);
     status(outbox, 200);
     const rowsSeen = (outbox.body as { sourceId: string; subject: string; attachments: unknown[] }[]).filter(
       (row) => row.sourceId === made.id,

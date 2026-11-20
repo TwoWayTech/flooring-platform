@@ -35,6 +35,15 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 ## Build decisions (B1…)
 
+- **B1. One sight rule, shared.** The API's `visibleOutboxRow` rule moved to packages/shared (`outboxSight`, `OutboxReader`, `REDACTED_OUTBOX`) instead of being copied into DemoStore; `notification-rules.ts` keeps `visibleOutboxRow` as a thin wrapper. DemoStore gains the API's sealed private-meeting rows and the address compared without case.
+- **B2. `?all=true` is exact.** Any other value, a repeated parameter (an array) or none is the personal view.
+- **B3. The quote email read the quote from before the send** (old total, no expiry): `updateQuoteStatus` now emails the quote re-read after the commit. Found by MQ1.
+- **B4. `userId` in `GET /notifications`**, the reader's own id, so the answer is the contract's `InAppNotification` with no mapping.
+- **B5. `markNotificationsRead` sends only UUIDs**, so a DemoStore id left on screen can't make the batch a 400, and an all-demo list sends nothing.
+- **B6. Part 1's `settings.int` A1, A8, A9b** compare part 1's sections (`partOne`); A1 also checks nothing else but `email` comes, to its readers. Email per role is `settings-email.int` ME1.
+- **B7. Never-saved Email answered empty** rather than with the company name: the answer is what is stored, and the empty name's meaning ("the company's name") is the same in both modes and on the page's helper text.
+- **B8. Pre-existing:** the demo e2e "marking an invoice sent puts a message in the Outbox" always skips, because every seeded invoice is already sent; DN1 covers the message (and its money) by making one unsent first.
+
 ## Commands and results
 
 ## Mutations
@@ -43,8 +52,16 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 - **Q1. Retry and Cancel on one's own rows.** The spec lets anyone send again or cancel their own message; the API keeps ADR 0032's `settings.outbox.view` and DemoStore now matches it. Widen it?
 - **Q2. Notification rules in api mode.** Event switches, channels and templates (`saveNotificationRule`, `list("notificationRules")`) still save in the browser only in api mode, while the API reads its own `notification_rules`. A follow-up PR.
+- **Q3. Dates in messages.** Message variables carry dates as `yyyy-MM-dd` (both modes, the spec's known behaviour); money now follows the company's number format. Format dates with the company's date format too?
+- **Q4. The sender name's characters.** Taken: no `@`, quotes, backslashes, angle brackets, control characters, line separators or text-direction marks (security review round 1), so a name can't pass for an address. Too strict for any company's real name?
 
 ## Security review
+
+- **Round 1** (fresh read-only security-reviewer on `0bb7424..67c4e18`): **nothing blocking**; four Low findings.
+  1. A sender name could still look like an address or another party ("billing@yourbank.example") or carry Unicode line separators and text-direction marks. **Fixed:** `emailSettingsProblem` also refuses `@`, U+0080 to U+009F, U+2028, U+2029, U+202A to U+202E and U+2066 to U+2069 (new words, both modes); R12 and ME4 cases.
+  2. The reply-to took display-name and list syntax (`x"<a@b.c>`, `a,b@c.d`). **Fixed:** `REPLY_TO_TEXT`, one plain mailbox without `"<>,;()[]\`; R12 and ME4 cases.
+  3. The API read `{ ids: [] }` as "mark all". **Fixed:** an empty list marks none, no list marks all; the notifications int case checks both.
+  4. The quote email's expiry is `yyyy-MM-dd`, not the company's date format. **Not changed:** dates in message variables are `yyyy-MM-dd` in both modes (spec "Edge cases": "Dates in variables are stored as YYYY-MM-DD"); a company date format in messages is recorded as Q3.
 
 ## For STATUS (the orchestrator applies these)
 

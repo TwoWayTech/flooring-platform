@@ -381,7 +381,8 @@ describe("notifications core (needs the local PostgreSQL)", () => {
   });
 
   it("marks only the person's own notes read, and refuses ids that are not ids", async () => {
-    const owner = await harness.userIdOf(await harness.addUser({ companyIds: [company.id] }));
+    const ownerEmail = await harness.addUser({ companyIds: [company.id] });
+    const owner = await harness.userIdOf(ownerEmail);
     const otherEmail = await harness.addUser({ companyIds: [company.id] });
     await service().notify(tenant, null, {
       event: "timeoff.requested",
@@ -397,6 +398,14 @@ describe("notifications core (needs the local PostgreSQL)", () => {
         .expect(201);
       const [after] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
       expect(after.readAt).toBeNull();
+      // An empty list marks none of the owner's own notes (security review round 1); no list marks them all.
+      const ownerCookie = await harness.signIn(ownerEmail);
+      await call("post", "/notifications/read", ownerCookie).send({ ids: [] }).expect(201);
+      const [still] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
+      expect(still.readAt).toBeNull();
+      await call("post", "/notifications/read", ownerCookie).send({}).expect(201);
+      const [read] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
+      expect(read.readAt).not.toBeNull();
     } finally {
       await handle.close();
     }
