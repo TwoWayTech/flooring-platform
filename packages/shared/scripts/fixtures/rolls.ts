@@ -59,7 +59,7 @@ export function buildRolls(ctx: GenContext, products: readonly Product[], users:
       rollNumber: `${brandCode(product.brand)}-${rng.int(1000, 9999)}`,
       productId: product.id,
       dyeLot: `${rng.int(10, 39)}${rng.pick(["A", "B", "C", "D"])}`,
-      widthFt: product.widthFt ?? 12,
+      widthFt: product.widthFt ?? "12",
       originalLengthFt: String(original),
       remainingLengthFt: String(remaining),
       costPerSqFt: costPerSqFt.toDecimalPlaces(4).toFixed(4),

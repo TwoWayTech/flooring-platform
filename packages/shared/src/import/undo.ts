@@ -83,7 +83,7 @@ export function productUndoProblem(change: ImportChange, facts: ProductUndoFacts
     before.category !== after.category ||
     before.unit !== after.unit ||
     decimalChanged(before.sqFtPerCarton, after.sqFtPerCarton) ||
-    before.widthFt !== after.widthFt;
+    decimalChanged(before.widthFt, after.widthFt);
   if (valuationChanged && facts.hasStock(before.id)) {
     return `${before.sku} has stock history now, so its cost, category, selling unit, coverage and roll width can't be put back.`;
   }

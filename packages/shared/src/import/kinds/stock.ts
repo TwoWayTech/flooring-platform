@@ -53,7 +53,7 @@ function resolveRoll(row: ParsedRow, ctx: PlanContext, product: Product, warehou
     rollNumber: number,
     productId: product.id,
     dyeLot: text(row, "dye_lot"),
-    widthFt: row.width_ft ? Number(row.width_ft) : (product.widthFt ?? 12),
+    widthFt: text(row, "width_ft") || (product.widthFt ?? "12"),
     originalLengthFt: length,
     remainingLengthFt: length,
     // The product's cost is per sq yd; a roll keeps it per sq ft (CLAUDE.md rule 4).

@@ -22,7 +22,7 @@ import {
   type SupplierPayment,
 } from "../src";
 
-const carpet = { id: "c", sku: "CP-1", unit: "sq_ft", widthFt: 12, category: "carpet" } as Product;
+const carpet = { id: "c", sku: "CP-1", unit: "sq_ft", widthFt: "12", category: "carpet" } as Product;
 const lvp = { id: "l", sku: "LV-1", unit: "sq_ft", sqFtPerCarton: "20.00", category: "lvp" } as Product;
 const lines = [
   { id: "1", productId: "c", description: "Carpet", quantity: "200", unit: "sq_ft" as const, unitCost: "18.00" },

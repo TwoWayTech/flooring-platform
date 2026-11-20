@@ -446,7 +446,7 @@ describe("SR-5 to SR-7: products with stock history and retired SKUs (ADR 0057 S
       id: "prd-carpet",
       sku: "CP-1",
       category: "carpet",
-      widthFt: 12,
+      widthFt: "12",
       sqFtPerCarton: undefined,
     });
     const carpetRow = { ...row, sku: "CP-1", category: "Carpet", sq_ft_per_carton: "", width_ft: "15" };
@@ -1075,7 +1075,7 @@ describe("SR-28: an Undo never puts back what stock is valued at (ADR 0057 S-5, 
       { category: "carpet" as const },
       { unit: "each" as const },
       { sqFtPerCarton: "20.000" },
-      { widthFt: 12 },
+      { widthFt: "12" },
     ]) {
       expect(productUndoProblem(change(after), facts(true))).toBe(FROZEN);
       expect(productUndoProblem(change(after), facts(false))).toBeNull();

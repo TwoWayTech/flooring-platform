@@ -29,9 +29,9 @@ export interface Product {
   cost: string;
   /** Boxed goods: sq ft per carton and reorder point in sq ft. Stock on hand comes from the stock ledger. */
   sqFtPerCarton?: string;
-  reorderPoint?: number;
+  reorderPoint?: string;
   /** Broadloom: roll width in ft. */
-  widthFt?: number;
+  widthFt?: string;
   attributes: Record<string, string>;
   supplierId: string;
   createdAt: string;
@@ -54,7 +54,7 @@ export interface Roll {
   rollNumber: string;
   productId: string;
   dyeLot: string;
-  widthFt: number;
+  widthFt: string;
   originalLengthFt: string;
   remainingLengthFt: string;
   costPerSqFt: string;
