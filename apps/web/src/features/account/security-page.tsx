@@ -21,7 +21,8 @@ import { AddPasskeyDialog, RemovePasskeyDialog, RenamePasskeyDialog } from "./pa
  * about their own account, so it needs no permission key.
  */
 export function SecurityPage() {
-  const query = useApiQuery((client) => client.signInSecurity(), []);
+  // A failed re-read after a change keeps the page, so an open dialog and its words stay.
+  const query = useApiQuery((client) => client.signInSecurity(), [], { keepDataOnError: true });
   return (
     <div className="flex max-w-3xl flex-col gap-6">
       <PageHeader title="Sign-in and security" description="How you confirm it is you when you sign in." />

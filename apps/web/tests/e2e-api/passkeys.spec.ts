@@ -81,6 +81,15 @@ test.describe("passkeys (api mode)", () => {
   test.beforeAll(async () => resetAuthState(controlUrl(), [HR_EMAIL]));
   test.afterAll(async () => resetAuthState(controlUrl(), [HR_EMAIL]));
 
+  test("a browser without passkeys is not offered the passkey sign-in", async ({ page }) => {
+    await page.addInitScript(() => {
+      delete (window as { PublicKeyCredential?: unknown }).PublicKeyCredential;
+    });
+    await page.goto("/login");
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toHaveCount(0);
+  });
+
   test("enrol with a passkey, sign in with it, then rename, add and remove passkeys", async ({ page }) => {
     test.setTimeout(120_000);
     const cdp = await page.context().newCDPSession(page);
