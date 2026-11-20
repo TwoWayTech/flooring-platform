@@ -891,10 +891,10 @@ export class DemoStore implements ApiClient {
    * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule against
    * the stored tab. Region refuses a zone, country or locale change and needs Sales tax's key for a
    * change of the states of operation (View as limits the keys, spec rule 22); Currency keeps its
-   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). Sales tax starts a changed rule or county
-   * rate today, a changed rule taking its state's next version, and keeps only what is in force
-   * (part 3a). The step-up is the
-   * dialog alone, as everywhere in the demo. Only that tab changes, and the audit entry names it.
+   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). Sales tax starts
+   * a changed rule or county rate today, a changed rule taking its state's next version, and keeps
+   * only what is in force (part 3a). The step-up is the dialog alone, as everywhere in the demo.
+   * Only that tab changes, and the audit entry names it.
    */
   async updateLocalization<T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) {
     const db = this.open();
