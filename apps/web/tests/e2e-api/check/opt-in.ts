@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import type { FreshTestServer } from "@workspace/db/testing";
+import { redirectableUrl, type FreshTestServer } from "@workspace/db/testing";
 
 /**
  * The whole-product check's browser specs (tests/e2e-api/check, tagged @check) are opt-in, because
@@ -37,8 +37,8 @@ function refuseUnlessThrowaway(name: string, url: string | undefined): string {
   } catch {
     throw new Error(`${name} is not a database URL.`);
   }
-  const overridden = [...parsed.searchParams.keys()].some((key) => key === "host" || key === "hostaddr");
-  const local = LOCAL_HOSTS.has(parsed.hostname) && !overridden;
+  // A query option or a fragment could move postgres.js off the host and port checked here.
+  const local = LOCAL_HOSTS.has(parsed.hostname) && !redirectableUrl(url, parsed);
   if (!local || (!ON_GITHUB_ACTIONS && parsed.port !== THROWAWAY_PORT)) {
     throw new Error(
       `${name} must point at the throwaway e2e database on this machine (port ${THROWAWAY_PORT} outside GitHub Actions); ` +

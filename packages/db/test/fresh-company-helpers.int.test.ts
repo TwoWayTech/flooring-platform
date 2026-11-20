@@ -189,7 +189,8 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
     const names = freshNames("c");
     const company = { ...names, products: ["flooring"] as const };
     const remote = "postgres://postgres:postgres@db.example.com:5432/control";
-    const hostOverride = `${control.url}${control.url.includes("?") ? "&" : "?"}host=db.example.com`;
+    const withOption = (option: string) => `${control.url}${control.url.includes("?") ? "&" : "?"}${option}`;
+    const hostOverride = withOption("host=db.example.com");
     const countTenants = async () => (await handle.db.select({ id: tenants.id }).from(tenants)).length;
     const tenantsBefore = await countTenants();
     const refusals: [string, () => Promise<unknown>, RegExp][] = [
@@ -214,6 +215,16 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
         "provision with a host override",
         () => provisionTestCompany({ ...server, controlUrl: hostOverride }, company),
         /this machine.*controlUrl/,
+      ],
+      [
+        "provision with a port override",
+        () => provisionTestCompany({ ...server, controlUrl: withOption("port=5999") }, company),
+        /this machine.*controlUrl/,
+      ],
+      [
+        "provision with a fragment",
+        () => provisionTestCompany({ ...server, adminUrl: `${server.adminUrl}#@db.example.com:5432/x` }, company),
+        /this machine.*adminUrl/,
       ],
       ["invite summit", () => inviteTestOwner(control.url, "summit"), /demo company summit/],
       ["invite on a remote server", () => inviteTestOwner(remote, names.slug), /this machine/],
@@ -289,7 +300,7 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
     expect(await sweepTestCompanies(server, 2 * HOUR), "nothing is left to sweep").toEqual([]);
   }, 60_000);
 
-  it("FH-4: the sweep drops a retired company's leftover database, and one company it can't retire doesn't stop the others", async () => {
+  it("FH-4: the sweep drops a retired fresh company's leftover database and leaves a stranger's, and one company it can't retire doesn't stop the others", async () => {
     const age = new Date(Date.now() - 3 * HOUR);
     // Retired, but its drop never ran: both stamps set, the database still there.
     const orphan = await provision("f");
@@ -308,6 +319,18 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
       timeZone: "America/Denver",
       createdAt: age,
     });
+    // A retired company the helpers never made (outside FRESH_SLUG), whose database must survive.
+    const stranger = `e2efresh_${randomBytes(2).toString("hex")}`;
+    await handle.db.insert(tenants).values({
+      slug: stranger,
+      legalName: "Retired Stranger LLC",
+      name: "Retired Stranger",
+      state: "CO",
+      timeZone: "America/Denver",
+      createdAt: age,
+      deletedAt: age,
+    });
+    await admin.db.execute(sql.raw(`create database "${companyDatabaseName(stranger)}"`));
     const old = await provision("h");
     await handle.db.update(tenants).set({ createdAt: age }).where(eq(tenants.id, old.tenantId));
     expect(await databaseExists(companyDatabaseName(orphan.slug))).toBe(true);
@@ -318,6 +341,8 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
     expect(await deletedStamps(old.tenantId), "retired despite the failure").toEqual({ tenant: true, database: true });
     expect(await databaseExists(companyDatabaseName(old.slug))).toBe(false);
     expect(await databaseExists(companyDatabaseName(orphan.slug)), "the leftover database is dropped").toBe(false);
+    expect(await databaseExists(companyDatabaseName(stranger)), "a stranger's database is left alone").toBe(true);
+    await admin.db.execute(sql.raw(`drop database "${companyDatabaseName(stranger)}"`));
     await handle.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.slug, ownerless.slug));
   }, 60_000);
 });

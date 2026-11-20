@@ -570,6 +570,18 @@ function demoCompanyNames(): { slugs: ReadonlySet<string>; emails: ReadonlySet<s
  * because it holds a password. A `host` or `hostaddr` option would override the URL's host, so
  * either one is refused too.
  */
+/**
+ * The only query option a test database URL may carry. postgres.js reads `host`, `hostaddr` and
+ * `port` from the query over the URL's own, and parses `#` differently from WHATWG URL, so any
+ * other option or a `#` could send a guarded helper elsewhere (security review, 2026-11-20).
+ */
+const ALLOWED_URL_OPTIONS: ReadonlySet<string> = new Set(["sslmode"]);
+
+/** Whether a URL carries a fragment or a query option the guards don't allow. */
+export function redirectableUrl(url: string, parsed: URL): boolean {
+  return url.includes("#") || [...parsed.searchParams.keys()].some((key) => !ALLOWED_URL_OPTIONS.has(key));
+}
+
 function refuseRemoteDatabase(helper: string, label: string, url: string): void {
   let parsed: URL;
   try {
@@ -577,8 +589,7 @@ function refuseRemoteDatabase(helper: string, label: string, url: string): void 
   } catch {
     throw new Error(`${helper}: ${label} is not a database URL.`);
   }
-  const overridden = [...parsed.searchParams.keys()].some((key) => key === "host" || key === "hostaddr");
-  if (!LOCAL_HOSTS.has(parsed.hostname) || overridden) {
+  if (!LOCAL_HOSTS.has(parsed.hostname) || redirectableUrl(url, parsed)) {
     throw new Error(`${helper} only works on a database on this machine (localhost or 127.0.0.1); ${label} is not.`);
   }
 }

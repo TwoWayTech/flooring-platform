@@ -705,6 +705,11 @@ These replace the lines above where they differ.
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 
+## Reviewer summary
+- **Round 1 (2026-11-20), security-reviewer, fresh and read-only:** pass, no blocking issue. Product paths are identical to PR #68; only the test-only helpers in `packages/db/src/testing.ts` are added, refusing remote hosts, other providers, demo companies, seeded users and names outside the fresh patterns before they connect, and lint keeps them out of `apps/*/src`. FS's setup script runs only on the harness's scratch control database. The oracle uses packages/shared only and the matrix runs the real guards. Every exception-list entry was checked against the code it cites; none hides a hole (the view-key writes are self-only, Owner-only or recorded findings F-j, F-h, F-k). No secrets or real names; traces off. Should-fix: wrap `new URL` in `opt-in.ts`; lift the 5433 rule on `GITHUB_ACTIONS` only. Notes: pin route-level sensitive-key overrides; STATUS lines for F-h, F-j, F-k (orchestrator's).
+- **Round 1, schema-reviewer, fresh and read-only:** pass, no blocking issue. No schema or migration change; the helpers write only through existing tables (UUID v7 ids and audit columns through `business()`, the invitation token stored only as a SHA-256); retirement soft-deletes `tenants` and `tenant_databases` in one transaction and hard-deletes only the fresh Owner's Better Auth rows. Should-fix: the sweep can't clean a database left after a failed drop; one bad company aborts the sweep.
+- **Fixed in `e737d66`:** all four should-fix items and the overrides note (PM-1 (h), `SENSITIVE_KEY_OVERRIDES`, FH-4, mutation M12 caught).
+
 ## Outcome
 - **Stage 0** is done: this log is committed and pushed, and draft PR #43 is open.
 - **Stage 1** is done: the route catalog, the oracle, the reviewed lists and `route-matrix.int.test.ts` (PM-1 to PM-5), with the snapshots `apps/api/test/__snapshots__/route-requirements.json` and `route-role-matrix.txt`. 15 tests pass in about 20 s, or 31 s with `WHOLE_CHECK=1`. Findings F-h, F-i and F-j are new.
