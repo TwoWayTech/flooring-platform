@@ -294,6 +294,28 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
       (q: { id: string }) => q.id === whole.body.id,
     );
     expect(saved.lines[0].quantity).toBe("160.000");
+    // A line without a product has no carton: a pack sent on it, even "0", is dropped, never a 500
+    // (security review, round 1).
+    for (const pack of ["0", "15"]) {
+      const loose = [
+        {
+          id: "draft-2",
+          productId: "",
+          description: "Haul away",
+          category: "service",
+          unit: "each",
+          quantity: "7",
+          unitPrice: "40.00",
+          unitCost: "0",
+          sqFtPerCarton: pack,
+        },
+      ];
+      const created = await call("post", "/quotes", cookies.owner).send(
+        quoteBody(customer.body.id, warehouse, tile, { lines: loose }),
+      );
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      expect(created.body.lines[0]).not.toHaveProperty("sqFtPerCarton");
+    }
   });
 
   it("costs a line sent without unitCost from the catalog; the rep's answers carry no cost, the manager's do, and a sent cost is ignored (B1)", async () => {

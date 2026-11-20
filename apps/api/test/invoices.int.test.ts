@@ -326,6 +326,47 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(made).toBe(false);
   });
 
+  it("F-m converts a quote whose line without a product was stored with a zero pack, rather than answer 500 (security review, round 1)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ken Ito" }).expect(201);
+    const quote = await call("post", "/quotes", cookies.salesA)
+      .send({
+        customerId: customer.body.id,
+        locationId: warehouse,
+        jobSite: { street: "12 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
+        rooms: [],
+        lines: [
+          {
+            id: "draft-1",
+            productId: tile,
+            description: "Slate Tile",
+            category: "material",
+            unit: "sq_ft",
+            quantity: "20",
+            unitPrice: "4.50",
+            unitCost: "0",
+            wastePct: "10",
+          },
+        ],
+        depositPct: "0",
+        taxOverride: null,
+        notes: "",
+      })
+      .expect(201);
+    // A pack an older save kept on a line: now zero, which no carton can be.
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db.update(quoteLines).set({ sqFtPerCarton: "0" }).where(eq(quoteLines.quoteId, quote.body.id));
+    } finally {
+      await handle.close();
+    }
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    const converted = await call("post", `/quotes/${quote.body.id}/invoice`, cookies.salesA);
+    expect(converted.status, JSON.stringify(converted.body)).toBe(201);
+  });
+
   it("checks proof, references and amounts, and makes a second person confirm", async () => {
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Omar Haddad" }).expect(201);
     const { invoice } = await invoiced(cookies.salesA, customer.body.id);

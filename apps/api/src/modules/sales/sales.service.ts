@@ -491,7 +491,8 @@ export class SalesService {
           message: "Only someone who may change tax can add a line without a product.",
         });
       }
-      return { ...line, unitCost: saved?.unitCost ?? "0" };
+      // A carton is a product's packaging; a line without a product has none, whatever was sent.
+      return { ...line, sqFtPerCarton: undefined, unitCost: saved?.unitCost ?? "0" };
     });
   }
 

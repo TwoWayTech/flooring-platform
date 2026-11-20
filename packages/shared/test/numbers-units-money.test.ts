@@ -101,6 +101,9 @@ describe("units", () => {
     expect(partCartonProblem(lines.slice(0, 2), "sell")).toBeNull();
     expect(partCartonProblem(lines, "sell")).toBe("Slate Tile: sell whole cartons, multiples of 20 sq ft.");
     expect(partCartonProblem(lines, "order")).toBe("Slate Tile: order whole cartons, multiples of 20 sq ft.");
+    // A pack that is no carton (zero, or an older line's blank) is no rule, never a throw.
+    expect(partCartonProblem([{ description: "Haul away", quantity: "7", sqFtPerCarton: "0.000" }], "sell")).toBeNull();
+    expect(partCartonProblem([{ description: "Haul away", quantity: "7", sqFtPerCarton: null }], "sell")).toBeNull();
   });
 
   it("reads sq ft or cartons typed in a quantity field (spec A1)", () => {
