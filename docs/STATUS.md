@@ -51,7 +51,7 @@ All of these are in "Open questions for the owner" below, with every other quest
 **Checks of the run.**
 - Laptop at the start: lint, typecheck and `pnpm test` pass. `pnpm test:api` passes 787 of 787 only with `--maxWorkers=4`; with the default 12 workers three teardown hooks time out.
 - The whole demo suite (owner rule: before every handoff), on the stack's top before #43: flooring 467 passed and 7 skipped; hr 71 passed.
-- The whole demo suite on final main (`51c6241`): **PLACEHOLDER: numbers to come from the re-run in progress.**
+- The whole demo suite on final main (`51c6241`): on a demo build, flooring 467 passed and 7 skipped (2 workers, 7.9 min); hr 71 passed (2 workers, 1.1 min); nothing failed or flaked.
 - The whole-product check, final: the default api-mode suite 69 passed and 16 skipped (the opt-in `WHOLE_CHECK` specs); with `WHOLE_CHECK=1` FC and DS 7 passed, PGM 9 passed. Reports: docs/whole-product-check.md and docs/real-build-coverage.md.
 - `pnpm test` on main is flaky under load: the check's web scan suites (`coverage-list`, `page-gates`) time out their 10 s `beforeAll` about 1 run in 3. PR #74 raised them to 60 s, which fixes it. `pnpm test --force` doesn't force Turbo; use `TURBO_FORCE=true pnpm test`.
 
