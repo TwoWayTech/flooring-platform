@@ -19,6 +19,7 @@ import {
   type NotificationEventKey,
   type NotificationRule,
   type OutboxAttachment,
+  type OutboxReader,
   type OutboxRecipient,
 } from "@workspace/shared";
 import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -38,7 +39,6 @@ import {
   fromHeader,
   oneLine,
   visibleOutboxRow,
-  type OutboxReader,
 } from "./notification-rules";
 
 /** The queue that sends one Outbox row. */

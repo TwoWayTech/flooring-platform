@@ -1,5 +1,12 @@
 import type { EmailAttachment } from "@workspace/providers";
-import type { OutboxAttachment, OutboxFailure, OutboxRecipient } from "@workspace/shared";
+import {
+  outboxSight,
+  REDACTED_OUTBOX,
+  type OutboxAttachment,
+  type OutboxFailure,
+  type OutboxReader,
+  type OutboxRecipient,
+} from "@workspace/shared";
 
 /** The address check of spec rule 4: a plain shape check, never a lookup. */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -58,54 +65,15 @@ export interface OutboxView {
   attachments: unknown[];
 }
 
-/** The person reading the Outbox, as the visibility rules need them. */
-export interface OutboxReader {
-  userId: string;
-  email: string;
-  /** Holds `settings.outbox.view`: may list every row. */
-  admin: boolean;
-  /** Holds `hr.employee.view`: may read restricted rows of others. */
-  hrView: boolean;
-}
-
-/** Whether the reader is part of the message: who caused it, or who it went to (spec "Who can see"). */
-function involves(row: OutboxView, reader: OutboxReader): boolean {
-  return (
-    row.actorUserId === reader.userId ||
-    (row.recipientType === "user" && row.recipientId === reader.userId) ||
-    row.recipientEmail.toLowerCase() === reader.email.toLowerCase()
-  );
-}
-
 /**
- * Whether a restricted row stays sealed even for holders of `hr.employee.view`: a private meeting's
- * invite, reminder or reply. A private meeting is hidden from everyone who is not on it, the Owner
- * included (meetings.md "Who sees which meeting"; ADR 0051 "Private meetings", critic A4), and its
- * rows carry its title, notes, place and guests. Meeting rows are restricted only when the meeting
- * is private.
- */
-function sealed(row: OutboxView): boolean {
-  return row.restricted && row.sourceType === "meeting";
-}
-
-/**
- * The Outbox row as this reader may see it, or null when it is not listed for them (spec "Who can
- * see which Outbox row"): an admin sees every row, anyone else only their own; a restricted row of
- * someone else is redacted unless the reader holds `hr.employee.view`, and a private meeting's row
- * is redacted for everyone not involved, whatever they hold (ADR 0051). Recipient, status and
- * dates stay visible on a redacted row.
+ * The Outbox row as this reader may see it, or null when it is not listed for them: the shared
+ * `outboxSight` (spec "Who can see which Outbox row"; ADR 0051), which DemoStore applies too. A
+ * redacted row keeps its recipient, status and dates and loses its subject, body and attachments.
  */
 export function visibleOutboxRow<T extends OutboxView>(row: T, reader: OutboxReader): T | null {
-  const mine = involves(row, reader);
-  if (!reader.admin && !mine) return null;
-  if (row.restricted && !mine && (!reader.hrView || sealed(row))) {
-    return {
-      ...row,
-      subject: "Restricted message",
-      bodyText: "Only the people involved can read this.",
-      attachments: [],
-    };
-  }
+  const sight = outboxSight({ ...row, recipientKind: row.recipientType }, reader);
+  if (sight === "hidden") return null;
+  if (sight === "redacted") return { ...row, ...REDACTED_OUTBOX, attachments: [] };
   return row;
 }
 

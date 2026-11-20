@@ -16,6 +16,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { useCan } from "@/components/workspace/workspace-context";
 import { downloadText } from "@/components/data-table/csv";
 import { api } from "@/lib/api";
+import { isDemoMode } from "@/lib/data-source";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { SimulateReply } from "@/features/meetings/simulate-reply";
@@ -24,7 +25,8 @@ const STATUS: Record<
   OutboxStatus,
   { tone: "success" | "warning" | "danger" | "neutral" | "brand"; icon: typeof Info; label: string }
 > = {
-  sent: { tone: "success", icon: MailCheck, label: "Sent (simulated)" },
+  // Only the demo pretends to send; in api mode the email provider sent it (ADR 0059, bell and Outbox part, D5).
+  sent: { tone: "success", icon: MailCheck, label: isDemoMode() ? "Sent (simulated)" : "Sent" },
   scheduled: { tone: "brand", icon: MailClock, label: "Scheduled" },
   queued: { tone: "brand", icon: MailClock, label: "Queued" },
   sending: { tone: "brand", icon: MailClock, label: "Sending" },
@@ -32,8 +34,9 @@ const STATUS: Record<
   cancelled: { tone: "neutral", icon: MailX, label: "Cancelled" },
 };
 
-/** The note every Outbox view carries: nothing here is really sent (spec A4). */
+/** The note every Outbox view carries in the demo: nothing here is really sent (spec A4). The real API sends. */
 export function OutboxBanner() {
+  if (!isDemoMode()) return null;
   return (
     <p className="bg-brand-soft/40 border-hairline flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
       <Info aria-hidden="true" className="size-4 shrink-0" />
@@ -96,22 +99,24 @@ function MessageDrawer({ message, all, onClose }: { message: OutboxMessage; all:
           ) : null}
           <p className="text-muted-foreground text-xs">Created {formatDate(message.createdAt, true)}</p>
           <div className="flex flex-wrap gap-2">
-            {message.status === "failed" ? (
+            {/* Send again and Cancel need settings.outbox.view, as on the API (ADR 0059, bell and Outbox part, D3). */}
+            {message.status === "failed" && can("settings.outbox.view") ? (
               <Button variant="outline" onClick={() => void run(api.retryOutbox(message.id), "Sent again")}>
                 Send again
               </Button>
             ) : null}
-            {message.status === "scheduled" ? (
+            {message.status === "scheduled" && can("settings.outbox.view") ? (
               <Button variant="outline" onClick={() => void run(api.cancelOutbox(message.id), "Message cancelled")}>
                 Cancel message
               </Button>
             ) : null}
-            {message.status === "sent" && all && can("settings.outbox.view") ? (
+            {/* Presenter tools: the demo's only (D4). */}
+            {isDemoMode() && message.status === "sent" && all && can("settings.outbox.view") ? (
               <Button variant="outline" onClick={() => void run(api.simulateBounce(message.id), "Marked as bounced")}>
                 Simulate bounce
               </Button>
             ) : null}
-            <SimulateReply message={message} onDone={onClose} />
+            {isDemoMode() ? <SimulateReply message={message} onDone={onClose} /> : null}
           </div>
         </div>
       </SheetContent>

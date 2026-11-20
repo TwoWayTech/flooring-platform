@@ -1,3 +1,4 @@
+import type { OutboxReader } from "@workspace/shared";
 import { describe, expect, it } from "vitest";
 import {
   addressProblem,
@@ -7,7 +8,6 @@ import {
   fromHeader,
   oneLine,
   visibleOutboxRow,
-  type OutboxReader,
   type OutboxView,
 } from "../src/core/notifications/notification-rules";
 
