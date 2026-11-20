@@ -8,6 +8,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { Public } from "../../core/tenancy/access";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { requireFeature } from "../sales/sales-common";
 import { InvitationsService } from "./invitations.service";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { SupportGrantsService } from "./support-grants.service";
@@ -43,7 +44,8 @@ export class InvitationsController {
 
 /**
  * Support access, from the Owner's side (blueprint role rule 6). Platform admins ask for it through
- * POST /platform/support-grants, behind the platform guard (modules/platform).
+ * POST /platform/support-grants, behind the platform guard (modules/platform). The Owner's panel sits
+ * on Settings → Users, so every route reads the `settings.users` switch first (CLAUDE.md rule 13).
  */
 @Controller("support-grants")
 export class SupportGrantsController {
@@ -58,6 +60,7 @@ export class SupportGrantsController {
     @CurrentSession() session: AuthSession,
     @Req() request: Request,
   ) {
+    requireFeature("settings.users");
     return this.grants.list(tenant, actorOf(access, session, request));
   }
 
@@ -73,6 +76,7 @@ export class SupportGrantsController {
     @Req() request: Request,
     @Param("id", new ParseUUIDPipe()) grantId: string,
   ) {
+    requireFeature("settings.users");
     await this.grants.approve(tenant, actorOf(access, session, request), grantId);
   }
 
@@ -88,6 +92,7 @@ export class SupportGrantsController {
     @Req() request: Request,
     @Param("id", new ParseUUIDPipe()) grantId: string,
   ) {
+    requireFeature("settings.users");
     await this.grants.revoke(tenant, actorOf(access, session, request), grantId);
   }
 }

@@ -415,6 +415,47 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     ).toBe(400);
   });
 
+  it("adds proof to a payment, three files at most, only within scope, and none to a rejected payment (F-q)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Lena Park" }).expect(201);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const paid = await call("post", "/payments", cookies.salesA).send(payment(invoice.id)).expect(201);
+    const path = `/payments/${paid.body.id}/files`;
+    const added = await call("post", path, cookies.salesA)
+      .send({ files: [PDF] })
+      .expect(201);
+    expect(added.body.files).toHaveLength(2);
+    // Three in all: one more fits, two more don't, and a refused add stores nothing.
+    expect((await call("post", path, cookies.salesA).send({ files: [PDF, PDF] })).status).toBe(400);
+    // Another rep's own scope, another company and a role without the key don't reach it.
+    expect((await call("post", path, cookies.salesB).send({ files: [PDF] })).status).toBe(404);
+    expect((await call("post", path, cookies.otherSales).send({ files: [PDF] })).status).toBe(404);
+    const noKey = await call("post", path, cookies.dispatcher).send({ files: [PDF] });
+    expect([noKey.status, noKey.body.code]).toEqual([403, "forbidden"]);
+    await call("post", `/payments/${paid.body.id}/review`, cookies.accountant)
+      .send({ action: "reject", reason: "The check is unreadable." })
+      .expect(201);
+    const refused = await call("post", path, cookies.salesA).send({ files: [PDF] });
+    expect([refused.status, refused.body.message]).toEqual([
+      400,
+      `Payment ${paid.body.number} is rejected; files can't be added.`,
+    ]);
+    const seen = (await call("get", "/payments", cookies.salesA).expect(200)).body as {
+      id: string;
+      files: unknown[];
+    }[];
+    expect(seen.find((p) => p.id === paid.body.id)?.files).toHaveLength(2);
+    const handle = await harness.companyDb(company.id);
+    try {
+      const rows = await handle.db
+        .select({ action: auditLog.action })
+        .from(auditLog)
+        .where(eq(auditLog.targetId, paid.body.id));
+      expect(rows.filter((row) => row.action === "Attached file to payment")).toHaveLength(1);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("writes off small leftovers, turns credit notes into credit, applies and refunds it", async () => {
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ines Moreau" }).expect(201);
     const { invoice } = await invoiced(cookies.salesA, customer.body.id);

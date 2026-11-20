@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { LifeBuoy } from "lucide-react";
-import { SUPPORT_OPEN_MESSAGE, seesAllSupportGrants, type PlatformSupportGrant } from "@workspace/shared";
+import { featureOn, SUPPORT_OPEN_MESSAGE, seesAllSupportGrants, type PlatformSupportGrant } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -74,6 +74,8 @@ export function CompanySupportPage({ companyId }: { companyId: string }) {
   if (!data.data) return <p className="text-muted-foreground">This company does not exist.</p>;
   const { company, grants } = data.data;
   const blocked = grants.some(blocksNewRequest);
+  // The Owner answers on Settings → Users; with that switched off no request may start (rule 13).
+  const canAsk = featureOn("settings.users");
 
   return (
     <>
@@ -88,21 +90,23 @@ export function CompanySupportPage({ companyId }: { companyId: string }) {
           </p>
           {seesAllSupportGrants(role) ? null : <p>You see your own requests.</p>}
         </div>
-        <div className="flex flex-col items-start gap-1.5">
-          <Button
-            onClick={() => setAsking(true)}
-            disabled={blocked}
-            aria-describedby={blocked ? "support-open-hint" : undefined}
-          >
-            <LifeBuoy />
-            Ask for support access
-          </Button>
-          {blocked ? (
-            <p id="support-open-hint" className="text-muted-foreground text-xs">
-              {SUPPORT_OPEN_MESSAGE}
-            </p>
-          ) : null}
-        </div>
+        {canAsk ? (
+          <div className="flex flex-col items-start gap-1.5">
+            <Button
+              onClick={() => setAsking(true)}
+              disabled={blocked}
+              aria-describedby={blocked ? "support-open-hint" : undefined}
+            >
+              <LifeBuoy />
+              Ask for support access
+            </Button>
+            {blocked ? (
+              <p id="support-open-hint" className="text-muted-foreground text-xs">
+                {SUPPORT_OPEN_MESSAGE}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </Panel>
       <DataTable
         id="platform-support"
@@ -113,7 +117,7 @@ export function CompanySupportPage({ companyId }: { companyId: string }) {
         initialSort={{ id: "requested", desc: true }}
         empty={{ message: "No support requests for this company yet." }}
       />
-      {asking ? (
+      {asking && canAsk ? (
         <SupportRequestDialog
           company={company}
           onClose={() => setAsking(false)}

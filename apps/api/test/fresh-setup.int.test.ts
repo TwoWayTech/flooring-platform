@@ -172,7 +172,7 @@ describe("a fresh company from the setup script, set up through the API with sam
     expect(await answerTo(moneyCalls.customer("Walk-in Counter Sale"))).toEqual({
       status: 409,
       code: "settings_missing",
-      message: "Finish Settings → Localization and tax before creating quotes.",
+      message: "Finish Settings → Localization and tax before adding customers.",
     });
     // The only stand-in for settings: the Localization row seeding at provisioning would write.
     const handle = await harness.companyDb(companyId);
