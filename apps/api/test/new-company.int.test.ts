@@ -974,11 +974,11 @@ describe("a bare new company on the API (whole-product check FA; needs the local
   }, 60_000);
 
   it("FA-4, GAP-G2 and GAP-G3 (demo steps 2 and 3): a customer added by hand waits for Settings → Localization and tax; one imported can't be quoted, because there is no warehouse (STATUS: Settings at provisioning; Settings → Locations moves to the API)", async () => {
-    // Finding F-n: adding a customer reads the default terms from Localization, and the words name quotes.
+    // Finding F-n: adding a customer reads the default terms from Localization; since 2026-11-20 the words name this step.
     expectRefused(await send(moneyCalls.customer("Avery Brook")), {
       status: 409,
       code: "settings_missing",
-      message: /^Finish Settings → Localization and tax before creating quotes\.$/,
+      message: /^Finish Settings → Localization and tax before adding customers\.$/,
     });
     // An import is the one way a customer comes in: on Due on receipt, with the Owner as rep (ADR 0057 S-9).
     const result = await importCustomers([{ name: "Avery Brook", email: "avery.brook@example.test" }]);

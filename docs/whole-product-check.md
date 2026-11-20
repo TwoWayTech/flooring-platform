@@ -105,7 +105,7 @@ Every finding, with evidence, is in the session log's "Findings"; the ones to fi
 - **T2, money:** opening balances; F-a (P&L expenses); F-m (part cartons); F-o (float money in the UI); "payroll paid" posting (Q3).
 - **T3, real-company readiness:** G1 to G4, G7, then G6.
 - **T4, robustness and operations:** F-g (no CI on main since 2026-11-14), F-c (retirement and migrations), F-b (Turbo), F-r (dates).
-- **T5, minor:** F-i (a bare 404), F-p (HR host page gates), F-q (five routes without API tests), F-k (JSON-number quantities).
+- **T5, minor:** F-i (a bare 404; fixed 2026-11-20, P8), F-n's words (fixed 2026-11-20, P7; G2 stays), F-p (HR host page gates), F-q (five routes without API tests), F-k (JSON-number quantities).
 
 ## Owner questions
 

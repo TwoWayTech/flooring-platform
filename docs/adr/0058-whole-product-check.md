@@ -52,6 +52,7 @@ The owner asked for the findings to be fixed in small PRs ("Fix what it finds in
 
 - **F-h (P1, `fix/api-settings-switch-checks`):** the users, roles, audit and support-grant routes read their switch first, and the 12 entries left `NO_SWITCH_ROUTES`; PM-5 now finds each one hidden. `GET /users` and `GET /roles` are hidden only with both `settings.users` and `settings.roles` off (`any-of`), because the Users page reads the roles and the Roles page reads the users. The console's support request is hidden with `settings.users` too, so no request starts that no Owner could answer (security review, round 1).
 - **F-l (P2, `fix/access-sensitive-own-keys`):** `sensitiveKeyFor` and the interceptor's `visible` read a field's key with `Object.hasOwn`, so `constructor`, `toString` or `to_string` is neither stripped from every answer nor a 500 on a route with its own keys. Pinned by a shared unit test, an API unit test and `sensitive-fields.int.test.ts` (a product's attributes over HTTP; the real `GET /suppliers` metadata through the interceptor).
+- **F-i (P8) and F-n's words (P7), `fix/api-refusal-words`:** `POST /outbox/:id/retry` for an id that names no message answers 404 "This message no longer exists.", so PM-5 now sees `settings.outbox` hide the route and it left `SWITCH_READ_IN_SERVICE`; `POST /customers` on a company without Localization answers "Finish Settings → Localization and tax before adding customers." (FA-4, FS-3 and FC-3 assert the words). The cause, G2, stays with the owner.
 
 ## Consequences
 
