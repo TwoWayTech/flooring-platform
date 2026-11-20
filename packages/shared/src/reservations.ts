@@ -234,6 +234,15 @@ export function mayIssue(ledger: Pick<InvoiceLedger, "paid" | "state">): boolean
   return dec(ledger.paid).gt(0) || ledger.state === "paid";
 }
 
+/**
+ * Whether a reservation row is short, so the invoice shows what is missing (spec C2, inventory.md
+ * rule 11: a shortfall never blocks the sale). Read by value: the API sends `shortBy` at its
+ * numeric(14,3) scale, `"0.000"` when fully held, and the demo sends `"0"` (STATUS B3).
+ */
+export function isShort(reservation: Pick<Reservation, "shortBy">): boolean {
+  return dec(reservation.shortBy).gt(0);
+}
+
 /** Whether an adjustment of this size waits for an Owner or Manager (spec C1). */
 export function adjustmentNeedsApproval(quantity: string, threshold: string): boolean {
   const limit = threshold.trim();

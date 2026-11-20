@@ -14,7 +14,6 @@ import {
   DialogTitle,
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
-import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
 import { StatusPill } from "@workspace/ui/components/status-pill";
@@ -32,6 +31,7 @@ import { useFormatDate } from "@/lib/use-format-date";
 import { HrTabs } from "../hr-tabs";
 import { Pick } from "../pick";
 import { PlanFormDialog } from "./plan-form-dialog";
+import { PlanTerms } from "./plan-terms";
 import { StatementSheet } from "./statement-sheet";
 
 const STATUS = {
@@ -273,31 +273,7 @@ export function CommissionsPage() {
                     ) : null
                   }
                 >
-                  <p className="text-sm">
-                    <Num kind="percent" value={plan.baseRatePct} /> of{" "}
-                    {plan.basis === "paid_revenue" ? "paid revenue" : "gross margin"} up to a monthly target of{" "}
-                    <Num kind="money" value={plan.monthlyTarget} />
-                    {plan.tiers.map((t) => (
-                      <span key={t.fromPctOfTarget}>
-                        , then <Num kind="percent" value={t.ratePct} /> from{" "}
-                        <Num kind="percent" value={t.fromPctOfTarget} /> of target
-                      </span>
-                    ))}
-                    . Clawback window {plan.clawbackDays} days.
-                    {plan.overridePct !== "0" ? (
-                      <>
-                        {" "}
-                        Manager override <Num kind="percent" value={plan.overridePct} />.
-                      </>
-                    ) : null}
-                    {plan.draw.kind !== "none" ? (
-                      <>
-                        {" "}
-                        {plan.draw.kind === "recoverable" ? "Recoverable" : "Guaranteed"} draw of{" "}
-                        <Num kind="money" value={plan.draw.monthlyAmount} /> a month.
-                      </>
-                    ) : null}
-                  </p>
+                  <PlanTerms plan={plan} />
                 </Panel>
               ))}
           </TabsContent>
