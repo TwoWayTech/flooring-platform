@@ -1,4 +1,4 @@
-import { dec } from "@workspace/shared";
+import { dec, SHARE_PERCENT_TEXT } from "@workspace/shared";
 
 /** One person's share of an invoice's commission, a percent as a decimal string. */
 export interface CommissionShare {
@@ -34,4 +34,15 @@ export function splitShown(
   const rep = split?.find((share) => share.userId === repId);
   if (!other) return { second: null, pct: DEFAULT_REP_PCT };
   return { second: other.userId, pct: rep?.pct ?? dec(100).minus(other.pct).toString() };
+}
+
+/**
+ * Why a typed share can't be sent, or null: the API takes a percent of up to two decimals
+ * (`SHARE_PERCENT_TEXT`), and the rest is worked out from it, so it is at most 100.
+ */
+export function sharePctProblem(pct: string): string | null {
+  const typed = pct.trim();
+  return SHARE_PERCENT_TEXT.test(typed) && dec(typed).lte(100)
+    ? null
+    : "Enter the rep's share as a percent from 0 to 100, such as 60.";
 }

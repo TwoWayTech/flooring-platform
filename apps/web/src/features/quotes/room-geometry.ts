@@ -1,4 +1,4 @@
-import { dec, type Room } from "@workspace/shared";
+import { dec, type DecimalInput, type Room } from "@workspace/shared";
 
 /**
  * A room's size as drawing numbers for the canvas's SVG units. A room keeps its width and length as
@@ -9,7 +9,12 @@ export function roomSize(room: Pick<Room, "widthFt" | "lengthFt">): { w: number;
   return { w: dec(room.widthFt).toNumber(), h: dec(room.lengthFt).toNumber() };
 }
 
-/** A size drawn or typed in ft, snapped to half a foot, as the decimal string a room keeps. */
+/** A size in ft rounded to the nearest half foot (a quarter rounds up), as the decimal string a room keeps. */
+export function halfFoot(ft: DecimalInput): string {
+  return dec(ft).times(2).toDecimalPlaces(0).dividedBy(2).toString();
+}
+
+/** A size drawn on the canvas, in ft, as the decimal string a room keeps. */
 export function feetText(ft: number): string {
-  return dec(ft).toDecimalPlaces(1).toString();
+  return halfFoot(ft);
 }

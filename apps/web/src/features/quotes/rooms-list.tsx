@@ -6,6 +6,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
+import { halfFoot } from "./room-geometry";
 
 interface RoomsListProps {
   rooms: Room[];
@@ -21,7 +22,7 @@ interface RoomsListProps {
 function feet(value: string, fallback: string): string {
   const typed = value.trim();
   if (!QUANTITY_TEXT.test(typed) || dec(typed).lt(1)) return fallback;
-  return dec(typed).times(2).toDecimalPlaces(0).dividedBy(2).toString();
+  return halfFoot(typed);
 }
 
 /** Rooms as rows with name and dimensions, the precise alternative to dragging on the canvas. */

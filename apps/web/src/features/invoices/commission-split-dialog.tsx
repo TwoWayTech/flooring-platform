@@ -17,7 +17,7 @@ import { Field } from "@/components/field";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
-import { splitFor, splitShown } from "./commission-split";
+import { sharePctProblem, splitFor, splitShown } from "./commission-split";
 
 const NOBODY = "none";
 
@@ -33,6 +33,11 @@ export function CommissionSplitDialog({ invoice, onClose }: { invoice: Invoice; 
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const problem = second === NOBODY ? null : sharePctProblem(pct);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     try {
       await api.setCommissionSplit(invoice.id, splitFor(invoice.salesRepId, second === NOBODY ? null : second, pct));
       toast.success("Commission split saved");

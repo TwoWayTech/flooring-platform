@@ -169,7 +169,17 @@ export const STOCK: KindHandler = {
         aliases: ["length", "roll length"],
         examples: ["", "120 ft"],
       },
-      { key: "width_ft", label: "Width (ft)", type: "number", unit: "ft", aliases: ["width"], examples: ["", "12"] },
+      {
+        key: "width_ft",
+        label: "Width (ft)",
+        type: "number",
+        unit: "ft",
+        // numeric(14,3), as the products import's roll width: a longer number is refused, never a 500.
+        digits: { whole: 10, decimals: 3 },
+        positive: true,
+        aliases: ["width"],
+        examples: ["", "12"],
+      },
       { key: "dye_lot", label: "Dye lot", type: "text", aliases: ["lot", "dye lot number"], examples: ["", "14B"] },
       { key: "bin", label: "Bin", type: "text", aliases: ["bin location", "rack"], examples: ["A-12", "R-03"] },
       {
