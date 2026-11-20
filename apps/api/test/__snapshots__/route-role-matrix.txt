@@ -1,0 +1,203 @@
+# guard decisions only; see docs/whole-product-check.md for in-handler rules.
+# Who gets past TenantGuard and PermissionGuard in a fresh trial of each product, MFA held.
+DELETE /meetings/:id/attendees/:attendeeId  flooring: owner manager sales hr  hr: owner hr
+DELETE /roles/:id  flooring: owner  hr: owner
+GET /audit  flooring: owner manager accountant hr  hr: owner hr
+GET /billing  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /bills  flooring: owner manager accountant purchasing  hr: -
+GET /bonuses  flooring: owner accountant hr  hr: owner hr
+GET /change-orders  flooring: owner manager accountant sales  hr: -
+GET /clock-entries  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /commission-totals  flooring: owner manager accountant sales  hr: -
+GET /commissions  flooring: owner hr  hr: owner hr
+GET /company  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /contract-billings  flooring: owner manager accountant sales  hr: -
+GET /contract-lines  flooring: owner manager accountant sales  hr: -
+GET /contractor-payments  flooring: owner accountant hr  hr: owner hr
+GET /contracts  flooring: owner manager accountant sales  hr: -
+GET /customers  flooring: owner manager accountant sales  hr: -
+GET /employees  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /expenses  flooring: owner manager accountant  hr: -
+GET /files/:id  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /imports  flooring: owner  hr: owner
+GET /insurance-certificates  flooring: owner manager accountant  hr: -
+GET /invoice-adjustments  flooring: owner manager accountant sales  hr: -
+GET /invoices  flooring: owner manager accountant sales  hr: -
+GET /ledger/period-close  flooring: owner manager accountant  hr: -
+GET /ledger/trial-balance  flooring: owner manager accountant  hr: -
+GET /lien-waivers  flooring: owner manager accountant  hr: -
+GET /locations  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: -
+GET /me/meetings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /me/portal  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /meeting-guests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /meetings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /meetings/:id/calendar.ics  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /notifications  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /outbox  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /pay-periods  flooring: owner accountant hr  hr: owner hr
+GET /pay-periods/:id/review  flooring: owner accountant hr  hr: owner hr
+GET /payments  flooring: owner manager accountant sales  hr: -
+GET /products  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /pto-requests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /purchase-orders  flooring: owner manager accountant purchasing warehouse  hr: -
+GET /quotes  flooring: owner manager accountant sales  hr: -
+GET /receipts  flooring: owner manager accountant purchasing warehouse  hr: -
+GET /recurring-expenses  flooring: owner manager accountant  hr: -
+GET /refunds  flooring: owner manager accountant sales  hr: -
+GET /reports/business  flooring: owner manager accountant  hr: -
+GET /reports/options  flooring: owner manager accountant sales  hr: -
+GET /reports/payments  flooring: owner manager accountant  hr: -
+GET /reports/pnl  flooring: owner manager accountant  hr: -
+GET /reports/sales-by-category  flooring: owner manager accountant sales  hr: -
+GET /reservations  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /roles  flooring: owner manager hr  hr: owner hr
+GET /rolls  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /settings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /settings/accounting  flooring: owner accountant  hr: -
+GET /stock-holds  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /stock-movements  flooring: owner manager accountant sales purchasing warehouse  hr: -
+GET /supplier-contacts  flooring: owner manager accountant purchasing warehouse  hr: -
+GET /supplier-payments  flooring: owner manager accountant purchasing  hr: -
+GET /suppliers  flooring: owner manager accountant purchasing warehouse  hr: -
+GET /support-grants  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /time-off-entries  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /time-off-policies  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /timesheets  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+GET /transfers  flooring: owner manager purchasing warehouse  hr: -
+GET /users  flooring: owner manager hr  hr: owner hr
+PATCH /me/employee  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+PATCH /meetings/:id  flooring: owner manager sales hr  hr: owner hr
+PATCH /rolls/:id  flooring: owner manager warehouse  hr: -
+PATCH /users/:id  flooring: owner  hr: owner
+POST /bonuses  flooring: owner hr  hr: owner hr
+POST /bonuses/:id/void  flooring: owner hr  hr: owner hr
+POST /change-orders/:id/decision  flooring: owner manager  hr: -
+POST /clock/in  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /clock/out  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /commission-adjustments  flooring: owner hr  hr: owner hr
+POST /commission-assignments  flooring: owner hr  hr: owner hr
+POST /commission-assignments/:id/acknowledge  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /commission-plans  flooring: owner hr  hr: owner hr
+POST /commission-reversals/decide  flooring: owner hr  hr: owner hr
+POST /commission-statements/approve  flooring: owner hr  hr: owner hr
+POST /contract-billings/:id/void  flooring: owner manager accountant  hr: -
+POST /contractor-payments  flooring: owner hr  hr: owner hr
+POST /contractor-payments/:id/pay  flooring: owner accountant hr  hr: owner hr
+POST /contractor-payments/:id/void  flooring: owner hr  hr: owner hr
+POST /contracts  flooring: owner manager sales  hr: -
+POST /contracts/:id/billings  flooring: owner manager accountant  hr: -
+POST /contracts/:id/change-orders  flooring: owner manager sales  hr: -
+POST /contracts/:id/close  flooring: owner manager sales  hr: -
+POST /contracts/:id/complete  flooring: owner manager sales  hr: -
+POST /contracts/:id/files  flooring: owner manager sales  hr: -
+POST /contracts/:id/lien-waivers  flooring: owner manager accountant  hr: -
+POST /contracts/:id/recall  flooring: owner manager sales  hr: -
+POST /contracts/:id/renew  flooring: owner manager sales  hr: -
+POST /contracts/:id/retainage-releases  flooring: owner manager accountant  hr: -
+POST /contracts/:id/send  flooring: owner manager sales  hr: -
+POST /contracts/:id/sign  flooring: owner manager  hr: -
+POST /contracts/:id/terminate  flooring: owner manager  hr: -
+POST /customers  flooring: owner manager sales  hr: -
+POST /employees  flooring: owner hr  hr: owner hr
+POST /employees/:id/checklist/:itemId  flooring: owner hr  hr: owner hr
+POST /employees/:id/documents  flooring: owner hr  hr: owner hr
+POST /employees/:id/offboarding  flooring: owner hr  hr: owner hr
+POST /expenses  flooring: owner manager accountant  hr: -
+POST /expenses/:id/review  flooring: owner manager accountant  hr: -
+POST /expenses/:id/void  flooring: owner accountant  hr: -
+POST /imports  flooring: owner  hr: owner
+POST /imports/:id/undo  flooring: owner  hr: owner
+POST /imports/check  flooring: owner  hr: owner
+POST /invoices/:id/apply-credit  flooring: owner accountant  hr: -
+POST /invoices/:id/credit-notes  flooring: owner manager accountant  hr: -
+POST /invoices/:id/sent  flooring: owner manager accountant sales  hr: -
+POST /invoices/:id/void  flooring: owner manager accountant  hr: -
+POST /invoices/:id/write-off  flooring: owner accountant  hr: -
+POST /ledger/period-close  flooring: owner  hr: -
+POST /locations  flooring: owner  hr: -
+POST /meeting-requests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /meetings  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /meetings/:id/attendees/:attendeeId/proposal  flooring: owner manager sales hr  hr: owner hr
+POST /meetings/:id/cancel  flooring: owner manager sales hr  hr: owner hr
+POST /meetings/:id/reschedule  flooring: owner manager sales hr  hr: owner hr
+POST /meetings/:id/reschedule/undo  flooring: owner manager sales hr  hr: owner hr
+POST /meetings/:id/response  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /notifications/read  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /outbox/:id/cancel  flooring: owner  hr: owner
+POST /outbox/:id/retry  flooring: owner  hr: owner
+POST /pay-periods  flooring: owner accountant hr  hr: owner hr
+POST /pay-periods/:id/approve  flooring: owner hr  hr: owner hr
+POST /pay-periods/:id/exclusions  flooring: owner hr  hr: owner hr
+POST /pay-periods/:id/export  flooring: owner accountant hr  hr: owner hr
+POST /pay-periods/:id/reopen  flooring: owner hr  hr: owner hr
+POST /payments  flooring: owner manager accountant sales  hr: -
+POST /payments/:id/files  flooring: owner manager accountant sales  hr: -
+POST /payments/:id/review  flooring: owner accountant  hr: -
+POST /payments/:id/void  flooring: owner accountant  hr: -
+POST /pto-requests  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /pto-requests/:id/cancel  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /pto-requests/:id/decision  flooring: owner manager hr  hr: owner hr
+POST /purchase-orders  flooring: owner manager purchasing  hr: -
+POST /purchase-orders/:id/bills  flooring: owner manager accountant purchasing  hr: -
+POST /purchase-orders/:id/cancel  flooring: owner manager purchasing  hr: -
+POST /purchase-orders/:id/order  flooring: owner manager purchasing  hr: -
+POST /purchase-orders/:id/receipts  flooring: owner manager purchasing warehouse  hr: -
+POST /quotes  flooring: owner manager sales  hr: -
+POST /quotes/:id/invoice  flooring: owner manager accountant sales  hr: -
+POST /quotes/:id/status  flooring: owner manager sales  hr: -
+POST /recurring-expenses  flooring: owner manager accountant  hr: -
+POST /refunds  flooring: owner accountant  hr: -
+POST /reservations/:id/issue  flooring: owner manager warehouse  hr: -
+POST /roles  flooring: owner  hr: owner
+POST /roles/:id/reset  flooring: owner  hr: owner
+POST /rolls/:id/invoice  flooring: owner manager accountant sales  hr: -
+POST /stock/corrections  flooring: owner  hr: -
+POST /supplier-contacts  flooring: owner manager purchasing  hr: -
+POST /supplier-contacts/:id/status  flooring: owner manager purchasing  hr: -
+POST /supplier-payments  flooring: owner manager accountant purchasing  hr: -
+POST /supplier-payments/:id/review  flooring: owner manager accountant  hr: -
+POST /supplier-payments/:id/void  flooring: owner manager accountant  hr: -
+POST /suppliers  flooring: owner manager purchasing  hr: -
+POST /suppliers/:id/status  flooring: owner manager purchasing  hr: -
+POST /support-grants/:id/approve  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /support-grants/:id/revoke  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /time-off-adjustments  flooring: owner manager hr  hr: owner hr
+POST /time-off-policies  flooring: owner hr  hr: owner hr
+POST /timesheets/:id/reopen  flooring: owner manager hr  hr: owner hr
+POST /timesheets/:id/submit  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /timesheets/decisions  flooring: owner manager hr  hr: owner hr
+POST /timesheets/upload  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee
+POST /transfers  flooring: owner manager warehouse  hr: -
+POST /transfers/:id/receive  flooring: owner manager warehouse  hr: -
+POST /users/invite  flooring: owner  hr: owner
+PUT /commission-plans/:id  flooring: owner hr  hr: owner hr
+PUT /contracts/:id  flooring: owner manager sales  hr: -
+PUT /contracts/:id/insurance-certificate  flooring: owner manager accountant  hr: -
+PUT /customers/:id  flooring: owner manager sales  hr: -
+PUT /employees/:id  flooring: owner hr  hr: owner hr
+PUT /expenses/:id  flooring: owner manager accountant  hr: -
+PUT /imports/mappings/:kind  flooring: owner  hr: owner
+PUT /invoices/:id/commission-split  flooring: owner manager accountant hr  hr: -
+PUT /locations/:id  flooring: owner  hr: -
+PUT /quotes/:id  flooring: owner manager sales  hr: -
+PUT /recurring-expenses/:id  flooring: owner manager accountant  hr: -
+PUT /roles/:id  flooring: owner  hr: owner
+PUT /settings/accounting  flooring: owner accountant  hr: -
+PUT /settings/branding  flooring: owner  hr: owner
+PUT /settings/email  flooring: owner  hr: owner
+PUT /settings/expenses  flooring: owner  hr: -
+PUT /settings/hr  flooring: owner hr  hr: owner hr
+PUT /settings/inventory  flooring: owner  hr: -
+PUT /settings/localization/currency  flooring: owner accountant  hr: owner
+PUT /settings/localization/documents  flooring: owner accountant  hr: -
+PUT /settings/localization/payroll  flooring: owner accountant  hr: owner
+PUT /settings/localization/region  flooring: owner accountant  hr: owner
+PUT /settings/localization/tax  flooring: owner accountant  hr: owner
+PUT /settings/numbers  flooring: owner accountant  hr: owner
+PUT /settings/payments  flooring: owner accountant  hr: -
+PUT /settings/profile  flooring: owner  hr: owner
+PUT /settings/sharedCosts  flooring: owner  hr: -
+PUT /supplier-contacts/:id  flooring: owner manager purchasing  hr: -
+PUT /suppliers/:id  flooring: owner manager purchasing  hr: -
+PUT /time-off-policies/:id  flooring: owner hr  hr: owner hr
+PUT /timesheets  flooring: owner manager accountant sales purchasing warehouse installer hr employee  hr: owner hr employee

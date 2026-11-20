@@ -1,0 +1,4 @@
+External ID,Name,Type,Contact,Email,Phone,Payment terms,Street,City,State,ZIP
+JRT-C-001,Harlow Residence,Homeowner,Quinn Harlow,quinn.harlow@example.test,303-555-0190,Due on receipt,415 Elm Ct,Boulder,CO,80302
+JRT-C-002,Pinewood Builders,Contractor,Sam Ortez,sam@pinewood-builders.example,720-555-0133,Net 30,2200 Canyon Blvd,Boulder,CO,80302
+JRT-C-003,"Vance, Tamsin",Homeowner,,tamsin.vance@example.test,,Due on receipt,,,,

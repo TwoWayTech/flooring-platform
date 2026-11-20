@@ -1,0 +1,141 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ALL_PERMISSION_KEYS, permissionDef, PRODUCT_MODULES, PRODUCT_ROLES, type ProductKey } from "@workspace/shared";
+import { PRODUCTS, visibleItems } from "@/products";
+import { canOpenPage, pageList } from "@/products/pages";
+import { buildCoverage, samplePath, type CoverageModel } from "./coverage-scan/model";
+import { subPageRules, trialAccess } from "./coverage-scan/page-rules";
+import { routeRoles } from "./coverage-scan/route-snapshots";
+import { TOLERATED_REFUSALS } from "./coverage-scan/tolerated-refusals";
+
+/**
+ * Page gates (whole-product check, ADR 0058): every page rule names real keys of modules the
+ * product offers (PG-1), every menu item a role sees opens (PG-2, ADR 0008), who opens which page
+ * in api mode is a reviewed snapshot (PG-3), and a role that opens a page is let through by the
+ * API on every read that page makes, or the page is known to handle the refusal (PG-4). PG-4 joins
+ * the coverage scan with the API's route-role matrix, so a page gate looser than the API fails here
+ * without a browser; a page stricter than the API is safe and is only reported.
+ */
+
+const PRODUCT_KEYS = Object.keys(PRODUCTS) as ProductKey[];
+const before = process.env.NEXT_PUBLIC_DATA_SOURCE;
+
+/** Restores the data source the run started with. */
+function restoreDataSource(): void {
+  if (before === undefined) delete process.env.NEXT_PUBLIC_DATA_SOURCE;
+  else process.env.NEXT_PUBLIC_DATA_SOURCE = before;
+}
+
+let model: CoverageModel;
+
+beforeAll(async () => {
+  model = await buildCoverage();
+});
+
+afterAll(restoreDataSource);
+
+/** The company pages (inside the app shell) the scan found, by route. */
+function companyPages(): string[] {
+  return model.screens
+    .filter((screen) => screen.kind === "page" && screen.layouts.includes("(app)") && !screen.route.includes("["))
+    .map((screen) => screen.route);
+}
+
+/** Every page the snapshot covers for a product: its menus in this build, every view rule, every company page. */
+function gatedPages(product: ProductKey): string[] {
+  const pages = new Set([
+    ...pageList(product).map((item) => item.href),
+    ...subPageRules().map((rule) => rule.pattern),
+    ...companyPages(),
+  ]);
+  return [...pages].sort();
+}
+
+describe("page gates (PG-1 to PG-4)", () => {
+  it("PG-1: every page rule's keys exist, and their modules are offered with the product", () => {
+    const known = new Set<string>(ALL_PERMISSION_KEYS);
+    /** The problems with one rule's keys, against the modules that may serve it. */
+    const keyProblems = (where: string, keys: readonly string[], offered: ReadonlySet<string>) =>
+      keys.flatMap((key) => {
+        const keyModule = permissionDef(key)?.module;
+        if (!known.has(key) || !keyModule) return [`${where}: unknown key ${key}`];
+        return offered.has(keyModule) ? [] : [`${where}: ${key} is in module ${keyModule}, not offered here`];
+      });
+    const problems = PRODUCT_KEYS.flatMap((product) => {
+      const { menu, settings } = PRODUCTS[product];
+      const offered = new Set<string>(PRODUCT_MODULES[product]);
+      return [...menu, ...settings].flatMap((item) => keyProblems(`${product} ${item.href}`, item.anyOf, offered));
+    });
+    const anyProduct = new Set<string>(PRODUCT_KEYS.flatMap((product) => PRODUCT_MODULES[product]));
+    problems.push(...subPageRules().flatMap((rule) => keyProblems(rule.pattern, rule.anyOf, anyProduct)));
+    expect(subPageRules().length, "the SUB_PAGES rules in pages.ts could not be read").toBeGreaterThan(15);
+    expect(problems).toEqual([]);
+  });
+
+  it("PG-2: for every product and role, in both modes, every menu item shown opens", () => {
+    const refused: string[] = [];
+    for (const mode of ["demo", "api"]) {
+      process.env.NEXT_PUBLIC_DATA_SOURCE = mode;
+      for (const product of PRODUCT_KEYS) {
+        const { menu, settings } = PRODUCTS[product];
+        for (const role of PRODUCT_ROLES[product]) {
+          const access = trialAccess(role, product);
+          for (const item of visibleItems([...menu, ...settings], access)) {
+            if (!canOpenPage(product, item.href, access)) refused.push(`${mode} ${product} ${role} ${item.href}`);
+          }
+        }
+      }
+    }
+    restoreDataSource();
+    expect(refused).toEqual([]);
+  });
+
+  it("PG-3: who opens each page in api mode, per product and default role, is the reviewed snapshot", async () => {
+    process.env.NEXT_PUBLIC_DATA_SOURCE = "api";
+    const gates = Object.fromEntries(
+      PRODUCT_KEYS.map((product) => [
+        product,
+        Object.fromEntries(
+          gatedPages(product).map((page) => [
+            page,
+            PRODUCT_ROLES[product].filter((role) => canOpenPage(product, samplePath(page), trialAccess(role, product))),
+          ]),
+        ),
+      ]),
+    );
+    restoreDataSource();
+    const document = {
+      note: "Generated by apps/web/tests/unit/page-gates.test.ts (whole-product check, ADR 0058): the default roles that open each page in api mode, in a fresh trial. Do not edit; regenerate with: pnpm --filter web exec vitest run tests/unit/page-gates.test.ts -u",
+      ...gates,
+    };
+    await expect(`${JSON.stringify(document, null, 2)}\n`).toMatchFileSnapshot("../e2e-api/check/page-gates.json");
+  });
+
+  it("PG-4: a role that opens a page is let through by the API on its reads, or the page handles the refusal", () => {
+    const allowed = routeRoles();
+    const loose: string[] = [];
+    const usedTolerances = new Set<string>();
+    process.env.NEXT_PUBLIC_DATA_SOURCE = "api";
+    for (const page of model.screens.filter((s) => s.kind === "page" && companyPages().includes(s.route))) {
+      for (const role of PRODUCT_ROLES.flooring) {
+        if (!canOpenPage("flooring", samplePath(page.route), trialAccess(role, "flooring"))) continue;
+        for (const target of page.onApi) {
+          for (const { route, softens } of model.targetRoutes.get(target) ?? []) {
+            // Only company routes are judged per role; session and public routes have no role gate.
+            const passes = allowed.get(route);
+            if (!route.startsWith("GET ") || !passes || passes.flooring.has(role) || softens !== null) continue;
+            const tolerance = `${page.route} ${target}`;
+            if (tolerance in TOLERATED_REFUSALS) usedTolerances.add(tolerance);
+            else loose.push(`${page.route} ${role}: ${target} → ${route} refused by the API`);
+          }
+        }
+      }
+    }
+    restoreDataSource();
+    expect(
+      [...new Set(loose)],
+      "tighten the page gate, or add the pair to TOLERATED_REFUSALS with how the page handles it",
+    ).toEqual([]);
+    const stale = Object.keys(TOLERATED_REFUSALS).filter((pair) => !usedTolerances.has(pair));
+    expect(stale, "TOLERATED_REFUSALS names a pair that no longer meets a refusal").toEqual([]);
+  });
+});

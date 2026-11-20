@@ -11,3 +11,6 @@ test-results
 **/next-env.d.ts
 .claude
 *.md
+apps/api/test/__snapshots__/*.json
+apps/web/tests/e2e-api/check/page-coverage.json
+apps/web/tests/e2e-api/check/page-gates.json
