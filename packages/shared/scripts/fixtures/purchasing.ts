@@ -147,11 +147,17 @@ function receiptFor(
     lines: po.lines.map((l) => ({
       poLineId: l.id,
       productId: l.productId,
-      received: partial ? dec(l.quantity).div(2).ceil().toString() : l.quantity,
+      received: partial ? halfReceived(l) : l.quantity,
       damaged: "0",
       rolls: [],
     })),
   };
+}
+
+/** Half a line, rounded up: in whole cartons for boxed goods (ADR 0027, F-m), so the rest can still arrive. */
+function halfReceived(line: PoLine): string {
+  if (!line.sqFtPerCarton) return dec(line.quantity).div(2).ceil().toString();
+  return dec(line.quantity).div(line.sqFtPerCarton).div(2).ceil().times(line.sqFtPerCarton).toString();
 }
 
 /**

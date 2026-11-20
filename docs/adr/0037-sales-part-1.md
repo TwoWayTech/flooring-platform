@@ -122,8 +122,9 @@
 
 ## 2026-11-20: whole cartons on the API (whole-product check F-m)
 - **The API refuses, it doesn't round.** A quote save, a quote conversion, a purchase order and a receipt refuse a boxed line that isn't whole cartons with 400 and the line's words ("Slate Tile: sell whole cartons, multiples of 20 sq ft."). Why: ADR 0027 rounds on the screens, and a server that silently raised a quantity would bill or order more than the person sent. Nothing in the spec asks the server to round.
-- **The pack is the product's.** `trustedLines` sets a product line's `sqFtPerCarton` from the catalog, also when the product has none, so a line can't claim a smaller carton.
-- **Converting re-checks.** A quote saved with a part carton before this rule is refused at conversion, before anything is numbered, posted or held. Summit's seeded quotes and invoices are all whole cartons, so nothing seeded is caught.
+- **The pack is the product's.** `trustedLines` sets a product line's `sqFtPerCarton` from the catalog, also when the product has none, so a line can't claim a smaller carton. A line without a product has no carton: a pack sent on it is dropped. A stored pack that isn't above zero is no carton rule (`partCartonProblem`), so it never answers 500 (security review, round 1).
+- **Converting re-checks.** A quote saved with a part carton before this rule is refused at conversion, before anything is numbered, posted or held. Summit's seeded quotes, invoices, orders and receipts are all whole cartons (SQL on the seeded database; a shared test reads every fixture order and receipt line), so nothing seeded is caught and a partly received seeded order can still be finished. The fixture generator now halves a partial receipt in whole cartons (its output is unchanged).
+- **The pack is the line's, as written.** Conversion checks the pack stored on the quote line, and a receipt the order line's, never the product's current one (ADR 0027: a later change of pack size never rewrites an old document).
 - **Not checked separately:** the roll quick invoice (ft of a roll, never boxed) and stock issue (it issues what the invoice line holds).
 
 ## 2026-11-20: the owner's answer on waste

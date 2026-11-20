@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   allocate,
@@ -10,7 +12,9 @@ import {
   receiptStock,
   supplierBalance,
   supplierDueDate,
+  partCartonProblem,
   type Bill,
+  type CompanyFixtures,
   type GoodsReceipt,
   type Product,
   type PurchaseOrder,
@@ -106,6 +110,25 @@ describe("purchasing (spec D1 to D3)", () => {
     expect(receiptProblem(boxed, receipt("a", "0", "20", "5").lines, [])).toBe(
       "LVP: receive whole cartons, multiples of 20 sq ft.",
     );
+  });
+
+  it("seeds whole cartons on every order and receipt line, so a partly received order can still be finished (F-m)", () => {
+    for (const company of ["summit", "keystone"]) {
+      const fixtures = JSON.parse(
+        readFileSync(fileURLToPath(new URL(`../fixtures/${company}.json`, import.meta.url)), "utf8"),
+      ) as CompanyFixtures;
+      const orders = fixtures.purchaseOrders;
+      expect(orders.length, company).toBeGreaterThan(0);
+      for (const order of orders) expect(partCartonProblem(order.lines, "order"), order.number).toBeNull();
+      const lineOf = new Map(orders.flatMap((order) => order.lines.map((line) => [line.id, line] as const)));
+      for (const receipt of fixtures.receipts) {
+        const quantities = receipt.lines.flatMap((line) => {
+          const ordered = lineOf.get(line.poLineId)!;
+          return [line.received, line.damaged].map((quantity) => ({ ...ordered, quantity }));
+        });
+        expect(partCartonProblem(quantities, "receive"), receipt.number).toBeNull();
+      }
+    }
   });
 
   it("derives the order status from receipts, bills and supplier payments", () => {

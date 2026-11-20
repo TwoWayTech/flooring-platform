@@ -62,7 +62,8 @@ export function wholeCartonArea(areaSqFt: DecimalInput, sqFtPerCarton: DecimalIn
 export function isWholeCartons(areaSqFt: DecimalInput, sqFtPerCarton: DecimalInput): boolean {
   const per = dec(sqFtPerCarton);
   if (per.lte(0)) throw new Error("Coverage per carton must be positive");
-  return dec(areaSqFt).dividedBy(per).isInteger();
+  // Exact by construction: a remainder, not a quotient rounded to decimal.js's precision.
+  return dec(areaSqFt).mod(per).isZero();
 }
 
 /** What a person does with a boxed line, for the words of `partCartonProblem`. */
@@ -71,13 +72,16 @@ export type CartonAction = "sell" | "order" | "receive";
 /**
  * The first boxed line whose sq ft is not whole cartons, in words, or null (F-m, ADR 0027). The
  * screens round boxed lines up; the API refuses rather than change a quantity it was sent. The
- * pack is the line's own, copied from the product when the line was written.
+ * pack is the line's own, copied from the product when the line was written; a line whose pack
+ * is blank or not above zero holds no cartons, so it is no part carton either.
  */
 export function partCartonProblem(
   lines: readonly { description: string; quantity: string; sqFtPerCarton?: string | null }[],
   action: CartonAction,
 ): string | null {
-  const line = lines.find((l) => l.sqFtPerCarton && !isWholeCartons(l.quantity || "0", l.sqFtPerCarton));
+  const line = lines.find(
+    (l) => l.sqFtPerCarton && dec(l.sqFtPerCarton).gt(0) && !isWholeCartons(l.quantity || "0", l.sqFtPerCarton),
+  );
   if (!line) return null;
   return `${line.description}: ${action} whole cartons, multiples of ${dec(line.sqFtPerCarton!).toString()} sq ft.`;
 }
