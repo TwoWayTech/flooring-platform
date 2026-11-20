@@ -243,7 +243,7 @@ As built:
 - **MFA reset.** A company can't reset a platform admin's MFA (existing, ADR 0034).
 - **Members.** The count is of sign-ins, not seats in use.
 - **Database errors.** The error text is never shown, only the status, a "has error" flag and, from part 3, the SQLSTATE code of the newest recorded failure.
-- **Support grants.** A grant still opens nothing, in part 3 too.
+- **Support grants.** A grant still opens nothing, in part 3 too. **Rule for the part that first honours a grant (2026-11-20, finding F-h):** while `settings.users` is off, the Owner can't see or revoke a grant (the panel and its routes are hidden), so no grant may be honoured while that switch is off; that part needs a test for it.
 - **Products.** They are read-only.
 - **Limits with no plan.** A company with no subscription row that is not deleted has none, and none can be set without a row, which waits for the owner.
 
