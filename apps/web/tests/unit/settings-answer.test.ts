@@ -44,11 +44,13 @@ function served(): Required<Pick<SettingsAnswer, ApiSettingsSection>> {
     }),
     payments: { ...demo.payments, approvalThreshold: "10.00" },
     expenses: { approvalRequired: false, approvalThreshold: "" },
+    sharedCosts: { rule: "floor_area", fixedPct: {} },
     hr: {
       ...demo.hr,
       showRatesToEmployees: !demo.hr.showRatesToEmployees,
       holidays: [{ date: "2026-12-24", name: "Shop closed" }],
     },
+    branding: { ...demo.branding, displayName: "Summit Floor Co. (API)", brandColor: "#1F5C99", logoDataUrl: null },
     email: { senderName: "Summit Billing", replyTo: "billing@summit.example", signature: "" },
     inventory: { adjustmentApprovalQty: "75.5" },
   };
@@ -70,7 +72,7 @@ function keysOf(value: unknown): string[] {
   return [];
 }
 
-const UNSERVED = ["localization", "branding", "sharedCosts", "meetings"] as const;
+const UNSERVED = ["localization", "meetings"] as const;
 
 describe("Settings part 1 in api mode (ADR 0059)", () => {
   it("W1 getSettings reads GET /settings: the served sections are the API's, the rest DemoStore's", async () => {
@@ -81,7 +83,11 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(settings.profile).toEqual(answer.profile);
     expect(settings.payments).toEqual(answer.payments);
     expect(settings.expenses).toEqual(answer.expenses);
+    // Part 4b: shared costs are the API's too.
+    expect(settings.sharedCosts).toEqual(answer.sharedCosts);
+    expect(settings.sharedCosts).not.toEqual(demo.sharedCosts);
     expect(settings.hr).toEqual(answer.hr);
+    expect(settings.branding).toEqual(answer.branding);
     expect(settings.email).toEqual(answer.email);
     expect(settings.inventory).toEqual(answer.inventory);
     expect(settings.numbers).toEqual({
@@ -101,6 +107,7 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     const hr = await client(narrow).client.getSettings();
     expect(hr.payments).toEqual(demo.payments);
     expect(hr.expenses).toEqual(demo.expenses);
+    expect(hr.sharedCosts).toEqual(demo.sharedCosts);
     expect(hr.profile).toEqual(narrow.profile);
     // Settings → HR left out (never saved, or no reader): DemoStore's copy stays (ADR 0059, part 5, D7).
     expect(hr.hr).toEqual(demo.hr);
@@ -136,8 +143,17 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(result.localization).toEqual(demo.localization);
   });
 
-  it("W5 updateSettings sends the profile, payments, expenses, HR, Email and Stock rules unchanged to their own route", async () => {
-    for (const section of ["profile", "payments", "expenses", "hr", "email", "inventory"] as const) {
+  it("W5 updateSettings sends the profile, payments, expenses, shared costs, HR, branding, Email and Stock rules unchanged to their own route", async () => {
+    for (const section of [
+      "profile",
+      "payments",
+      "expenses",
+      "sharedCosts",
+      "hr",
+      "branding",
+      "email",
+      "inventory",
+    ] as const) {
       const api = client(served());
       const value = demo[section];
       await api.client.updateSettings(section, value);
@@ -152,6 +168,28 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(api.sent).toEqual([]);
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith("localization", demo.localization);
+  });
+
+  it("BW1 api mode: branding is the API's whole, so a logo kept in this browser's demo storage is not shown (part 6, D5)", async () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    const answer = served();
+    const api = fakeApi({ "GET /settings": { status: 200, body: answer } }, () => ({ status: 200, body: {} }), {
+      getSettings: async () => ({ ...structuredClone(demo), branding: { ...demo.branding, logoDataUrl: logo } }),
+    });
+    const settings = await api.client.getSettings();
+    expect(settings.branding).toEqual(answer.branding);
+    expect(settings.branding.logoDataUrl).toBeNull();
+    // An answer without branding (a company with no live row) keeps DemoStore's copy, as for any section.
+    const rest: SettingsAnswer = { ...answer };
+    delete rest.branding;
+    expect((await client(rest).client.getSettings()).branding).toEqual(demo.branding);
+  });
+
+  it("BW2 a refused branding save rejects with the API's words and reads nothing", async () => {
+    const message = "Confirm it's you with a code from your authenticator app, then try again.";
+    const api = client(served(), {}, { status: 403, body: { code: "step_up_required", message } });
+    await expect(api.client.updateSettings("branding", demo.branding)).rejects.toThrow(message);
+    expect(api.sent.map((request) => request.call)).toEqual(["PUT /settings/branding"]);
   });
 
   it("W7 Reset to default and resetSettings stay DemoStore's", () => {

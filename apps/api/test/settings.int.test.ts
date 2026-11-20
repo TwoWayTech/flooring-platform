@@ -13,8 +13,9 @@ import {
   taxRules,
   userProfiles,
 } from "@workspace/db/company";
-import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
+import { tenantBranding, tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
 import {
+  DEFAULT_SHARED_COSTS,
   defaultNumberSettings,
   enabledModules,
   EXPENSE_MESSAGES,
@@ -59,18 +60,9 @@ import { platformHelpers } from "./support/platform-admins";
 const SUMMIT = JSON.parse(
   readFileSync(createRequire(import.meta.url).resolve("@workspace/shared/fixtures/summit.json"), "utf8"),
 ) as { settings: CompanySettings };
+/** Part 1's served sections; part 4b's `sharedCosts` has its own file (settings-shared-costs.int.test.ts). */
 const SERVED = ["profile", "numbers", "payments", "expenses"] as const;
 type Served = (typeof SERVED)[number];
-
-/**
- * The part 1 sections an answer holds, sorted: later parts' sections (HR, Email) are their own
- * files' (settings-hr.int, settings-email.int), so these cases compare part 1's only.
- */
-function partOne(answer: object): string[] {
-  return Object.keys(answer)
-    .filter((section) => (SERVED as readonly string[]).includes(section))
-    .sort();
-}
 
 /** One company of the test: its tenant id and slug, and its product. */
 interface TestCompany {
@@ -226,11 +218,26 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
   }
 
   /** The stored value of a settings group, or undefined. */
-  function rowOf(company: TestCompany, group: Served): Promise<unknown> {
+  function rowOf(company: TestCompany, group: Served | "sharedCosts"): Promise<unknown> {
     return withCompanyDb(company, async (db) => {
       const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, group));
       return row?.value;
     });
+  }
+
+  /** A company's branding as its control row holds it (part 6). */
+  async function controlBranding(company: TestCompany) {
+    const [row] = await harness.control.db
+      .select({
+        displayName: tenantBranding.displayName,
+        monogram: tenantBranding.monogram,
+        brandColor: tenantBranding.brandColor,
+        pattern: tenantBranding.pattern,
+        defaultTheme: tenantBranding.defaultTheme,
+      })
+      .from(tenantBranding)
+      .where(eq(tenantBranding.tenantId, company.id));
+    return row;
   }
 
   /** How many audit entries a company has. */
@@ -315,19 +322,26 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        // Part 1's sections: these companies never saved Settings → HR, which part 5's own file reads (H1).
-        const expected = readableSections({
-          permissions: held,
-          modules: enabledModules([company.product], null, []),
-        }).filter((section): section is Served => (SERVED as readonly string[]).includes(section));
-        expect(partOne(body)).toEqual([...expected].sort());
-        // Nothing else but Settings → Email and Stock rules, never saved here, to their readers
-        // (settings-email.int ME1, settings-stock.int MS1).
+        // All but HR, which these companies never saved and part 5's own file reads (H1), and Email and
+        // Stock rules, never saved here either, whose own files read them (settings-email.int ME1,
+        // settings-stock.int MS1).
         const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
-        const others = readableSections(reader).filter((section) => section === "email" || section === "inventory");
+        const readable = readableSections(reader);
+        const ownFiles: string[] = ["hr", "email", "inventory"];
+        const expected = readable.filter(
+          (section): section is Served | "sharedCosts" | "branding" => !ownFiles.includes(section),
+        );
+        const others = readable.filter((section) => section === "email" || section === "inventory");
         expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
-          const stored = await rowOf(company, section);
+          // Branding is the control row's (part 6; its own cases are in settings-branding.int.test.ts).
+          if (section === "branding") {
+            expect(body.branding, section).toEqual({ ...(await controlBranding(company)), logoDataUrl: null });
+            continue;
+          }
+          // Nothing seeds shared costs here: never saved, they are answered as the report acts on them (part 4b, D9).
+          const stored =
+            (await rowOf(company, section)) ?? (section === "sharedCosts" ? DEFAULT_SHARED_COSTS : undefined);
           const want =
             section === "numbers"
               ? numbersToWire(stored as NumberSettings)
@@ -341,16 +355,26 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(keysOf(body).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         if (company === floorco && key === "owner") {
-          expect(partOne(body)).toEqual(["expenses", "numbers", "payments", "profile"]);
+          expect(Object.keys(body).sort()).toEqual([
+            "branding",
+            "email",
+            "expenses",
+            "inventory",
+            "numbers",
+            "payments",
+            "profile",
+            "sharedCosts",
+          ]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
         if (company === floorco && key === "sales") {
-          expect(partOne(body)).toEqual(["numbers", "payments", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe("");
         }
-        if (company === floorco && key === "warehouse") expect(partOne(body)).toEqual(["numbers", "profile"]);
+        if (company === floorco && key === "warehouse")
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
         if (company === peopleco && key === "owner") {
-          expect(partOne(body)).toEqual(["numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "email", "numbers", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
       });
@@ -752,8 +776,21 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect((await put(section, owner.cookie, bodies[section])).status, section).toBe(404);
         const body = await answerOf(owner.cookie);
         if (section === "payments") expect(body).not.toHaveProperty("payments");
-        else if (section === "expenses") expect(body).not.toHaveProperty("expenses");
-        else expect(partOne(body)).toEqual(["expenses", "numbers", "payments", "profile"]);
+        else if (section === "expenses") {
+          // One switch for the Expenses page: approval and shared costs both leave the read (part 4b).
+          expect(body).not.toHaveProperty("expenses");
+          expect(body).not.toHaveProperty("sharedCosts");
+        } else
+          expect(Object.keys(body).sort()).toEqual([
+            "branding",
+            "email",
+            "expenses",
+            "inventory",
+            "numbers",
+            "payments",
+            "profile",
+            "sharedCosts",
+          ]);
       });
     }
   });
@@ -805,11 +842,21 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         403,
         "module_not_enabled",
       ]);
-      expect(partOne(await answerOf(owner.cookie))).toEqual(["numbers", "profile"]);
+      // Email is a platform section: it stays while core is off.
+      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["branding", "email", "numbers", "profile"]);
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, floorco.id));
     }
-    expect(partOne(await answerOf(owner.cookie))).toEqual(["expenses", "numbers", "payments", "profile"]);
+    expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual([
+      "branding",
+      "email",
+      "expenses",
+      "inventory",
+      "numbers",
+      "payments",
+      "profile",
+      "sharedCosts",
+    ]);
     await put("expenses", owner.cookie, SUMMIT.settings.expenses).expect(200);
   });
 

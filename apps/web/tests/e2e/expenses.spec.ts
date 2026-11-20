@@ -96,6 +96,30 @@ test.describe("Finance → Expenses (spec F1)", () => {
     await expect(page.getByText(/They must add up to 100/)).toBeVisible();
   });
 
+  test("SCS1 Shared costs: a split that isn't 100 is refused with the API's words, a cleared share counts 0, a split of 100 saves (ADR 0059, part 4b)", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/expenses");
+    await page.getByLabel("How company-wide costs are shared").click();
+    await page.getByRole("option", { name: "Fixed percentages" }).click();
+    await page.getByLabel("Denver Central percent").fill("60");
+    await page.getByLabel("Colorado Springs percent").fill("30");
+    const total = "The percentages add up to 90. They must add up to 100.";
+    await expect(page.getByRole("alert").filter({ hasText: total })).toBeVisible();
+    await page.getByRole("button", { name: "Save shared costs" }).click();
+    await expect(page.getByText(total).last()).toBeVisible();
+    // A cleared share is dropped, not sent blank: Denver alone then counts.
+    await page.getByLabel("Colorado Springs percent").fill("");
+    await expect(page.getByRole("alert").filter({ hasText: "add up to 60." })).toBeVisible();
+    await page.getByLabel("Denver Central percent").fill("100");
+    await expect(page.getByRole("alert").filter({ hasText: "add up to" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Save shared costs" }).click();
+    await expect(page.getByText("Shared costs saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Denver Central percent")).toHaveValue("100");
+    await expect(page.getByLabel("Colorado Springs percent")).toHaveValue("");
+  });
+
   test("a location has a floor area in its settings", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/settings/locations");
     await page

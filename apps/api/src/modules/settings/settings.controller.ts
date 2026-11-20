@@ -1,6 +1,7 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
+  brandingProblem,
   companyProfileProblem,
   currencyProblem,
   datedRates,
@@ -21,10 +22,12 @@ import {
   regionKeyProblem,
   regionProblem,
   SETTINGS_SECTIONS,
+  sharedCostsProblem,
   statesOfOperationChanged,
   STOCK_RULES_OWNER_ONLY,
   stockRulesLoosened,
   taxProblem,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
@@ -38,6 +41,7 @@ import {
   type PayrollInput,
   type RegionInput,
   type SettingsAnswer,
+  type SharedCostSettings,
 } from "@workspace/shared";
 import type { Request } from "express";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -49,8 +53,10 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
+  BRANDING_INPUT,
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
   EMAIL_INPUT,
@@ -62,6 +68,7 @@ import {
   PAYROLL_INPUT,
   PROFILE_INPUT,
   REGION_INPUT,
+  SHARED_COSTS_INPUT,
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
@@ -81,10 +88,12 @@ function check(problem: string | null): void {
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
- * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 5
- * adds Settings → HR, whose checks against recorded pay run under the `hr` row's lock. The bell and
- * Outbox part adds Settings → Email, the sender details, with a step-up on every save. The Stock
- * rules part adds the adjustment approval quantity, whose loosening is the Owner's with a step-up.
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
+ * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
+ * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
+ * save that writes the control database: the company's own branding row. The bell and Outbox part
+ * adds Settings → Email, the sender details, with a step-up on every save. The Stock rules part
+ * adds the adjustment approval quantity, whose loosening is the Owner's with a step-up.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -209,6 +218,42 @@ export class SettingsController {
   }
 
   /**
+   * PUT /settings/sharedCosts: how the Business report splits company-wide costs across locations
+   * (ADR 0023; ADR 0059, part 4b). Expense approval's key, module `core` and switch; scope `all`; a
+   * strict body; then, inside the save's transaction under the row's lock, the shared rule against the
+   * company's live locations read there (D2, D4), so a share can only name a location the company has
+   * and a fixed split adds up to 100. No step-up (D3): nothing posts to the ledger, the key is not an
+   * MFA key, and every save is audited with before and after. Answers the section as saved.
+   */
+  @Put("sharedCosts")
+  @RequirePermission(...SETTINGS_SECTIONS.sharedCosts.keys)
+  @RequireModule(SETTINGS_SECTIONS.sharedCosts.module)
+  @Audited()
+  async saveSharedCosts(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<SharedCostSettings> {
+    requireFeature(SETTINGS_SECTIONS.sharedCosts.feature);
+    requireWholeCompany(access);
+    const input = parse(SHARED_COSTS_INPUT, body);
+    // The cast is what the guard proves: `SettingsService.save` runs the guard (the shared rule, which
+    // refuses an unknown rule) before it writes anything, and a refusal rolls the save back.
+    const sharedCosts = input as SharedCostSettings;
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "sharedCosts",
+      sharedCosts,
+      (value) => value,
+      async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
+    );
+    return sharedCosts;
+  }
+
+  /**
    * PUT /settings/hr: Settings → HR (ADR 0059, part 5): the workweek, the pay calendar, holidays and
    * what employees see. `settings.hr.manage` (an MFA key), module `hr`; the page's switch (404),
    * scope `all` (403), a strict body and `hrSettingsProblem` (400). Then, under the `hr` row's lock
@@ -241,6 +286,34 @@ export class SettingsController {
       await this.stepUp.require(session);
       return hr;
     });
+  }
+
+  /**
+   * PUT /settings/branding (ADR 0059, part 6; approved by the owner on 2026-11-20): the display name,
+   * monogram, brand color, floor pattern and default theme, which the shell, documents, the login
+   * page and emails read. Its key and switch from `SETTINGS_SECTIONS.branding`; module `platform`
+   * (every company of both products), so no module guard, as profile and numbers. In order: the
+   * switch (404), data scope `all` (403), the strict body (400; a logo is refused, D5), the shared
+   * rule (400), then always a step-up (403 `step_up_required`, after the content checks so a refused
+   * value never costs a code), then the save. The company is only the session's: the control row is
+   * found by the verified tenant's id, never by anything in the body. Answers the branding as saved.
+   */
+  @Put("branding")
+  @RequirePermission(...SETTINGS_SECTIONS.branding.keys)
+  @Audited()
+  async saveBranding(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<Branding> {
+    requireFeature(SETTINGS_SECTIONS.branding.feature);
+    requireWholeCompany(access);
+    const branding = parse(BRANDING_INPUT, body);
+    check(brandingProblem(branding));
+    await this.stepUp.require(session);
+    return this.settings.saveBranding(tenant, actorOf(access, session, request), branding);
   }
 
   /**
