@@ -367,8 +367,12 @@ function zoneOf(db: CompanyDb): string | null {
  * API would date a record on (ADR 0051, "The company's day on the web", 2026-11-20).
  */
 function dayOf(db: CompanyDb): string {
-  const zone = zoneOf(db);
-  return zone ? dayInZone(new Date(), zone) : browserDay();
+  return dayInOrBrowser(db.settings.localization.region.timeZone);
+}
+
+/** Today in a zone, or the browser's day for a zone Intl doesn't know. */
+function dayInOrBrowser(zone: string): string {
+  return isKnownTimeZone(zone) ? dayInZone(new Date(), zone) : browserDay();
 }
 
 /** A company's wall clock, "YYYY-MM-DDTHH:mm", for the moments records and audit rows carry. */
@@ -876,7 +880,7 @@ export class DemoStore implements ApiClient {
   }
 
   async getSettings() {
-    return this.answered(this.open().settings);
+    return this.answered(this.open());
   }
 
   /**
@@ -886,9 +890,10 @@ export class DemoStore implements ApiClient {
    * sent back, so the tab saves and they drop out of the stored copy on its next save (spec, known
    * limits). Pricing reads the stored copy, with every row, as before.
    */
-  private answered(settings: CompanySettings): CompanySettings {
+  private answered(db: CompanyDb): CompanySettings {
+    const settings = db.settings;
     const { localization } = settings;
-    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, this.today()) } };
+    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, dayOf(db)) } };
   }
 
   /**
@@ -930,7 +935,7 @@ export class DemoStore implements ApiClient {
       ...diff,
     });
     this.emit();
-    return this.answered(db.settings);
+    return this.answered(db);
   }
 
   /**
@@ -959,7 +964,7 @@ export class DemoStore implements ApiClient {
       ...diffSummary(current, stored),
     });
     this.emit();
-    return this.answered(db.settings);
+    return this.answered(db);
   }
 
   async getDefaultSettings() {
@@ -2171,8 +2176,7 @@ export class DemoStore implements ApiClient {
     if (!db) {
       const fixtures = await loadCompanyFixtures(companyId);
       // Shifted to the company's own day, the day its screens and actions read (`dayOf`).
-      const zone = fixtures.settings.localization.region.timeZone;
-      db = new CompanyDb(fixtures, isKnownTimeZone(zone) ? dayInZone(new Date(), zone) : browserDay());
+      db = new CompanyDb(fixtures, dayInOrBrowser(fixtures.settings.localization.region.timeZone));
       if (db.droppedFileIds.length) await this.files.remove(db.droppedFileIds).catch(() => undefined);
       this.dbs.set(companyId, db);
     }

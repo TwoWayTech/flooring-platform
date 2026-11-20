@@ -201,6 +201,18 @@ describe("the api-mode client's today()", () => {
       expect(fake.client.today()).toBe("2026-11-21");
     });
 
+    it("AD9 opening a company (sign-in, a switch) drops the last company's zone until its own GET /company answers", async () => {
+      let opened = 0;
+      const fake = fakeApi(served("America/Denver"), undefined, { openCompany: async () => void opened++ });
+      await fake.client.getWorkspace();
+      await fake.client.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+      at(DENVER_EVENING);
+      expect(fake.client.today()).toBe("2026-11-21");
+      expect(opened).toBe(1);
+      await fake.client.getWorkspace();
+      expect(fake.client.today()).toBe("2026-11-20");
+    });
+
     it("AD8 leaving for the platform pages forgets the zone and closes the demo's company too", async () => {
       let closed = 0;
       const fake = fakeApi(served("America/Denver"), undefined, { closeCompany: () => void closed++ });
