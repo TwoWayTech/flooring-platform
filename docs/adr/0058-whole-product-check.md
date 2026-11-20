@@ -46,6 +46,12 @@ Decided on resuming (2026-11-20):
 - **R-6, the test helpers' database guards refuse rather than reason.** A URL a guarded helper may use is a `postgres:` or `postgresql:` URL on localhost or 127.0.0.1 with no fragment, no control character, space or backslash, the scheme followed at once by `//`, and no query option but `sslmode` (`redirectableUrl`); the opt-in specs add port 5433 unless on GitHub Actions. Why: postgres.js parses URLs itself and reads `host`, `hostaddr` and `port` from the query, so any shape where it and WHATWG URL could disagree is refused (security reviews, rounds 2 to 5).
 - **R-7, route-level sensitive-key overrides are reviewed exactly** (`SENSITIVE_KEY_OVERRIDES`, PM-1 (h)). Why: the leak judge trusts a route's own `@SensitiveFieldKeys`, so a loosened override must fail somewhere other than a `-u` snapshot (security review, round 1).
 
+## Findings fixed (2026-11-20)
+
+The owner asked for the findings to be fixed in small PRs ("Fix what it finds in small PRs"), one branch each, stacked. Each fix turns the check's pin round: the test that pinned the gap now asserts the fixed behaviour. Details and decisions: docs/sessions/2026-11-20-1948-a-check-fixes-x.md.
+
+- **F-h (P1, `fix/api-settings-switch-checks`):** the users, roles, audit and support-grant routes read their switch first, and the 12 entries left `NO_SWITCH_ROUTES`; PM-5 now finds each one hidden. `GET /users` and `GET /roles` are hidden only with both `settings.users` and `settings.roles` off (`any-of`), because the Users page reads the roles and the Roles page reads the users. The console's support request is hidden with `settings.users` too, so no request starts that no Owner could answer (security review, round 1).
+
 ## Consequences
 
 - A PR that adds a route, an ApiClient method, a page rule or a role change regenerates `route-requirements.json`, `route-role-matrix.txt`, `docs/coverage.md`, `page-coverage.json` and `page-gates.json` (`-u` on the two test files) and reviews the diff; a new route with no module, no switch, a view key on a write or a reused money name fails until it is listed with a reason.

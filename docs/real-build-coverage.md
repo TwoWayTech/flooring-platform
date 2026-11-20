@@ -117,9 +117,9 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `settings.users` | Done | Users, invite, support access | Reads no switch (F-h) | FA-0, `users.spec.ts` |
-| `settings.roles` | Partly | Roles (5 routes) | No api-mode e2e; reads no switch (F-h) | FA-2 |
-| `settings.audit` | Done | Audit log | Reads no switch (F-h) | FA-10, DS-19 |
+| `settings.users` | Done | Users, invite, support access | Reads its switch since 2026-11-20 (F-h fixed); `GET /users` answers while Users or Roles is on | FA-0, `users.spec.ts` |
+| `settings.roles` | Partly | Roles (5 routes) | No api-mode e2e; reads its switch since 2026-11-20 (F-h fixed); `GET /roles` answers while Users or Roles is on | FA-2 |
+| `settings.audit` | Done | Audit log | Reads its switch since 2026-11-20 (F-h fixed) | FA-10, DS-19 |
 | `settings.branding` | Done | `PUT /settings/branding` (part 6) | Reset to default reads DemoStore | `settings-branding.spec.ts` |
 | `settings.localization` | Partly | All five tabs (parts 2a, 2b, 3a, 3b) | A company with no Localization row can't save any tab (G2) | FS-3, `settings-localization.spec.ts`, `settings-tax.spec.ts` |
 | `settings.number-format` | Done | `PUT /settings/numbers` | — | FS-3, `settings.spec.ts` |

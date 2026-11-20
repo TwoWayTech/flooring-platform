@@ -24,6 +24,8 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import type { ApiEnv } from "../../core/config/env";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { requireAnyFeature } from "../hr/hr-input";
+import { requireFeature } from "../sales/sales-common";
 import { AuditLogService } from "./audit-log.service";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { linkOrigin } from "./invitation-rules";
@@ -64,7 +66,17 @@ const ROLE = z.object({
   permissions: z.array(PERMISSION_KEY).max(1000),
 });
 
-/** Settings → Users (spec "Settings: Users"; draft spec docs/specs/settings-users-access.md). */
+/**
+ * The two reads both settings pages make: the Users page shows each person's roles (GET /roles) and
+ * the Roles page counts each role's holders (GET /users), so each answers while either page's switch
+ * is on, and hides only when both are off (CLAUDE.md rule 13; finding F-h).
+ */
+const USERS_OR_ROLES = ["settings.users", "settings.roles"] as const;
+
+/**
+ * Settings → Users (spec "Settings: Users"; draft spec docs/specs/settings-users-access.md). Every
+ * write reads the `settings.users` switch first, so a switched-off page is hidden from the API too.
+ */
 @Controller("users")
 export class UsersController {
   constructor(
@@ -76,6 +88,7 @@ export class UsersController {
   @Get()
   @RequirePermission("settings.users.view", "settings.users.manage")
   list(@CurrentTenant() tenant: TenantContext) {
+    requireAnyFeature(...USERS_OR_ROLES);
     return this.users.list(tenant);
   }
 
@@ -90,6 +103,7 @@ export class UsersController {
     @Req() request: Request,
     @Body() body: unknown,
   ) {
+    requireFeature("settings.users");
     const origin = linkOrigin(
       request.get("x-forwarded-host") ?? request.get("host"),
       this.config.get("AUTH_ALLOWED_HOSTS", { infer: true }),
@@ -112,11 +126,15 @@ export class UsersController {
     @Param("id", new ParseUUIDPipe()) userId: string,
     @Body() body: unknown,
   ) {
+    requireFeature("settings.users");
     return this.users.update(tenant, actorOf(access, session, request), userId, parse(USER_PATCH, body));
   }
 }
 
-/** Settings → Security roles (spec "Create or duplicate a role" to "Delete a role"). */
+/**
+ * Settings → Security roles (spec "Create or duplicate a role" to "Delete a role"). Every write reads
+ * the `settings.roles` switch first (CLAUDE.md rule 13).
+ */
 @Controller("roles")
 export class RolesController {
   constructor(private readonly roles: RolesService) {}
@@ -125,6 +143,7 @@ export class RolesController {
   @Get()
   @RequirePermission("settings.roles.view", "settings.roles.manage", "settings.users.view", "settings.users.manage")
   list(@CurrentTenant() tenant: TenantContext) {
+    requireAnyFeature(...USERS_OR_ROLES);
     return this.roles.list(tenant);
   }
 
@@ -139,6 +158,7 @@ export class RolesController {
     @Req() request: Request,
     @Body() body: unknown,
   ) {
+    requireFeature("settings.roles");
     return this.roles.save(tenant, actorOf(access, session, request), parse(ROLE, body));
   }
 
@@ -154,6 +174,7 @@ export class RolesController {
     @Param("id", new ParseUUIDPipe()) roleId: string,
     @Body() body: unknown,
   ) {
+    requireFeature("settings.roles");
     return this.roles.save(tenant, actorOf(access, session, request), { ...parse(ROLE, body), id: roleId });
   }
 
@@ -168,6 +189,7 @@ export class RolesController {
     @Req() request: Request,
     @Param("id", new ParseUUIDPipe()) roleId: string,
   ) {
+    requireFeature("settings.roles");
     return this.roles.reset(tenant, actorOf(access, session, request), roleId);
   }
 
@@ -183,6 +205,7 @@ export class RolesController {
     @Req() request: Request,
     @Param("id", new ParseUUIDPipe()) roleId: string,
   ) {
+    requireFeature("settings.roles");
     await this.roles.remove(tenant, actorOf(access, session, request), roleId);
   }
 }
@@ -199,6 +222,7 @@ export class AuditLogController {
   @Get()
   @RequirePermission("settings.audit.view")
   list(@CurrentTenant() tenant: TenantContext, @CurrentAccess() access: RequestAccess) {
+    requireFeature("settings.audit");
     return this.audit.list(tenant, access);
   }
 }

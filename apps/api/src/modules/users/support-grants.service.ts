@@ -66,7 +66,11 @@ export class SupportGrantsService {
     await this.change(tenant, actor, grantId, "approve");
   }
 
-  /** An Owner ends a pending or approved grant, with no step-up. */
+  /**
+   * An Owner ends a pending or approved grant, with no step-up. Like the whole panel, it is hidden
+   * while `settings.users` is off (finding F-h, 2026-11-20). That is safe only while a grant opens
+   * nothing: the code that first honours a grant must also honour none while that switch is off.
+   */
   async revoke(tenant: TenantContext, actor: Actor, grantId: string): Promise<void> {
     assertOwner(actor);
     await this.change(tenant, actor, grantId, "revoke");

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Ban, CalendarClock, CircleHelp, Clock, CreditCard, type LucideIcon } from "lucide-react";
 import {
+  featureOn,
   PRODUCT_LABELS,
   SUBSCRIPTION_STANDING_TEXT,
   type CompanyBilling,
@@ -112,12 +113,14 @@ export function BillingView({ billing }: { billing: CompanyBilling }) {
               </dd>
             </div>
           </dl>
-          <Link
-            href="/settings/users"
-            className="text-brand-ink self-start text-sm font-medium underline-offset-2 hover:underline"
-          >
-            See seats in use
-          </Link>
+          {featureOn("settings.users") ? (
+            <Link
+              href="/settings/users"
+              className="text-brand-ink self-start text-sm font-medium underline-offset-2 hover:underline"
+            >
+              See seats in use
+            </Link>
+          ) : null}
         </Panel>
         <Panel title="Plan" className="md:col-span-2">
           {billing.subscriptions.length === 0 ? (

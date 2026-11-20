@@ -10,10 +10,12 @@ import {
   user,
 } from "@workspace/db/control";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
+import type { FeatureKey } from "@workspace/shared";
 import { and, eq } from "drizzle-orm";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
+import { withFeaturesOff } from "./support/switches";
 
 /** A TOTP code for the next 30-second step, so a code is never used twice in one step. */
 function freshCode(secret: string): string {
@@ -95,6 +97,70 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     const sales = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: ["sales"] }));
     expect((await call("get", "/users", sales)).status).toBe(403);
     expect((await call("get", "/audit", sales)).status).toBe(403);
+  });
+
+  it("hides each Users, Roles, Audit log and Support access route with its switch off (rule 13, F-h)", async () => {
+    const NIL = "00000000-0000-0000-0000-000000000000";
+    type Route = readonly ["get" | "post" | "patch" | "put" | "delete", string];
+    const hidden: readonly (readonly [FeatureKey, readonly Route[]])[] = [
+      [
+        "settings.users",
+        [
+          ["post", "/users/invite"],
+          ["patch", `/users/${NIL}`],
+          ["get", "/support-grants"],
+          ["post", `/support-grants/${NIL}/approve`],
+          ["post", `/support-grants/${NIL}/revoke`],
+        ],
+      ],
+      [
+        "settings.roles",
+        [
+          ["post", "/roles"],
+          ["put", `/roles/${NIL}`],
+          ["post", `/roles/${NIL}/reset`],
+          ["delete", `/roles/${NIL}`],
+        ],
+      ],
+      ["settings.audit", [["get", "/audit"]]],
+    ];
+    /** The bare 404 a switched-off feature answers; a missing record's 404 has words. */
+    const switchedOff = (answer: request.Response) =>
+      answer.status === 404 && answer.body.code === "not_found" && answer.body.message === "Not Found";
+    for (const [key, routes] of hidden) {
+      for (const [method, path] of routes) {
+        // With the switch on the route answers something else, so the 404 with it off is the switch's own.
+        const on = await call(method, path, owner.cookie).send({});
+        const off = await withFeaturesOff([key], () => call(method, path, owner.cookie).send({}));
+        expect({ key, method, path, on: switchedOff(on), off: switchedOff(off) }).toEqual({
+          key,
+          method,
+          path,
+          on: false,
+          off: true,
+        });
+      }
+    }
+  });
+
+  it("answers GET /users and GET /roles while either the Users or the Roles page is on (each page reads both)", async () => {
+    for (const key of ["settings.users", "settings.roles"] as const) {
+      await withFeaturesOff([key], async () => {
+        await call("get", "/users", owner.cookie).expect(200);
+        await call("get", "/roles", owner.cookie).expect(200);
+      });
+    }
+    await withFeaturesOff(["settings.users", "settings.roles"], async () => {
+      for (const path of ["/users", "/roles"]) {
+        const answer = await call("get", path, owner.cookie);
+        expect([path, answer.status, answer.body.code, answer.body.message]).toEqual([
+          path,
+          404,
+          "not_found",
+          "Not Found",
+        ]);
+      }
+    });
   });
 
   it("needs a step-up to change roles, checks the code, and syncs member.role with the mfa marker", async () => {
