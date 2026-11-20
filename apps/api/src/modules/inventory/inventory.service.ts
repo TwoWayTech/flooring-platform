@@ -7,6 +7,7 @@ import {
   boxedOnHand,
   dec,
   isWholeCartons,
+  cartonPack,
   nextNumber,
   nextPaymentNumber,
   receiveTransfer,
@@ -273,7 +274,7 @@ export class InventoryService {
         const locations = await loadLocations(tx);
         const location = locations.find((candidate) => candidate.id === input.locationId);
         if (location?.kind !== "warehouse") throw refuse("Choose a warehouse; showrooms hold no stock.");
-        const pack = product.sqFtPerCarton;
+        const pack = cartonPack(product.sqFtPerCarton);
         if (pack ? !isWholeCartons(counted, pack) : !counted.isInteger()) {
           throw refuse(pack ? `Count whole cartons: multiples of ${pack} sq ft.` : "Count whole items.");
         }

@@ -34,6 +34,7 @@ import {
   upgradeCompany,
   QUOTE_ACTION_STATUS,
   quoteActions,
+  partCartonProblem,
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
@@ -1192,6 +1193,9 @@ export class DemoStore implements ApiClient {
       throw new DemoRuleError(`Quote ${before.number} is closed and can't be changed.`);
     const draftProblem = quoteDraftProblem(input);
     if (draftProblem) throw new DemoRuleError(draftProblem);
+    // Boxed lines are sold in whole cartons, as on the API (F-m, ADR 0027).
+    const cartons = partCartonProblem(input.lines, "sell");
+    if (cartons) throw new DemoRuleError(cartons);
     // Status, sending and conversion change only through their own calls (spec B1).
     const quote: Quote = {
       ...input,

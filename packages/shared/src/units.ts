@@ -66,6 +66,11 @@ export function isWholeCartons(areaSqFt: DecimalInput, sqFtPerCarton: DecimalInp
   return dec(areaSqFt).mod(per).isZero();
 }
 
+/** The carton size when a pack is one (above zero), or undefined: a blank or zero pack holds no cartons. */
+export function cartonPack(sqFtPerCarton: string | null | undefined): string | undefined {
+  return sqFtPerCarton && dec(sqFtPerCarton).gt(0) ? sqFtPerCarton : undefined;
+}
+
 /** What a person does with a boxed line, for the words of `partCartonProblem`. */
 export type CartonAction = "sell" | "order" | "receive";
 
@@ -79,9 +84,10 @@ export function partCartonProblem(
   lines: readonly { description: string; quantity: string; sqFtPerCarton?: string | null }[],
   action: CartonAction,
 ): string | null {
-  const line = lines.find(
-    (l) => l.sqFtPerCarton && dec(l.sqFtPerCarton).gt(0) && !isWholeCartons(l.quantity || "0", l.sqFtPerCarton),
-  );
+  const line = lines.find((l) => {
+    const pack = cartonPack(l.sqFtPerCarton);
+    return pack !== undefined && !isWholeCartons(l.quantity || "0", pack);
+  });
   if (!line) return null;
   return `${line.description}: ${action} whole cartons, multiples of ${dec(line.sqFtPerCarton!).toString()} sq ft.`;
 }
