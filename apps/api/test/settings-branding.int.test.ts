@@ -21,7 +21,8 @@ import {
   type SettingsAnswer,
 } from "@workspace/shared";
 import { and, count, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { AuditService } from "../src/core/access/audit";
 import { isAudited, permissionRequirement } from "../src/core/access/permission.decorators";
 import { AuthHarness } from "./auth-harness";
 import { platformHelpers } from "./support/platform-admins";
@@ -504,5 +505,47 @@ describe("settings part 6 on the API: branding into the control database (needs 
     expect(entries).toHaveLength(2);
     expect(entries[1].before).toEqual(entries[0].after);
     expect((await controlRow(floorco)).monogram).toBe((entries[1].after as Branding).monogram);
+  });
+
+  it("BA14 a save that can't get the row lock within the wait answers 409 branding_busy promptly, writing nothing", async () => {
+    await harness.grantStepUp(owner.cookie);
+    const row = await controlRow(floorco);
+    const audits = await auditCount(floorco);
+    // Another transaction holds the row for longer than the save's lock wait (5 s).
+    const outcome14 = await harness.control.db.transaction(async (tx) => {
+      await tx
+        .select({ id: tenantBranding.id })
+        .from(tenantBranding)
+        .where(eq(tenantBranding.tenantId, floorco.id))
+        .for("update");
+      const started = Date.now();
+      const response = await put(owner.cookie, { ...NEW, monogram: "BZ" });
+      return { response, waited: Date.now() - started };
+    });
+    expect([outcome14.response.status, outcome14.response.body]).toEqual([
+      409,
+      { code: "branding_busy", message: "Branding is being saved by someone else right now. Try again in a moment." },
+    ]);
+    expect(outcome14.waited).toBeGreaterThanOrEqual(4_500);
+    expect(outcome14.waited).toBeLessThan(9_000);
+    await unchanged(floorco, row, audits);
+    // Once the row is free, the same save goes through.
+    expect((await put(owner.cookie, { ...NEW, monogram: "BZ" })).status).toBe(200);
+  }, 30_000);
+
+  it("BA15 a company audit write that fails rolls the control change back: nothing is saved unaudited", async () => {
+    await harness.grantStepUp(owner.cookie);
+    const row = await controlRow(floorco);
+    const audits = await auditCount(floorco);
+    const audit = harness.app.get(AuditService);
+    const spy = vi.spyOn(audit, "record").mockRejectedValueOnce(new Error("audit write failed"));
+    try {
+      const response = await put(owner.cookie, { ...NEW, monogram: "AF" });
+      expect(response.status).toBe(500);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+    await unchanged(floorco, row, audits);
   });
 });

@@ -26,7 +26,7 @@ import {
   type SettingsAnswer,
   type TaxInput,
 } from "@workspace/shared";
-import { and, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -37,13 +37,28 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadExpenseSettings } from "../finance/expense-records";
 import { companyClock, type CompanyClock } from "../sales/sales-common";
 import { loadLocalization } from "../sales/sales-records";
-import { BRANDING_COLUMNS, brandingAnswer, brandingMissing, brandingOf, readBranding } from "./branding-row";
+import { lockNotAvailable } from "../imports/import-lock";
+import {
+  BRANDING_COLUMNS,
+  brandingAnswer,
+  brandingBusy,
+  brandingMissing,
+  brandingOf,
+  readBranding,
+} from "./branding-row";
 
 /**
  * A served section stored in the company's `settings` table: every one but Branding, which lives in
  * the control `tenant_branding` row (ADR 0059, part 6, D2).
  */
 export type CompanySection = Exclude<ApiSettingsSection, "branding">;
+
+/** How long a branding save waits for the control row's lock before it answers 409 `branding_busy` (part 6). */
+export const BRANDING_LOCK_WAIT = "5s";
+/** The longest one control statement of a branding save may run (part 6). */
+const BRANDING_STATEMENT_LIMIT = "10s";
+/** How long a branding save's control transaction may sit idle (waiting for the company database) before the server ends it (part 6). */
+const BRANDING_IDLE_LIMIT = "10s";
 
 /** A served section's value as it is stored. */
 export type StoredSection<S extends CompanySection> = CompanySettings[S];
@@ -390,40 +405,69 @@ export class SettingsService {
    * transaction inside the control one, so it commits first: no change is ever left unaudited (D3).
    * No transaction spans both databases, so a control commit that fails after the audit committed
    * leaves an audit row for a change not made. Answers the branding as saved, without a logo (D5).
+   *
+   * The control pool is shared by every tenant's sign-in, so the save never holds a control
+   * connection long (part 6, review 2026-11-20): the company database is reached first, before any
+   * control connection is taken; inside the control transaction a row lock waits at most
+   * `BRANDING_LOCK_WAIT` (then 409 `branding_busy`), a statement runs at most
+   * `BRANDING_STATEMENT_LIMIT`, and the server ends a transaction left idle longer than
+   * `BRANDING_IDLE_LIMIT` (while it waits for the company database), which rolls it back.
    */
   async saveBranding(tenant: TenantContext, actor: Actor, branding: Branding): Promise<Branding> {
     const db = await this.tenancy.db(tenant);
-    return this.control.db.transaction(async (control) => {
-      const [row] = await control
-        .select({ id: tenantBranding.id, ...BRANDING_COLUMNS })
-        .from(tenantBranding)
-        .where(brandingOf(tenant.companyId))
-        .for("update");
-      if (!row) throw brandingMissing();
-      const after = brandingAnswer(branding);
-      const { displayName, monogram, brandColor, pattern, defaultTheme } = after;
-      await control
-        .update(tenantBranding)
-        .set({ displayName, monogram, brandColor, pattern, defaultTheme, updatedAt: new Date() })
-        .where(eq(tenantBranding.id, row.id));
-      await db.transaction((tx) =>
-        this.auditLog.record(
-          tenant,
-          actor.audit,
-          {
-            category: "settings",
-            action: `Changed ${SETTINGS_SECTIONS.branding.label.toLowerCase()}`,
-            targetType: "settings",
-            targetId: row.id,
-            targetLabel: SETTINGS_SECTIONS.branding.label,
-            before: brandingAnswer(row),
-            after,
-          },
-          tx,
-        ),
-      );
-      return after;
-    });
+    // Reach the company database before a control connection is held, so a slow or unreachable
+    // company database fails here and never keeps a control connection or the row lock waiting.
+    await db.execute(sql`select 1`);
+    try {
+      return await this.control.db.transaction(async (control) => {
+        await control.execute(sql.raw(`set local lock_timeout = '${BRANDING_LOCK_WAIT}'`));
+        await control.execute(sql.raw(`set local statement_timeout = '${BRANDING_STATEMENT_LIMIT}'`));
+        await control.execute(sql.raw(`set local idle_in_transaction_session_timeout = '${BRANDING_IDLE_LIMIT}'`));
+        return this.writeBranding(control, db, tenant, actor, branding);
+      });
+    } catch (error) {
+      if (lockNotAvailable(error)) throw brandingBusy();
+      throw error;
+    }
+  }
+
+  /** The branding save's work inside its control transaction (`saveBranding`): lock, update, audit. */
+  private async writeBranding(
+    control: ControlDb,
+    db: CompanyDb,
+    tenant: TenantContext,
+    actor: Actor,
+    branding: Branding,
+  ): Promise<Branding> {
+    const [row] = await control
+      .select({ id: tenantBranding.id, ...BRANDING_COLUMNS })
+      .from(tenantBranding)
+      .where(brandingOf(tenant.companyId))
+      .for("update");
+    if (!row) throw brandingMissing();
+    const after = brandingAnswer(branding);
+    const { displayName, monogram, brandColor, pattern, defaultTheme } = after;
+    await control
+      .update(tenantBranding)
+      .set({ displayName, monogram, brandColor, pattern, defaultTheme, updatedAt: new Date() })
+      .where(eq(tenantBranding.id, row.id));
+    await db.transaction((tx) =>
+      this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "settings",
+          action: `Changed ${SETTINGS_SECTIONS.branding.label.toLowerCase()}`,
+          targetType: "settings",
+          targetId: row.id,
+          targetLabel: SETTINGS_SECTIONS.branding.label,
+          before: brandingAnswer(row),
+          after,
+        },
+        tx,
+      ),
+    );
+    return after;
   }
 
   /** The row of a settings group, locked until the transaction ends: it orders two saves of one group (ADR 0059). */

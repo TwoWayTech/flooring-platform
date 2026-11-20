@@ -47,6 +47,17 @@ export async function readBranding(control: ControlDb, companyId: string): Promi
 }
 
 /**
+ * The refusal of a branding save that waited too long for the control row's lock (part 6): another
+ * save of the same company holds it. Nothing was written; trying again is safe.
+ */
+export function brandingBusy(): ConflictException {
+  return new ConflictException({
+    code: "branding_busy",
+    message: "Branding is being saved by someone else right now. Try again in a moment.",
+  });
+}
+
+/**
  * The refusal of a branding save for a company with no live branding row (part 6, D2). Provisioning
  * always writes one, so nothing is invented here: the session timeouts live in the same row.
  */
