@@ -158,11 +158,14 @@ export function dayInZone(instant: Date, zone: string): string {
   return instantToZoned(instant, zone).slice(0, 10);
 }
 
-/** Whether Intl knows a zone name, so that `dayInZone` and `instantToZoned` can read a clock in it. */
+/**
+ * Whether Intl knows a zone name, so that `dayInZone` and `instantToZoned` can read a clock in it. A
+ * known zone's formatter is cached, so the web's `today()` costs no new formatter per call.
+ */
 export function isKnownTimeZone(zone: string): boolean {
   if (!zone) return false;
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    formatter(zone);
     return true;
   } catch {
     return false;
