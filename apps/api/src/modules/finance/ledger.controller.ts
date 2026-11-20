@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Inject, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, ForbiddenException, Get, Header, Inject, Post, Query, Req } from "@nestjs/common";
 import type { ControlDb, DbHandle } from "@workspace/db";
+import { seesTrialBalance, TRIAL_BALANCE_HIDDEN, type TrialBalance } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -11,12 +12,18 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
+import { RequireProduct } from "../../core/tenancy/access";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
+import { requireReport } from "../reports/report-access";
+import { readSnapshot } from "../reports/report-records";
 import { companyToday, DAY, refuse } from "../sales/sales-common";
 import { requireCompanyWide } from "./company-wide";
 
 const THROUGH = z.object({ through: DAY.optional() });
+
+/** The books are a company's figures: never kept by a browser or a shared cache (ADR 0055 S11). */
+const NO_STORE = "private, no-store";
 
 const CLOSE = z.object({ through: DAY, note: z.string().max(500) });
 
@@ -34,17 +41,32 @@ export class LedgerController {
     private readonly auditLog: AuditService,
   ) {}
 
-  /** GET /ledger/trial-balance?through=: every account's totals, and whether debits equal credits. */
+  /**
+   * GET /ledger/trial-balance?through=: every account's totals, and whether debits equal credits.
+   * The Reports hub's Trial balance (ADR 0055 "Trial balance"): Flooring Suite like the hub (403
+   * `product_not_enabled`), the hub's switch (404), company-wide scope (403), the query (400), then
+   * the sight rule (403), all before any figure is read. The rule and the figures come from one
+   * read-only snapshot, so a pay or contract posting that lands between them can't reach someone
+   * the rule would now refuse.
+   */
   @Get("trial-balance")
+  @RequireProduct("flooring")
   @RequirePermission("reports.financial.view")
+  @Header("Cache-Control", NO_STORE)
   async trialBalance(
     @CurrentTenant() tenant: TenantContext,
     @CurrentAccess() access: RequestAccess,
     @Query() query: unknown,
-  ) {
+  ): Promise<TrialBalance> {
+    requireReport("trial-balance");
     requireCompanyWide(access);
     const { through } = parse(THROUGH, query);
-    return this.ledger.trialBalance(await this.tenancy.db(tenant), through);
+    return readSnapshot(await this.tenancy.db(tenant), async (tx) => {
+      if (!seesTrialBalance(access, await this.ledger.trialBalanceFacts(tx))) {
+        throw new ForbiddenException({ code: "forbidden", message: TRIAL_BALANCE_HIDDEN });
+      }
+      return this.ledger.trialBalance(tx, through);
+    });
   }
 
   /** GET /ledger/period-close: the last closed day, or null. */

@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Building2, RotateCw, SlidersHorizontal, type LucideIcon } from "lucide-react";
-import { REPORT_QUERY_MESSAGES, REPORT_WHOLE_COMPANY } from "@workspace/shared";
+import { Building2, Lock, RotateCw, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { REPORT_QUERY_MESSAGES, REPORT_WHOLE_COMPANY, TRIAL_BALANCE_HIDDEN } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import { QueryFallback } from "@/components/query-fallback";
@@ -10,6 +10,20 @@ import type { QueryState } from "@/lib/api/use-api";
 
 /** Every refusal of a report's filters, in the words the API and the demo both use (ADR 0055 S8, S10). */
 const FILTER_REFUSALS: ReadonlySet<string> = new Set(Object.values(REPORT_QUERY_MESSAGES));
+
+/** The books' own refusal for a narrower data scope (apps/api `requireCompanyWide`). */
+const BOOKS_WHOLE_COMPANY = "The books cover the whole company.";
+
+/**
+ * Refusals that mean the person may no longer open this report, with what to do instead. Each offers
+ * to read the list of their reports again, which drops the report from the menu.
+ */
+const ACCESS_REFUSALS: ReadonlyMap<string, { icon: LucideIcon; detail: string }> = new Map([
+  [REPORT_WHOLE_COMPANY, { icon: Building2, detail: "Your access covers part of the company. Choose another report." }],
+  [BOOKS_WHOLE_COMPANY, { icon: Building2, detail: "Your access covers part of the company. Choose another report." }],
+  // The books gained pay or contract postings after the list was read (ADR 0055 "Trial balance").
+  [TRIAL_BALANCE_HIDDEN, { icon: Lock, detail: "Ask your company's Owner for that access, or choose another report." }],
+]);
 
 interface ReportFallbackProps {
   query: QueryState<unknown>;
@@ -50,22 +64,18 @@ function Notice({ icon: Icon, title, detail, className, children }: NoticeProps)
 /**
  * What a report shows until it is ready. Two refusals are not failures to load, so neither offers
  * a Try again that would only be refused again:
- * - a company-wide report refused because the person's data scope is narrower (ADR 0055 S1) says
- *   so in the server's words and offers to read the list of their reports again, which drops the
- *   report from the menu;
+ * - a company-wide report refused because the person's data scope is narrower (ADR 0055 S1), or the
+ *   trial balance refused for the cost and pay sight its figures need, says so in the server's
+ *   words and offers to read the list of their reports again, which drops the report from the menu;
  * - filters the server refuses (S8, S10: a period too long, a location no longer live) show the
  *   server's words and ask for other filters, which are still on screen above.
  * Anything else falls back to the usual skeleton or error with Try again.
  */
 export function ReportFallback({ query, className, label, onRefresh }: ReportFallbackProps) {
-  if (query.status === "error" && query.error.message === REPORT_WHOLE_COMPANY) {
+  const refusal = query.status === "error" ? ACCESS_REFUSALS.get(query.error.message) : undefined;
+  if (query.status === "error" && refusal) {
     return (
-      <Notice
-        icon={Building2}
-        title={REPORT_WHOLE_COMPANY}
-        detail="Your access covers part of the company. Choose another report."
-        className={className}
-      >
+      <Notice icon={refusal.icon} title={query.error.message} detail={refusal.detail} className={className}>
         <Button variant="outline" size="sm" onClick={onRefresh}>
           <RotateCw />
           Show my reports

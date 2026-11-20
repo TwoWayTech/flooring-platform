@@ -561,6 +561,13 @@ Purchasing, Warehouse, HR manager, Installer and Employee open no report. With H
 
 Also settled while building: the screen never sends a pick the server no longer lists (it reads as all); while any report reloads (the Business report and the three hub reports alike) its last figures stay dimmed and marked busy and the export buttons wait, so an export always matches its filters; a refusal for a whole-company report shows as a notice with "Show my reports"; the Business report's Custom dates are checked on the screen by the same rule as S8, so a pair the API would refuse is explained beside the dates ("Choose a period of 366 days or less.", "The start date must be on or before the end date.", "Enter a date.", "Enter a real date.") and never sent, and the last figures stay; a refused filter that reaches the server shows as a notice in its words, with no Try again.
 
+### Trial balance (real build only, 2026-11-20)
+A fifth report, "Trial balance" (`?report=trial-balance`), read from `GET /ledger/trial-balance`; ADR 0055 "Trial balance".
+- **Who:** `reports.financial.view`, data scope `all`, and the sight its figures reveal: sales margin and product cost always, contract cost once a contract billing has posted, and pay sight once pay has posted. Anyone else is never offered it, and the API refuses them. Default roles: Owner and Accountant.
+- **Not in the demo:** the demo keeps no journal, so the report is never offered there.
+- **What it shows:** an As of day (today by default), the accounts grouped by kind with their debits, credits and balance (Dr or Cr), empty accounts on request, the totals, and whether the books balance (and by how much they don't). Export CSV for `reports.financial.export`.
+- **Switch:** `reports.hub`; no switch of its own.
+
 ### Known limits this build closes
 - **Data scope differs between reports:** closed (S1, S2).
 - **Profit and loss mixes scopes:** closed (S1). The warehouse filter still leaves expenses alone.
@@ -582,6 +589,6 @@ Also settled while building: the screen never sends a pick the server no longer 
 4. Confirm the product-cost key for cost figures (S17) and the P&L's margin columns (S18).
 5. The 366-day cap (S8), or two years for year-over-year?
 6. Screen-checked exports (S15) until Excel and emailed reports.
-7. Should `GET /ledger/trial-balance` hide the Cost of Goods Sold and Wages accounts the same way (P13)?
+7. Should `GET /ledger/trial-balance` hide the Cost of Goods Sold and Wages accounts the same way (P13)? Default taken 2026-11-20: the whole trial balance is refused without that sight ("Trial balance (real build only)" above). Confirm.
 8. Migrations: freezing shared-cost shares at period close (`expense_allocations`), and date indexes on invoices, expenses and payments.
 9. Keep or delete the removed reports' web builders (S14).

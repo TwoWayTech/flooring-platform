@@ -22,7 +22,7 @@ import { Panel } from "@workspace/ui/components/panel";
 import { Segmented } from "@workspace/ui/components/segmented";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@workspace/ui/components/sheet";
 import { cn } from "@workspace/ui/lib/utils";
-import { downloadText } from "@/components/data-table/csv";
+import { csvCell, downloadText } from "@/components/data-table/csv";
 import { ScrollRegion } from "@/components/scroll-region";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { Pick } from "@/features/hr/pick";
@@ -187,7 +187,6 @@ function ReportSection({ section, onOpen }: { section: BusinessSection; onOpen: 
 
 /** Every section as one CSV: the same rows the screen shows. */
 function toCsvText(report: BusinessReport): string {
-  const quote = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   const lines = report.sections.flatMap((s) => {
     const head = ["Section", "Line", ...s.columns.map((c) => c.header)];
     const rows = [...s.rows, ...(s.total ? [s.total] : [])].map((r) => [
@@ -197,7 +196,7 @@ function toCsvText(report: BusinessReport): string {
     ]);
     return [head, ...rows, []];
   });
-  return lines.map((l) => l.map(quote).join(",")).join("\n");
+  return lines.map((l) => l.map(csvCell).join(",")).join("\n");
 }
 
 /**

@@ -200,6 +200,7 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
   supplierPaymentId: "an id",
   showRatesToEmployees: "a setting flag",
   showPayToEmployees: "a setting flag",
+  hasPayPostings: "a fact of the journal that decides who may read the trial balance (ADR 0055), not an amount",
 };
 
 describe("every cost, margin, rate, wage and limit field in packages/shared is classified", () => {

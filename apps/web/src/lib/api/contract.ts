@@ -8,6 +8,7 @@ import type {
   PnlQuery,
   Report,
   ReportOptions,
+  TrialBalance,
   SalesByCategoryQuery,
   Expense,
   RecurringExpense,
@@ -990,6 +991,11 @@ export interface ApiClient {
   salesByCategoryReport(query: SalesByCategoryQuery): Promise<Report>;
   /** Confirmed payments by payment date within the person's data scope (rule 24). */
   paymentsReport(query: PaymentsReportQuery): Promise<Report>;
+  /**
+   * The trial balance through a day, or all time with null (GET /ledger/trial-balance; ADR 0055
+   * "Trial balance"). The API only: the demo keeps no journal, so DemoStore refuses and the hub never offers it.
+   */
+  trialBalance(through: string | null): Promise<TrialBalance>;
   /** The Meetings page's data (`MeetingsData`). Needs meetings.meeting.view. */
   meetingsData(): Promise<MeetingsData>;
   /** My meetings (GET /me/meetings): the reader's coming meetings with their next occurrence, and whom they may ask to meet. Needs hr.portal.view. */

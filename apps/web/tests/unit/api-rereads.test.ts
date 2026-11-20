@@ -123,6 +123,7 @@ const CASES = {
   pnlReport: read((c) => c.pnlReport(stub({ range: "month" }))),
   salesByCategoryReport: read((c) => c.salesByCategoryReport(stub({ range: "month" }))),
   paymentsReport: read((c) => c.paymentsReport(stub({ range: "month" }))),
+  trialBalance: read((c) => c.trialBalance("2026-10-31")),
   importOverview: read((c) => c.importOverview("summit")),
   previewImport: read((c) => c.previewImport("summit", IMPORT), "POST /imports/check"),
   runImport: write((c) => c.runImport("summit", { ...IMPORT, expected: "c" })),
@@ -243,7 +244,8 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(163);
+    // 158 and 113 before: the passkey screens add 5 (3 writes), the trial balance 1 read.
+    expect(READS.length + WRITES.length).toBe(164);
     expect(WRITES).toHaveLength(116);
   });
 
