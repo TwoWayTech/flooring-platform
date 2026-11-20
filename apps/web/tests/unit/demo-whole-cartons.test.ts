@@ -5,6 +5,7 @@ import { CompanyDb } from "@/lib/api/demo/company-db";
 import type { FileStore } from "@/lib/api/demo/file-store";
 import { loadCompanyFixtures } from "@/lib/api/demo/fixtures";
 import type { ActionContext } from "@/lib/api/demo/payment-actions";
+import { DemoStore } from "@/lib/api/demo/store";
 
 const noFiles: FileStore = {
   put: async () => undefined,
@@ -54,5 +55,18 @@ describe("demo whole cartons on purchase orders", () => {
     await expect(order("7")).rejects.toThrow(`${product.name}: order whole cartons, multiples of`);
     const saved = await order(dec(pack).times(3).toString());
     expect(saved.lines[0]!.quantity).toBe(dec(pack).times(3).toString());
+  });
+
+  it("WC2 the quote save refuses a part carton by the product's pack, even when the line leaves the pack out", async () => {
+    const store = new DemoStore(noFiles);
+    await store.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+    const quote = (await store.list("quotes")).find(
+      (q) => q.status === "draft" && q.lines.some((l) => l.sqFtPerCarton),
+    )!;
+    const index = quote.lines.findIndex((l) => l.sqFtPerCarton);
+    const { sqFtPerCarton, ...bare } = quote.lines[index]!;
+    const part = dec(bare.quantity).plus(dec(sqFtPerCarton!).dividedBy(2)).toString();
+    const lines = quote.lines.map((line, i) => (i === index ? { ...bare, quantity: part } : line));
+    await expect(store.saveQuote({ ...quote, lines })).rejects.toThrow("sell whole cartons, multiples of");
   });
 });
