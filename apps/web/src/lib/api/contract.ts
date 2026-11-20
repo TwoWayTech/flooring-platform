@@ -879,15 +879,18 @@ export interface ApiClient {
   getSettings(): Promise<CompanySettings>;
   /**
    * Replaces one settings section and audits the change. In api mode a served section is
-   * `PUT /settings/<section>`; other sections stay on DemoStore. Screens save `localization` per tab
-   * through `updateLocalization`; no screen sends the whole section (ADR 0059, part 2a).
+   * `PUT /settings/<section>`; other sections stay on DemoStore. Localization and tax saves per tab
+   * through `updateLocalization`: `updateSettings("localization")` is refused in both modes
+   * ("Localization and tax saves one tab at a time."), after the module, keys, switch and scope
+   * checks (ADR 0059, part 3b).
    */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
   /**
    * Saves one tab of Localization and tax (Region, Currency, Sales tax, Payroll rules) or the Sales
    * and documents page, and audits it. Each tab checks its own key (LOCALIZATION_TABS), so a person who
-   * manages only sales tax can't save the other tabs. In api mode the tabs in API_LOCALIZATION_TABS are
-   * `PUT /settings/localization/<tab>`; the rest stay on DemoStore until their part (ADR 0059, part 2a).
+   * manages only sales tax can't save the other tabs. In api mode every tab is
+   * `PUT /settings/localization/<tab>` (API_LOCALIZATION_TABS, all five since part 3a; ADR 0059, parts 2a
+   * to 3a).
    */
   updateLocalization<T extends keyof LocalizationSettings>(
     tab: T,
@@ -899,7 +902,10 @@ export interface ApiClient {
    * DemoStore's in api mode: the fixture's originals, which the API was seeded with (ADR 0059 D7).
    */
   getDefaultSettings(): Promise<CompanySettings>;
-  /** Restores one settings section to the company's original values and audits it. No screen calls it; DemoStore only. */
+  /**
+   * Restores one settings section to the company's original values and audits it; `localization` is
+   * refused, as by `updateSettings` (ADR 0059, part 3b). No screen calls it; DemoStore only.
+   */
   resetSettings(section: keyof CompanySettings): Promise<CompanySettings>;
 
   /** Records of a collection, limited to the viewer's data scope. */

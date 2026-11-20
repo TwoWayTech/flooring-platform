@@ -12,12 +12,12 @@ import {
   FEATURES,
   featureOn,
   isApiSettingsSection,
+  LOCALIZATION_SECTION_MESSAGE,
   MODULES,
   NUMBER_KINDS,
   numberSettingsProblem,
   numbersFromWire,
   numbersToWire,
-  overtimeRuleProblem,
   PAYMENT_MESSAGES,
   paymentSettingsProblem,
   permissionsForModules,
@@ -97,7 +97,7 @@ describe("Settings sections on the API (ADR 0059)", () => {
     }
     for (const section of ["payments", "expenses", "sharedCosts", "inventory"] as const)
       expect(SETTINGS_SECTIONS[section].module, section).toBe("core");
-    // Both keys: the demo's whole-section rule. API routes go per tab (see the entry's JSDoc).
+    // Both keys: who reaches the whole-section refusal; every save goes per tab (part 3b).
     expect(SETTINGS_SECTIONS.localization.keys).toEqual(["settings.localization.manage", "settings.tax.manage"]);
     const actions = Object.values(SETTINGS_SECTIONS).map((rule) => `Changed ${rule.label.toLowerCase()}`);
     expect(actions.sort()).toEqual(
@@ -223,25 +223,11 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(isApiSettingsSection("localization")).toBe(false);
   });
 
-  it("R8 settingsSectionProblem dispatches, numbers against the current value, and keeps the overtime rule", () => {
-    const localization = (overtimeRule: string) => ({
-      ...SUMMIT.localization,
-      payroll: { ...SUMMIT.localization.payroll, overtimeRule },
-    });
-    expect(
-      settingsSectionProblem(
-        "localization",
-        localization("california") as CompanySettings["localization"],
-        SUMMIT.localization,
-      ),
-    ).toBe(overtimeRuleProblem("california"));
-    expect(
-      settingsSectionProblem(
-        "localization",
-        localization("weekly") as CompanySettings["localization"],
-        SUMMIT.localization,
-      ),
-    ).toBe(overtimeRuleProblem("weekly"));
+  it("R8 settingsSectionProblem dispatches, numbers against the current value; Localization and tax is refused whole (part 3b)", () => {
+    // Refused whole (WS1); the overtime rule is Payroll rules' own (LR5, LR6; D5 in the demo).
+    expect(settingsSectionProblem("localization", SUMMIT.localization, SUMMIT.localization)).toBe(
+      LOCALIZATION_SECTION_MESSAGE,
+    );
     expect(settingsSectionProblem("hr", SUMMIT.hr, SUMMIT.hr)).toBeNull();
     expect(settingsSectionProblem("payments", { ...SUMMIT.payments, writeOffMax: "12." }, SUMMIT.payments)).toBe(
       PAYMENT_MESSAGES.writeOffMax,
@@ -255,6 +241,27 @@ describe("Settings sections on the API (ADR 0059)", () => {
     expect(settingsSectionProblem("expenses", { ...SUMMIT.expenses, approvalThreshold: "-1" }, SUMMIT.expenses)).toBe(
       EXPENSE_MESSAGES.approvalThreshold,
     );
+  });
+
+  it("WS1 the whole Localization and tax section is refused by its name, whatever it holds (ADR 0059, part 3b)", async () => {
+    const whole = SUMMIT.localization;
+    const refused = "Localization and tax saves one tab at a time.";
+    expect(LOCALIZATION_SECTION_MESSAGE).toBe(refused);
+    const values: CompanySettings["localization"][] = [
+      whole,
+      // A value a tab's rule refuses gets the section's words: no tab rule runs.
+      { ...whole, documents: { ...whole.documents, lateFeePct: "12." } },
+      // What the path let through before part 3b: a states change without the tax key, a tax block whole.
+      { ...whole, region: { ...whole.region, statesOfOperation: ["CO"] } },
+      { ...whole, tax: { ...whole.tax, pricesInclude: "inclusive" } },
+      // By the name, so a value of no shape is refused too (D33).
+      undefined as unknown as CompanySettings["localization"],
+    ];
+    for (const [i, value] of values.entries())
+      expect(settingsSectionProblem("localization", value, whole), String(i)).toBe(refused);
+    expect(settingsSectionProblem("numbers", SUMMIT.numbers, SUMMIT.numbers)).toBeNull();
+    // The dynamic import reads the package's exports without a second static import of "../src" (S9c).
+    expect(Object.keys(await import("../src"))).not.toContain("localizationProblem");
   });
 
   it("R10 readableSections: each section only to its readers, while its module and product switch are on", () => {

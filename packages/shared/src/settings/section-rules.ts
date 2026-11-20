@@ -1,14 +1,8 @@
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
-import type {
-  CompanyProfile,
-  CompanySettings,
-  ExpenseSettings,
-  LocalizationSettings,
-  PaymentSettings,
-} from "../types/settings";
+import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
-import { DOCUMENT_PREFIX_TEXT, localizationProblem } from "./localization-rules";
+import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
 export const EIN_PATTERN = /^\d{2}-\d{7}$/;
@@ -135,17 +129,29 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 }
 
 /**
+ * Why Localization and tax is never saved whole (spec settings-and-permissions.md rule 7; ADR 0059,
+ * part 3b, D16): each tab saves on its own, with its own key, rules, step-up and dating
+ * (`LOCALIZATION_TABS`, `localizationTabProblem`, `localizationTabStored`; Sales tax's versions),
+ * which one whole-section save would skip. `settingsSectionProblem` answers it for
+ * `updateSettings("localization")` and `resetSettings("localization")` in both modes, after the
+ * module, keys, switch and scope checks.
+ */
+export const LOCALIZATION_SECTION_MESSAGE = "Localization and tax saves one tab at a time.";
+
+/**
  * Why a settings section can't be saved, or null: the content rules both modes run, with the same
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
- * refuse a change that no page makes. Localization runs its tabs' rules against the stored section
- * (`localization-rules.ts`; ADR 0059 parts 2a and 2b); every other section gets its rules when its
- * part moves to the API.
+ * refuse a change that no page makes. Localization and tax is refused by its name, whatever the
+ * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
+ * rule 7; ADR 0059, part 3b, D33). Every other section gets its rules when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
   value: CompanySettings[K],
   current: CompanySettings[K],
 ): string | null {
+  // By the name, not the value, so no value of any shape is stored whole (ADR 0059, part 3b, D33).
+  if (section === "localization") return LOCALIZATION_SECTION_MESSAGE;
   // One key is set, so reading a section's property narrows the value to that section's type;
   // `current` is that same section's stored value.
   const settings = { [section]: value } as Partial<CompanySettings>;
@@ -153,6 +159,5 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.numbers) return numberSettingsProblem(settings.numbers, current as NumberSettings);
   if (settings.payments) return paymentSettingsProblem(settings.payments);
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
-  if (settings.localization) return localizationProblem(settings.localization, current as LocalizationSettings);
   return null;
 }

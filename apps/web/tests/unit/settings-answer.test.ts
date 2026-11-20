@@ -21,6 +21,9 @@ const noFiles: FileStore = {
   clear: async () => undefined,
 };
 
+/** DemoStore's words for a whole Localization and tax save (ADR 0059, part 3b). */
+const SECTION_REFUSAL = "Localization and tax saves one tab at a time.";
+
 /** Summit's settings as DemoStore holds them: the demo half of every merge. */
 let demo: CompanySettings;
 
@@ -138,6 +141,19 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
   it("W7 Reset to default and resetSettings stay DemoStore's", () => {
     expect("getDefaultSettings" in API_METHODS).toBe(false);
     expect("resetSettings" in API_METHODS).toBe(false);
+  });
+
+  it("WW1 api mode: updateSettings('localization') and resetSettings('localization') reach DemoStore, which refuses them; nothing is sent (part 3b)", async () => {
+    const store = new DemoStore(noFiles);
+    await store.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+    const api = client(served(), {
+      updateSettings: store.updateSettings.bind(store) as ApiClient["updateSettings"],
+      resetSettings: store.resetSettings.bind(store),
+    });
+    await expect(api.client.updateSettings("localization", demo.localization)).rejects.toThrow(SECTION_REFUSAL);
+    await expect(api.client.resetSettings("localization")).rejects.toThrow(SECTION_REFUSAL);
+    expect(api.sent).toEqual([]);
+    expect((await store.getSettings()).localization).toEqual(demo.localization);
   });
 });
 

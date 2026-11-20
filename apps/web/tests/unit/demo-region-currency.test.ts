@@ -34,6 +34,7 @@ const KEYSTONE_OWNER = "ks-usr-01";
 const HARBOR_OWNER = "hb-usr-01";
 const ROLE_REFUSAL = "Your role does not allow this. Ask an Owner to change your security role.";
 const ACTION = "Changed localization and tax";
+const SECTION_REFUSAL = "Localization and tax saves one tab at a time.";
 
 type Region = LocalizationSettings["region"];
 type Currency = LocalizationSettings["currency"];
@@ -199,11 +200,12 @@ describe("DemoStore saves Region and Currency with the API's rules (ADR 0059, pa
     await expect(store.updateLocalization("currency", currency)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
   });
 
-  it("RD10 the whole-section path refuses a zone change too", async () => {
+  it("RD10 the whole-section path can't change the zone: the section is refused whole (part 3b)", async () => {
     const store = await open("summit", DANA);
     const whole = (await store.getSettings()).localization;
     await expect(
       store.updateSettings("localization", { ...whole, region: { ...whole.region, timeZone: "Europe/Paris" } }),
-    ).rejects.toThrow(REGION_MESSAGES.timeZone);
+    ).rejects.toThrow(SECTION_REFUSAL);
+    expect((await store.getSettings()).localization.region.timeZone).toBe(whole.region.timeZone);
   });
 });

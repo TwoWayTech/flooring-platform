@@ -72,8 +72,8 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Edit a customer or their addresses | `customers.customer.edit` | Owner, Manager, Sales | Store: `saveCustomer`. Screen: `CustomerAddresses`, `CustomerDrawer` |
 | See a credit limit | `customers.customer.view_sensitive` | Owner, Manager, Accountant | Screen only: `CustomersTable`, `CustomerDrawer` |
 | Settings > Payments | `settings.payments.manage` | Owner, Accountant | Store: `updateSettings` through `SETTINGS_SECTIONS.payments` in `packages/shared/src/settings/sections.ts`; on the API, `PUT /settings/payments` (ADR 0059). Data scope `all` and a step-up. Screen: `PaymentsSettingsPage` |
-| Settings > Sales and documents | `settings.localization.manage` to open the page. The store accepts it or `settings.tax.manage` | Owner, Accountant | Store: `updateSettings`. Screen: `apps/web/src/products/settings-menu.ts` |
-| Tax rates in Settings > Localization | `settings.tax.manage` | Owner, Accountant | Store: `updateLocalization("tax")`; on the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up |
+| Settings > Sales and documents | `settings.localization.manage` (to open the page and to save it; `settings.tax.manage` alone saves nothing here) | Owner, Accountant | Store: `updateLocalization("documents")`; on the API `PUT /settings/localization/documents` (ADR 0059, part 2a). The whole section is never saved (part 3b). Screen: `DocumentsPage`; menu `apps/web/src/products/settings-menu.ts` |
+| Tax rates in Settings > Localization | `settings.tax.manage` | Owner, Accountant | Store: `updateLocalization("tax")`; on the API, `PUT /settings/localization/tax` (ADR 0059, part 3a), always with a step-up. The whole section is never saved (part 3b) |
 
 Data scope, from `apps/web/src/lib/api/demo/scope.ts`, applied by `DemoStore.list` and `DemoStore.get`:
 
@@ -679,7 +679,7 @@ Exact `action` strings. The default category inside an `ActionContext` is `payme
 | `Applied customer credit` | payment | `applyCredit` |
 | `Refunded customer credit` | payment | `refundCredit` |
 | `Changed payments` | settings | `updateSettings("payments", ...)` |
-| `Changed localization and tax` | settings | `updateLocalization("tax", ...)` for the Sales tax tab (target "Sales tax"); `updateSettings("localization", ...)` |
+| `Changed localization and tax` | settings | `updateLocalization("documents")` (Sales and documents) or `updateLocalization("tax")` (Sales tax); never the whole section (part 3b) |
 
 `keepNewGuest` writes no audit entry of its own for a lead or a customer contact.
 

@@ -193,6 +193,8 @@ export const API_METHODS = {
   verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
   // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
   // other section, Reset to default and resetSettings stay on DemoStore until their part moves.
+  // `localization` is never sent whole: DemoStore refuses it, because Localization and tax saves one
+  // tab at a time through updateLocalization (ADR 0059, part 3b, D37).
   getSettings: (http, demo) => () => readSettings(http, demo),
   updateSettings:
     (http, demo) =>

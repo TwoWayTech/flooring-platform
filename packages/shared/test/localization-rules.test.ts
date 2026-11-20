@@ -32,7 +32,6 @@ import {
   roleTemplate,
   SENSITIVE_FIELDS,
   SETTINGS_SECTIONS,
-  settingsSectionProblem,
   TAX_MESSAGES,
   WASTE_CATEGORIES,
   type CompanySettings,
@@ -228,7 +227,7 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
       );
   });
 
-  it("LR6 the dispatchers: each served tab's rule against the stored tab; tax runs taxProblem; the whole section runs them", () => {
+  it("LR6 the dispatchers: each served tab's rule against the stored tab; tax runs taxProblem; the whole section is refused (WS1)", () => {
     const holds = () => true;
     expect(localizationTabProblem("documents", { ...DOCUMENTS, lateFeePct: "12." }, DOCUMENTS, holds)).toBe(
       DOCUMENT_MESSAGES.lateFeePct,
@@ -252,10 +251,6 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
     expect(localizationTabProblem("tax", odd as LocalizationSettings["tax"], SUMMIT.tax, holds)).toBe(
       TAX_MESSAGES.pricesInclude,
     );
-    expect(
-      settingsSectionProblem("localization", { ...SUMMIT, documents: { ...DOCUMENTS, lateFeePct: "12." } }, SUMMIT),
-    ).toBe(DOCUMENT_MESSAGES.lateFeePct);
-    expect(settingsSectionProblem("localization", SUMMIT, SUMMIT)).toBeNull();
     expect(DOCUMENT_PREFIX_TEXT.test("PAY-")).toBe(true);
     expect(DOCUMENT_PREFIX_TEXT.test("-PAY")).toBe(false);
   });

@@ -52,6 +52,7 @@ const HARBOR_OWNER = "hb-usr-01";
 const HARBOR_HR = "hb-usr-02";
 const ROLE_REFUSAL = "Your role does not allow this. Ask an Owner to change your security role.";
 const MODULE_REFUSAL = "This part of the product is not switched on for your company.";
+const SECTION_REFUSAL = "Localization and tax saves one tab at a time.";
 
 const noFiles: FileStore = {
   put: async () => undefined,
@@ -129,17 +130,20 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     });
   });
 
-  it("D5 the overtime rule is still refused on a localization save", async () => {
+  it("D5 the overtime rule is refused on a Payroll rules save; the whole section is refused before any rule (part 3b)", async () => {
     const store = await open("summit", DANA);
     const localization = (await store.getSettings()).localization;
-    const saveRule = (overtimeRule: string) =>
-      store.updateSettings("localization", {
-        ...localization,
-        payroll: { ...localization.payroll, overtimeRule: overtimeRule as "federal" },
-      });
-    await expect(saveRule("weekly")).rejects.toThrow(overtimeRuleProblem("weekly")!);
+    const payroll = (overtimeRule: string) => ({ ...localization.payroll, overtimeRule: overtimeRule as "federal" });
+    await expect(store.updateLocalization("payroll", payroll("weekly"))).rejects.toThrow(
+      overtimeRuleProblem("weekly")!,
+    );
     // California is switched off in the register until a payroll review (ADR 0050).
-    await expect(saveRule("california")).rejects.toThrow(overtimeRuleProblem("california")!);
+    await expect(store.updateLocalization("payroll", payroll("california"))).rejects.toThrow(
+      overtimeRuleProblem("california")!,
+    );
+    await expect(store.updateSettings("localization", { ...localization, payroll: payroll("weekly") })).rejects.toThrow(
+      SECTION_REFUSAL,
+    );
   });
 
   it("D6 Sales can't save the number format: the keys come from SETTINGS_SECTIONS", async () => {

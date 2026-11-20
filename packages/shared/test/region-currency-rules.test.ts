@@ -16,7 +16,6 @@ import {
   regionKeyProblem,
   regionProblem,
   SENSITIVE_FIELDS,
-  settingsSectionProblem,
   statesOfOperationChanged,
   TAX_MESSAGES,
   WEEK_STARTS,
@@ -196,7 +195,7 @@ describe("Settings part 2b: Region and Currency rules (ADR 0059)", () => {
     ]);
   });
 
-  it("RG7 the dispatchers: each tab's rule against the stored tab, Region's key after its content; the whole section too", () => {
+  it("RG7 the dispatchers: each tab's rule against the stored tab, Region's key after its content", () => {
     expect(localizationTabProblem("region", asRegion(region({ dateFormat: "dd/MM/yyyy" })), REGION, all)).toBe(
       REGION_MESSAGES.dateFormat,
     );
@@ -224,18 +223,6 @@ describe("Settings part 2b: Region and Currency rules (ADR 0059)", () => {
     const value = asRegion(region({ dateFormat: "yyyy-MM-dd" }));
     expect(localizationTabStored("region", value, REGION, day)).toBe(value);
     expect(localizationTabStored("payroll", SUMMIT.payroll, SUMMIT.payroll, day)).toBe(SUMMIT.payroll);
-
-    const paris = { ...SUMMIT, region: { ...REGION, timeZone: "Europe/Paris" } };
-    expect(settingsSectionProblem("localization", paris, SUMMIT)).toBe(REGION_MESSAGES.timeZone);
-    const keystone = { ...SUMMIT, currency: CURRENCY };
-    const added = {
-      ...keystone,
-      currency: { ...CURRENCY, extra: [...CURRENCY.extra, { ...CURRENCY.extra[0]!, code: "EUR" }] },
-    };
-    expect(settingsSectionProblem("localization", added, keystone)).toBe(CURRENCY_MESSAGES.codes);
-    expect(settingsSectionProblem("localization", keystone, keystone)).toBeNull();
-    // The whole-section path checks no extra key: a states change passes its content rules.
-    expect(settingsSectionProblem("localization", { ...SUMMIT, region: changed }, SUMMIT)).toBeNull();
   });
 
   it("RG8 FX_RATE_TEXT and the tab's options: the rate pattern, its longest text, the date formats and week starts", () => {
