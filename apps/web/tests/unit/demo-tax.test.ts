@@ -276,6 +276,7 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     const [first, ...rest] = accepted.lines;
     // Whole cartons when the line is boxed: DemoStore refuses a part carton, as the API does (F-m).
     const more999 = first!.sqFtPerCarton ? wholeCartonArea("999", first!.sqFtPerCarton).toString() : "999";
+    expect(more999).not.toBe(first!.quantity);
     const more = await store.saveQuote({
       ...accepted,
       lines: [{ ...first, quantity: more999 }, ...rest],

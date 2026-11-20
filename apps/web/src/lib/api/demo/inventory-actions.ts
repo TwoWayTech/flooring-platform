@@ -11,6 +11,8 @@ import {
   nextPaymentNumber,
   planReservations,
   rollAvailable,
+  cartonPack,
+  isWholeCartons,
   stockUnit,
   type AdjustmentReason,
   type Invoice,
@@ -192,8 +194,9 @@ export async function correctStockCount(ctx: ActionContext, input: StockCorrecti
   const roll = input.rollId ? ctx.db.get("rolls", input.rollId) : undefined;
   if (input.rollId && !roll) throw new DemoRuleError("This roll no longer exists.");
   if (!roll) {
-    const pack = product.sqFtPerCarton;
-    if (pack ? !counted.dividedBy(pack).isInteger() : !counted.isInteger()) {
+    // The same rule as the API's count (F-m): a pack is a carton only above zero.
+    const pack = cartonPack(product.sqFtPerCarton);
+    if (pack ? !isWholeCartons(counted, pack) : !counted.isInteger()) {
       throw new DemoRuleError(pack ? `Count whole cartons: multiples of ${pack} sq ft.` : "Count whole items.");
     }
   }
