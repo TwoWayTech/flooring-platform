@@ -239,6 +239,18 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     expect(quote.total).not.toBe(late.total);
   });
 
+  it("TD11 an accepted quote saved after a tax change keeps its accepted total unless the save reprices it", async () => {
+    const store = await open("summit", DANA);
+    const accepted = (await store.list("quotes")).find((each) => each.id === AFTER_QUOTE)!;
+    expect(accepted.status).toBe("accepted");
+    await store.updateLocalization("tax", withRule(await taxOf(store), "CO", { ratePct: "8.5" }));
+    const notes = await store.saveQuote({ ...accepted, notes: "Gate code 1234", total: "1.00" });
+    expect(notes.total).toBe(accepted.total);
+    const [first, ...rest] = accepted.lines;
+    const more = await store.saveQuote({ ...accepted, lines: [{ ...first, quantity: "999" }, ...rest], total: "2.00" });
+    expect(more.total).toBe("2.00");
+  });
+
   it("TD9 saved data with tax-inclusive prices can go back to before tax; never the other way", async () => {
     const store = await open("summit", DANA);
     const whole = (await store.getSettings()).localization;

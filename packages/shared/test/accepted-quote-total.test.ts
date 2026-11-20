@@ -62,6 +62,10 @@ describe("saving an accepted quote keeps its total unless the save reprices it (
       }),
     ).toBe(false);
     expect(keepsAcceptedTotal(accepted, { ...accepted, customerId: "c2" })).toBe(false);
+    expect(keepsAcceptedTotal(accepted, { ...accepted, lumpSum: true })).toBe(false);
+    expect(keepsAcceptedTotal(accepted, { ...accepted, lines: [{ ...line, productId: "p2" }] })).toBe(false);
+    expect(keepsAcceptedTotal(accepted, { ...accepted, lines: [line, { ...line, id: "l2" }] })).toBe(false);
+    expect(keepsAcceptedTotal(accepted, { ...accepted, lines: [] })).toBe(false);
   });
 
   it("KA3 only an accepted quote keeps its total", () => {
