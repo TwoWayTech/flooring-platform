@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/api/errors";
+
 /**
  * The browser's half of a passkey ceremony, without a WebAuthn library (ADR 0060, section 2). The
  * API (Better Auth's passkey plugin) sends options as JSON with binary fields in base64url; the
@@ -45,7 +47,7 @@ export interface CredentialJSON {
 }
 
 /** Why the browser's prompt did not give a passkey, in the person's words. */
-export class PasskeyCeremonyError extends Error {}
+export class PasskeyCeremonyError extends ApiError {}
 
 /** Bytes as base64url with no padding, the encoding WebAuthn JSON uses. */
 export function toBase64Url(bytes: ArrayBuffer | Uint8Array): string {

@@ -98,7 +98,11 @@ describe("answers to the API", () => {
   });
 
   it("WA5 an assertion becomes the plugin client's JSON body; a missing user handle is left out", () => {
-    const response = { clientDataJSON: bytes(1).buffer, authenticatorData: bytes(2).buffer, signature: bytes(3).buffer };
+    const response = {
+      clientDataJSON: bytes(1).buffer,
+      authenticatorData: bytes(2).buffer,
+      signature: bytes(3).buffer,
+    };
     expect(assertionJSON(fakeCredential({ ...response, userHandle: bytes(4).buffer })).response).toEqual({
       clientDataJSON: "AQ",
       authenticatorData: "Ag",

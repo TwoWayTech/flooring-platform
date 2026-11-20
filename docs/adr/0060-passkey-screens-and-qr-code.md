@@ -10,10 +10,10 @@
 
 ### 1. The QR code: `qrcode` 1.5.4, in apps/web only
 
-| Library | Version | Where | Why |
-| --- | --- | --- | --- |
-| qrcode | 1.5.4 (2024-08-05) | apps/web | Draws the authenticator app's `otpauth://` link as a QR code on the set-up step, so a phone scans it instead of typing a 32-letter key |
-| @types/qrcode | 1.5.6 (2025-10-24) | apps/web (dev) | Its types |
+| Library       | Version            | Where          | Why                                                                                                                                    |
+| ------------- | ------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| qrcode        | 1.5.4 (2024-08-05) | apps/web       | Draws the authenticator app's `otpauth://` link as a QR code on the set-up step, so a phone scans it instead of typing a 32-letter key |
+| @types/qrcode | 1.5.6 (2025-10-24) | apps/web (dev) | Its types                                                                                                                              |
 
 - Only `QRCode.create` is used: it returns the module matrix, which `QrCode` (`features/login/qr-code.tsx`) draws as one SVG path with React. No `innerHTML`, no canvas, no data URL, no network. The secret and the link are never logged, stored or sent anywhere; they live in the set-up step's state only, as before.
 - Error correction `M`; a quiet zone of 4 modules; dark modules on a light tile in both themes (`--qr-ink` and `--qr-paper`, the same in light and dark, because many phone scanners do not read inverted codes). The setup key and Copy stay under it for people who cannot scan.

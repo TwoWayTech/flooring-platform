@@ -39,11 +39,19 @@ describe("passkey calls on the API", () => {
 
   it("PK2 a wrong password, the account lock and the per-IP limit each have their words", async () => {
     const wrong = fakeApi({ "POST /api/auth/verify-password": refusal(401, "INVALID_PASSWORD", "Invalid password") });
-    await expect(wrong.client.confirmPassword("x")).rejects.toThrow("That password is not right. Check it and try again.");
+    await expect(wrong.client.confirmPassword("x")).rejects.toThrow(
+      "That password is not right. Check it and try again.",
+    );
     const locked = fakeApi({
-      "POST /api/auth/verify-password": refusal(429, "account_locked", "Too many wrong passwords. Try again in 15 minutes."),
+      "POST /api/auth/verify-password": refusal(
+        429,
+        "account_locked",
+        "Too many wrong passwords. Try again in 15 minutes.",
+      ),
     });
-    await expect(locked.client.confirmPassword("x")).rejects.toThrow("Too many wrong passwords. Try again in 15 minutes.");
+    await expect(locked.client.confirmPassword("x")).rejects.toThrow(
+      "Too many wrong passwords. Try again in 15 minutes.",
+    );
     const limited = fakeApi({ "POST /api/auth/verify-password": refusal(429) });
     await expect(limited.client.confirmPassword("x")).rejects.toThrow(
       "Too many attempts from this network. Wait a minute, then try again.",
@@ -52,7 +60,9 @@ describe("passkey calls on the API", () => {
 
   it("PK3 adding asks for options with no name query, then sends the answer and the trimmed name, never createSession", async () => {
     ceremony.create.mockClear();
-    const fake = fakeApi({ "GET /api/auth/passkey/generate-register-options": { status: 200, body: { challenge: "AQ" } } });
+    const fake = fakeApi({
+      "GET /api/auth/passkey/generate-register-options": { status: 200, body: { challenge: "AQ" } },
+    });
     await fake.client.addPasskey("  Office laptop  ");
     expect(fake.sent).toEqual([
       { call: "GET /api/auth/passkey/generate-register-options", body: undefined },
@@ -94,11 +104,19 @@ describe("passkey calls on the API", () => {
     const fake = fakeApi({
       "GET /auth/context": {
         status: 200,
-        body: { user: {}, company: null, companies: [], mfa: { required: true, totp: false, passkeys: 2, state: "ok" } },
+        body: {
+          user: {},
+          company: null,
+          companies: [],
+          mfa: { required: true, totp: false, passkeys: 2, state: "ok" },
+        },
       },
       "GET /api/auth/passkey/list-user-passkeys": {
         status: 200,
-        body: [PASSKEY_ROW, { ...PASSKEY_ROW, id: "pk-1", name: "", createdAt: "2026-11-19T10:00:00.000Z", backedUp: true }],
+        body: [
+          PASSKEY_ROW,
+          { ...PASSKEY_ROW, id: "pk-1", name: "", createdAt: "2026-11-19T10:00:00.000Z", backedUp: true },
+        ],
       },
     });
     expect(await fake.client.signInSecurity()).toEqual({
@@ -115,7 +133,10 @@ describe("passkey calls on the API", () => {
   it("PK7 renaming and removing post the id; removing the last factor of a required user says why", async () => {
     const fake = fakeApi({ "POST /api/auth/passkey/delete-passkey": refusal(403, "mfa_required") });
     await fake.client.renamePasskey("pk-1", " Phone ");
-    expect(fake.sent[0]).toEqual({ call: "POST /api/auth/passkey/update-passkey", body: { id: "pk-1", name: "Phone" } });
+    expect(fake.sent[0]).toEqual({
+      call: "POST /api/auth/passkey/update-passkey",
+      body: { id: "pk-1", name: "Phone" },
+    });
     await expect(fake.client.deletePasskey("pk-1")).rejects.toThrow(
       "Your role needs two-step sign-in, so you cannot remove your last passkey.",
     );
@@ -124,7 +145,10 @@ describe("passkey calls on the API", () => {
 
   it("PK8 an unknown refusal keeps the server's own words and code", async () => {
     const fake = fakeApi({ "POST /api/auth/passkey/delete-passkey": refusal(500, "boom", "Something broke.") });
-    await expect(fake.client.deletePasskey("pk-1")).rejects.toMatchObject({ message: "Something broke.", code: "boom" });
+    await expect(fake.client.deletePasskey("pk-1")).rejects.toMatchObject({
+      message: "Something broke.",
+      code: "boom",
+    });
   });
 });
 

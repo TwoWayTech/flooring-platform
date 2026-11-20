@@ -117,7 +117,12 @@ interface PasskeyRow {
 }
 
 function summary(row: PasskeyRow): PasskeySummary {
-  return { id: row.id, name: row.name?.trim() || "Unnamed passkey", createdAt: row.createdAt ?? "", synced: !!row.backedUp };
+  return {
+    id: row.id,
+    name: row.name?.trim() || "Unnamed passkey",
+    createdAt: row.createdAt ?? "",
+    synced: !!row.backedUp,
+  };
 }
 
 /**
