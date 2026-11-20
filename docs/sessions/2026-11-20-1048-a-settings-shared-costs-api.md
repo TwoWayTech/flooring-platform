@@ -115,10 +115,25 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Owner questions:** "Owner questions (Settings part 4b; none blocks)" with Q1 to Q3 above.
 - **BRANCHES:** a `feat/settings-shared-costs-api` row: "A (Claude)", "Queue item 2, task 2, Settings part 4b: shared costs on the API (worktree `C:\dev\fp-4b`; stacked on #61)", the state at handoff, the PR once opened, "see the branch".
 
-## E2E (written, not run: another builder owns ports 3000 and 4000)
+## E2E (written first; run after the coordinator freed ports 3000 and 4000)
 
 - Api mode: `apps/web/tests/e2e-api/settings-shared-costs.spec.ts`, SCE1 (new); part 1's E3 in `tests/e2e-api/settings.spec.ts` keeps its check that saving expense approval sends no shared costs, with its comment rewritten.
 - Demo: SCS1 in `apps/web/tests/e2e/expenses.spec.ts`.
 - To run (one server at a time; stop it after; demo and api need separate builds):
   - Demo: `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build`, then from `apps/web`: `E2E_WORKERS=2 npx playwright test tests/e2e/expenses.spec.ts --project=flooring`.
   - Api mode: `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` and `pnpm --filter api build`, then `node <scratchpad>/e2e-api.mjs C:/dev/fp-4b tests/e2e-api/settings-shared-costs.spec.ts tests/e2e-api/settings.spec.ts` (the orchestrator's runner, as in 4a), then the whole api-mode suite once: `node <scratchpad>/e2e-api.mjs C:/dev/fp-4b tests/e2e-api`.
+
+### E2E run (coordinator's go-ahead; one build at a time; ports free and the throwaway database removed after)
+
+- **Fresh database, as CI makes one:** a throwaway PostgreSQL 16 container on port 5434 (`fp4b-e2e-pg`, recreated for every run), seeded twice and migrated, with a seed password and auth secret made in memory for the run (never printed or written) and CI's public throwaway encryption key. No `.env` file read; the shared local server on 5432 was not touched. Runner: `<scratchpad>/4b-e2e-api.mjs <worktree> [playwright args]`.
+- **Builds:** `pnpm --filter api build`, `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build`; later `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build`.
+
+| Run | Result |
+| --- | --- |
+| Whole api-mode suite, `--workers=2` | 46 passed, 7 failed, 5 did not run. Failures across specs that share Summit's personas (login.spec's MFA reset, company standing, F2, F3, meetings, LNE1, SCE1): the api config is single-worker by design (`workers: 1`, `fullyParallel: false`). |
+| SCE1 alone, 1 worker | first on the reused database: refused at sign-in (my runner gave a new seed password to a database whose users kept the old one); the runner now recreates the container every run; then **1 passed** on a fresh database |
+| **Whole api-mode suite, `--workers=1`, fresh database** | **58 passed (6.3 m)**, SCE1 and part 1's E3 among them |
+| Demo, `E2E_WORKERS=2 npx playwright test tests/e2e/expenses.spec.ts tests/e2e/settings.spec.ts tests/e2e/reports.spec.ts tests/e2e/warehouses.spec.ts --project=flooring` | **35 passed, 1 skipped** (a switched-off feature), SCS1 among them |
+
+No code changed after the review rounds, so no new review round was needed.
+
