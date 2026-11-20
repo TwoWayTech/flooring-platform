@@ -8,6 +8,9 @@ import {
   numbersFromWire,
   PAYROLL_MESSAGES,
   REGION_MESSAGES,
+  TAX_JURISDICTIONS_MAX,
+  TAX_MESSAGES,
+  US_STATES,
   WASTE_CATEGORIES,
   type CompanyProfile,
   type CurrencyInput,
@@ -18,6 +21,7 @@ import {
   type PaymentSettings,
   type PayrollInput,
   type RegionInput,
+  type TaxInput,
 } from "@workspace/shared";
 import { z } from "zod";
 
@@ -184,5 +188,74 @@ export const CURRENCY_INPUT: z.ZodType<CurrencyInput> = z
         z.object({ code: z.string().max(10, CURRENCY_MESSAGES.codes), rate: z.string(), asOf: z.string() }).strict(),
       )
       .max(50, CURRENCY_MESSAGES.codes),
+  })
+  .strict();
+
+/** What a state rule or the company default taxes, per category: four booleans and nothing else. */
+const TAXABLE = z
+  .object({ material: z.boolean(), labor: z.boolean(), freight: z.boolean(), service: z.boolean() })
+  .strict();
+
+/**
+ * The Sales tax tab as it sends it (ADR 0059, part 3a). Dates, versions and county ids are taken for
+ * their shape only: the save sets them (D4, D25). Rates are strings, never JSON numbers (CLAUDE.md
+ * rule 6). Filing, certificate types and the company default (null for none) are required (D30).
+ * Outer lengths as part 2b landed them (D32): where the words are fixed, the outer length carries
+ * them; where the words name a state or a county (jurisdiction, name, rates, note), and for the
+ * never-stored id, dates and version, there is none: the shared rule speaks first for every length,
+ * and the JSON body limit bounds the request. The county's bound sits far above `TAX_COUNTY_MAX` with
+ * the same words, so the rule's own check speaks first for anything a person types.
+ */
+export const TAX_INPUT: z.ZodType<TaxInput> = z
+  .object({
+    pricesInclude: z.string().max(20, TAX_MESSAGES.pricesInclude),
+    rounding: z.string().max(20, TAX_MESSAGES.rounding),
+    rules: z
+      .array(
+        z
+          .object({
+            state: z.string().max(10, TAX_MESSAGES.ruleState),
+            jurisdiction: z.string(),
+            ratePct: z.string(),
+            taxable: TAXABLE,
+            lumpSumLaborTaxable: z.boolean(),
+            validFrom: z.string(),
+            validTo: z.string().nullable().optional(),
+            version: z.number().int(),
+            rationale: z.string(),
+          })
+          .strict(),
+      )
+      .max(US_STATES.length, TAX_MESSAGES.rules),
+    jurisdictions: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            state: z.string().max(10, TAX_MESSAGES.countyState),
+            county: z.string().max(1000, TAX_MESSAGES.county),
+            name: z.string(),
+            ratePct: z.string(),
+            validFrom: z.string(),
+            validTo: z.string().nullable(),
+          })
+          .strict(),
+      )
+      .max(TAX_JURISDICTIONS_MAX, TAX_MESSAGES.jurisdictions),
+    companyDefault: z
+      .object({ ratePct: z.string().max(100, TAX_MESSAGES.companyDefault), taxable: TAXABLE, validFrom: z.string() })
+      .strict()
+      .nullable(),
+    filing: z
+      .array(
+        z
+          .object({
+            state: z.string().max(10, TAX_MESSAGES.notHere),
+            frequency: z.string().max(20, TAX_MESSAGES.notHere),
+          })
+          .strict(),
+      )
+      .max(100, TAX_MESSAGES.notHere),
+    certificateTypes: z.array(z.string().max(200, TAX_MESSAGES.notHere)).max(50, TAX_MESSAGES.notHere),
   })
   .strict();

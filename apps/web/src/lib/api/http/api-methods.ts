@@ -203,8 +203,8 @@ export const API_METHODS = {
       await http.request<unknown>("PUT", `/settings/${section}`, body);
       return readSettings(http, demo);
     },
-  // Settings, parts 2a and 2b (ADR 0059): the tabs in API_LOCALIZATION_TABS save on the API; Sales tax
-  // stays on DemoStore until part 3, which checks its own key.
+  // Settings, parts 2a, 2b and 3a (ADR 0059): every tab in API_LOCALIZATION_TABS, all of them since
+  // part 3a, saves on the API; Sales tax checks its own key.
   updateLocalization:
     (http, demo) =>
     async <T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) => {

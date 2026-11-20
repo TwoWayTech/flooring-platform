@@ -37,6 +37,17 @@ export const FX_RATE_TEXT = /^\d{1,10}(\.\d{1,8})?$/;
 export const FX_RATE_TEXT_MAX = 19;
 
 /**
+ * A sales tax rate in percent as a write takes it (ADR 0059, part 3a; STATUS B6): up to two digits
+ * and four decimals by value, so below 100. Rule and county rates live in numeric(18,8) columns and
+ * the API answers them at that scale ("8.81000000"), so up to eight decimals may be written, but the
+ * places after the fourth may only be zeros, as PERCENT_TEXT. No bare point, sign, exponent or space.
+ */
+export const TAX_RATE_TEXT = /^\d{1,2}(\.\d{1,4}0{0,4})?$/;
+
+/** The longest text `TAX_RATE_TEXT` takes ("99.99990000"), where a tax rate input stops typing. */
+export const TAX_RATE_TEXT_MAX = 11;
+
+/**
  * Plain decimal text: digits with an optional fraction. No sign, exponent, radix prefix ("0x0a"),
  * bare point ("10.", ".5") or space, all of which decimal.js would otherwise read as a number.
  */

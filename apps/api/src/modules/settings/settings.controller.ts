@@ -16,10 +16,12 @@ import {
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   statesOfOperationChanged,
+  taxProblem,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
+  type LocalizationSettings,
   type NumberSettingsWire,
   type PaymentSettings,
   type PayrollInput,
@@ -45,6 +47,7 @@ import {
   PAYROLL_INPUT,
   PROFILE_INPUT,
   REGION_INPUT,
+  TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
 
@@ -70,7 +73,8 @@ function check(problem: string | null): void {
  * `step_up_required`, after the content checks so a refused value never costs a code), then the save
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
- * Currency; their checks that read the stored tab run inside the save, under the row lock.
+ * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -287,5 +291,33 @@ export class SettingsController {
         return datedRates(currency, current, clock.day);
       },
     );
+  }
+
+  /**
+   * PUT /settings/localization/tax: the Sales tax tab (ADR 0059, part 3a). One key, `settings.tax.manage`
+   * (an MFA key), `platform` (no module guard, D5); the page's switch, scope `all`, a strict body, then
+   * under the row's lock the shared rules against the tab in force and always a step-up, after them
+   * (blueprint p21 rule 4; Payments' order, so a refused value never costs a code). A changed rule or
+   * county rate becomes a new row from the company's day and the rows it replaces end the day before,
+   * so issued invoices keep the tax they used. Answers the tab in force after the save.
+   */
+  @Put("localization/tax")
+  @RequirePermission(...LOCALIZATION_TABS.tax.keys)
+  @Audited()
+  async saveTax(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<LocalizationSettings["tax"]> {
+    requireFeature(LOCALIZATION_TABS.tax.feature);
+    requireWholeCompany(access);
+    const tax = parse(TAX_INPUT, body);
+    return this.settings.saveTax(tenant, actorOf(access, session, request), async (current) => {
+      check(taxProblem(tax, current));
+      await this.stepUp.require(session);
+      return tax;
+    });
   }
 }

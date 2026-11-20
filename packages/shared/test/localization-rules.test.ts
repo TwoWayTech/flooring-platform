@@ -33,6 +33,7 @@ import {
   SENSITIVE_FIELDS,
   SETTINGS_SECTIONS,
   settingsSectionProblem,
+  TAX_MESSAGES,
   WASTE_CATEGORIES,
   type CompanySettings,
   type DefaultRoleKey,
@@ -117,23 +118,26 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
     ]);
   });
 
-  it("LR2 the served tabs: documents, payroll, and since part 2b region and currency, each with a reader rule", () => {
-    expect([...API_LOCALIZATION_TABS]).toEqual(["documents", "payroll", "region", "currency"]);
+  it("LR2 the served tabs: documents, payroll, since part 2b region and currency, and since part 3a tax, each with a reader rule", () => {
+    expect([...API_LOCALIZATION_TABS]).toEqual(["documents", "payroll", "region", "currency", "tax"]);
     expect(Object.keys(LOCALIZATION_READERS).sort()).toEqual([...API_LOCALIZATION_TABS].sort());
     for (const tab of API_LOCALIZATION_TABS) expect(isApiLocalizationTab(tab), tab).toBe(true);
-    for (const tab of ["tax", "localization"]) expect(isApiLocalizationTab(tab), tab).toBe(false);
+    expect(isApiLocalizationTab("tax")).toBe(true);
+    expect(isApiLocalizationTab("localization")).toBe(false);
   });
 
-  it("LR3 readableTabs: documents to quote, invoice and PO readers with core; payroll to HR readers with hr; region to everyone; currency to its managers", () => {
+  it("LR3 readableTabs: documents to quote, invoice and PO readers with core; payroll to HR readers with hr; region to everyone; currency to its managers; tax to quote readers and tax managers", () => {
     const of = (product: ProductKey, key: DefaultRoleKey, on?: (key: FeatureKey) => boolean) =>
       readableTabs(readerOf(product, key), on);
     for (const key of ["owner", "accountant"] as const)
-      expect(of("flooring", key), key).toEqual(["documents", "payroll", "region", "currency"]);
-    for (const key of ["manager", "sales", "purchasing", "warehouse"] as const)
+      expect(of("flooring", key), key).toEqual(["documents", "payroll", "region", "currency", "tax"]);
+    for (const key of ["manager", "sales"] as const)
+      expect(of("flooring", key), key).toEqual(["documents", "payroll", "region", "tax"]);
+    for (const key of ["purchasing", "warehouse"] as const)
       expect(of("flooring", key), key).toEqual(["documents", "payroll", "region"]);
     for (const key of ["installer", "hr", "employee"] as const)
       expect(of("flooring", key), key).toEqual(["payroll", "region"]);
-    expect(of("hr", "owner")).toEqual(["payroll", "region", "currency"]);
+    expect(of("hr", "owner")).toEqual(["payroll", "region", "currency", "tax"]);
     for (const key of PRODUCT_ROLES.hr.filter((role) => role !== "owner"))
       expect(of("hr", key), `hr ${key}`).toEqual(["payroll", "region"]);
     const keys = (...held: PermissionKey[]) => new Set<PermissionKey>(held);
@@ -148,10 +152,16 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
         permissions: keys("settings.localization.manage", "sales.quote.view"),
         modules: ["platform", "hr"],
       }),
-    ).toEqual(["payroll", "region", "currency"]);
+    ).toEqual(["payroll", "region", "currency", "tax"]);
     const meetingsOnly = new Set<PermissionKey>(permissionsForModules(["meetings"]));
     expect(readableTabs({ permissions: meetingsOnly, modules: ["platform", "hr", "meetings"] })).toEqual(["region"]);
-    expect(of("flooring", "owner", without("settings.localization"))).toEqual(["documents", "payroll", "region"]);
+    // Sales tax isn't hidden by the page switch: the quote builder reads it (part 3a, D7).
+    expect(of("flooring", "owner", without("settings.localization"))).toEqual([
+      "documents",
+      "payroll",
+      "region",
+      "tax",
+    ]);
   });
 
   it("LR4 documentsProblem: Summit passes; each refused field gets its own words", () => {
@@ -218,7 +228,7 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
       );
   });
 
-  it("LR6 the dispatchers: each served tab's rule against the stored tab; tax has none yet; the whole section runs them", () => {
+  it("LR6 the dispatchers: each served tab's rule against the stored tab; tax runs taxProblem; the whole section runs them", () => {
     const holds = () => true;
     expect(localizationTabProblem("documents", { ...DOCUMENTS, lateFeePct: "12." }, DOCUMENTS, holds)).toBe(
       DOCUMENT_MESSAGES.lateFeePct,
@@ -237,8 +247,11 @@ describe("Settings part 2a: Localization tabs and their rules (ADR 0059)", () =>
     expect(localizationTabProblem("currency", { ...SUMMIT.currency, locked: false }, SUMMIT.currency, holds)).toBe(
       CURRENCY_MESSAGES.base("USD"),
     );
+    // Part 3a: Sales tax has its rule (tax-settings.test.ts, SR6).
     const odd = { anything: true } as unknown;
-    expect(localizationTabProblem("tax", odd as LocalizationSettings["tax"], SUMMIT.tax, holds)).toBeNull();
+    expect(localizationTabProblem("tax", odd as LocalizationSettings["tax"], SUMMIT.tax, holds)).toBe(
+      TAX_MESSAGES.pricesInclude,
+    );
     expect(
       settingsSectionProblem("localization", { ...SUMMIT, documents: { ...DOCUMENTS, lateFeePct: "12." } }, SUMMIT),
     ).toBe(DOCUMENT_MESSAGES.lateFeePct);

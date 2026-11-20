@@ -8,8 +8,10 @@ import type { LocalizationSettings, WasteCategory } from "../types/settings";
 import { OVERTIME_RULE_MESSAGE, overtimeRuleProblem } from "../us-pack/overtime";
 import { isStateCode } from "../us-pack/states";
 // Region's tax key comes from the one table of tab keys (CLAUDE.md rule 4; ADR 0059, part 2b), so
-// this file is no longer a leaf. sections.ts imports nothing from settings/, so there is no cycle.
+// this file is no longer a leaf. sections.ts and tax-settings.ts import nothing from settings/, so
+// there is no cycle (part 3a).
 import { LOCALIZATION_TABS } from "./sections";
+import { taxChanges, taxProblem, type TaxInput } from "./tax-settings";
 
 type Region = LocalizationSettings["region"];
 type Currency = LocalizationSettings["currency"];
@@ -96,6 +98,7 @@ export interface LocalizationTabInput {
   payroll: PayrollInput;
   region: RegionInput;
   currency: CurrencyInput;
+  tax: TaxInput;
 }
 
 /**
@@ -333,7 +336,8 @@ type TabPair = {
  * with the API's words: the tab's content rule against the stored tab (`current`), then, for Region,
  * the extra key a change of the states of operation needs (`regionKeyProblem`). The page runs it
  * before any code and DemoStore's `updateLocalization` before it saves; the API answers the content
- * part as 400 and the key as 403 (ADR 0059, parts 2a and 2b). Sales tax gets its rules in part 3.
+ * part as 400 and the key as 403 (ADR 0059, parts 2a and 2b). Sales tax runs `taxProblem` against
+ * the tab in force (part 3a).
  */
 export function localizationTabProblem<T extends keyof LocalizationSettings>(
   tab: T,
@@ -351,13 +355,17 @@ export function localizationTabProblem<T extends keyof LocalizationSettings>(
       regionKeyProblem(pair.region.next, pair.region.current, holds)
     );
   if (pair.currency) return currencyProblem(pair.currency.next, pair.currency.current);
+  if (pair.tax) return taxProblem(pair.tax.next, pair.tax.current);
+  // Every tab is named above; the type still needs a return.
   return null;
 }
 
 /**
  * What a tab's save stores beyond what was sent, once `localizationTabProblem` passed (DemoStore's;
- * the API's routes store the same): Currency dates a changed rate with `day` (`datedRates`), every
- * other tab is stored as sent (ADR 0059, part 2b, D8).
+ * the API's routes store the same): Currency dates a changed rate with `day` (`datedRates`, ADR 0059,
+ * part 2b, D8); Sales tax becomes the tab in force after the save: a changed or new rule or county
+ * rate starts on `day`, a changed rule takes the next version, and ended rows go (DemoStore keeps
+ * only what is in force; ADR 0059, part 3a, D17); every other tab is stored as sent.
  */
 export function localizationTabStored<T extends keyof LocalizationSettings>(
   tab: T,
@@ -368,13 +376,17 @@ export function localizationTabStored<T extends keyof LocalizationSettings>(
   const pair = { [tab]: { next: value, current } } as TabPair;
   // The branch is the currency tab, so its stored value is that tab's type.
   if (pair.currency) return datedRates(pair.currency.next, pair.currency.current, day) as LocalizationSettings[T];
+  // The branch is the tax tab, so its stored value is that tab's type.
+  if (pair.tax) return taxChanges(pair.tax.next, pair.tax.current, day).after as LocalizationSettings[T];
   return value;
 }
 
 /**
- * Why the whole Localization and tax section can't be saved, or null: every tab's content rule
- * against the stored section, for `updateSettings("localization")` and `resetSettings`, which no
- * screen calls (ADR 0059, parts 2a and 2b). It checks no extra key and dates no rate (part 2b, D17).
+ * Why the whole Localization and tax section can't be saved, or null: the content rules of Payroll
+ * rules, Sales and documents, Region and Currency against the stored section, for
+ * `updateSettings("localization")` and `resetSettings`, which no screen calls. Sales tax's rule is
+ * not run here, because its versions need the tab's own save; part 3b retires this path (ADR 0059,
+ * parts 2a, 2b and 3a). It checks no extra key and dates no rate (part 2b, D17).
  */
 export function localizationProblem(localization: LocalizationSettings, current: LocalizationSettings): string | null {
   return (

@@ -12,8 +12,8 @@ import {
 /**
  * DemoStore's localization with each served tab (API_LOCALIZATION_TABS) the answer holds replaced
  * by the API's (ADR 0059, part 2a). A tab the answer leaves out (the person doesn't read it) keeps
- * DemoStore's copy, which none of that person's screens reads; Sales tax (until part 3) and
- * anything unknown are ignored, so a newer API never widens an older web.
+ * DemoStore's copy, which none of that person's screens reads. Every tab is served, all five since
+ * part 3a; anything unknown is ignored, so a newer API never widens an older web.
  */
 function servedTabs(answer: LocalizationAnswer, demo: LocalizationSettings): LocalizationSettings {
   const merged = { ...demo };

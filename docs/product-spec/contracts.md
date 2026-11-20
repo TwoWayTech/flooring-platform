@@ -255,7 +255,7 @@ Money uses decimal.js. `roundMoney` rounds to 2 places, half up. `pctOf(value, p
     on_release      -> moneyString(gross - withheld + released)
     ```
 
-    Under `on_billing` a release has gross 0, so it carries no tax. `computeTotals` in `packages/shared/src/documents.ts` applies the rate per taxable line with `roundMoney(amount * rate / 100)` and sums, or rounds once on the taxable amount, by the company's `tax.rounding` setting. The rule comes from `taxContextFor` in `packages/shared/src/operations/quotes.ts`, using the job site, with `lumpSum` false. The customer is exempt only while its certificate is valid on the issue date.
+    Under `on_billing` a release has gross 0, so it carries no tax. Under `on_release` the retained part is taxed under the rule of its release day, so a tax rule change between a billing and its release taxes the retained money at the new rate (ADR 0059, part 3a). `computeTotals` in `packages/shared/src/documents.ts` applies the rate per taxable line with `roundMoney(amount * rate / 100)` and sums, or rounds once on the taxable amount, by the company's `tax.rounding` setting. The rule comes from `taxContextFor` in `packages/shared/src/operations/quotes.ts`, using the job site, with `lumpSum` false. The customer is exempt only while its certificate is valid on the issue date.
 
 14. **Supplier bill.** `contractBill` in `documents.ts`. It carries no tax.
 

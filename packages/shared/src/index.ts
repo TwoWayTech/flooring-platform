@@ -88,3 +88,4 @@ export * from "./platform/company-answer";
 export * from "./settings/sections";
 export * from "./settings/section-rules";
 export * from "./settings/localization-rules";
+export * from "./settings/tax-settings";

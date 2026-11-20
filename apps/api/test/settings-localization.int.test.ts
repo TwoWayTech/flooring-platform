@@ -346,14 +346,14 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
       payroll: "savePayroll",
       region: "saveRegion",
       currency: "saveCurrency",
+      tax: "saveTax",
     };
-    // Every served tab has its handler, and every handler below is checked (part 2b adds two).
+    // Every served tab has its handler, and every handler below is checked (part 2b adds two, part 3a one).
     expect(Object.keys(handlers).sort()).toEqual([...API_LOCALIZATION_TABS].sort());
     for (const tab of Object.keys(handlers) as ApiLocalizationTab[]) {
       const requirement = permissionRequirement(reflector, context(handlers[tab]), "PUT");
       const rule = LOCALIZATION_TABS[tab];
       expect(requirement.permissions, tab).toEqual(rule.keys);
-      expect(requirement.permissions, tab).toEqual(["settings.localization.manage"]);
       // A `platform` route declares no module (part 1's A0): every company has it.
       expect(requirement.module, tab).toBe(rule.module === "platform" ? undefined : rule.module);
       expect(isAudited(reflector, context(handlers[tab])), tab).toBe(true);
@@ -363,6 +363,9 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     // Part 2b: Region and Currency are every company's.
     expect(LOCALIZATION_TABS.region.module).toBe("platform");
     expect(LOCALIZATION_TABS.currency.module).toBe("platform");
+    // Part 3a: Sales tax is every company's too, with its own key.
+    expect(LOCALIZATION_TABS.tax.module).toBe("platform");
+    expect(LOCALIZATION_TABS.tax.keys).toEqual(["settings.tax.manage"]);
   });
 
   for (const company of [floorco, peopleco]) {
@@ -374,22 +377,26 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
         const held = new Set(expectedPermissions(company.product, key));
         const expected = readableTabs({ permissions: held, modules: enabledModules([company.product], null, []) });
         const stored = (await rowOf(company))!;
-        // Part 2b: Region is answered with the company's control zone, never the row's copy.
-        const answered = { ...stored, region: { ...stored.region, timeZone: await zoneOf(company) } };
+        // Part 2b: Region is answered with the company's control zone, never the row's copy. Part 3a:
+        // Sales tax with the rules and county rates in force, none in these companies.
+        const answered = {
+          ...stored,
+          region: { ...stored.region, timeZone: await zoneOf(company) },
+          tax: { ...stored.tax, rules: [], jurisdictions: [] },
+        };
         if (expected.length === 0) expect(body).not.toHaveProperty("localization");
         else {
           expect(Object.keys(body.localization ?? {}).sort()).toEqual([...expected].sort());
           for (const tab of expected) expect(body.localization?.[tab], tab).toEqual(answered[tab]);
         }
-        expect(body.localization ?? {}).not.toHaveProperty("tax");
         expect(keysOf(body.localization ?? {}).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         const tabs = Object.keys(body.localization ?? {}).sort();
         if (company === floorco && key === "owner")
-          expect(tabs).toEqual(["currency", "documents", "payroll", "region"]);
-        if (company === floorco && key === "sales") expect(tabs).toEqual(["documents", "payroll", "region"]);
+          expect(tabs).toEqual(["currency", "documents", "payroll", "region", "tax"]);
+        if (company === floorco && key === "sales") expect(tabs).toEqual(["documents", "payroll", "region", "tax"]);
         if (company === floorco && (key === "installer" || key === "hr")) expect(tabs).toEqual(["payroll", "region"]);
-        if (company === peopleco && key === "owner") expect(tabs).toEqual(["currency", "payroll", "region"]);
+        if (company === peopleco && key === "owner") expect(tabs).toEqual(["currency", "payroll", "region", "tax"]);
         if (company === peopleco && key === "employee") expect(tabs).toEqual(["payroll", "region"]);
       });
     }
@@ -717,6 +724,7 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
       "documents",
       "payroll",
       "region",
+      "tax",
     ]);
   });
 
@@ -845,12 +853,11 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
     expect(await rowOf(floorco)).toEqual(stored);
   });
 
-  it("L16 Sales tax and the whole section are not routes", async () => {
+  it("L16 the whole section is not a route", async () => {
     const owner = people.get("flooring:owner")!;
     await stepUp(owner);
     const stored = (await rowOf(floorco))!;
     const audits = await auditCount(floorco);
-    expect((await put("tax", owner.cookie, stored.tax)).status).toBe(404);
     expect((await call("put", "/settings/localization", owner.cookie).send(stored)).status).toBe(404);
     expect(await rowOf(floorco)).toEqual(stored);
     expect(await auditCount(floorco)).toBe(audits);
