@@ -364,6 +364,27 @@ export const DOCUMENT_WRITES: Readonly<Record<string, readonly [DocumentWriteKin
   "PUT /timesheets": ["refused once posted", "Saves a week's hours; an approved week is locked until it is reopened."],
 };
 
+/** The supplier credit limit's reviewers: who buys from a supplier needs its limit (ADR 0036). */
+const SUPPLIER_CREDIT_LIMIT = {
+  fields: { creditLimit: ["inventory.product.view_sensitive", "purchasing.bill.view"] },
+  why: "A supplier's credit limit shows to whoever sees product cost or supplier bills (ADR 0036), not only to view_sensitive on sales; pinned so a loosened key list fails here, not only in a -u snapshot.",
+} as const;
+
+/**
+ * Routes whose own `@SensitiveFieldKeys` replace MUST_STRIP's key for a field (the leak judge then
+ * trusts the route's list), each exactly as reviewed. PM-1 (h) fails on an override not listed here,
+ * on one whose fields or keys differ, and on a stale entry, so the API's own declaration can never
+ * quietly become its own judge (security review, 2026-11-20).
+ */
+export const SENSITIVE_KEY_OVERRIDES: Readonly<
+  Record<string, { fields: Readonly<Record<string, readonly PermissionKey[]>>; why: string }>
+> = {
+  "GET /suppliers": SUPPLIER_CREDIT_LIMIT,
+  "POST /suppliers": SUPPLIER_CREDIT_LIMIT,
+  "POST /suppliers/:id/status": SUPPLIER_CREDIT_LIMIT,
+  "PUT /suppliers/:id": SUPPLIER_CREDIT_LIMIT,
+};
+
 /** Company routes that read no feature switch, with why none applies. */
 export const NO_SWITCH_ROUTES: Reviewed = {
   "DELETE /roles/:id":

@@ -38,6 +38,7 @@ import {
 import {
   CROSS_MODULE_ROUTES,
   DOCUMENT_WRITES,
+  SENSITIVE_KEY_OVERRIDES,
   EMPTY_BODY_OK,
   NO_MODULE_ROUTES,
   NO_SWITCH_ROUTES,
@@ -294,6 +295,24 @@ describe("route matrix: the guard chain against the shared engine (whole-product
       );
       expect([...onRecords].filter((name) => !(name in DOCUMENT_WRITES))).toEqual([]);
       expect(staleEntries(DOCUMENT_WRITES, onRecords)).toEqual([]);
+    }, 30_000);
+
+    it("(h) declares route-level sensitive-key overrides only exactly as reviewed", () => {
+      const sorted = (fields: Readonly<Record<string, readonly string[]>>) =>
+        Object.fromEntries(
+          Object.entries(fields)
+            .sort(([a], [b]) => byCodeUnit(a, b))
+            .map(([field, keys]) => [field, [...keys].sort(byCodeUnit)]),
+        );
+      const declared = Object.fromEntries(
+        catalog
+          .filter((route) => route.sensitiveKeys !== undefined)
+          .map((route) => [route.name, sorted(route.sensitiveKeys ?? {})]),
+      );
+      const reviewed = Object.fromEntries(
+        Object.entries(SENSITIVE_KEY_OVERRIDES).map(([name, entry]) => [name, sorted(entry.fields)]),
+      );
+      expect(declared, "list the override in SENSITIVE_KEY_OVERRIDES with why, or fix the route").toEqual(reviewed);
     }, 30_000);
   });
 

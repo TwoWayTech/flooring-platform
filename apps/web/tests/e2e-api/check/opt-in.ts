@@ -15,21 +15,33 @@ export function checkOnly(): void {
 /** The port of the throwaway api-mode e2e database; a developer's own databases are on 5432. */
 const THROWAWAY_PORT = "5433";
 
+/**
+ * Whether the run is GitHub Actions, whose job database is throwaway. Only that lifts the port
+ * rule: a stray `CI=1` in a developer's shell must not point the specs at their own databases.
+ */
+const ON_GITHUB_ACTIONS = process.env.GITHUB_ACTIONS === "true";
+
 /** The hosts a check spec may write companies on: this machine only. */
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1"]);
 
 /**
- * Throws unless a database URL is on this machine and, outside CI, on the throwaway port. Never
- * puts the URL in the message, because it holds a password.
+ * Throws unless a database URL is on this machine and, outside GitHub Actions, on the throwaway
+ * port. Never puts the URL in a message, because it holds a password: a malformed URL is refused
+ * with the variable's name only, since the URL parser's own error carries its input.
  */
 function refuseUnlessThrowaway(name: string, url: string | undefined): string {
   if (!url) throw new Error(`Set ${name}: the check specs need the throwaway e2e database.`);
-  const parsed = new URL(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${name} is not a database URL.`);
+  }
   const overridden = [...parsed.searchParams.keys()].some((key) => key === "host" || key === "hostaddr");
   const local = LOCAL_HOSTS.has(parsed.hostname) && !overridden;
-  if (!local || (!process.env.CI && parsed.port !== THROWAWAY_PORT)) {
+  if (!local || (!ON_GITHUB_ACTIONS && parsed.port !== THROWAWAY_PORT)) {
     throw new Error(
-      `${name} must point at the throwaway e2e database on this machine (port ${THROWAWAY_PORT} outside CI); ` +
+      `${name} must point at the throwaway e2e database on this machine (port ${THROWAWAY_PORT} outside GitHub Actions); ` +
         "the check specs provision and drop companies there.",
     );
   }
@@ -38,9 +50,9 @@ function refuseUnlessThrowaway(name: string, url: string | undefined): string {
 
 /**
  * The throwaway server a check spec provisions on, from the environment the API under test uses:
- * the control database, the server's superuser login and the encryption key. Outside CI it
- * refuses unless both database URLs are on this machine's port 5433, so a spec never writes a
- * company into a developer's own databases; in CI the job's own PostgreSQL is throwaway too.
+ * the control database, the server's superuser login and the encryption key. Outside GitHub
+ * Actions it refuses unless both database URLs are on this machine's port 5433, so a spec never
+ * writes a company into a developer's own databases; the Actions job's own PostgreSQL is throwaway.
  */
 export function assertThrowawayDb(): FreshTestServer {
   const encryptionKey = process.env.CONNECTION_ENCRYPTION_KEY;

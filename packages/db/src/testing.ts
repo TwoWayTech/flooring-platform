@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, isNull, like, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, like, lt, ne, sql } from "drizzle-orm";
 import { decodeMemberRoles, type CompanyId, type ProductKey } from "@workspace/shared";
 import { openControlDb, type ControlDb } from "./client";
 import {
@@ -776,9 +776,12 @@ export async function retireTestCompany(
 /**
  * Retires every fresh test company older than `olderThanMs` that is still live in either
  * `tenants` or `tenant_databases`: the leftovers of runs that were killed before their own
- * clean-up. Slugs that start with `e2efresh` but don't match FRESH_SLUG were not made by these
- * helpers and are left alone. Refuses a threshold under 10 minutes, so it never retires a company a
- * run on the same database is still using. Returns the slugs retired. Tests only.
+ * clean-up. It also drops the database of a fresh company already retired whose drop failed after
+ * the retirement committed (`DROP DATABASE IF EXISTS`, so safe to repeat). Slugs that start with
+ * `e2efresh` but don't match FRESH_SLUG were not made by these helpers and are left alone. One
+ * company that can't be retired doesn't stop the others: every failure is collected and thrown
+ * together at the end. Refuses a threshold under 10 minutes, so it never retires a company a run on
+ * the same database is still using. Returns the slugs retired. Tests only.
  */
 export async function sweepTestCompanies(
   server: Pick<FreshTestServer, "controlUrl" | "adminUrl">,
@@ -788,23 +791,40 @@ export async function sweepTestCompanies(
   if (!(olderThanMs >= MIN_SWEEP_AGE_MS))
     throw new Error("sweepTestCompanies needs a threshold of 10 minutes or more.");
   const handle = openControlDb(server.controlUrl, { max: 1 });
-  let rows: { slug: string }[];
+  let rows: { slug: string; live: boolean }[];
   try {
     rows = await handle.db
-      .select({ slug: tenants.slug })
+      .select({
+        slug: tenants.slug,
+        live: sql<boolean>`(${tenants.deletedAt} is null or (${tenantDatabases.id} is not null and ${tenantDatabases.deletedAt} is null))`,
+      })
       .from(tenants)
       .leftJoin(tenantDatabases, eq(tenantDatabases.tenantId, tenants.id))
-      .where(
-        and(
-          like(tenants.slug, "e2efresh%"),
-          lt(tenants.createdAt, new Date(Date.now() - olderThanMs)),
-          or(isNull(tenants.deletedAt), and(isNotNull(tenantDatabases.id), isNull(tenantDatabases.deletedAt))),
-        ),
-      );
+      .where(and(like(tenants.slug, "e2efresh%"), lt(tenants.createdAt, new Date(Date.now() - olderThanMs))));
   } finally {
     await handle.close();
   }
-  const slugs = [...new Set(rows.map((row) => row.slug))].filter((slug) => FRESH_SLUG.test(slug)).sort();
-  for (const slug of slugs) await retireTestCompany(server, slug);
+  const ours = rows.filter((row) => FRESH_SLUG.test(row.slug));
+  const slugs = [...new Set(ours.filter((row) => row.live).map((row) => row.slug))].sort();
+  const retiredBefore = [...new Set(ours.filter((row) => !row.live).map((row) => row.slug))].filter(
+    (slug) => !slugs.includes(slug),
+  );
+  const failures: string[] = [];
+  for (const slug of slugs) {
+    try {
+      await retireTestCompany(server, slug);
+    } catch (error) {
+      failures.push(`${slug}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const provisioner = new PostgresServerProvisioner(server.adminUrl);
+  for (const slug of retiredBefore) {
+    try {
+      await provisioner.drop(companyDatabaseName(slug));
+    } catch (error) {
+      failures.push(`${slug} (drop): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (failures.length > 0) throw new Error(`sweepTestCompanies could not finish:\n${failures.join("\n")}`);
   return slugs;
 }

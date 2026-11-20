@@ -288,4 +288,36 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
     expect(others).toEqual([{ deletedAt: null }, { deletedAt: null }]);
     expect(await sweepTestCompanies(server, 2 * HOUR), "nothing is left to sweep").toEqual([]);
   }, 60_000);
+
+  it("FH-4: the sweep drops a retired company's leftover database, and one company it can't retire doesn't stop the others", async () => {
+    const age = new Date(Date.now() - 3 * HOUR);
+    // Retired, but its drop never ran: both stamps set, the database still there.
+    const orphan = await provision("f");
+    await handle.db.update(tenants).set({ createdAt: age, deletedAt: age }).where(eq(tenants.id, orphan.tenantId));
+    await handle.db
+      .update(tenantDatabases)
+      .set({ deletedAt: age })
+      .where(eq(tenantDatabases.tenantId, orphan.tenantId));
+    // A live company in the fresh pattern with no Owner: retirement refuses it.
+    const ownerless = freshNames("g");
+    await handle.db.insert(tenants).values({
+      slug: ownerless.slug,
+      legalName: "Ownerless LLC",
+      name: "Ownerless",
+      state: "CO",
+      timeZone: "America/Denver",
+      createdAt: age,
+    });
+    const old = await provision("h");
+    await handle.db.update(tenants).set({ createdAt: age }).where(eq(tenants.id, old.tenantId));
+    expect(await databaseExists(companyDatabaseName(orphan.slug))).toBe(true);
+
+    await expect(sweepTestCompanies(server, 2 * HOUR)).rejects.toThrow(
+      new RegExp(`^sweepTestCompanies could not finish:\\n${ownerless.slug}: `),
+    );
+    expect(await deletedStamps(old.tenantId), "retired despite the failure").toEqual({ tenant: true, database: true });
+    expect(await databaseExists(companyDatabaseName(old.slug))).toBe(false);
+    expect(await databaseExists(companyDatabaseName(orphan.slug)), "the leftover database is dropped").toBe(false);
+    await handle.db.update(tenants).set({ deletedAt: new Date() }).where(eq(tenants.slug, ownerless.slug));
+  }, 60_000);
 });
