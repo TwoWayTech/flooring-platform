@@ -81,7 +81,12 @@ export async function loadHrRules(db: CompanyDb): Promise<HrRules> {
  * lock, the order every writer of the `hr` row keeps.
  */
 export async function holdHrRules(tx: CompanyDb, read: HrRules): Promise<void> {
-  await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "hr")).for("share");
+  // The live row, as `loadHrRules` and `loadPaySchedule` read it.
+  await tx
+    .select({ id: settings.id })
+    .from(settings)
+    .where(and(eq(settings.group, "hr"), isNull(settings.deletedAt)))
+    .for("share");
   const held = await loadHrRules(tx);
   if (held.workweekStartDay !== read.workweekStartDay || held.clockEnabled !== read.clockEnabled) {
     throw new ConflictException({

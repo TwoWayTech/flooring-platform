@@ -566,8 +566,9 @@ describe("Settings → HR on the API (needs the local PostgreSQL)", () => {
         { group: "localization", value: { payroll: { overtimeRule: "federal", holidayState: "CO" } } },
       ]),
     );
-    const employeeId = await addEmployee(company);
     const worker = await member(company, ["employee"]);
+    // Their record carries their sign-in's email, so an upload of their own rows finds them (H18).
+    const employeeId = await addEmployee(company, { email: worker.email });
     const userId = await harness.userIdOf(worker.email);
     await withCompanyDb(company, (db) =>
       db.update(userProfiles).set({ employeeId }).where(eq(userProfiles.userId, userId)),
@@ -637,5 +638,57 @@ describe("Settings → HR on the API (needs the local PostgreSQL)", () => {
     expect(refusal(await out.pending)).toEqual([409, "conflict", HR_CHANGED]);
     const [punch] = await withCompanyDb(company, (db) => db.select().from(clockEntries));
     expect(punch!.outAt).toBeNull();
+  });
+
+  it("H18 a timesheet upload while the workweek changes waits for the change and is refused, storing nothing", async () => {
+    const { company, worker } = await hoursCompany("hruploadrace");
+    const monday = new Date();
+    monday.setUTCDate(monday.getUTCDate() - 21 - ((monday.getUTCDay() + 6) % 7));
+    const day = monday.toISOString().slice(0, 10);
+    const send = () =>
+      call("post", "/timesheets/upload", worker.cookie).send({
+        table: {
+          headers: ["employee_email", "employee_external_id", "employee_name", "work_date", "hours_worked", "note"],
+          rows: [[worker.email, "", "", day, "8", ""]],
+        },
+        fileName: "hours.csv",
+        apply: true,
+        own: true,
+      });
+    const uploaded = await whileWorkweekMoves(company, send);
+    expect(refusal(uploaded)).toEqual([409, "conflict", HR_CHANGED]);
+    expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toEqual([]);
+    const uploads = await withCompanyDb(company, (db) =>
+      db.select().from(auditLog).where(eq(auditLog.action, "Uploaded timesheet hours")),
+    );
+    expect(uploads).toEqual([]);
+    // The same upload, sent again on the new workweek, is saved: the refusal was the race, not the rows.
+    const again = await send();
+    expect(again.status, JSON.stringify(again.body)).toBeLessThan(300);
+    expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toHaveLength(1);
+  });
+
+  it("H19 a clock-out while the clock is switched off waits for the change and is refused; the punch stays open", async () => {
+    const { company, worker } = await hoursCompany("hrclockoff");
+    await call("post", "/clock/in", worker.cookie).send({}).expect(201);
+    const sheetsBefore = await withCompanyDb(company, (db) => db.select().from(timesheets));
+    const out = await withCompanyDb(company, (db) =>
+      db.transaction(async (tx) => {
+        await tx.select({ id: settings.id }).from(settings).where(eq(settings.group, "hr")).for("update");
+        await tx
+          .update(settings)
+          .set({ value: { ...HR, clockEnabled: false } })
+          .where(eq(settings.group, "hr"));
+        const pending = call("post", "/clock/out", worker.cookie)
+          .send({})
+          .then((response) => response);
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        return { pending };
+      }),
+    );
+    expect(refusal(await out.pending)).toEqual([409, "conflict", HR_CHANGED]);
+    const [punch] = await withCompanyDb(company, (db) => db.select().from(clockEntries));
+    expect(punch!.outAt).toBeNull();
+    expect(await withCompanyDb(company, (db) => db.select().from(timesheets))).toEqual(sheetsBefore);
   });
 });

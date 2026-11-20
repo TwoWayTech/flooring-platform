@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  BRANDING_MESSAGES,
   defaultNumberSettings,
   overtimeRuleProblem,
   PAYMENT_MESSAGES,
   SETTINGS_SCOPE_MESSAGE,
+  SHARED_COST_MESSAGES,
   type CompanyId,
+  type CompanySettings,
   type FeatureKey,
   type FeatureRegister,
   type Role,
@@ -187,5 +190,101 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     const kept = { ...canadian, negativeStyle: "parens" as const };
     await store.updateSettings("numbers", kept);
     expect((await store.getSettings()).numbers).toEqual(kept);
+  });
+});
+
+describe("DemoStore saves shared costs with the API's rule (ADR 0059, part 4b)", () => {
+  /** Summit's first two live locations, as Settings → Expenses lists them. */
+  async function twoLocations(store: DemoStore) {
+    const [a, b] = await store.list("locations");
+    return { a, b };
+  }
+
+  it("SCD1 the Owner saves a fixed split over live locations, stored and audited once with the API's label", async () => {
+    const store = await open("summit", DANA);
+    const { a, b } = await twoLocations(store);
+    const value = { rule: "fixed" as const, fixedPct: { [a.id]: "60", [b.id]: "40.00000000" } };
+    const seen = new Set((await store.list("audit")).map((row) => row.id));
+    await store.updateSettings("sharedCosts", value);
+    expect((await store.getSettings()).sharedCosts).toEqual(value);
+    const added = (await store.list("audit")).filter((row) => !seen.has(row.id));
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ category: "settings", action: "Changed shared costs", target: "Shared costs" });
+  });
+
+  it("SCD2 the same refusals as the API, with its words; nothing stored or audited (plan note (b))", async () => {
+    const store = await open("summit", DANA);
+    const { a, b } = await twoLocations(store);
+    const before = (await store.getSettings()).sharedCosts;
+    const audits = (await store.list("audit")).length;
+    const cases: [unknown, string][] = [
+      [{ rule: "weighted", fixedPct: {} }, SHARED_COST_MESSAGES.rule],
+      [{ rule: "fixed", fixedPct: { [a.id]: "60", [b.id]: "30" } }, SHARED_COST_MESSAGES.total("90")],
+      [{ rule: "fixed", fixedPct: { [a.id]: "1.2.3", [b.id]: "40" } }, SHARED_COST_MESSAGES.shareOf(a.name)],
+      [{ rule: "revenue", fixedPct: { [a.id]: "" } }, SHARED_COST_MESSAGES.shareOf(a.name)],
+      [{ rule: "equal", fixedPct: { "kn-loc-01": "0" } }, SHARED_COST_MESSAGES.unknownLocation],
+    ];
+    for (const [value, words] of cases)
+      await expect(
+        store.updateSettings("sharedCosts", value as CompanySettings["sharedCosts"]),
+        JSON.stringify(value),
+      ).rejects.toThrow(words);
+    expect((await store.getSettings()).sharedCosts).toEqual(before);
+    expect(await store.list("audit")).toHaveLength(audits);
+  });
+
+  it("SCD3 the key, the Expenses switch and the module, in the API's order", async () => {
+    const value = { rule: "equal" as const, fixedPct: {} };
+    await expect((await open("summit", PRIYA)).updateSettings("sharedCosts", value)).rejects.toThrow(ROLE_REFUSAL);
+    await expect((await open("harbor", HARBOR_OWNER)).updateSettings("sharedCosts", value)).rejects.toThrow(
+      MODULE_REFUSAL,
+    );
+    OFF.add("finance.expenses");
+    await expect((await open("summit", DANA)).updateSettings("sharedCosts", value)).rejects.toThrow(
+      "This feature is switched off.",
+    );
+  });
+});
+
+describe("DemoStore branding saves follow the API's rules (ADR 0059, part 6)", () => {
+  it("BD1 the shared rule refuses with its words: nothing stored, no audit entry", async () => {
+    const store = await open("summit", DANA);
+    const before = (await store.getSettings()).branding;
+    const audits = (await store.list("audit")).length;
+    const refused: [object, string][] = [
+      [{ displayName: "Summit\nBcc: someone@example.com" }, BRANDING_MESSAGES.displayName],
+      [{ monogram: "sfc" }, BRANDING_MESSAGES.monogram],
+      [{ brandColor: "2E8B7E" }, BRANDING_MESSAGES.brandColor],
+      [{ brandColor: "#F5F0A0" }, "This color is too light to read against panels. Pick a deeper shade."],
+      [{ logoDataUrl: "https://example.com/logo.png" }, BRANDING_MESSAGES.logo],
+    ];
+    for (const [patch, words] of refused)
+      await expect(store.updateSettings("branding", { ...before, ...patch }), words).rejects.toThrow(words);
+    expect((await store.getSettings()).branding).toEqual(before);
+    expect(await store.list("audit")).toHaveLength(audits);
+  });
+
+  it("BD2 the key, switch and scope come first: Sales is refused with the role words, a switched-off page with the switch's", async () => {
+    const sales = await open("summit", PRIYA);
+    const branding = (await sales.getSettings()).branding;
+    await expect(sales.updateSettings("branding", { ...branding, monogram: "x" })).rejects.toThrow(ROLE_REFUSAL);
+    OFF.add("settings.branding");
+    const owner = await open("summit", DANA);
+    await expect(owner.updateSettings("branding", branding)).rejects.toThrow("This feature is switched off.");
+  });
+
+  it("BD3 the Owner saves branding, a demo logo included; one audit entry; the HR Suite's Owner too", async () => {
+    const store = await open("summit", DANA);
+    const before = (await store.getSettings()).branding;
+    const seen = new Set((await store.list("audit")).map((row) => row.id));
+    const next = { ...before, monogram: "SC", logoDataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+    expect((await store.updateSettings("branding", next)).branding).toEqual(next);
+    const added = (await store.list("audit")).filter((row) => !seen.has(row.id));
+    expect(added.map((entry) => [entry.action, entry.target])).toEqual([["Changed branding", "Branding"]]);
+    const harbor = await open("harbor", HARBOR_OWNER);
+    const theirs = (await harbor.getSettings()).branding;
+    expect((await harbor.updateSettings("branding", { ...theirs, defaultTheme: "dark" })).branding.defaultTheme).toBe(
+      "dark",
+    );
   });
 });
