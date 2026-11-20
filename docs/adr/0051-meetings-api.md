@@ -968,5 +968,6 @@ The five displays (`product-drawer.tsx`, `products-table.tsx`, `rolls-table.tsx`
 - **Invite branches (Q6), the server half of D18.** Approved, first after the stack, with a security review:
   - `POST /users/invite` and `PATCH /users/:id` refuse a branch id that is not one of the company's live branches (400 `unknown_branch`); an empty id still means no branch.
   - The invite's audit row records the branch actually stored, never the id as sent.
-  - A branch-scoped admin (data scope below `all`) may invite only into their own branch and may change someone's branch only from and to their own branch (403 `branch_other`). The rule lives in packages/shared, and DemoStore applies it too.
+  - A branch-scoped admin (data scope below `all`) may invite only into their own branch and may change someone's branch only from and to their own branch (403 `branch_other`). The rule lives in packages/shared (`branchPlacementDenial`), and DemoStore applies it too.
+  - **Safest option taken in review (not asked):** such an admin may change nothing else about people outside their own branch either (roles, status, title, MFA reset; `branchManageDenial`), so they can't disable or re-role another branch's staff. Changes to oneself follow the other rules. `GET /users` still lists every branch to them (unchanged).
 - Every other question in this ADR keeps the safest default already built.

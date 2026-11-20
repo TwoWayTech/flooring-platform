@@ -210,6 +210,7 @@ export function UsersPage() {
         roles={roles}
         branches={invite.branches}
         defaultBranchId={invite.defaultId}
+        canInvite={invite.canInvite}
       />
       {editingRoles ? (
         <ChangeRolesDialog user={editingRoles} roles={roles} onClose={() => setEditingRoles(null)} />

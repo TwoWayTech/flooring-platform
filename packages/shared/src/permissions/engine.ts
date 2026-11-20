@@ -145,3 +145,39 @@ export interface UserLike {
 export function hasActiveOwner(users: readonly UserLike[], ownerRoleIds: ReadonlySet<string>): boolean {
   return users.some((u) => u.status === "active" && u.roleIds.some((id) => ownerRoleIds.has(id)));
 }
+
+/** Why a branch-scoped admin may not place someone in a branch, or null when they may. */
+export type BranchDenial = "branch_other" | null;
+
+/**
+ * The server half of D18 (ADR 0051, "2026-11-20"): someone whose data scope is `all` may invite
+ * into, and move people between, any branch. Anyone narrower may only invite into their own branch,
+ * and may only move a person who is in their own branch to their own branch, so a branch admin can
+ * never reach or fill another branch. A narrower admin without a branch can place nobody. `from` is
+ * the person's branch before a change, or undefined for an invitation. Branch ids are compared as
+ * stored; no branch is null.
+ */
+export function branchPlacementDenial(
+  actor: { dataScope: DataScope; branchId: string | null },
+  to: string | null,
+  from?: string | null,
+): BranchDenial {
+  if (actor.dataScope === "all") return null;
+  if (actor.branchId === null || to !== actor.branchId) return "branch_other";
+  if (from !== undefined && from !== actor.branchId) return "branch_other";
+  return null;
+}
+
+/**
+ * Whether an admin may change this person at all (ADR 0051, "2026-11-20", safest option from the
+ * invite-branch review): below scope `all`, only people in the admin's own branch, so a branch admin
+ * can't disable, re-role or reset the MFA of someone in another branch. Changes to oneself are left
+ * to the other rules. `personBranchId` is the person's stored branch; no branch is null.
+ */
+export function branchManageDenial(
+  actor: { dataScope: DataScope; branchId: string | null },
+  personBranchId: string | null,
+): BranchDenial {
+  if (actor.dataScope === "all") return null;
+  return actor.branchId !== null && personBranchId === actor.branchId ? null : "branch_other";
+}

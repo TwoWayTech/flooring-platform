@@ -11,6 +11,7 @@ describe("the invite dialog's branches (ADR 0051, 'GET /company', D18)", () => {
     expect(inviteBranches(BRANCHES, { branchId: DENVER.id }, { dataScope: "all" })).toEqual({
       branches: BRANCHES,
       defaultId: DENVER.id,
+      canInvite: true,
     });
   });
 
@@ -18,6 +19,7 @@ describe("the invite dialog's branches (ADR 0051, 'GET /company', D18)", () => {
     expect(inviteBranches(BRANCHES, { branchId: DENVER.id }, { dataScope: "branch" })).toEqual({
       branches: [DENVER],
       defaultId: DENVER.id,
+      canInvite: true,
     });
   });
 
@@ -25,13 +27,15 @@ describe("the invite dialog's branches (ADR 0051, 'GET /company', D18)", () => {
     expect(inviteBranches(BRANCHES, { branchId: SPRINGS.id }, { dataScope: "own" })).toEqual({
       branches: [SPRINGS],
       defaultId: SPRINGS.id,
+      canInvite: true,
     });
   });
 
-  it("I4 scope branch with no branch of one's own: nothing to pick, stored as no branch", () => {
+  it("I4 scope branch with no branch of one's own: nothing to pick, and no invitation (the API refuses it)", () => {
     expect(inviteBranches(BRANCHES, { branchId: "" }, { dataScope: "branch" })).toEqual({
       branches: [],
       defaultId: "",
+      canInvite: false,
     });
   });
 
@@ -39,6 +43,7 @@ describe("the invite dialog's branches (ADR 0051, 'GET /company', D18)", () => {
     expect(inviteBranches(BRANCHES, { branchId: "sm-br-denver" }, { dataScope: "all" })).toEqual({
       branches: BRANCHES,
       defaultId: SPRINGS.id,
+      canInvite: true,
     });
   });
 });
