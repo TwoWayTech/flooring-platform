@@ -611,7 +611,8 @@ export class NotificationService implements OnApplicationBootstrap {
       .select()
       .from(outboxMessages)
       .where(and(eq(outboxMessages.id, messageId), isNull(outboxMessages.deletedAt)));
-    if (!row) throw new NotFoundException();
+    // Words for the person (api-contract ErrorBody), unlike a switched-off feature's bare 404 (finding F-i).
+    if (!row) throw new NotFoundException({ code: "not_found", message: "This message no longer exists." });
     return row;
   }
 

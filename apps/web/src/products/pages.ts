@@ -68,11 +68,14 @@ function bestRule(product: ProductKey, href: string): PageRule | null {
 
 /**
  * Whether the access may open a page: the page's rule allows it (`itemAllows`: the Owner for an
- * Owner-only page, else one of its permissions), or the page has no rule.
+ * Owner-only page, else one of its permissions), or no product's rule names the page (sign-in, the
+ * settings home, /outbox, "/"). A page only another product's rules name, such as /sales on the
+ * HR Suite host, is not this product's and opens for nobody (finding F-p, 2026-11-20).
  */
 export function canOpenPage(product: ProductKey, href: string, access: Access): boolean {
   const rule = bestRule(product, href);
-  return !rule || itemAllows(rule, access);
+  if (rule) return itemAllows(rule, access);
+  return !(Object.keys(PRODUCTS) as ProductKey[]).some((other) => other !== product && bestRule(other, href));
 }
 
 /** The pages of a product whose feature is on and that exist in this build, for the effective access preview. */

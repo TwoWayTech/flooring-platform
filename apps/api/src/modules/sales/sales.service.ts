@@ -135,7 +135,7 @@ export class SalesService {
     const name = input.name.trim();
     if (!name) throw refuse("Enter the customer's name.");
     const db = await this.tenancy.db(tenant);
-    const localization = await loadLocalization(db);
+    const localization = await loadLocalization(db, "adding customers");
     const id = uuidv7();
     await db.transaction(async (tx) => {
       await tx.insert(customers).values({

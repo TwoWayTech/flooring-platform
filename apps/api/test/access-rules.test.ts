@@ -99,6 +99,14 @@ describe("stripSensitive (CLAUDE.md rule 5: the server strips sensitive fields)"
     ]);
   });
 
+  it("keeps fields named like Object.prototype members, with and without a route's own keys (finding F-l)", () => {
+    const named = { name: "Oak plank", constructor: "c", toString: "t", to_string: "s", valueOf: "v", cost: "2.5000" };
+    const kept = { name: "Oak plank", constructor: "c", toString: "t", to_string: "s", valueOf: "v" };
+    expect(stripSensitive(named, new Set())).toEqual(kept);
+    const own = { creditLimit: ["purchasing.bill.view"] as PermissionKey[] };
+    expect(stripSensitive(named, new Set(), own)).toEqual(kept);
+  });
+
   it("does not change the original response", () => {
     stripSensitive(body, new Set());
     expect(body.cost).toBe("2.5000");

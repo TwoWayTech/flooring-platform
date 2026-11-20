@@ -19,6 +19,7 @@ import { CompanyAccessService } from "./company-access.service";
 import {
   CurrentPlatformAdmin,
   PlatformAdminGuard,
+  PlatformFeature,
   PlatformWriteRoles,
   type PlatformActor,
 } from "./platform-admin.guard";
@@ -141,9 +142,12 @@ export class PlatformSupportGrantsController {
   /**
    * POST /platform/support-grants: any platform admin asks a company's Owner for access, after a
    * step-up; one open grant per admin and company (409) and 10 per admin in 24 hours (429).
+   * Hidden (404) while `settings.users` is off: the Owner answers on Settings → Users, so no request
+   * may start that no Owner could see, approve or revoke (CLAUDE.md rule 13; finding F-h, 2026-11-20).
    */
   @Post()
   @PlatformWriteRoles("owner", "support")
+  @PlatformFeature("settings.users")
   request(@CurrentPlatformAdmin() admin: PlatformActor, @Body() body: unknown): Promise<{ id: string }> {
     return this.requests.request(admin, parse(SUPPORT_REQUEST, body));
   }
