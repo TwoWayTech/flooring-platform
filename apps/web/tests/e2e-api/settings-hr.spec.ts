@@ -33,111 +33,118 @@ async function healHrOrThrow(request: APIRequestContext, value: HrSettings, secr
  * it and puts it back as its last step, with a clean-up that repeats the restore.
  */
 flowTest.describe("Settings → HR on the API (api mode)", () => {
-  resetAuthAround([HR_EMAIL, EMPLOYEE_EMAIL, SALES_EMAIL]);
+  // Each test signs Tamara in and enrols her authenticator, so each resets the accounts it uses.
+  flowTest.describe("saving", () => {
+    resetAuthAround([HR_EMAIL, EMPLOYEE_EMAIL]);
 
-  flowTest(
-    "E1 HR saves a switch and a holiday with a step-up; the employee reads them; a refused value says why before any code",
-    async ({ personas }) => {
-      flowTest.setTimeout(150_000);
-      const tamara = await personas.open(HR_EMAIL, { mfa: true });
-      const bri = await personas.open(EMPLOYEE_EMAIL);
-      const secret = tamara.secret!;
-      const original = (await readAs<SettingsAnswer>(tamara.request, "/settings")).hr;
-      expect(original, "Summit's seeded Settings → HR").toBeDefined();
-      personas.onCleanup("put Settings → HR back", () => healHrOrThrow(tamara.request, original!, secret));
-      const since = Date.now();
-      const audited = await auditBy(tamara.request, ACTION, "Tamara Reyes", since);
+    flowTest(
+      "E1 HR saves a switch and a holiday with a step-up; the employee reads them; a refused value says why before any code",
+      async ({ personas }) => {
+        flowTest.setTimeout(150_000);
+        const tamara = await personas.open(HR_EMAIL, { mfa: true });
+        const bri = await personas.open(EMPLOYEE_EMAIL);
+        const secret = tamara.secret!;
+        const original = (await readAs<SettingsAnswer>(tamara.request, "/settings")).hr;
+        expect(original, "Summit's seeded Settings → HR").toBeDefined();
+        personas.onCleanup("put Settings → HR back", () => healHrOrThrow(tamara.request, original!, secret));
+        const since = Date.now();
+        const audited = await auditBy(tamara.request, ACTION, "Tamara Reyes", since);
 
-      // 1. A holiday date listed twice is refused with the shared words, and no code is asked for.
-      await tamara.page.goto("/settings/hr");
-      const day = original!.holidays[0]!;
-      await tamara.page.getByLabel("Holiday date").fill(day.date);
-      await tamara.page.getByLabel("Holiday name").fill("Again");
-      await tamara.page.getByRole("button", { name: "Add holiday" }).click();
-      await tamara.page.getByRole("button", { name: "Save hr" }).click();
-      await expect(tamara.page.getByText(HR_MESSAGES.holidayTwice)).toBeVisible();
-      await expect(tamara.page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
+        // 1. A holiday date listed twice is refused with the shared words, and no code is asked for.
+        await tamara.page.goto("/settings/hr");
+        const day = original!.holidays[0]!;
+        await tamara.page.getByLabel("Holiday date").fill(day.date);
+        await tamara.page.getByLabel("Holiday name").fill("Again");
+        await tamara.page.getByRole("button", { name: "Add holiday" }).click();
+        await tamara.page.getByRole("button", { name: "Save hr" }).click();
+        await expect(tamara.page.getByText(HR_MESSAGES.holidayTwice)).toBeVisible();
+        await expect(tamara.page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
 
-      // 2. Discard, flip "Show who is out", save with a code.
-      await tamara.page.getByRole("button", { name: "Discard" }).click();
-      const toggle = tamara.page.getByLabel("Show who is out to employees");
-      await toggle.click();
-      const saved = tamara.page.waitForResponse(
-        (response) =>
-          response.request().method() === "PUT" && new URL(response.url()).pathname === "/api-proxy/settings/hr",
-      );
-      await tamara.page.getByRole("button", { name: "Save hr" }).click();
-      await confirmStepUp(tamara.page, secret);
-      expect((await saved).status()).toBe(200);
-      await expect(tamara.page.getByText("HR saved")).toBeVisible();
-      const flipped = !original!.showTeamCalendarToEmployees;
+        // 2. Discard, flip "Show who is out", save with a code.
+        await tamara.page.getByRole("button", { name: "Discard" }).click();
+        const toggle = tamara.page.getByLabel("Show who is out to employees");
+        await toggle.click();
+        const saved = tamara.page.waitForResponse(
+          (response) =>
+            response.request().method() === "PUT" && new URL(response.url()).pathname === "/api-proxy/settings/hr",
+        );
+        await tamara.page.getByRole("button", { name: "Save hr" }).click();
+        await confirmStepUp(tamara.page, secret);
+        expect((await saved).status()).toBe(200);
+        await expect(tamara.page.getByText("HR saved")).toBeVisible();
+        const flipped = !original!.showTeamCalendarToEmployees;
 
-      // 3. After a reload the page reads it from the API.
-      await tamara.page.reload();
-      await expect(tamara.page.getByLabel("Show who is out to employees")).toHaveAttribute(
-        "aria-checked",
-        String(flipped),
-      );
+        // 3. After a reload the page reads it from the API.
+        await tamara.page.reload();
+        await expect(tamara.page.getByLabel("Show who is out to employees")).toHaveAttribute(
+          "aria-checked",
+          String(flipped),
+        );
 
-      // 4. Bri, an employee, reads the section (her team calendar's week), and can't save it.
-      const answer = waitForAnswer<SettingsAnswer>(bri.page, "GET", /^\/api-proxy\/settings$/);
-      await bri.page.goto("/my/time-off");
-      expect((await answer).hr?.showTeamCalendarToEmployees).toBe(flipped);
-      const denied = await bri.request.put("/api-proxy/settings/hr", { data: original });
-      expect(denied.status()).toBe(403);
-      expect((await denied.json()).code).toBe("forbidden");
+        // 4. Bri, an employee, reads the section (her team calendar's week), and can't save it.
+        const answer = waitForAnswer<SettingsAnswer>(bri.page, "GET", /^\/api-proxy\/settings$/);
+        await bri.page.goto("/my/time-off");
+        expect((await answer).hr?.showTeamCalendarToEmployees).toBe(flipped);
+        const denied = await bri.request.put("/api-proxy/settings/hr", { data: original });
+        expect(denied.status()).toBe(403);
+        expect((await denied.json()).code).toBe("forbidden");
 
-      // 5. Put back; two saves audited as Tamara, on screen too.
-      expect((await healHrOrThrow(tamara.request, original!, secret)).status()).toBe(200);
-      expect(await auditBy(tamara.request, ACTION, "Tamara Reyes", since)).toBe(audited + 2);
-      await expectAuditRows(tamara.page, "HR", [ACTION], since);
-    },
-  );
+        // 5. Put back; two saves audited as Tamara, on screen too.
+        expect((await healHrOrThrow(tamara.request, original!, secret)).status()).toBe(200);
+        expect(await auditBy(tamara.request, ACTION, "Tamara Reyes", since)).toBe(audited + 2);
+        await expectAuditRows(tamara.page, "HR", [ACTION], since);
+      },
+    );
+  });
 
-  flowTest(
-    "E2 once a pay period exists the pay frequency is fixed, on screen and on the API; Sales can't save HR",
-    async ({ personas }) => {
-      flowTest.setTimeout(150_000);
-      const tamara = await personas.open(HR_EMAIL, { mfa: true });
-      const priya = await personas.open(SALES_EMAIL);
-      const secret = tamara.secret!;
-      const original = (await readAs<SettingsAnswer>(tamara.request, "/settings")).hr!;
-      personas.onCleanup("put Settings → HR back", () => healHrOrThrow(tamara.request, original, secret));
-      const since = Date.now();
-      const audited = await auditBy(tamara.request, ACTION, "Tamara Reyes", since);
+  flowTest.describe("the schedule lock", () => {
+    resetAuthAround([HR_EMAIL, SALES_EMAIL]);
 
-      // 0. Today's pay period exists (opening it is safe to repeat; the Pay periods page does it on load).
-      const opened = await tamara.request.post("/api-proxy/pay-periods", { data: {} });
-      expect(opened.status(), await opened.text()).toBeLessThan(300);
+    flowTest(
+      "E2 once a pay period exists the pay frequency is fixed, on screen and on the API; Sales can't save HR",
+      async ({ personas }) => {
+        flowTest.setTimeout(150_000);
+        const tamara = await personas.open(HR_EMAIL, { mfa: true });
+        const priya = await personas.open(SALES_EMAIL);
+        const secret = tamara.secret!;
+        const original = (await readAs<SettingsAnswer>(tamara.request, "/settings")).hr!;
+        personas.onCleanup("put Settings → HR back", () => healHrOrThrow(tamara.request, original, secret));
+        const since = Date.now();
+        const audited = await auditBy(tamara.request, ACTION, "Tamara Reyes", since);
 
-      // 1. On screen: another frequency is refused after the code, with the lock's words.
-      await tamara.page.goto("/settings/hr");
-      const other = original.payFrequency === "weekly" ? "Every two weeks" : "Weekly";
-      await choose(tamara.page, tamara.page.getByLabel("Pay frequency"), other);
-      await tamara.page.getByRole("button", { name: "Save hr" }).click();
-      await confirmStepUp(tamara.page, secret);
-      await expect(tamara.page.getByText(HR_MESSAGES.scheduleLocked)).toBeVisible();
+        // 0. Today's pay period exists (opening it is safe to repeat; the Pay periods page does it on load).
+        const opened = await tamara.request.post("/api-proxy/pay-periods", { data: {} });
+        expect(opened.status(), await opened.text()).toBeLessThan(300);
 
-      // 2. On the API: the anchor and the workweek too (409), and nothing was stored.
-      const refusals: [Partial<HrSettings>, string][] = [
-        [{ payPeriodAnchor: "2026-01-05" }, HR_MESSAGES.scheduleLocked],
-        [{ workweekStartDay: (original.workweekStartDay + 1) % 7 }, HR_MESSAGES.workweekLocked],
-      ];
-      for (const [patch, message] of refusals) {
-        const refused = await putWithStepUp(tamara.request, secret, "/settings/hr", { ...original, ...patch });
-        expect(refused.status()).toBe(409);
-        expect(await refused.json()).toEqual({ code: "conflict", message });
-      }
-      expect(canonical((await readAs<SettingsAnswer>(tamara.request, "/settings")).hr)).toBe(canonical(original));
-      expect(await auditBy(tamara.request, ACTION, "Tamara Reyes", since)).toBe(audited);
+        // 1. On screen: another frequency is refused after the code, with the lock's words.
+        await tamara.page.goto("/settings/hr");
+        const other = original.payFrequency === "weekly" ? "Every two weeks" : "Weekly";
+        await choose(tamara.page, tamara.page.getByLabel("Pay frequency"), other);
+        await tamara.page.getByRole("button", { name: "Save hr" }).click();
+        await confirmStepUp(tamara.page, secret);
+        await expect(tamara.page.getByText(HR_MESSAGES.scheduleLocked)).toBeVisible();
 
-      // 3. Sales reads the section (her own timesheet's week) and can't save it; no HR page in her menu.
-      const denied = await priya.request.put("/api-proxy/settings/hr", { data: original });
-      expect(denied.status()).toBe(403);
-      expect((await denied.json()).code).toBe("forbidden");
-      expect((await readAs<SettingsAnswer>(priya.request, "/settings")).hr).toBeDefined();
-      await priya.page.goto("/settings");
-      await expect(priya.page.getByRole("link", { name: "HR", exact: true })).toHaveCount(0);
-    },
-  );
+        // 2. On the API: the anchor and the workweek too (409), and nothing was stored.
+        const refusals: [Partial<HrSettings>, string][] = [
+          [{ payPeriodAnchor: "2026-01-05" }, HR_MESSAGES.scheduleLocked],
+          [{ workweekStartDay: (original.workweekStartDay + 1) % 7 }, HR_MESSAGES.workweekLocked],
+        ];
+        for (const [patch, message] of refusals) {
+          const refused = await putWithStepUp(tamara.request, secret, "/settings/hr", { ...original, ...patch });
+          expect(refused.status()).toBe(409);
+          expect(await refused.json()).toEqual({ code: "conflict", message });
+        }
+        expect(canonical((await readAs<SettingsAnswer>(tamara.request, "/settings")).hr)).toBe(canonical(original));
+        expect(await auditBy(tamara.request, ACTION, "Tamara Reyes", since)).toBe(audited);
+
+        // 3. Sales reads the section (her own timesheet's week) and can't save it; no HR page in her menu.
+        const denied = await priya.request.put("/api-proxy/settings/hr", { data: original });
+        expect(denied.status()).toBe(403);
+        expect((await denied.json()).code).toBe("forbidden");
+        expect((await readAs<SettingsAnswer>(priya.request, "/settings")).hr).toBeDefined();
+        await priya.page.goto("/settings");
+        await expect(priya.page.getByRole("link", { name: "HR", exact: true })).toHaveCount(0);
+      },
+    );
+  });
 });
