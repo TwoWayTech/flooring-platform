@@ -64,10 +64,11 @@ On a throwaway database on port 5433 (Summit seeded twice and migrated, as CI do
 
 | Run | Result | Time |
 | --- | --- | --- |
-| The api-mode suite without the flag, as CI runs it | 68 passed, 16 skipped (the opt-in check specs) | 6.3 min |
+| The api-mode suite without the flag, as CI runs it | 68 passed, 16 skipped (the opt-in check specs); on the final head 69 passed, 16 skipped | 6.3 min; 10.1 min |
 | FC, fresh company | 1 passed | with DS, 39 s |
 | DS, demo script on Summit | 6 passed | 45 s |
-| PGM, page × persona matrix | 9 passed | 7.4 min |
+| PGM, page × persona matrix | 9 passed (again on the final head) | 7.4 min; 10.0 min |
+| FC and DS on the final head | 7 passed | 59 s |
 
 Five GAP pins failed the first time because their gap had closed upstream, which is what a pin is for, and now assert the working behaviour: the commission split with a second rep saves (F-t, people from `GET /company`); Number format and Branding read and save on the API (G17, G18); the Outbox and the bell read the API (GB, PR #65); View as is not offered in api mode, since the API answers only for the signed-in person (G15, PR #50); the Sales dashboard loads (F-s, PR #48).
 
