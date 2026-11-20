@@ -17,7 +17,7 @@ import {
   type TrialBalance,
   type TrialBalanceFacts,
 } from "@workspace/shared";
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 
 /** A posting the books refuse: 409 with the rule's words. */
@@ -229,19 +229,32 @@ export class LedgerService {
       .from(journalEntries)
       .where(inArray(journalEntries.sourceType, [...CONTRACT_SOURCE_TYPES]))
       .limit(1);
-    const [pay] = await db
-      .select({ id: journalLines.id })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
-      .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
-      .where(
-        or(
-          inArray(journalEntries.sourceType, [...PAY_SOURCE_TYPES]),
-          inArray(ledgerAccounts.key, [...PAY_ACCOUNT_KEYS]),
-        ),
-      )
+    // Two indexed existence checks, not one OR across a join that would scan every line when no pay
+    // has posted (PR review): entries by source type, then lines on the pay accounts by account id.
+    const [paySource] = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(inArray(journalEntries.sourceType, [...PAY_SOURCE_TYPES]))
       .limit(1);
-    return { hasContractPostings: contract !== undefined, hasPayPostings: pay !== undefined };
+    if (paySource) return { hasContractPostings: contract !== undefined, hasPayPostings: true };
+    const payAccounts = await db
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(inArray(ledgerAccounts.key, [...PAY_ACCOUNT_KEYS]));
+    const [payLine] =
+      payAccounts.length === 0
+        ? []
+        : await db
+            .select({ id: journalLines.id })
+            .from(journalLines)
+            .where(
+              inArray(
+                journalLines.accountId,
+                payAccounts.map((account) => account.id),
+              ),
+            )
+            .limit(1);
+    return { hasContractPostings: contract !== undefined, hasPayPostings: payLine !== undefined };
   }
 
   /**

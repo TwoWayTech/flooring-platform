@@ -99,6 +99,19 @@ describe("the trial balance screen's model (ADR 0055 Trial balance)", () => {
     ]);
     expect(trialBalanceCsv(BOOKS, true)).toContain("2000,Accounts Payable,Liabilities,0.00,0.00,0.00");
   });
+
+  it("never lets an account name run as a spreadsheet formula, and keeps negative balances as numbers", () => {
+    const planted = {
+      ...BOOKS,
+      rows: [row("1010", '=HYPERLINK("https://x.example","Bank")', "asset", "0.00", "10.00", "-10.00")],
+    };
+    const line = trialBalanceCsv(planted, false).split("\n")[1];
+    expect(line).toBe(`1010,"'=HYPERLINK(""https://x.example"",""Bank"")",Assets,0.00,10.00,-10.00`);
+    for (const name of ["+1", "-cmd", "@SUM(A1)", "\tcmd"])
+      expect(trialBalanceCsv({ ...BOOKS, rows: [row("1", name, "asset", "1.00", "0.00", "1.00")] }, false)).toContain(
+        `,'${name},`,
+      );
+  });
 });
 
 describe("the trial balance on the API and in the demo", () => {

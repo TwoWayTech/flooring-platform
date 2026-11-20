@@ -217,13 +217,16 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     expect(await offered(cookies.tb_cost!)).toBe(true);
   });
 
-  it("needs pay sight once pay has posted, on any date", async () => {
+  it("needs pay sight once pay has posted, by its account or its source, on any date", async () => {
+    // A payroll expense posts to Wages from an ordinary expense: caught by the account.
+    await post(draft("expense.confirmed", "expense", "2026-03-15", "wages", "cash", "25.00"));
+    await hidden(cookies.tb_cost!);
     await post(draft("payroll.approved", "pay_period", "2026-03-31", "wages", "accrued_payroll", "500.00"));
     await hidden(cookies.tb_cost!);
     // Asking for a day before the pay doesn't get round it.
     status(await call(`${PATH}?through=2026-01-31`, cookies.tb_cost), 403);
     expect(await offered(cookies.tb_cost!)).toBe(false);
-    expect((await read(cookies.tb_costpay!)).debit).toBe("640.00");
+    expect((await read(cookies.tb_costpay!)).debit).toBe("665.00");
     expect(await offered(cookies.tb_costpay!)).toBe(true);
   });
 
@@ -241,7 +244,7 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     await hidden(cookies.tb_costpay!);
     expect(await offered(cookies.tb_costpay!)).toBe(false);
     for (const key of ["tb_full", "owner", "accountant"]) {
-      expect(await read(cookies[key]!)).toMatchObject({ debit: "650.00", credit: "650.00", balanced: true });
+      expect(await read(cookies[key]!)).toMatchObject({ debit: "675.00", credit: "675.00", balanced: true });
       expect(await offered(cookies[key]!)).toBe(true);
     }
   });
