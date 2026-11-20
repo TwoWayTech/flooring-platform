@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 /** DemoStore refuses part cartons as the API does (F-m, ADR 0027; security review round 2, note 3). */
-describe("demo whole cartons on purchase orders", () => {
+describe("demo whole cartons on quotes, conversions and purchase orders", () => {
   it("WC1 a boxed line that isn't whole cartons is refused with the API's words; whole cartons save", async () => {
     const fixtures = await loadCompanyFixtures("summit");
     const ctx: ActionContext = {
@@ -161,7 +161,9 @@ describe("demo whole cartons on purchase orders", () => {
     PART_CARTON.quoteId = accepted!.id;
     const store = new DemoStore(noFiles);
     await store.openCompany("summit", { userId: "sm-usr-01", viewAsRoleId: null });
+    const invoices = (await store.list("invoices")).length;
     await expect(store.convertQuoteToInvoice(accepted!.id)).rejects.toThrow("sell whole cartons, multiples of");
+    expect((await store.list("invoices")).length).toBe(invoices);
     expect((await store.list("quotes")).find((q) => q.id === accepted!.id)?.invoiceId ?? null).toBeNull();
   });
 });
