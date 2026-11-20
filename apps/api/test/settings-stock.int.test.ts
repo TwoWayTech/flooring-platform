@@ -17,7 +17,7 @@ import {
   type ProductKey,
   type SettingsAnswer,
 } from "@workspace/shared";
-import { asc, count, eq } from "drizzle-orm";
+import { asc, count, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isAudited, permissionRequirement } from "../src/core/access/permission.decorators";
 import { AuthHarness } from "./auth-harness";
@@ -87,11 +87,12 @@ describe("Stock rules on the API (needs the local PostgreSQL)", () => {
     }
   }
 
-  /** Writes a company's `inventory` row, replacing any. */
+  /** Writes a company's `inventory` row, replacing any; `null` writes the jsonb value null. */
   function seedStock(company: TestCompany, value: unknown) {
     return withCompanyDb(company, async (db) => {
       await db.delete(settings).where(eq(settings.group, "inventory"));
-      await db.insert(settings).values({ group: "inventory", value });
+      // A JSON null is the jsonb value null, not SQL NULL (the column is not null).
+      await db.insert(settings).values({ group: "inventory", value: value === null ? sql`'null'::jsonb` : value });
     });
   }
 
