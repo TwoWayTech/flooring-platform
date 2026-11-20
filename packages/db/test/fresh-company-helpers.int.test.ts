@@ -231,12 +231,9 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
         /this machine.*adminUrl/,
       ],
       [
-        "provision with a scheme the guard doesn't allow",
+        "provision with an http: URL whose host WHATWG rewrites to 127.0.0.1",
         () =>
-          provisionTestCompany(
-            { ...server, adminUrl: "http:postgres:postgres@localhost:5432/x://db.example.com:5432/postgres" },
-            company,
-          ),
+          provisionTestCompany({ ...server, adminUrl: "http://postgres:postgres@0177.0.0.1:5432/postgres" }, company),
         /this machine.*adminUrl/,
       ],
       [
