@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SETTINGS_SCOPE_MESSAGE,
   TAX_MESSAGES,
+  type CompanyId,
   type FeatureKey,
   type FeatureRegister,
   type LocalizationSettings,
@@ -22,8 +23,33 @@ vi.mock("@workspace/shared", async (importOriginal) => {
   };
 });
 
+/**
+ * Summit's Sales tax as a test opens it, from the raw fixture's tax and its anchor date (data typed
+ * before part 3a, ADR 0059 part 3b, D40); null keeps the fixture's. The store moves every fixture date
+ * to today, so a patch dates its rows against the anchor.
+ */
+const SUMMIT_TAX = vi.hoisted(() => ({
+  value: null as ((tax: LocalizationSettings["tax"], anchorDate: string) => LocalizationSettings["tax"]) | null,
+}));
+
+vi.mock("@/lib/api/demo/fixtures", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/api/demo/fixtures")>();
+  return {
+    ...real,
+    loadCompanyFixtures: async (companyId: CompanyId) => {
+      const fixtures = await real.loadCompanyFixtures(companyId);
+      const patch = SUMMIT_TAX.value;
+      if (companyId !== "summit" || !patch) return fixtures;
+      const tax = patch(fixtures.settings.localization.tax, fixtures.anchorDate);
+      const localization = { ...fixtures.settings.localization, tax };
+      return { ...fixtures, settings: { ...fixtures.settings, localization } };
+    },
+  };
+});
+
 afterEach(() => {
   OFF.clear();
+  SUMMIT_TAX.value = null;
   Reflect.deleteProperty(globalThis, "localStorage");
 });
 
@@ -240,9 +266,9 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
   });
 
   it("TD9 saved data with tax-inclusive prices can go back to before tax; never the other way", async () => {
+    // Only data typed before part 3a holds "inclusive": no save sets it since part 3b (D40).
+    SUMMIT_TAX.value = (tax) => ({ ...tax, pricesInclude: "inclusive" });
     const store = await open("summit", DANA);
-    const whole = (await store.getSettings()).localization;
-    await store.updateSettings("localization", { ...whole, tax: { ...whole.tax, pricesInclude: "inclusive" } });
     expect((await taxOf(store)).pricesInclude).toBe("inclusive");
     await store.updateLocalization("tax", { ...(await taxOf(store)), pricesInclude: "exclusive" });
     expect((await taxOf(store)).pricesInclude).toBe("exclusive");
@@ -265,41 +291,43 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
 
   it("TD11 saved demo data typed before 3a: rows dated later are not shown and drop out on the first save", async () => {
     const items = memoryStorage();
-    const store = await open("summit", DANA);
-    const whole = (await store.getSettings()).localization;
+    const whole = (await (await open("summit", DANA)).getSettings()).localization;
     const before = whole.tax;
-    const later = `${Number(store.today().slice(0, 4)) + 1}-01-01`;
-    const co = before.rules.find((rule) => rule.state === "CO")!;
-    const elPaso = before.jurisdictions.find((rate) => rate.id === "jur-co-el-paso")!;
     // As the tab before 3a let anyone type them: a state and a county dated later only, and a later row
-    // beside one in force.
-    const legacy: Tax = {
-      ...before,
-      rules: [
-        ...before.rules,
-        { ...co, state: "AZ", jurisdiction: "Arizona (example)", ratePct: "9", validFrom: later },
-        { ...co, ratePct: "9.5", validFrom: later, version: 2 },
-      ],
-      jurisdictions: [
-        ...before.jurisdictions,
-        {
-          ...elPaso,
-          id: "jur-co-adams",
-          county: "Adams",
-          name: "Adams County combined",
-          ratePct: "7",
-          validFrom: later,
-        },
-        { ...elPaso, id: "jur-co-el-paso-later", ratePct: "9", validFrom: later },
-      ],
+    // beside one in force. Part 3b refuses the whole-section save that typed them here, so they come
+    // from the fixture, dated after its anchor (D40).
+    SUMMIT_TAX.value = (tax, anchorDate) => {
+      const later = `${Number(anchorDate.slice(0, 4)) + 1}-01-01`;
+      const co = tax.rules.find((rule) => rule.state === "CO")!;
+      const elPaso = tax.jurisdictions.find((rate) => rate.id === "jur-co-el-paso")!;
+      return {
+        ...tax,
+        rules: [
+          ...tax.rules,
+          { ...co, state: "AZ", jurisdiction: "Arizona (example)", ratePct: "9", validFrom: later },
+          { ...co, ratePct: "9.5", validFrom: later, version: 2 },
+        ],
+        jurisdictions: [
+          ...tax.jurisdictions,
+          {
+            ...elPaso,
+            id: "jur-co-adams",
+            county: "Adams",
+            name: "Adams County combined",
+            ratePct: "7",
+            validFrom: later,
+          },
+          { ...elPaso, id: "jur-co-el-paso-later", ratePct: "9", validFrom: later },
+        ],
+      };
     };
-    const stored = await store.updateSettings("localization", { ...whole, tax: legacy });
-    expect((await savedTax(items, store)).rules).toHaveLength(before.rules.length + 2);
+    const store = await open("summit", DANA);
     // Read and answered as the API answers them: the tab in force today, so the later rows are neither
     // shown nor sent back.
-    expect(stored.localization.tax).toEqual(before);
     expect(await taxOf(store)).toEqual(before);
     expect((await store.updateLocalization("payroll", whole.payroll)).localization.tax).toEqual(before);
+    // Another tab's save stores the section with every tax row: the later ones are there.
+    expect((await savedTax(items, store)).rules).toHaveLength(before.rules.length + 2);
     const rounding = before.rounding === "line" ? "invoice" : "line";
     await store.updateLocalization("tax", { ...(await taxOf(store)), rounding });
     expect(await taxOf(store)).toEqual({ ...before, rounding });

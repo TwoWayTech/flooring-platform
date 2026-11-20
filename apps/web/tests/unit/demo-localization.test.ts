@@ -35,6 +35,7 @@ const PRIYA = "sm-usr-03";
 const HARBOR_OWNER = "hb-usr-01";
 const ROLE_REFUSAL = "Your role does not allow this. Ask an Owner to change your security role.";
 const MODULE_REFUSAL = "This part of the product is not switched on for your company.";
+const SECTION_REFUSAL = "Localization and tax saves one tab at a time.";
 
 const noFiles: FileStore = {
   put: async () => undefined,
@@ -215,14 +216,61 @@ describe("DemoStore saves Localization one tab at a time, with the API's rules (
     );
   });
 
-  it("LD13 the whole-section save runs every tab's rules", async () => {
+  it("LD13 the whole-section save is refused, even a value every tab's rule takes; nothing is stored or audited (part 3b)", async () => {
     const store = await open("summit", DANA);
-    const localization = (await store.getSettings()).localization;
+    const before = structuredClone((await store.getSettings()).localization);
+    const seen = new Set((await store.list("audit")).map((row) => row.id));
+    await expect(store.updateSettings("localization", before)).rejects.toThrow(SECTION_REFUSAL);
     await expect(
-      store.updateSettings("localization", {
-        ...localization,
-        documents: { ...localization.documents, lateFeePct: "12." },
-      }),
-    ).rejects.toThrow(DOCUMENT_MESSAGES.lateFeePct);
+      store.updateSettings("localization", { ...before, documents: { ...before.documents, lateFeePct: "12." } }),
+    ).rejects.toThrow(SECTION_REFUSAL);
+    expect((await store.getSettings()).localization).toEqual(before);
+    expect((await store.list("audit")).filter((row) => !seen.has(row.id))).toEqual([]);
+  });
+});
+
+describe("DemoStore refuses Localization and tax saved whole (ADR 0059, part 3b)", () => {
+  it("WD1 the refusal comes after the keys, switch and scope; neither key alone saves another tab's settings", async () => {
+    const priya = await open("summit", PRIYA);
+    const whole = structuredClone((await priya.getSettings()).localization);
+    await expect(priya.updateSettings("localization", whole)).rejects.toThrow(ROLE_REFUSAL);
+    const branch = await viewingAs(["settings.localization.manage"], "branch");
+    await expect(branch.updateSettings("localization", whole)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
+    OFF.add("settings.localization");
+    const off = await open("summit", DANA);
+    await expect(off.updateSettings("localization", whole)).rejects.toThrow("This feature is switched off.");
+    OFF.clear();
+    // Before part 3b either key saved every tab here: Sales tax's key a late fee, the localization key a tax rate.
+    const taxOnly = await viewingAs(["settings.tax.manage"]);
+    await expect(
+      taxOnly.updateSettings("localization", { ...whole, documents: { ...whole.documents, lateFeePct: "2" } }),
+    ).rejects.toThrow(SECTION_REFUSAL);
+    expect((await taxOnly.getSettings()).localization).toEqual(whole);
+    const localOnly = await viewingAs(["settings.localization.manage"]);
+    const [first, ...rest] = whole.tax.rules;
+    const changedTax = { ...whole.tax, rules: [{ ...first!, ratePct: "9" }, ...rest] };
+    await expect(localOnly.updateSettings("localization", { ...whole, tax: changedTax })).rejects.toThrow(
+      SECTION_REFUSAL,
+    );
+    expect((await localOnly.getSettings()).localization).toEqual(whole);
+    // Platform module: an HR Suite company reaches the refusal too.
+    const harbor = await open("harbor", HARBOR_OWNER);
+    await expect(
+      harbor.updateSettings("localization", (await harbor.getSettings()).localization),
+    ).rejects.toThrow(SECTION_REFUSAL);
+  });
+
+  it("WD2 resetSettings('localization') is refused too; another section still resets", async () => {
+    const store = await open("summit", DANA);
+    const before = structuredClone((await store.getSettings()).localization);
+    await expect(store.resetSettings("localization")).rejects.toThrow(SECTION_REFUSAL);
+    expect((await store.getSettings()).localization).toEqual(before);
+    const original = (await store.getDefaultSettings()).numbers;
+    await store.updateSettings("numbers", {
+      ...original,
+      negativeStyle: original.negativeStyle === "minus" ? "parens" : "minus",
+    });
+    await store.resetSettings("numbers");
+    expect((await store.getSettings()).numbers).toEqual(original);
   });
 });
