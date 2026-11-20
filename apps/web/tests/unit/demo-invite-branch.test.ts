@@ -5,7 +5,8 @@ import { DemoStore } from "@/lib/api/demo/store";
 
 const DANA = "sm-usr-01";
 const UNKNOWN = "That branch is not one of your company's branches. Reload the page and pick another.";
-const OTHER = "You can only invite people to your own branch, or move people within it.";
+const OTHER = "You can only invite people to your own branch.";
+const CHANGE = "You can only change people in your own branch, and keep them in it.";
 
 const noFiles: FileStore = {
   put: async () => undefined,
@@ -75,8 +76,11 @@ describe("DemoStore applies the API's invite-branch rules (ADR 0051, 2026-11-20)
     const elsewhere = users.find((u) => u.branchId === other)!;
     const nearby = users.find((u) => u.branchId === own && u.id !== DANA)!;
     await asBranchAdmin(store);
-    await expect(store.updateUser(elsewhere.id, { branchId: own })).rejects.toThrow(OTHER);
-    await expect(store.updateUser(nearby.id, { branchId: other })).rejects.toThrow(OTHER);
+    await expect(store.updateUser(elsewhere.id, { branchId: own })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(elsewhere.id, { title: "Renamed" })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(elsewhere.id, { status: "disabled" })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(nearby.id, { branchId: other })).rejects.toThrow(CHANGE);
+    expect((await store.updateUser(nearby.id, { title: "Lead" })).title).toBe("Lead");
     store.setViewer({ userId: DANA, viewAsRoleId: null });
     expect((await store.updateUser(nearby.id, { branchId: other })).branchId).toBe(other);
   });

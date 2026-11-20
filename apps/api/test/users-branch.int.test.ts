@@ -207,6 +207,23 @@ describe("invite branches (ADR 0051 2026-11-20, needs the local PostgreSQL)", ()
     await call("patch", `/users/${inNorth.body.id}`, branchAdmin.cookie).send({ title: "Lead" }).expect(200);
   });
 
+  it("IB8 lets a branch admin change nothing about people in another branch or in none", async () => {
+    await stepUp(owner);
+    const inSouth = await invite(owner.cookie, south, "other-south").expect(201);
+    const nowhere = await invite(owner.cookie, "", "other-none").expect(201);
+    await stepUp(branchAdmin);
+    for (const id of [inSouth.body.id, nowhere.body.id]) {
+      for (const patch of [{ title: "Renamed" }, { status: "disabled" }, { roleIds: [helperRoleId] }]) {
+        const refused = await call("patch", `/users/${id}`, branchAdmin.cookie).send(patch);
+        expect(refused.status, JSON.stringify(patch)).toBe(403);
+        expect(refused.body.code).toBe("branch_other");
+      }
+    }
+    const listed = await call("get", "/users", owner.cookie).expect(200);
+    const kept = listed.body.find((row: { id: string }) => row.id === inSouth.body.id);
+    expect(kept).toMatchObject({ title: "", status: "invited" });
+  });
+
   it("IB7 lets an all-scope admin move people between any branches and to none", async () => {
     await stepUp(owner);
     const person = await invite(owner.cookie, north, "owner-move").expect(201);

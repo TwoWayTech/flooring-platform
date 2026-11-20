@@ -28,10 +28,14 @@ interface InviteDialogProps {
   branches: Branch[];
   /** The branch picked first: the inviter's own when it is listed (`inviteBranches`). */
   defaultBranchId: string;
+  /** False for an admin below scope `all` with no branch of their own: the API would refuse any invite. */
+  canInvite: boolean;
 }
 
+const NO_BRANCH = "You can only invite people to your own branch, and you have none. Ask an Owner to set your branch.";
+
 /** Invite a user with one or more roles and a branch; the seat limit is enforced by the ApiClient. */
-export function InviteDialog({ open, onOpenChange, roles, branches, defaultBranchId }: InviteDialogProps) {
+export function InviteDialog({ open, onOpenChange, roles, branches, defaultBranchId, canInvite }: InviteDialogProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [title, setTitle] = useState("");
@@ -43,6 +47,7 @@ export function InviteDialog({ open, onOpenChange, roles, branches, defaultBranc
   /** Checks the form, then asks for a step-up code: inviting gives roles (draft spec "Step-up"). */
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!canInvite) return setError(NO_BRANCH);
     if (!name.trim()) return setError("Enter the person's name.");
     if (!EMAIL.test(email)) return setError("Enter a valid email address, for example jo@company.com.");
     if (roleIds.length === 0) return setError("Pick at least one role.");

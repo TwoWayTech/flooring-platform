@@ -22,6 +22,7 @@ import {
 } from "@workspace/db/control";
 import type { EmailProvider } from "@workspace/providers";
 import {
+  branchManageDenial,
   branchPlacementDenial,
   canAssignRole,
   canManageHolder,
@@ -169,7 +170,7 @@ export class UsersService {
     await this.stepUp.require(actor.session);
     const db = await this.tenancy.db(tenant);
     const branchId = await knownBranch(db, input.branchId);
-    assertBranchPlacement(actor.access, branchId);
+    if (branchPlacementDenial(actor.access, branchId)) throw new ForbiddenException(BRANCH_REFUSALS.invite);
     const email = input.email.trim().toLowerCase();
     const allRoles = await loadRoles(db);
     this.assertCanAssign(actor.access, allRoles, input.roleIds, []);
@@ -300,12 +301,17 @@ export class UsersService {
     const allRoles = await loadRoles(db);
     const held = await heldRoles(db);
     const current = held.get(userId) ?? [];
-    if (userId !== actor.access.userId) this.assertCanManage(actor.access, allRoles, current);
+    if (userId !== actor.access.userId) {
+      this.assertCanManage(actor.access, allRoles, current);
+      if (branchManageDenial(actor.access, profile.branchId)) throw new ForbiddenException(BRANCH_REFUSALS.change);
+    }
     if (patch.roleIds !== undefined) this.assertCanAssign(actor.access, allRoles, patch.roleIds, current);
     await this.assertOwnerRemains(db, allRoles, held, userId, patch);
     if (patch.mfaEnrolled === false) await this.assertMfaResettable(tenant, userId);
     const branchId = patch.branchId === undefined ? undefined : await knownBranch(db, patch.branchId);
-    if (branchId !== undefined) assertBranchPlacement(actor.access, branchId, profile.branchId);
+    if (branchId !== undefined && branchPlacementDenial(actor.access, branchId, profile.branchId)) {
+      throw new ForbiddenException(BRANCH_REFUSALS.change);
+    }
 
     await db.transaction(async (tx) => {
       const changes: Partial<typeof userProfiles.$inferInsert> = {};
@@ -489,18 +495,14 @@ async function knownBranch(db: CompanyDb, branchId: string): Promise<string | nu
 }
 
 /**
- * A branch-scoped admin invites into, and moves people from and to, their own branch only (the
- * server half of D18; `branchPlacementDenial` in packages/shared). `from` is the person's branch
- * before a change, left out for an invitation.
+ * What a branch-scoped admin is told (the server half of D18; `branchPlacementDenial` and
+ * `branchManageDenial` in packages/shared): they invite into their own branch only, and change only
+ * people in their own branch, keeping them there.
  */
-function assertBranchPlacement(access: RequestAccess, to: string | null, from?: string | null): void {
-  if (branchPlacementDenial(access, to, from)) {
-    throw new ForbiddenException({
-      code: "branch_other",
-      message: "You can only invite people to your own branch, or move people within it.",
-    });
-  }
-}
+const BRANCH_REFUSALS = {
+  invite: { code: "branch_other", message: "You can only invite people to your own branch." },
+  change: { code: "branch_other", message: "You can only change people in your own branch, and keep them in it." },
+} as const;
 
 /** The audit action for a user change, in words. */
 function describePatch(patch: UserPatchInput): string {

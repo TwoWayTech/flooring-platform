@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import {
+  branchManageDenial,
   branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
@@ -950,7 +951,7 @@ export class DemoStore implements ApiClient {
     await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
     assertSeatAvailable(db.list("users"), company.userLimit);
-    await this.assertBranchPlacement(db, input.branchId);
+    await this.assertBranchInvite(db, input.branchId);
     const user: User = {
       id: newId(db.companyId, "usr"),
       companyId: db.companyId,
@@ -978,7 +979,7 @@ export class DemoStore implements ApiClient {
     await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
     assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
-    if (patch.branchId !== undefined) await this.assertBranchPlacement(db, patch.branchId, before.branchId);
+    await this.assertBranchChange(db, before, patch.branchId);
     if (patch.roleIds)
       await this.assertCanAssign(
         db,
@@ -2208,24 +2209,34 @@ export class DemoStore implements ApiClient {
     }
   }
 
+  /** The API's invite-branch rule (ADR 0051, "2026-11-20"): a known branch, the admin's own below scope `all`. */
+  private async assertBranchInvite(db: CompanyDb, to: string) {
+    const actor = await this.branchActor(db, to);
+    if (branchPlacementDenial(actor, branchOf(to)))
+      throw new DemoRuleError("You can only invite people to your own branch.");
+  }
+
   /**
-   * The API's branch rules (ADR 0051, "2026-11-20"), in its words: a branch that is not one of the
-   * company's is refused, and a branch-scoped admin places people in their own branch only
-   * (`branchPlacementDenial`). An empty id is no branch. `from` is the person's branch before a change.
+   * The API's change rules (ADR 0051, "2026-11-20"): below scope `all` an admin changes only people
+   * in their own branch (`branchManageDenial`; oneself excepted) and moves them only within it
+   * (`branchPlacementDenial`). `to` is the new branch, undefined when the branch isn't changing.
    */
-  private async assertBranchPlacement(db: CompanyDb, to: string, from?: string) {
+  private async assertBranchChange(db: CompanyDb, person: User, to: string | undefined) {
+    const actor = await this.branchActor(db, to ?? "");
+    const from = branchOf(person.branchId);
+    const denied =
+      (person.id !== this.viewer!.userId && branchManageDenial(actor, from)) ||
+      (to !== undefined && branchPlacementDenial(actor, branchOf(to), from));
+    if (denied) throw new DemoRuleError("You can only change people in your own branch, and keep them in it.");
+  }
+
+  /** The viewer's scope and branch for the branch rules, after refusing a branch that isn't the company's. */
+  private async branchActor(db: CompanyDb, to: string) {
     const { access, company } = await this.granter(db);
     if (to !== "" && !company.branches.some((branch) => branch.id === to)) {
       throw new DemoRuleError("That branch is not one of your company's branches. Reload the page and pick another.");
     }
-    const branchOf = (id: string) => (id === "" ? null : id);
-    const own = branchOf(db.get("users", this.viewer!.userId)?.branchId ?? "");
-    const denial = branchPlacementDenial(
-      { dataScope: access.dataScope, branchId: own },
-      branchOf(to),
-      from === undefined ? undefined : branchOf(from),
-    );
-    if (denial) throw new DemoRuleError("You can only invite people to your own branch, or move people within it.");
+    return { dataScope: access.dataScope, branchId: branchOf(db.get("users", this.viewer!.userId)?.branchId ?? "") };
   }
 
   private roleNames(db: CompanyDb, roleIds: readonly string[]) {
@@ -2264,4 +2275,9 @@ export class DemoStore implements ApiClient {
   private emit() {
     for (const listener of this.listeners) listener();
   }
+}
+
+/** A stored branch id as the shared branch rules take it: the demo's empty id is no branch. */
+function branchOf(id: string): string | null {
+  return id === "" ? null : id;
 }

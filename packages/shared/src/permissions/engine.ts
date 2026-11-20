@@ -167,3 +167,17 @@ export function branchPlacementDenial(
   if (from !== undefined && from !== actor.branchId) return "branch_other";
   return null;
 }
+
+/**
+ * Whether an admin may change this person at all (ADR 0051, "2026-11-20", safest option from the
+ * invite-branch review): below scope `all`, only people in the admin's own branch, so a branch admin
+ * can't disable, re-role or reset the MFA of someone in another branch. Changes to oneself are left
+ * to the other rules. `personBranchId` is the person's stored branch; no branch is null.
+ */
+export function branchManageDenial(
+  actor: { dataScope: DataScope; branchId: string | null },
+  personBranchId: string | null,
+): BranchDenial {
+  if (actor.dataScope === "all") return null;
+  return actor.branchId !== null && personBranchId === actor.branchId ? null : "branch_other";
+}
