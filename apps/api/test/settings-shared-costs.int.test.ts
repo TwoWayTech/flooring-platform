@@ -294,6 +294,8 @@ describe("settings part 4b on the API: shared costs (needs the local PostgreSQL)
       { rule: "fixed", fixedPct: { [ids.a]: null } },
       [],
       "fixed",
+      // A top-level prototype key is an unknown field (security review round 2).
+      JSON.parse(`{"rule":"revenue","fixedPct":{},"__proto__":{"rule":"fixed"}}`),
     ];
     for (const body of bodies)
       expect(outcome(await put(owner.cookie, body)), JSON.stringify(body)).toEqual([400, "invalid_request"]);
