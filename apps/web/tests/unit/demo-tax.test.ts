@@ -222,7 +222,7 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     expect((await taxOf(harbor)).rounding).not.toBe(theirs.rounding);
   });
 
-  it("TD7 an issued invoice keeps its tax; a quote converted after the change takes the new version and total", async () => {
+  it("TD7 an issued invoice keeps its tax; a quote converted after the change takes the new version, and keeps its accepted total", async () => {
     const store = await open("summit", DANA);
     const issued = await store.convertQuoteToInvoice(BEFORE_QUOTE);
     expect(issued.taxRule).toMatchObject({ state: "CO", version: 1 });
@@ -230,10 +230,25 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     await store.updateLocalization("tax", withRule(before, "CO", { ratePct: "8.5" }));
     const kept = (await store.list("invoices")).find((invoice) => invoice.id === issued.id)!;
     expect([kept.tax, kept.total, kept.taxRule]).toEqual([issued.tax, issued.total, issued.taxRule]);
+    const accepted = (await store.list("quotes")).find((each) => each.id === AFTER_QUOTE)!.total;
     const late = await store.convertQuoteToInvoice(AFTER_QUOTE);
     expect(late.taxRule).toMatchObject({ state: "CO", ratePct: "8.5", version: 2 });
+    // The quote keeps the total the customer accepted (owner, 2026-11-20; sales.md rule 18).
     const quote = (await store.list("quotes")).find((each) => each.id === AFTER_QUOTE)!;
-    expect(quote.total).toBe(late.total);
+    expect(quote.total).toBe(accepted);
+    expect(quote.total).not.toBe(late.total);
+  });
+
+  it("TD12 an accepted quote saved after a tax change keeps its accepted total unless the save reprices it", async () => {
+    const store = await open("summit", DANA);
+    const accepted = (await store.list("quotes")).find((each) => each.id === AFTER_QUOTE)!;
+    expect(accepted.status).toBe("accepted");
+    await store.updateLocalization("tax", withRule(await taxOf(store), "CO", { ratePct: "8.5" }));
+    const notes = await store.saveQuote({ ...accepted, notes: "Gate code 1234", total: "1.00" });
+    expect(notes.total).toBe(accepted.total);
+    const [first, ...rest] = accepted.lines;
+    const more = await store.saveQuote({ ...accepted, lines: [{ ...first, quantity: "999" }, ...rest], total: "2.00" });
+    expect(more.total).toBe("2.00");
   });
 
   it("TD9 saved data with tax-inclusive prices can go back to before tax; never the other way", async () => {

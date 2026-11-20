@@ -9,6 +9,7 @@ import {
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  keepsAcceptedTotal,
   permissionsForModules,
   featureOn,
   PRODUCT_MODULES,
@@ -938,10 +939,9 @@ export class DemoStore implements ApiClient {
     if (collection === "audit") return (await this.auditAsSeen(db, items as AuditEntry[])) as unknown as Collections[K];
     // Who has left is HR's business: disabled colleagues only for Settings → Users' readers, as
     // GET /company's directory (ADR 0051, "2026-11-20"). View as narrows it too.
-    if (collection === "users") {
-      const { access } = await this.granter(db);
-      if (!seesDisabledPeople((key) => access.permissions.has(key)))
-        return (items as User[]).filter((u) => u.status !== "disabled") as unknown as Collections[K];
+    const { access } = await this.granter(db);
+    if (collection === "users" && !seesDisabledPeople((key) => access.permissions.has(key))) {
+      return (items as User[]).filter((u) => u.status !== "disabled") as unknown as Collections[K];
     }
     return items;
   }
@@ -1150,6 +1150,8 @@ export class DemoStore implements ApiClient {
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
       invoiceId: before?.invoiceId ?? null,
+      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      total: before && keepsAcceptedTotal(before, input) ? before.total : input.total,
     };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
     if (wasteChanged(quote, before, db.list("products"), db.settings.localization.documents.defaultWastePct)) {
@@ -1255,7 +1257,6 @@ export class DemoStore implements ApiClient {
       status: "converted",
       sentAt: quote.sentAt ?? this.todayIso,
       invoiceId: invoice.id,
-      total: invoice.total,
     });
     this.appendAudit(db, {
       category: "data",

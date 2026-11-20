@@ -1,5 +1,6 @@
 import { format, parseISO } from "date-fns";
 import {
+  acceptedTotalIfDifferent,
   cartonEquivalent,
   dec,
   formatNumber,
@@ -63,6 +64,11 @@ export interface InvoiceModel {
   taxLabel: string;
   /** Where the rate came from (spec A5); shown on screen, not printed for the customer. */
   taxSource: string;
+  /**
+   * Printed when the tax differs from the quote the customer accepted (`acceptedTotalIfDifferent`;
+   * owner's answer of 2026-11-20): the invoice follows the rule in force on its own date.
+   */
+  taxNote: string | null;
   tax: string;
   total: string;
   paid: string;
@@ -87,6 +93,18 @@ function taxLabel(invoice: Invoice, fmt: (v: DecimalInput, k: NumberKind) => str
   if (invoice.taxExempt) return "Sales tax, exempt (resale certificate on file)";
   if (!invoice.taxRule) return `Sales tax, not collected in ${stateName(invoice.jobSite.state)}`;
   return `Sales tax, ${invoice.taxRule.jurisdiction} ${fmt(invoice.taxRule.ratePct, "taxRate")}`;
+}
+
+/** The note an invoice prints when its total differs from the accepted quote's (sales.md rule 18). */
+function taxNote(
+  invoice: Invoice,
+  quote: Quote | undefined,
+  fmt: (v: DecimalInput, k: NumberKind) => string,
+  date: (iso: string) => string,
+): string | null {
+  const accepted = acceptedTotalIfDifferent(invoice, quote);
+  if (accepted === null || !quote) return null;
+  return `Sales tax follows the rate in force on ${date(invoice.issuedAt)}, so this total differs from the ${fmt(accepted, "money")} accepted on quote ${quote.number}.`;
 }
 
 /**
@@ -136,6 +154,7 @@ export function buildInvoiceModel(
     subtotal: fmt(invoice.subtotal, "money"),
     taxLabel: taxLabel(invoice, fmt),
     taxSource: invoice.taxExempt ? "" : invoice.taxSource.label,
+    taxNote: taxNote(invoice, quote, fmt, date),
     tax: fmt(invoice.tax, "money"),
     total: fmt(invoice.total, "money"),
     paid: fmt(ledger.paid, "money"),
