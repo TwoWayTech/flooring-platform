@@ -1,5 +1,6 @@
 import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
+import type { Address } from "../types/company";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { hrSettingsProblem } from "./hr-rules";
@@ -68,13 +69,27 @@ const amountOk = (value: string) => value === "" || MONEY_TEXT.test(value);
  * stored as sent. The page builds its inline checks from the same patterns and messages.
  */
 export function companyProfileProblem(profile: CompanyProfile): string | null {
-  const { address } = profile;
   if (blank(profile.legalName)) return PROFILE_MESSAGES.legalName;
   if (!EIN_PATTERN.test(profile.ein)) return PROFILE_MESSAGES.ein;
   if (profile.phone.trim().length < 7) return PROFILE_MESSAGES.phone;
   if (!EMAIL_TEXT.test(profile.email.trim())) return PROFILE_MESSAGES.email;
   const website = profile.website.trim();
   if (website !== "" && !WEBSITE_TEXT.test(website)) return PROFILE_MESSAGES.website;
+  return streetAddressProblem(profile.address);
+}
+
+/**
+ * The longest street, city, ZIP and county an address takes (ADR 0059, part 4a, D10): the API body's
+ * bounds since part 1, with no words of their own, where the address inputs stop typing.
+ */
+export const ADDRESS_MAX = { street: 200, city: 100, zip: 10, county: 100 } as const;
+
+/**
+ * Why a street address can't be saved, or null (spec rule 28): street and city given, a US state
+ * code, a ZIP, and a map position that is a pair of numbers or absent. The company profile's and a
+ * location's rule (ADR 0059, part 4a, D10), with the profile's words.
+ */
+export function streetAddressProblem(address: Address): string | null {
   if (blank(address.street)) return PROFILE_MESSAGES.street;
   if (blank(address.city)) return PROFILE_MESSAGES.city;
   if (!isStateCode(address.state)) return PROFILE_MESSAGES.state;

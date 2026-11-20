@@ -28,6 +28,7 @@ import {
   rollAvailable,
   roundMoney,
   sum,
+  warehousesOf,
   type Invoice,
   type InvoiceAdjustment,
   type Payment,
@@ -44,7 +45,7 @@ import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
+import { loadLocations, loadMovements, loadProducts, loadRolls } from "../inventory/inventory-records";
 import { lockStock } from "../inventory/stock-lock";
 import { creditNow, invoiceInScope, invoiceState, lockCustomer } from "./invoice-ledger";
 import { insertInvoice, takeInvoiceNumber } from "./invoice-writes";
@@ -183,6 +184,16 @@ export class InvoicesService {
       // The invoice and its journal entry commit together (CLAUDE.md rule 10; ADR 0039).
       // Stock before the ledger's shared locks, the order every path takes (PR #22 review).
       await lockStock(tx);
+      // Under the stock lock, which every location save takes, so a warehouse that became a showroom
+      // after the quote was saved is seen here: a showroom never holds stock for an invoice
+      // (ADR 0059, part 4a, D21; inventory.md rule 24). Quote saves don't take this lock.
+      const warehouses = new Set(warehousesOf(await loadLocations(tx)).map((location) => location.id));
+      const shipsFrom = [
+        quote.locationId,
+        ...quote.lines.flatMap((line) => (line.locationId ? [line.locationId] : [])),
+      ];
+      if (!shipsFrom.every((locationId) => warehouses.has(locationId)))
+        throw refuse("Fulfil the quote from a warehouse.");
       await this.books.post(tx, invoicePosting(invoice), actor.access.userId);
       const [products, rolls, movements, held] = await Promise.all([
         loadProducts(tx),

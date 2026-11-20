@@ -32,7 +32,7 @@ Effective access is role permissions, intersected with the company ceiling and e
 | Start a transfer | `inventory.transfer.create` | Owner, Manager, Warehouse | `DemoStore.createTransfer` in `apps/web/src/lib/api/demo/store.ts` |
 | Receive a transfer | `inventory.transfer.receive` | Owner, Manager, Warehouse | `DemoStore.receiveTransfer` in `store.ts` |
 | Quick invoice from Cut roll | `sales.invoice.create` | Owner, Manager, Accountant, Sales | `createRollInvoice` in `inventory-actions.ts` |
-| Manage warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `DemoStore.saveLocation` in `store.ts`, `SETTINGS_SECTIONS.inventory` in `packages/shared/src/settings/sections.ts` |
+| Manage warehouses, showrooms and stock rules | `settings.locations.manage` | Owner | `saveLocation` (`POST /locations`, `PUT /locations/:id` in api mode, ADR 0059 part 4a; `DemoStore.saveLocation` in `store.ts`), `SETTINGS_SECTIONS.inventory` in `packages/shared/src/settings/sections.ts` |
 
 Data scope does not narrow any inventory collection. `FILTERS` in `apps/web/src/lib/api/demo/scope.ts` has no entry for products, rolls, stock movements, reservations, transfers or locations. Reservations are left out on purpose (audit U-03), so everyone who sees stock sees all holds.
 
@@ -293,7 +293,7 @@ return left < LOW_ROLL_FT ? "Low" : "Roll";
     limit !== "" && dec(quantity).abs().gt(limit)
     ```
 
-24. **Warehouses and showrooms.** `DemoStore.saveLocation` in `store.ts`. A showroom cannot hold stock and cannot be the default. One location stays the default. Setting a new default clears the old one.
+24. **Warehouses and showrooms.** `saveLocation`, through the shared `location-rules.ts` in both modes (settings-and-permissions.md rule 29; ADR 0059, part 4a). A showroom cannot hold stock and cannot be the default. One warehouse stays the default; setting a new default clears the old one. A location's branch is fixed once added. A warehouse becomes a showroom only while it holds no stock (rolls with length left, in transit or not; boxed stock not zero), no transfer is in transit from or to it, it holds no stock for an invoice (an active reservation above zero; a short row holds nothing and doesn't block) and no open quote ships from it. On the API the save and the quote conversion's warehouse check run under the stock lock.
 
 25. **Default warehouse on new documents.** `defaultWarehouse` in `stock.ts`: the person's `defaultLocationId`, then the company default, then the first warehouse. Showrooms are left out by `warehousesOf`.
 
@@ -440,11 +440,11 @@ Returned by `listStockHolds` for active reservations. It carries the customer na
 | --- | --- | --- |
 | `id`, `name` | string | |
 | `kind` | `warehouse`, `showroom` | |
-| `branchId` | string | Branches drive data scope and limits |
+| `branchId` | string | Branches drive data scope and limits. Fixed once the location is added |
 | `address` | `Address` | |
-| `isDefault` | boolean | One per company |
+| `isDefault` | boolean | One warehouse per company |
 | `displaySamples` | number | A count only, never sellable stock |
-| `floorAreaSqFt` | string, optional | Used to share company-wide costs |
+| `floorAreaSqFt` | string, optional | Used to share company-wide costs. Sq ft with up to 3 decimals; blank is none. The name is unique among live locations as the stock import folds names |
 
 ### InventorySettings (`packages/shared/src/types/settings.ts`)
 
@@ -478,7 +478,7 @@ Audit entries. All use category `data` unless noted.
 | `Started transfer` | Transfer created | `DemoStore.createTransfer`, `store.ts` |
 | `Received transfer` | Transfer received | `DemoStore.receiveTransfer`, `store.ts` |
 | `Moved roll` | New bin. The entry is built by the screen and passed to `save` | `move-roll-dialog.tsx` |
-| `Added location`, `Changed location` | Location saved. Category `settings` | `DemoStore.saveLocation`, `store.ts` |
+| `Added location`, `Changed location` | Location saved, and the default it cleared. Category `settings` | `locations.service.ts`, `DemoStore.saveLocation` in `store.ts` |
 
 Two sales audit entries report reservations: `Converted quote to invoice` adds the `reservationSummary` text, and `Voided invoice` adds how many reservations were released.
 
@@ -499,6 +499,7 @@ None.
 - **Transfers ignore reservations.** `validateTransfer` checks `boxedOnHand`, not `availability`, and does not look at holds on a roll. Reserved stock can be sent away. A held roll that travels cannot be cut until received, and afterwards `Reservation.locationId` still names the old warehouse, so Ready to cut's warehouse filter reads the wrong place.
 - **Boxed issue has no on-hand check.** `issueReservation` writes the movement without reading the ledger, so stock moved after it was reserved can take a warehouse negative.
 - **Short lines stay short.** Nothing re-plans a reservation when stock arrives. A receipt or transfer does not fill a short row.
+- **A short row at a location that becomes a showroom stays there.** It holds nothing, so it doesn't block the change (ADR 0059, part 4a, D22); the invoice's stock panel shows it short against the showroom until the invoice is voided.
 - **Voiding does not bring back cut stock.** `releaseFor` only closes `active` reservations. An invoice cut before payment with an override can be voided, and the issued stock stays out.
 - **Credit notes do not return stock.** `issueCreditNote` in `commission-actions.ts` writes `lines: []` and no movement. No store action writes movement kind `return` or source kind `credit_note`, and the seed has none.
 - **In-transit value.** Boxed goods in transit are in no warehouse's on hand or value. In-transit rolls are out of on hand, but still count in the sender's value, because `stockSection` does not filter `transferId`.

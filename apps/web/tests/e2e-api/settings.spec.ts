@@ -86,7 +86,14 @@ function withTotal(invoices: readonly Invoice[], whose: string): Invoice {
 
 /** The Total cell of invoice `number` on the open invoices list, after searching for it. */
 async function totalOf(page: Page, number: string) {
-  await page.getByPlaceholder("Search invoices and customers").fill(number);
+  // The table restores the person's last search when it opens without one in the address, and a
+  // restore that lands while the fill types appends to it ("INV-1224INV-1224"), so fill until the
+  // box holds exactly the number (ADR 0059, part 4a, build decision A9).
+  const search = page.getByPlaceholder("Search invoices and customers");
+  await expect(async () => {
+    await search.fill(number);
+    await expect(search).toHaveValue(number, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(page).toHaveURL(new RegExp(number));
   return cellUnder(page.getByRole("table").first(), page.getByRole("row", { name: new RegExp(number) }), "Total");
 }

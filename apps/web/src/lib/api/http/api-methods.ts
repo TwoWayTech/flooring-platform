@@ -124,7 +124,8 @@ import type { HttpTransport } from "./transport";
  * for names beside records; ADR 0051, "GET /company"), and Settings reads full users and roles
  * through its own methods (ADR 0034). Roles stay DemoStore's: their two screen reads are unused.
  * Invoices and what settles them move with sales, part 2 (ADR 0038), so every balance on every
- * screen comes from one place.
+ * screen comes from one place. Locations moved with Settings part 4a (ADR 0059), so every screen that
+ * lists warehouses and showrooms reads the API's ids.
  */
 const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   audit: "/audit",
@@ -137,6 +138,9 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   payPeriods: "/pay-periods",
   bonuses: "/bonuses",
   contractorPayments: "/contractor-payments",
+  // Settings part 4a (ADR 0059): warehouses and showrooms, for every member; an HR Suite company
+  // answers 403, read as none (`seen`).
+  locations: "/locations",
 };
 
 /**
@@ -448,6 +452,14 @@ export const API_METHODS = {
   moveRoll: (http) => (rollId, bin) => http.request<Roll>("PATCH", `/rolls/${rollId}`, { bin }),
   createTransfer: (http) => (input) => http.request<Transfer>("POST", "/transfers", input),
   receiveTransfer: (http) => (transferId) => http.request<Transfer>("POST", `/transfers/${transferId}/receive`),
+  // A location the API made (or the seed: UUID v5) has a UUID; a new one from the dialog doesn't. The
+  // id never travels in the body (ADR 0059, part 4a, D14).
+  saveLocation: (http) => (location) => {
+    const { id, ...body } = location;
+    return isSaved(id)
+      ? http.request<Location>("PUT", `/locations/${id}`, body)
+      : http.request<Location>("POST", "/locations", body);
+  },
   correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
   // Ready to cut, issuing and cutting, the roll quick invoice and the split moved in inventory part 2 (ADR 0043).
   listStockHolds: (http) => () => seen(http.request<StockHold[]>("GET", "/stock-holds")),
