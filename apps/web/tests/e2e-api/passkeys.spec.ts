@@ -122,7 +122,7 @@ test.describe("passkeys (api mode)", () => {
       await page.getByRole("button", { name: "Remove Work laptop" }).click();
       await page.getByRole("button", { name: "Remove passkey" }).click();
       await expect(page.getByRole("dialog").getByRole("alert")).toHaveText(
-        /Your role needs two-step sign-in, so you cannot remove your last passkey\./,
+        "Your role needs two-step sign-in, so you cannot remove your last passkey. Add another passkey first, then remove this one.",
       );
       await page.getByRole("button", { name: "Keep it" }).click();
     });

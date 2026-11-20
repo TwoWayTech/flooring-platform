@@ -95,7 +95,9 @@ export function AddPasskeyDialog({ open, onOpenChange }: DialogProps) {
           <DialogTitle>Add a passkey</DialogTitle>
           <DialogDescription>
             {phase === "password"
-              ? "Confirm your password first. Then you have 5 minutes to make the passkey."
+              ? isDemoMode()
+                ? "Confirm your password first."
+                : "A passkey can be added in the first 10 minutes after you sign in. Confirm your password first; then you have 5 minutes to make it."
               : isDemoMode()
                 ? "Name the passkey."
                 : "Name the passkey. We email you whenever one is added to your account."}

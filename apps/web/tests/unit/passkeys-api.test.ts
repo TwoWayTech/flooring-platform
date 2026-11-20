@@ -140,7 +140,7 @@ describe("passkey calls on the API", () => {
       body: { id: "pk-1", name: "Phone" },
     });
     await expect(fake.client.deletePasskey("pk-1")).rejects.toThrow(
-      "Your role needs two-step sign-in, so you cannot remove your last passkey.",
+      "Your role needs two-step sign-in, so you cannot remove your last passkey. Add another passkey first, then remove this one.",
     );
     expect(fake.sent[1]).toEqual({ call: "POST /api/auth/passkey/delete-passkey", body: { id: "pk-1" } });
   });

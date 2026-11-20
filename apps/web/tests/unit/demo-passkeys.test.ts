@@ -59,7 +59,7 @@ describe("DemoStore passkeys", () => {
     const security = await store.signInSecurity();
     expect(security).toMatchObject({ mfaRequired: true, totp: false });
     await expect(store.deletePasskey(security.passkeys[0]!.id)).rejects.toThrow(
-      "Your role needs two-step sign-in, so you cannot remove your last passkey.",
+      "Your role needs two-step sign-in, so you cannot remove your last passkey. Add another passkey first, then remove this one.",
     );
     await store.addPasskey("Phone");
     await store.deletePasskey(security.passkeys[0]!.id);

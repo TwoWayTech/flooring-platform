@@ -76,7 +76,7 @@ export const PASSKEY_REFUSALS = {
   SESSION_NOT_FRESH:
     "A passkey can be added only in the first 10 minutes after you sign in. Sign out, sign in again, then add it.",
   mfa_required:
-    "Your role needs two-step sign-in, so you cannot remove your last passkey. Add another passkey first, or set up the authenticator app.",
+    "Your role needs two-step sign-in, so you cannot remove your last passkey. Add another passkey first, then remove this one.",
   passkey_required: "Your account uses a passkey for two-step sign-in. Sign in with your passkey.",
   PASSKEY_NOT_FOUND: "That passkey is no longer on your account. Reload the page to see your passkeys.",
   AUTHENTICATION_FAILED: "That passkey was not accepted. Try again, or sign in with your password.",
