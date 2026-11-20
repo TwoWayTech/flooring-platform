@@ -22,6 +22,7 @@ import {
   NUMBER_KINDS,
   numbersFromWire,
   numbersToWire,
+  PAYMENT_CONTROLS_OWNER_ONLY,
   PAYMENT_MESSAGES,
   permissionsForModules,
   PRODUCT_HEADER,
@@ -38,6 +39,7 @@ import {
   type FeatureKey,
   type NumberSettings,
   type NumberSettingsWire,
+  type PaymentSettings,
   type PermissionKey,
   type ProductKey,
   type SettingsAnswer,
@@ -488,7 +490,10 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
       expect(saved.body).toEqual({ ...rules, writeOffMax: "4.00" });
       expect(await rowOf(floorco, "payments")).toEqual({ ...rules, writeOffMax: "4.00" });
       expect(await auditCount(floorco)).toBe(audits + 1);
-      await put("payments", person.cookie, rules).expect(200);
+      // Back to 5.00 raises the write-off limit, which only an Owner may do (A16).
+      const restorer = key === "owner" ? person : people.get("flooring:owner")!;
+      if (key !== "owner") await stepUp(restorer);
+      await put("payments", restorer.cookie, rules).expect(200);
     }
     for (const key of PRODUCT_ROLES.flooring.filter((role) => role !== "owner" && role !== "accountant"))
       expect(outcome(await put("payments", people.get(`flooring:${key}`)!.cookie, rules)), key).toEqual([
@@ -604,8 +609,9 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
   }
 
   it("A6 the server acts on saved payments: customer and supplier approval, the write-off limit, numbering", async () => {
-    const grace = pay.accountant;
-    await stepUp(grace);
+    // The Owner saves: switching approval off loosens a control only an Owner may (A16).
+    const saver = pay.owner;
+    await stepUp(saver);
     let rules = {
       approvalRequired: true,
       approvalThreshold: "10.00",
@@ -615,7 +621,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     };
     const save = async (patch: object) => {
       rules = { ...rules, ...patch };
-      const response = await put("payments", grace.cookie, rules);
+      const response = await put("payments", saver.cookie, rules);
       expect(response.status, JSON.stringify(response.body)).toBe(200);
     };
     await save({});
@@ -856,12 +862,63 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(outcome(wrongHost)).toEqual([403, "product_not_enabled"]);
   });
 
-  it("A13 /settings/accounting still answers beside the new routes", async () => {
+  it("A13 /settings/accounting still answers beside the new routes, and a save needs a step-up", async () => {
     const grace = people.get("flooring:accountant")!;
     const read = await call("get", "/settings/accounting", grace.cookie);
     expect(read.status, JSON.stringify(read.body)).toBe(200);
+    const audits = await auditCount(floorco);
+    const unconfirmed = await call("put", "/settings/accounting", grace.cookie).send(read.body);
+    expect(outcome(unconfirmed)).toEqual([403, "step_up_required"]);
+    expect(await auditCount(floorco)).toBe(audits);
+    await stepUp(grace);
     const saved = await call("put", "/settings/accounting", grace.cookie).send(read.body);
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  });
+
+  it("A16 only an Owner loosens a payment control, refused before the code; anyone with the key tightens", async () => {
+    const rules = SUMMIT.settings.payments as PaymentSettings;
+    const grace = people.get("flooring:accountant")!;
+    const dana = people.get("flooring:owner")!;
+    await stepUp(dana);
+    await put("payments", dana.cookie, rules).expect(200);
+    const before = await rowOf(floorco, "payments");
+    const audits = await auditCount(floorco);
+    const looser: Partial<PaymentSettings>[] = [
+      { approvalRequired: false },
+      { approvalThreshold: "1000.01" },
+      { writeOffMax: "5.01" },
+      { writeOffMax: "" },
+    ];
+    for (const patch of looser) {
+      const refused = await put("payments", grace.cookie, { ...rules, ...patch });
+      expect([...outcome(refused), refused.body.message], JSON.stringify(patch)).toEqual([
+        403,
+        "owner_only",
+        PAYMENT_CONTROLS_OWNER_ONLY,
+      ]);
+    }
+    expect(await rowOf(floorco, "payments")).toEqual(before);
+    expect(await auditCount(floorco)).toBe(audits);
+    await stepUp(grace);
+    const tighter = { ...rules, approvalThreshold: "500.00", writeOffMax: "1.00", paymentPrefix: "PMT-" };
+    await put("payments", grace.cookie, tighter).expect(200);
+    expect(outcome(await put("payments", grace.cookie, { ...tighter, approvalThreshold: "500.01" }))).toEqual([
+      403,
+      "owner_only",
+    ]);
+    for (const patch of looser) await put("payments", dana.cookie, { ...rules, ...patch }).expect(200);
+    await put("payments", dana.cookie, rules).expect(200);
+    expect(await rowOf(floorco, "payments")).toEqual(rules);
+  });
+
+  it("A16b a never-saved Payments section is the strictest: anyone but an Owner can only keep it", async () => {
+    const grace = pay.accountant;
+    await withCompanyDb(payco, (db) => db.delete(settings).where(eq(settings.group, "payments")));
+    const loose = { ...SUMMIT.settings.payments, approvalThreshold: "1000.00", writeOffMax: "5.00" };
+    expect(outcome(await put("payments", grace.cookie, loose))).toEqual([403, "owner_only"]);
+    expect(await rowOf(payco, "payments")).toBeUndefined();
+    await stepUp(pay.owner);
+    await put("payments", pay.owner.cookie, loose).expect(200);
   });
 
   it("A14 two saves at once: both answered, both audited in order, the later one stored", async () => {

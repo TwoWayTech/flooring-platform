@@ -9,7 +9,17 @@ import {
   type ControlDb,
   type DbHandle,
 } from "@workspace/db";
-import { account, member, organization, tenantBranding, tenantDatabases, tenants, user } from "@workspace/db/control";
+import {
+  account,
+  authAttempts,
+  member,
+  organization,
+  session,
+  tenantBranding,
+  tenantDatabases,
+  tenants,
+  user,
+} from "@workspace/db/control";
 import { seededTenantId, seedTestCompany } from "@workspace/db/seed";
 import { adminUrl, scratchDatabase } from "@workspace/db/testing";
 import {
@@ -169,6 +179,24 @@ export class AuthHarness {
       .set("X-Forwarded-Host", host)
       .set("X-Client-IP", ip)
       .set("X-Proxy-Secret", PROXY_SECRET);
+  }
+
+  /**
+   * Records a passed step-up for the session behind `cookie`, the rows a verified code writes
+   * (`AttemptLog.recordStepUpPass`). Only for suites where a step-up is setup, not what they test;
+   * step-up itself is tested with real codes in users.int.test.ts and settings.int.test.ts.
+   */
+  async grantStepUp(cookie: string): Promise<void> {
+    const token = decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)).split(".")[0];
+    const [row] = await this.control.db
+      .select({ id: session.id, userId: session.userId })
+      .from(session)
+      .where(eq(session.token, token));
+    if (!row) throw new Error("No session for that cookie.");
+    await this.control.db.insert(authAttempts).values([
+      { kind: "step_up_pass", subject: `step:${row.userId}`, ip: null },
+      { kind: "step_up_ok", subject: row.id, ip: null },
+    ]);
   }
 
   /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */

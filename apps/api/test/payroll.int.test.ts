@@ -332,6 +332,7 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     cookies.sales = await harness.signIn(emails.sales);
     cookies.wes = await harness.signIn(emails.wes);
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({
         costingMethod: "average",
