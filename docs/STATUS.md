@@ -695,14 +695,14 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
   - **Billing:** what "paid" means (`first_paid_at` or an `active` row), the payment record (a `platform_payments` table or the audit row), invoices, prices, trial length, $0 plans, proration, unlimited plans and employee bands, and approval of a billing spec. Until then no billing writes are built.
   - Taken, please confirm: the `support` role may read and file support requests only; a support request needs a step-up; products are read-only per company; when two admins edit one company the last save wins.
 - **Owner questions (PR #54, Settings part 3a; session log Q1 to Q10; none blocks):**
-  - **Effective dates:** a change takes effect on the company's day of the save; dates are read only; no back-dating or scheduling. Allow a future start date?
+  - **Effective dates:** a change takes effect on the company's day of the save; dates are read only; no back-dating or scheduling. Allow a future start date? **Answered 2026-11-20:** the company's day of the save, as built.
   - **The company default's history:** it stays in the settings row, dated when it changes, earlier values in the audit log. Version it in its own table (a schema change)?
   - **Tax-inclusive prices:** shown, can't be turned on (nothing applies it). Build inclusive pricing, or remove the setting?
   - **Sales tax for the HR Suite:** module `platform`, so an HR Suite Owner can save tax rules that drive nothing. Make it `core` and hide the tab there?
   - **Who reads tax:** quote viewers and tax managers. Widen when a screen needs it?
   - **Step-up:** always, even for a save that changes nothing. Only when something changed?
   - **County rates without a rule under them:** allowed (inert). Refuse them, or warn?
-  - **Accepted quotes and a rate change:** conversion taxes under the conversion day's rule and overwrites the quote's stored total with the invoice's (sales.md rules 18 and 19). Keep, or price an accepted quote's tax at acceptance (a schema change)?
+  - **Accepted quotes and a rate change:** answered by the owner on 2026-11-20 and built in PR #59: the accepted quote keeps its total, the invoice is taxed on its own day and notes a difference (ADR 0059, "2026-11-20"). Awaiting the client's accountant.
   - **A page left open:** last save wins, both audited. Refuse a save from a stale page (a version check)?
   - **Snapshot versions for county and company-default rates:** the invoice keeps the rate; its version names the state rule (or 1). Add a county version or id to the snapshot (a schema change)?
 - **Owner questions (PR #53, Settings part 2b; session log Q1 to Q8; none blocks):**

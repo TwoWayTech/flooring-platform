@@ -9,6 +9,7 @@ import {
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  keepsAcceptedTotal,
   permissionsForModules,
   featureOn,
   PRODUCT_MODULES,
@@ -1158,6 +1159,8 @@ export class DemoStore implements ApiClient {
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
       invoiceId: before?.invoiceId ?? null,
+      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      total: before && keepsAcceptedTotal(before, input) ? before.total : input.total,
     };
     const taxChanged = JSON.stringify(before?.taxOverride ?? null) !== JSON.stringify(quote.taxOverride ?? null);
     if (wasteChanged(quote, before, db.list("products"), db.settings.localization.documents.defaultWastePct)) {
