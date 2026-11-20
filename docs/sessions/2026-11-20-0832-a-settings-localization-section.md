@@ -101,6 +101,12 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 | 3 | `apps/web: E2E_WORKERS=2 npx playwright test` settings, localization, tax, number-format, branding, square-feet, quote, invoice-lifecycle, audit, roles, users, presenter-guide, expenses, payments `--project=flooring` | 56 passed (1.2m) |
 | 3 | the same for settings, localization, hr, hr-workspace, branding, number-format, roles, users, audit `--project=hr` (only settings.spec.ts holds `@hr` tests among them) | 8 passed (10.8s) |
 | 4 | docs: ADR 0059 section "2026-11-20: part 3b" and its "Later parts" row 3 and 3a's 3b line; api-contract (part 1 "The web", 2a "One key per tab" and "Not routes yet", the `updateSettings`, `updateLocalization`, `getDefaultSettings` and `resetSettings` rows); blueprint-delta row (A4). FEATURES.md, data-model.md and demo-script.md unchanged (D43: no switch, table or step) | read against the code; Markdown is in `.prettierignore` |
+| 5 | `pnpm test` | providers 11, db 18, api 126, shared 1178, web 429 passed |
+| 5 | `apps/api: npx vitest run --project integration --maxWorkers=4` (the whole API suite; L16 and 3a's ST case included) | 41 files, 798 tests passed (493s) |
+| 5 | `pnpm --filter @workspace/db test:api` | 8 files, 59 tests passed |
+| 5 | `pnpm test:hooks` | 15 passed |
+| 5 | fresh `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build` and `pnpm --filter api build`, then `node <scratchpad>/e2e-api.mjs C:/dev/fp-3b tests/e2e-api` (the whole api-mode suite, one worker; `settings-tax.spec.ts` adds Texas versions once) | 55 passed (5.7m); ports free after |
+| 5 | fresh read-only security-reviewer on `d42737c..HEAD` | PASS, no findings (below) |
 
 ### Mutations (stage 2, on the committed change `35d2b8a`)
 
@@ -121,6 +127,21 @@ Red for the stated reasons, then green; every mutation caught. No screen, flow o
 
 Every settings page of both projects, Localization and tax, Sales tax, Sales and documents' Reset to default, the quote builder, invoices and the audit log pass in demo mode, and the settings, localization and region-currency specs pass in api mode on this branch's build. No e2e test changed (D41).
 
+## Review (stage 5)
+
+A fresh read-only security-reviewer pass on `d42737c..HEAD`, focused on plan section 13: **PASS, no blocking issues and no findings.** It confirmed the name check runs before the value is read; DemoStore throws after module, keys, switch and scope and before any store, audit or emit; `resetSettings` goes through `updateSettings`; a person without either key gets only the role words; `LOCALIZATION_TABS` and `updateLocalization` are unchanged; api mode never sends the whole section and the API never used `localizationProblem`; the TD9 and TD11 set-ups keep what they prove. Its one note (not a finding) is the pre-existing `settings-input.ts` JSDoc, already a follow-up.
+
+Summary for the PR review comment (for the orchestrator):
+
+> Security review (read-only), feat/settings-localization-section, diff d42737c..HEAD: PASS, no blocking issues. `settingsSectionProblem` now refuses `localization` by name before reading the value. DemoStore's `updateSettings` throws after the module, keys, switch and scope checks, before anything is stored, audited or emitted. `resetSettings` goes through `updateSettings`, so it is refused too. A person without either key still gets only the role message. `LOCALIZATION_TABS` and `updateLocalization` are unchanged, so each tab still needs its own key, its own rules and tax versioning. In api mode the whole section is never sent: `localization` is not an API section and `resetSettings` stays on DemoStore. The API has no whole-section route and never depended on the removed `localizationProblem`. Other sections' rules are unchanged. The TD9/TD11 set-up now uses a fixture mock limited to the tests and keeps what they prove.
+
+`/review` was not run as a slash command (unattended subagent session); the fresh security-reviewer pass is the self-merge rule's reviewer for permissions, tax and payroll.
+
+## Outcome
+
+Built as planned, with TD11 as the one extra caller (A1 to A3). 6 product files (2 logic, 4 comments only), 8 test files, docs (spec, sales.md, api-contract, ADR 0059 section, blueprint-delta row). Every check passes: lint, typecheck, `pnpm test`, the whole API integration suite, the db suite, the hooks, the demo subset in both projects and the whole api-mode suite. No servers left running. No PR opened (the orchestrator's).
+
 ## What's left
 
-Stage 5.
+- The orchestrator: open the draft PR (stacked on #59), apply "For STATUS" and BRANCHES, post the review summary, and later ready and merge in queue order after #45 to #59.
+- Follow-ups: the settings menu's copy of the two keys; `settings-input.ts`'s JSDoc.
