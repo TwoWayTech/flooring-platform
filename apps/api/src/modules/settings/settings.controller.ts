@@ -227,7 +227,8 @@ export class SettingsController {
     requireFeature(SETTINGS_SECTIONS.sharedCosts.feature);
     requireWholeCompany(access);
     const input = parse(SHARED_COSTS_INPUT, body);
-    // The rule is checked inside the guard before anything is stored, so the cast is what it proved.
+    // The cast is what the guard proves: `SettingsService.save` runs the guard (the shared rule, which
+    // refuses an unknown rule) before it writes anything, and a refusal rolls the save back.
     const sharedCosts = input as SharedCostSettings;
     await this.settings.save(
       tenant,

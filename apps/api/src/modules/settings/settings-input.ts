@@ -118,12 +118,21 @@ export const EXPENSES_INPUT: z.ZodType<ExpenseSettings> = z
 export const SHARED_COSTS_INPUT: z.ZodType<SharedCostsInput> = z
   .object({
     rule: z.string().max(20, SHARED_COST_MESSAGES.rule),
-    fixedPct: z
-      .record(z.string().max(64), z.string().max(20, SHARED_COST_MESSAGES.share), {
-        // Zod reports a refused key as the record's own issue, so its words are set here.
-        error: (issue) => (issue.code === "invalid_key" ? SHARED_COST_MESSAGES.unknownLocation : undefined),
-      })
-      .refine((map) => Object.keys(map).length <= SHARED_COST_SHARES_MAX, SHARED_COST_MESSAGES.shares),
+    // Zod's record drops a "__proto__" key without an issue, so it is refused here first with the
+    // words of any key that names no location (security review round 1).
+    fixedPct: z.preprocess(
+      (raw, context) => {
+        if (raw !== null && typeof raw === "object" && Object.hasOwn(raw, "__proto__"))
+          context.addIssue({ code: "custom", message: SHARED_COST_MESSAGES.unknownLocation });
+        return raw;
+      },
+      z
+        .record(z.string().max(64), z.string().max(20, SHARED_COST_MESSAGES.share), {
+          // Zod reports a refused key as the record's own issue, so its words are set here.
+          error: (issue) => (issue.code === "invalid_key" ? SHARED_COST_MESSAGES.unknownLocation : undefined),
+        })
+        .refine((map) => Object.keys(map).length <= SHARED_COST_SHARES_MAX, SHARED_COST_MESSAGES.shares),
+    ),
   })
   .strict();
 

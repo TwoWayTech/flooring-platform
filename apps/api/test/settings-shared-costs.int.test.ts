@@ -317,6 +317,12 @@ describe("settings part 4b on the API: shared costs (needs the local PostgreSQL)
       await refused({ rule: "fixed", fixedPct: { [ids.a]: "100", [id]: "0" } }, SHARED_COST_MESSAGES.unknownLocation);
       await refused({ rule: "revenue", fixedPct: { [id]: "0" } }, SHARED_COST_MESSAGES.unknownLocation);
     }
+    // Prototype names are keys like any other (security review round 1): Zod's record would drop "__proto__" silently.
+    for (const key of ["__proto__", "constructor", "toString"])
+      await refused(
+        JSON.parse(`{"rule":"revenue","fixedPct":{"${ids.a}":"10","${key}":"5"}}`),
+        SHARED_COST_MESSAGES.unknownLocation,
+      );
     for (const share of ["", "1.2.3", "-5", "1e2", " 5", "101", "100.0001", "12.34567"]) {
       const words = SHARED_COST_MESSAGES.shareOf("Main Warehouse");
       await refused({ rule: "fixed", fixedPct: { [ids.a]: share, [ids.b]: "40" } }, words);
