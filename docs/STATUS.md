@@ -1,7 +1,7 @@
 # Status: real build
 
 - **Phase:** the owner's queue of 2026-11-16 is done to item 3: the flows' bugs, the remaining screens on the API and the whole-product check are merged. P13 is not started; the owner does a click-through first. The demo is finished, on branch `demo` (tag `demo-v3`), and its status is in docs/archive/demo-STATUS.md.
-- **In progress:** the whole-product check's fix PRs, from A's run of 2026-11-20: #70 to #73 (`fix/api-settings-switch-checks`, `fix/access-sensitive-own-keys`, `fix/api-refusal-words`, `fix/web-hr-page-gates`, stacked in that order), then `fix/api-whole-cartons` and `fix/money-decimal-strings` (stacked). Everything else of the run is merged ("Handover (2026-11-20, A's run)"). What merged before is in Done and docs/MERGE_LOG.md.
+- **In progress:** nothing. A's run of 2026-11-20 is merged and handed off ("Handover (2026-11-20, A's run)"); main is at `51c6241`. What merged before is in Done and docs/MERGE_LOG.md.
 - **Reviews and merges on 2026-11-13:** A did B's reviews and merges that day, because B's internet was down.
   - A squash-merged PR #2 (P8 part 1, `31e2297`) and PR #3 (Claude tooling, `ab57891`).
   - From that day Claude self-merges under the CLAUDE.md rule (owner decision; docs/blueprint-delta.md): PR #4 (`0ec9f6c`), PR #5 (`1c47288`), PR #6 (`429149d`), PR #7 (`39e6a33`), PR #8 (`59ce4e4`), PR #9 (`38bf221`), PR #10 (`a1b0840`), PR #11 (`2ddf5bc`), PR #12 (`2d483de`), PR #13 (`a66a49d`), PR #14 (`2dcb6e8`), PR #15 (`f8b0ef4`), PR #16 (`328ca36`), PR #18 (`82535cd`), PR #19 (`157f8ae`), PR #20 (`1ba1019`), PR #21 (`881712f`), PR #22 (`069ccb3`), PR #23 (`59ce102`), PR #24 (`2e0a846`), PR #25 (`57664d9`), PR #26 (`ba3902d`), PR #27 (`b7c2163`), PR #28 (`b792f54`), PR #29 (`f9b18a9`) and PR #30 (`e2ff2ae`). The owner merged PR #17 (`9b6cbd0`).
@@ -11,18 +11,20 @@
 
 A (the owner, with Claude as orchestrator) ran the queue unattended on 2026-11-20 from B's handover of 2026-11-17. The orchestrator's log is docs/sessions/2026-11-20-2200-a-run-handoff.md. GitHub Actions runs again, so every PR merged on CI; the local-check fallback was never needed.
 
-**Merged to main, in order:** #45 to #54 (B's stack), #55 (the owner's answers), #56 (invite branches), #57 (payment controls and separation of duties), #58 (the people directory), #59 (an accepted quote keeps its total), #60 (part 3b), #61 (part 4a), #63 (part 4b), #62 (part 5), #64 (part 6, branding), #65 (the bell, the Outbox and Settings → Email), #66 (stock rules), #67 (the trial balance screen), #68 (passkey screens and `qrcode`, ADR 0060), #69 (`today()` in the company's zone) and #43 (the whole-product check, ADR 0058). Main is at `73107dc`. Each merge commit is in the run's log and in Done.
+**Merged to main, in order:** #45 to #54 (B's stack), #55 (the owner's answers), #56 (invite branches), #57 (payment controls and separation of duties), #58 (the people directory), #59 (an accepted quote keeps its total), #60 (part 3b), #61 (part 4a), #63 (part 4b), #62 (part 5), #64 (part 6, branding), #65 (the bell, the Outbox and Settings → Email), #66 (stock rules), #67 (the trial balance screen), #68 (passkey screens and `qrcode`, ADR 0060), #69 (`today()` in the company's zone), #43 (the whole-product check, ADR 0058), then the check's fix PRs #70 to #75 (below). Main is at `51c6241`. Each merge commit is in the run's log and in Done.
 
-**Not merged yet: the check's fix PRs.**
+**The check's fix PRs, all merged** (stacked branches, merged in order):
 
-| PR | Branch | Finding | State |
+| PR | Branch | Finding | Main commit |
 | --- | --- | --- | --- |
-| #70 | `fix/api-settings-switch-checks` | F-h | Ready; CI running |
-| #71 | `fix/access-sensitive-own-keys` | F-l | Draft, stacked on #70 |
-| #72 | `fix/api-refusal-words` | F-i, F-n | Draft, stacked on #71 |
-| #73 | `fix/web-hr-page-gates` | F-p, F-q | Draft, stacked on #72 |
-| not open | `fix/api-whole-cartons` | F-m; the web scan suites' 60 s timeout | Pushed |
-| not open | `fix/money-decimal-strings` | F-o, F-k (an API contract change) | Pushed, stacked on `fix/api-whole-cartons` |
+| #70 | `fix/api-settings-switch-checks` | F-h, switch checks | `134746f` |
+| #71 | `fix/access-sensitive-own-keys` | F-l, own keys | `e9c0e09` |
+| #72 | `fix/api-refusal-words` | F-i and F-n, wording | `8cfd80e` |
+| #73 | `fix/web-hr-page-gates` | F-p and F-q, HR page gates and tests | `19bb47d` |
+| #74 | `fix/api-whole-cartons` | F-m, whole cartons; the web scan suites' 60 s timeout | `fdaa931` |
+| #75 | `fix/money-decimal-strings` | F-o and F-k, decimal strings (an API contract change) | `51c6241` |
+
+Still open from the check: P6 / F-r, F-a, F-c, F-g, F-j, G1 to G7, and My timesheet's hours as numbers (Q-y2). See "Follow-ups" and "Open questions for the owner".
 
 **Not built, and why.**
 - **Installation jobs.** `installation.calendar` is switched off with status `removed`; Contracts replaced it (blueprint-delta, 2026-11-10). Turning it back on is the owner's decision.
@@ -49,8 +51,9 @@ All of these are in "Open questions for the owner" below, with every other quest
 **Checks of the run.**
 - Laptop at the start: lint, typecheck and `pnpm test` pass. `pnpm test:api` passes 787 of 787 only with `--maxWorkers=4`; with the default 12 workers three teardown hooks time out.
 - The whole demo suite (owner rule: before every handoff), on the stack's top before #43: flooring 467 passed and 7 skipped; hr 71 passed.
+- The whole demo suite on final main (`51c6241`): **PLACEHOLDER: numbers to come from the re-run in progress.**
 - The whole-product check, final: the default api-mode suite 69 passed and 16 skipped (the opt-in `WHOLE_CHECK` specs); with `WHOLE_CHECK=1` FC and DS 7 passed, PGM 9 passed. Reports: docs/whole-product-check.md and docs/real-build-coverage.md.
-- `pnpm test` on main is flaky under load: the check's web scan suites (`coverage-list`, `page-gates`) time out their 10 s `beforeAll` about 1 run in 3. `fix/api-whole-cartons` raises them to 60 s. `pnpm test --force` doesn't force Turbo; use `TURBO_FORCE=true pnpm test`.
+- `pnpm test` on main is flaky under load: the check's web scan suites (`coverage-list`, `page-gates`) time out their 10 s `beforeAll` about 1 run in 3. PR #74 raised them to 60 s, which fixes it. `pnpm test --force` doesn't force Turbo; use `TURBO_FORCE=true pnpm test`.
 
 **Test environment notes.**
 - One PostgreSQL is enough, set up as the header of `apps/web/playwright.api.config.ts` says: `docker compose up -d`; `pnpm db:migrate`; `pnpm db:seed` with SEED_USER_PASSWORD set; both api-mode builds; `pnpm --filter web test:e2e:api`. The builders used a throwaway Postgres 16 on port 5434, seeded twice, with 1 worker, and removed it after.
@@ -96,6 +99,12 @@ A carried on from B's handover of 2026-11-17. GitHub Actions runs again (PR #45'
 - **Owner answers (2026-11-15):** bonus and pay-run exclusion reasons are hidden from anyone without pay access, like commission reasons; pay viewers see plan terms and pay-sensitive audit details only within their own data scope, and only the Owner sees every rep; both schema changes approved: a dated manager history and the paid employee stored on each commission statement (migrations 0005 and 0006). A stored `carry_out` was not approved. Then the queue restarts in this order: meetings; platform admin and manual billing; reports; import; cross-module api-mode e2e flows; the whole-product check (ADR 0048, "Owner answers, 2026-11-15").
 
 ## Done
+- [x] **Decimal strings and decimal.js money (check findings F-k and F-o, P4 and P5),** merged to main in PR #75 (`51c6241`, `fix/money-decimal-strings`; session log docs/sessions/2026-11-20-1948-a-check-fixes-y.md). **API contract change:** a product's `reorderPoint` and `widthFt`, a roll's `widthFt` and a quote room's `widthFt` and `lengthFt` are decimal strings in the answers and the shared types; the quote body takes room sizes as decimal strings (a JSON number answers 400), compared by value. ApiClient and DemoStore both follow (DemoStore's saved data moves to version 5 with an in-place upgrade), so screens don't change. The commission split works out the second share with decimal.js (66.6 leaves 33.4) and reads shares by user; Bonus, "Waiting to be paid", the printed order's line amounts and the dashboard's percent change use decimal.js. `OTHER_NUMBER_KEYS` keeps only coordinates; `KNOWN_FLOAT_USES` loses its arithmetic entries. Still open: My timesheet sends hours as numbers (Q-y2). Full API integration 1,027 tests pass.
+- [x] **Whole cartons on the API (check finding F-m, P3),** merged to main in PR #74 (`fdaa931`, `fix/api-whole-cartons`; session log docs/sessions/2026-11-20-1948-a-check-fixes-y.md). The API and DemoStore refuse part cartons on quotes, conversions, purchase orders and receipts (400, never rounded), with one shared carton rule. The demo e2e found that a new boxed quote line started at 1 sq ft (a part carton): it now starts at one whole carton, and a zero carton size counts as no carton. It also gives the check's web scan suites a 60 s timeout, which fixes `pnpm test`'s flake under load.
+- [x] **The HR host opens only HR pages, and tests for five untested routes (check findings F-p and F-q, P9 and P10),** merged to main in PR #73 (`19bb47d`, `fix/web-hr-page-gates`; session log docs/sessions/2026-11-20-1948-a-check-fixes-x.md). On the HR Suite host `canOpenPage` refuses the Flooring Suite pages; every route now has an API test.
+- [x] **Words for an unknown outbox message and an early customer (check findings F-i and F-n, P8 and P7),** merged to main in PR #72 (`8cfd80e`, `fix/api-refusal-words`). A missing outbox message answers 404 with words for the person; a customer added by hand before Localization is set gets words for that step.
+- [x] **Sensitive-field lookups read own keys only (check finding F-l, P2),** merged to main in PR #71 (`e9c0e09`, `fix/access-sensitive-own-keys`). Field stripping matches own names only, so a field named like an `Object.prototype` member can't match a function.
+- [x] **Users, Roles, Audit and Support access read their switches (check finding F-h, P1),** merged to main in PR #70 (`134746f`, `fix/api-settings-switch-checks`). The users, roles, audit and support-access routes read their feature switch (rule 13); the console's support request too. Fix PRs #70 to #73 together: lint, typecheck and `pnpm test` pass; the api-mode suite 69 passed and 16 skipped; demo specs 150 passed.
 - [x] **The whole-product check (queue item 3),** merged to main in PR #43 (`73107dc`, `feat/check-whole-product`; session log docs/sessions/2026-11-16-1241-b-whole-product-check.md; ADR 0058; one delta row). The coverage list, the route matrix, money integrity, a bare and a fresh company (FS: `pnpm db:provision-tenant`, settings, locations, a sample CSV import, a purchase and a sale with the ledger agreeing), the browser suites, the report (docs/whole-product-check.md) and item-by-item coverage (docs/real-build-coverage.md). Final runs: the apps/api integration suite 1,021 passed; the default api-mode suite 69 passed and 16 skipped (the opt-in `WHOLE_CHECK` specs); with `WHOLE_CHECK=1` FC and DS 7 passed, PGM 9 passed; 11 of 11 mutations caught. The 9.4 gate keeps tier B on (about +45 s per verify). Its findings F-s, F-t, G15, G17, G18 and GB were closed by the run's earlier PRs; the fix PRs for the rest are under "Handover (2026-11-20, A's run)".
 - [x] **`today()` in the company's time zone (queue item 2's last item),** merged to main in PR #69 (`adc501c`, `feat/web-company-today`; session log docs/sessions/2026-11-20-1630-a-company-today.md; ADR 0051, 2026-11-20 section "the company's day on the web"). The web's `today()` is the company's day in its own zone, worked out on every call so it rolls over at the company's midnight. In api mode it uses the zone of every `GET /company` answer; the zone is dropped when a company opens or closes, or when an answer names a zone Intl doesn't know, and the browser's day applies until the next answer. In DemoStore it uses the open company's zone, with the fixtures shifted to that day and records stamped with the company's clock. One shared `dayInZone` serves the API's `dayIn` and the web. The Sales tax tab's placeholders start at `api.today()`. No route, schema, migration or dependency change. Checks: lint, typecheck, unit tests (shared 1,236, web 495, API 128, db 18, providers 11), API integration 963 of 963; `company-day.spec.ts` runs from Pacific/Kiritimati; five security review rounds, all PASS.
 - [x] **Passkey screens with the QR code (queue item 2),** merged to main in PR #68 (`4a27031`, `feat/auth-passkey-screens`; session log docs/sessions/2026-11-20-1516-a-passkey-screens.md; ADR 0060, the `qrcode` 1.5.4 library). Api-mode login: Sign in with a passkey. MFA set-up: an authenticator app (QR code drawn locally with `qrcode`) or a passkey (the password through `/verify-password` first). A new page, Sign-in and security (`/account/security`, the avatar menu, both products and modes): two-step state, and list, add, rename and remove passkeys. No API change. Six security review rounds, the last with no security note.
@@ -223,16 +232,16 @@ A carried on from B's handover of 2026-11-17. GitHub Actions runs again (PR #45'
 
 ## Next three tasks
 The owner's queue of 2026-11-16 is done to item 3 (see "Handover (2026-11-20, A's run)"). Each task gets its own small branch and PR from an up-to-date main, and self-merges under the CLAUDE.md rule.
-1. **Finish the check's fix PRs:** #70 to #73, then `fix/api-whole-cartons` and `fix/money-decimal-strings`, each in order once `verify` and `e2e` are green (the stack procedure in the handover).
-2. **The owner's answers** to "Open questions for the owner" below: record them in docs/blueprint-delta.md and the ADRs, then build each in its own small PR.
-3. **The rest of the check's findings,** once the owner decides: P6 / F-r (one date format for every module), then F-a, F-c, F-g, F-j, Q-y2 (My timesheet's hours as numbers), the mixed pages (G5) and the onboarding gaps G1 to G7 in the order the owner picks (check Q2).
+1. **The owner's answers** to "Open questions for the owner" below: record them in docs/blueprint-delta.md and the ADRs, then build each in its own small PR.
+2. **The rest of the check's findings,** once the owner decides: P6 / F-r (one date format for every module), then F-a, F-c, F-g, F-j, Q-y2 (My timesheet's hours as numbers), the mixed pages (G5) and the onboarding gaps G1 to G7 in the order the owner picks (check Q2).
+3. **Small follow-ups that need no decision,** for example the three raw carton-size reads left after PR #74 (Follow-ups).
 
 **P13 only when the owner says so,** after the owner's click-through. Installation jobs and stock adjustments only if the owner turns them back on.
 
 Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later parts"), billing writes (ADR 0052, "For the owner"), import parts 2 to 8 (ADR 0057, "Later parts").
 
 ## Follow-ups (don't forget)
-- **Whole-product check findings still open (PR #43; docs/whole-product-check.md; fixes in flight under "Handover (2026-11-20, A's run)"):**
+- **Whole-product check findings still open (PR #43; docs/whole-product-check.md; F-h, F-i, F-k, F-l, F-m, F-n, F-o, F-p and F-q are fixed in PRs #70 to #75):**
   - **F-r, dates:** moments go out as UTC minutes with no zone mark and the screens read them as local time (owner question "P6 / F-r").
   - **F-a, finance:** the P&L's expenses leave out purchase tax and write-offs, which the ledger and the Business report include, so the two differ on the same month (check Q3, the accountant).
   - **F-c, company deletion:** `pnpm db:migrate` reads only `tenant_databases.deleted_at`; a company deleted by `tenants.deleted_at` alone stops every later rollout (check Q8).
@@ -245,6 +254,7 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
   - **Q-y2, rule 6:** My timesheet sends hours as numbers (`TimesheetInput.days`).
   - `/hr/employees/<id>` and `/hr/employees/new` have no page rule (pre-existing; fix-X session log).
   - DemoStore's commission split action should refuse a share of 0 or less and the same person twice, as the API does (fix-Y session log).
+  - **Carton size after PR #74:** a new boxed quote line now starts at one whole carton, and a zero carton size counts as no carton. Three places still read the raw carton size: the transfer prefill in the quote builder, the area quantity input and the stock unit check. Only a direct database edit can make a zero size.
   - The check's web scan suites read hundreds of files synchronously; making them share one model or read asynchronously would speed `pnpm test` (fix-Y session log).
 - **`today()` follow-ups (PR #69; review notes, Low):**
   - In a demo tab left open past the company's midnight, the demo's seeded "today" records sit a day behind until a reload, because fixtures are shifted only once, when they load.
@@ -370,7 +380,6 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
 - **B6 follow-ups (PR #49; session log "For STATUS" and review notes, none blocking):**
   - In api mode the inputs show percents at stored scale (Deposit percent, waste, Retainage %, the split share `60.00000000`). PR #49 Q2.
   - The waste and Settings default inputs keep a bare point as typed (`12.`): api mode answers 400 "Enter a percent such as 10." and DemoStore stores it. For Payments and Expenses both modes now refuse it with a message that names the field (PR #51); Sales and documents' percents too since PR #52. Writing the value back on blur (`dec(x).toFixed()`) fixes both; goes with Q2.
-  - The split dialog: float maths (`commission-split-dialog.tsx`, rule 6), and shares picked by position, not by person: when the rep holds the smaller share, a re-save sends the rep twice and gets 400 "Name each person once." (api mode only). One small fix: choose the shares by `userId === invoice.salesRepId`, with PR #45's `Number(...)` sweep. Q4.
   - A time-off accrual rate below 1e-7 is answered in exponent form (`"5e-8"`, `hoursText` uses `toString()`) and can't be re-saved; canonical answers should use `dec(x).toFixed()`.
   - The recurring expense amount answers 500 on malformed text (`expenses.controller.ts`). Q4.
   - `wastePct` is not stripped though sales.md's Access known gaps say it must be. Q3.
@@ -391,7 +400,7 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
   - A tab left open across the deploy gets "Reload the page, then save your hours again." on its next timesheet save.
   - The two focus counters (`support-access-panel.tsx`, `company-status-page.tsx`) read twice in api mode (harmless); the demo emits after a timesheet upload's dry run and the API doesn't (harmless).
 - **B3 follow-ups (PR #45; session log "For STATUS"):**
-  - **Float money on the PO PDF:** `purchasing/po-pdf.tsx` multiplies `Number(l.quantity) * Number(l.unitCost)` for a line's amount (rule 6). `apps/web/src` has 118 `Number(...)` calls on decimals; most compare with zero or feed a chart. Fix the PDF in a small PR and sweep the rest (owner question below).
+  - **`Number(...)` on decimals:** the PO PDF's float line amount was fixed in PR #75 (`poLineAmount`). `apps/web/src` still has many `Number(...)` calls on decimals; most compare with zero or feed a chart, and the low-risk ones are listed in `apps/web/tests/unit/coverage-scan/known-float-uses.ts`. Sweep the rest (owner question below).
   - The API's own shortfall count (`invoices.service.ts`, `dec(draft.shortBy).gt(0)`) could use the shared `isShort`.
   - Text compares left by design (typed or browser-built values, or demo-only): `customers-table.tsx` overdue, the demo's `payment-actions.ts` and `permission-rules.ts` (its waste check compares by value since B6), the API's quote tax-override check (`taxChanged` in `sales.service.ts`: the override is answered as stored and the builder sends it back unchanged; a respelled rate reads as a change and is 403 without `sales.tax.override`, so it fails closed; docs/api-contract.md, Bodies), `statement-sheet.tsx`, and the bill dialog's "total differs" hint (`bill-dialog.tsx:94` compares the typed total with the expected text, so typing "1200" for "1200.00" shows the hint; a hint only).
   - The Cut toast shows the API's raw quantity ("Cut 40.000 ft"); format it through `formatNumber`. The markup-to-text test helper now exists in three test files.
@@ -590,7 +599,6 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
   - A roll correction should also check the `inventory.rolls` switch (and a boxed one `inventory.products`).
   - `validateTransfer` should refuse a product no longer in the live catalog (latent: products cannot be deleted yet).
   - Add a test for two receives of one transfer at once.
-  - `widthFt` and `reorderPoint` go out as JSON numbers because the shared types declare them so; make them decimal strings when those types are next touched (CLAUDE.md rule 6).
   - A stock correction changes inventory value: post it through LedgerService once P12 exists (rule 10).
   - The inventory tables have no indexes on their foreign keys (`rolls.product_id`, `rolls.location_id`, `roll_cuts.roll_id`, `transfer_lines.transfer_id`), and the SKU and roll-number unique indexes are not partial on `deleted_at`. A change to existing tables, so it waits for a schema task the owner approves.
 - **PR #11 security review (none blocking):**
@@ -751,14 +759,14 @@ Every open question from the run, in one place. None blocks: each has the safest
 - Q9, CI on main (F-g): push CI and the merge log haven't run on main since 2026-11-14, because each squash body carries the branch's `[skip ci]` subjects. Which fix: the repository's squash-message setting, no `[skip ci]` on stage commits, or `--body-file` in the merge guard? And one manual verify run on main now? Built: recorded only; the guard and repository settings are the owner's.
 - Q10, permissions (F-j): should the outbox get a `settings.outbox.manage` key for retry and cancel? And is `hr.payroll.view` the intended key for opening a pay period (`POST /pay-periods`)? Built: the outbox keeps its one view key.
 
-**Fix PRs X** (#70 to #73; session log 2026-11-20-1948-a-check-fixes-x)
+**Fix PRs X** (#70 to #73, merged; session log 2026-11-20-1948-a-check-fixes-x)
 - O1. With `settings.users` off, an Owner can't see or revoke a support grant approved before the switch went off. Built: revoke stays behind the switch; grants open nothing yet, and the platform-admin spec now requires that no grant be honoured while the switch is off.
 - O2. An invitation sent before `settings.users` went off can still be accepted. Built: kept (the Owner sent it on purpose).
 - O3. `/hr` on the HR Suite host now shows "You don't have access to this page". Built: refused; a redirect to `/` is a small later change.
 - O4. `POST /outbox/:id/cancel` answers an unknown id with 409 `not_scheduled`, retry with 404 words. Built: kept.
 - O5. P7 changed only the words; should a customer added by hand on a company without Localization take Due on receipt, as the import does? Built: no, it waits for G2 (settings at provisioning).
 
-**Fix PRs Y** (`fix/api-whole-cartons`, `fix/money-decimal-strings`; session log 2026-11-20-1948-a-check-fixes-y)
+**Fix PRs Y** (#74 and #75, merged; session log 2026-11-20-1948-a-check-fixes-y)
 - Q-y1. Refuse or round boxed lines on the API? Built: refuse (400). Rounding on the server is a one-line change in `partCartonProblem`'s callers.
 - Q-y2. My timesheet's hours as numbers (F-o's "also")? Built: not changed; a separate small PR changing `TimesheetInput.days` to decimal strings.
 - Q-y3. A database CHECK (`sq_ft_per_carton > 0`)? Built: none (it alters an existing table); the code treats a pack not above zero as no carton.
