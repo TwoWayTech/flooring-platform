@@ -950,8 +950,8 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
-    assertSeatAvailable(db.list("users"), company.userLimit);
     await this.assertBranchInvite(db, input.branchId);
+    assertSeatAvailable(db.list("users"), company.userLimit);
     const user: User = {
       id: newId(db.companyId, "usr"),
       companyId: db.companyId,
@@ -978,13 +978,15 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
-    assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
-    await this.assertBranchChange(db, before, patch.branchId);
+    // The API's order: whom the admin may change, the roles, the last Owner, then the branch.
+    await this.assertBranchManage(db, before);
     if (patch.roleIds)
       await this.assertCanAssign(
         db,
         patch.roleIds.filter((id) => !before.roleIds.includes(id)),
       );
+    assertOwnerRemains(db.list("users"), db.list("roles"), userId, patch);
+    if (patch.branchId !== undefined) await this.assertBranchMove(db, before, patch.branchId);
     const after = { ...before, ...patch };
     db.put("users", after);
     const describe = (u: User) => `${u.status}, ${this.roleNames(db, u.roleIds)}, MFA ${u.mfaEnrolled ? "on" : "off"}`;
@@ -2217,17 +2219,19 @@ export class DemoStore implements ApiClient {
   }
 
   /**
-   * The API's change rules (ADR 0051, "2026-11-20"): below scope `all` an admin changes only people
-   * in their own branch (`branchManageDenial`; oneself excepted) and moves them only within it
-   * (`branchPlacementDenial`). `to` is the new branch, undefined when the branch isn't changing.
+   * The API's first change rule (ADR 0051, "2026-11-20"): below scope `all` an admin changes only
+   * people in their own branch (`branchManageDenial`); changes to oneself follow the other rules.
    */
-  private async assertBranchChange(db: CompanyDb, person: User, to: string | undefined) {
-    const actor = await this.branchActor(db, to ?? "");
-    const from = branchOf(person.branchId);
-    const denied =
-      (person.id !== this.viewer!.userId && branchManageDenial(actor, from)) ||
-      (to !== undefined && branchPlacementDenial(actor, branchOf(to), from));
-    if (denied) throw new DemoRuleError("You can only change people in your own branch, and keep them in it.");
+  private async assertBranchManage(db: CompanyDb, person: User) {
+    if (person.id === this.viewer!.userId) return;
+    if (branchManageDenial(await this.branchActor(db, ""), branchOf(person.branchId)))
+      throw new DemoRuleError(BRANCH_CHANGE);
+  }
+
+  /** The API's move rule: a known branch, and below scope `all` from and to the admin's own (`branchPlacementDenial`). */
+  private async assertBranchMove(db: CompanyDb, person: User, to: string) {
+    const actor = await this.branchActor(db, to);
+    if (branchPlacementDenial(actor, branchOf(to), branchOf(person.branchId))) throw new DemoRuleError(BRANCH_CHANGE);
   }
 
   /** The viewer's scope and branch for the branch rules, after refusing a branch that isn't the company's. */
@@ -2281,3 +2285,6 @@ export class DemoStore implements ApiClient {
 function branchOf(id: string): string | null {
   return id === "" ? null : id;
 }
+
+/** The API's words when a branch-scoped admin changes someone outside their branch, or moves them out. */
+const BRANCH_CHANGE = "You can only change people in your own branch, and keep them in it.";

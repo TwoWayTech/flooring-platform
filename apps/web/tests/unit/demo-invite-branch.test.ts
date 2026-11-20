@@ -79,6 +79,9 @@ describe("DemoStore applies the API's invite-branch rules (ADR 0051, 2026-11-20)
     await expect(store.updateUser(elsewhere.id, { branchId: own })).rejects.toThrow(CHANGE);
     await expect(store.updateUser(elsewhere.id, { title: "Renamed" })).rejects.toThrow(CHANGE);
     await expect(store.updateUser(elsewhere.id, { status: "disabled" })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(elsewhere.id, { mfaEnrolled: false })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(DANA, { branchId: other })).rejects.toThrow(CHANGE);
+    await expect(store.updateUser(DANA, { branchId: "" })).rejects.toThrow(CHANGE);
     await expect(store.updateUser(nearby.id, { branchId: other })).rejects.toThrow(CHANGE);
     expect((await store.updateUser(nearby.id, { title: "Lead" })).title).toBe("Lead");
     store.setViewer({ userId: DANA, viewAsRoleId: null });

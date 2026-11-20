@@ -3,9 +3,9 @@ import type { Access, Branch, User } from "@workspace/shared";
 /**
  * The branches an inviter may pick and the one picked first (ADR 0051, "GET /company", D18): every
  * branch for someone whose data scope is `all`, otherwise only their own, and their own branch first
- * when it is listed, and whether they can invite at all. This only keeps the screen from offering a branch a branch-scoped admin
- * can't pick; the API and DemoStore refuse it anyway (`branchPlacementDenial`, ADR 0051 "2026-11-20").
- * An empty id is no branch.
+ * when it is listed, and whether they can invite at all. This only keeps the screen from offering a
+ * branch a branch-scoped admin can't pick; the API and DemoStore refuse it anyway
+ * (`branchPlacementDenial`, ADR 0051 "2026-11-20"). An empty id is no branch.
  */
 export function inviteBranches(
   branches: readonly Branch[],
