@@ -83,8 +83,8 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 | `pnpm typecheck` | pass |
 | `pnpm test` | pass: shared 1,236, web 495, API 128, db 18, providers 11 |
 | API integration (`vitest --project integration --maxWorkers=3`) | 963 of 963 at `a85c87b`, and again 963 of 963 at `1869f8c` (after the last API-side change) |
-| Playwright api mode (with `company-day.spec.ts`) | not run: ports 3000/4000 belong to another builder |
-| Playwright demo (expenses, timesheets, time off, quotes, invoices, plus the six changed specs) | not run, for the same reason |
+| Playwright api mode, after merging PR #68 (`4cc29c6`) | `company-day.spec.ts` alone 1 of 1 (browser on Pacific/Kiritimati); the whole suite 69 of 69 (6.8 min, 1 worker, fresh Postgres 16 on 5434, seeded twice and migrated, throwaway secrets made in-process; container removed) |
+| Playwright demo, after the merge | 113 of 113 (2.2 min, 2 workers, both projects): expenses, quote, quote-status, quote-warehouse, invoice-lifecycle, dashboard, flows-batch3, hr-workspace, hr (timesheets, time off), portal, credit-notes, meetings, meetings-invites, settings, payments |
 | Red first | the old DemoStore fails DD2, DD3 and DD4; an unrouted `today` fails the six AD tests |
 
 ## What is left
@@ -144,3 +144,13 @@ Security review of branch `feat/web-company-today` (read-only), diff `f3e9136..H
   - In api mode, screens still on DemoStore read the fixture company's zone.
   - Sign-out leaves the zone until the next company opens.
   - A `GET /company` still in flight at a company switch isn't checked against the new company.
+
+## Merge of PR #68 (coordinator's request)
+
+- `4cc29c6`: a real `git merge --no-ff origin/feat/auth-passkey-screens` (PR #68 at `2727cd9`, which contains the trial balance #67). Two conflicts, both resolved keeping both sides:
+  - `api-rereads.test.ts`: PR #68's counts (164 routed reads and writes, 116 writes) with this branch's three `local` methods (`today`, `openCompany`, `closeCompany`).
+  - `docs/blueprint-delta.md`: all three 2026-11-20 rows kept (this branch's first).
+- DemoStore, `api-methods.ts`, ADR 0051 and ADR 0060 merged without conflicts. The new screens (trial balance, reports) already read `api.today()`.
+- No API file conflicted, and the resolution touched only a test's counts and a docs table, so the API integration tests and a new security review were not rerun.
+- PR #68 adds the `qrcode` dependency, so I ran `pnpm install --frozen-lockfile`.
+- After the merge: lint, typecheck and `pnpm test` (shared 1,243, web 540, API 128, db 18, providers 11) pass.
