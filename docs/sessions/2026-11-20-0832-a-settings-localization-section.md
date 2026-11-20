@@ -55,6 +55,30 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 - **Q3. `resetSettings` in the ApiClient.** Taken: kept. It refuses Localization and tax and still resets other sections, and no screen calls it. Remove it from the contract?
 - **Q4. Keep `"localization"` out of the method types** (`Exclude<keyof CompanySettings, "localization">` on `updateSettings` and `resetSettings`). Taken: not done (D45); the runtime refusal with words stays either way. Add the compile-time block too?
 
+## Which test pins which path
+
+| Path | Tests | Mutations |
+| --- | --- | --- |
+| The section refused by name, any value | WS1, R8, LD13 | WM1, WM2 |
+| After module, keys, switch and scope; nothing stored or audited | WD1, LD13 | WM3 |
+| Neither key alone saves another tab's settings | WD1, LD6 | WM1 |
+| `resetSettings` refused; other sections still reset | WD2, WW1 | WM4 |
+| Api mode: refused through DemoStore, nothing sent | WW1, W6, W7 | WM5 |
+| The API has no whole-section route | L16, 3a's ST case | (unchanged) |
+| Zone and overtime can't pass through the whole section | RD10, D5 | WM1 |
+| Tax-inclusive data can only go back to exclusive (TD9's new set-up still reaches the rule) | TD9 | WM6 (3a's TM40) |
+| Later-dated pre-3a rows are not shown and drop out on the first Sales tax save (TD11's new set-up) | TD11 | none (A1) |
+
+## For STATUS (the orchestrator applies these)
+
+- **In progress / next:** "...; part 3b, Localization and tax saves one tab at a time (`feat/settings-localization-section`, stacked on #59); then 4 Locations and shared costs, 5 HR, 6 Branding".
+- **Done (on merge):** "Settings part 3b (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-20 part 3b section). `updateSettings("localization")` and `resetSettings("localization")` are refused in both modes ("Localization and tax saves one tab at a time.") after the module, keys, switch and scope checks; nothing is stored or audited, and `localizationProblem` is gone. Neither localization key alone saves another tab's settings by any path, and no tax block is stored whole. No screen, API, schema, migration or dependency change."
+- **Close:** 2a's "`updateSettings("localization")` keeps the any-of keys ..." and 2b's "The whole-section path ... retire it in part 3 (planned as 3b)" (also 2b's review note, which has no STATUS line of its own).
+- **Change:** part 1's "Reset to default reads DemoStore's originals in api mode; `resetSettings` is unrouted. ..." gains "; `resetSettings("localization")` is refused (part 3b)".
+- **New follow-ups:** the settings menu repeats `SETTINGS_SECTIONS.localization.keys` (`settings-menu.ts`'s `anyOf`, and the page's `canLocal || canTax`): read them from the one table. `apps/api/src/modules/settings/settings-input.ts`'s JSDoc says the API checks bodies with `settingsSectionProblem`, but the controller calls each section's rule directly: reword it.
+- **Owner questions:** "Owner questions (Settings part 3b; none blocks)" with Q1 to Q4 above.
+- **BRANCHES:** a `feat/settings-localization-section` row: "A (Claude)", "Queue item 2, task 2, Settings part 3b: the whole-section localization save retired (worktree `C:devp-3b`; stacked on #59)", the state at handoff, the PR once opened, "see the branch".
+
 ## Commands run
 
 | Stage | Command | Result |
@@ -76,6 +100,7 @@ The plan's D16 and D33 to D46 are taken as written (plan section 5). Build decis
 | 3 | `NEXT_PUBLIC_DATA_SOURCE=demo pnpm --filter web build` | exit 0 |
 | 3 | `apps/web: E2E_WORKERS=2 npx playwright test` settings, localization, tax, number-format, branding, square-feet, quote, invoice-lifecycle, audit, roles, users, presenter-guide, expenses, payments `--project=flooring` | 56 passed (1.2m) |
 | 3 | the same for settings, localization, hr, hr-workspace, branding, number-format, roles, users, audit `--project=hr` (only settings.spec.ts holds `@hr` tests among them) | 8 passed (10.8s) |
+| 4 | docs: ADR 0059 section "2026-11-20: part 3b" and its "Later parts" row 3 and 3a's 3b line; api-contract (part 1 "The web", 2a "One key per tab" and "Not routes yet", the `updateSettings`, `updateLocalization`, `getDefaultSettings` and `resetSettings` rows); blueprint-delta row (A4). FEATURES.md, data-model.md and demo-script.md unchanged (D43: no switch, table or step) | read against the code; Markdown is in `.prettierignore` |
 
 ### Mutations (stage 2, on the committed change `35d2b8a`)
 
@@ -98,4 +123,4 @@ Every settings page of both projects, Localization and tax, Sales tax, Sales and
 
 ## What's left
 
-Stages 4 and 5.
+Stage 5.
