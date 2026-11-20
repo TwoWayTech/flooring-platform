@@ -263,6 +263,39 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     ).toBe(false);
   });
 
+  it("F-m refuses a boxed line that isn't whole cartons, and takes the pack from the product, never the request (rule 7, ADR 0027)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ines Okafor" }).expect(201);
+    const withQuantity = (quantity: string, extra: Record<string, unknown> = {}) =>
+      quoteBody(customer.body.id, warehouse, tile).lines.map((line) => ({ ...line, quantity, ...extra }));
+    // 150 sq ft of a 20 sq ft carton is 7.5 cartons: refused with the rule's words, nothing saved.
+    const part = await call("post", "/quotes", cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, { lines: withQuantity("150") }),
+    );
+    expect(part.status).toBe(400);
+    expect(part.body).toMatchObject({
+      code: "invalid_request",
+      message: "Slate Tile: sell whole cartons, multiples of 20 sq ft.",
+    });
+    // A pack sent on the line doesn't change the product's: 150 is still 7.5 of its cartons.
+    const disguised = await call("post", "/quotes", cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, { lines: withQuantity("150", { sqFtPerCarton: "15" }) }),
+    );
+    expect(disguised.status).toBe(400);
+    const whole = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, { lines: withQuantity("160", { sqFtPerCarton: "15" }) }))
+      .expect(201);
+    expect(whole.body.lines[0]).toMatchObject({ quantity: "160.000", sqFtPerCarton: "20.000" });
+    // Saving the quote again with a part carton is refused too; the saved line is unchanged.
+    const edit = await call("put", `/quotes/${whole.body.id}`, cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, { lines: withQuantity("170") }),
+    );
+    expect(edit.status).toBe(400);
+    const saved = (await call("get", "/quotes", cookies.salesA).expect(200)).body.find(
+      (q: { id: string }) => q.id === whole.body.id,
+    );
+    expect(saved.lines[0].quantity).toBe("160.000");
+  });
+
   it("costs a line sent without unitCost from the catalog; the rep's answers carry no cost, the manager's do, and a sent cost is ignored (B1)", async () => {
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Noor Haddad" }).expect(201);
     const sent = quoteBody(customer.body.id, warehouse, tile);

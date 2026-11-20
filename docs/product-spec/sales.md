@@ -236,7 +236,7 @@ pctOf(v, p)    = v * p / 100
    other labor units  = unchanged
    ```
 
-7. **Waste and whole cartons.** `withWaste`, `cartonsForArea`, `wholeCartonArea` and `quantityForArea` in `packages/shared/src/units.ts`. Cartons are billed whole (plan N-2).
+7. **Waste and whole cartons.** `withWaste`, `cartonsForArea`, `wholeCartonArea` and `quantityForArea` in `packages/shared/src/units.ts`. Cartons are billed whole (plan N-2). The screens round a boxed line up; the API refuses a boxed line that isn't whole cartons of its product's pack (`isWholeCartons`, `partCartonProblem`: "Slate Tile: sell whole cartons, multiples of 20 sq ft.") on a quote save and on converting a quote, and never rounds what it was sent (F-m, 2026-11-20).
 
    ```
    gross          = area * (100 + wastePct) / 100

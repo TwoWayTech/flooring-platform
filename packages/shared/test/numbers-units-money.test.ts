@@ -6,9 +6,11 @@ import {
   formatFull,
   formatNumber,
   isRounded,
+  isWholeCartons,
   marginPct,
   moneyString,
   parseAreaEntry,
+  partCartonProblem,
   quantityForArea,
   quantityString,
   rollAreaSqFt,
@@ -82,6 +84,23 @@ describe("units", () => {
     expect(wholeCartonArea(500, "23.64").toString()).toBe("520.08");
     expect(wholeCartonArea("520.08", "23.64").toString()).toBe("520.08");
     expect(cartonEquivalent(500, "23.64")).toEqual({ cartons: 22, sqFtPerCarton: "23.64" });
+  });
+
+  it("tells whole cartons from part cartons, and names the first boxed line that isn't whole (F-m, ADR 0027)", () => {
+    expect(isWholeCartons("520.08", "23.64")).toBe(true);
+    expect(isWholeCartons("160", "20.000")).toBe(true);
+    expect(isWholeCartons("0", "20")).toBe(true);
+    expect(isWholeCartons("150", "20")).toBe(false);
+    expect(isWholeCartons("500", "23.64")).toBe(false);
+    expect(() => isWholeCartons("20", "0")).toThrow();
+    const lines = [
+      { description: "Oak plank", quantity: "300" },
+      { description: "Slate Tile", quantity: "160", sqFtPerCarton: "20.000" },
+      { description: "Slate Tile", quantity: "150", sqFtPerCarton: "20.000" },
+    ];
+    expect(partCartonProblem(lines.slice(0, 2), "sell")).toBeNull();
+    expect(partCartonProblem(lines, "sell")).toBe("Slate Tile: sell whole cartons, multiples of 20 sq ft.");
+    expect(partCartonProblem(lines, "order")).toBe("Slate Tile: order whole cartons, multiples of 20 sq ft.");
   });
 
   it("reads sq ft or cartons typed in a quantity field (spec A1)", () => {

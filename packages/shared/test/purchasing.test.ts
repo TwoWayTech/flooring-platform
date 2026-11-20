@@ -97,6 +97,17 @@ describe("purchasing (spec D1 to D3)", () => {
     expect(rolls).toEqual([expect.objectContaining({ productId: "c", remainingLengthFt: "8.3", locationId: "w2" })]);
   });
 
+  it("receives boxed goods in whole cartons of the order line's pack (F-m, ADR 0027)", () => {
+    const boxed = { ...po, lines: po.lines.map((l) => (l.id === "2" ? { ...l, sqFtPerCarton: "20.000" } : l)) };
+    expect(receiptProblem(boxed, receipt("a", "0", "40").lines, [])).toBeNull();
+    expect(receiptProblem(boxed, receipt("a", "0", "30").lines, [])).toBe(
+      "LVP: receive whole cartons, multiples of 20 sq ft.",
+    );
+    expect(receiptProblem(boxed, receipt("a", "0", "20", "5").lines, [])).toBe(
+      "LVP: receive whole cartons, multiples of 20 sq ft.",
+    );
+  });
+
   it("derives the order status from receipts, bills and supplier payments", () => {
     const today = "2026-11-20";
     expect(poState(po, [], [], [], today)).toBe("ordered");

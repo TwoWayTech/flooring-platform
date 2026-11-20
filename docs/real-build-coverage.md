@@ -36,7 +36,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `sales.quotes` | Partly | Quotes, rooms, status, convert to invoice (4 routes) | A new company can't quote (G2, G3); the API takes part cartons on a boxed line (F-m) | F1, `sales.spec.ts`, FS-6 |
+| `sales.quotes` | Partly | Quotes, rooms, status, convert to invoice (4 routes) | A new company can't quote (G2, G3). The API refuses part cartons on a boxed line (F-m fixed, 2026-11-20) | F1, `sales.spec.ts`, FS-6 |
 | `sales.quote-availability` | Done | Reads stock through `inventoryData` | No test names the feature; covered by the quote screens' reads | `docs/coverage.md` |
 | `sales.invoices` | Done | Invoices, credit notes, void, write-off, sent, apply credit, the commission split (9 routes) | The page also holds the removed installation scheduling's DemoStore calls, which never run; F-t closed (the split saves under the API's ids) | F1, F5, `invoices.spec.ts`, DS-4 |
 | `sales.payments` | Done | Payments, proof files, review, void, refunds (10 routes) | Settings → Payments' Reset to default reads DemoStore | `payments` integration, 20 api-mode specs |
@@ -48,7 +48,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | The API itself accepts part cartons (F-m); `reorderPoint` and widths go out as JSON numbers (F-k) | MI-1 (whole cartons), MI-DEC |
+| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | `reorderPoint` and widths go out as JSON numbers (F-k). The API refuses part cartons on quotes, conversions, orders and receipts (F-m fixed, 2026-11-20) | MI-1 (whole cartons), MI-DEC |
 | `inventory.products` | Partly | Products listed with sensitive cost stripped | No route creates or edits a product; only the import (G3); `/inventory` is mixed | FA-5, FS-5, PM-7 |
 | `inventory.rolls` | Partly | Rolls, cuts, moves, roll invoices | `/inventory/rolls/*` reads customers from DemoStore (G5) | F1, `inventory.spec.ts` |
 | `inventory.transfers` | Done | Create and receive (3 routes) | — | `inventory.spec.ts`, integration |
@@ -150,7 +150,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | Step | Verdict | Summit (api mode) | New company | Gap |
 | --- | --- | --- | --- | --- |
 | 1 Dashboard | Partly | DS-1, PGM (loads for every persona, Sales included) | — | G5 (17 DemoStore lists) |
-| 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3, F-m |
+| 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3 |
 | 3 Deposit with proof | Done | F1 | FS-6 | — |
 | 4 Corrections | Done | DS-4 (commission split and credit note) | — | — |
 | 5 Cut a roll | Done | F1 | — | — |

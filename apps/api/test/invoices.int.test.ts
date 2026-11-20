@@ -4,6 +4,7 @@ import {
   invoices,
   locations,
   products,
+  quoteLines,
   rolePermissions,
   roles,
   settings,
@@ -274,6 +275,55 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("post", `/invoices/${invoice.id}/sent`, cookies.salesB)).status).toBe(404);
     const sent = await call("post", `/invoices/${invoice.id}/sent`, cookies.salesA).expect(201);
     expect(sent.body.sentAt).not.toBeNull();
+  });
+
+  it("F-m refuses to convert a quote whose boxed line isn't whole cartons, as a quote saved before the rule (rule 7, ADR 0027)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Jo Lindqvist" }).expect(201);
+    const quote = await call("post", "/quotes", cookies.salesA)
+      .send({
+        customerId: customer.body.id,
+        locationId: warehouse,
+        jobSite: { street: "12 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
+        rooms: [],
+        lines: [
+          {
+            id: "draft-1",
+            productId: tile,
+            description: "Slate Tile",
+            category: "material",
+            unit: "sq_ft",
+            quantity: "160",
+            unitPrice: "4.50",
+            unitCost: "0",
+            wastePct: "10",
+          },
+        ],
+        depositPct: "0",
+        taxOverride: null,
+        notes: "",
+      })
+      .expect(201);
+    // A line written before the API checked cartons: 150 sq ft is 7.5 cartons of 20.
+    const handle = await harness.companyDb(company.id);
+    try {
+      await handle.db.update(quoteLines).set({ quantity: "150" }).where(eq(quoteLines.quoteId, quote.body.id));
+    } finally {
+      await handle.close();
+    }
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    const refused = await call("post", `/quotes/${quote.body.id}/invoice`, cookies.salesA);
+    expect(refused.status).toBe(400);
+    expect(refused.body).toMatchObject({
+      code: "invalid_request",
+      message: "Slate Tile: sell whole cartons, multiples of 20 sq ft.",
+    });
+    const made = (await call("get", "/invoices", cookies.salesA).expect(200)).body.some(
+      (i: { quoteId: string }) => i.quoteId === quote.body.id,
+    );
+    expect(made).toBe(false);
   });
 
   it("checks proof, references and amounts, and makes a second person confirm", async () => {

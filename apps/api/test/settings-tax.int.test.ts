@@ -940,11 +940,12 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
     expect(notes.status, JSON.stringify(notes.body)).toBe(200);
     expect([(notes.body as Quote).total, await storedTotal(q4.id)]).toEqual(["489.65", "489.65"]);
     const repriced = quoteBody("CO");
-    repriced.lines[0].quantity = "110";
+    // Whole cartons of the 20 sq ft tile: the API refuses a part carton (F-m).
+    repriced.lines[0].quantity = "120";
     const more = await call("put", `/quotes/${q4.id}`, tax.owner.cookie).send(repriced);
     expect(more.status, JSON.stringify(more.body)).toBe(200);
-    // 110 sq ft at 4.50 is 495.00; at 8.5 % that is 537.08.
-    expect((more.body as Quote).total).toBe("537.08");
+    // 120 sq ft at 4.50 is 540.00; at 8.5 % that is 585.90.
+    expect((more.body as Quote).total).toBe("585.90");
     // A quote saved again takes the day's rule.
     const resaved = await call("put", `/quotes/${q1.id}`, tax.owner.cookie).send(quoteBody("CO"));
     expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);

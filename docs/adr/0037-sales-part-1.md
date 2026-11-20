@@ -120,5 +120,11 @@
 - The Settings move: tax rule and county `ratePct` are numeric(18,8) and answered raw, so their write checks use the shared pattern.
 - One waste rule for both modes in shared, once the demo's looser blank rules are settled.
 
+## 2026-11-20: whole cartons on the API (whole-product check F-m)
+- **The API refuses, it doesn't round.** A quote save, a quote conversion, a purchase order and a receipt refuse a boxed line that isn't whole cartons with 400 and the line's words ("Slate Tile: sell whole cartons, multiples of 20 sq ft."). Why: ADR 0027 rounds on the screens, and a server that silently raised a quantity would bill or order more than the person sent. Nothing in the spec asks the server to round.
+- **The pack is the product's.** `trustedLines` sets a product line's `sqFtPerCarton` from the catalog, also when the product has none, so a line can't claim a smaller carton.
+- **Converting re-checks.** A quote saved with a part carton before this rule is refused at conversion, before anything is numbered, posted or held. Summit's seeded quotes and invoices are all whole cartons, so nothing seeded is caught.
+- **Not checked separately:** the roll quick invoice (ft of a roll, never boxed) and stock issue (it issues what the invoice line holds).
+
 ## 2026-11-20: the owner's answer on waste
 - **Waste is not sensitive** (Q3; PR #49 Q3, PR #52 Q6). `wastePct` stays visible to every quote and invoice reader, and the API never strips it. Changing a line's waste still needs `sales.waste.view` (sales.md rule 8), and the builder still hides the column from people without it. So the waste check never meets a line that comes back without its waste, and a salesperson's new line keeps taking its waste from the Sales and documents default. Nothing in the code changes; sales.md's Access known gap no longer lists `wastePct`.
