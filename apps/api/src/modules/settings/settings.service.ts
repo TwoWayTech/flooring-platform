@@ -415,14 +415,18 @@ export class SettingsService {
    */
   async saveBranding(tenant: TenantContext, actor: Actor, branding: Branding): Promise<Branding> {
     const db = await this.tenancy.db(tenant);
-    // Reach the company database before a control connection is held, so a slow or unreachable
-    // company database fails here and never keeps a control connection or the row lock waiting.
+    // Reach the company database before a control connection is held, so an unreachable company
+    // database fails here. The connection goes back to its pool after this check, so the audit's
+    // company transaction may still wait for one; the idle limit below bounds that wait.
     await db.execute(sql`select 1`);
     try {
       return await this.control.db.transaction(async (control) => {
-        await control.execute(sql.raw(`set local lock_timeout = '${BRANDING_LOCK_WAIT}'`));
-        await control.execute(sql.raw(`set local statement_timeout = '${BRANDING_STATEMENT_LIMIT}'`));
-        await control.execute(sql.raw(`set local idle_in_transaction_session_timeout = '${BRANDING_IDLE_LIMIT}'`));
+        // Transaction-scoped (`is_local` true), as `set local`, with the values as parameters.
+        await control.execute(sql`select set_config('lock_timeout', ${BRANDING_LOCK_WAIT}, true)`);
+        await control.execute(sql`select set_config('statement_timeout', ${BRANDING_STATEMENT_LIMIT}, true)`);
+        await control.execute(
+          sql`select set_config('idle_in_transaction_session_timeout', ${BRANDING_IDLE_LIMIT}, true)`,
+        );
         return this.writeBranding(control, db, tenant, actor, branding);
       });
     } catch (error) {

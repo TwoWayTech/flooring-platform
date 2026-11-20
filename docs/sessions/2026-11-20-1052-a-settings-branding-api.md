@@ -79,6 +79,8 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 Mutations BM28 (no `lock_timeout`: BA14 hangs past its timeout), BM29 (no busy mapping: 500) and BM30 (the audit not awaited: the control change commits) are each caught (BA14, BA14, BA15); files restored.
 
+**Fresh review of that delta (`b73c910`): PASS, no blocking.** Three Low notes, taken: the `select 1` comment now says the idle limit, not the check, bounds the wait for a company connection; the three limits are set with `set_config(..., true)` and parameters instead of `sql.raw`; ADR 0059's residual-risk line notes that an audit slower than 10 s ends the control session after the audit committed (D3's accepted gap, slightly likelier). Untested: the idle-limit path (holding all 3 company connections), recorded as follow-up F6.
+
 ## Owner questions (added during the build)
 
 - **Q4. A company with no live branding row in api mode** shows the demo's branding (a save answers 409). Taken: as every section left out of the answer. Show neutral product defaults instead?
@@ -88,7 +90,7 @@ Mutations BM28 (no `lock_timeout`: BA14 hangs past its timeout), BM29 (no busy m
 - **In progress / next:** Settings part 6, Branding (`feat/settings-branding-api`, stacked on #61).
 - **Done (on merge):** "Settings part 6 (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-20 part 6 section). Settings → Branding saves on the API: `PUT /settings/branding` (`settings.branding.manage`, platform, the `settings.branding` switch, scope `all`, strict body, the shared `brandingProblem`, always a step-up) writes the session company's control `tenant_branding` row (name, monogram, colour, pattern, theme only) under a row lock with one company audit entry; `GET /settings` answers branding to every member from that row. No logo on the API yet (the monogram stands in)."
 - **Change:** "The shell's branding is still the demo's until Settings part 6" is closed; the unmoved-pages list loses Branding.
-- **New follow-ups:** F1 a neutral fallback for a company with no branding row in api mode (review Low 2, Q4); F2 the branding save holds a control connection while it opens a company transaction (review Low 3: check pool sizes, or write the audit on its own connection); F3 the logo on the API (Q1); F4 the api-mode e2e BE1 and the demo branding spec (step-up, BS1, BS2) are written but not run; F5 verify RFC 2047 encoding of a non-ASCII display name in email headers (independent review note 4).
+- **New follow-ups:** F1 a neutral fallback for a company with no branding row in api mode (review Low 2, Q4); F2 the branding save holds a control connection while it opens a company transaction (review Low 3: check pool sizes, or write the audit on its own connection); F3 the logo on the API (Q1); F4 the api-mode e2e BE1 and the demo branding spec (step-up, BS1, BS2) are written but not run; F5 verify RFC 2047 encoding of a non-ASCII display name in email headers (independent review note 4); F6 a test that holds all company connections and expects a branding save to fail within the idle limit with the control row unchanged.
 - **Owner questions:** "Owner questions (Settings part 6; none blocks)" with Q1 to Q4.
 - **BRANCHES:** a `feat/settings-branding-api` row: "A (Claude)", "Queue item 2, task 2, Settings part 6: branding on the API (worktree `C:\dev\fp-6`; stacked on #61)", e2e not yet run, "see the branch".
 
