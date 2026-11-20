@@ -1,5 +1,9 @@
 import {
   ADDRESS_MAX,
+  BRANDING_MESSAGES,
+  BRANDING_NAME_MAX,
+  DEFAULT_THEMES,
+  FLOOR_PATTERNS,
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
@@ -18,6 +22,7 @@ import {
   TAX_MESSAGES,
   US_STATES,
   WASTE_CATEGORIES,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
@@ -94,6 +99,24 @@ export const NUMBERS_INPUT: z.ZodType<NumberSettings> = z
   })
   .strict()
   .transform(numbersFromWire);
+
+/**
+ * Branding as Settings → Branding sends it (ADR 0059, part 6, D4, D5). Types, outer lengths and
+ * unknown fields only; the name, monogram and color are the shared rule's to judge
+ * (`brandingProblem`), with the same words in both modes, and each outer bound carries its field's
+ * words. The pattern and theme are their options, with the rule's words. The logo must be null: the
+ * API keeps no logo yet, so the monogram stands in, and a data URL is refused with words, never stored.
+ */
+export const BRANDING_INPUT: z.ZodType<Branding> = z
+  .object({
+    displayName: z.string().max(10 * BRANDING_NAME_MAX, BRANDING_MESSAGES.displayName),
+    monogram: z.string().max(20, BRANDING_MESSAGES.monogram),
+    brandColor: z.string().max(20, BRANDING_MESSAGES.brandColor),
+    pattern: z.enum(FLOOR_PATTERNS, { error: BRANDING_MESSAGES.pattern }),
+    logoDataUrl: z.null({ error: BRANDING_MESSAGES.logoNotOnApi }),
+    defaultTheme: z.enum(DEFAULT_THEMES, { error: BRANDING_MESSAGES.defaultTheme }),
+  })
+  .strict();
 
 /** Payment rules as Settings → Payments sends them. */
 export const PAYMENTS_INPUT: z.ZodType<PaymentSettings> = z

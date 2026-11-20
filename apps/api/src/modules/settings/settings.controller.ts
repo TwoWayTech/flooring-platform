@@ -1,6 +1,7 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
+  brandingProblem,
   companyProfileProblem,
   currencyProblem,
   datedRates,
@@ -23,6 +24,7 @@ import {
   sharedCostsProblem,
   statesOfOperationChanged,
   taxProblem,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
@@ -48,6 +50,7 @@ import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-con
 import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
+  BRANDING_INPUT,
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
   EXPENSES_INPUT,
@@ -88,7 +91,8 @@ function check(problem: string | null): void {
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
  * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
  * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
- * whose checks against recorded pay run under the `hr` row's lock.
+ * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
+ * save that writes the control database: the company's own branding row.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -281,6 +285,34 @@ export class SettingsController {
       await this.stepUp.require(session);
       return hr;
     });
+  }
+
+  /**
+   * PUT /settings/branding (ADR 0059, part 6; approved by the owner on 2026-11-20): the display name,
+   * monogram, brand color, floor pattern and default theme, which the shell, documents, the login
+   * page and emails read. Its key and switch from `SETTINGS_SECTIONS.branding`; module `platform`
+   * (every company of both products), so no module guard, as profile and numbers. In order: the
+   * switch (404), data scope `all` (403), the strict body (400; a logo is refused, D5), the shared
+   * rule (400), then always a step-up (403 `step_up_required`, after the content checks so a refused
+   * value never costs a code), then the save. The company is only the session's: the control row is
+   * found by the verified tenant's id, never by anything in the body. Answers the branding as saved.
+   */
+  @Put("branding")
+  @RequirePermission(...SETTINGS_SECTIONS.branding.keys)
+  @Audited()
+  async saveBranding(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<Branding> {
+    requireFeature(SETTINGS_SECTIONS.branding.feature);
+    requireWholeCompany(access);
+    const branding = parse(BRANDING_INPUT, body);
+    check(brandingProblem(branding));
+    await this.stepUp.require(session);
+    return this.settings.saveBranding(tenant, actorOf(access, session, request), branding);
   }
 
   /**

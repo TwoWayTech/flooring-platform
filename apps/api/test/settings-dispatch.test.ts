@@ -59,9 +59,10 @@ describe("GET /settings answers each served section under its own name", () => {
   });
 
   it("X2 a section the dispatch doesn't name is refused, never answered as expenses", async () => {
-    READABLE.sections = ["expenses", "branding"];
-    const { expenses, branding } = SUMMIT.settings;
-    const service = serviceOver({ expenses, branding });
-    await expect(service.answer(TENANT, ACCESS)).rejects.toThrow('GET /settings has no answer for "branding".');
+    // Meeting settings are not served (HR is since part 5; branding since part 6, from the control row).
+    READABLE.sections = ["expenses", "meetings"];
+    const { expenses, meetings } = SUMMIT.settings;
+    const service = serviceOver({ expenses, meetings });
+    await expect(service.answer(TENANT, ACCESS)).rejects.toThrow('GET /settings has no answer for "meetings".');
   });
 });

@@ -53,6 +53,10 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
         // Left out while the company never saved it (ADR 0059, part 5, D7): DemoStore's copy stays.
         merged.hr = answer.hr ?? demo.hr;
         break;
+      case "branding":
+        // The control row's, without a logo: the monogram stands in on the API (ADR 0059, part 6, D5).
+        merged.branding = answer.branding ?? demo.branding;
+        break;
       default:
         throw unservedSection(section);
     }

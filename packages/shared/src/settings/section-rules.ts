@@ -5,6 +5,7 @@ import type { Address } from "../types/company";
 import type { Location } from "../types/locations";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
+import { brandingProblem } from "./branding-rules";
 import { hrSettingsProblem } from "./hr-rules";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
 
@@ -170,8 +171,8 @@ export interface SettingsRuleContext {
  * refuse a change that no page makes. Shared costs are judged against `context`'s live locations; a
  * call without them throws, so no caller can skip that check (part 4b, D8). Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
- * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5). Every other
- * section gets its rules when its part moves to the API.
+ * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5), Branding
+ * `brandingProblem` (part 6). Every other section gets its rules when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -194,5 +195,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   }
   // The value alone; what recorded pay forbids needs the store's records (`hrScheduleProblem`, ADR 0059 part 5).
   if (settings.hr) return hrSettingsProblem(settings.hr);
+  if (settings.branding) return brandingProblem(settings.branding);
   return null;
 }

@@ -2,6 +2,7 @@ import { featureOn, type FeatureKey } from "../features";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ModuleKey } from "../products";
+import type { Branding } from "../types/company";
 import type {
   CompanyProfile,
   CompanySettings,
@@ -96,9 +97,18 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then. Part 4b adds shared costs and part 5 Settings → HR.
+ * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR and part 6
+ * Branding.
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "sharedCosts", "hr"] as const;
+export const API_SETTINGS_SECTIONS = [
+  "profile",
+  "numbers",
+  "payments",
+  "expenses",
+  "sharedCosts",
+  "hr",
+  "branding",
+] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -142,6 +152,9 @@ export interface SettingsReadRule {
  *   (`hr.portal.view`), and Settings → HR (`settings.hr.manage`). Those screens read it whatever
  *   the `settings.hr` page switch says, so it is not hidden while that switch is off. Pay periods,
  *   timesheets, the clock and the portal read the stored row on the server.
+ * - `branding`: every member: the shell paints every screen with its color, pattern and theme and
+ *   shows its name and monogram, and invoices, receipts and purchase orders print it (part 6, D6).
+ *   Its page switch gates only the save. The API answers it from the control `tenant_branding` row.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -157,6 +170,7 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
     readers: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view", "hr.portal.view", "settings.hr.manage"],
     hiddenWhenOff: false,
   },
+  branding: { readers: "everyone", hiddenWhenOff: false },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -261,6 +275,11 @@ export interface SettingsAnswer {
   sharedCosts?: SharedCostSettings;
   /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
   hr?: HrSettings;
+  /**
+   * From the control `tenant_branding` row (ADR 0059, part 6, D6); left out when the company has no
+   * live row. `logoDataUrl` is always null on the API: the monogram stands in for a logo (D5).
+   */
+  branding?: Branding;
   /**
    * Present only when the company has saved localization and the person reads at least one served
    * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is
