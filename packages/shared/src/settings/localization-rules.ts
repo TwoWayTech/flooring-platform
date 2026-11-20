@@ -380,19 +380,3 @@ export function localizationTabStored<T extends keyof LocalizationSettings>(
   if (pair.tax) return taxChanges(pair.tax.next, pair.tax.current, day).after as LocalizationSettings[T];
   return value;
 }
-
-/**
- * Why the whole Localization and tax section can't be saved, or null: the content rules of Payroll
- * rules, Sales and documents, Region and Currency against the stored section, for
- * `updateSettings("localization")` and `resetSettings`, which no screen calls. Sales tax's rule is
- * not run here, because its versions need the tab's own save; part 3b retires this path (ADR 0059,
- * parts 2a, 2b and 3a). It checks no extra key and dates no rate (part 2b, D17).
- */
-export function localizationProblem(localization: LocalizationSettings, current: LocalizationSettings): string | null {
-  return (
-    payrollProblem(localization.payroll) ??
-    documentsProblem(localization.documents) ??
-    regionProblem(localization.region, current.region) ??
-    currencyProblem(localization.currency, current.currency)
-  );
-}

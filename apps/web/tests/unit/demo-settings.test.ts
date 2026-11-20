@@ -134,14 +134,16 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     const store = await open("summit", DANA);
     const localization = (await store.getSettings()).localization;
     const payroll = (overtimeRule: string) => ({ ...localization.payroll, overtimeRule: overtimeRule as "federal" });
-    await expect(store.updateLocalization("payroll", payroll("weekly"))).rejects.toThrow(overtimeRuleProblem("weekly")!);
+    await expect(store.updateLocalization("payroll", payroll("weekly"))).rejects.toThrow(
+      overtimeRuleProblem("weekly")!,
+    );
     // California is switched off in the register until a payroll review (ADR 0050).
     await expect(store.updateLocalization("payroll", payroll("california"))).rejects.toThrow(
       overtimeRuleProblem("california")!,
     );
-    await expect(
-      store.updateSettings("localization", { ...localization, payroll: payroll("weekly") }),
-    ).rejects.toThrow(SECTION_REFUSAL);
+    await expect(store.updateSettings("localization", { ...localization, payroll: payroll("weekly") })).rejects.toThrow(
+      SECTION_REFUSAL,
+    );
   });
 
   it("D6 Sales can't save the number format: the keys come from SETTINGS_SECTIONS", async () => {

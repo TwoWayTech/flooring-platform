@@ -856,7 +856,10 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Screens save `localization` per tab through `updateLocalization`.
+   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Localization
+   * and tax is never replaced whole: after those checks it is refused with "Localization and tax
+   * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
+   * `updateLocalization` (ADR 0059, part 3b, D34).
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
@@ -887,7 +890,9 @@ export class DemoStore implements ApiClient {
    * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule against
    * the stored tab. Region refuses a zone, country or locale change and needs Sales tax's key for a
    * change of the states of operation (View as limits the keys, spec rule 22); Currency keeps its
-   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). The step-up is the
+   * base, lock and codes and dates a changed rate with today (ADR 0059, part 2b). Sales tax starts a changed rule or county
+   * rate today, a changed rule taking its state's next version, and keeps only what is in force
+   * (part 3a). The step-up is the
    * dialog alone, as everywhere in the demo. Only that tab changes, and the audit entry names it.
    */
   async updateLocalization<T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) {
@@ -913,6 +918,10 @@ export class DemoStore implements ApiClient {
     return this.open().defaultSettings;
   }
 
+  /**
+   * Restores one section to the company's original values through `updateSettings`, with its checks
+   * and rules, so Localization and tax is refused here too (ADR 0059, part 3b). No screen calls it.
+   */
   async resetSettings(section: keyof CompanySettings) {
     return this.updateSettings(section, this.open().defaultSettings[section]);
   }

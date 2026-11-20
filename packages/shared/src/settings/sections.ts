@@ -12,9 +12,10 @@ import type {
 
 /**
  * Who may save one settings section and where it lives (spec settings-and-permissions.md rule 7;
- * ADR 0059): any one of `keys` saves it; `feature` is the switch of the page that saves it, and a
- * save answers "not found" while it is off; a company without `module` is refused; `label` names
- * the section in the audit log ("Changed <label in lower case>", target `<label>`).
+ * ADR 0059): any one of `keys` saves it (Localization and tax's two keys only reach its refusal: it
+ * saves one tab at a time, `LOCALIZATION_TABS`; part 3b); `feature` is the switch of the page that
+ * saves it, and a save answers "not found" while it is off; a company without `module` is refused;
+ * `label` names the section in the audit log ("Changed <label in lower case>", target `<label>`).
  */
 export interface SettingsSectionRule {
   keys: readonly [PermissionKey, ...PermissionKey[]];
@@ -37,9 +38,11 @@ export const SETTINGS_SECTIONS = {
     label: "Branding",
   },
   /**
-   * The demo's whole-section rule, kept for `updateSettings("localization")`, which no screen calls
-   * since part 2a: any one of the two keys saves the whole section. Screens and the API save per tab,
-   * with one key each: `LOCALIZATION_TABS`.
+   * Localization and tax saves one tab at a time, each with its own key (`LOCALIZATION_TABS`), on
+   * screens, in DemoStore and on the API. These keys only decide who reaches the whole-section
+   * refusal: `updateSettings("localization")` and `resetSettings("localization")` check the module,
+   * either key, the switch and scope, then refuse with `LOCALIZATION_SECTION_MESSAGE` (spec rule 7;
+   * ADR 0059, part 3b, D35). The label names every tab's audit entry and the feature is every tab's switch.
    */
   localization: {
     keys: ["settings.localization.manage", "settings.tax.manage"],

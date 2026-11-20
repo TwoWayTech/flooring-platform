@@ -255,9 +255,9 @@ describe("DemoStore refuses Localization and tax saved whole (ADR 0059, part 3b)
     expect((await localOnly.getSettings()).localization).toEqual(whole);
     // Platform module: an HR Suite company reaches the refusal too.
     const harbor = await open("harbor", HARBOR_OWNER);
-    await expect(
-      harbor.updateSettings("localization", (await harbor.getSettings()).localization),
-    ).rejects.toThrow(SECTION_REFUSAL);
+    await expect(harbor.updateSettings("localization", (await harbor.getSettings()).localization)).rejects.toThrow(
+      SECTION_REFUSAL,
+    );
   });
 
   it("WD2 resetSettings('localization') is refused too; another section still resets", async () => {
