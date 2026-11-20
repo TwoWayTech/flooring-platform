@@ -8,6 +8,7 @@ import {
   nextNumber,
   nextPaymentNumber,
   poTotal,
+  partCartonProblem,
   receiptProblem,
   receiptStock,
   receivedValue,
@@ -41,6 +42,9 @@ export async function createPurchaseOrder(ctx: ActionContext, input: NewPurchase
   if (input.lines.length === 0) throw new DemoRuleError("Add at least one line to the purchase order.");
   if (!ctx.db.get("suppliers", input.supplierId)) throw new DemoRuleError("Choose a supplier.");
   if (input.lines.some((l) => !dec(l.quantity || "0").gt(0))) throw new DemoRuleError("Every line needs a quantity.");
+  // Cartons are ordered whole, as on the API (F-m, ADR 0027).
+  const cartons = partCartonProblem(input.lines, "order");
+  if (cartons) throw new DemoRuleError(cartons);
   const po: PurchaseOrder = {
     id: ctx.newId("po"),
     number: nextNumber(

@@ -8,6 +8,7 @@ import {
   type LocalizationSettings,
   type PermissionKey,
   type Role,
+  wholeCartonArea,
 } from "@workspace/shared";
 import type { FileStore } from "@/lib/api/demo/file-store";
 import { DemoStore } from "@/lib/api/demo/store";
@@ -273,7 +274,13 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     const notes = await store.saveQuote({ ...accepted, notes: "Gate code 1234", total: "1.00" });
     expect(notes.total).toBe(accepted.total);
     const [first, ...rest] = accepted.lines;
-    const more = await store.saveQuote({ ...accepted, lines: [{ ...first, quantity: "999" }, ...rest], total: "2.00" });
+    // Whole cartons when the line is boxed: DemoStore refuses a part carton, as the API does (F-m).
+    const more999 = first!.sqFtPerCarton ? wholeCartonArea("999", first!.sqFtPerCarton).toString() : "999";
+    const more = await store.saveQuote({
+      ...accepted,
+      lines: [{ ...first, quantity: more999 }, ...rest],
+      total: "2.00",
+    });
     expect(more.total).toBe("2.00");
   });
 

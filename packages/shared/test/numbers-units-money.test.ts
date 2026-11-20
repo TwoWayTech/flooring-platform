@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cartonEquivalent,
+  cartonPack,
   cartonsForArea,
   defaultNumberSettings,
   formatFull,
@@ -101,6 +102,12 @@ describe("units", () => {
     expect(partCartonProblem(lines.slice(0, 2), "sell")).toBeNull();
     expect(partCartonProblem(lines, "sell")).toBe("Slate Tile: sell whole cartons, multiples of 20 sq ft.");
     expect(partCartonProblem(lines, "order")).toBe("Slate Tile: order whole cartons, multiples of 20 sq ft.");
+    expect([cartonPack("20.000"), cartonPack("0.000"), cartonPack(""), cartonPack(null)]).toEqual([
+      "20.000",
+      undefined,
+      undefined,
+      undefined,
+    ]);
     // A pack that is no carton (zero, or an older line's blank) is no rule, never a throw.
     expect(partCartonProblem([{ description: "Haul away", quantity: "7", sqFtPerCarton: "0.000" }], "sell")).toBeNull();
     expect(partCartonProblem([{ description: "Haul away", quantity: "7", sqFtPerCarton: null }], "sell")).toBeNull();
