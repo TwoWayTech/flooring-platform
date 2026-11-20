@@ -1952,7 +1952,7 @@
       "audited": false,
       "sensitiveKeys": null,
       "features": {
-        "settings.outbox": "shaping"
+        "settings.outbox": "gating"
       }
     },
     "POST /pay-periods": {

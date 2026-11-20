@@ -307,6 +307,27 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     }
   });
 
+  it("answers a retry of a message that doesn't exist with words for the person (finding F-i)", async () => {
+    const email = await harness.addUser({ companyIds: [company.id], roles: [] });
+    const userId = await harness.userIdOf(email);
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [role] = await handle.db
+        .insert(roles)
+        .values({ key: `outbox-gone-${uuidv7().slice(-6)}`, name: "Outbox keeper", dataScope: "all" })
+        .returning();
+      await handle.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.outbox.view" });
+      await handle.db.insert(userRoles).values({ userId, roleId: role.id });
+    } finally {
+      await handle.close();
+    }
+    const missing = await call("post", `/outbox/${uuidv7()}/retry`, await harness.signIn(email)).send({});
+    expect([missing.status, missing.body]).toEqual([
+      404,
+      { code: "not_found", message: "This message no longer exists." },
+    ]);
+  });
+
   it("refuses retry and cancel without settings.outbox.view", async () => {
     const plain = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
     for (const action of ["retry", "cancel"]) {

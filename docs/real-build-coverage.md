@@ -40,7 +40,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | `sales.quote-availability` | Done | Reads stock through `inventoryData` | No test names the feature; covered by the quote screens' reads | `docs/coverage.md` |
 | `sales.invoices` | Done | Invoices, credit notes, void, write-off, sent, apply credit, the commission split (9 routes) | The page also holds the removed installation scheduling's DemoStore calls, which never run; F-t closed (the split saves under the API's ids) | F1, F5, `invoices.spec.ts`, DS-4 |
 | `sales.payments` | Done | Payments, proof files, review, void, refunds (10 routes) | Settings → Payments' Reset to default reads DemoStore | `payments` integration, 20 api-mode specs |
-| `sales.customers` | Partly | Customers and addresses (3 routes) | Customer pickers on the dashboard, Sales, Inventory and roll pages read DemoStore's list (G5); a new company can't add one by hand until Localization exists (F-n, G2) | FA-4, FS-3 |
+| `sales.customers` | Partly | Customers and addresses (3 routes) | Customer pickers on the dashboard, Sales, Inventory and roll pages read DemoStore's list (G5); a new company can't add one by hand until Localization exists (G2; since 2026-11-20 the refusal names this step, F-n) | FA-4, FS-3 |
 | `sales.team` | Partly | `teamCommission` | `/sales` is mixed (roles list from DemoStore) | `sales.spec.ts` |
 | `installation.calendar` | Not by design | — | Removed (ADR 0026); its calls on the invoice and Installation pages never run | FEATURES.md |
 
@@ -99,7 +99,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | `meetings.requests` | Partly | 2 routes | No api-mode e2e | integration |
 | `settings.meetings` | Missing | — | No route; the page is hidden in api mode, and the New meeting form reads its defaults from DemoStore | `docs/coverage.md` |
 | `settings.notifications` | Partly | Settings → Email (`PUT /settings/email`) | Notification rules (channels and wording) stay on DemoStore | `notifications.spec.ts` |
-| `settings.outbox` | Partly | Outbox list, retry, cancel | Simulate reply and Simulate bounce stay on DemoStore; retry and cancel need only a view key (F-j); a missing message answers a bare 404 (F-i) | `notifications.spec.ts`, DS-11 |
+| `settings.outbox` | Partly | Outbox list, retry, cancel | Simulate reply and Simulate bounce stay on DemoStore; retry and cancel need only a view key (F-j); a missing message answers 404 with words since 2026-11-20 (F-i fixed) | `notifications.spec.ts`, DS-11 |
 | `shell.notifications` | Done | The bell: list and mark read | — | `notifications.spec.ts` |
 
 ### Reports (`reports.md`)

@@ -148,7 +148,7 @@ test.describe("a fresh company end to end, with its gaps (whole-product check FC
       const customer = { name: `Avery Brook ${run}` };
       expect(await answer(await page.request.post("/api-proxy/customers", { data: customer }), 409)).toMatchObject({
         code: "settings_missing",
-        message: "Finish Settings → Localization and tax before creating quotes.",
+        message: "Finish Settings → Localization and tax before adding customers.",
       });
       const audit = await answer<AuditEntry[]>(await page.request.get("/api-proxy/audit"), 200);
       expect(audit.map((entry) => [entry.action, entry.target, entry.actorName, entry.actorRole])).toEqual([

@@ -409,8 +409,6 @@ export const NO_SWITCH_ROUTES: Reviewed = {
 export const SWITCH_READ_IN_SERVICE: Reviewed = {
   "GET /files/:id":
     "Each owner type's switch (sales.payments, finance.expenses, purchasing.orders, contracts.register, hr.employees, hr.portal) is read in PaymentsService.file after the file is found, so a missing file answers 404 first; traced by hand.",
-  "POST /outbox/:id/retry":
-    "The controller reads settings.outbox first, but a missing message also answers the bare 404 (NotificationService.rowFor), so a flip cannot show it; traced by hand. Finding F-i.",
 };
 
 /** Writes that may answer 2xx to an empty body `{}`, with why that is safe. */
