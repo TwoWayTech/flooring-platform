@@ -32,3 +32,21 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 - Web units: QR matrix and SVG path (`qr-code`), base64url and the ceremony's request/answer shapes and error mapping (`webauthn`), the passkey calls' error words by code (`passkeys`), DemoStore's simulated passkeys (`demo-passkeys`), the router (`api-router` if it lists methods).
 - api-mode Playwright (`passkeys.spec.ts`): a CDP virtual authenticator; the owner enrols with a passkey at sign-in (password first), signs out, a password sign-in is refused `passkey_required`, signs in with the passkey, renames it, adds a second (password first), and cannot remove the last one (`mfa_required`). Demo spec: the security page lists, adds, renames and removes simulated passkeys, and lays out at 375 px with axe clean.
+
+## Build decisions (B1…)
+
+- **B1. One step for the choice and the password.** The set-up step asks "How do you want to confirm it is you?" (Authenticator app, the default, or Passkey) above "Confirm your password", so the existing e2e helpers that enrol an app (accounts.ts) work unchanged. The app path calls `two-factor/enable` as before; the passkey path calls `/verify-password`, then shows the name step. "Step n of 3" for the app, "of 2" for a passkey.
+- **B2. A password check that ran out** (`password_confirmation_required` from `generate-register-options` or `verify-registration`) returns to the password step with the reason shown, both at enrolment and in the Add dialog.
+- **B3. `HttpTransport.auth()`:** the same fetcher and re-reads on `/api/auth`, so the ApiClient methods reach Better Auth through the proxy's vouched route and the router's re-read rule holds (`api-rereads.test.ts` classifies the five new methods: `signInSecurity` read, `confirmPassword` a read POST, add/rename/delete writes).
+- **B4. The list keeps only id, name, date added and backed-up** from Better Auth's rows (which carry the public key and credential id).
+- **B5. Refusals by code** (`PASSKEY_REFUSALS` in lib/session/passkeys.ts): `INVALID_PASSWORD`, `password_confirmation_required`, `SESSION_NOT_FRESH` (a passkey can be added only in the first 10 minutes after signing in), `mfa_required`, `passkey_required`, `PASSKEY_NOT_FOUND`, `AUTHENTICATION_FAILED`, `FAILED_TO_VERIFY_REGISTRATION`, `CHALLENGE_NOT_FOUND`; `account_locked` keeps the API's words; a 429 with no code is the per-IP limit. Browser refusals by DOMException name (`NotAllowedError`, `InvalidStateError`, `SecurityError`, `NotSupportedError`, `AbortError`) and "this browser cannot use passkeys". On the login page an unknown passkey says it does not belong to an account here.
+- **B6. QR tokens** `--qr-ink` and `--qr-paper` (packages/ui globals.css), the same in both themes, as `fill-qr-ink` and `bg-qr-paper`.
+- **B7. Demo:** `DemoPasskeys` keeps passkeys per company and person in memory (lost on reload, as the demo's code step remembers nothing); the last factor of a role that needs MFA (Owner or an MFA key, `roleRequiresMfa`) without the simulated app (`mfaEnrolled`) is refused with the API's words.
+- **B8. No server change.** The API already enforces every rule; its tests (mfa.int.test.ts) cover them, so no API integration test was added.
+
+## Owner questions (none blocks; the safest default is taken)
+
+- **Q1. A feature switch for Sign-in and security?** Taken: none; signing in is not a module feature, and `auth.mfa` stays the demo's simulated code step.
+- **Q2. Bound passkey names on the API** (the plugin accepts any length)? Taken: 1 to 60 characters on screen only; a server bound needs an auth hook change (asked first, CLAUDE.md).
+- **Q3. Let people whose role does not require MFA set up the authenticator app from Sign-in and security** (and turn it off)? Taken: not built; the page shows whether it is set up.
+- **Q4. ADR number:** 0060 (0058 stays reserved by the paused whole-product check). If another branch takes 0060 first, this one renumbers.
