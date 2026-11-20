@@ -305,7 +305,11 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        const expected = readableSections({ permissions: held, modules: enabledModules([company.product], null, []) });
+        // Part 1's sections: these companies never saved Settings → HR, which part 5's own file reads (H1).
+        const expected = readableSections({
+          permissions: held,
+          modules: enabledModules([company.product], null, []),
+        }).filter((section): section is Served => (SERVED as readonly string[]).includes(section));
         expect(Object.keys(body).sort()).toEqual([...expected].sort());
         for (const section of expected) {
           const stored = await rowOf(company, section);

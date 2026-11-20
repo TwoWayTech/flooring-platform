@@ -2,6 +2,8 @@ import { format } from "date-fns";
 import {
   branchManageDenial,
   PAYMENT_CONTROLS_OWNER_ONLY,
+  hrFrequencyProblem,
+  hrScheduleProblem,
   paymentControlsLoosened,
   branchPlacementDenial,
   canAssignRole,
@@ -34,6 +36,7 @@ import {
   type Company,
   type CompanyId,
   type CompanySettings,
+  type HrSettings,
   type PermissionKey,
   seesDisabledPeople,
   SENSITIVE,
@@ -857,7 +860,8 @@ export class DemoStore implements ApiClient {
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
-   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`). Localization
+   * stored section, then Payments' Owner-only loosening (`paymentControlsLoosened`) and Settings →
+   * HR's schedule lock and monthly rule against the demo's own records (part 5). Localization
    * and tax is never replaced whole: after those checks it is refused with "Localization and tax
    * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
    * `updateLocalization` (ADR 0059, part 3b, D34).
@@ -868,11 +872,15 @@ export class DemoStore implements ApiClient {
     const access = await this.assertSettingsSave(db, rule);
     const problem = settingsSectionProblem(section, value, db.settings[section]);
     if (problem) throw new DemoRuleError(problem);
+    // One key is set, so reading a section's property narrows the value to that section's type.
+    const next = { [section]: value } as Partial<CompanySettings>;
     // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
-    const payments = { [section]: value } as Partial<CompanySettings>;
-    if (payments.payments && !access.isOwner && paymentControlsLoosened(payments.payments, db.settings.payments)) {
+    if (next.payments && !access.isOwner && paymentControlsLoosened(next.payments, db.settings.payments)) {
       throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
     }
+    // Settings → HR doesn't re-cut recorded pay, as on the API (ADR 0059, part 5, D4 and D5).
+    const hrProblem = next.hr ? this.hrRecordsProblem(db, next.hr) : null;
+    if (hrProblem) throw new DemoRuleError(hrProblem);
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);
@@ -2186,6 +2194,20 @@ export class DemoStore implements ApiClient {
     const { access } = await this.granter(db);
     const employeeId = db.get("users", this.viewer!.userId)?.employeeId ?? null;
     return demoAuditAsSeen({ ...access, employeeId }, entries);
+  }
+
+  /**
+   * Why a Settings → HR save would re-cut recorded pay, or null, as the API judges it under the `hr`
+   * row's lock (ADR 0059, part 5, D4 and D5): the schedule lock against the demo's pay periods,
+   * timesheets and clock punches, then the monthly rule on a change of frequency against its people.
+   */
+  private hrRecordsProblem(db: CompanyDb, next: HrSettings): string | null {
+    const facts = {
+      payPeriods: db.list("payPeriods").length > 0,
+      hoursRecorded: db.list("timesheets").length > 0 || db.list("clockEntries").length > 0,
+    };
+    const current = db.settings.hr;
+    return hrScheduleProblem(next, current, facts) ?? hrFrequencyProblem(next, current, db.list("employees"));
   }
 
   /**

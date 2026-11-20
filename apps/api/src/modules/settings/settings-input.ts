@@ -2,6 +2,9 @@ import {
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
+  HOLIDAY_NAME_MAX,
+  HOLIDAYS_MAX,
+  HR_MESSAGES,
   LEGAL_FOOTER_MAX,
   NUMBER_KINDS,
   NUMBER_MESSAGES,
@@ -16,6 +19,7 @@ import {
   type CurrencyInput,
   type DocumentsInput,
   type ExpenseSettings,
+  type HrSettingsInput,
   type NumberKind,
   type NumberSettings,
   type PaymentSettings,
@@ -257,5 +261,36 @@ export const TAX_INPUT: z.ZodType<TaxInput> = z
       )
       .max(100, TAX_MESSAGES.notHere),
     certificateTypes: z.array(z.string().max(200, TAX_MESSAGES.notHere)).max(50, TAX_MESSAGES.notHere),
+  })
+  .strict();
+
+/**
+ * Settings → HR as the page sends it (ADR 0059, part 5). Only types, outer lengths and unknown
+ * fields are checked here; the workweek day, the frequency, the anchor and every holiday are the
+ * shared rule's to judge (`hrSettingsProblem`), so both modes refuse them with the same words. Each
+ * outer length carries its field's words and sits above the rule's own (ten times a holiday name, ten
+ * times the list), so the rule speaks first for anything a person types; the JSON body limit bounds
+ * the rest.
+ */
+export const HR_INPUT: z.ZodType<HrSettingsInput> = z
+  .object({
+    workweekStartDay: z.number(),
+    payFrequency: z.string().max(20, HR_MESSAGES.payFrequency),
+    payPeriodAnchor: z.string().max(20, HR_MESSAGES.payPeriodAnchor),
+    holidays: z
+      .array(
+        z
+          .object({
+            date: z.string().max(20, HR_MESSAGES.holidayDate),
+            name: z.string().max(10 * HOLIDAY_NAME_MAX, HR_MESSAGES.holidayName),
+          })
+          .strict(),
+      )
+      .max(10 * HOLIDAYS_MAX, HR_MESSAGES.holidays),
+    showPayToEmployees: z.boolean(),
+    showCommissionToEmployees: z.boolean(),
+    showRatesToEmployees: z.boolean(),
+    showTeamCalendarToEmployees: z.boolean(),
+    clockEnabled: z.boolean(),
   })
   .strict();
