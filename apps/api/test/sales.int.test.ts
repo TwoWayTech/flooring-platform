@@ -5,6 +5,8 @@ import {
   outboxMessages,
   products,
   quoteLines,
+  rolePermissions,
+  roles,
   settings,
   taxRules,
   userProfiles,
@@ -499,6 +501,60 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     // 450.00 + 5% = 472.50; the server records who changed it.
     expect(quote.body.total).toBe("472.50");
     expect(quote.body.taxOverride.byName).not.toBe("");
+  });
+
+  it("F-k takes and answers a room's width and length as decimal strings, compared by value (rule 6)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Theo Brandt" }).expect(201);
+    const room = (widthFt: unknown, lengthFt: unknown) => ({
+      id: "room-1",
+      name: "Den",
+      x: 0,
+      y: 0,
+      widthFt,
+      lengthFt,
+    });
+    const asNumbers = await call("post", "/quotes", cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, { rooms: [room(12.5, 10)] }),
+    );
+    expect(asNumbers.status).toBe(400);
+    for (const bad of ["12,5", "-1", "1e3", "12.5555"]) {
+      const refused = await call("post", "/quotes", cookies.salesA).send(
+        quoteBody(customer.body.id, warehouse, tile, { rooms: [room(bad, "10")] }),
+      );
+      expect(refused.status, bad).toBe(400);
+    }
+    const saved = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, { rooms: [room("12.5", "10")] }))
+      .expect(201);
+    expect(saved.body.rooms[0]).toMatchObject({ widthFt: "12.500", lengthFt: "10.000", x: 0, y: 0 });
+    // Sent back as answered, or the same value written another way, the rooms are unchanged, so a
+    // role that can't measure rooms may still save the quote (spec "Draw rooms on the canvas").
+    const handle = await harness.companyDb(company.id);
+    let estimator = "";
+    try {
+      const [role] = await handle.db
+        .insert(roles)
+        .values({ key: `estimator-${uuidv7().slice(-6)}`, name: "Estimator", dataScope: "all" as const })
+        .returning();
+      await handle.db.insert(rolePermissions).values(
+        ["sales.quote.view", "sales.quote.edit", "customers.customer.view"].map((permissionKey) => ({
+          roleId: role.id,
+          permissionKey,
+        })),
+      );
+      estimator = await harness.signIn(await harness.addUser({ companyIds: [company.id], roles: [role.key] }));
+    } finally {
+      await handle.close();
+    }
+    const answered = saved.body.rooms[0] as { id: string };
+    const sameValue = await call("put", `/quotes/${saved.body.id}`, estimator).send(
+      quoteBody(customer.body.id, warehouse, tile, { rooms: [{ ...answered, widthFt: "12.50", lengthFt: "10" }] }),
+    );
+    expect(sameValue.status, JSON.stringify(sameValue.body)).toBe(200);
+    const changed = await call("put", `/quotes/${saved.body.id}`, estimator).send(
+      quoteBody(customer.body.id, warehouse, tile, { rooms: [{ ...answered, widthFt: "13", lengthFt: "10" }] }),
+    );
+    expect(changed.status).toBe(403);
   });
 
   it("sends, accepts and declines quotes only as their state allows", async () => {

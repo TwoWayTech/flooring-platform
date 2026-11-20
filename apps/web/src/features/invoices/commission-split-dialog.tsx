@@ -17,15 +17,16 @@ import { Field } from "@/components/field";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
+import { splitFor, splitShown } from "./commission-split";
 
 const NOBODY = "none";
 
 /** Shares an invoice's commission between two reps (spec C1); locked from the first confirmed payment. */
 export function CommissionSplitDialog({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   const users = useApiQuery((client) => client.list("users"), []);
-  const existing = invoice.commissionSplit?.[1];
-  const [second, setSecond] = useState(existing?.userId ?? NOBODY);
-  const [pct, setPct] = useState(invoice.commissionSplit?.[0]?.pct ?? "60");
+  const shown = splitShown(invoice.commissionSplit, invoice.salesRepId);
+  const [second, setSecond] = useState(shown.second ?? NOBODY);
+  const [pct, setPct] = useState(shown.pct);
   const [error, setError] = useState<string | null>(null);
   const others = (users.data ?? []).filter((u) => u.id !== invoice.salesRepId && u.status === "active");
   const firstName = users.data?.find((u) => u.id === invoice.salesRepId)?.name ?? "the sales rep";
@@ -33,14 +34,7 @@ export function CommissionSplitDialog({ invoice, onClose }: { invoice: Invoice; 
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      const split =
-        second === NOBODY
-          ? [{ userId: invoice.salesRepId, pct: "100" }]
-          : [
-              { userId: invoice.salesRepId, pct },
-              { userId: second, pct: String(100 - Number(pct)) },
-            ];
-      await api.setCommissionSplit(invoice.id, split);
+      await api.setCommissionSplit(invoice.id, splitFor(invoice.salesRepId, second === NOBODY ? null : second, pct));
       toast.success("Commission split saved");
       onClose();
     } catch (e) {
