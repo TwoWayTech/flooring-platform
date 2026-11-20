@@ -51,7 +51,9 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - `npx vitest run test/hr-settings-rules.test.ts test/settings-sections.test.ts` (packages/shared): 17 passed.
 - `npx vitest run tests/unit/demo-hr-settings.test.ts tests/unit/settings-answer.test.ts tests/unit/settings-dispatch.test.ts` (apps/web): 7 and 19 passed.
 - `npx vitest run --project integration --maxWorkers=2 test/settings-hr.int.test.ts` (apps/api): 26 passed, first run.
-- `pnpm typecheck`, `pnpm lint` (root): clean after the first commit.
+- `pnpm typecheck`, `pnpm lint` (root): clean after the first commit and after review round 1.
+- `pnpm test` (root): shared 1187, web 438 (HD3b included), api unit 126, db 18, providers 11, all passed.
+- API integration, after round 1: settings-hr, hr, portal, payroll, california-pay, imports: 150 passed; settings, permissions, isolation with settings-hr: 110 passed; settings-localization: passed.
 - Mutations (`mutate.mjs` in the scratchpad: one at a time, restored after each): see "Mutations".
 
 ## Mutations
@@ -96,6 +98,8 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - *Note 3:* `lockGroup` doesn't filter `deleted_at` while the HR loaders do. Kept: settings rows are never soft-deleted (ADR 0059 D20), as every settings save already does.
 - *Note 4:* in api mode, for a company that never saved HR, the page's monthly gate compares with DemoStore's copy while the API compares with nothing. Kept: it fails closed (the API answers 400 with the same words).
 
+**Round 2** (fresh read-only security-reviewer, on `17a81ca`): **clean**, no blocking or should-fix finding. Notes kept: (1) settings rows are never soft-deleted, so `lockGroup` and `holdHrRules` not filtering `deleted_at` is unreachable (D20); (2) `holdHrRules` also compares `clockEnabled` for timesheet saves and uploads, so a clock switch flipped in the same milliseconds gives a 409 to retry; (3) a clock-out refused that way leaves the punch open, as the existing clock-off rule does; (4) in api mode a company that never saved HR sees DemoStore's copy on the page (D7), while the server stays authoritative. No deadlock cycle: nothing takes the `hr` row after an employee lock or the payroll advisory lock.
+
 ## For STATUS (the orchestrator applies these)
 
 - **Done (on merge):** "Settings part 5 (queue item 2, task 2), PR #<n> (ADR 0059, 2026-11-20 part 5 section). Settings → HR saves on the API (`PUT /settings/hr`, `settings.hr.manage`, module `hr`, scope `all`, a step-up, one audit entry) with the same rules and words in DemoStore. The pay frequency and anchor are fixed once a pay period exists and the workweek once hours or a period exist (409, under the `hr` row's lock); monthly with California non-exempt staff is refused on a change. Timesheet and clock writes hold the `hr` row and answer 409 if it changed under them. No schema, migration or dependency change."
@@ -107,5 +111,11 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 
 Security review (security-reviewer, read-only), Settings part 5, Settings → HR on the API.
 Round 1: no blocking finding. One should-fix: timesheet and clock writes didn't hold the `hr` row, so a company's first hours could land on a workweek changed meanwhile. Fixed: they take it `FOR SHARE` and answer 409 if it changed (H16, H17). Note 2: two first saves at once could overwrite each other. Fixed: 409 (H15). Notes 3 and 4 kept: settings rows are never soft-deleted, and the page's never-saved monthly gate fails closed.
-Round 2: (see below)
+Round 2: clean (no blocking or should-fix). Notes: settings rows are never soft-deleted; a clock switch flipped in the same milliseconds gives an hours writer a 409 to retry; no deadlock cycle (nothing takes the hr row after an employee or payroll lock).
 Checked sound: module `hr` then `settings.hr.manage` from packages/shared; switch, scope `all`, strict body and content rules before any database work; the schedule lock, monthly rule and step-up under the same `FOR UPDATE` that opening a pay period takes; one audit entry with the locked `before`; the company only from the session; ADR 0050 unaffected; no `SENSITIVE_FIELDS` name answered; DemoStore applies the same rules and words.
+
+## E2E (written, not run: the orchestrator owns ports 3000 and 4000)
+
+- Api mode: `apps/web/tests/e2e-api/settings-hr.spec.ts` (E1 HR saves a switch with a step-up, the employee reads it, a duplicate holiday is refused before any code; E2 the pay frequency is fixed once a pay period exists, on screen and on the API, and Sales is refused). Each restores Summit's section as it found it.
+- Demo: `apps/web/tests/e2e/hr-workspace.spec.ts` (the existing "Settings → HR changes what employees see" now confirms the code; the schedule lock; a duplicate holiday refused before any code).
+- Commands, when allowed: api mode through the orchestrator's runner for `tests/e2e-api/settings-hr.spec.ts` plus `settings.spec.ts` (part 1's shared answer); demo: `pnpm build` with `NEXT_PUBLIC_DATA_SOURCE=demo`, then `pnpm --filter web exec playwright test tests/e2e/hr-workspace.spec.ts --project=flooring --project=hr --workers=2`.
