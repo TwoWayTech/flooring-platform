@@ -169,6 +169,12 @@ describe("passkey names", () => {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
     expect(defaultPasskeyName(windowsChrome)).toBe("Chrome on Windows");
     expect(defaultPasskeyName(iphone)).toBe("Safari on iPhone or iPad");
+    const iosChrome =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/140.0 Mobile/15E148 Safari/604.1";
+    const iosFirefox =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/140.0 Mobile/15E148 Safari/605.1.15";
+    expect(defaultPasskeyName(iosChrome)).toBe("Chrome on iPhone or iPad");
+    expect(defaultPasskeyName(iosFirefox)).toBe("Firefox on iPhone or iPad");
     expect(defaultPasskeyName("")).toBe("My passkey");
   });
 });

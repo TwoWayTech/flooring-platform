@@ -41,11 +41,12 @@ export function passkeyNameProblem(name: string): string | null {
 
 /** A first name for a new passkey from the browser and system, such as "Chrome on Windows". */
 export function defaultPasskeyName(userAgent: string): string {
-  const browser = /Edg\//.test(userAgent)
+  // iOS browsers name themselves CriOS, FxiOS and EdgiOS, and all end in Safari/.
+  const browser = /Edg(A|iOS)?\//.test(userAgent)
     ? "Edge"
-    : /Firefox\//.test(userAgent)
+    : /(Firefox|FxiOS)\//.test(userAgent)
       ? "Firefox"
-      : /Chrome\//.test(userAgent)
+      : /(Chrome|CriOS)\//.test(userAgent)
         ? "Chrome"
         : /Safari\//.test(userAgent)
           ? "Safari"

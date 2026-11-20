@@ -63,3 +63,34 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Round 3** (a new fresh reviewer, whole diff 29e8d42..f3b30cf): **PASS, nothing blocking.** Notes: (1) a server code named like an object property (`constructor`) would have looked up a function as words. Fixed: `Object.hasOwn` (PK14). (2) No screen test of the "password check ran out" return. Added to passkeys.spec.ts at enrolment (back to the password with Passkey still chosen) and in the Add dialog, by answering one `generate-register-options` with 403 `password_confirmation_required` through `page.route`; the call-order check now reads the last calls. (3) `qrcode`'s install-only dependencies (`yargs`, `pngjs` and others) in the lockfile, already in ADR 0060; nothing to do.
 - **Round 4** (a new fresh reviewer, whole diff 29e8d42..40b289a): **PASS, nothing blocking.** Notes: (1) removing or renaming a passkey needs no password and removal sends no email (API, unchanged): owner question Q5. (2) A failed re-read after a passkey change swapped the page for the error box and closed the open dialog. Fixed: `keepDataOnError` on the page's read. (3) No test that the login page hides "Sign in with a passkey" without WebAuthn. Added to passkeys.spec.ts (`window.PublicKeyCredential` removed before load).
 - **Round 5** (a new fresh reviewer, whole diff 29e8d42..8cac51a): **PASS, nothing blocking.** Notes: (1) the passkey sign-in and the passkey-done step showed any `Error`'s own text (say a JSON parse error) after the session read. Fixed: `failureWords` there, and `fetchSessionContext` and `openCompany` now throw an `ApiError` with the mapped words, so those words still show (PK15). (2) A credential the browser made before `verify-registration` was refused stays on the device; harmless, recorded in ADR 0060 (`signalUnknownCredential` left for later).
+- **Round 6** (a new fresh reviewer, whole diff 29e8d42..2b8f8d1): **PASS, nothing blocking, no security note.** One cosmetic note: the suggested name read Chrome and Firefox on iOS (`CriOS`, `FxiOS`) as Safari. Fixed, with PK10 extended. A small UI-only fix, so no further round was run.
+
+## Checks
+
+| Check | Result |
+| --- | --- |
+| `pnpm --filter web lint`, `typecheck` | clean |
+| Web unit tests (vitest) | 69 files, 499 tests passed (new: webauthn WA1-10, qr-matrix QR1-3, passkeys-api PK1-15, demo-passkeys DP1-5; api-rereads classifies the 5 new methods) |
+| Prettier on changed files | clean |
+| API integration | not run: the API does not change (its mfa.int.test.ts already covers the rules) |
+| api-mode Playwright (`passkeys.spec.ts`, `login.spec.ts`) | written; not run yet: ports 3000/4000 are shared, waiting for the hand-over |
+| demo Playwright (`account-security.spec.ts`, screens list for a11y, responsive, console) | written; not run yet, same reason |
+
+## For STATUS
+
+- **Passkey screens with the QR code** (queue item 2), branch `feat/auth-passkey-screens`, stacked on #66; ADR 0060. Api-mode login: Sign in with a passkey. MFA set-up: authenticator app (QR code drawn locally with `qrcode` 1.5.4) or a passkey (the password through `/verify-password` first). New page Sign-in and security (`/account/security`, avatar menu, both products and modes): two-step state, list, add, rename and remove passkeys. No API change. Six security review rounds, the last with no security note.
+- **Owner questions (defaults taken):** Q1 no feature switch for the page; Q2 bound passkey names on the API (60 on screen only today); Q3 set up the authenticator app from the security page (not built); Q4 ADR number 0060; Q5 a password and an email for removing a passkey (API unchanged).
+- **Follow-ups:** API: `checkNoDowngrade` (auth-hooks.ts) can be raced by two simultaneous passkey deletes of a required user with no app, leaving no factor until the next request sends them to enrolment; serialise deletes per user. Web: tell the browser to forget a credential whose registration the API refused (`signalUnknownCredential`) once support is wider; older login code still shows a raw `Error.message` in places (`failureWords` exists now).
+
+## Reviewer summary
+
+Security review (six fresh read-only `security-reviewer` rounds on 29e8d42..HEAD; the last: **PASS, nothing blocking, no security note**).
+
+- Every auth call (verify-password, the passkey register, list, rename and delete calls, and the passkey sign-in) goes through `/api/auth` by way of `HttpTransport.auth()`, the one route the proxy vouches for; `/auth/context` stays on `/api-proxy`. The verbs match `@better-auth/passkey` 1.7.22.
+- Adding a passkey always confirms the password first (`/verify-password`, at enrolment and in the Add dialog); `verify-registration` sends `{ response, name }` and never `createSession`. The API enforces the fresh session, the 5-minute same-session proof, user verification, `mfa_required` and `passkey_required` on its own.
+- No tenant or user id comes from the client; passkey ids are ownership-checked by the plugin. The list keeps only id, name, date added and backed-up.
+- The `otpauth://` secret is drawn locally as a React SVG path from `qrcode`'s matrix: no innerHTML, data URL, network, storage or logging. `qrcode` 1.5.4 is pinned, has no install scripts, and its CLI dependencies stay out of the browser bundle (ADR 0060).
+- The WebAuthn base64url and JSON conversion matches the plugin's client; browser errors and API refusals are shown in fixed plain words by name or code (own-property lookup); the per-IP limit and the account lock are told apart.
+- The demo's simulated passkeys cannot be reached in api mode (all five methods are routed; the re-read test classifies them).
+- Fixed along the way: stuck buttons on non-API failures, a way back from Passkey to the app at enrolment, the expired password check returning to the password step (e2e), `mfa_required` words, the 10-minute rule said up front, a page kept on a failed re-read, the passkey button hidden without WebAuthn (e2e), plain words after a passkey sign-in.
+- Recorded, not changed here: the API-side `checkNoDowngrade` race on simultaneous deletes; passkey names unbounded on the server (Q2); remove and rename needing only a session, with no email on removal (Q5).
