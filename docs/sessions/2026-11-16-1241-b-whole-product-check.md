@@ -252,6 +252,7 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 | 147 | M7: `listOutbox` out of DEMO_ONLY | `listOutbox` is on the API now | M7 removes `simulateReply` |
 | 148 | Ten mutations | FS is new | M11: the products import stores the price as the cost; FS-5 fails |
 | 149 | Merge commits | Carry no `[skip ci]`, so `fast` ran on `f718961` and failed typecheck (the scan's three-argument factory call) | Fixed in `9e84b6c`; noted so the owner isn't surprised by the red run |
+| 150 | Stage 9: security-reviewer and, if packages/db changed, schema-reviewer | packages/db changed only in the stage-6 test helpers; never reviewed, since stage 9 hadn't run | Both run fresh. Every should-fix landed in the check's own helpers: `opt-in.ts` (URL parse, GitHub Actions only), the sweep (continue past a failure, drop a leftover database; FH-4), `SENSITIVE_KEY_OVERRIDES` with PM-1 (h) and M12, and the URL guard hardened over rounds 2 to 5 (R-6, R-7 in ADR 0058) |
 
 ## Decisions and why
 1. **SH-1 fallback (stage 0).** Import has merged and flows is still a draft, so this branch builds every stage except 7. Why: it is the plan's fallback (section 0). DS and PGM reuse `flows/kit.ts`, and copying the kit would duplicate code (CLAUDE.md, style). The report marks DS and PGM "waiting for PR #42". A later commit, or a small follow-up PR if this one has merged, adds them once #42 merges.
@@ -702,6 +703,8 @@ These replace the lines above where they differ.
 | R | `WHOLE_CHECK=1 api-e2e.sh fc-ds`, `ds-a`, `ds-b`, `ds-c` | FC passed; DS failed on closed gaps F-t, G17/G18, G15, then 6 passed |
 | R | `WHOLE_CHECK=1 api-e2e.sh pgm-a`, then `pgm-sales` | 8 passed and Sales failed on the stale F-s entry; then passed |
 | R | read-only `psql` counts on 5433 | 0 live `e2efresh` companies, 0 databases; ports 3000 and 4000 free; the orchestrator told |
+| R | Review fixes: `int.sh fh-1` to `fh-7 packages/db test/fresh-company-helpers.int.test.ts`, `rm-h` (route matrix), `mutate.sh M12`, lint and typecheck after each | FH 4 passed each time after the fix; route matrix 20 passed; M12 CAUGHT by PM-1 (h); removing the scheme allowlist by hand fails FH-2 |
+| R | `gh pr review 43 --comment --body-file …` | the reviewer summary posted |
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 

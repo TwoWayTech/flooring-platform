@@ -15,7 +15,7 @@ The owner's step 3 (STATUS "Next three tasks"): compare the specs, the feature r
 | Fresh company in the browser (FC) | Pass | 1 test, 5 steps: invitation, password, MFA, then G1; nothing left live on 5433 | G1 |
 | Demo script on Summit (DS) | Pass | 6 tests (the Owner's walk, Tamara, Priya, Cole, Grace, Bri); no sensitive field reaches Sales or Warehouse | — |
 | Page × persona matrix (PGM) | Pass | 9 personas × 57 pages: every page opens or refuses as the gate says, with no failed read; 5 reviewed differences (Settings home is stricter than the gate) | — |
-| Mutations | 11 of 11 caught | M1 to M10 from the plan, M11 for FS | |
+| Mutations | 12 of 12 caught | M1 to M10 from the plan, M11 for FS, M12 for the reviewed sensitive-key overrides | |
 
 ## How to rerun
 
@@ -89,6 +89,10 @@ Five GAP pins failed the first time because their gap had closed upstream, which
 | G5 | 22 mixed pages | `docs/coverage.md` |
 | G6 | The HR Suite is not walked in api mode | — (Q5) |
 | G7 | No API or console route makes a company | F-f |
+
+## Review
+
+A fresh schema-reviewer (pass) and five rounds of a fresh security-reviewer, the last clean; every should-fix was in the check's own helpers and is fixed (session log, "Reviewer summary"). The database-URL guards of the test helpers now refuse anything postgres.js could read differently from WHATWG URL.
 
 ## Findings
 
