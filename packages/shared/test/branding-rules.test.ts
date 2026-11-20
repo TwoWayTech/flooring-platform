@@ -51,6 +51,11 @@ describe("branding rules (ADR 0059, part 6)", () => {
       "A\tB",
       "A B",
       "A\u0085B",
+      "Summit\u202Emoc.evil",
+      "A\u200BB",
+      "A\u2066B",
+      "\uFEFFSummit",
+      "A\u200FB",
     ])
       expect(brandingProblem({ ...SUMMIT, displayName }), JSON.stringify(displayName)).toBe(
         BRANDING_MESSAGES.displayName,

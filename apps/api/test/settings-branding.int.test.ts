@@ -329,6 +329,7 @@ describe("settings part 6 on the API: branding into the control database (needs 
       [{ displayName: "   " }, BRANDING_MESSAGES.displayName],
       [{ displayName: "x".repeat(81) }, BRANDING_MESSAGES.displayName],
       [{ displayName: "Summit\r\nBcc: someone@example.com" }, BRANDING_MESSAGES.displayName],
+      [{ displayName: "Summit\u202Emoc.evil" }, BRANDING_MESSAGES.displayName],
       [{ monogram: "gp" }, BRANDING_MESSAGES.monogram],
       [{ monogram: "GPX" }, BRANDING_MESSAGES.monogram],
       [{ brandColor: "7A3E9D" }, BRANDING_MESSAGES.brandColor],
