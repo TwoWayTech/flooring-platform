@@ -131,6 +131,7 @@ const CASES = {
   moveRoll: write((c) => c.moveRoll(ID, "A-1")),
   createTransfer: write((c) => c.createTransfer(stub())),
   receiveTransfer: write((c) => c.receiveTransfer(ID)),
+  saveLocation: write((c) => c.saveLocation(stub({ id: ID }))),
   correctStockCount: write((c) => c.correctStockCount(stub())),
   listStockHolds: read((c) => c.listStockHolds()),
   issueReservation: write((c) => c.issueReservation(ID)),
@@ -229,8 +230,8 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(152);
-    expect(WRITES).toHaveLength(109);
+    expect(READS.length + WRITES.length).toBe(153);
+    expect(WRITES).toHaveLength(110);
   });
 
   it("sends at least one request in every case, so no case passes without reaching the API", async () => {

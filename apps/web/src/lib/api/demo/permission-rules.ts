@@ -19,7 +19,8 @@ import type { CollectionName } from "../contract";
 const SAVE_PERMISSIONS: Record<CollectionName, readonly PermissionKey[]> = {
   roles: ["settings.roles.manage"],
   users: ["settings.users.manage"],
-  locations: ["settings.locations.manage"],
+  // Locations change only through `saveLocation`, which runs the shared rules (ADR 0059, part 4a, D16).
+  locations: [],
   products: ["inventory.product.create", "inventory.product.edit"],
   rolls: ["inventory.roll.edit"],
   stockMovements: [],

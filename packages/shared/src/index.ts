@@ -90,3 +90,4 @@ export * from "./settings/section-rules";
 export * from "./settings/payment-controls";
 export * from "./settings/localization-rules";
 export * from "./settings/tax-settings";
+export * from "./settings/location-rules";

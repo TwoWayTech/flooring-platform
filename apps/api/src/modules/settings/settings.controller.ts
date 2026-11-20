@@ -55,9 +55,10 @@ import { settingsMissing, SettingsService } from "./settings.service";
 
 /**
  * Settings bind the whole company, so a save needs data scope `all` (ADR 0059 D4), as the books do
- * (ADR 0040); anyone narrower gets 403, whatever key their role holds.
+ * (ADR 0040); anyone narrower gets 403, whatever key their role holds. Warehouses and showrooms use
+ * it too (ADR 0059, part 4a, D23).
  */
-function requireWholeCompany(access: RequestAccess): void {
+export function requireWholeCompany(access: RequestAccess): void {
   if (access.dataScope !== "all") throw new ForbiddenException({ code: "forbidden", message: SETTINGS_SCOPE_MESSAGE });
 }
 

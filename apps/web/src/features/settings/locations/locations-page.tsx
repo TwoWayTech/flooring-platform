@@ -9,7 +9,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
-import { useCan } from "@/components/workspace/workspace-context";
+import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
 import { LocationDialog } from "./location-dialog";
 import { StockRulesForm } from "./stock-rules-form";
@@ -23,15 +23,13 @@ import { Panel } from "@workspace/ui/components/panel";
 export function LocationsPage() {
   const can = useCan();
   const [editing, setEditing] = useState<Location | "new" | null>(null);
-  // Branches from the same source as the locations: DemoStore's in api mode until Locations moves,
-  // since the shell's branches are the API's since GET /company (ADR 0051, "GET /company", D7).
-  const data = useApiQuery(async (client) => {
-    const [locations, company] = await Promise.all([client.list("locations"), client.getCompany()]);
-    return { locations, branches: company.branches };
-  }, []);
+  // The shell's branches: GET /company's in api mode, DemoStore's in the demo, the same source as
+  // the locations in each (ADR 0051 "GET /company" D7, closed by ADR 0059, part 4a, D15).
+  const { company } = useWorkspace();
+  const branches = company.branches;
+  const data = useApiQuery((client) => client.list("locations"), []);
   if (!can("settings.locations.manage")) return <NoAccess />;
 
-  const branches = data.data?.branches ?? [];
   const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "";
   const columns: ColumnSpec<Location>[] = [
     {
@@ -72,7 +70,7 @@ export function LocationsPage() {
       ) : (
         <DataTable
           id="settings-locations"
-          rows={data.data.locations}
+          rows={data.data}
           columns={columns}
           getRowId={(l) => l.id}
           onRowClick={setEditing}
@@ -94,6 +92,7 @@ export function LocationsPage() {
         <LocationDialog
           location={editing === "new" ? null : editing}
           branches={branches}
+          locations={data.data ?? []}
           onClose={() => setEditing(null)}
         />
       ) : null}

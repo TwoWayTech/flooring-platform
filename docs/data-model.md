@@ -62,7 +62,7 @@ Owner decision, 2026-11-13 (ADR 0029, part 2):
 | Entity | Database | Blueprint table | Key fields | Relationships |
 | --- | --- | --- | --- | --- |
 | Branch (`Company.branches`) | Company | `branches` | `id`, `name`, `city`, `state` | Referenced by `User.branchId`, `Location.branchId`, `Quote.branchId`, `Invoice.branchId`, `Contract.branchId`. Branch drives data scope |
-| Location (`locations`) | Company | `locations` | `id`, `name`, `kind` (`warehouse`, `showroom`), `branchId`, `address`, `isDefault`, `displaySamples`, `floorAreaSqFt` | `branchId -> Branch`. Referenced by stock, documents, expenses, `User.defaultLocationId` and `Employee.homeLocationId` |
+| Location (`locations`) | Company | `locations` | `id`, `name`, `kind` (`warehouse`, `showroom`), `branchId`, `address`, `isDefault`, `displaySamples`, `floorAreaSqFt` | `branchId -> Branch`, fixed once added. Referenced by stock, documents, expenses, `User.defaultLocationId` and `Employee.homeLocationId`. One default warehouse and unique (folded) names are kept by the API's rule under the stock lock, not by an index (ADR 0059, part 4a) |
 | Role (`roles`) | Company | `roles`, `role_permissions` | `id`, `companyId`, `key`, `name`, `permissions`, `dataScope` (`own`, `branch`, `all`), `system`, `owner` | Linked to users through `User.roleIds` |
 | User, profile part (`users`) | Company | `user_profiles`, `user_roles` | `title`, `roleIds`, `branchId`, `employeeId`, `defaultLocationId` | `roleIds -> Role`, `branchId -> Branch`, `employeeId -> Employee`, `defaultLocationId -> Location`. A user id is the target of `salesRepId`, `recordedById`, `buyerId`, `ownerUserId` and similar fields |
 
