@@ -24,6 +24,43 @@ test.describe("warehouses and transfers (spec A1)", () => {
     await expect(page.getByRole("alert")).toHaveText(/holds stock\. Transfer it out/);
   });
 
+  test("LNS1 a new showroom with no floor area is added and the Business report still opens with it", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/locations");
+    await page.getByRole("button", { name: "Add location" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name", { exact: true }).fill("Annex Showroom");
+    await dialog.getByRole("group", { name: "Type" }).getByRole("button", { name: "Showroom" }).click();
+    await dialog.getByLabel("Street", { exact: true }).fill("1 Annex Way");
+    await dialog.getByLabel("City", { exact: true }).fill("Denver");
+    await dialog.getByLabel("State", { exact: true }).fill("CO");
+    await dialog.getByLabel("ZIP").fill("80202");
+    await dialog.getByRole("button", { name: "Save location" }).click();
+    await expect(page.getByText("Annex Showroom saved")).toBeVisible();
+    // The Branch cell, matched exactly: the City cell reads "Denver, CO".
+    await expect(
+      page.getByRole("row", { name: /Annex Showroom/ }).getByRole("cell", { name: "Denver", exact: true }),
+    ).toBeVisible();
+    await page.goto("/reports");
+    await expect(page.getByRole("heading", { name: "Profit by location", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Annex Showroom", { exact: true })).toBeVisible();
+  });
+
+  test("LNS2 an edit keeps the branch read only, and another location's name is refused before anything is saved", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/locations");
+    await page.getByRole("row", { name: /Southgate Showroom/ }).first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("combobox", { name: "Branch" })).toBeDisabled();
+    await dialog.getByLabel("Name", { exact: true }).fill("denver central");
+    await dialog.getByRole("button", { name: "Save location" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("Another location is already called Denver Central.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("row", { name: /Southgate Showroom/ })).toBeVisible();
+  });
+
   test("receives a transfer in transit, then starts a new one", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/inventory?view=transfers");
     const travelling = page.getByRole("row", { name: /TR-1003/ });

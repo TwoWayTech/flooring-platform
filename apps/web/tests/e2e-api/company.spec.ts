@@ -188,9 +188,12 @@ flowTest.describe("the company shell from GET /company (api mode)", () => {
         expect(invite.sent?.branchId, "the invite's branch").toBe(denver!.id);
         await page.keyboard.press("Escape");
 
-        // Settings → Locations is still DemoStore's, so its branch names are DemoStore's too (D7).
+        // Settings → Locations reads the API's locations and the shell's branches since part 4a
+        // (ADR 0059): the Branch cell, matched exactly, since the name and City cells say Denver too.
         await page.goto("/settings/locations");
-        await expect(page.getByRole("row", { name: /Denver Central/ }).first()).toContainText("Denver");
+        await expect(
+          page.getByRole("row", { name: /Denver Central/ }).first().getByRole("cell", { name: "Denver", exact: true }),
+        ).toBeVisible();
       },
     );
   });

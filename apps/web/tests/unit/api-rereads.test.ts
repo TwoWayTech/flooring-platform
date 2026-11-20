@@ -131,6 +131,7 @@ const CASES = {
   moveRoll: write((c) => c.moveRoll(ID, "A-1")),
   createTransfer: write((c) => c.createTransfer(stub())),
   receiveTransfer: write((c) => c.receiveTransfer(ID)),
+  saveLocation: write((c) => c.saveLocation(stub({ id: ID }))),
   correctStockCount: write((c) => c.correctStockCount(stub())),
   listStockHolds: read((c) => c.listStockHolds()),
   issueReservation: write((c) => c.issueReservation(ID)),
