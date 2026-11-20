@@ -4,6 +4,7 @@ import {
   messageMoney,
   REDACTED_OUTBOX,
   SETTINGS_SCOPE_MESSAGE,
+  type CompanySettings,
   type Invoice,
   type OutboxMessage,
   type Role,
@@ -39,6 +40,7 @@ interface StoreDb {
   put(collection: "invoices", row: Invoice): Invoice;
   put(collection: "roles", row: Role): Role;
   get(collection: "roles", id: string): Role | undefined;
+  settings: CompanySettings;
 }
 
 /** Writes Outbox rows straight into one store. */
@@ -218,5 +220,18 @@ describe("DemoStore notifications and Settings → Email (ADR 0059, bell and Out
     expect((await luis.listOutbox(true)).some((m) => m.id === theirs.id)).toBe(false);
     await expect(luis.retryOutbox(theirs.id)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
     await expect(luis.cancelOutbox(theirs.id)).rejects.toThrow(SETTINGS_SCOPE_MESSAGE);
+  });
+
+  it("DN7 a stored sender the rule would refuse shows as the API's worker sends it: no name, no reply-to (round 3)", async () => {
+    const dana = await open(DANA);
+    const db = (dana as unknown as { open(): StoreDb }).open();
+    db.settings = {
+      ...db.settings,
+      email: { senderName: "billing@bank.example", replyTo: 'x"<a@b.co>', signature: "" },
+    };
+    const invoice = await unsentInvoice(dana);
+    await dana.markInvoiceSent(invoice.id);
+    const [message] = (await dana.listOutbox(true)).filter((m) => m.sourceId === invoice.id);
+    expect([message?.fromName, message?.replyTo]).toEqual(["", ""]);
   });
 });

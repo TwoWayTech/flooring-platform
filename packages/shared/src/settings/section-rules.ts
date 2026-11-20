@@ -62,14 +62,14 @@ export const EMAIL_MESSAGES = {
 } as const;
 
 /**
- * What a sender name may not hold (security review rounds 1 and 2), checked on its NFKC form so a
+ * What a sender name may not hold (security review rounds 1 to 3), checked on its NFKC form so a
  * look-alike such as the fullwidth `＠` counts as the character it shows: what the From header could
  * not carry as typed (control characters, quotes, backslashes, angle brackets); an @, so the name
- * can't pass for an address in a mail app that shows only the name; and the zero-width characters,
- * Unicode line separators and text-direction marks that can make a name display as something else.
+ * can't pass for an address in a mail app that shows only the name; and every format character
+ * (zero-width, soft hyphen, text-direction marks, tag characters), line and paragraph separator, the
+ * combining grapheme joiner and the Hangul fillers, which can make a name display as something else.
  */
-const SENDER_NAME_REFUSED =
-  /[\u0000-\u001f\u007f-\u009f"\\<>@\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/;
+const SENDER_NAME_REFUSED = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}"\\<>@\u034f\u115f\u1160\u3164\uffa0]/u;
 
 /**
  * A reply-to address as one plain mailbox (security review rounds 1 and 2): `EMAIL_TEXT` without

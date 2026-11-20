@@ -1,6 +1,8 @@
 import {
   effectiveRule,
   featureOn,
+  isPlainReplyTo,
+  isPlainSenderName,
   messageMoney,
   notificationEvent,
   outboxSight,
@@ -55,6 +57,14 @@ function failureOf(email: string): { type: OutboxFailure; detail: string } | nul
 }
 
 /**
+ * The sender a demo Outbox row shows, as the API's worker sends it (`senderHeaders`): the name only
+ * when plain, the reply-to only when one plain mailbox (security review round 3).
+ */
+function demoSender(name: string, replyTo: string): Pick<OutboxMessage, "fromName" | "replyTo"> {
+  return { fromName: isPlainSenderName(name) ? name : "", replyTo: isPlainReplyTo(replyTo) ? replyTo : "" };
+}
+
+/**
  * Raises an event (spec A4, ADR 0020): one Outbox row per recipient with the rendered snapshot, and
  * a stored notification per person told in the app. An event switched off writes nothing. The
  * person who caused an event is never told about it. Nothing is really sent in the demo.
@@ -79,9 +89,13 @@ export function notify(ctx: ActionContext, input: NotifyInput): void {
         sourceId: input.source.id,
         actorUserId: ctx.actor.id,
         recipient,
-        // An empty sender name sends as the company, as on the API (ADR 0059, bell and Outbox part, D10).
-        fromName: ctx.db.settings.email.senderName || ctx.db.settings.branding.displayName,
-        replyTo: ctx.db.settings.email.replyTo,
+        // An empty sender name sends as the company, as on the API (ADR 0059, bell and Outbox part, D10);
+        // a name or reply-to the save rule would refuse is shown as the API's worker sends it: no name,
+        // no reply-to (security review round 3).
+        ...demoSender(
+          ctx.db.settings.email.senderName || ctx.db.settings.branding.displayName,
+          ctx.db.settings.email.replyTo,
+        ),
         subject: renderTemplate(rule.subject, scoped).text,
         values: scoped,
         bodyText: [renderTemplate(rule.body, scoped).text, ctx.db.settings.email.signature]
