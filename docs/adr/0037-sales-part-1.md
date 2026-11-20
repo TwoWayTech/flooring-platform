@@ -119,3 +119,6 @@
 - Whether waste is sensitive (Q3); if it is stripped, the waste check must keep a saved line's waste when it comes back without one.
 - The Settings move: tax rule and county `ratePct` are numeric(18,8) and answered raw, so their write checks use the shared pattern.
 - One waste rule for both modes in shared, once the demo's looser blank rules are settled.
+
+## 2026-11-20: the owner's answer on waste
+- **Waste is not sensitive** (Q3; PR #49 Q3, PR #52 Q6). `wastePct` stays visible to every quote and invoice reader, and the API never strips it. Changing a line's waste still needs `sales.waste.view` (sales.md rule 8), and the builder still hides the column from people without it. So the waste check never meets a line that comes back without its waste, and a salesperson's new line keeps taking its waste from the Sales and documents default. Nothing in the code changes; sales.md's Access known gap no longer lists `wastePct`.
