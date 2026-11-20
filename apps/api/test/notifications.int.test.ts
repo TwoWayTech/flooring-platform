@@ -190,7 +190,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     await service().notify(tenant, null, quoteSent(sourceId, "pat@example.test", { restricted: true }));
     const plain = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
     const mine = await call("get", "/outbox", plain).expect(200);
-    expect(mine.body.some((row: { sourceId: string }) => row.sourceId === sourceId)).toBe(false);
+    expect(mine.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(false);
 
     const viewerEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
     const viewerId = await harness.userIdOf(viewerEmail);
@@ -211,7 +211,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     for (const path of ["/outbox", "/outbox?all=1", "/outbox?all=TRUE", "/outbox?all=true&all=true"]) {
       const own = await call("get", path, viewer).expect(200);
       expect(
-        own.body.some((row: { sourceId: string }) => row.sourceId === sourceId),
+        own.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`),
         path,
       ).toBe(false);
     }
@@ -271,6 +271,23 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       await db.close();
     }
     const branch = await harness.signIn(branchEmail);
+
+    // Company-wide scope without the key: still only one's own rows.
+    const wideEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
+    const wideId = await harness.userIdOf(wideEmail);
+    const wideDb = await harness.companyDb(company.id);
+    try {
+      const [role] = await wideDb.db
+        .insert(roles)
+        .values({ key: `wide-${uuidv7().slice(-6)}`, name: "Company-wide, no Outbox", dataScope: "all" })
+        .returning();
+      await wideDb.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "hr.employee.view" });
+      await wideDb.db.insert(userRoles).values({ userId: wideId, roleId: role.id });
+    } finally {
+      await wideDb.close();
+    }
+    const wideAll = await call("get", "/outbox?all=true", await harness.signIn(wideEmail)).expect(200);
+    expect(wideAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(false);
     const branchAll = await call("get", "/outbox?all=true", branch).expect(200);
     expect(branchAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(
       false,
