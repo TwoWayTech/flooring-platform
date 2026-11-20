@@ -1,5 +1,5 @@
 import { addDays } from "../dates";
-import { computeTotals, type DocLine, type TaxContext } from "../documents";
+import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxContext } from "../documents";
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
@@ -56,6 +56,41 @@ export function defaultWastePct(
   defaults: LocalizationSettings["documents"]["defaultWastePct"],
 ): string | undefined {
   return product.category === "service" ? undefined : defaults[product.category];
+}
+
+/** Whether a new line is measured from the rooms: anything sold per sq ft, goods and labor alike. */
+function measuredFromRooms(product: Pick<Product, "unit">): boolean {
+  return product.unit === "sq_ft";
+}
+
+/**
+ * A new quote line for a product (spec "Quote builder"): tied to every room when it is sold per sq ft
+ * and the quote has rooms, otherwise one unit. Its cost is the product's as the viewer received it:
+ * absent for a viewer without product cost, because the API strips it (CLAUDE.md rule 5). It is never
+ * filled in: the server costs the line from the catalog (`trustedLines`), and computeTotals leaves
+ * margin unknown (sales.md rule 13; ADR 0037, 2026-11-16).
+ */
+export function quoteLineFor(
+  product: Product,
+  lineId: string,
+  rooms: readonly Room[],
+  waste: LocalizationSettings["documents"]["defaultWastePct"],
+): DocLine {
+  const linked = rooms.length > 0 && measuredFromRooms(product);
+  return {
+    id: lineId,
+    productId: product.id,
+    description: product.category === "service" ? product.name : `${product.brand} ${product.name}`,
+    category: productTaxCategory(product),
+    unit: product.unit,
+    quantity: "1",
+    unitPrice: product.price,
+    // Absent when the API withheld it, and never a placeholder: a "0" would show a 100 % margin.
+    unitCost: product.cost,
+    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+    ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
+    ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
+  };
 }
 
 /** Total area of the given rooms in sq ft. */
@@ -170,6 +205,6 @@ export function invoiceFromQuote(
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
-    cost: totals.cost,
+    cost: storedCost(totals),
   };
 }

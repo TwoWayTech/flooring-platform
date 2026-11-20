@@ -103,6 +103,17 @@ export const SENSITIVE_FIELDS: Readonly<Record<string, PermissionKey>> = {
   estimatedCost: "contracts.contract.view_sensitive",
 };
 
+/**
+ * Whether a viewer may see a quote's margin and the cost under it (sales.md "Who uses it", See
+ * margin on a quote; ADR 0037, 2026-11-16): the margin key and the product-cost key. Margin is the
+ * subtotal less cost, so it gives the cost away (CLAUDE.md rule 5), as the reports' margin flag
+ * already says (ADR 0055 S17). No default role changes: the roles that hold the margin key also
+ * hold product cost.
+ */
+export function seesQuoteMargin(has: (key: PermissionKey) => boolean): boolean {
+  return has(SENSITIVE.margin) && has(SENSITIVE.productCost);
+}
+
 /** A snake_case column name as the camelCase property name it stands for (`unit_cost` → `unitCost`). */
 function camelCase(field: string): string {
   return field.replace(/_([a-z0-9])/g, (_match, letter: string) => letter.toUpperCase());

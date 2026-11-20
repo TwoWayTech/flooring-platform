@@ -2,8 +2,7 @@
 
 import { useReducer } from "react";
 import {
-  defaultWastePct,
-  productTaxCategory,
+  quoteLineFor,
   remeasureLines,
   type Address,
   type DocLine,
@@ -34,30 +33,6 @@ export type DraftAction =
   | { type: "notes"; notes: string }
   /** The quote as the store saved it, e.g. after a status change. */
   | { type: "saved"; quote: Quote };
-
-/** Whether a product is measured from the rooms: goods sold by area, and labor sold per sq ft. */
-function measuredFromRooms(product: Product): boolean {
-  if (product.category === "service") return product.unit === "sq_ft";
-  return product.unit === "sq_ft";
-}
-
-/** A new line for a product: tied to every room when it is measured by area, otherwise one unit. */
-function lineFor(product: Product, lineId: string, rooms: readonly Room[], waste: WasteDefaults): DocLine {
-  const linked = rooms.length > 0 && measuredFromRooms(product);
-  return {
-    id: lineId,
-    productId: product.id,
-    description: product.category === "service" ? product.name : `${product.brand} ${product.name}`,
-    category: productTaxCategory(product),
-    unit: product.unit,
-    quantity: "1",
-    unitPrice: product.price,
-    unitCost: product.cost,
-    ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
-    ...(product.category !== "service" ? { wastePct: defaultWastePct(product, waste) } : {}),
-    ...(linked ? { roomIds: rooms.map((r) => r.id) } : {}),
-  };
-}
 
 function reducer(products: readonly Product[], waste: WasteDefaults) {
   return (draft: Quote, action: DraftAction): Quote => {
@@ -94,7 +69,7 @@ function reducer(products: readonly Product[], waste: WasteDefaults) {
       case "addProduct":
         return remeasure({
           ...draft,
-          lines: [...draft.lines, lineFor(action.product, action.lineId, draft.rooms, waste)],
+          lines: [...draft.lines, quoteLineFor(action.product, action.lineId, draft.rooms, waste)],
         });
       case "updateLine":
         return remeasure({ ...draft, lines: draft.lines.map((l) => (l.id === action.line.id ? action.line : l)) });

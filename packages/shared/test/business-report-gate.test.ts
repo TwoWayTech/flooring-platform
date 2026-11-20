@@ -7,6 +7,7 @@ import {
   dec,
   lineAmount,
   roundMoney,
+  storedCost,
   sum,
   type BusinessAdjustment,
   type BusinessData,
@@ -256,7 +257,7 @@ function invoice(r: Prng, n: number): BusinessInvoice {
   }
   const lines = Array.from({ length: 1 + r.int(4) }, (_, k) => line(r, n * 10 + k));
   const totals = computeTotals(lines, { rule: undefined, exempt: false, rounding: "invoice" });
-  return { ...base, lines, subtotal: totals.subtotal, tax: totals.tax, total: totals.total, cost: totals.cost };
+  return { ...base, lines, subtotal: totals.subtotal, tax: totals.tax, total: totals.total, cost: storedCost(totals) };
 }
 
 function expense(r: Prng, n: number): BusinessExpense {

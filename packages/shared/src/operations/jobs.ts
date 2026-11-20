@@ -1,4 +1,4 @@
-import { computeTotals, productTaxCategory, type DocLine } from "../documents";
+import { computeTotals, productTaxCategory, storedCost, type DocLine } from "../documents";
 import { dec, maxDec, moneyString, roundMoney, sum } from "../money";
 import { rollAreaSqFt } from "../units";
 import { defaultAddress, plainAddress } from "../customers";
@@ -176,7 +176,7 @@ export function invoiceFromJob(
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
-    cost: totals.cost,
+    cost: storedCost(totals),
   };
 }
 
