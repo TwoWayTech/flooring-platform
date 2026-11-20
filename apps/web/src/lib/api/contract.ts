@@ -102,6 +102,22 @@ import type {
 } from "@workspace/shared";
 // Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
 import type { ImportBatchSummary, ImportOverview, ImportPreview, ImportResult } from "@workspace/shared";
+// GET /company (ADR 0051, "GET /company") keeps its own import, so the lists above stay as they are.
+import type { Access } from "@workspace/shared";
+
+/**
+ * The open company's facts the shell takes from `getWorkspace()` (ADR 0051, "GET /company"). The
+ * rest of `Company` (id, product, plan, status, limits) is still `getCompany()`'s.
+ */
+export type CompanyFacts = Pick<Company, "name" | "city" | "state" | "modules" | "ceiling" | "branches">;
+
+/** Who is signed in to the open company and what they may do, as the shell shows it (`getWorkspace`). */
+export interface WorkspaceFacts {
+  company: CompanyFacts;
+  user: User;
+  roles: Role[];
+  access: Access;
+}
 
 /** Record collections a company holds; each maps to a resource endpoint in docs/api-contract.md. */
 export type Collections = Omit<CompanyFixtures, "companyId" | "anchorDate" | "settings">;
@@ -847,6 +863,14 @@ export interface ApiClient {
 
   /** The open company's record (modules, ceiling, limits). */
   getCompany(): Promise<Company>;
+  /**
+   * Who is signed in and what they may do in the open company, as the shell shows it (GET /company):
+   * the company's modules, ceiling and branches, the person, the roles the shell may list and the
+   * person's own effective access. The demo lists every role (View as); the API only the person's
+   * own, with the guard's own access. The rest of `Company` (plan, status, limits) is still
+   * `getCompany()`'s.
+   */
+  getWorkspace(): Promise<WorkspaceFacts>;
   /** The open company's settings. */
   getSettings(): Promise<CompanySettings>;
   /** Replaces one settings section and audits the change. */

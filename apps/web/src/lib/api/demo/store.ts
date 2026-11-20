@@ -162,6 +162,9 @@ import { DEMO_PLANS_KEY, demoFixturePlans, demoPlans, demoPlanStore, type DemoPl
 import { DEMO_STATUS_KEY, demoConsoleStanding, demoStatusFacts, demoStatusStore } from "./platform-status";
 // Data import, part 1 (ADR 0057) keeps its own imports, so the lists above stay as they are.
 import { FULL_IMPORT_HOLDER, type ImportHolder } from "@workspace/shared";
+// GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
+import { seesCeiling } from "@workspace/shared";
+import type { WorkspaceFacts } from "../contract";
 import { CompanyDb } from "./company-db";
 import { loadCompanyFixtures, loadPlatformFixtures } from "./fixtures";
 import { applyScope, scopeSubject } from "./scope";
@@ -817,6 +820,21 @@ export class DemoStore implements ApiClient {
   async getCompany() {
     const db = this.open();
     return (await this.listCompanies()).find((c) => c.id === db.companyId)!;
+  }
+
+  /**
+   * The shell's facts from exactly what the shell read before GET /company (ADR 0051, "GET /company"):
+   * the company, every role (for View as) and the person's own access. View as is the shell's, so
+   * it never changes this answer. The ceiling follows the API's rule (`seesCeiling`, D4).
+   */
+  async getWorkspace(): Promise<WorkspaceFacts> {
+    const [company, roles, users] = await Promise.all([this.getCompany(), this.list("roles"), this.list("users")]);
+    const user = users.find((candidate) => candidate.id === this.viewer!.userId);
+    if (!user) throw new DemoRuleError("Your profile is not in this company.");
+    const access = viewerAccess(company, roles, user, null);
+    const { name, city, state, modules, ceiling, branches } = company;
+    const shown = seesCeiling((key) => access.permissions.has(key)) ? ceiling : [];
+    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access };
   }
 
   async getSettings() {

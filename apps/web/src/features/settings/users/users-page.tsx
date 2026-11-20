@@ -24,6 +24,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { ChangeRolesDialog } from "./change-roles-dialog";
 import { InviteDialog } from "./invite-dialog";
+import { inviteBranches } from "./invite-branches";
 import { SupportAccessPanel } from "./support-access-panel";
 
 const STATUS = {
@@ -58,7 +59,7 @@ function SeatMeter({ used, limit }: { used: number; limit: number }) {
  */
 export function UsersPage() {
   const can = useCan();
-  const { company, access } = useWorkspace();
+  const { company, access, user } = useWorkspace();
   const [inviting, setInviting] = useState(false);
   const [editingRoles, setEditingRoles] = useState<User | null>(null);
   const [resettingMfa, setResettingMfa] = useState<User | null>(null);
@@ -74,6 +75,7 @@ export function UsersPage() {
   const { users, roles } = data.data;
   const manage = can("settings.users.manage");
   const seatsUsed = users.filter((u) => u.status !== "disabled").length;
+  const invite = inviteBranches(company.branches, user, access);
   const now = new Date();
 
   async function setStatus(user: User, status: User["status"]) {
@@ -202,7 +204,13 @@ export function UsersPage() {
         empty={{ message: "No users yet." }}
       />
       {access.isOwner ? <SupportAccessPanel /> : null}
-      <InviteDialog open={inviting} onOpenChange={setInviting} roles={roles} branches={company.branches} />
+      <InviteDialog
+        open={inviting}
+        onOpenChange={setInviting}
+        roles={roles}
+        branches={invite.branches}
+        defaultBranchId={invite.defaultId}
+      />
       {editingRoles ? (
         <ChangeRolesDialog user={editingRoles} roles={roles} onClose={() => setEditingRoles(null)} />
       ) : null}

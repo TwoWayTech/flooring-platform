@@ -4,10 +4,15 @@ import {
   defaultNumberSettings,
   formatNumber,
   invoicesIn,
+  periodRange,
   salesTotals,
+  teamStats,
+  type CompanyAnswer,
   type Customer,
+  type Payment,
   type Product,
   type Quote,
+  type TeamCommission,
   type ViewedInvoice,
 } from "@workspace/shared";
 import { MANAGER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
@@ -140,9 +145,56 @@ test.describe("sales (api mode)", () => {
     await expect(summary.getByText(/^Cost /)).toBeVisible();
   });
 
-  // Sales → Team is left out: it loads today only because its people come from DemoStore (R1, session
-  // log 2026-11-16-2320), so a check there would pass whatever B5 does; it comes back with GET /company.
-  // teamStats and TeamTable are pinned by dashboard-without-cost.test.ts and dashboard-margin.test.tsx.
+  test("T1 Sales → Team shows a salesperson's own row from the API, without margin (B5; back with GET /company)", async ({
+    page,
+  }) => {
+    await signInAs(page, SALES_EMAIL);
+    const company = waitForAnswer<CompanyAnswer>(page, "GET", /^\/api-proxy\/company$/);
+    const invoicesAnswer = waitForAnswer<ViewedInvoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
+    const paymentsAnswer = waitForAnswer<Payment[]>(page, "GET", /^\/api-proxy\/payments$/);
+    const quotesAnswer = waitForAnswer<Quote[]>(page, "GET", /^\/api-proxy\/quotes$/);
+    await page.goto("/sales?view=team");
+    const today = companyToday();
+    const range = periodRange("ytd", today);
+    const totals = waitForAnswer<[string, TeamCommission][]>(page, "GET", /^\/api-proxy\/commission-totals$/, {
+      from: range.from,
+      to: range.to,
+    });
+    await choose(page, page.getByLabel("Period"), "Year to date");
+    // Her row first: before GET /company, Team's people were DemoStore's and matched no API invoice.
+    const row = page.getByRole("row", { name: /Priya Natarajan/ });
+    await expect(row).toBeVisible();
+    const [answer, invoices, payments, quotes, commission] = await Promise.all([
+      company,
+      invoicesAnswer,
+      paymentsAnswer,
+      quotesAnswer,
+      totals,
+    ]);
+    expect(
+      invoices.some((invoice) => !invoice.voidedAt && invoice.issuedAt >= range.from),
+      "her answer has an invoice this year; the API seed keeps the fixture dates (to 2026-11-04)",
+    ).toBe(true);
+    const [expected] = teamStats(
+      { users: [answer.me], invoices, payments, quotes, commission: new Map(commission) },
+      { ...range, today, locationId: null },
+    );
+    expect(expected?.userId).toBe(answer.me.id);
+    await expect(row).toContainText(formatNumber(expected.sales, "money", defaultNumberSettings()));
+    await expect(row).toContainText(formatNumber(expected.paidRevenue, "money", defaultNumberSettings()));
+    await expect(page.getByRole("columnheader", { name: /^Margin\b/ })).toHaveCount(0);
+    await expect(failures(page)).toHaveCount(0);
+  });
+
+  test("T2 a manager's Team shows margin for his branch's reps (B5; back with GET /company)", async ({ page }) => {
+    await signInAs(page, MANAGER_EMAIL);
+    await page.goto("/sales?view=team");
+    await choose(page, page.getByLabel("Period"), "Year to date");
+    await expect(page.getByRole("row", { name: /Priya Natarajan/ })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /^Margin\b/ })).toBeVisible();
+    await expect(failures(page)).toHaveCount(0);
+  });
+
   test("a salesperson's dashboard loads without cost and shows no margin (B5)", async ({ page }) => {
     await signInAs(page, SALES_EMAIL);
     const answer = waitForAnswer<ViewedInvoice[]>(page, "GET", /^\/api-proxy\/invoices$/);

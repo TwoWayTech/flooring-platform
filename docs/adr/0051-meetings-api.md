@@ -4,6 +4,7 @@
 - **Part 2** (moves, undo, proposal decisions and conflicts) was added on 2026-11-15 under the same rule, on branch `feat/meetings-api-moves` (PR #35). It is the section "Part 2 (2026-11-15)" below. Where it changes a part 1 decision, the part 1 text says so.
 - **Part 3** (the web on the API: the Meetings page, its drawer and dialogs, and My meetings in api mode, and the demo store on the shared rules) was added on 2026-11-15 under the same rule, on branch `feat/meetings-web-api` (PR #37). It is the section "Part 3 (2026-11-15)" below. Its one API behaviour change is the undo check order; where it changes a part 1 or part 2 text, that text says so.
 - **2026-11-16 (STATUS B2):** every routed write makes the screens read again (the transport decides by verb), and `PUT /timesheets` refuses a save over hours changed since the form opened. It is the section "Re-reading after every write, and the timesheet stale-save check" below; it supersedes the first two bullets of part 3's "Re-reading after a write".
+- **2026-11-17 (queue item 2, task 1):** in api mode the shell's person, roles, access, modules and branches come from a new `GET /company`, which closes R1. It is the section "GET /company: the shell's person, roles, access, modules and branches from the API, closing R1" below.
 - **Context:**
   - docs/real-build-plan.md row 14, "Meetings, invites and .ics": spec meetings.md, depends on module 5 (the notifications core), week 18 in the schedule.
   - meetings.md describes the demo: a calendar in both products, guests from one search or by email, an Outbox row and `.ics` per guest (ADR 0021), answers and proposals, requests, reminders and Settings → Meetings.
@@ -551,7 +552,7 @@
 
 ### Who is looking
 - **The reader's id comes from the server:** `viewerUserId` of `GET /me/meetings` when it answered, otherwise `user.id` of `GET /auth/context`. It never comes from the demo persona's fixture id. It is read on every load, not remembered, so a new session can't reuse an old id.
-- **The reader's keys and scope** come from the shell (`useWorkspace().access`, `useMeetingViewer`). In api mode these are still DemoStore's roles until `GET /company` and the roles move (risk R1). The server decides every action again.
+- **The reader's keys and scope** come from the shell (`useWorkspace().access`, `useMeetingViewer`). In api mode these are still DemoStore's roles until `GET /company` and the roles move (risk R1). The server decides every action again. (Closed 2026-11-17: see "GET /company" below; in api mode they are the guard's own access.)
 
 ### What the screens offer (`apps/web/src/features/meetings/meeting-rights.ts`)
 - **`meetingRights(viewer, shown)`**, on the meeting as the server shaped it:
@@ -713,7 +714,7 @@
 8. **Part 2's open questions still stand:** the 5-minute window, a CANCEL to an undone split, past exceptions, held occurrences, "this and following" from the first occurrence, 100 exceptions, declining audited, the caps' status code, the start bound, a "Busy" conflict's time, and Outlook and SEQUENCE.
 
 ### Residual risks (part 3)
-- **R1 Client keys and scope in api mode** come from the shell's DemoStore roles until `GET /company` and the roles move. For an organiser, a role edited on the API can show a button the API refuses (a 403 toast, then a re-read). For anyone else the server's address signal guards it. Either way a control can be hidden that the API would allow.
+- **R1 Client keys and scope in api mode** come from the shell's DemoStore roles until `GET /company` and the roles move. For an organiser, a role edited on the API can show a button the API refuses (a 403 toast, then a re-read). For anyone else the server's address signal guards it. Either way a control can be hidden that the API would allow. (Closed 2026-11-17: see "GET /company" below.)
 - **R2 No live updates:** other people's changes show on reload, or after the person's own write or refusal. A stale drawer can still send an action the server refuses (a 409, 400 or 403 toast, then a re-read).
 - **R3 Load:** the Meetings page makes three GETs per load and per write, or four when `/me/meetings` gives no answer. `GET /me/meetings` loads the reader's meetings just for `colleagues`, and `GET /meetings` has no date window.
 - **R4 The address and name signals:** the organiser path relies on a hidden guest being shown by kind with no address (`shownParty`), so a readable customer literally named "Customer" with no address loses the button; the other path relies on a stored organiser address. Both fail closed.
@@ -822,6 +823,82 @@
 - **R7 `"7..5"` saves as 0 hours,** as before (`Number(text) || 0`).
 - **R8 Tables draw their cells afresh whenever the page that owns them renders again.** `DataTable` passes each column's inline `cell` function to TanStack's `flexRender`, which mounts it as a component. The page builds new columns on each render, so every re-render remounts every cell, and an open row menu closes. In demo mode a write's emit re-renders at once. In api mode the re-read now lands a round trip after each write, so a row menu opened in that window closes. The first full api-mode run hit this in `login.spec.ts` (Priya's actions menu after a role change), which now waits for her row to show the change. A stable cell renderer in `DataTable` fixes it for every table; that is its own task (STATUS follow-up).
 - **R9 Demo refusals don't emit,** so the demo's parity for a stale save relies on the upload's own emit. Two demo tabs don't share data anyway.
+
+## GET /company: the shell's person, roles, access, modules and branches from the API, closing R1 (2026-11-17, queue item 2, task 1)
+- **Status:** accepted, 2026-11-17, on branch `feat/web-company-from-api` (draft PR #50, stacked on #49 and through it on #48, #47, #46 and #45; it merges after them). It is item 2, task 1 of the owner's queue of 2026-11-16. The owner was asleep, so the safest option was taken wherever something was open, and each one is listed below. ADR 0058 is reserved by the paused whole-product check, so this is a dated section here, where R1 lives. Session log docs/sessions/2026-11-17-0525-b-company-from-api.md.
+- **Context:**
+  - **R1** (part 3, "Residual risks"): in api mode the shell's person, roles, keys, modules, ceiling and branches came from DemoStore. The session is bridged to a fixture persona by email (ADR 0029), and the shell read `getCompany()`, `list("roles")` and `list("users")`, none of them routed. So buttons and menus followed the demo's roles, and every screen that compared `user.id`, `user.branchId`, `user.employeeId` or `user.defaultLocationId` with API records compared a fixture id with a UUID.
+  - **What that broke, as recorded:** the Users page's Branch column was blank and the invite sent a fixture branch id (B4's Q-B4-2); a new quote's "Sold at" read the warehouse; `saveQuote` sent a fixture `salesRepId` and `branchId`; the cost displays were gated only by the shell's `can()` (ADR 0037, D19 of B1); Sales → Team's api-mode e2e was left out, since its people were DemoStore's (ADR 0037, B5); PR #11's "give the shell the effective permissions from the API"; ADR 0052's "the api-mode company shell reads modules and the ceiling from DemoStore".
+
+### The route (docs/api-contract.md, "Company and the shell")
+- **`GET /company`**, in the users module (`apps/api/src/modules/users/company.controller.ts` and `company.service.ts`). An ordinary company route: SessionGuard, TenantGuard and PermissionGuard, `@AnyCompanyMember()` on the handler, `Cache-Control: no-store`, not audited, no module and no feature switch (the shell needs it, like the standing route). Express keeps it apart from `GET /company/standing`.
+- **The answer** (`CompanyAnswer`, `packages/shared/src/platform/company-answer.ts`):
+  - `company`: the session's tenant id, slug, name, city, state and time zone, the modules, the live branches by name (id, name, city, state), and the ceiling only for someone who `seesCeiling` (any one of `settings.roles.view`, `settings.roles.manage`, `settings.users.view`, `settings.users.manage`, the keys that open the only screens reading it), else `null`;
+  - `me`: the caller's own `User`, exactly as `GET /users` shapes it (a new `UsersService.one`, sharing `list`'s mapping);
+  - `roles`: only the roles the caller holds, as `GET /roles` shapes them;
+  - `access`: `@CurrentAccess()` of the same request, PermissionGuard's own (keys sorted, data scope, owner flag), never worked out a second time;
+  - `people`: id, name and status of every live profile with an account (`directoryOf`), invited people left out, by name.
+- **Never:** another company's anything (the company comes only from the verified session); another person's email, title, roles, branch, MFA, sign-in time, employee link or default warehouse; a role the caller doesn't hold; the ceiling without a settings key; billing facts (plan, status, limits; ADR 0054 keeps them on the Owner's `GET /billing`); feature switches; any `SENSITIVE_FIELDS` name. A profile with no control account is refused with the guard's own 403 `forbidden`.
+- **Refusals** are the guards' own: 401 without a session, TenantGuard's `company_required`, `not_a_member`, `product_not_enabled`, the maintenance and unavailable 503s and the locked 403; PermissionGuard's 403 `forbidden` for a disabled profile and 403 `mfa_enrolment_required` for a role that needs a factor not yet set up.
+- **Cost:** ten queries of its own on top of the guards' (four on the control database: the tenant row, the caller's account and passkeys, the people's names; six on the company database: branches, the caller's profile and held roles, the people's profiles, the roles and their keys).
+
+### Why a company route, and not `/auth/context`
+`/auth/context` is session-only by design (ADR 0029, ADR 0030): it answers before a company is chosen and never opens a company database. Roles, keys, branches and profiles live there, so putting them in `/auth/context` would mean repeating TenantGuard's checks in a session-only route, a core/auth change. A company route gets every TenantGuard and PermissionGuard check in order, and `@CurrentAccess()` is the very access the guards used, so what the shell shows can't drift from what the API allows. docs/api-contract.md already named `GET /company` for the shell's company.
+
+### The web
+- **`getWorkspace()`**, a new ApiClient method. In api mode it reads `GET /company` and maps it with a pure `workspaceFromAnswer` (`apps/web/src/lib/api/http/company-answer.ts`) that drops keys and modules this build doesn't know, so a newer API never widens an older web (fail closed). The demo answers it from exactly what the shell computed before, with the same ceiling rule.
+- **The provider** (`workspace-provider.tsx`) reads `getWorkspace()`, `getCompany()` and `getSettings()`. A pure `buildWorkspace` lays the facts' name, place, modules, ceiling and branches over `getCompany()`, which keeps the id, product, plan, status and limits until Settings and billing move. The access is the facts' own (the guard's in api mode), unless the demo's View as applies.
+- **View as is demo only** (D2, D16). The rules live in `apps/web/src/lib/view-as.ts` (`viewAsOffered`, `mayViewAs`, `viewAsRoleFor`). In the demo a stored choice applies only to an Owner or someone holding `settings.roles.manage`; `openWorkspace` opens DemoStore with no View as and applies a stored id only for such a person, and the provider clears one that doesn't apply. A View-as access is worked out against DemoStore's own company, never the trimmed ceiling.
+- **Your profile is hidden in api mode:** it reads and saves DemoStore's locations, and there is no `PATCH /me` yet (D8).
+- **A refused first read** of `GET /company` shows a full page (`WorkspaceRefused`, with `workspaceRefusal` deciding): the company-unavailable panel for a standing refusal, otherwise "Your workspace could not open" with the API's own words; both offer Try again and Sign out (D17). A later re-read that fails keeps the last data, as before.
+- **In api mode:** `list("users")` and `get("users")` give `GET /company`'s people as users with only id, name and status filled; `whoAmI()` is `GET /auth/context`'s `user.id`; `saveQuote` sends neither `salesRepId` nor `branchId` (D9).
+- **Settings → Users:** the Branch column and the invite dialog use the API's branches. The dialog starts at the inviter's own branch and lists only that branch when the inviter's data scope is narrower than `all` (`inviteBranches`, D18). **Settings → Locations** reads its branch names from `getCompany()`, the same source as its locations, until Locations moves (D7).
+- **What doesn't change:** nothing in `apps/web/src/lib/session/`, core/auth, core/tenancy, packages/providers or packages/db; no table, migration, dependency or switch. `getCompany()`, `getSettings()`, `today()` and `list("roles")` stay DemoStore's. Every screen's `useCan()` and `useWorkspace()` call is unchanged (rule 1).
+
+### The D19 cost displays
+The five displays (`product-drawer.tsx`, `products-table.tsx`, `rolls-table.tsx`, `roll-page.tsx`, `order-drawer.tsx`) show a cost when `can(SENSITIVE.productCost)`. The server reveals `cost`, `unitCost` and `costPerSqFt` only for `inventory.product.view_sensitive` in the request's effective keys. With `can()` now the API's own effective set, a display shows exactly when the server sent the field; E1 proves it with a Manager whose cost key was removed on the API. What remains is a role changed between the shell's read and a page's read (R2 below).
+
+### The company's day
+`GET /company` carries `company.timeZone` (`tenants.time_zone`, the zone `companyClock` uses) for the later `today()` task; `workspaceFromAnswer` ignores it for now. `today()` is synchronous and runs before the answer, and DemoStore's fixtures are shifted to the browser's day, so that task has to settle both. The zone has two copies (`tenants.time_zone` and the company settings' `localization.region.timeZone`); the Settings task must write both.
+
+### Safest options taken (also in docs/blueprint-delta.md)
+- **D2** View as is not offered in api mode: the API answers for the signed-in person only, so a viewed role's buttons could offer what the API refuses.
+- **D4** The ceiling goes only to holders of a role or user settings key; everyone else gets `null`, which none of their screens reads.
+- **D5** Every member gets a names directory (id, name, active or disabled), never invited people and nothing else. This is new: until now only active names reached holders of the meetings or portal keys. The narrower options are the owner's (question 2).
+- **D8** Your profile is hidden in api mode until `PATCH /me`.
+- **D9** `saveQuote` sends no rep or branch; the server sets both, as for contracts (ADR 0044).
+- **D11** No billing facts in `GET /company`; the seat meter keeps `getCompany()`'s limit in api mode.
+- **D16** In the demo a stored View as applies only to someone who may view as, and a stale one is cleared (a behaviour change: Dana's View as no longer carries over to Cole on the same tab).
+- **D17** A refused first read shows a full page with Sign out, so a disabled member or one refused by the MFA backstop is never stuck.
+- **D18** The invite dialog starts at the inviter's own branch and lists only it below scope `all`. Client-side and narrowing only; the server check stays open (STATUS).
+
+### Tests that pin it
+- **Shared:** `seesCeiling` and `directoryOf`.
+- **API** (`apps/api/test/company.int.test.ts`, supertest against throwaway databases, 21 cases): every default role of both products, exactly the guard's access and only held roles (C1); branches (C2); people without invited or deleted ones (C3); nothing beyond the caller's own (C4); the session's company whatever the request names (C5); a module off and a ceiling below the role agreeing with the guarded routes (C6, C7); the refusals (C8); `no-store` and no audit row (C9); the standing route still apart (C10). The permission and isolation route inventories pick the route up unchanged.
+- **Web unit:** the answer's mapping, `list("users")`, `whoAmI` and `saveQuote` (W1 to W6); the View-as rules (V1 to V5); `buildWorkspace` (B1 to B6); DemoStore's `getWorkspace` and `openWorkspace` (D1 to D6); the refusal map (R1 to R4); the invite branches (I1 to I5); `api-rereads` covers the two new routed reads.
+- **Api-mode e2e** (`apps/web/tests/e2e-api/company.spec.ts`): E1 changes Sales and Manager on the API only, then Priya has no New quote (and the API refuses one), gets Purchasing (and the API serves it), and Luis sees no cost and no crash; E2 the Owner's shell has no View as or Your profile and the API's branches, and the invite sends the live Denver id; E3 a new quote starts at the showroom and a transfer at Cole's warehouse; E4 a disabled member sees the refusal page and signs out. `sales.spec.ts` gets the Sales → Team tests back (T1 a salesperson's own row equals `teamStats` over the API's answers, without margin; T2 a manager's Team with margin).
+- **Demo e2e:** S1 in `shell.spec.ts`, a stored View as doesn't carry over to someone who may not view as.
+- **Red first:** every new test failed on B6's code at its symptom (session log), and 18 mutations of the final code each failed their tests.
+
+### Residual risks
+- **R1 Load.** One `GET /company` per full load and per answered write, plus one per screen that lists users. Since the shell's access object changes on every re-read, the attention list (the bell) loads twice after each write, as before this change, but now after the `GET /company` round trip.
+- **R2 A stale shell.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload (no live updates). Until then a button may show that the API refuses (a 403 message, then a re-read) or hide one it allows, and a cost display can meet a withheld cost (a crash that fails closed). A person disabled mid-session keeps the last shell until a reload.
+- **R3 The DemoStore half.** Screens that haven't moved still check their writes against the demo persona's roles; they can only refuse more, and the API isn't involved.
+- **R4 Hybrids.** Warehouse today and the attention list's supplier payments read DemoStore lists against the API person.
+- **R5 The bridge.** Only accounts with a fixture twin open the shell in api mode (`toCompanySession`).
+- **R6 Saved table views** are keyed by the API user's id in api mode, so views saved before reset once.
+- **R7 The company switcher** in api mode still lists DemoStore's companies (pre-existing).
+- **R8 The people directory** shows every member's name, and whether they are disabled, to every member (D5).
+- **R9 The invite's branch** is narrowed on screen only; a branch-scoped admin's crafted request can still name another branch until the server check lands.
+
+### For the owner
+1. **View as in the real product:** build a server-side "see as a role" later, or keep it demo only?
+2. **The people directory:** keep names and status for every member, or give disabled people only to `settings.users.view` and `sales.commission.view` holders, or only the people in the viewer's scope?
+3. **The ceiling:** only for holders of a role or user settings key. Confirm.
+4. **The seat limit:** give Users viewers the user limit in `GET /company`, or show the meter to the Owner only, from `GET /billing`?
+5. **Your profile:** build `PATCH /me` (the person's own default warehouse, audited) with the Settings task?
+6. **Invite branches:** should the API refuse an unknown branch with 400 and record the stored branch in the audit row, and keep a branch-scoped admin's invitations and branch changes to their own branch (the server half of D18)?
+7. **CI time:** `company.spec.ts` adds about 11 s and the two Team tests about 3 s to `e2e`.
 
 ## Later parts
 - **Part 2** (`feat/meetings-api-moves`, PR #35): done, under "Part 2 (2026-11-15)" above.

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { STANDING_SCREENS, SUPPORT_READ_ONLY_MESSAGE } from "@workspace/shared";
 import {
   insertSupportGrant,
@@ -32,6 +32,34 @@ async function openSettingsPage(page: Page, name: string): Promise<void> {
   await page.getByRole("navigation", { name: "Settings" }).getByRole("link", { name }).click();
 }
 
+/**
+ * Counts the page's open API requests from now on; `settled()` waits until none has been open for
+ * 300 ms. The app reads again after a write or a page change, and since GET /company (ADR 0051) the
+ * shell's own re-read starts further reads (the attention list's). A read still open when a step
+ * puts Summit under maintenance behind the API's back would show the overlay before the step's click.
+ */
+function apiReads(page: Page): { settled: () => Promise<void> } {
+  let open = 0;
+  let quietSince = Date.now();
+  const isApi = (request: Request) => request.url().includes("/api-proxy/");
+  const ended = (request: Request) => {
+    if (!isApi(request)) return;
+    open -= 1;
+    quietSince = Date.now();
+  };
+  page.on("request", (request) => {
+    if (isApi(request)) open += 1;
+  });
+  page.on("requestfinished", ended);
+  page.on("requestfailed", ended);
+  return {
+    settled: () =>
+      expect
+        .poll(() => open === 0 && Date.now() - quietSince >= 300, { message: "the app's reads have finished" })
+        .toBe(true),
+  };
+}
+
 // Platform admin part 4 on the real API (docs/specs/platform-admin.md, "Part 4"; ADR 0054). The
 // tests change Summit's maintenance flag and period dates behind the API's back; each step that
 // does puts the baseline back in its own finally, and afterAll asserts Summit equals its snapshot.
@@ -56,6 +84,7 @@ test.describe("company standing, billing and support access (api mode)", () => {
     page,
   }) => {
     const notice = page.getByRole("status", { name: "Account notice" });
+    const reads = apiReads(page);
     let secret = "";
 
     await test.step("Billing shows the plan and no notice", async () => {
@@ -132,6 +161,7 @@ test.describe("company standing, billing and support access (api mode)", () => {
       });
       const overlay = page.getByRole("alertdialog", { name: "Under maintenance" });
       try {
+        await reads.settled();
         await setMaintenance(CONTROL_URL, "summit", "move");
         await openSettingsPage(page, "Audit log");
         await expect(overlay).toBeVisible();
@@ -165,6 +195,7 @@ test.describe("company standing, billing and support access (api mode)", () => {
   test("a manager sees no billing and no support panel, and the maintenance and suspended screens replace the app", async ({
     page,
   }) => {
+    const reads = apiReads(page);
     await test.step("no Billing and no support panel", async () => {
       await signInAs(page, MANAGER_EMAIL);
       await page.goto("/settings");
@@ -181,6 +212,7 @@ test.describe("company standing, billing and support access (api mode)", () => {
     await test.step("maintenance covers the open screen", async () => {
       const overlay = page.getByRole("alertdialog", { name: "Under maintenance" });
       try {
+        await reads.settled();
         await setMaintenance(CONTROL_URL, "summit", "move");
         await openSettingsPage(page, "Audit log");
         await expect(overlay).toBeVisible();

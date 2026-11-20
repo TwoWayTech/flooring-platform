@@ -36,6 +36,30 @@ test.describe("app shell", () => {
     ).toBeVisible();
   });
 
+  test("S1 a stored View as doesn't carry over to someone who may not view as (ADR 0051, 'GET /company')", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER);
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search or run a command").fill("View as Sales");
+    await page.getByRole("option", { name: "View as Sales" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Viewing as" })).toContainText("Viewing as Sales.");
+
+    // The same tab, so sessionStorage keeps Dana's choice: Cole, the warehouse lead, signs in.
+    await signInAs(page, { companyId: "summit", userId: "sm-usr-04", roleKey: "warehouse" });
+    await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Inventory" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Viewing as" })).toHaveCount(0);
+    expect(new URL(page.url()).pathname).not.toBe("/no-access");
+    expect(await page.evaluate(() => sessionStorage.getItem("fp-view-as:summit"))).toBeNull();
+
+    // The stale choice was cleared, so Dana starts as herself again.
+    await signInAs(page, SUMMIT_OWNER);
+    await expect(
+      page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Purchasing" }),
+    ).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Viewing as" })).toHaveCount(0);
+  });
+
   test("switching company changes name and branding", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER);
     const brand = () =>

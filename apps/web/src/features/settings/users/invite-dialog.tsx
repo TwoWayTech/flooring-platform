@@ -26,15 +26,17 @@ interface InviteDialogProps {
   onOpenChange: (open: boolean) => void;
   roles: Role[];
   branches: Branch[];
+  /** The branch picked first: the inviter's own when it is listed (`inviteBranches`). */
+  defaultBranchId: string;
 }
 
 /** Invite a user with one or more roles and a branch; the seat limit is enforced by the ApiClient. */
-export function InviteDialog({ open, onOpenChange, roles, branches }: InviteDialogProps) {
+export function InviteDialog({ open, onOpenChange, roles, branches, defaultBranchId }: InviteDialogProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [title, setTitle] = useState("");
   const [roleIds, setRoleIds] = useState<string[]>([]);
-  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+  const [branchId, setBranchId] = useState(defaultBranchId);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 

@@ -84,3 +84,4 @@ export * from "./platform/company-billing";
 export * from "./platform/admin-reason";
 export * from "./platform/plans";
 export * from "./platform/company-status";
+export * from "./platform/company-answer";

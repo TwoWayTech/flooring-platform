@@ -25,6 +25,13 @@ export const WAREHOUSE_EMAIL = "cole.brennan@summitfloor.example";
 /** Summit's purchasing coordinator: suppliers, purchase orders and receipts; the role needs no MFA. */
 export const PURCHASING_EMAIL = "renata.kowalski@summitfloor.example";
 
+/**
+ * Summit's sales rep Victor Sims, seeded disabled: he signs in and holds nothing, so `GET /company`
+ * refuses him (ADR 0051, "GET /company"). Not in SEEDED_EMAILS: no test changes him, and only
+ * company.spec.ts signs him in, resetting his sign-in state around itself.
+ */
+export const DISABLED_EMAIL = "victor.sims@summitfloor.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,

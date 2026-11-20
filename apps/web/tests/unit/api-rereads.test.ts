@@ -66,6 +66,8 @@ const CASES = {
   listPlatformSupportGrants: read((c) => c.listPlatformSupportGrants(ID)),
   requestSupportAccess: write((c) => c.requestSupportAccess(stub())),
   getCompanyStanding: read((c) => c.getCompanyStanding()),
+  getWorkspace: read((c) => c.getWorkspace()),
+  whoAmI: read((c) => c.whoAmI()),
   getCompanyBilling: read((c) => c.getCompanyBilling()),
   listSupportGrants: read((c) => c.listSupportGrants()),
   approveSupportGrant: write((c) => c.approveSupportGrant(ID)),
@@ -224,7 +226,7 @@ async function run(c: Case, nonGet: FakeAnswer = OK) {
 describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
   it("classifies every routed method, and nothing else", () => {
     expect(Object.keys(CASES).sort()).toEqual(Object.keys(API_METHODS).sort());
-    expect(READS.length + WRITES.length).toBe(147);
+    expect(READS.length + WRITES.length).toBe(149);
     expect(WRITES).toHaveLength(107);
   });
 

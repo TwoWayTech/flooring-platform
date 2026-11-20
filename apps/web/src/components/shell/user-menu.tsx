@@ -14,6 +14,7 @@ import {
 import { api } from "@/lib/api";
 import { useSessionActions } from "@/lib/session/use-session-actions";
 import { useWorkspace } from "@/components/workspace/workspace-context";
+import { isDemoMode } from "@/lib/data-source";
 import { featureOn } from "@workspace/shared";
 import { ProfileDialog } from "./profile-dialog";
 
@@ -33,7 +34,9 @@ export async function resetDemo() {
 export function UserMenu() {
   const { user, roles, product } = useWorkspace();
   const [profileOpen, setProfileOpen] = useState(false);
-  const hasWarehouses = featureOn("inventory.locations") && product.key === "flooring";
+  // There is no PATCH /me on the API yet, and the dialog reads and saves DemoStore's warehouses, so
+  // Your profile is demo only; the API's default warehouse comes through GET /company (ADR 0051, D8).
+  const hasWarehouses = featureOn("inventory.locations") && product.key === "flooring" && isDemoMode();
   const { signOut } = useSessionActions();
   const roleNames = roles
     .filter((r) => user.roleIds.includes(r.id))

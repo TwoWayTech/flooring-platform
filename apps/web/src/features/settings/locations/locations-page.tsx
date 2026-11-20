@@ -9,7 +9,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
 import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
-import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
+import { useCan } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
 import { LocationDialog } from "./location-dialog";
 import { StockRulesForm } from "./stock-rules-form";
@@ -22,12 +22,17 @@ import { Panel } from "@workspace/ui/components/panel";
  */
 export function LocationsPage() {
   const can = useCan();
-  const { company } = useWorkspace();
   const [editing, setEditing] = useState<Location | "new" | null>(null);
-  const data = useApiQuery((client) => client.list("locations"), []);
+  // Branches from the same source as the locations: DemoStore's in api mode until Locations moves,
+  // since the shell's branches are the API's since GET /company (ADR 0051, "GET /company", D7).
+  const data = useApiQuery(async (client) => {
+    const [locations, company] = await Promise.all([client.list("locations"), client.getCompany()]);
+    return { locations, branches: company.branches };
+  }, []);
   if (!can("settings.locations.manage")) return <NoAccess />;
 
-  const branchName = (id: string) => company.branches.find((b) => b.id === id)?.name ?? "";
+  const branches = data.data?.branches ?? [];
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? "";
   const columns: ColumnSpec<Location>[] = [
     {
       id: "name",
@@ -67,7 +72,7 @@ export function LocationsPage() {
       ) : (
         <DataTable
           id="settings-locations"
-          rows={data.data}
+          rows={data.data.locations}
           columns={columns}
           getRowId={(l) => l.id}
           onRowClick={setEditing}
@@ -88,7 +93,7 @@ export function LocationsPage() {
       {editing ? (
         <LocationDialog
           location={editing === "new" ? null : editing}
-          branches={company.branches}
+          branches={branches}
           onClose={() => setEditing(null)}
         />
       ) : null}
