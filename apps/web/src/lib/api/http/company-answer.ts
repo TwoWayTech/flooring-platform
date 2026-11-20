@@ -12,8 +12,8 @@ import type { WorkspaceFacts } from "../contract";
  * The shell's facts from `GET /company` (ADR 0051, "GET /company"): the person, the roles they hold
  * and the guard's own access, used as is (D3). Keys and modules this build doesn't know are
  * dropped, so a newer API never widens an older web (fail closed). A ceiling the API keeps back
- * (D4) reads as none. `company.timeZone` is not used yet: `today()` moves to the company's zone in
- * a later task.
+ * (D4) reads as none. `company.timeZone` is kept for `today()` by the route that reads the answer
+ * (`lib/api/company-day.ts`; ADR 0051, "The company's day on the web").
  */
 export function workspaceFromAnswer(answer: CompanyAnswer): WorkspaceFacts {
   const { name, city, state, modules, ceiling, branches } = answer.company;

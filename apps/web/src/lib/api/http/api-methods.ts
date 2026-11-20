@@ -104,6 +104,7 @@ import { importBody } from "./import-body";
 // GET /company (ADR 0051, "GET /company") keeps its own imports, so the lists above stay as they are.
 import type { CompanyAnswer } from "@workspace/shared";
 import { peopleAsUsers, workspaceFromAnswer } from "./company-answer";
+import { companyDayOf } from "../company-day";
 // Settings, part 1 (ADR 0059) keeps its own imports, so the lists above stay as they are.
 import {
   isApiLocalizationTab,
@@ -160,7 +161,7 @@ export const API_METHODS = {
   list:
     (http, demo) =>
     <K extends CollectionName>(collection: K) => {
-      if (collection === "users") return companyPeople(http) as Promise<Collections[K]>;
+      if (collection === "users") return companyPeople(http, demo) as Promise<Collections[K]>;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.list(collection);
       return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
@@ -169,14 +170,16 @@ export const API_METHODS = {
     (http, demo) =>
     async <K extends CollectionName>(collection: K, id: string) => {
       if (collection === "users")
-        return (await companyPeople(http)).find((user) => user.id === id) as ItemOf<K> | undefined;
+        return (await companyPeople(http, demo)).find((user) => user.id === id) as ItemOf<K> | undefined;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
       const all = await seen(http.request<ItemOf<K>[]>("GET", path));
       return all.find((item) => (item as { id: string }).id === id);
     },
   // The shell's person, roles, access and company facts (ADR 0051, "GET /company").
-  getWorkspace: (http) => async () => workspaceFromAnswer(await http.request<CompanyAnswer>("GET", "/company")),
+  getWorkspace: (http, demo) => async () => workspaceFromAnswer(await companyAnswer(http, demo)),
+  // The company's day in its own zone, learned from GET /company (ADR 0051, "The company's day on the web").
+  today: (_http, demo) => () => companyDayOf(demo).today(),
   // The API's own id for the session, the read `meetingsData` makes too; never the demo persona's.
   whoAmI: (http) => async () => (await http.request<SessionContext>("GET", "/auth/context")).user.id,
   listSettingsUsers: (http) => () => http.request<User[]>("GET", "/users"),
@@ -1051,8 +1054,18 @@ function quoteBody(quote: Quote): Omit<Quote, "salesRepId" | "branchId"> {
 }
 
 /** GET /company's people as users: id, name and status only (`peopleAsUsers`; ADR 0051, "GET /company"). */
-async function companyPeople(http: HttpTransport): Promise<User[]> {
-  return peopleAsUsers(await http.request<CompanyAnswer>("GET", "/company"));
+async function companyPeople(http: HttpTransport, demo: ApiClient): Promise<User[]> {
+  return peopleAsUsers(await companyAnswer(http, demo));
+}
+
+/**
+ * Reads GET /company and keeps its `company.timeZone` for `today()`, so every answer the client reads
+ * also settles the company's day (ADR 0051, "The company's day on the web", 2026-11-20).
+ */
+async function companyAnswer(http: HttpTransport, demo: ApiClient): Promise<CompanyAnswer> {
+  const answer = await http.request<CompanyAnswer>("GET", "/company");
+  companyDayOf(demo).learn(answer.company.timeZone);
+  return answer;
 }
 
 /** An id the API made (a UUID); a draft from the screen or a demo record has another kind of id. */

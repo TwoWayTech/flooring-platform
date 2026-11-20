@@ -1,4 +1,7 @@
 import { format } from "date-fns";
+// The company's day (ADR 0051, "The company's day on the web", 2026-11-20) keeps its own imports.
+import { dayInZone, instantToZoned, isKnownTimeZone } from "@workspace/shared";
+import { browserDay } from "../company-day";
 import {
   branchManageDenial,
   PAYMENT_CONTROLS_OWNER_ONLY,
@@ -350,7 +353,29 @@ const PRIVATE_COLLECTIONS: Partial<Record<CollectionName, PermissionKey>> = {
   insuranceCertificates: "contracts.compliance.view",
 };
 
-const nowStamp = () => format(new Date(), "yyyy-MM-dd'T'HH:mm");
+/**
+ * The zone a demo company keeps its day in: its own `localization.region.timeZone`, read only since
+ * Settings part 2b, or null for a zone Intl doesn't know (the browser's clock then stands in).
+ */
+function zoneOf(db: CompanyDb): string | null {
+  const zone = db.settings.localization.region.timeZone;
+  return isKnownTimeZone(zone) ? zone : null;
+}
+
+/**
+ * A company's today, worked out on every call so it rolls over at the company's midnight: the day the
+ * API would date a record on (ADR 0051, "The company's day on the web", 2026-11-20).
+ */
+function dayOf(db: CompanyDb): string {
+  const zone = zoneOf(db);
+  return zone ? dayInZone(new Date(), zone) : browserDay();
+}
+
+/** A company's wall clock, "YYYY-MM-DDTHH:mm", for the moments records and audit rows carry. */
+function stampOf(db: CompanyDb): string {
+  const zone = zoneOf(db);
+  return zone ? instantToZoned(new Date(), zone) : format(new Date(), "yyyy-MM-dd'T'HH:mm");
+}
 const newId = (companyId: string, kind: string) => `${companyId}-${kind}-${crypto.randomUUID().slice(0, 8)}`;
 
 /**
@@ -364,7 +389,6 @@ export class DemoStore implements ApiClient {
   private platform: PlatformFixtures | null = null;
   private current: CompanyDb | null = null;
   private viewer: Viewer | null = null;
-  private readonly todayIso = format(new Date(), "yyyy-MM-dd");
   private notices: string[] = [];
   /** Each meeting's last move, for Undo; in memory only (ADR 0051 "Part 3", B.6 item 6). */
   private readonly meetingMoves = new MeetingMoveMemo();
@@ -401,8 +425,12 @@ export class DemoStore implements ApiClient {
     return () => void this.listeners.delete(listener);
   }
 
+  /**
+   * The open company's day in its own zone, worked out on every call; with no company open (sign-in,
+   * the platform console) the browser's day, which the platform's own dates use too.
+   */
   today() {
-    return this.todayIso;
+    return this.current ? dayOf(this.current) : browserDay();
   }
 
   async resetDemo() {
@@ -536,7 +564,7 @@ export class DemoStore implements ApiClient {
     if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(BILLING_OWNER_ONLY_MESSAGE);
     const company = await this.platformCompany(db.companyId);
     if (!company) throw new DemoRuleError("That company does not exist.");
-    return demoBilling(company, this.todayIso);
+    return demoBilling(company, browserDay());
   }
 
   /** The open company's support requests for its Owner (spec part 4, "GET /support-grants"). */
@@ -663,7 +691,7 @@ export class DemoStore implements ApiClient {
     this.assertBillingOn();
     const company = await this.platformCompany(companyId);
     if (!company) return null;
-    const facts = demoStatusFacts(company, this.statusStore(), this.todayIso);
+    const facts = demoStatusFacts(company, this.statusStore(), browserDay());
     return companyStatusView(company.id, facts.status, {
       statusChangedAt: facts.statusChangedAt,
       subscriptions: facts.subscriptions,
@@ -687,7 +715,7 @@ export class DemoStore implements ApiClient {
     const nameProblem = input.action === "cancel" ? confirmNameProblem(input, company.name) : null;
     if (nameProblem) throw new DemoRuleError(nameProblem);
     const stored = this.statusStore();
-    const facts = demoStatusFacts(company, stored, this.todayIso);
+    const facts = demoStatusFacts(company, stored, browserDay());
     const now = new Date();
     const stale = staleStatusRefusal(input.expectedStatus, facts.status, facts.statusChangedAt, now);
     if (stale) throw new DemoRefusal(stale.message, stale.code);
@@ -772,12 +800,12 @@ export class DemoStore implements ApiClient {
 
   /** Where a demo company stands in the console, with the status the console stored for it. */
   private consoleStanding(company: Company) {
-    return demoConsoleStanding(company, this.statusStore(), this.todayIso, new Date());
+    return demoConsoleStanding(company, this.statusStore(), browserDay(), new Date());
   }
 
   /** A demo company in full for the console, with its console standing. */
   private async consoleDetail(company: Company) {
-    return demoDetail(company, await this.consoleFacts(company.id), this.todayIso, this.consoleStanding(company));
+    return demoDetail(company, await this.consoleFacts(company.id), browserDay(), this.consoleStanding(company));
   }
 
   async getPlatformDirectory(companyId: string) {
@@ -860,7 +888,7 @@ export class DemoStore implements ApiClient {
    */
   private answered(settings: CompanySettings): CompanySettings {
     const { localization } = settings;
-    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, this.todayIso) } };
+    return { ...settings, localization: { ...localization, tax: taxInForce(localization.tax, this.today()) } };
   }
 
   /**
@@ -922,7 +950,7 @@ export class DemoStore implements ApiClient {
     const current = db.settings.localization[tab];
     const problem = localizationTabProblem(tab, value, current, (key) => access.permissions.has(key));
     if (problem) throw new DemoRuleError(problem);
-    const stored = localizationTabStored(tab, value, current, this.todayIso);
+    const stored = localizationTabStored(tab, value, current, dayOf(db));
     db.settings = { ...db.settings, localization: { ...db.settings.localization, [tab]: stored } };
     this.appendAudit(db, {
       category: "settings",
@@ -1117,7 +1145,7 @@ export class DemoStore implements ApiClient {
       taxExempt: false,
       certificate: null,
       salesRepId: this.subject(db).user.id,
-      createdAt: this.todayIso,
+      createdAt: dayOf(db),
     };
     db.put("customers", customer);
     this.appendAudit(db, {
@@ -1221,29 +1249,30 @@ export class DemoStore implements ApiClient {
 
   async updateQuoteStatus(quoteId: string, change: QuoteStatusChange) {
     const db = this.open();
+    const today = dayOf(db);
     await this.assertCan(db, ["sales.quote.edit"]);
     const quote = db.get("quotes", quoteId);
     if (!quote) throw new DemoRuleError("This quote no longer exists.");
-    if (!quoteActions(quote, this.todayIso).includes(change.action)) {
+    if (!quoteActions(quote, today).includes(change.action)) {
       throw new DemoRuleError(`Quote ${quote.number} can't be changed that way in its current state.`);
     }
     const expiresAt = change.action === "send" ? (change.expiresAt ?? null) : quote.expiresAt;
     if (change.action === "send") {
-      const problem = Object.values(quoteSendProblems(quote, expiresAt, this.todayIso))[0];
+      const problem = Object.values(quoteSendProblems(quote, expiresAt, today))[0];
       if (problem) throw new DemoRuleError(problem);
     }
     const saved: Quote = {
       ...quote,
       status: QUOTE_ACTION_STATUS[change.action],
-      sentAt: quote.sentAt ?? (change.action === "send" ? this.todayIso : null),
+      sentAt: quote.sentAt ?? (change.action === "send" ? today : null),
       expiresAt,
     };
     db.put("quotes", saved);
     this.appendAudit(db, {
       category: "data",
-      action: `Marked quote ${quoteStateLabel(quoteState(saved, this.todayIso)).toLowerCase()}`,
+      action: `Marked quote ${quoteStateLabel(quoteState(saved, today)).toLowerCase()}`,
       target: quote.number,
-      before: quoteStateLabel(quoteState(quote, this.todayIso)),
+      before: quoteStateLabel(quoteState(quote, today)),
       after: expiresAt && change.action === "send" ? `expires ${expiresAt}` : quoteStateLabel(saved.status),
     });
     if (change.action === "send") notifyQuoteSent(this.actionContext(db), saved);
@@ -1261,7 +1290,8 @@ export class DemoStore implements ApiClient {
     if (!quote) throw new DemoRuleError("This quote no longer exists.");
     if (quote.invoiceId) throw new DemoRuleError(`This quote is already invoiced.`);
     if (!quoteIsOpen(quote)) throw new DemoRuleError(`Quote ${quote.number} was declined; it can't be invoiced.`);
-    const problem = Object.values(quoteSendProblems(quote, null, this.todayIso))[0];
+    const today = dayOf(db);
+    const problem = Object.values(quoteSendProblems(quote, null, today))[0];
     if (problem) throw new DemoRuleError(problem);
     const customer = db.get("customers", quote.customerId)!;
     const prefix = db.settings.localization.documents.invoicePrefix;
@@ -1272,7 +1302,7 @@ export class DemoStore implements ApiClient {
         db.list("invoices").map((i) => i.number),
         1001,
       ),
-      issuedAt: this.todayIso,
+      issuedAt: today,
       createdBy: this.viewer!.userId,
       holdUntilInstalled:
         featureOn("installation.calendar") && (await this.granter(db)).company.modules.includes("installation"),
@@ -1283,14 +1313,14 @@ export class DemoStore implements ApiClient {
     db.put("quotes", {
       ...quote,
       status: "converted",
-      sentAt: quote.sentAt ?? this.todayIso,
+      sentAt: quote.sentAt ?? today,
       invoiceId: invoice.id,
     });
     this.appendAudit(db, {
       category: "data",
       action: "Converted quote to invoice",
       target: quote.number,
-      before: quoteStateLabel(quoteState(quote, this.todayIso)),
+      before: quoteStateLabel(quoteState(quote, today)),
       after: `${invoice.number}; ${reservationSummary(held)}`,
     });
     this.emit();
@@ -1972,7 +2002,7 @@ export class DemoStore implements ApiClient {
       toId: input.toId,
       status: "in_transit",
       lines: input.lines.map((l) => ({ ...l, id: newId(db.companyId, "trl") })),
-      createdAt: nowStamp(),
+      createdAt: stampOf(db),
       createdBy: this.viewer!.userId,
       receivedAt: null,
       receivedBy: null,
@@ -2000,7 +2030,7 @@ export class DemoStore implements ApiClient {
     const transfer = db.get("transfers", transferId);
     if (!transfer) throw new DemoRuleError("This transfer no longer exists.");
     if (transfer.status !== "in_transit") throw new DemoRuleError(`${transfer.number} was already received.`);
-    const ids = { movementId: () => newId(db.companyId, "mov"), at: nowStamp(), byUserId: this.viewer!.userId };
+    const ids = { movementId: () => newId(db.companyId, "mov"), at: stampOf(db), byUserId: this.viewer!.userId };
     const result = receiveTransfer(transfer, db.list("rolls"), ids);
     db.put("transfers", result.transfer);
     for (const m of result.movements) db.put("stockMovements", m);
@@ -2096,7 +2126,7 @@ export class DemoStore implements ApiClient {
   private async platformData(): Promise<PlatformFixtures> {
     if (!this.platform) {
       const fixtures = await loadPlatformFixtures();
-      this.platform = shiftDates(fixtures, dateShift(fixtures.anchorDate, this.todayIso));
+      this.platform = shiftDates(fixtures, dateShift(fixtures.anchorDate, browserDay()));
     }
     return this.platform;
   }
@@ -2139,7 +2169,10 @@ export class DemoStore implements ApiClient {
   private async db(companyId: CompanyId): Promise<CompanyDb> {
     let db = this.dbs.get(companyId);
     if (!db) {
-      db = new CompanyDb(await loadCompanyFixtures(companyId), this.todayIso);
+      const fixtures = await loadCompanyFixtures(companyId);
+      // Shifted to the company's own day, the day its screens and actions read (`dayOf`).
+      const zone = fixtures.settings.localization.region.timeZone;
+      db = new CompanyDb(fixtures, isKnownTimeZone(zone) ? dayInZone(new Date(), zone) : browserDay());
       if (db.droppedFileIds.length) await this.files.remove(db.droppedFileIds).catch(() => undefined);
       this.dbs.set(companyId, db);
     }
@@ -2150,8 +2183,8 @@ export class DemoStore implements ApiClient {
   private actionContext(db: CompanyDb): ActionContext {
     return {
       db,
-      today: this.todayIso,
-      now: nowStamp(),
+      today: dayOf(db),
+      now: stampOf(db),
       actor: db.get("users", this.viewer!.userId)!,
       files: this.files,
       can: async (key) => (await this.granter(db)).access.permissions.has(key),
@@ -2182,8 +2215,8 @@ export class DemoStore implements ApiClient {
     }
     return {
       db,
-      today: this.todayIso,
-      now: nowStamp(),
+      today: dayOf(db),
+      now: stampOf(db),
       actor,
       modules: company.modules,
       holder,
@@ -2226,7 +2259,7 @@ export class DemoStore implements ApiClient {
 
   /** Who asks for a report (ADR 0055): effective access, whose records count as theirs, and today. */
   private async reportViewer(db: CompanyDb): Promise<ReportViewer> {
-    return { access: (await this.granter(db)).access, subject: this.subject(db), today: this.todayIso };
+    return { access: (await this.granter(db)).access, subject: this.subject(db), today: dayOf(db) };
   }
 
   /** The signed-in viewer's effective access in the open company. */
@@ -2348,7 +2381,7 @@ export class DemoStore implements ApiClient {
       actorName: self?.name ?? "Platform admin",
       actorRole: self ? this.roleNames(db, self.roleIds) : "Super-admin",
     };
-    db.put("audit", { id: newId(db.companyId, "aud"), at: nowStamp(), ...by, ...entry });
+    db.put("audit", { id: newId(db.companyId, "aud"), at: stampOf(db), ...by, ...entry });
   }
 
   /** A list kept in local storage, or empty when nothing (or something that isn't a list) is stored. */
