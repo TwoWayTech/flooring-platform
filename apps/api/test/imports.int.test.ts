@@ -841,7 +841,7 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
       price: "3.0000",
       cost: "2.0000",
       unit: "sq_ft",
-      widthFt: 12,
+      widthFt: "12.000",
     });
     expect(await productBySku(co.a, "RW-5003")).toBeUndefined();
     const nan = await inCompany(co.a, (db) =>

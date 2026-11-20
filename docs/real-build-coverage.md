@@ -48,7 +48,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | `reorderPoint` and widths go out as JSON numbers (F-k). The API refuses part cartons on quotes, conversions, orders and receipts (F-m fixed, 2026-11-20) | MI-1 (whole cartons), MI-DEC |
+| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | Quantities are decimal strings, `reorderPoint` and widths too (F-k fixed, 2026-11-20). The API refuses part cartons on quotes, conversions, orders and receipts (F-m fixed, 2026-11-20) | MI-1 (whole cartons), MI-DEC |
 | `inventory.products` | Partly | Products listed with sensitive cost stripped | No route creates or edits a product; only the import (G3); `/inventory` is mixed | FA-5, FS-5, PM-7 |
 | `inventory.rolls` | Partly | Rolls, cuts, moves, roll invoices | `/inventory/rolls/*` reads customers from DemoStore (G5) | F1, `inventory.spec.ts` |
 | `inventory.transfers` | Done | Create and receive (3 routes) | — | `inventory.spec.ts`, integration |

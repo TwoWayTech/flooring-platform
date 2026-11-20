@@ -116,7 +116,7 @@ export function NewOrderDialog({ open, onOpenChange, suppliers, contacts, produc
     const ft = dec(d.line.quantity || "0")
       .div(d.product.widthFt!)
       .toDecimalPlaces(1);
-    return `${fmt(ft.toString())} ft of a ${d.product.widthFt} ft roll`;
+    return `${fmt(ft.toString())} ft of a ${fmt(d.product.widthFt!)} ft roll`;
   }
 
   async function submit(asDraft: boolean) {

@@ -19,6 +19,7 @@ import {
   payWorkweekTable,
   type ContractorPayment,
   type PayPeriod,
+  bonusPay,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Num } from "@workspace/ui/components/num";
@@ -103,7 +104,7 @@ function ReviewBody({ review, period }: { review: PayPeriodReview; period: PayPe
       id: "bonus",
       header: "Bonus",
       kind: "money",
-      value: (r) => String(Number(r.line.nondiscretionaryBonus) + Number(r.line.discretionaryBonus)),
+      value: (r) => bonusPay(r.line),
       total: true,
     },
     { id: "deduct", header: "Unpaid leave", kind: "money", value: (r) => r.line.salaryDeduction, hidden: true },

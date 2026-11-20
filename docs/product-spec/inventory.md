@@ -323,8 +323,8 @@ return left < LOW_ROLL_FT ? "Low" : "Roll";
 | `price` | string | Per selling unit, per sq ft for area goods |
 | `cost` | string | Per selling unit. Sensitive. Also the average cost for boxed value |
 | `sqFtPerCarton` | string, optional | Boxed goods only. Packaging data |
-| `reorderPoint` | number, optional | Boxed goods, in sq ft |
-| `widthFt` | number, optional | Broadloom roll width |
+| `reorderPoint` | decimal string, optional | Boxed goods, in sq ft |
+| `widthFt` | decimal string, optional | Broadloom roll width |
 | `attributes` | Record of string | Fiber, construction and similar |
 | `supplierId` | string | The order form offers this supplier's products first |
 | `createdAt` | string | |
@@ -337,7 +337,7 @@ return left < LOW_ROLL_FT ? "Low" : "Roll";
 | `rollNumber` | string | Remnants add `-R` and a number |
 | `productId` | string | |
 | `dyeLot` | string | |
-| `widthFt` | number | |
+| `widthFt` | decimal string | |
 | `originalLengthFt`, `remainingLengthFt` | string | In ft |
 | `costPerSqFt` | string | Sensitive. Each roll carries its own cost |
 | `locationId` | string | Stays the sender's while in transit |

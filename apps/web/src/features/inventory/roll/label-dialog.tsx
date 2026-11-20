@@ -50,7 +50,10 @@ export function LabelDialog({
               Dye lot <strong>{roll.dyeLot}</strong>
             </span>
             <span>
-              Width <strong>{roll.widthFt} ft</strong>
+              Width{" "}
+              <strong>
+                <Num kind="quantity" value={roll.widthFt} unit="ft" />
+              </strong>
             </span>
             <span>
               Left{" "}

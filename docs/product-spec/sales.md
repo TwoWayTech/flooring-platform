@@ -494,7 +494,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | --- | --- | --- |
 | `id`, `name` | string | |
 | `x`, `y` | number | Canvas position |
-| `widthFt`, `lengthFt` | number | Feet |
+| `widthFt`, `lengthFt` | decimal string | Feet; the canvas draws them as numbers and snaps to half a foot |
 
 ### DocLine (`packages/shared/src/documents.ts`)
 

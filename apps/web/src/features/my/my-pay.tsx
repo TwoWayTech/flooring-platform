@@ -1,6 +1,6 @@
 "use client";
 
-import { GROSS_PAY_LABEL } from "@workspace/shared";
+import { bonusPay, dec, GROSS_PAY_LABEL } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
 import type { MyPayRow, MyPortal } from "@/lib/api/contract";
@@ -31,8 +31,8 @@ function Row({
 function PeriodCard({ row, showCommission }: { row: MyPayRow; showCommission: boolean }) {
   const formatDate = useFormatDate();
   const { line, period } = row;
-  const bonus = String(Number(line.nondiscretionaryBonus) + Number(line.discretionaryBonus));
-  const salaried = Number(line.salaryAmount) > 0;
+  const bonus = bonusPay(line);
+  const salaried = dec(line.salaryAmount).gt(0);
   return (
     <Panel title={`${formatDate(period.start)} to ${formatDate(period.end)}`}>
       <dl className="flex flex-col gap-1.5 text-sm">
@@ -47,14 +47,14 @@ function PeriodCard({ row, showCommission }: { row: MyPayRow; showCommission: bo
         )}
         <Row label="Overtime pay" kind="money" value={line.overtimePremium} />
         <Row label="Paid leave pay" kind="money" value={line.paidLeavePay} />
-        {Number(bonus) > 0 ? <Row label="Bonus" kind="money" value={bonus} /> : null}
+        {dec(bonus).gt(0) ? <Row label="Bonus" kind="money" value={bonus} /> : null}
         {showCommission ? (
           <>
             <Row label="Commission" kind="money" value={line.commissionPay} />
             <Row label="Overtime on commission" kind="money" value={line.overtimeTrueUp} />
           </>
         ) : null}
-        {Number(line.salaryDeduction) > 0 ? (
+        {dec(line.salaryDeduction).gt(0) ? (
           <Row label="Unpaid leave deducted" kind="money" value={`-${line.salaryDeduction}`} />
         ) : null}
         <div className="border-hairline flex justify-between gap-3 border-t pt-2 font-medium">

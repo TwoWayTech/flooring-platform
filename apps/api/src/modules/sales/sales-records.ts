@@ -203,8 +203,8 @@ export async function loadQuotes(db: CompanyDb, ids?: readonly string[]): Promis
         name: room.name,
         x: room.x,
         y: room.y,
-        widthFt: Number(room.widthFt),
-        lengthFt: Number(room.lengthFt),
+        widthFt: room.widthFt,
+        lengthFt: room.lengthFt,
       })),
     lines: lines
       .filter((line) => line.quoteId === row.id)

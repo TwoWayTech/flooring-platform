@@ -43,9 +43,14 @@ export function supplierDueDate(issuedAt: string, terms: SupplierTerms): string 
   return addDays(issuedAt, NET_DAYS[terms] ?? 0);
 }
 
-/** Total of purchase order lines: quantity × unit cost, each rounded to cents. */
+/** A purchase order line's amount: quantity × unit cost, rounded to cents (CLAUDE.md rule 6). */
+export function poLineAmount(line: Pick<PoLine, "quantity" | "unitCost">): string {
+  return moneyString(roundMoney(dec(line.quantity).times(line.unitCost)));
+}
+
+/** Total of purchase order lines: the sum of their amounts, each rounded to cents. */
 export function poTotal(lines: readonly Pick<PoLine, "quantity" | "unitCost">[]): string {
-  return moneyString(sum(lines.map((l) => roundMoney(dec(l.quantity).times(l.unitCost)))));
+  return moneyString(sum(lines.map(poLineAmount)));
 }
 
 /**
