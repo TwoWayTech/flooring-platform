@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
-import { formatNumber, type NumberKind } from "@workspace/shared";
+import { dec, formatNumber, type NumberKind } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
 
@@ -55,8 +55,8 @@ interface FigureCardProps {
  */
 export function FigureCard({ label, value, kind, change, upIsBad, note, points, href }: FigureCardProps) {
   const numbers = useNumberSettings();
-  const up = change !== null && change !== undefined && Number(change) > 0;
-  const down = change !== null && change !== undefined && Number(change) < 0;
+  const up = change !== null && change !== undefined && dec(change).gt(0);
+  const down = change !== null && change !== undefined && dec(change).lt(0);
   const Icon = up ? ArrowUpRight : down ? ArrowDownRight : Minus;
   const good = (up && !upIsBad) || (down && upIsBad);
   return (
@@ -80,7 +80,7 @@ export function FigureCard({ label, value, kind, change, upIsBad, note, points, 
           <Icon aria-hidden="true" className="size-3.5" />
           {change === null
             ? "No earlier period to compare"
-            : `${up ? "Up" : down ? "Down" : "Level"} ${formatNumber(String(Math.abs(Number(change))), "percent", numbers)} vs previous period`}
+            : `${up ? "Up" : down ? "Down" : "Level"} ${formatNumber(dec(change).abs().toString(), "percent", numbers)} vs previous period`}
         </dd>
       ) : null}
       {note ? <dd className="text-muted-foreground text-xs">{note}</dd> : null}

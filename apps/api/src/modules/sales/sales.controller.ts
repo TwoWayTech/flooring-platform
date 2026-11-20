@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { dec, isStateCode, PERCENT_TEXT } from "@workspace/shared";
+import { dec, isStateCode, PERCENT_TEXT, QUANTITY_TEXT } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -70,6 +70,17 @@ const CUSTOMER = z.object({
     .max(50),
 });
 
+/**
+ * A room's width or length: a decimal string in ft, as every quantity (CLAUDE.md rule 6), up to
+ * 10,000 ft. A JSON number is refused (whole-product check F-k).
+ */
+// The pattern runs first, but Zod still runs the refinement on text it refused, so the size is read only
+// from text the pattern took (a "12,5" would otherwise throw in decimal.js and answer 500).
+const ROOM_FT = QUANTITY.refine(
+  (value) => !QUANTITY_TEXT.test(value) || dec(value).lte(10_000),
+  "Enter a room size of at most 10,000 ft.",
+);
+
 const QUOTE = z.object({
   id: OPTIONAL_ID,
   customerId: z.string().uuid(),
@@ -83,8 +94,8 @@ const QUOTE = z.object({
         name: z.string().max(100),
         x: z.number().finite(),
         y: z.number().finite(),
-        widthFt: z.number().nonnegative().max(10_000),
-        lengthFt: z.number().nonnegative().max(10_000),
+        widthFt: ROOM_FT,
+        lengthFt: ROOM_FT,
       }),
     )
     .max(100),

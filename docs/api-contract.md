@@ -96,6 +96,8 @@ Every company route declares what it needs: `@RequirePermission(...keys)` (any o
 
 Draft spec: docs/specs/settings-users-access.md.
 
+**Feature switches (CLAUDE.md rule 13, 2026-11-20, finding F-h).** Each route reads its page's switch first, after the guards, and answers 404 `not_found` while it is off: `POST /users/invite`, `PATCH /users/:id` and the three company `/support-grants` routes read `settings.users`; `POST /roles`, `PUT /roles/:id`, `POST /roles/:id/reset` and `DELETE /roles/:id` read `settings.roles`; `GET /audit` reads `settings.audit`. `GET /users` and `GET /roles` answer while `settings.users` or `settings.roles` is on, since the Users page reads the roles and the Roles page reads the users; they answer 404 only with both off. `POST /platform/support-grants` also answers 404 while `settings.users` is off (`@PlatformFeature`), since no Owner could see, approve or revoke the request; `GET /platform/support-grants` still lists the console's own requests.
+
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /users` | `settings.users.view` or `settings.users.manage` | Everyone with a profile in the company (`User`) |
@@ -417,7 +419,7 @@ The adjustment approval quantity, on part 1's pattern. The company is the verifi
 
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
-Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
+Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404. A product's `reorderPoint` and `widthFt` and a roll's `widthFt` are decimal strings at their column's scale (`"692.850"`, `"12.000"`), as every quantity; until 2026-11-20 they were JSON numbers (whole-product check F-k).
 
 | Route | Needs | Does |
 | --- | --- | --- |
@@ -444,11 +446,11 @@ Every route needs the `core` module. Line costs (`unitCost`) are stripped withou
 | `POST /supplier-contacts`, `PUT /supplier-contacts/:id` | create, edit | One primary per supplier |
 | `POST /supplier-contacts/:id/status` | `purchasing.supplier.edit` | A leaving primary is replaced |
 | `GET /purchase-orders` | `purchasing.order.view` | Orders with their lines, newest first |
-| `POST /purchase-orders` | `purchasing.order.create` | `NewPurchaseOrderInput`; a draft, or ordered (emails the rep) |
+| `POST /purchase-orders` | `purchasing.order.create` | `NewPurchaseOrderInput`; a draft, or ordered (emails the rep). 400 "<line>: order whole cartons, multiples of <pack> sq ft." for a boxed line that isn't whole cartons (F-m) |
 | `POST /purchase-orders/:id/order` | `purchasing.order.create` | `{ via }`. 409 `not_draft` |
 | `POST /purchase-orders/:id/cancel` | `purchasing.order.create` | `{ reason }`. 409 `has_receipts`, `already_cancelled` |
 | `GET /receipts` | `purchasing.order.view` | Goods receipts with their lines |
-| `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, or a roll number already in stock |
+| `POST /purchase-orders/:id/receipts` | `purchasing.order.receive` | `ReceiptInput`: stock movements and rolls come in. 400 when more than is still due, a showroom, a roll number already in stock, or a boxed quantity received or damaged that isn't whole cartons of the order line's pack ("<line>: receive whole cartons, multiples of <pack> sq ft.", F-m) |
 
 ## Sales, part 1 (real build, P11, ADR 0037)
 
@@ -457,10 +459,10 @@ Every route needs the `core` module and reads through data scope (own, branch, a
 | Route | Needs | Does |
 | --- | --- | --- |
 | `GET /customers` | `customers.customer.view` | Customers within scope, with addresses and certificate |
-| `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }` |
+| `POST /customers` | `customers.customer.create` | `{ name, phone?, email?, type? }`. 409 `settings_missing`, "Finish Settings → Localization and tax before adding customers.", until the company has Localization (the default terms come from it) |
 | `PUT /customers/:id` | `customers.customer.edit` | Name, contact, terms and addresses; credit, exemption and rep are never taken from the request |
 | `GET /quotes` | `sales.quote.view` | Quotes within scope, with rooms and lines |
-| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default; the default is the company's Sales and documents setting, which `GET /settings` answers to every quote reader, ADR 0059 part 2a) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. 400 "Send each line once." for a repeated line id. 409 `quote_closed`, `settings_missing` |
+| `POST /quotes`, `PUT /quotes/:id` | `sales.quote.create`, `sales.quote.edit` | The server computes the total with the tax engine. The web sends no `salesRepId` or `branchId`; the server sets both (ADR 0051, "GET /company"). A line's `unitCost` is optional and ignored: the server costs each line from the catalog or the saved line, so a client without product cost sends none (ADR 0037, 2026-11-16). 403 for a waste change without `sales.waste.view` (by value: `10` and `10.00000000` are the same; a line sent with another product than the saved line under its id starts from that product's default; the default is the company's Sales and documents setting, which `GET /settings` answers to every quote reader, ADR 0059 part 2a) or a tax change without `sales.tax.override`; a line sent without the product it had is a new line without a product, which needs `sales.tax.override`. A room's `widthFt` and `lengthFt` are decimal strings in ft (the quantity pattern, at most 10,000; answered at scale, `"12.500"`); a JSON number is refused with 400 (F-k, 2026-11-20). Rooms sent back are compared by value, so `"12.5"` and `"12.500"` are no change for a role without `retail.room.measure`. 400 "Send each line once." for a repeated line id. 400 "<line>: sell whole cartons, multiples of <pack> sq ft." for a boxed line that isn't whole cartons of its product's pack: refused, never rounded; a pack sent on a product line is ignored (F-m, ADR 0027). 409 `quote_closed`, `settings_missing` |
 | `POST /quotes/:id/status` | `sales.quote.edit` | `{ action: send, accept or decline, expiresAt? }`. 409 `quote_state` |
 
 ## Sales, part 2: invoices and payments (real build, P11, ADR 0038)
@@ -474,7 +476,7 @@ Each answers 404 when `sales.invoices` (reads, conversion, sent, void, credit no
 | `GET /invoice-adjustments` | `sales.invoice.view` | Write-offs and credit applied, within scope |
 | `GET /refunds` | `sales.payment.view` or `sales.payment.refund` | Refunds to customers within scope |
 | `GET /reservations` | `inventory.product.view`, `inventory.roll.view` or `sales.invoice.view` | Every hold for stock viewers; otherwise the holds of invoices within scope |
-| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing`. Refuses, under the stock lock, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (Settings part 4a, D21) |
+| `POST /quotes/:id/invoice` | `sales.invoice.create` | Converts an accepted quote once: server totals, invoice number, stock holds. 409 `conflict` when already invoiced, `settings_missing`. Refuses, under the stock lock, a quote whose header or line warehouse is no longer a live warehouse: 400 "Fulfil the quote from a warehouse." (Settings part 4a, D21). 400 "<line>: sell whole cartons, multiples of <pack> sq ft." for a quote saved with a part carton before the API checked (F-m) |
 | `POST /invoices/:id/sent` | `sales.invoice.edit` or `sales.invoice.create` | Marks it sent once and emails `invoice.sent` |
 | `POST /invoices/:id/void` | `sales.invoice.void` | `{ reason }`; refused once money is confirmed or a credit note's credit is spent; voids pending payments and releases holds |
 | `POST /invoices/:id/credit-notes` | `sales.invoice.void` | `{ subtotal, reason }`; up to what is not yet credited; tax and cost in proportion |
@@ -807,7 +809,7 @@ Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is 
 | `GET /notifications` | Any company member | The person's own in-app notes, newest first (50): `{ id, userId, eventKey, title, href, readAt, createdAt }` |
 | `POST /notifications/read` | Any company member | `{ ids? }`: marks those notes read, none for an empty list, or all unread ones without a list; only the person's own |
 | `GET /outbox` | Any company member | The messages the person caused or received; with `?all=true` (exactly that value), every message to holders of `settings.outbox.view` at data scope `all` (spec `admin = all && can`; ADR 0059, the bell and Outbox part). A redacted row also has an empty `sourceId`. The row is the screen's columns plus the sender snapshot (`fromName`, `replyTo`); template values, the dedupe key and the provider's id never come. Someone else's restricted message is redacted without `hr.employee.view`. A private meeting's message is redacted for everyone it does not involve, whatever they hold (ADR 0051): subject, body and attachments are hidden, while recipient, status and dates stay |
-| `POST /outbox/:id/retry` | `settings.outbox.view`, data scope `all` (403 otherwise) | Sends a failed message again after checking its address. 409 `not_failed` otherwise |
+| `POST /outbox/:id/retry` | `settings.outbox.view`, data scope `all` (403 otherwise) | Sends a failed message again after checking its address. 409 `not_failed` otherwise; 404 `not_found`, "This message no longer exists.", for an id that names no message |
 | `POST /outbox/:id/cancel` | `settings.outbox.view`, data scope `all` (403 otherwise) | Cancels a scheduled message. 409 `not_scheduled` otherwise |
 
 In api mode the bell (`listMyNotifications`, `markNotificationsRead`) and the Outbox screens (`listOutbox`, `retryOutbox`, `cancelOutbox`) use these routes (ADR 0059, the bell and Outbox part). `markNotificationsRead([])` sends nothing, because a body without ids marks every unread note. Simulate bounce and Simulate reply are demo presenter tools, hidden in api mode.

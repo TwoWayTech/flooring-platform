@@ -28,9 +28,12 @@ const FIELD_KEYS = "sensitive:field-keys";
 /** Sets a route's own keys for some sensitive field names (handler level). Fields not named keep the default. */
 export const SensitiveFieldKeys = (keys: FieldKeys) => SetMetadata(FIELD_KEYS, keys);
 
-/** Whether the viewer may see a field: the route's own keys when it has them, else the shared map. */
+/**
+ * Whether the viewer may see a field: the route's own keys when it has them, else the shared map.
+ * Only the route's own names count, never Object.prototype's, such as `toString` (finding F-l).
+ */
 function visible(field: string, held: ReadonlySet<PermissionKey>, own: FieldKeys | undefined): boolean {
-  const routeKeys = own?.[field];
+  const routeKeys = own && Object.hasOwn(own, field) ? own[field] : undefined;
   if (routeKeys) return routeKeys.some((key) => held.has(key));
   const key = sensitiveKeyFor(field);
   return !key || held.has(key);

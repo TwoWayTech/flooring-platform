@@ -24,14 +24,15 @@ function dayOf(value: Date): string {
 /**
  * The company's localization settings with its tax rules and county rates, which live in their own
  * tables because they carry effective dates (data-model "Settings groups"). The tax engine reads it.
+ * Without them the step is refused in words that name it (`step`, quotes by default; finding F-n).
  */
-export async function loadLocalization(db: CompanyDb): Promise<LocalizationSettings> {
+export async function loadLocalization(db: CompanyDb, step = "creating quotes"): Promise<LocalizationSettings> {
   const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, "localization"));
   // A company set up without settings collects nothing and sells nothing until they exist (fail closed).
   if (!row) {
     throw new ConflictException({
       code: "settings_missing",
-      message: "Finish Settings → Localization and tax before creating quotes.",
+      message: `Finish Settings → Localization and tax before ${step}.`,
     });
   }
   const stored = row.value as LocalizationSettings;
@@ -203,8 +204,8 @@ export async function loadQuotes(db: CompanyDb, ids?: readonly string[]): Promis
         name: room.name,
         x: room.x,
         y: room.y,
-        widthFt: Number(room.widthFt),
-        lengthFt: Number(room.lengthFt),
+        widthFt: room.widthFt,
+        lengthFt: room.lengthFt,
       })),
     lines: lines
       .filter((line) => line.quoteId === row.id)

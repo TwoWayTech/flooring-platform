@@ -122,10 +122,16 @@ function camelCase(field: string): string {
 
 /**
  * The key that reveals a response field, or undefined when the field is not sensitive. Raw SQL rows
- * arrive in snake_case, so `unit_cost` is matched as `unitCost` (PR #7 review).
+ * arrive in snake_case, so `unit_cost` is matched as `unitCost` (PR #7 review). Only the map's own
+ * names match, never inherited ones such as `toString` (finding F-l).
  */
 export function sensitiveKeyFor(field: string): PermissionKey | undefined {
-  return SENSITIVE_FIELDS[field] ?? SENSITIVE_FIELDS[camelCase(field)];
+  return ownKey(field) ?? ownKey(camelCase(field));
+}
+
+/** The map's own entry only: a name such as `constructor` must not match Object.prototype (finding F-l). */
+function ownKey(field: string): PermissionKey | undefined {
+  return Object.hasOwn(SENSITIVE_FIELDS, field) ? SENSITIVE_FIELDS[field] : undefined;
 }
 
 /** Who is looking, as data scope needs it. */

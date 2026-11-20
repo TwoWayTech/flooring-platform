@@ -7,9 +7,6 @@ import { loadSuppliers } from "../purchasing/purchasing-records";
 import { liveSupplierIds, loadProductsWithStock, loadRetiredSkus } from "./import-records";
 import { byChangeKey, idsOf, type KindStore, type RecordKind } from "./kind-store";
 
-/** Optional numbers the shared `Product` keeps as JS numbers, as the numeric column stores them. */
-const numeric = (value: number | undefined) => (value === undefined ? null : String(value));
-
 /**
  * The product columns an import writes (ADR 0057 M2, S-18): the loader reads a missing supplier as
  * "", so it goes back as null, and a missing coverage, width or reorder point is null. A JS number
@@ -27,8 +24,8 @@ export function productRow(product: Product) {
     price: product.price,
     cost: product.cost,
     sqFtPerCarton: product.sqFtPerCarton ?? null,
-    reorderPoint: numeric(product.reorderPoint),
-    widthFt: numeric(product.widthFt),
+    reorderPoint: product.reorderPoint ?? null,
+    widthFt: product.widthFt ?? null,
     supplierId: product.supplierId || null,
   };
 }

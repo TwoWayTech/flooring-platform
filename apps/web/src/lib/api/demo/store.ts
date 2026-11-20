@@ -17,6 +17,7 @@ import {
   keepsAcceptedTotal,
   permissionsForModules,
   featureOn,
+  type FeatureKey,
   PRODUCT_MODULES,
   roleTemplate,
   becomesShowroom,
@@ -34,6 +35,7 @@ import {
   upgradeCompany,
   QUOTE_ACTION_STATUS,
   quoteActions,
+  partCartonProblem,
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
@@ -507,9 +509,11 @@ export class DemoStore implements ApiClient {
    * ("Refusal order": the body's 400 before the 404, 409 and 429). The grant and its
    * `support.requested` row are kept in this browser. No step-up, like the demo's access save. The
    * company's Owner approves or revokes it in Settings → Users (part 4); otherwise it stays pending
-   * until it expires.
+   * until it expires. Refused while `settings.users` is off, as the API hides the route then: no Owner
+   * could see the request (CLAUDE.md rule 13).
    */
   async requestSupportAccess(input: SupportRequestInput) {
+    switchedOn("settings.users");
     const problem = supportRequestInputProblem(input);
     if (problem) throw new DemoRuleError(problem);
     const company = await this.platformCompany(input.companyId);
@@ -573,8 +577,12 @@ export class DemoStore implements ApiClient {
     await this.decideSupportGrant(grantId, "revoke");
   }
 
-  /** The open company, once its viewer is checked to be its Owner, as the support routes check. */
+  /**
+   * The open company, once its viewer is checked to be its Owner, as the support routes check; first
+   * the `settings.users` switch, whose page holds the panel, as on the API (CLAUDE.md rule 13).
+   */
   private async supportOwner(): Promise<CompanyDb> {
+    switchedOn("settings.users");
     const db = this.open();
     if (!(await this.granter(db)).access.isOwner) throw new DemoRuleError(SUPPORT_OWNER_ONLY_MESSAGE);
     return db;
@@ -968,6 +976,7 @@ export class DemoStore implements ApiClient {
   }
 
   async list<K extends CollectionName>(collection: K) {
+    if (collection === "audit") switchedOn("settings.audit");
     const db = this.open();
     const can = this.actionContext(db).can;
     const needed = PRIVATE_COLLECTIONS[collection];
@@ -1011,6 +1020,7 @@ export class DemoStore implements ApiClient {
   }
 
   async inviteUser(input: InviteUserInput) {
+    switchedOn("settings.users");
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const company = await this.getCompany();
@@ -1039,6 +1049,7 @@ export class DemoStore implements ApiClient {
   }
 
   async updateUser(userId: string, patch: UserPatch) {
+    switchedOn("settings.users");
     const db = this.open();
     await this.assertCan(db, ["settings.users.manage"]);
     const before = db.get("users", userId)!;
@@ -1066,6 +1077,7 @@ export class DemoStore implements ApiClient {
   }
 
   async saveRole(role: Role) {
+    switchedOn("settings.roles");
     const db = this.open();
     await this.assertCan(db, ["settings.roles.manage"]);
     const before = db.get("roles", role.id);
@@ -1084,6 +1096,7 @@ export class DemoStore implements ApiClient {
   }
 
   async resetRole(roleId: string) {
+    switchedOn("settings.roles");
     const db = this.open();
     const role = db.get("roles", roleId);
     if (!role?.system || !isDefaultRoleKey(role.key)) throw new DemoRuleError("Only default roles can be reset.");
@@ -1100,6 +1113,7 @@ export class DemoStore implements ApiClient {
   }
 
   async deleteRole(roleId: string) {
+    switchedOn("settings.roles");
     const db = this.open();
     await this.assertCan(db, ["settings.roles.manage"]);
     const role = db.get("roles", roleId)!;
@@ -1192,9 +1206,21 @@ export class DemoStore implements ApiClient {
       throw new DemoRuleError(`Quote ${before.number} is closed and can't be changed.`);
     const draftProblem = quoteDraftProblem(input);
     if (draftProblem) throw new DemoRuleError(draftProblem);
+    // Boxed lines are sold in whole cartons, as on the API (F-m, ADR 0027).
+    // The pack is the product's, as on the API, never the one the line was sent with; it is
+    // checked and stored that way.
+    const packed = input.lines.map((line) => {
+      if (!line.productId) return { ...line, sqFtPerCarton: undefined };
+      const product = db.get("products", line.productId);
+      if (!product) throw new DemoRuleError("A product on the quote no longer exists.");
+      return { ...line, sqFtPerCarton: product.sqFtPerCarton };
+    });
+    const cartons = partCartonProblem(packed, "sell");
+    if (cartons) throw new DemoRuleError(cartons);
     // Status, sending and conversion change only through their own calls (spec B1).
     const quote: Quote = {
       ...input,
+      lines: packed,
       status: before?.status ?? "draft",
       sentAt: before?.sentAt ?? null,
       expiresAt: before?.expiresAt ?? null,
@@ -1286,6 +1312,9 @@ export class DemoStore implements ApiClient {
     const today = dayOf(db);
     const problem = Object.values(quoteSendProblems(quote, null, today))[0];
     if (problem) throw new DemoRuleError(problem);
+    // A part carton saved before the rule is not invoiced, as on the API (F-m, rule 7).
+    const cartons = partCartonProblem(quote.lines, "sell");
+    if (cartons) throw new DemoRuleError(cartons);
     const customer = db.get("customers", quote.customerId)!;
     const prefix = db.settings.localization.documents.invoicePrefix;
     const invoice = invoiceFromQuote(quote, customer, db.settings.localization, {
@@ -1541,11 +1570,14 @@ export class DemoStore implements ApiClient {
     );
   }
 
+  // Each settings page reads both lists, so either page's switch keeps them, as on the API (F-h).
   async listSettingsUsers() {
+    switchedOn("settings.users", "settings.roles");
     return this.list("users");
   }
 
   async listSettingsRoles() {
+    switchedOn("settings.users", "settings.roles");
     return this.list("roles");
   }
 
@@ -2445,3 +2477,11 @@ function branchOf(id: string): string | null {
 
 /** The API's words when a branch-scoped admin changes someone outside their branch, or moves them out. */
 const BRANCH_CHANGE = "You can only change people in your own branch, and keep them in it.";
+
+/**
+ * Refuses, as the API's 404 does, unless one of these switches is on (CLAUDE.md rule 13): the
+ * Users, Roles and Audit log pages' reads and writes (whole-product check finding F-h).
+ */
+function switchedOn(...keys: [FeatureKey, ...FeatureKey[]]): void {
+  if (!keys.some((key) => featureOn(key))) throw new DemoRuleError("This feature is switched off.");
+}

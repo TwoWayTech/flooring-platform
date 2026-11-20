@@ -4,6 +4,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { formatNumber, type Room } from "@workspace/shared";
 import { useNumberSettings } from "@workspace/ui/components/number-settings";
 import { cn } from "@workspace/ui/lib/utils";
+import { feetText, roomSize } from "./room-geometry";
 
 /** The drawing area in ft; rooms snap to half a foot. */
 const FIELD = { width: 48, height: 30 };
@@ -66,19 +67,20 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
         h: Math.abs(p.y - d.startY),
       });
     } else if (d.mode === "move") {
-      const x = clamp(p.x - d.dx, 0, FIELD.width - d.room.widthFt);
-      const y = clamp(p.y - d.dy, 0, FIELD.height - d.room.lengthFt);
+      const { w, h } = roomSize(d.room);
+      const x = clamp(p.x - d.dx, 0, FIELD.width - w);
+      const y = clamp(p.y - d.dy, 0, FIELD.height - h);
       if (x !== d.room.x || y !== d.room.y) onChange({ ...d.room, x, y });
     } else {
-      const widthFt = Math.max(MIN_FT, p.x - d.room.x);
-      const lengthFt = Math.max(MIN_FT, p.y - d.room.y);
+      const widthFt = feetText(Math.max(MIN_FT, p.x - d.room.x));
+      const lengthFt = feetText(Math.max(MIN_FT, p.y - d.room.y));
       onChange({ ...d.room, widthFt, lengthFt });
     }
   }
 
   function onUp() {
     if (drag.current?.mode === "draw" && sketch && sketch.w >= MIN_FT && sketch.h >= MIN_FT) {
-      onAdd({ x: sketch.x, y: sketch.y, widthFt: sketch.w, lengthFt: sketch.h });
+      onAdd({ x: sketch.x, y: sketch.y, widthFt: feetText(sketch.w), lengthFt: feetText(sketch.h) });
     }
     drag.current = null;
     setSketch(null);
@@ -89,17 +91,18 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
     if (!step || !editable) return;
     e.preventDefault();
     const [dx, dy] = step as [number, number];
+    const { w, h } = roomSize(room);
     if (e.shiftKey) {
       onChange({
         ...room,
-        widthFt: Math.max(MIN_FT, room.widthFt + dx),
-        lengthFt: Math.max(MIN_FT, room.lengthFt + dy),
+        widthFt: feetText(Math.max(MIN_FT, w + dx)),
+        lengthFt: feetText(Math.max(MIN_FT, h + dy)),
       });
     } else {
       onChange({
         ...room,
-        x: clamp(room.x + dx, 0, FIELD.width - room.widthFt),
-        y: clamp(room.y + dy, 0, FIELD.height - room.lengthFt),
+        x: clamp(room.x + dx, 0, FIELD.width - w),
+        y: clamp(room.y + dy, 0, FIELD.height - h),
       });
     }
   }
@@ -129,6 +132,7 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
       {rooms.map((room) => {
         const selected = room.id === selectedId;
         const size = sizeLabel(room);
+        const { w, h } = roomSize(room);
         return (
           <g
             key={room.id}
@@ -149,23 +153,23 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
             <rect
               x={room.x}
               y={room.y}
-              width={room.widthFt}
-              height={room.lengthFt}
+              width={w}
+              height={h}
               fill="var(--brand-soft)"
               stroke={selected ? "var(--brand-ink)" : "var(--brand)"}
               strokeWidth={selected ? 2.5 : 1.25}
               vectorEffect="non-scaling-stroke"
             />
             <text textAnchor="middle" className="fill-foreground" fontSize={0.95} fontWeight={600}>
-              <tspan x={room.x + room.widthFt / 2} y={room.y + room.lengthFt / 2 - 0.2}>
+              <tspan x={room.x + w / 2} y={room.y + h / 2 - 0.2}>
                 {room.name}
               </tspan>
-              {room.lengthFt >= 4 ? (
+              {h >= 4 ? (
                 <>
                   {" "}
                   <tspan
-                    x={room.x + room.widthFt / 2}
-                    y={room.y + room.lengthFt / 2 + 1.1}
+                    x={room.x + w / 2}
+                    y={room.y + h / 2 + 1.1}
                     className="fill-muted-foreground"
                     fontSize={0.8}
                     fontWeight={400}
@@ -177,8 +181,8 @@ export function RoomCanvas({ rooms, selectedId, editable, onSelect, onAdd, onCha
             </text>
             {selected && editable ? (
               <rect
-                x={room.x + room.widthFt - 0.6}
-                y={room.y + room.lengthFt - 0.6}
+                x={room.x + w - 0.6}
+                y={room.y + h - 0.6}
                 width={1.2}
                 height={1.2}
                 rx={0.15}

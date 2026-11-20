@@ -1,6 +1,7 @@
 import { addDays, daysBetween } from "../dates";
 import { dec, maxDec, minDec, moneyString, roundMoney, roundUnitCost, sum, type Dec } from "../money";
 import { isBoxed, stockUnit } from "../stock";
+import { partCartonProblem } from "../units";
 import type {
   Bill,
   GoodsReceipt,
@@ -42,9 +43,14 @@ export function supplierDueDate(issuedAt: string, terms: SupplierTerms): string 
   return addDays(issuedAt, NET_DAYS[terms] ?? 0);
 }
 
-/** Total of purchase order lines: quantity × unit cost, each rounded to cents. */
+/** A purchase order line's amount: quantity × unit cost, rounded to cents (CLAUDE.md rule 6). */
+export function poLineAmount(line: Pick<PoLine, "quantity" | "unitCost">): string {
+  return moneyString(roundMoney(dec(line.quantity).times(line.unitCost)));
+}
+
+/** Total of purchase order lines: the sum of their amounts, each rounded to cents. */
 export function poTotal(lines: readonly Pick<PoLine, "quantity" | "unitCost">[]): string {
-  return moneyString(sum(lines.map((l) => roundMoney(dec(l.quantity).times(l.unitCost)))));
+  return moneyString(sum(lines.map(poLineAmount)));
 }
 
 /**
@@ -94,6 +100,17 @@ export function receiptProblem(
     if (received.plus(damaged).gt(0)) any = true;
     const open = dec(ordered.quantity).minus(got.get(ordered.id) ?? 0);
     if (received.plus(damaged).gt(open)) return `${ordered.description}: only ${open.toString()} is still to come.`;
+    // Cartons arrive whole, damaged or not, in the order line's pack (F-m, ADR 0027).
+    const pack = ordered.sqFtPerCarton;
+    const cartons = partCartonProblem(
+      [received, damaged].map((quantity) => ({
+        description: ordered.description,
+        quantity: quantity.toString(),
+        sqFtPerCarton: pack,
+      })),
+      "receive",
+    );
+    if (cartons) return cartons;
   }
   return any ? null : "Enter what arrived on at least one line.";
 }

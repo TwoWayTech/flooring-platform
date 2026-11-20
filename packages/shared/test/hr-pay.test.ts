@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { grossPay, payFrequencyProblem, periodFor, splitOvertime, type Employee, type Timesheet } from "../src";
+import {
+  bonusPay,
+  grossPay,
+  payFrequencyProblem,
+  periodFor,
+  splitOvertime,
+  type Employee,
+  type Timesheet,
+} from "../src";
 
 const employee = (patch: Partial<Employee> = {}) =>
   ({
@@ -236,5 +244,12 @@ describe("pay periods (spec C1)", () => {
     expect(payFrequencyProblem("monthly", [employee({ state: "CA", status: "active" })])).toMatch(/California/);
     expect(payFrequencyProblem("biweekly", [employee({ state: "CA", status: "active" })])).toBeNull();
     expect(payFrequencyProblem("monthly", [employee({ state: "CO", status: "active" })])).toBeNull();
+  });
+});
+
+describe("money shown on the pay screens (F-o, rule 6)", () => {
+  it("adds the two bonuses with decimal.js, to the cent", () => {
+    expect(bonusPay({ nondiscretionaryBonus: "0.10", discretionaryBonus: "0.20" })).toBe("0.30");
+    expect(bonusPay({ nondiscretionaryBonus: "0.00", discretionaryBonus: "0.00" })).toBe("0.00");
   });
 });

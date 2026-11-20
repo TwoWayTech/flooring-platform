@@ -8,6 +8,7 @@ import {
   EXAMPLE_TAX_RULES,
   invoiceFromQuote,
   nextNumber,
+  quantityForArea,
   quoteLineFor,
   remeasureLines,
   savedQuoteLine,
@@ -39,8 +40,8 @@ const localization = { tax, region: { statesOfOperation: ["NJ", "CO"] } } as Pic
 >;
 const lvp = { id: "lvp", unit: "sq_ft", sqFtPerCarton: "23.64", category: "lvp" } as Product;
 const rooms = [
-  { id: "living", name: "Living room", x: 0, y: 0, widthFt: 14, lengthFt: 18 },
-  { id: "hall", name: "Hall", x: 16, y: 0, widthFt: 4, lengthFt: 12 },
+  { id: "living", name: "Living room", x: 0, y: 0, widthFt: "14", lengthFt: "18" },
+  { id: "hall", name: "Hall", x: 16, y: 0, widthFt: "4", lengthFt: "12" },
 ];
 const lines: DocLine[] = [
   {
@@ -210,7 +211,7 @@ describe("a new quote line (spec Quote builder)", () => {
       description: "Tidewater Vinyl Weathered Pier",
       category: "material",
       unit: "sq_ft",
-      quantity: "1",
+      quantity: "23.64",
       unitPrice: "4.25",
       unitCost: "2.10",
       sqFtPerCarton: "23.64",
@@ -223,6 +224,20 @@ describe("a new quote line (spec Quote builder)", () => {
     const line = quoteLineFor(product({ sqFtPerCarton: "23.64" }), "draft-1", [], waste);
     expect(line).not.toHaveProperty("roomIds");
     expect(line.wastePct).toBe(waste.lvp);
+  });
+
+  it("starts a boxed line at one whole carton, so a new line is never a part carton (F-m, ADR 0027)", () => {
+    const boxed = quoteLineFor(product({ sqFtPerCarton: "23.640" }), "draft-1", [], waste);
+    expect(boxed).toMatchObject({ quantity: "23.64", sqFtPerCarton: "23.640" });
+    expect(quoteLineFor(product({}), "draft-1", [], waste).quantity).toBe("1");
+    // A pack that is no carton (zero) is no pack: one unit, no carton size, and remeasuring doesn't throw.
+    const zero = product({ sqFtPerCarton: "0.000" });
+    const line = quoteLineFor(zero, "draft-1", [], waste);
+    expect(line.quantity).toBe("1");
+    expect(line).not.toHaveProperty("sqFtPerCarton");
+    const measured = remeasureLines([{ ...line, roomIds: ["living"] }], rooms, [zero]);
+    // The living room is 14 × 18 = 252 sq ft, plus waste, with no carton rounding.
+    expect(measured[0]!.quantity).toBe(quantityForArea("252", line.wastePct ?? "0").toString());
   });
 
   it("ties installation sold per sq ft to the rooms, with no waste, by its name and taxed as labor", () => {

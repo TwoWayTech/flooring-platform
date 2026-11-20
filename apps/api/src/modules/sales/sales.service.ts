@@ -3,10 +3,12 @@ import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { addresses, customers, measurementRooms, quoteLines, quotes } from "@workspace/db/company";
 import {
   computeTotals,
+  dec,
   keepsAcceptedTotal,
   productTaxCategory,
   defaultWastePct,
   nextNumber,
+  partCartonProblem,
   QUOTE_ACTION_STATUS,
   quoteActions,
   quoteDraftProblem,
@@ -105,6 +107,27 @@ function quoteAudit(
  * the company's own rules, never taken from the screen. Every write is audited in its transaction.
  * Invoices, payments, credits and refunds come in part 2.
  */
+/**
+ * Rooms sent back as answered are no change: sizes are compared by value, so "12.500" (as the API
+ * answers it) and "12.5" (as typed) are the same room (STATUS B6; whole-product check F-k).
+ */
+function sameRooms(sent: readonly Room[], saved: readonly Room[]): boolean {
+  return (
+    sent.length === saved.length &&
+    sent.every((room, index) => {
+      const was = saved[index]!;
+      return (
+        room.id === was.id &&
+        room.name === was.name &&
+        room.x === was.x &&
+        room.y === was.y &&
+        dec(room.widthFt).eq(was.widthFt) &&
+        dec(room.lengthFt).eq(was.lengthFt)
+      );
+    })
+  );
+}
+
 @Injectable()
 export class SalesService {
   private readonly logger = new Logger("Sales");
@@ -134,7 +157,7 @@ export class SalesService {
     const name = input.name.trim();
     if (!name) throw refuse("Enter the customer's name.");
     const db = await this.tenancy.db(tenant);
-    const localization = await loadLocalization(db);
+    const localization = await loadLocalization(db, "adding customers");
     const id = uuidv7();
     await db.transaction(async (tx) => {
       await tx.insert(customers).values({
@@ -273,6 +296,9 @@ export class SalesService {
       const localization = await loadLocalization(tx);
       const catalog = new Map((await loadProducts(tx)).map((product) => [product.id, product]));
       const lines = this.trustedLines(actor.access, input.lines, before, catalog);
+      // Boxed lines are whole cartons (ADR 0027): refused, never rounded, so the quantity is the one sent (F-m).
+      const cartons = partCartonProblem(lines, "sell");
+      if (cartons) throw refuse(cartons);
       await this.assertReferences(tx, lines, input.soldAtLocationId);
       this.assertRooms(actor.access, input.rooms, before);
       this.assertWaste(actor.access, lines, before, catalog, localization.documents.defaultWastePct);
@@ -475,7 +501,8 @@ export class SalesService {
           category: productTaxCategory(product),
           unit: product.unit,
           unitCost: product.cost,
-          ...(product.sqFtPerCarton ? { sqFtPerCarton: product.sqFtPerCarton } : {}),
+          // The pack is the product's, never the request's, so a line can't claim smaller cartons (F-m).
+          sqFtPerCarton: product.sqFtPerCarton,
         };
       }
       // A line with no product keeps the category it was saved with; a new one, a changed
@@ -486,7 +513,8 @@ export class SalesService {
           message: "Only someone who may change tax can add a line without a product.",
         });
       }
-      return { ...line, unitCost: saved?.unitCost ?? "0" };
+      // A carton is a product's packaging; a line without a product has none, whatever was sent.
+      return { ...line, sqFtPerCarton: undefined, unitCost: saved?.unitCost ?? "0" };
     });
   }
 
@@ -513,8 +541,7 @@ export class SalesService {
 
   /** Drawing rooms is Retail's (spec "Draw rooms on the canvas"); others keep the rooms as saved. */
   private assertRooms(access: RequestAccess, rooms: readonly Room[], before: Quote | undefined): void {
-    const same = JSON.stringify(rooms) === JSON.stringify(before?.rooms ?? []);
-    if (same) return;
+    if (sameRooms(rooms, before?.rooms ?? [])) return;
     if (!access.modules.includes("retail") || !access.permissions.has("retail.room.measure")) {
       throw new ForbiddenException({ code: "forbidden", message: "Your role does not allow measuring rooms." });
     }
@@ -592,8 +619,8 @@ export class SalesService {
           name: room.name,
           x: room.x,
           y: room.y,
-          widthFt: String(room.widthFt),
-          lengthFt: String(room.lengthFt),
+          widthFt: room.widthFt,
+          lengthFt: room.lengthFt,
           createdBy: by,
         })),
       );

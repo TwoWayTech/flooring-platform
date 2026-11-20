@@ -24,6 +24,7 @@ import {
   nextNumber,
   planReservations,
   quoteIsOpen,
+  partCartonProblem,
   quoteSendProblems,
   rollAvailable,
   roundMoney,
@@ -167,6 +168,9 @@ export class InvoicesService {
       }
       const problem = Object.values(quoteSendProblems(quote, null, clock.day))[0];
       if (problem) throw refuse(problem);
+      // A quote saved before the API checked cartons is not invoiced as a part carton (F-m, rule 7).
+      const cartons = partCartonProblem(quote.lines, "sell");
+      if (cartons) throw refuse(cartons);
       const [customer] = await loadCustomers(tx, [quote.customerId]);
       if (!customer) throw refuse("This quote's customer no longer exists.");
       const localization = await loadLocalization(tx);

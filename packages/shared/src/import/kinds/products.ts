@@ -1,6 +1,6 @@
 import { CATEGORY_LABELS } from "../../catalog-labels";
 import { dec } from "../../money";
-import { SQ_FT_PER_SQ_YD, UNIT_LABELS, type SellUnit } from "../../units";
+import { cartonPack, SQ_FT_PER_SQ_YD, UNIT_LABELS, type SellUnit } from "../../units";
 import type { Product, ProductCategory } from "../../types";
 import type { CellProblem } from "../types";
 import { ambiguous, findParty, keepStored, patched, sameDecimal, text } from "../lookup";
@@ -19,16 +19,13 @@ const TOO_LARGE = dec("10000000000");
 
 const refuse = (field: string, message: string): RowOutcome => ({ problems: [{ field, message }] });
 
-/** A stored coverage the plan may divide by: more than 0, else none. */
-const usableCoverage = (stored: string | undefined) => (stored && dec(stored).gt(0) ? stored : undefined);
-
 /**
  * Coverage and width the product's unit needs (spec section 4): cartons need sq ft per carton in
  * every category, adhesives and trims included (ADR 0057 S-18), and broadloom a width.
  */
 function unitProblems(category: ProductCategory, unit: FileUnit, row: ParsedRow, existing?: Product): CellProblem[] {
   const problems: CellProblem[] = [];
-  if (unit === "carton" && !row.sq_ft_per_carton && !usableCoverage(existing?.sqFtPerCarton)) {
+  if (unit === "carton" && !row.sq_ft_per_carton && !cartonPack(existing?.sqFtPerCarton)) {
     problems.push({ field: "sq_ft_per_carton", message: "Products sold by the carton need the sq ft per carton." });
   }
   if (category === "carpet" && !row.width_ft && !existing?.widthFt) {
@@ -77,7 +74,7 @@ function matchSku(sku: string, ctx: KindContext): { product?: Product } | { prob
  */
 function stockHistoryProblem(
   existing: Product,
-  next: { cost: string; category: ProductCategory; unit: SellUnit; coverage: string | null; width?: number },
+  next: { cost: string; category: ProductCategory; unit: SellUnit; coverage: string | null; width: string | null },
   ctx: KindContext,
 ): CellProblem | null {
   if (!ctx.lookups.productsWithStock.has(existing.id)) return null;
@@ -86,7 +83,7 @@ function stockHistoryProblem(
     next.category !== existing.category ||
     next.unit !== existing.unit ||
     (next.coverage !== null && !sameDecimal(existing.sqFtPerCarton, next.coverage)) ||
-    (next.width !== undefined && next.width !== existing.widthFt);
+    (next.width !== null && !sameDecimal(existing.widthFt, next.width));
   if (!costChanges && !otherChanges) return null;
   return {
     field: costChanges ? "cost" : "unit",
@@ -121,13 +118,14 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
   if (problems.length) return { problems };
   const unit: SellUnit = fileUnit === "sq_yd" || fileUnit === "carton" ? "sq_ft" : fileUnit;
   const coverageCell = row.sq_ft_per_carton as string | null;
-  const coverage = coverageCell ?? usableCoverage(existing?.sqFtPerCarton);
+  const coverage = coverageCell ?? cartonPack(existing?.sqFtPerCarton);
   const price = pricePerSellUnit(text(row, "price"), fileUnit, coverage);
   const cost = pricePerSellUnit(text(row, "cost"), fileUnit, coverage);
   const size = tooLarge(price, cost);
   if (size) return { problems: [size] };
-  const width = row.width_ft ? Number(row.width_ft) : undefined;
-  const reorder = row.reorder_point ? Number(row.reorder_point) : undefined;
+  // Quantities stay decimal strings, as typed (CLAUDE.md rule 6; whole-product check F-k).
+  const width = (row.width_ft as string | null) || null;
+  const reorder = (row.reorder_point as string | null) || null;
   if (!existing) {
     const product: Product = {
       id: ctx.newId("prd"),
@@ -142,8 +140,8 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
       price,
       cost,
       ...(coverageCell ? { sqFtPerCarton: coverageCell } : {}),
-      ...(reorder !== undefined ? { reorderPoint: reorder } : {}),
-      ...(width !== undefined ? { widthFt: width } : {}),
+      ...(reorder ? { reorderPoint: reorder } : {}),
+      ...(width ? { widthFt: width } : {}),
       attributes: {},
       supplierId: supplier.id,
       createdAt: ctx.today,
@@ -162,8 +160,8 @@ function resolveProduct(row: ParsedRow, ctx: KindContext): RowOutcome {
     price: keepStored(existing.price, price),
     cost: keepStored(existing.cost, cost),
     sqFtPerCarton: keepStored(existing.sqFtPerCarton, coverageCell),
-    reorderPoint: reorder,
-    widthFt: width,
+    reorderPoint: keepStored(existing.reorderPoint, reorder),
+    widthFt: keepStored(existing.widthFt, width),
     supplierId: supplier.id,
   });
   if (!next) return { action: "skip", label: sku, writes: [], note: "Nothing changed." };

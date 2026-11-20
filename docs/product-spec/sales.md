@@ -236,7 +236,7 @@ pctOf(v, p)    = v * p / 100
    other labor units  = unchanged
    ```
 
-7. **Waste and whole cartons.** `withWaste`, `cartonsForArea`, `wholeCartonArea` and `quantityForArea` in `packages/shared/src/units.ts`. Cartons are billed whole (plan N-2).
+7. **Waste and whole cartons.** `withWaste`, `cartonsForArea`, `wholeCartonArea` and `quantityForArea` in `packages/shared/src/units.ts`. Cartons are billed whole (plan N-2). The screens round a boxed line up; the API refuses a boxed line that isn't whole cartons of its product's pack (`isWholeCartons`, `partCartonProblem`: "Slate Tile: sell whole cartons, multiples of 20 sq ft.") on a quote save and on converting a quote, and never rounds what it was sent (F-m, 2026-11-20). The check uses the product's pack when a quote is saved, so an open quote written before its product's pack changed is refused on its next save until its boxed quantities are whole cartons of the new pack; conversion checks the pack stored on the line. DemoStore does the same.
 
    ```
    gross          = area * (100 + wastePct) / 100
@@ -494,7 +494,7 @@ Written only by `keepNewGuest` and the seed. The generic `save` refuses this col
 | --- | --- | --- |
 | `id`, `name` | string | |
 | `x`, `y` | number | Canvas position |
-| `widthFt`, `lengthFt` | number | Feet |
+| `widthFt`, `lengthFt` | decimal string | Feet; the canvas draws them as numbers and snaps to half a foot |
 
 ### DocLine (`packages/shared/src/documents.ts`)
 

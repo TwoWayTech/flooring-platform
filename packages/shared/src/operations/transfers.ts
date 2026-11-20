@@ -1,5 +1,6 @@
 import { dec } from "../money";
 import { boxedOnHand } from "../stock";
+import { cartonPack, isWholeCartons } from "../units";
 import type { Location, Product, Roll, StockMovement, Transfer, TransferLine } from "../types";
 
 /** What a person fills in to start a transfer. */
@@ -45,8 +46,8 @@ export function validateTransfer(
     const quantity = dec(line.quantity || "0");
     if (quantity.lte(0)) return "Enter a quantity above zero for every item.";
     const product = products.find((p) => p.id === line.productId);
-    const pack = product?.sqFtPerCarton;
-    if (pack ? !quantity.dividedBy(pack).isInteger() : !quantity.isInteger()) {
+    const pack = cartonPack(product?.sqFtPerCarton);
+    if (pack ? !isWholeCartons(quantity, pack) : !quantity.isInteger()) {
       return pack ? `Move whole cartons: multiples of ${pack} sq ft.` : "Move whole items.";
     }
     sending.set(line.productId, (sending.get(line.productId) ?? dec(0)).plus(quantity));

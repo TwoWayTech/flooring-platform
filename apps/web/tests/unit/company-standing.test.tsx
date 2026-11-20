@@ -293,6 +293,18 @@ describe("standing and billing screens", () => {
     expect(html).not.toContain('aria-label="Account notice"');
   });
 
+  it("leaves out See seats in use while Settings → Users is switched off (rule 13)", () => {
+    const feature = FEATURES["settings.users"] as { enabled: boolean };
+    feature.enabled = false;
+    try {
+      const html = renderToStaticMarkup(<BillingView billing={billing()} />);
+      expect(html).not.toContain('href="/settings/users"');
+      expect(html).not.toContain("See seats in use");
+    } finally {
+      feature.enabled = true;
+    }
+  });
+
   it.each(Object.keys(SUBSCRIPTION_STANDING_TEXT) as SubscriptionStanding[])(
     "shows the %s standing's words",
     (standing) => {

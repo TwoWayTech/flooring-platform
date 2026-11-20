@@ -153,6 +153,22 @@ describe("platform support requests API (P11 part 3, needs the local PostgreSQL)
     await ask(support, company).expect(201);
   });
 
+  it("refuses a new request while Settings → Users is switched off (404), writing nothing, since no Owner could see it", async () => {
+    const admin = await freshAdmin();
+    const company = await companyOn("usersoff");
+    const feature = FEATURES["settings.users"] as { enabled: boolean };
+    feature.enabled = false;
+    try {
+      const refused = await ask(admin, company);
+      expect([refused.status, refused.body.code]).toEqual([404, "not_found"]);
+      expect((await call("get", "/platform/support-grants", admin.cookie)).status).toBe(200);
+    } finally {
+      feature.enabled = true;
+    }
+    expect(await written(admin.userId)).toEqual({ grants: 0, audits: 0 });
+    await ask(admin, company).expect(201);
+  });
+
   it("lists every admin's requests for the owner role and only its own for the support role, newest first, with no approver", async () => {
     const company = await companyOn("listed");
     await stepUp(support);

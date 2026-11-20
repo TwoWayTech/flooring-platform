@@ -36,11 +36,11 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `sales.quotes` | Partly | Quotes, rooms, status, convert to invoice (4 routes) | A new company can't quote (G2, G3); the API takes part cartons on a boxed line (F-m) | F1, `sales.spec.ts`, FS-6 |
+| `sales.quotes` | Partly | Quotes, rooms, status, convert to invoice (4 routes) | A new company can't quote (G2, G3). The API refuses part cartons on a boxed line (F-m fixed, 2026-11-20) | F1, `sales.spec.ts`, FS-6 |
 | `sales.quote-availability` | Done | Reads stock through `inventoryData` | No test names the feature; covered by the quote screens' reads | `docs/coverage.md` |
 | `sales.invoices` | Done | Invoices, credit notes, void, write-off, sent, apply credit, the commission split (9 routes) | The page also holds the removed installation scheduling's DemoStore calls, which never run; F-t closed (the split saves under the API's ids) | F1, F5, `invoices.spec.ts`, DS-4 |
 | `sales.payments` | Done | Payments, proof files, review, void, refunds (10 routes) | Settings → Payments' Reset to default reads DemoStore | `payments` integration, 20 api-mode specs |
-| `sales.customers` | Partly | Customers and addresses (3 routes) | Customer pickers on the dashboard, Sales, Inventory and roll pages read DemoStore's list (G5); a new company can't add one by hand until Localization exists (F-n, G2) | FA-4, FS-3 |
+| `sales.customers` | Partly | Customers and addresses (3 routes) | Customer pickers on the dashboard, Sales, Inventory and roll pages read DemoStore's list (G5); a new company can't add one by hand until Localization exists (G2; since 2026-11-20 the refusal names this step, F-n) | FA-4, FS-3 |
 | `sales.team` | Partly | `teamCommission` | `/sales` is mixed (roles list from DemoStore) | `sales.spec.ts` |
 | `installation.calendar` | Not by design | — | Removed (ADR 0026); its calls on the invoice and Installation pages never run | FEATURES.md |
 
@@ -48,7 +48,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | The API itself accepts part cartons (F-m); `reorderPoint` and widths go out as JSON numbers (F-k) | MI-1 (whole cartons), MI-DEC |
+| `units.square-feet` | Partly | Area stored and sent in sq ft; screens round boxed lines to whole cartons | Quantities are decimal strings, `reorderPoint` and widths too (F-k fixed, 2026-11-20). The API refuses part cartons on quotes, conversions, orders and receipts (F-m fixed, 2026-11-20) | MI-1 (whole cartons), MI-DEC |
 | `inventory.products` | Partly | Products listed with sensitive cost stripped | No route creates or edits a product; only the import (G3); `/inventory` is mixed | FA-5, FS-5, PM-7 |
 | `inventory.rolls` | Partly | Rolls, cuts, moves, roll invoices | `/inventory/rolls/*` reads customers from DemoStore (G5) | F1, `inventory.spec.ts` |
 | `inventory.transfers` | Done | Create and receive (3 routes) | — | `inventory.spec.ts`, integration |
@@ -62,7 +62,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `purchasing.suppliers` | Done | Suppliers and contacts (8 routes) | `POST /suppliers/:id/status` and `PUT /supplier-contacts/:id` have no integration test (F-q) | F2, FA-3 |
+| `purchasing.suppliers` | Done | Suppliers and contacts (8 routes) | Every route has an integration test (F-q fixed 2026-11-20) | F2, FA-3 |
 | `purchasing.orders` | Done | Orders, receipts, bills, supplier payments (12 routes) | — | F2, MI-1, FS-6 |
 | `finance.payments-queue` | Done | Reads payments and supplier payments | — | `expenses.spec.ts` |
 | `finance.expenses` | Done | Expenses, recurring, approval, void, files (10 routes) | Settings → Expenses' Reset to default reads DemoStore | F7, MI-1, FA-6 |
@@ -99,7 +99,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | `meetings.requests` | Partly | 2 routes | No api-mode e2e | integration |
 | `settings.meetings` | Missing | — | No route; the page is hidden in api mode, and the New meeting form reads its defaults from DemoStore | `docs/coverage.md` |
 | `settings.notifications` | Partly | Settings → Email (`PUT /settings/email`) | Notification rules (channels and wording) stay on DemoStore | `notifications.spec.ts` |
-| `settings.outbox` | Partly | Outbox list, retry, cancel | Simulate reply and Simulate bounce stay on DemoStore; retry and cancel need only a view key (F-j); a missing message answers a bare 404 (F-i) | `notifications.spec.ts`, DS-11 |
+| `settings.outbox` | Partly | Outbox list, retry, cancel | Simulate reply and Simulate bounce stay on DemoStore; retry and cancel need only a view key (F-j); a missing message answers 404 with words since 2026-11-20 (F-i fixed) | `notifications.spec.ts`, DS-11 |
 | `shell.notifications` | Done | The bell: list and mark read | — | `notifications.spec.ts` |
 
 ### Reports (`reports.md`)
@@ -117,9 +117,9 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 
 | Feature | Verdict | On the API | Missing, or why partly | Evidence |
 | --- | --- | --- | --- | --- |
-| `settings.users` | Done | Users, invite, support access | Reads no switch (F-h) | FA-0, `users.spec.ts` |
-| `settings.roles` | Partly | Roles (5 routes) | No api-mode e2e; reads no switch (F-h) | FA-2 |
-| `settings.audit` | Done | Audit log | Reads no switch (F-h) | FA-10, DS-19 |
+| `settings.users` | Done | Users, invite, support access | Reads its switch since 2026-11-20 (F-h fixed); `GET /users` answers while Users or Roles is on | FA-0, `users.spec.ts` |
+| `settings.roles` | Partly | Roles (5 routes) | No api-mode e2e; reads its switch since 2026-11-20 (F-h fixed); `GET /roles` answers while Users or Roles is on | FA-2 |
+| `settings.audit` | Done | Audit log | Reads its switch since 2026-11-20 (F-h fixed) | FA-10, DS-19 |
 | `settings.branding` | Done | `PUT /settings/branding` (part 6) | Reset to default reads DemoStore | `settings-branding.spec.ts` |
 | `settings.localization` | Partly | All five tabs (parts 2a, 2b, 3a, 3b) | A company with no Localization row can't save any tab (G2) | FS-3, `settings-localization.spec.ts`, `settings-tax.spec.ts` |
 | `settings.number-format` | Done | `PUT /settings/numbers` | — | FS-3, `settings.spec.ts` |
@@ -150,7 +150,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | Step | Verdict | Summit (api mode) | New company | Gap |
 | --- | --- | --- | --- | --- |
 | 1 Dashboard | Partly | DS-1, PGM (loads for every persona, Sales included) | — | G5 (17 DemoStore lists) |
-| 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3, F-m |
+| 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3 |
 | 3 Deposit with proof | Done | F1 | FS-6 | — |
 | 4 Corrections | Done | DS-4 (commission split and credit note) | — | — |
 | 5 Cut a roll | Done | F1 | — | — |
