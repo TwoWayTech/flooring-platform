@@ -369,6 +369,13 @@ describe("Settings → Email on the API (needs the local PostgreSQL)", () => {
     await put(owner.cookie, EMAIL).expect(200);
   });
 
+  it("ME11 a stored sender the rule would refuse is written to the row as the worker sends it: no name, no reply-to", async () => {
+    const company: TestCompany = { ...(await harness.provisionCompany("mailoldrow")), product: "flooring" };
+    await seedEmail(company, { senderName: "billing@bank.example", replyTo: 'x"<a@b.co>', signature: "" });
+    const row = await quoteEmail(company);
+    expect([row.fromName, row.replyTo]).toEqual(["", ""]);
+  });
+
   it("ME6 the page's switch off answers the PUT 404 and leaves the section out of the read", async () => {
     const owner = people.get("flooring:owner")!;
     await withFeatureOff(SETTINGS_SECTIONS.email.feature, async () => {

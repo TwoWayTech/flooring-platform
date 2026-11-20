@@ -13,6 +13,8 @@ import type { EmailProvider } from "@workspace/providers";
 import {
   effectiveRule,
   featureOn,
+  isPlainReplyTo,
+  isPlainSenderName,
   notificationEvent,
   renderTemplate,
   type EmailSettings,
@@ -546,10 +548,14 @@ export class NotificationService implements OnApplicationBootstrap {
     const companyName = branding?.displayName ?? tenant?.name ?? "";
     const [stored] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, "email"));
     const email = (stored?.value ?? {}) as Partial<EmailSettings>;
+    // The row keeps the sender the worker will send (`senderHeaders`), so the Outbox shows what went
+    // out and both modes match (DemoStore's `demoSender`; security review round 6).
+    const fromName = email.senderName || companyName;
+    const replyTo = email.replyTo ?? "";
     return {
       companyName,
-      fromName: email.senderName || companyName,
-      replyTo: email.replyTo ?? "",
+      fromName: isPlainSenderName(fromName) ? fromName : "",
+      replyTo: isPlainReplyTo(replyTo) ? replyTo : "",
       signature: email.signature ?? "",
     };
   }
