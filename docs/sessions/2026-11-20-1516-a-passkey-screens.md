@@ -101,3 +101,10 @@ Security review (six fresh read-only `security-reviewer` rounds on 29e8d42..HEAD
 - `git merge --no-ff origin/feat/inventory-stock-rules-api` (f3e9136: Stock rules through Settings parts 4b, 5 and 6) as d9d26eb: **no conflicts**, 42 files from the base, none of them this branch's files. ADR 0060 is still free on the base. After it: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck` and `pnpm test` all green (6/6, 6/6, 5/5). No API file conflicted, so the API integration suites were not run; no code was resolved by hand, so no new security review.
 
 E2E ran after the merge of f3e9136, at 503f99a, once the ports were handed over. Servers stopped, container removed, ports 3000, 4000 and 5434 free afterwards. No failures, so no product change and no new review.
+
+## Merge of the trial balance screen (PR #67)
+
+- `git merge --no-ff origin/feat/finance-trial-balance-screen` (ee341cc, which already holds f3e9136) as 20834e1. ADR numbers: the trial balance adds none in 006x, so 0060 stays this branch's.
+- **Conflicts, both kept on both sides:** `apps/web/tests/unit/api-rereads.test.ts`, the routed-method counts (158/113 before; passkeys +5 with 3 writes, trial balance +1 read: now 164 and 116); `docs/blueprint-delta.md`, both 2026-11-20 rows kept, passkeys above the trial balance (merged after it).
+- `API_METHODS`, the ApiClient contract, DemoStore and the screens list merged without conflict. API files came in from #67 (ledger service and controller, reports service, their tests) without conflict, so the API integration suites were not run; the hand resolution changed a test count and a doc only, so no new security review.
+- After it: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, all green (6/6, 6/6, 5/5). No servers run.
