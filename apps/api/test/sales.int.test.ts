@@ -2,6 +2,7 @@ import {
   auditLog,
   branches,
   locations,
+  outboxMessages,
   products,
   quoteLines,
   settings,
@@ -9,7 +10,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { dec } from "@workspace/shared";
+import { dec, defaultNumberSettings } from "@workspace/shared";
 import { and, eq, isNull } from "drizzle-orm";
 import request from "supertest";
 import { readFileSync } from "node:fs";
@@ -508,6 +509,32 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
     expect(
       (await call("post", "/quotes", cookies.salesA).send(quoteBody(mine.body.id, otherWarehouse, tile))).status,
     ).toBe(400);
+  });
+
+  it("MQ1 the quote email writes its total in the company's number format and its expiry (ADR 0059, bell and Outbox part, D6)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA)
+      .send({ name: "Rae Lund", email: "rae@lund.example" })
+      .expect(201);
+    const quote = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile))
+      .expect(201);
+    const sent = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    // The company never saved a number format, so messages use the US pack's: one sign, grouped, two places.
+    const handle = await harness.companyDb(company.id);
+    try {
+      const [row] = await handle.db.select().from(outboxMessages).where(eq(outboxMessages.sourceId, quote.body.id));
+      const total = new Intl.NumberFormat(defaultNumberSettings().locale, {
+        style: "currency",
+        currency: defaultNumberSettings().currency,
+      }).format(Number(sent.body.total));
+      expect(row?.values).toMatchObject({ "quote.total": total, "quote.expires": "2099-01-01" });
+      expect(row?.bodyText).toContain(`for ${total} is attached. It is valid until 2099-01-01.`);
+      expect(row?.bodyText).not.toContain("$$");
+    } finally {
+      await handle.close();
+    }
   });
 
   it("audits every sales change", async () => {

@@ -1,3 +1,4 @@
+import type { OutboxReader } from "@workspace/shared";
 import { describe, expect, it } from "vitest";
 import {
   addressProblem,
@@ -6,8 +7,8 @@ import {
   failureNotice,
   fromHeader,
   oneLine,
+  senderHeaders,
   visibleOutboxRow,
-  type OutboxReader,
   type OutboxView,
 } from "../src/core/notifications/notification-rules";
 
@@ -37,6 +38,7 @@ describe("failureNotice (spec rule 5)", () => {
 describe("visibleOutboxRow (spec: who can see which Outbox row)", () => {
   const row: OutboxView = {
     sourceType: "commission",
+    sourceId: "statement-1",
     actorUserId: "actor",
     recipientType: "customer",
     recipientId: "c1",
@@ -80,6 +82,8 @@ describe("visibleOutboxRow (spec: who can see which Outbox row)", () => {
     expect(visibleOutboxRow(meeting, reader({ admin: true, hrView: true }))).toMatchObject({
       subject: "Restricted message",
       attachments: [],
+      // The meeting's id stays with the people on it (security review round 2).
+      sourceId: "",
     });
     expect(visibleOutboxRow(meeting, reader({ admin: true, hrView: true, userId: "actor" }))).toEqual(meeting);
     expect(visibleOutboxRow(meeting, reader({ email: "dana@example.test" }))).toEqual(meeting);
@@ -87,6 +91,23 @@ describe("visibleOutboxRow (spec: who can see which Outbox row)", () => {
       ...meeting,
       restricted: false,
     });
+  });
+});
+
+describe("senderHeaders (security review round 2: the worker applies the save rule too)", () => {
+  it("sends a plain sender name and one plain reply-to as stored", () => {
+    expect(senderHeaders("Summit Floor Co.", "office@summit.example", "mail@platform.example")).toEqual({
+      from: '"Summit Floor Co." <mail@platform.example>',
+      replyTo: "office@summit.example",
+    });
+    expect(senderHeaders("", "", "mail@platform.example")).toEqual({ from: "mail@platform.example" });
+  });
+
+  it("drops a stored name that could pass for an address or hide text, and a reply-to that is not one plain mailbox", () => {
+    for (const name of ["billing@bank.example", "billing\uff20bank.example", "Summit \u202egnilliB", "Sum\u200bmit"])
+      expect(senderHeaders(name, "", "mail@platform.example").from, name).toBe("mail@platform.example");
+    for (const replyTo of ['x"<a@b.co>', "a,b@c.co", "a;b@c.co", "a\u0000@b.co", "office", "b@summ\u0456t.example"])
+      expect(senderHeaders("Summit", replyTo, "mail@platform.example"), replyTo).not.toHaveProperty("replyTo");
   });
 });
 

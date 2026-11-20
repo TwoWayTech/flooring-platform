@@ -1,24 +1,39 @@
 import {
   ADDRESS_MAX,
+  BRANDING_MESSAGES,
+  BRANDING_NAME_MAX,
+  DEFAULT_THEMES,
+  FLOOR_PATTERNS,
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
+  EMAIL_MAX,
+  EMAIL_MESSAGES,
+  HOLIDAY_NAME_MAX,
+  HOLIDAYS_MAX,
+  HR_MESSAGES,
   LEGAL_FOOTER_MAX,
   NUMBER_KINDS,
   NUMBER_MESSAGES,
   numbersFromWire,
   PAYROLL_MESSAGES,
+  QUANTITY_TEXT_MAX,
   REGION_MESSAGES,
   SHARED_COST_MESSAGES,
   SHARED_COST_SHARES_MAX,
+  STOCK_RULES_MESSAGES,
   TAX_JURISDICTIONS_MAX,
   TAX_MESSAGES,
   US_STATES,
   WASTE_CATEGORIES,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
+  type EmailSettings,
   type ExpenseSettings,
+  type HrSettingsInput,
+  type InventorySettings,
   type NumberKind,
   type NumberSettings,
   type PaymentSettings,
@@ -90,6 +105,24 @@ export const NUMBERS_INPUT: z.ZodType<NumberSettings> = z
   })
   .strict()
   .transform(numbersFromWire);
+
+/**
+ * Branding as Settings → Branding sends it (ADR 0059, part 6, D4, D5). Types, outer lengths and
+ * unknown fields only; the name, monogram and color are the shared rule's to judge
+ * (`brandingProblem`), with the same words in both modes, and each outer bound carries its field's
+ * words. The pattern and theme are their options, with the rule's words. The logo must be null: the
+ * API keeps no logo yet, so the monogram stands in, and a data URL is refused with words, never stored.
+ */
+export const BRANDING_INPUT: z.ZodType<Branding> = z
+  .object({
+    displayName: z.string().max(10 * BRANDING_NAME_MAX, BRANDING_MESSAGES.displayName),
+    monogram: z.string().max(20, BRANDING_MESSAGES.monogram),
+    brandColor: z.string().max(20, BRANDING_MESSAGES.brandColor),
+    pattern: z.enum(FLOOR_PATTERNS, { error: BRANDING_MESSAGES.pattern }),
+    logoDataUrl: z.null({ error: BRANDING_MESSAGES.logoNotOnApi }),
+    defaultTheme: z.enum(DEFAULT_THEMES, { error: BRANDING_MESSAGES.defaultTheme }),
+  })
+  .strict();
 
 /** Payment rules as Settings → Payments sends them. */
 export const PAYMENTS_INPUT: z.ZodType<PaymentSettings> = z
@@ -297,5 +330,60 @@ export const TAX_INPUT: z.ZodType<TaxInput> = z
       )
       .max(100, TAX_MESSAGES.notHere),
     certificateTypes: z.array(z.string().max(200, TAX_MESSAGES.notHere)).max(50, TAX_MESSAGES.notHere),
+  })
+  .strict();
+
+/**
+ * Settings → HR as the page sends it (ADR 0059, part 5). Only types, outer lengths and unknown
+ * fields are checked here; the workweek day, the frequency, the anchor and every holiday are the
+ * shared rule's to judge (`hrSettingsProblem`), so both modes refuse them with the same words. Each
+ * outer length carries its field's words and sits above the rule's own (ten times a holiday name, ten
+ * times the list), so the rule speaks first for anything a person types; the JSON body limit bounds
+ * the rest.
+ */
+export const HR_INPUT: z.ZodType<HrSettingsInput> = z
+  .object({
+    workweekStartDay: z.number(),
+    payFrequency: z.string().max(20, HR_MESSAGES.payFrequency),
+    payPeriodAnchor: z.string().max(20, HR_MESSAGES.payPeriodAnchor),
+    holidays: z
+      .array(
+        z
+          .object({
+            date: z.string().max(20, HR_MESSAGES.holidayDate),
+            name: z.string().max(10 * HOLIDAY_NAME_MAX, HR_MESSAGES.holidayName),
+          })
+          .strict(),
+      )
+      .max(10 * HOLIDAYS_MAX, HR_MESSAGES.holidays),
+    showPayToEmployees: z.boolean(),
+    showCommissionToEmployees: z.boolean(),
+    showRatesToEmployees: z.boolean(),
+    showTeamCalendarToEmployees: z.boolean(),
+    clockEnabled: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Settings → Email as its page sends it (ADR 0059, bell and Outbox part, D7): three strings, nothing
+ * else. Each length carries its field's words and sits above the shared rule's own (ten times), so
+ * `emailSettingsProblem` speaks first for anything a person types; the JSON body limit bounds the rest.
+ */
+export const EMAIL_INPUT: z.ZodType<EmailSettings> = z
+  .object({
+    senderName: z.string().max(10 * EMAIL_MAX.senderName, EMAIL_MESSAGES.senderName),
+    replyTo: z.string().max(10 * EMAIL_MAX.replyTo, EMAIL_MESSAGES.replyTo),
+    signature: z.string().max(10 * EMAIL_MAX.signature, EMAIL_MESSAGES.signature),
+  })
+  .strict();
+
+/**
+ * Stock rules as Warehouses and showrooms sends them (ADR 0059, the Stock rules part, D2): the
+ * approval quantity as a string, never a JSON number (CLAUDE.md rule 6), with an outer bound that
+ * carries the shared words; `inventorySettingsProblem` checks the form after this.
+ */
+export const INVENTORY_INPUT: z.ZodType<InventorySettings> = z
+  .object({
+    adjustmentApprovalQty: z.string().max(10 * QUANTITY_TEXT_MAX, STOCK_RULES_MESSAGES.adjustmentApprovalQty),
   })
   .strict();

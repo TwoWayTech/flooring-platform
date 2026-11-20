@@ -2,7 +2,11 @@ import { format } from "date-fns";
 import {
   branchManageDenial,
   PAYMENT_CONTROLS_OWNER_ONLY,
+  hrFrequencyProblem,
+  hrScheduleProblem,
   paymentControlsLoosened,
+  STOCK_RULES_OWNER_ONLY,
+  stockRulesLoosened,
   branchPlacementDenial,
   canAssignRole,
   invoiceFromQuote,
@@ -38,6 +42,7 @@ import {
   type Company,
   type CompanyId,
   type CompanySettings,
+  type HrSettings,
   type PermissionKey,
   seesDisabledPeople,
   SENSITIVE,
@@ -84,6 +89,7 @@ import {
   taxInForce,
   type LocalizationSettings,
   type SettingsSectionRule,
+  type TrialBalance,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -139,6 +145,7 @@ import type {
   Viewer,
 } from "../contract";
 import { assertOwnerRemains, assertSeatAvailable, DemoRuleError, diffSummary, permissionDiff } from "./admin-rules";
+import { DemoPasskeys } from "./passkeys";
 import { demoAuditAsSeen } from "./audit-view";
 import { demoAuditPage, type DemoPlatformAuditRow } from "./platform-audit";
 import { demoAccessDiff, demoDetail, demoSummary, withAccess, type DemoCompanyFacts } from "./platform-console";
@@ -363,6 +370,8 @@ export class DemoStore implements ApiClient {
   private notices: string[] = [];
   /** Each meeting's last move, for Undo; in memory only (ADR 0051 "Part 3", B.6 item 6). */
   private readonly meetingMoves = new MeetingMoveMemo();
+  /** Simulated passkeys, in memory for this tab (ADR 0060). */
+  private readonly passkeys = new DemoPasskeys();
 
   /** Proof files live outside the overlay, behind the FileStore interface (spec Appendix A). */
   constructor(private readonly files: FileStore = indexedDbFileStore) {}
@@ -862,10 +871,11 @@ export class DemoStore implements ApiClient {
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
    * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
    * stored section and, for Shared costs, the live locations (ADR 0059, part 4b, D8), then Payments'
-   * Owner-only loosening (`paymentControlsLoosened`). Localization
-   * and tax is never replaced whole: after those checks it is refused with "Localization and tax
-   * saves one tab at a time." and nothing is stored or audited; screens save it per tab through
-   * `updateLocalization` (ADR 0059, part 3b, D34).
+   * and Stock rules' Owner-only loosening (`paymentControlsLoosened`, `stockRulesLoosened`) and
+   * Settings → HR's schedule lock and monthly rule against the demo's own records (part 5).
+   * Localization and tax is never replaced whole: after those checks it is refused with
+   * "Localization and tax saves one tab at a time." and nothing is stored or audited; screens save
+   * it per tab through `updateLocalization` (ADR 0059, part 3b, D34).
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
@@ -873,11 +883,19 @@ export class DemoStore implements ApiClient {
     const access = await this.assertSettingsSave(db, rule);
     const problem = settingsSectionProblem(section, value, db.settings[section], { locations: db.list("locations") });
     if (problem) throw new DemoRuleError(problem);
+    // One key is set, so reading a section's property narrows the value to that section's type.
+    const next = { [section]: value } as Partial<CompanySettings>;
     // Loosening a payment control is the Owner's alone (ADR 0059, "2026-11-20"), as on the API.
-    const payments = { [section]: value } as Partial<CompanySettings>;
-    if (payments.payments && !access.isOwner && paymentControlsLoosened(payments.payments, db.settings.payments)) {
+    if (next.payments && !access.isOwner && paymentControlsLoosened(next.payments, db.settings.payments)) {
       throw new DemoRuleError(PAYMENT_CONTROLS_OWNER_ONLY);
     }
+    // So is raising or clearing the adjustment approval quantity (ADR 0059, the Stock rules part, D4).
+    if (next.inventory && !access.isOwner && stockRulesLoosened(next.inventory, db.settings.inventory)) {
+      throw new DemoRuleError(STOCK_RULES_OWNER_ONLY);
+    }
+    // Settings → HR doesn't re-cut recorded pay, as on the API (ADR 0059, part 5, D4 and D5).
+    const hrProblem = next.hr ? this.hrRecordsProblem(db, next.hr) : null;
+    if (hrProblem) throw new DemoRuleError(hrProblem);
     const before = db.settings[section];
     db.settings = { ...db.settings, [section]: value };
     const diff = diffSummary(before, value);
@@ -1327,16 +1345,32 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => resetNotificationRule(ctx, key));
   }
 
+  /** The Outbox; the whole company's only at data scope `all`, as on the API (security review round 2). */
   async listOutbox(all: boolean) {
-    return listOutbox(this.actionContext(this.open()), all);
+    const db = this.open();
+    const { access } = await this.granter(db);
+    return listOutbox(this.actionContext(db), all, access.dataScope === "all");
   }
 
   async retryOutbox(id: string) {
+    await this.assertWholeOutbox();
     return this.act((ctx) => retryOutbox(ctx, id));
   }
 
   async cancelOutbox(id: string) {
+    await this.assertWholeOutbox();
     return this.act((ctx) => cancelOutbox(ctx, id));
+  }
+
+  /**
+   * Send again and Cancel act on the whole company's Outbox: a holder of settings.outbox.view below
+   * data scope `all` is refused with the settings words, after the key, as on the API (round 2).
+   */
+  private async assertWholeOutbox(): Promise<void> {
+    const db = this.open();
+    const { access } = await this.granter(db);
+    if (access.permissions.has("settings.outbox.view") && access.dataScope !== "all")
+      throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
   }
 
   async simulateBounce(id: string) {
@@ -1500,6 +1534,35 @@ export class DemoStore implements ApiClient {
     if (!/^\d{6}$/.test(code)) throw new DemoRuleError("Enter the 6-digit code from your authenticator app.");
   }
 
+  async signInSecurity() {
+    const db = this.open();
+    return this.passkeys.security(this.personKey(), db.get("users", this.viewer!.userId)!, db.list("roles"));
+  }
+
+  async confirmPassword(password: string) {
+    this.passkeys.confirmPassword(password);
+  }
+
+  async addPasskey(name: string) {
+    this.passkeys.add(this.personKey(), name, new Date().toISOString());
+    this.emit();
+  }
+
+  async renamePasskey(id: string, name: string) {
+    this.passkeys.rename(this.personKey(), id, name);
+    this.emit();
+  }
+
+  async deletePasskey(id: string) {
+    this.passkeys.remove(this.personKey(), id, await this.signInSecurity());
+    this.emit();
+  }
+
+  /** Whose simulated passkeys: the signed-in person in the open company, never a View as role. */
+  private personKey(): string {
+    return `${this.open().companyId}:${this.viewer!.userId}`;
+  }
+
   async saveExpense(input: ExpenseInput, files: File[]) {
     return this.act((ctx) => saveExpense(ctx, input, files));
   }
@@ -1544,6 +1607,15 @@ export class DemoStore implements ApiClient {
     const db = this.open();
     await this.assertCan(db, ["reports.financial.view"]);
     return demoPaymentsReport(db, await this.reportViewer(db), query);
+  }
+
+  /**
+   * The demo keeps no journal: its "ledger" is each invoice's balance, so a trial balance made up
+   * from the documents would disagree with the API's postings. The hub never offers it in the demo
+   * (`reportAccess` without `books`), and asking anyway is refused (ADR 0055 "Trial balance").
+   */
+  async trialBalance(): Promise<TrialBalance> {
+    throw new DemoRuleError("The demo keeps no journal, so it has no trial balance.");
   }
 
   // Meetings follow the shared rules the API uses (ADR 0051 "Part 3"); what stays demo-only is in
@@ -2211,6 +2283,20 @@ export class DemoStore implements ApiClient {
     const { access } = await this.granter(db);
     const employeeId = db.get("users", this.viewer!.userId)?.employeeId ?? null;
     return demoAuditAsSeen({ ...access, employeeId }, entries);
+  }
+
+  /**
+   * Why a Settings → HR save would re-cut recorded pay, or null, as the API judges it under the `hr`
+   * row's lock (ADR 0059, part 5, D4 and D5): the schedule lock against the demo's pay periods,
+   * timesheets and clock punches, then the monthly rule on a change of frequency against its people.
+   */
+  private hrRecordsProblem(db: CompanyDb, next: HrSettings): string | null {
+    const facts = {
+      payPeriods: db.list("payPeriods").length > 0,
+      hoursRecorded: db.list("timesheets").length > 0 || db.list("clockEntries").length > 0,
+    };
+    const current = db.settings.hr;
+    return hrScheduleProblem(next, current, facts) ?? hrFrequencyProblem(next, current, db.list("employees"));
   }
 
   /**

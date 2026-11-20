@@ -33,6 +33,8 @@ test.describe("real sign-in with MFA (api mode)", () => {
     await page.getByRole("button", { name: "Continue" }).click();
     secret = (await page.getByTestId("mfa-setup-key").getAttribute("data-key")) ?? "";
     expect(secret).toMatch(/^[A-Z2-7]+=*$/);
+    // The same link as a QR code, drawn in the page (ADR 0060).
+    await expect(page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
     await page.getByLabel("Code from the app").fill(totpCode(secret));
     await page.getByRole("button", { name: "Turn on two-step sign-in" }).click();
 

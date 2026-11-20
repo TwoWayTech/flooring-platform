@@ -14,3 +14,8 @@ export function apiErrorCode(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
   return "code" in error && typeof error.code === "string" ? error.code : null;
 }
+
+/** What to tell the person when something they started did not finish: an ApiError's own words, else a plain retry. */
+export function failureWords(failure: unknown): string {
+  return failure instanceof ApiError ? failure.message : "Something went wrong. Try again.";
+}

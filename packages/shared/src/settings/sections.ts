@@ -2,10 +2,14 @@ import { featureOn, type FeatureKey } from "../features";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ModuleKey } from "../products";
+import type { Branding } from "../types/company";
+import type { EmailSettings } from "../types/notifications";
 import type {
   CompanyProfile,
   CompanySettings,
   ExpenseSettings,
+  HrSettings,
+  InventorySettings,
   LocalizationSettings,
   PaymentSettings,
   SharedCostSettings,
@@ -95,9 +99,21 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then.
+ * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR, part 6
+ * Branding, the bell and Outbox part Settings → Email (`email`, the sender details), and the Stock
+ * rules part `inventory`.
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "sharedCosts"] as const;
+export const API_SETTINGS_SECTIONS = [
+  "profile",
+  "numbers",
+  "payments",
+  "expenses",
+  "sharedCosts",
+  "hr",
+  "branding",
+  "email",
+  "inventory",
+] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -136,6 +152,20 @@ export interface SettingsReadRule {
  * - `expenses`: only Settings → Expenses reads it.
  * - `sharedCosts`: only Settings → Expenses reads it (ADR 0059, part 4b, D1). The Business report
  *   reads the stored row on the server in api mode (`loadSharedCosts`), never this answer.
+ * - `hr` (part 5, D6): HR Home's holidays (`hr.overview.view`), Timesheets' workweek
+ *   (`hr.timesheet.view`), the team calendar on Time off (`hr.pto.view`) and on My time off
+ *   (`hr.portal.view`), and Settings → HR (`settings.hr.manage`). Those screens read it whatever
+ *   the `settings.hr` page switch says, so it is not hidden while that switch is off. Pay periods,
+ *   timesheets, the clock and the portal read the stored row on the server.
+ * - `branding`: every member: the shell paints every screen with its color, pattern and theme and
+ *   shows its name and monogram, and invoices, receipts and purchase orders print it (part 6, D6).
+ *   Its page switch gates only the save. The API answers it from the control `tenant_branding` row.
+ * - `email` (the bell and Outbox part, D9): only Settings → Email and notifications reads it, so only
+ *   `settings.notifications.manage`, and it is hidden while that page's switch is off. The API's
+ *   sender reads the stored row whatever is answered.
+ * - `inventory` (the Stock rules part, D6): only the Stock rules form on Warehouses and showrooms
+ *   reads it, so only `settings.locations.manage`, and it is hidden while that page's switch
+ *   (`inventory.locations`) is off. Nothing on the API acts on it while stock adjustments are off.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -147,6 +177,13 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
   payments: { readers: ["sales.invoice.view", "settings.payments.manage"], hiddenWhenOff: true },
   expenses: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
   sharedCosts: { readers: ["settings.expenses.manage"], hiddenWhenOff: true },
+  hr: {
+    readers: ["hr.overview.view", "hr.timesheet.view", "hr.pto.view", "hr.portal.view", "settings.hr.manage"],
+    hiddenWhenOff: false,
+  },
+  branding: { readers: "everyone", hiddenWhenOff: false },
+  email: { readers: ["settings.notifications.manage"], hiddenWhenOff: true },
+  inventory: { readers: ["settings.locations.manage"], hiddenWhenOff: true },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -249,6 +286,17 @@ export interface SettingsAnswer {
   expenses?: ExpenseSettings;
   /** How company-wide costs are split across locations, as stored (ADR 0059, part 4b). */
   sharedCosts?: SharedCostSettings;
+  /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
+  hr?: HrSettings;
+  /** Settings → Email as stored, or all three fields empty when never saved (the bell and Outbox part, D10). */
+  email?: EmailSettings;
+  /** Stock rules as stored, or the strictest quantity (`"0"`) when never saved (the Stock rules part, D5). */
+  inventory?: InventorySettings;
+  /**
+   * From the control `tenant_branding` row (ADR 0059, part 6, D6); left out when the company has no
+   * live row. `logoDataUrl` is always null on the API: the monogram stands in for a logo (D5).
+   */
+  branding?: Branding;
   /**
    * Present only when the company has saved localization and the person reads at least one served
    * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is

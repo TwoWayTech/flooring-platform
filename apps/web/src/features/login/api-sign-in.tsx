@@ -3,13 +3,22 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { MailCheck } from "lucide-react";
+import { Fingerprint, MailCheck } from "lucide-react";
 import type { ProductKey } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
-import { fetchSessionContext, openCompany, signInWithPassword, signOutOfApi } from "@/lib/session/api-auth";
+import {
+  fetchSessionContext,
+  openCompany,
+  signInWithPasskey,
+  signInWithPassword,
+  signOutOfApi,
+} from "@/lib/session/api-auth";
+import { passkeysSupported } from "@/lib/session/webauthn";
+import { useHydrated } from "@/lib/use-hydrated";
 import type { ContextCompany } from "@/lib/session/api-context";
+import { failureWords } from "@/lib/api/errors";
 import { PRODUCTS } from "@/products";
 import { LoginLayout } from "./login-layout";
 import { MfaEnrolment } from "./mfa-enrolment";
@@ -44,8 +53,8 @@ const SUBTITLES: Record<SignInStage["kind"], string> = {
 };
 
 /**
- * The real sign-in (P8; blueprint p27): email and password through Better Auth, the authenticator
- * code for accounts that have one, MFA set-up for roles that require it, a "check your email" step
+ * The real sign-in (P8; blueprint p27): email and password through Better Auth, or a passkey
+ * (ADR 0060), the authenticator code for accounts that have one, MFA set-up for roles that require it, a "check your email" step
  * for unconfirmed addresses, and a company chooser for people in more than one company. Same frame
  * as the demo login.
  */
@@ -113,6 +122,24 @@ function PasswordForm({ notice, onVerifyEmail, onSecondFactor, onSignedIn }: Pas
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const hydrated = useHydrated();
+
+  async function signInWithKey() {
+    setPending(true);
+    setError(null);
+    const result = await signInWithPasskey();
+    if (result.ok) {
+      try {
+        await onSignedIn();
+        return;
+      } catch (failure) {
+        setError(failureWords(failure));
+      }
+    } else {
+      setError(result.message);
+    }
+    setPending(false);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -182,6 +209,19 @@ function PasswordForm({ notice, onVerifyEmail, onSecondFactor, onSignedIn }: Pas
       <Button type="submit" size="lg" disabled={pending} className="h-10">
         {pending ? "Signing in" : "Sign in"}
       </Button>
+      {hydrated && passkeysSupported() ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          disabled={pending}
+          className="h-10"
+          onClick={() => void signInWithKey()}
+        >
+          <Fingerprint aria-hidden="true" />
+          Sign in with a passkey
+        </Button>
+      ) : null}
       <Link href="/forgot-password" className="text-brand-ink self-start text-sm underline-offset-4 hover:underline">
         Forgot your password?
       </Link>

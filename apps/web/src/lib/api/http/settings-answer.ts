@@ -49,6 +49,24 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
       case "sharedCosts":
         merged.sharedCosts = answer.sharedCosts ?? demo.sharedCosts;
         break;
+      case "hr":
+        // Left out while the company never saved it (ADR 0059, part 5, D7): DemoStore's copy stays.
+        merged.hr = answer.hr ?? demo.hr;
+        break;
+      case "branding":
+        // The control row's, without a logo: the monogram stands in on the API (ADR 0059, part 6, D5).
+        merged.branding = answer.branding ?? demo.branding;
+        break;
+      case "email":
+        // Only Settings → Email's manager reads it (the bell and Outbox part, D9); anyone else keeps
+        // DemoStore's copy, which none of their screens reads.
+        merged.email = answer.email ?? demo.email;
+        break;
+      case "inventory":
+        // Only Stock rules' manager reads it (the Stock rules part, D6); anyone else keeps DemoStore's
+        // copy, which none of their screens reads.
+        merged.inventory = answer.inventory ?? demo.inventory;
+        break;
       default:
         throw unservedSection(section);
     }

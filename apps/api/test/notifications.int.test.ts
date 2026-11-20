@@ -190,7 +190,7 @@ describe("notifications core (needs the local PostgreSQL)", () => {
     await service().notify(tenant, null, quoteSent(sourceId, "pat@example.test", { restricted: true }));
     const plain = await harness.signIn(await harness.addUser({ companyIds: [company.id] }));
     const mine = await call("get", "/outbox", plain).expect(200);
-    expect(mine.body.some((row: { sourceId: string }) => row.sourceId === sourceId)).toBe(false);
+    expect(mine.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(false);
 
     const viewerEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
     const viewerId = await harness.userIdOf(viewerEmail);
@@ -206,12 +206,99 @@ describe("notifications core (needs the local PostgreSQL)", () => {
       await handle.close();
     }
     const viewer = await harness.signIn(viewerEmail);
-    const all = await call("get", "/outbox", viewer).expect(200);
-    const restricted = all.body.find((row: { sourceId: string }) => row.sourceId === sourceId);
+    // The personal Outbox lists only one's own rows, whatever one holds (spec `admin = all && can`;
+    // ADR 0059, bell and Outbox part, D2); only `?all=true` is the whole company's.
+    for (const path of ["/outbox", "/outbox?all=1", "/outbox?all=TRUE", "/outbox?all=true&all=true"]) {
+      const own = await call("get", path, viewer).expect(200);
+      expect(
+        own.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`),
+        path,
+      ).toBe(false);
+    }
+    const all = await call("get", "/outbox?all=true", viewer).expect(200);
+    // Found by its recipient: a redacted row keeps no source id (security review round 2).
+    const restricted = all.body.find((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`);
     expect(restricted).toMatchObject({
       subject: "Restricted message",
       bodyText: "Only the people involved can read this.",
+      attachments: [],
+      sourceId: "",
     });
+    // The sender snapshot the drawer shows comes back; the template values never do.
+    expect(Object.keys(restricted).sort()).toEqual(
+      [
+        "actorUserId",
+        "attachments",
+        "bodyText",
+        "createdAt",
+        "eventKey",
+        "failureDetail",
+        "failureType",
+        "fromName",
+        "id",
+        "recipientEmail",
+        "recipientId",
+        "recipientName",
+        "recipientType",
+        "replyTo",
+        "restricted",
+        "scheduledFor",
+        "sentAt",
+        "sourceId",
+        "sourceType",
+        "status",
+        "subject",
+      ].sort(),
+    );
+    // Without settings.outbox.view, ?all=true is still only one's own rows.
+    const plainAll = await call("get", "/outbox?all=true", plain).expect(200);
+    expect(plainAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(
+      false,
+    );
+
+    // The key below data scope all: no whole-company Outbox, and no Send again or Cancel (round 2).
+    const branchEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
+    const branchId = await harness.userIdOf(branchEmail);
+    const db = await harness.companyDb(company.id);
+    try {
+      const [role] = await db.db
+        .insert(roles)
+        .values({ key: `outbox-branch-${uuidv7().slice(-6)}`, name: "Branch Outbox reader", dataScope: "branch" })
+        .returning();
+      await db.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "settings.outbox.view" });
+      await db.db.insert(userRoles).values({ userId: branchId, roleId: role.id });
+    } finally {
+      await db.close();
+    }
+    const branch = await harness.signIn(branchEmail);
+
+    // Company-wide scope without the key: still only one's own rows.
+    const wideEmail = await harness.addUser({ companyIds: [company.id], roles: [] });
+    const wideId = await harness.userIdOf(wideEmail);
+    const wideDb = await harness.companyDb(company.id);
+    try {
+      const [role] = await wideDb.db
+        .insert(roles)
+        .values({ key: `wide-${uuidv7().slice(-6)}`, name: "Company-wide, no Outbox", dataScope: "all" })
+        .returning();
+      await wideDb.db.insert(rolePermissions).values({ roleId: role.id, permissionKey: "hr.employee.view" });
+      await wideDb.db.insert(userRoles).values({ userId: wideId, roleId: role.id });
+    } finally {
+      await wideDb.close();
+    }
+    const wideAll = await call("get", "/outbox?all=true", await harness.signIn(wideEmail)).expect(200);
+    expect(wideAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(false);
+    const branchAll = await call("get", "/outbox?all=true", branch).expect(200);
+    expect(branchAll.body.some((row: { recipientId: string }) => row.recipientId === `customer-${sourceId}`)).toBe(
+      false,
+    );
+    for (const action of ["retry", "cancel"]) {
+      const refused = await call("post", `/outbox/${restricted.id}/${action}`, branch);
+      expect([refused.status, refused.body]).toEqual([
+        403,
+        { code: "forbidden", message: "Company settings cover the whole company." },
+      ]);
+    }
     // Nothing that would undo the redaction comes back: no template values, dedupe key or provider id (PR #9 review).
     for (const row of all.body as Record<string, unknown>[]) {
       expect(row).not.toHaveProperty("values");
@@ -342,7 +429,8 @@ describe("notifications core (needs the local PostgreSQL)", () => {
   });
 
   it("marks only the person's own notes read, and refuses ids that are not ids", async () => {
-    const owner = await harness.userIdOf(await harness.addUser({ companyIds: [company.id] }));
+    const ownerEmail = await harness.addUser({ companyIds: [company.id] });
+    const owner = await harness.userIdOf(ownerEmail);
     const otherEmail = await harness.addUser({ companyIds: [company.id] });
     await service().notify(tenant, null, {
       event: "timeoff.requested",
@@ -358,11 +446,29 @@ describe("notifications core (needs the local PostgreSQL)", () => {
         .expect(201);
       const [after] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
       expect(after.readAt).toBeNull();
+      // An empty list marks none of the owner's own notes (security review round 1); no list marks them all.
+      const ownerCookie = await harness.signIn(ownerEmail);
+      await call("post", "/notifications/read", ownerCookie).send({ ids: [] }).expect(201);
+      const [still] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
+      expect(still.readAt).toBeNull();
+      await call("post", "/notifications/read", ownerCookie).send({}).expect(201);
+      const [read] = await handle.db.select().from(notifications).where(eq(notifications.id, note.id));
+      expect(read.readAt).not.toBeNull();
     } finally {
       await handle.close();
     }
     const bad = await call("post", "/notifications/read", other).send({ ids: ["not-an-id"] });
     expect(bad.status).toBe(400);
+    // The bell lists only the reader's own notes, each with the reader's own id.
+    const otherId = await harness.userIdOf(otherEmail);
+    await service().notify(tenant, null, {
+      event: "timeoff.requested",
+      source: { type: "pto", id: uuidv7() },
+      inApp: [{ userId: otherId, title: "Yours", href: "/hr/time-off" }],
+    });
+    const listed = await call("get", "/notifications", other).expect(200);
+    expect(listed.body.map((note: { title: string }) => note.title)).toEqual(["Yours"]);
+    for (const note of listed.body as { userId: string }[]) expect(note.userId).toBe(otherId);
   });
 
   it("queues no job inside the caller's transaction: the rows come back unqueued, for queueSends after the commit (final review of PR #33)", async () => {

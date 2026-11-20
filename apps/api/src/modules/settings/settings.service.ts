@@ -1,6 +1,16 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
-import { settings, taxJurisdictions, taxRules, type SettingsGroup } from "@workspace/db/company";
+import {
+  clockEntries,
+  employees,
+  payPeriods,
+  settings,
+  taxJurisdictions,
+  taxRules,
+  timesheets,
+  type SettingsGroup,
+} from "@workspace/db/company";
+import { tenantBranding } from "@workspace/db/control";
 import {
   closesOn,
   DEFAULT_SHARED_COSTS,
@@ -17,15 +27,19 @@ import {
   unservedSection,
   type ApiLocalizationTab,
   type ApiSettingsSection,
+  type Branding,
   type CompanyProfile,
   type CompanySettings,
+  type Employee,
+  type HrScheduleFacts,
+  type HrSettings,
   type LocalizationAnswer,
   type LocalizationSettings,
   type LocalizationTabInput,
   type SettingsAnswer,
   type TaxInput,
 } from "@workspace/shared";
-import { and, eq, inArray, isNull, max } from "drizzle-orm";
+import { and, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
@@ -36,9 +50,86 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadExpenseSettings } from "../finance/expense-records";
 import { companyClock, type CompanyClock } from "../sales/sales-common";
 import { loadLocalization } from "../sales/sales-records";
+import { lockNotAvailable } from "../imports/import-lock";
+import {
+  BRANDING_COLUMNS,
+  brandingAnswer,
+  brandingBusy,
+  brandingMissing,
+  brandingOf,
+  readBranding,
+} from "./branding-row";
+
+/**
+ * A served section stored in the company's `settings` table: every one but Branding, which lives in
+ * the control `tenant_branding` row (ADR 0059, part 6, D2).
+ */
+export type CompanySection = Exclude<ApiSettingsSection, "branding">;
+
+/** How long a branding save waits for the control row's lock before it answers 409 `branding_busy` (part 6). */
+export const BRANDING_LOCK_WAIT = "5s";
+/** The longest one control statement of a branding save may run (part 6). */
+const BRANDING_STATEMENT_LIMIT = "10s";
+/** How long a branding save's control transaction may sit idle (waiting for the company database) before the server ends it (part 6). */
+const BRANDING_IDLE_LIMIT = "10s";
 
 /** A served section's value as it is stored. */
-export type StoredSection<S extends ApiSettingsSection> = CompanySettings[S];
+export type StoredSection<S extends CompanySection> = CompanySettings[S];
+
+/**
+ * A served section the API answers and acts on with a value of its own when it was never saved (ADR
+ * 0059 D10). Settings → HR has none: never saved, it is left out of the answer and the API acts on
+ * no schedule or workweek at all (part 5, D7). Branding is not stored here at all (part 6, D2).
+ */
+export type DefaultedSection = Exclude<CompanySection, "hr">;
+
+/**
+ * What a Settings → HR save is judged against, read under the `hr` row's lock (ADR 0059, part 5, D4
+ * and D5): whether pay or hours are recorded, and the live employees' work state, FLSA status and
+ * employment status for the monthly rule.
+ */
+export interface HrRecords {
+  facts: HrScheduleFacts;
+  employees: Pick<Employee, "state" | "flsaStatus" | "status">[];
+}
+
+/** Why a first save is refused when another first save of the section won meanwhile (part 5, security review round 1). */
+export const SAVED_MEANWHILE = "Someone else saved these settings meanwhile. Open them again and redo the change.";
+
+/** Whether a table holds a live row: one row read at most. */
+async function anyLive(
+  tx: CompanyDb,
+  table: typeof payPeriods | typeof timesheets | typeof clockEntries,
+): Promise<boolean> {
+  const [row] = await tx.select({ id: table.id }).from(table).where(isNull(table.deletedAt)).limit(1);
+  return row !== undefined;
+}
+
+/** The records a Settings → HR save is judged against (`HrRecords`), read in the save's transaction. */
+async function loadHrRecords(tx: CompanyDb): Promise<HrRecords> {
+  const periods = await anyLive(tx, payPeriods);
+  const hours = (await anyLive(tx, timesheets)) || (await anyLive(tx, clockEntries));
+  const people = await tx
+    .select({ state: employees.state, flsaStatus: employees.flsaStatus, status: employees.status })
+    .from(employees)
+    .where(isNull(employees.deletedAt));
+  return { facts: { payPeriods: periods, hoursRecorded: hours }, employees: people };
+}
+
+/**
+ * Settings → Email never saved (ADR 0059, bell and Outbox part, D10): every field empty, which is
+ * what the sender acts on: an empty sender name sends as the company's name, with no reply-to and
+ * no sign-off (`NotificationService`).
+ */
+const NEVER_SAVED_EMAIL: CompanySettings["email"] = { senderName: "", replyTo: "", signature: "" };
+
+/**
+ * Stock rules never saved (ADR 0059, the Stock rules part, D5): the strictest quantity, so every
+ * non-zero adjustment would wait for a second person, as Payments' never-saved answer is the
+ * strictest; a save is judged against it, so only an Owner can loosen it. Nothing on the API acts on
+ * it while stock adjustments are switched off.
+ */
+const NEVER_SAVED_INVENTORY: CompanySettings["inventory"] = { adjustmentApprovalQty: "0" };
 
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
@@ -101,7 +192,8 @@ export function settingsMissing(): ConflictException {
  * section at a time, each in the session's company only (TenantGuard's tenant). Rows are one per
  * group, never soft-deleted, so neither the read nor the lock filters `deleted_at`, the same as the
  * modules that read them (D20). It reads the company's time zone from the control database
- * (`companyClock`, by the verified tenant's id) and never writes it (part 1 D11; part 2b D2).
+ * (`companyClock`, by the verified tenant's id) and never writes it (part 1 D11; part 2b D2). Its one
+ * control write is the company's own branding row, by the verified tenant's id (part 6, D2).
  */
 @Injectable()
 export class SettingsService {
@@ -127,13 +219,14 @@ export class SettingsService {
     const tabs = readableTabs(access);
     if (sections.length === 0 && tabs.length === 0) return {};
     const db = await this.tenancy.db(tenant);
-    const groups: SettingsGroup[] = tabs.length > 0 ? [...sections, "localization"] : [...sections];
+    const companySections = sections.filter((section): section is CompanySection => section !== "branding");
+    const groups: SettingsGroup[] = tabs.length > 0 ? [...companySections, "localization"] : companySections;
     const rows = await db
       .select({ group: settings.group, value: settings.value })
       .from(settings)
       .where(inArray(settings.group, groups));
     const stored = new Map(rows.map((row) => [row.group, row.value]));
-    const read = <S extends ApiSettingsSection>(section: S) => this.valueOf(db, section, stored.get(section));
+    const read = <S extends DefaultedSection>(section: S) => this.valueOf(db, section, stored.get(section));
     const answer: SettingsAnswer = {};
     for (const section of sections) {
       switch (section) {
@@ -152,6 +245,24 @@ export class SettingsService {
         case "sharedCosts":
           answer.sharedCosts = await read(section);
           break;
+        case "hr": {
+          // As stored, and only once saved: the API acts on no HR settings before that (part 5, D7).
+          const hr = stored.get(section);
+          if (hr !== undefined) answer.hr = hr as HrSettings;
+          break;
+        }
+        case "branding": {
+          // From the control row, by the verified tenant's id; none without a live row (part 6, D6).
+          const branding = await readBranding(this.control.db, tenant.companyId);
+          if (branding) answer.branding = branding;
+          break;
+        }
+        case "email":
+          answer.email = await read(section);
+          break;
+        case "inventory":
+          answer.inventory = await read(section);
+          break;
         default:
           throw unservedSection(section);
       }
@@ -168,7 +279,7 @@ export class SettingsService {
   }
 
   /** A section as the rules compare against: the stored value, or the value it is answered with when never saved. */
-  async current<S extends ApiSettingsSection>(tenant: TenantContext, section: S): Promise<StoredSection<S>> {
+  async current<S extends DefaultedSection>(tenant: TenantContext, section: S): Promise<StoredSection<S>> {
     const db = await this.tenancy.db(tenant);
     const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, section));
     return this.valueOf(db, section, row?.value);
@@ -182,49 +293,109 @@ export class SettingsService {
    * `guard` runs every check that reads the stored section or other rows, inside the transaction
    * and under the lock (`tx`; Shared costs read the live locations there: ADR 0059, part 4b, D2), and
    * refuses by throwing, which rolls back.
+   * `firstSave: "refuse"` makes a first save that finds the row taken meanwhile a 409, for a section
+   * whose `guard` judged the never-saved answer (Stock rules, security review round 1).
    */
-  async save<S extends ApiSettingsSection>(
+  async save<S extends DefaultedSection>(
     tenant: TenantContext,
     actor: Actor,
     section: S,
     value: StoredSection<S>,
     answered: (value: StoredSection<S>) => unknown,
     guard?: (current: StoredSection<S>, tx: CompanyDb) => Promise<void>,
+    firstSave: "upsert" | "refuse" = "upsert",
   ): Promise<void> {
-    const { label } = SETTINGS_SECTIONS[section];
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
       const row = await this.lockGroup(tx, section);
       // Checks that compare with what is stored run under the row's lock, against the never-saved
       // answer when nothing is (ADR 0059 D10), so two saves at once can't both pass on a stale value.
       if (guard) await guard(await this.valueOf(tx, section, row?.value), tx);
-      let id = row?.id;
-      if (id) {
-        await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, id));
-      } else {
-        // Two first saves at once both find no row: the unique group index makes the second an update.
-        const [saved] = await tx
-          .insert(settings)
-          .values({ id: uuidv7(), group: section, value, createdBy: actor.access.userId })
-          .onConflictDoUpdate({ target: settings.group, set: { value, updatedAt: new Date() } })
-          .returning({ id: settings.id });
-        id = saved.id;
-      }
-      await this.auditLog.record(
-        tenant,
-        actor.audit,
-        {
-          category: "settings",
-          action: `Changed ${label.toLowerCase()}`,
-          targetType: "settings",
-          targetId: id,
-          targetLabel: label,
-          before: row ? answered(row.value as StoredSection<S>) : null,
-          after: answered(value),
-        },
+      await this.write(
         tx,
+        tenant,
+        actor,
+        section,
+        row?.id,
+        value,
+        { before: row ? answered(row.value as StoredSection<S>) : null, after: answered(value) },
+        firstSave,
       );
     });
+  }
+
+  /**
+   * Saves Settings → HR (ADR 0059, part 5) in one transaction under `FOR UPDATE` on the `hr` row,
+   * the lock `PayPeriodsService.open` takes before it reads the schedule, so no pay period can be
+   * opened between the checks and the write. `settle` gets the stored section (undefined when never
+   * saved; a stored row may lack fields) and the records read under that lock (`HrRecords`); it runs
+   * every check that reads them (the schedule lock, the monthly rule, then the step-up) and returns
+   * what to store, or throws a refusal, which rolls back. One audit entry: `before` the locked row (or
+   * null), `after` the saved section. Answers what it stored.
+   */
+  async saveHr(
+    tenant: TenantContext,
+    actor: Actor,
+    settle: (current: Partial<HrSettings> | undefined, records: HrRecords) => Promise<HrSettings>,
+  ): Promise<HrSettings> {
+    const db = await this.tenancy.db(tenant);
+    return db.transaction(async (tx) => {
+      const row = await this.lockGroup(tx, "hr");
+      // The jsonb row as every HR loader reads it (`loadPaySchedule`, `loadHrRules`).
+      const current = row?.value as Partial<HrSettings> | undefined;
+      const value = await settle(current, await loadHrRecords(tx));
+      await this.write(tx, tenant, actor, "hr", row?.id, value, { before: current ?? null, after: value }, "refuse");
+      return value;
+    });
+  }
+
+  /**
+   * Writes one section's row, or inserts it when there is none, and its audit entry "Changed
+   * <label>", in the caller's transaction after the caller locked the row (ADR 0059). Two first saves
+   * at once both find no row: the unique group index makes the second an update, or, with
+   * `firstSave: "refuse"`, a 409 to be tried again, because its checks judged no row and what the first
+   * save stored may since have been acted on (Settings → HR: a pay period opened on it; part 5,
+   * security review round 1).
+   */
+  private async write<S extends CompanySection>(
+    tx: CompanyDb,
+    tenant: TenantContext,
+    actor: Actor,
+    section: S,
+    rowId: string | undefined,
+    value: StoredSection<S>,
+    audit: { before: unknown; after: unknown },
+    firstSave: "upsert" | "refuse" = "upsert",
+  ): Promise<void> {
+    const { label } = SETTINGS_SECTIONS[section];
+    let id = rowId;
+    if (id) {
+      await tx.update(settings).set({ value, updatedAt: new Date() }).where(eq(settings.id, id));
+    } else {
+      const insert = tx
+        .insert(settings)
+        .values({ id: uuidv7(), group: section, value, createdBy: actor.access.userId });
+      const [saved] = await (
+        firstSave === "refuse"
+          ? insert.onConflictDoNothing({ target: settings.group })
+          : insert.onConflictDoUpdate({ target: settings.group, set: { value, updatedAt: new Date() } })
+      ).returning({ id: settings.id });
+      if (!saved) throw new ConflictException({ code: "conflict", message: SAVED_MEANWHILE });
+      id = saved.id;
+    }
+    await this.auditLog.record(
+      tenant,
+      actor.audit,
+      {
+        category: "settings",
+        action: `Changed ${label.toLowerCase()}`,
+        targetType: "settings",
+        targetId: id,
+        targetLabel: label,
+        ...audit,
+      },
+      tx,
+    );
   }
 
   /**
@@ -369,7 +540,91 @@ export class SettingsService {
     });
   }
 
-  /** The row of a settings group, locked until the transaction ends: it orders two saves of one group (ADR 0059). */
+  /**
+   * Saves Settings → Branding into the company's control `tenant_branding` row (ADR 0059, part 6,
+   * D2, D3), approved by the owner on 2026-11-20. One control transaction: the company's live row,
+   * found by the verified tenant's id (TenantGuard's, never a body field), is locked (`FOR UPDATE`),
+   * so two saves run one after the other and each audit `before` is exactly what its save replaced;
+   * a company with no live row gets 409 and nothing is created. Only the name, monogram, color,
+   * pattern and theme change: the session timeouts and logo keys in the row never do. The company's
+   * `audit_log` row ("Changed branding", before and after as answered) is written in a company
+   * transaction inside the control one, so it commits first: no change is ever left unaudited (D3).
+   * No transaction spans both databases, so a control commit that fails after the audit committed
+   * leaves an audit row for a change not made. Answers the branding as saved, without a logo (D5).
+   *
+   * The control pool is shared by every tenant's sign-in, so the save never holds a control
+   * connection long (part 6, review 2026-11-20): the company database is reached first, before any
+   * control connection is taken; inside the control transaction a row lock waits at most
+   * `BRANDING_LOCK_WAIT` (then 409 `branding_busy`), a statement runs at most
+   * `BRANDING_STATEMENT_LIMIT`, and the server ends a transaction left idle longer than
+   * `BRANDING_IDLE_LIMIT` (while it waits for the company database), which rolls it back.
+   */
+  async saveBranding(tenant: TenantContext, actor: Actor, branding: Branding): Promise<Branding> {
+    const db = await this.tenancy.db(tenant);
+    // Reach the company database before a control connection is held, so an unreachable company
+    // database fails here. The connection goes back to its pool after this check, so the audit's
+    // company transaction may still wait for one; the idle limit below bounds that wait.
+    await db.execute(sql`select 1`);
+    try {
+      return await this.control.db.transaction(async (control) => {
+        // Transaction-scoped (`is_local` true), as `set local`, with the values as parameters.
+        await control.execute(sql`select set_config('lock_timeout', ${BRANDING_LOCK_WAIT}, true)`);
+        await control.execute(sql`select set_config('statement_timeout', ${BRANDING_STATEMENT_LIMIT}, true)`);
+        await control.execute(
+          sql`select set_config('idle_in_transaction_session_timeout', ${BRANDING_IDLE_LIMIT}, true)`,
+        );
+        return this.writeBranding(control, db, tenant, actor, branding);
+      });
+    } catch (error) {
+      if (lockNotAvailable(error)) throw brandingBusy();
+      throw error;
+    }
+  }
+
+  /** The branding save's work inside its control transaction (`saveBranding`): lock, update, audit. */
+  private async writeBranding(
+    control: ControlDb,
+    db: CompanyDb,
+    tenant: TenantContext,
+    actor: Actor,
+    branding: Branding,
+  ): Promise<Branding> {
+    const [row] = await control
+      .select({ id: tenantBranding.id, ...BRANDING_COLUMNS })
+      .from(tenantBranding)
+      .where(brandingOf(tenant.companyId))
+      .for("update");
+    if (!row) throw brandingMissing();
+    const after = brandingAnswer(branding);
+    const { displayName, monogram, brandColor, pattern, defaultTheme } = after;
+    await control
+      .update(tenantBranding)
+      .set({ displayName, monogram, brandColor, pattern, defaultTheme, updatedAt: new Date() })
+      .where(eq(tenantBranding.id, row.id));
+    await db.transaction((tx) =>
+      this.auditLog.record(
+        tenant,
+        actor.audit,
+        {
+          category: "settings",
+          action: `Changed ${SETTINGS_SECTIONS.branding.label.toLowerCase()}`,
+          targetType: "settings",
+          targetId: row.id,
+          targetLabel: SETTINGS_SECTIONS.branding.label,
+          before: brandingAnswer(row),
+          after,
+        },
+        tx,
+      ),
+    );
+    return after;
+  }
+
+  /**
+   * The row of a settings group, locked until the transaction ends: it orders two saves of one group
+   * (ADR 0059). No `deleted_at` filter: settings rows are never soft-deleted (D20), and the unique
+   * group index allows one row per group, so this is the row every loader reads.
+   */
   private async lockGroup(tx: CompanyDb, group: SettingsGroup): Promise<{ id: string; value: unknown } | undefined> {
     const [row] = await tx
       .select({ id: settings.id, value: settings.value })
@@ -380,13 +635,13 @@ export class SettingsService {
   }
 
   /** A stored section, or what a company that never saved it is answered with and acted on (ADR 0059 D10). */
-  private async valueOf<S extends ApiSettingsSection>(
+  private async valueOf<S extends DefaultedSection>(
     db: CompanyDb,
     section: S,
     stored: unknown,
   ): Promise<StoredSection<S>> {
     if (stored !== undefined) return stored as StoredSection<S>;
-    const never: { [K in ApiSettingsSection]: () => Promise<CompanySettings[K]> } = {
+    const never: { [K in DefaultedSection]: () => Promise<CompanySettings[K]> } = {
       profile: async () => BLANK_PROFILE,
       numbers: async () => defaultNumberSettings(),
       payments: async () => NEVER_SAVED_PAYMENTS,
@@ -394,6 +649,8 @@ export class SettingsService {
       expenses: () => loadExpenseSettings(db),
       // Exactly how the Business report reads a missing row: by revenue share (ADR 0023; part 4b, D9).
       sharedCosts: async () => DEFAULT_SHARED_COSTS,
+      email: async () => NEVER_SAVED_EMAIL,
+      inventory: async () => NEVER_SAVED_INVENTORY,
     };
     return (await never[section]()) as StoredSection<S>;
   }

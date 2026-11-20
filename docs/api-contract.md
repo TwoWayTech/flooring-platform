@@ -51,7 +51,9 @@ In api mode the browser reaches these through the web app's own origin: Next.js 
 | `POST /api/auth/sign-out` | → 200 | Deletes the session |
 | `POST /api/auth/change-password` | `{ currentPassword, newPassword }` | At least 12 characters |
 | `GET /auth/context` | → `{ user: { id, name, email }, company: { id, slug, name } \| null, companies: [...], mfa: { required, totp, passkeys, state } }` | The shared error body. 401 `unauthenticated` without a session; 401 `session_expired` when the company's idle or absolute timeout ended it (the session is deleted). `company` is null until the user chooses one. `mfa.state` is `enrolment_required` when MFA is mandatory and the user has no factor yet |
-| `GET /public/branding?host=` | → `{ displayName, monogram, brandColor, pattern, defaultTheme }` | Public, for the login page. 404 `not_found` when the host names no live company. 400 `invalid_request` for a malformed host. The logo arrives with the branding upload (P11) |
+| `GET /public/branding?host=` | → `{ displayName, monogram, brandColor, pattern, defaultTheme }` | Public, for the login page. 404 `not_found` when the host names no live company. 400 `invalid_request` for a malformed host. Follows a Settings → Branding save at once (Settings part 6). The logo arrives with the branding upload (owner question, part 6 Q1) |
+
+**Web screens (ADR 0060).** The ApiClient's `signInSecurity`, `confirmPassword`, `addPasskey`, `renamePasskey` and `deletePasskey` call `GET /auth/context` and the endpoints above under `/api/auth` (never `/api-proxy`, which refuses auth paths). `confirmPassword` is sent as a read; adding, renaming and removing re-read like any write. The login page's passkey sign-in calls `generate-authenticate-options` and `verify-authentication` directly.
 
 **Mandatory MFA (blueprint p27).** Owner, Accountant, HR and active platform admins must use a second factor. Until they have one, their session may only set up an authenticator app or a passkey, read `/auth/context`, choose a company and sign out. Every other Better Auth endpoint and every guarded route answers 403 `mfa_enrolment_required`. The roles are read from `member.role`, which holds the person's company role keys, comma-separated.
 
@@ -263,7 +265,7 @@ The web shell's person, roles, access, modules and branches. Spec: docs/product-
 
 ## Settings, part 1 (real build, ADR 0059)
 
-The company profile, number format, payment rules and expense approval. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 1". The company is the verified session's; nothing in the path, query, body or headers names it. No control-database write.
+The company profile, number format, payment rules and expense approval. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 1". The company is the verified session's; nothing in the path, query, body or headers names it. No control-database write (part 6 adds the one: Branding, below).
 
 | Route | Access | Handler checks, in order | Answer |
 | --- | --- | --- | --- |
@@ -354,6 +356,65 @@ Settings → Warehouses and showrooms saves on the API, beside `GET /locations` 
 - **The web.** `list("locations")` and `get("locations")` read `GET /locations` in api mode (HR Suite's 403 reads as none); `saveLocation` sends `PUT /locations/:id` for a UUID and `POST /locations` otherwise, with the id never in the body, then reads again. The page names branches from the shell (`GET /company`'s) and runs rule 29 before sending.
 - **The demo** runs the same checks in the same order on its own records; the generic `save("locations")` is refused.
 
+## Settings, part 5: HR (real build, ADR 0059, 2026-11-20)
+
+Settings → HR on part 1's pattern, with checks against recorded pay. Spec: docs/product-spec/settings-and-permissions.md, Real build, "Settings on the API, part 5". The company is the verified session's. No control-database read or write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/hr` | module `hr` (checked first), then `settings.hr.manage` (an MFA key) | switch `settings.hr` (404), data scope `all` (403), strict body (400), `hrSettingsProblem` (400); then under `FOR UPDATE` on the `hr` row: the schedule lock (409 `conflict`, `hrScheduleProblem`), the monthly rule on a change of frequency (400, `hrFrequencyProblem`), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `HrSettings`. Audited |
+
+- **Keys, module, switch and label** come from `SETTINGS_SECTIONS.hr`. The guards' refusals are part 1's.
+- **The body** is exactly `{ workweekStartDay, payFrequency, payPeriodAnchor, holidays: { date, name }[], showPayToEmployees, showCommissionToEmployees, showRatesToEmployees, showTeamCalendarToEmployees, clockEnabled }`. The shape is checked first: types, unknown fields at either level and outer lengths (frequency and anchor 20, each date 20, each name 800, at most 1,000 holidays), each refused with its field's words. Then `hrSettingsProblem`: `workweekStartDay` a whole 0 (Sunday) to 6; `payFrequency` `weekly`, `biweekly`, `semimonthly` or `monthly`; `payPeriodAnchor` a real `yyyy-MM-dd` day in 2000 to 2099; at most 100 holidays, each a real day in those years, its name 1 to 80 characters once trimmed (stored as sent), each date once. A refusal is 400 `invalid_request` with the first problem's words.
+- **The schedule lock** is judged on the locked row, so no pay period can be opened between the check and the write (`POST /pay-periods` takes the same lock). A change of `payFrequency` or `payPeriodAnchor` while a live pay period exists, and a change of `workweekStartDay` while a live timesheet, clock entry or pay period exists, are 409 `conflict` with the rule's words. A company that never saved the section counts every field as changed. Holidays and the switches always save.
+- **Monthly:** a change to `monthly` while a live, non-terminated employee works in California as non-exempt is 400 `invalid_request` ("California non-exempt staff must be paid at least twice a month."), whatever `hr.payroll.california` says (ADR 0050). An unchanged frequency is not judged again.
+- **Hours writers wait for it.** `PUT /timesheets`, `POST /timesheets/upload`, `POST /clock/in` and `POST /clock/out` take the `hr` row `FOR SHARE` first; if the workweek or the clock setting changed since they read it, they answer 409 `conflict` ("Settings → HR changed while this was being saved. Try again.").
+- **The save** writes the row (or inserts it, with `null` before; a first save that finds the row taken meanwhile is 409 `conflict`, "Someone else saved these settings meanwhile. Open them again and redo the change.") and one `audit_log` entry in the same transaction: "Changed hr", target "HR", `before` the locked row and `after` the saved section. The last save wins.
+- **Who reads it.** `GET /settings` adds `hr`, as stored, for holders of `hr.overview.view`, `hr.timesheet.view`, `hr.pto.view`, `hr.portal.view` or `settings.hr.manage` while module `hr` is on, not hidden by the `settings.hr` switch; a company with no `hr` row gets none.
+- **The web.** `updateSettings("hr", value)` sends the section to its `PUT` and reads again, with no transport change (`API_SETTINGS_SECTIONS`). The page runs `hrSettingsProblem` before the code dialog.
+
+## Settings, part 6: branding (real build, ADR 0059, 2026-11-20)
+
+Settings → Branding saves on the API into the company's control `tenant_branding` row, the one settings save that writes the control database (approved by the owner on 2026-11-20). Spec: docs/product-spec/settings-and-permissions.md rule 27 and Real build, "Settings on the API, part 6".
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/branding` | `settings.branding.manage` (`SETTINGS_SECTIONS.branding`; module `platform`, so no module guard) | switch `settings.branding` (404), data scope `all` (403 `forbidden`, "Company settings cover the whole company."), strict body (400), `brandingProblem` (400 `invalid_request` with its words), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor); then, under the control row's lock, no live row (409 `branding_missing`); a lock not granted within 5 s answers 409 `branding_busy` ("Branding is being saved by someone else right now. Try again in a moment."), with nothing written | 200, the saved `Branding` with `logoDataUrl: null`. Audited |
+
+- **The body** is exactly `{ displayName, monogram, brandColor, pattern, logoDataUrl, defaultTheme }`. Outer bounds with the rule's words: the name 800, the monogram 20 and the colour 20 characters; `pattern` one of `herringbone`, `running-bond`, `basketweave` and `defaultTheme` one of `system`, `light`, `dark`, with the rule's words; `logoDataUrl` must be `null` ("Logos can't be uploaded yet. The monogram stands in for a logo."). No company or tenant id is taken from the body, path, query or headers.
+- **Rule 27** (`brandingProblem` in packages/shared `settings/branding-rules.ts`, the same words in both modes): the display name not blank, at most 80 characters as stored, with no line breaks or control characters; the monogram 1 or 2 capital letters or digits; the brand colour exactly `#` and six hex digits, then `checkBrandColor`'s contrast (3:1 on the light surface, its own words); the pattern and theme their options; the logo none (the demo keeps a PNG, SVG or JPEG data URL of at most 300 KB).
+- **The save** is one control transaction: the company's live `tenant_branding` row, found by the verified tenant's id, is locked (`FOR UPDATE`); only `display_name`, `monogram`, `brand_color`, `pattern`, `default_theme` and `updated_at` change (the session timeouts and logo keys never do). The company's `audit_log` entry, "Changed branding", target "Branding", `before` and `after` as answered, is written in a company transaction inside the control one, so it commits first. Two saves run one after the other; the last wins. A company with no live row gets 409 and nothing is created. The control pool is shared by every tenant's sign-in, so the save reaches the company database before it takes a control connection, and its control transaction sets `lock_timeout` 5 s, `statement_timeout` 10 s and `idle_in_transaction_session_timeout` 10 s. A failed audit write rolls the control change back.
+- **Who reads it.** `GET /settings` answers `branding` to every member from the control row, with `logoDataUrl: null`, whatever the page switch says; a company with no live row gets none. The login page (`GET /public/branding`), the console's directory and the emails' company name read the same row, so they follow a save at once. `tenants.name` is not changed.
+- **The web.** `getSettings()` takes `branding` from the answer; `updateSettings("branding")` sends it to `PUT /settings/branding` and reads again. The page runs rule 27, then asks for a code; in api mode it offers no logo upload.
+
+## Settings → Email (real build, ADR 0059, the bell and Outbox part, 2026-11-20)
+
+The sender details every Outbox row is written with, on part 1's pattern. The company is the verified session's. No control-database read or write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/email` | `settings.notifications.manage` (module `platform`, so no module guard) | switch `settings.notifications` (404), data scope `all` (403), strict body (400), `emailSettingsProblem` (400), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `EmailSettings`. Audited |
+
+- **The body** is exactly `{ senderName, replyTo, signature }`, three strings; outer lengths 800, 2,540 and 5,000, each refused with its field's words. Then `emailSettingsProblem`: the sender name at most 80 characters with no control character, quote, backslash, angle bracket, `@` (look-alikes too: judged on its NFKC form), zero-width character, Unicode line separator or text-direction mark (empty sends as the company's name); the reply-to empty or one plain mailbox in printable ASCII of at most 254 characters, without `"<>,;()[]\`; the sign-off at most 500 characters with no invisible or text-direction character. Stored as sent.
+- **The step-up** comes after the content checks, so a refused value never costs a code: the sender name and reply-to decide who customers' mail seems to come from and where their answers go, and the sign-off is under every message.
+- **The save** writes the row under its lock (or inserts it with `null` before) and one `audit_log` entry: "Changed email and notifications", target "Email and notifications". The last save wins. The next Outbox row is written with it; rows already written keep their snapshot. The worker judges the stored name and reply-to by the same rule (`isPlainSenderName`, `isPlainReplyTo`) when it sends: a name that fails goes out as the platform's address alone, a reply-to that fails is left out.
+- **Who reads it.** `GET /settings` adds `email` for holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, it is `{ senderName: "", replyTo: "", signature: "" }`, which is what the sender acts on.
+- **The web.** `updateSettings("email", value)` goes to the route through `API_SETTINGS_SECTIONS`. The Sender form runs `emailSettingsProblem` before the code dialog.
+
+## Settings → Stock rules (real build, ADR 0059, the Stock rules part, 2026-11-20)
+
+The adjustment approval quantity, on part 1's pattern. The company is the verified session's. No control-database read or write. Stock adjustments stay switched off (`inventory.adjustments`, `removed`) and have no routes; nothing on the API reads this section yet.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/inventory` | module `core` (checked first), then `settings.locations.manage` | switch `inventory.locations` (404), data scope `all` (403), strict body (400), `inventorySettingsProblem` (400); then under `FOR UPDATE` on the `inventory` row, only when `stockRulesLoosened` against the stored section (never saved: `"0"`): Owner only (403 `owner_only`), then a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `InventorySettings`. Audited |
+
+- **The body** is exactly `{ adjustmentApprovalQty }`, a string (never a JSON number); outer length 140 with the rule's words. Then `inventorySettingsProblem`: empty, or `QUANTITY_TEXT` (up to ten digits and three decimals; no bare point, sign, exponent or space).
+- **Loosening** is raising the quantity (compared by value) or clearing it (empty: no adjustment waits); a stored value the rule refuses counts any change as loosening. Keeping, lowering, or setting one where there was none needs only the key and no step-up.
+- **The save** writes the row under its lock (or inserts it, with `null` before) and one `audit_log` entry: "Changed stock rules", target "Stock rules". The last save wins.
+- **Who reads it.** `GET /settings` adds `inventory` for holders of `settings.locations.manage` while module `core` and `inventory.locations` are on; never saved, `{ adjustmentApprovalQty: "0" }`.
+- **The web.** `updateSettings("inventory", value)` goes to the route through `API_SETTINGS_SECTIONS`. The Stock rules form runs the rule and the Owner-only words before the code dialog, which opens only for a loosening.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
@@ -432,13 +493,15 @@ Entries are posted by the modules, never through a route. Money is decimal strin
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all` | Every account's debits, credits and balance through a day (all time without one), the totals, and `balanced` |
+| `GET /ledger/trial-balance?through=` | `reports.financial.view`, data scope `all`, and the trial balance's sight rule (below) | `TrialBalance` (packages/shared): every account's debits, credits and balance through a day (all time without one), the totals, and `balanced`. 404 while `reports.hub` is off; `Cache-Control: private, no-store`; read in one read-only snapshot. The Reports hub's Trial balance (ADR 0055, "Trial balance") |
 | `GET /ledger/period-close` | `reports.financial.view` or `settings.company.manage`, data scope `all` | `{ closedThrough }`, the last closed day or null |
 | `POST /ledger/period-close` | `settings.company.manage` | `{ through, note }`: closes the books through that day, or reopens to an earlier one. Audited |
 | `GET /settings/accounting` | `settings.payments.manage`, data scope `all` | `AccountingSettings`: `{ costingMethod, salesTaxBasis, bankAccounts: [{ key, name, methods }] }`, or the defaults (ADR 0040). Unchanged by Settings part 1; in the finance module |
 | `PUT /settings/accounting` | `settings.payments.manage`, data scope `all` | Saves the settings. A new bank account has no `key` and gets one; each method may go to only one bank account. Removing a bank account with entries is 409 `bank_account_in_use`. Audited. A step-up after the body is read (403 `step_up_required`; ADR 0040, 2026-11-20) |
 
 Cash lines post to the bank account for the payment's method, or to Cash and Bank when no bank account claims it. A void credits the account the payment first posted to (ADR 0040).
+
+**The trial balance's sight rule** (`seesTrialBalance` in packages/shared; ADR 0055, "Trial balance", 2026-11-20). Flooring Suite only. In order: 401, 403 for the product (`product_not_enabled`), the module or the key, 404 for the hub switch, 403 "The books cover the whole company." below scope `all`, 400 for a bad `through`, then 403 `forbidden` "The trial balance shows cost of goods and pay, which your access doesn't include." unless the person holds `sales.margin.view_sensitive` and `inventory.product.view_sensitive`, plus `contracts.contract.view_sensitive` once a contract billing has posted and `hr.payroll.view` once pay has posted (a pay-run, contractor-payment or commission-statement entry, or a line on Wages, Accrued Payroll, Commissions or Contract Labor). The facts are read over all time, whatever `through` is.
 
 ## Expenses (real build, P12 part 2, ADR 0041)
 
@@ -650,7 +713,7 @@ Flooring Suite only and module `core`: an HR Suite company gets 403 `product_not
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /reports/options` | `reports.sales.view` or `reports.financial.view` | `ReportOptions` `{ reports, exports, locations, salespeople, vendors }`: the reports the person may open (`business`, `pnl`, `sales`, `payments`, by key, switch and, for the first two, data scope `all`), those they may also export (`reports.financial.export`, `reports.sales.export`), the live locations `{ id, name, kind }`, and, only when `business` is listed, the Business report's pickers: everyone who is the rep on a live invoice ("Former employee" when unknown) and the live suppliers, by name. Takes no parameter |
+| `GET /reports/options` | `reports.sales.view` or `reports.financial.view` | `ReportOptions` `{ reports, exports, locations, salespeople, vendors }`: the reports the person may open (`business`, `pnl`, `sales`, `payments`, by key, switch and, for the first two, data scope `all`; and `trial-balance` only when `GET /ledger/trial-balance` would answer them: `reports.financial.view`, scope `all` and the sight rule under "Ledger"), those they may also export (`reports.financial.export`, `reports.sales.export`), the live locations `{ id, name, kind }`, and, only when `business` is listed, the Business report's pickers: everyone who is the rep on a live invoice ("Former employee" when unknown) and the live suppliers, by name. Takes no parameter |
 | `GET /reports/business?from=&to=&locationIds=&productCategory=&expenseCategory=&salesRepId=&supplierId=` | `reports.financial.view`, data scope `all` | `BusinessReport` (spec rules 2 to 23). `from` and `to` are required; `locationIds` is comma-separated, at most 50, each a live location; `productCategory` a product category; `expenseCategory` one of the picker's categories (`payroll` refused); `salesRepId` and `supplierId` UUIDs (an unknown one matches nothing). Drill lists at most 200 records per row, newest first; a cut row has `recordCount` |
 | `GET /reports/pnl?range=&locationId=` | `reports.financial.view`, data scope `all` | `Report`: profit and loss by month (rule 24). `range` is `12m` (default), `3m`, `1m` or `ytd`; `locationId` a live warehouse |
 | `GET /reports/sales-by-category?range=&locationId=&category=` | `reports.sales.view` | `Report` over the invoices in the person's data scope, by the rules of `GET /invoices` (own by rep, branch by the invoice's branch). `category` is a product category other than `service` |
@@ -668,7 +731,7 @@ Flooring Suite only and module `core`: an HR Suite company gets 403 `product_not
 - **Snapshot:** each answer is read in one `READ ONLY`, `REPEATABLE READ` transaction, so all its figures come from one moment. Write-off and goods-receipt moments count on the company's day in its time zone.
 - **Exports:** there is no export route. CSV and PDF are built in the browser from these answers, and the buttons follow `exports`. Any future export route (Excel, emailed reports) checks the export key on the server.
 - **Removed reports:** sales tax by jurisdiction, inventory valuation and the two aging reports have no route.
-- **The web client** routes `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport` and `paymentsReport` (`API_METHODS`). It sends only the filters that are set, never a company id, and reads a 403 `forbidden` or a 404 on `GET /reports/options` as no reports (`EMPTY_REPORT_OPTIONS`); any other failure surfaces as elsewhere.
+- **The web client** routes `reportOptions`, `businessReport`, `pnlReport`, `salesByCategoryReport`, `paymentsReport` and, since 2026-11-20, `trialBalance` (`GET /ledger/trial-balance`) (`API_METHODS`). The demo keeps no journal, so `DemoStore.trialBalance` refuses and the demo's options never list `trial-balance`. It sends only the filters that are set, never a company id, and reads a 403 `forbidden` or a 404 on `GET /reports/options` as no reports (`EMPTY_REPORT_OPTIONS`); any other failure surfaces as elsewhere.
 
 ## Data import, part 1 (real build, ADR 0057)
 
@@ -741,11 +804,13 @@ Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is 
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /notifications` | Any company member | The person's own in-app notes, newest first (50) |
-| `POST /notifications/read` | Any company member | `{ ids? }`: marks those notes read, or all unread ones; only the person's own |
-| `GET /outbox` | Any company member | The messages the person caused or received; every message with `settings.outbox.view`. Someone else's restricted message is redacted without `hr.employee.view`. A private meeting's message is redacted for everyone it does not involve, whatever they hold (ADR 0051): subject, body and attachments are hidden, while recipient, status and dates stay |
-| `POST /outbox/:id/retry` | `settings.outbox.view` | Sends a failed message again after checking its address. 409 `not_failed` otherwise |
-| `POST /outbox/:id/cancel` | `settings.outbox.view` | Cancels a scheduled message. 409 `not_scheduled` otherwise |
+| `GET /notifications` | Any company member | The person's own in-app notes, newest first (50): `{ id, userId, eventKey, title, href, readAt, createdAt }` |
+| `POST /notifications/read` | Any company member | `{ ids? }`: marks those notes read, none for an empty list, or all unread ones without a list; only the person's own |
+| `GET /outbox` | Any company member | The messages the person caused or received; with `?all=true` (exactly that value), every message to holders of `settings.outbox.view` at data scope `all` (spec `admin = all && can`; ADR 0059, the bell and Outbox part). A redacted row also has an empty `sourceId`. The row is the screen's columns plus the sender snapshot (`fromName`, `replyTo`); template values, the dedupe key and the provider's id never come. Someone else's restricted message is redacted without `hr.employee.view`. A private meeting's message is redacted for everyone it does not involve, whatever they hold (ADR 0051): subject, body and attachments are hidden, while recipient, status and dates stay |
+| `POST /outbox/:id/retry` | `settings.outbox.view`, data scope `all` (403 otherwise) | Sends a failed message again after checking its address. 409 `not_failed` otherwise |
+| `POST /outbox/:id/cancel` | `settings.outbox.view`, data scope `all` (403 otherwise) | Cancels a scheduled message. 409 `not_scheduled` otherwise |
+
+In api mode the bell (`listMyNotifications`, `markNotificationsRead`) and the Outbox screens (`listOutbox`, `retryOutbox`, `cancelOutbox`) use these routes (ADR 0059, the bell and Outbox part). `markNotificationsRead([])` sends nothing, because a body without ids marks every unread note. Simulate bounce and Simulate reply are demo presenter tools, hidden in api mode.
 
 Raising an event is server-side only (`NotificationService.notify`): modules call it when their records change. An Outbox row moves from `queued` (or `scheduled`) to `sent` or `failed`, and from `scheduled` to `cancelled`.
 
@@ -808,8 +873,8 @@ Product by host: `proxy.ts` sets the `x-demo-product` request header. Hosts star
 | --- | --- | --- |
 | `getCompany()` | none yet | The open company's platform record as DemoStore holds it (plan, status, limits, product), until Settings and billing move. The shell's facts come from `getWorkspace()`; Settings → Locations names branches from the shell's since Settings part 4a. |
 | `getWorkspace()` | `GET /company` | `WorkspaceFacts` `{ company, user, roles, access }`: the company's name, city, state, modules, ceiling (`[]` when kept back) and branches, the person, the roles and the person's effective access, read through `workspaceFromAnswer`, which drops unknown keys and modules. The demo answers from DemoStore with the same ceiling rule and lists every role, for View as (ADR 0051, "GET /company"). |
-| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. Part 1 (ADR 0059): profile, numbers, payments and expenses come from the API, each to its readers, and part 2a the documents and payroll tabs of `localization`, each to its readers, and part 2b `region` (every member; the zone is `tenants.time_zone`) and `currency` (`settings.localization.manage`, hidden while the page is off), and part 3a `tax` (`sales.quote.view` and `settings.tax.manage`, as in force on the company's day, with its rule and county-rate rows); the other sections are still DemoStore's. |
-| `updateSettings(section, value)` | `PUT /settings/profile`, `/numbers`, `/payments`, `/expenses` | Replaces one section; audited with a before/after summary. Other sections stay on DemoStore until their part (ADR 0059). `localization` is refused in both modes ("Localization and tax saves one tab at a time."), after the module, keys, switch and scope checks (ADR 0059, part 3b). |
+| `getSettings()` | `GET /settings` | Branding, localization and tax, number format, profile. Part 1 (ADR 0059): profile, numbers, payments and expenses come from the API, each to its readers, and part 2a the documents and payroll tabs of `localization`, each to its readers, and part 2b `region` (every member; the zone is `tenants.time_zone`) and `currency` (`settings.localization.manage`, hidden while the page is off), and part 3a `tax` (`sales.quote.view` and `settings.tax.manage`, as in force on the company's day, with its rule and county-rate rows), and part 6 `branding` (every member, from the control `tenant_branding` row, no logo); the other sections are still DemoStore's. |
+| `updateSettings(section, value)` | `PUT /settings/profile`, `/numbers`, `/payments`, `/expenses`, `/branding` | Replaces one section; audited with a before/after summary. Branding writes the control `tenant_branding` row after a step-up, and takes no logo on the API (part 6). Other sections stay on DemoStore until their part (ADR 0059). `localization` is refused in both modes ("Localization and tax saves one tab at a time."), after the module, keys, switch and scope checks (ADR 0059, part 3b). |
 | `updateLocalization(tab, value)` | `PUT /settings/localization/documents`, `/payroll`, `/region`, `/currency`, `/tax` | Replaces one tab of Localization and tax, or the Sales and documents page, with that tab's own key (`LOCALIZATION_TABS`); audited with the tab as target. Every tab is on the API since part 3a; Sales tax versions its rule and county-rate rows instead of replacing them. The whole `localization` section is never sent and is refused (part 3b). |
 | `getDefaultSettings()` | none yet | The company's original settings, for Reset to default; the page puts them in its draft and saves through `updateSettings`, or through `updateLocalization` per tab for Localization and tax and Sales and documents. In api mode DemoStore's fixture originals, which the API was seeded with (ADR 0059 D7); Region and Currency's Reset keeps the zone, country, locale, base, lock and codes from the company's own copy (part 2b). |
 | `resetSettings(section)` | none yet | Restores one section to the company's original values; audited. No screen calls it; DemoStore only. `localization` is refused (part 3b). |

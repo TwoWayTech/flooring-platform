@@ -51,9 +51,9 @@ Each endpoint declares its permissions, and each answers 404 when its feature is
 - **`GET /outbox`:**
   - `@AnyCompanyMember`;
   - the rows the person caused or received;
-  - every row with `settings.outbox.view`;
+  - every row with `settings.outbox.view`, since 2026-11-20 only when asked with `?all=true` (ADR 0059, the bell and Outbox part);
   - someone else's restricted row is redacted without `hr.employee.view` (spec "Who can see").
-- **`POST /outbox/:id/retry` and `/cancel`:** `settings.outbox.view`, the key that opens the Outbox page whose actions these are. The spec also lets people retry or cancel their own messages. This is stricter on purpose, until the Outbox screen moves to the API (recorded in the blueprint delta).
+- **`POST /outbox/:id/retry` and `/cancel`:** `settings.outbox.view`, the key that opens the Outbox page whose actions these are. The spec also lets people retry or cancel their own messages. This is stricter on purpose, until the Outbox screen moves to the API (recorded in the blueprint delta). The screen moved on 2026-11-20 (ADR 0059, the bell and Outbox part) and kept this rule in both modes, an owner question.
 - **What `GET /outbox` returns:** only the screen's columns. Template values, the dedupe key and the provider's message id are never returned, so a redacted row cannot be read through them (PR #9 review). `POST /notifications/read` validates its `ids` with Zod.
 
 ### The 30-day cleanup

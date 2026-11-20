@@ -14,8 +14,8 @@ export interface TrialBalanceRow {
 }
 
 /**
- * GET /ledger/trial-balance's answer (apps/api `TrialBalance`). The web client has no screen or
- * method for it yet (STATUS "Later"), so the flows read it through `/api-proxy`.
+ * GET /ledger/trial-balance's answer (`TrialBalance` in packages/shared). The flows read it through
+ * `/api-proxy` with exact moves; the Reports hub's Trial balance screen shows the same answer.
  */
 export interface TrialBalance {
   through: string | null;

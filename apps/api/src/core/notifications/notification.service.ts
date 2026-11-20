@@ -13,12 +13,15 @@ import type { EmailProvider } from "@workspace/providers";
 import {
   effectiveRule,
   featureOn,
+  isPlainReplyTo,
+  isPlainSenderName,
   notificationEvent,
   renderTemplate,
   type EmailSettings,
   type NotificationEventKey,
   type NotificationRule,
   type OutboxAttachment,
+  type OutboxReader,
   type OutboxRecipient,
 } from "@workspace/shared";
 import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -35,10 +38,9 @@ import {
   emailAttachments,
   EXPIRES_AT_VALUE,
   failureNotice,
-  fromHeader,
   oneLine,
+  senderHeaders,
   visibleOutboxRow,
-  type OutboxReader,
 } from "./notification-rules";
 
 /** The queue that sends one Outbox row. */
@@ -247,8 +249,8 @@ export class NotificationService implements OnApplicationBootstrap {
   /** The Outbox as this reader may see it, newest first (spec "Who can see which Outbox row"). */
   async listOutbox(tenant: TenantContext, reader: OutboxReader) {
     const db = await this.tenancy.db(tenant);
-    // Only what the Outbox screen shows (spec "Outbox"). Template values, the dedupe key and the
-    // provider's id are never returned, so redaction cannot be undone from them (PR #9 review).
+    // Only what the Outbox screen shows (spec "Outbox"), the sender's name and reply-to included.
+    // Template values, the dedupe key and the provider's id are never returned, so redaction cannot be undone from them (PR #9 review).
     const rows = await db
       .select({
         id: outboxMessages.id,
@@ -260,6 +262,9 @@ export class NotificationService implements OnApplicationBootstrap {
         recipientId: outboxMessages.recipientId,
         recipientName: outboxMessages.recipientName,
         recipientEmail: outboxMessages.recipientEmail,
+        // The sender snapshot the Outbox drawer shows (ADR 0059, bell and Outbox part, D2).
+        fromName: outboxMessages.fromName,
+        replyTo: outboxMessages.replyTo,
         subject: outboxMessages.subject,
         bodyText: outboxMessages.bodyText,
         attachments: outboxMessages.attachments,
@@ -390,6 +395,8 @@ export class NotificationService implements OnApplicationBootstrap {
     return db
       .select({
         id: notifications.id,
+        // Always the reader's own id: the filter below takes no one else's note.
+        userId: notifications.userId,
         eventKey: notifications.eventKey,
         title: notifications.title,
         href: notifications.href,
@@ -402,14 +409,18 @@ export class NotificationService implements OnApplicationBootstrap {
       .limit(50);
   }
 
-  /** Marks the person's own unread notes read: the given ones, or all of them. */
+  /**
+   * Marks the person's own unread notes read: the given ones, or all of them when no list is given.
+   * An empty list marks none (security review round 1), as the web's contract means it.
+   */
   async markRead(tenant: TenantContext, userId: string, ids?: readonly string[]): Promise<void> {
+    if (ids && ids.length === 0) return;
     const db = await this.tenancy.db(tenant);
     const mine = and(eq(notifications.userId, userId), isNull(notifications.readAt));
     await db
       .update(notifications)
       .set({ readAt: new Date() })
-      .where(ids && ids.length > 0 ? and(mine, inArray(notifications.id, [...ids])) : mine);
+      .where(ids ? and(mine, inArray(notifications.id, [...ids])) : mine);
   }
 
   /**
@@ -458,9 +469,8 @@ export class NotificationService implements OnApplicationBootstrap {
       sentId = (
         await withTimeout(
           this.email.send({
-            from: fromHeader(row.fromName, this.emailFrom),
+            ...senderHeaders(row.fromName, row.replyTo, this.emailFrom),
             to: [row.recipientEmail],
-            ...(row.replyTo && !addressProblem(row.replyTo) ? { replyTo: row.replyTo } : {}),
             subject: oneLine(row.subject),
             text: row.bodyText,
             ...(files.length > 0 ? { attachments: files } : {}),
@@ -538,10 +548,14 @@ export class NotificationService implements OnApplicationBootstrap {
     const companyName = branding?.displayName ?? tenant?.name ?? "";
     const [stored] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, "email"));
     const email = (stored?.value ?? {}) as Partial<EmailSettings>;
+    // The row keeps the sender the worker will send (`senderHeaders`), so the Outbox shows what went
+    // out and both modes match (DemoStore's `demoSender`; security review round 6).
+    const fromName = email.senderName || companyName;
+    const replyTo = email.replyTo ?? "";
     return {
       companyName,
-      fromName: email.senderName || companyName,
-      replyTo: email.replyTo ?? "",
+      fromName: isPlainSenderName(fromName) ? fromName : "",
+      replyTo: isPlainReplyTo(replyTo) ? replyTo : "",
       signature: email.signature ?? "",
     };
   }

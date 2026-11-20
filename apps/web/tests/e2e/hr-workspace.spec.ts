@@ -1,8 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { featureOn, HR_MESSAGES } from "@workspace/shared";
 import { HARBOR_OWNER, HR_TAG, signInAs, SUMMIT_OWNER } from "./helpers";
 
 const SUMMIT_HR = { companyId: "summit", userId: "sm-usr-07", roleKey: "hr" } as const;
 const HARBOR_HR = { companyId: "harbor", userId: "hb-usr-02", roleKey: "hr" } as const;
+
+/** Saves Settings → HR, confirming the step-up with any six digits when the switch asks for one (ADR 0059, part 5). */
+async function saveHr(page: Page) {
+  await page.getByRole("button", { name: "Save hr" }).click();
+  if (!featureOn("auth.step-up")) return;
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  await dialog.getByLabel("Authenticator code").fill("123456");
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+}
 
 test.describe("HR workspace (spec C1)", () => {
   test("Home shows what needs action, and the people dates", async ({ page }) => {
@@ -122,8 +132,30 @@ test.describe("HR workspace (spec C1)", () => {
     await signInAs(page, SUMMIT_OWNER, "/settings/hr");
     await expect(page.getByRole("heading", { name: "Time-off policies" })).toBeVisible();
     await page.getByLabel("Show who is out to employees").check();
-    await page.getByRole("button", { name: /Save/ }).first().click();
-    await expect(page.getByText(/saved/i).first()).toBeVisible();
+    await saveHr(page);
+    await expect(page.getByText("HR saved")).toBeVisible();
+  });
+
+  test("Settings → HR keeps the pay frequency once pay periods exist, and says why", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/hr");
+    await page.getByLabel("Pay frequency").click();
+    await page.getByRole("option", { name: "Weekly" }).click();
+    await saveHr(page);
+    await expect(page.getByText(HR_MESSAGES.scheduleLocked)).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Pay frequency")).toContainText("Every two weeks");
+  });
+
+  test("Settings → HR says why a holiday date listed twice is refused, before any code", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/hr");
+    const first = page.getByRole("button", { name: /^Remove / }).first();
+    const date = (await first.getAttribute("aria-label"))!.split(" ").at(-1)!;
+    await page.getByLabel("Holiday date").fill(date);
+    await page.getByLabel("Holiday name").fill("Again");
+    await page.getByRole("button", { name: "Add holiday" }).click();
+    await page.getByRole("button", { name: "Save hr" }).click();
+    await expect(page.getByText(HR_MESSAGES.holidayTwice)).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
   });
 
   test("Sales → Team links commission to the HR figures", async ({ page }) => {

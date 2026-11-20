@@ -54,9 +54,22 @@ import type {
 } from "@workspace/shared";
 import { featureOn, hoursToWire, timesheetFromWire } from "@workspace/shared";
 // Reports (ADR 0055) keep their own imports.
-import { EMPTY_REPORT_OPTIONS, type BusinessReport, type Report, type ReportOptions } from "@workspace/shared";
+import {
+  EMPTY_REPORT_OPTIONS,
+  type BusinessReport,
+  type Report,
+  type ReportOptions,
+  type TrialBalance,
+} from "@workspace/shared";
 import { businessReportPath, hubReportPath } from "./report-paths";
 import type { SessionContext } from "@/lib/session/api-context";
+import {
+  addPasskeyOn,
+  confirmPasswordOn,
+  deletePasskeyOn,
+  renamePasskeyOn,
+  signInSecurityOn,
+} from "@/lib/session/passkeys";
 import { HttpApiError } from "./transport";
 import type {
   ApiClient,
@@ -115,6 +128,9 @@ import {
   type SettingsAnswer,
 } from "@workspace/shared";
 import { settingsFromAnswer } from "./settings-answer";
+// The bell and the Outbox (ADR 0059, bell and Outbox part) keep their own imports.
+import type { InAppNotification } from "@workspace/shared";
+import { markRead, outboxAction, readOutbox } from "./outbox-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
@@ -195,10 +211,18 @@ export const API_METHODS = {
   deleteRole: (http) => (roleId) => http.request<void>("DELETE", `/roles/${roleId}`),
   // Changes no company data, and the write that follows it reads again.
   verifyStepUp: (http) => (code) => http.requestAsRead<void>("POST", "/auth/step-up", { code }),
+  // Sign-in and security (ADR 0060): Better Auth's endpoints, through /api/auth. Confirming the
+  // password only reads; adding, renaming and removing a passkey are writes.
+  signInSecurity: (http) => () => signInSecurityOn(http),
+  confirmPassword: (http) => (password) => confirmPasswordOn(http.auth(), password),
+  addPasskey: (http) => (name) => addPasskeyOn(http.auth(), name),
+  renamePasskey: (http) => (id, name) => renamePasskeyOn(http.auth(), id, name),
+  deletePasskey: (http) => (id) => deletePasskeyOn(http.auth(), id),
   // Settings, part 1 (ADR 0059): the sections in API_SETTINGS_SECTIONS read and write the API; every
   // other section, Reset to default and resetSettings stay on DemoStore until their part moves.
   // `localization` is never sent whole: DemoStore refuses it, because Localization and tax saves one
-  // tab at a time through updateLocalization (ADR 0059, part 3b, D37).
+  // tab at a time through updateLocalization (ADR 0059, part 3b, D37). Branding is served since part 6:
+  // `PUT /settings/branding` writes the company's control branding row, after a step-up.
   getSettings: (http, demo) => () => readSettings(http, demo),
   updateSettings:
     (http, demo) =>
@@ -209,6 +233,15 @@ export const API_METHODS = {
       await http.request<unknown>("PUT", `/settings/${section}`, body);
       return readSettings(http, demo);
     },
+  // The bell and the Outbox (ADR 0059, bell and Outbox part, D1 to D4): the person's own notes and
+  // their read state; the Outbox, their own rows or, with `all` and settings.outbox.view, the whole
+  // company's; Send again and Cancel message with settings.outbox.view. Simulate bounce and Simulate
+  // reply are presenter tools, hidden in api mode and left on DemoStore.
+  listMyNotifications: (http) => () => http.request<InAppNotification[]>("GET", "/notifications"),
+  markNotificationsRead: (http) => (ids) => markRead(http, ids),
+  listOutbox: (http) => (all) => readOutbox(http, all),
+  retryOutbox: (http) => (id) => outboxAction(http, id, "retry"),
+  cancelOutbox: (http) => (id) => outboxAction(http, id, "cancel"),
   // Settings, parts 2a, 2b and 3a (ADR 0059): every tab in API_LOCALIZATION_TABS, all of them since
   // part 3a, saves on the API; Sales tax checks its own key.
   updateLocalization:
@@ -384,6 +417,11 @@ export const API_METHODS = {
   salesByCategoryReport: (http) => (query) =>
     http.request<Report>("GET", hubReportPath("/reports/sales-by-category", query)),
   paymentsReport: (http) => (query) => http.request<Report>("GET", hubReportPath("/reports/payments", query)),
+  trialBalance: (http) => (through) =>
+    http.request<TrialBalance>(
+      "GET",
+      through ? `/ledger/trial-balance?${new URLSearchParams({ through }).toString()}` : "/ledger/trial-balance",
+    ),
   // Data import, part 1 (ADR 0057): customers, addresses, suppliers and products on the API. The
   // company is the session's, so `companyId` is never sent; only the chosen columns travel
   // (`importBody`); every write makes the history and the record lists read again (ADR 0051, 2026-11-16).

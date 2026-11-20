@@ -1,5 +1,14 @@
 import type { EmailAttachment } from "@workspace/providers";
-import type { OutboxAttachment, OutboxFailure, OutboxRecipient } from "@workspace/shared";
+import {
+  isPlainReplyTo,
+  isPlainSenderName,
+  outboxSight,
+  REDACTED_OUTBOX,
+  type OutboxAttachment,
+  type OutboxFailure,
+  type OutboxReader,
+  type OutboxRecipient,
+} from "@workspace/shared";
 
 /** The address check of spec rule 4: a plain shape check, never a lookup. */
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -40,6 +49,17 @@ export function fromHeader(name: string, address: string): string {
   return safe ? `"${safe}" <${address}>` : address;
 }
 
+/**
+ * The From and Reply-To an Outbox row is sent with (security review round 2): the stored sender name
+ * only when it is plain (`isPlainSenderName`), else the platform's address alone; the stored reply-to
+ * only when it is one plain mailbox (`isPlainReplyTo`), else none. A row written before the save rule,
+ * or with the company's display name as the sender, is judged by the same rule as a save.
+ */
+export function senderHeaders(fromName: string, replyTo: string, address: string): { from: string; replyTo?: string } {
+  const from = fromHeader(isPlainSenderName(fromName) ? fromName : "", address);
+  return replyTo && isPlainReplyTo(replyTo) && !addressProblem(replyTo) ? { from, replyTo } : { from };
+}
+
 /** The text of a failure notice to the person who caused the message (spec rule 5). */
 export function failureNotice(recipientName: string, detail: string | null): string {
   return `The email to ${recipientName} could not be delivered: ${detail ?? "unknown problem"}`;
@@ -48,6 +68,7 @@ export function failureNotice(recipientName: string, detail: string | null): str
 /** An Outbox row as a reader sees it, before redaction. */
 export interface OutboxView {
   sourceType: string;
+  sourceId: string;
   actorUserId: string | null;
   recipientType: string;
   recipientId: string;
@@ -58,54 +79,16 @@ export interface OutboxView {
   attachments: unknown[];
 }
 
-/** The person reading the Outbox, as the visibility rules need them. */
-export interface OutboxReader {
-  userId: string;
-  email: string;
-  /** Holds `settings.outbox.view`: may list every row. */
-  admin: boolean;
-  /** Holds `hr.employee.view`: may read restricted rows of others. */
-  hrView: boolean;
-}
-
-/** Whether the reader is part of the message: who caused it, or who it went to (spec "Who can see"). */
-function involves(row: OutboxView, reader: OutboxReader): boolean {
-  return (
-    row.actorUserId === reader.userId ||
-    (row.recipientType === "user" && row.recipientId === reader.userId) ||
-    row.recipientEmail.toLowerCase() === reader.email.toLowerCase()
-  );
-}
-
 /**
- * Whether a restricted row stays sealed even for holders of `hr.employee.view`: a private meeting's
- * invite, reminder or reply. A private meeting is hidden from everyone who is not on it, the Owner
- * included (meetings.md "Who sees which meeting"; ADR 0051 "Private meetings", critic A4), and its
- * rows carry its title, notes, place and guests. Meeting rows are restricted only when the meeting
- * is private.
- */
-function sealed(row: OutboxView): boolean {
-  return row.restricted && row.sourceType === "meeting";
-}
-
-/**
- * The Outbox row as this reader may see it, or null when it is not listed for them (spec "Who can
- * see which Outbox row"): an admin sees every row, anyone else only their own; a restricted row of
- * someone else is redacted unless the reader holds `hr.employee.view`, and a private meeting's row
- * is redacted for everyone not involved, whatever they hold (ADR 0051). Recipient, status and
- * dates stay visible on a redacted row.
+ * The Outbox row as this reader may see it, or null when it is not listed for them: the shared
+ * `outboxSight` (spec "Who can see which Outbox row"; ADR 0051), which DemoStore applies too. A
+ * redacted row keeps its recipient, status and dates and loses its subject, body and attachments.
  */
 export function visibleOutboxRow<T extends OutboxView>(row: T, reader: OutboxReader): T | null {
-  const mine = involves(row, reader);
-  if (!reader.admin && !mine) return null;
-  if (row.restricted && !mine && (!reader.hrView || sealed(row))) {
-    return {
-      ...row,
-      subject: "Restricted message",
-      bodyText: "Only the people involved can read this.",
-      attachments: [],
-    };
-  }
+  const sight = outboxSight({ ...row, recipientKind: row.recipientType }, reader);
+  if (sight === "hidden") return null;
+  // The source id goes too: a private meeting's id is not for readers it does not involve (round 2).
+  if (sight === "redacted") return { ...row, ...REDACTED_OUTBOX, sourceId: "", attachments: [] };
   return row;
 }
 

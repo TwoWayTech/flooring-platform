@@ -3,9 +3,13 @@ import { MONEY_TEXT } from "../decimal-text";
 import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { Address } from "../types/company";
 import type { Location } from "../types/locations";
+import type { EmailSettings } from "../types/notifications";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
+import { brandingProblem } from "./branding-rules";
+import { hrSettingsProblem } from "./hr-rules";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
+import { inventorySettingsProblem } from "./stock-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
 export const EIN_PATTERN = /^\d{2}-\d{7}$/;
@@ -48,6 +52,62 @@ export const EXPENSE_MESSAGES = {
   approvalRequired: "Choose whether expenses wait for approval.",
   approvalThreshold: "Enter the expense approval amount as a number such as 1000.00, or leave it empty.",
 } as const;
+
+/** The longest sender name, reply-to address and sign-off Settings → Email takes (ADR 0059, bell and Outbox part, D8). */
+export const EMAIL_MAX = { senderName: 80, replyTo: 254, signature: 500 } as const;
+
+/** What Settings → Email says about each field it refuses, the same words in both modes. */
+export const EMAIL_MESSAGES = {
+  senderName: `Keep the sender name to ${EMAIL_MAX.senderName} characters.`,
+  senderNameCharacters:
+    "Use a plain name for the sender: no @, quotes, backslashes, angle brackets, line breaks or text-direction marks.",
+  replyTo: "Enter the reply-to address as name@example.com, or leave it empty.",
+  signature: `Keep the sign-off to ${EMAIL_MAX.signature} characters.`,
+  signatureCharacters: "Leave invisible and text-direction characters out of the sign-off.",
+} as const;
+
+/**
+ * What a sender name may not hold (security review rounds 1 to 3), checked on its NFKC form so a
+ * look-alike such as the fullwidth `＠` counts as the character it shows: what the From header could
+ * not carry as typed (control characters, quotes, backslashes, angle brackets); an @, so the name
+ * can't pass for an address in a mail app that shows only the name; and every format character
+ * (zero-width, soft hyphen, text-direction marks, tag characters), line and paragraph separator, the
+ * combining grapheme joiner and the Hangul fillers, which can make a name display as something else.
+ */
+const SENDER_NAME_REFUSED = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}"\\<>@\u034f\u115f\u1160\u3164\uffa0]/u;
+
+/**
+ * A reply-to address as one plain mailbox (security review rounds 1 and 2): `EMAIL_TEXT` without
+ * control characters or the characters that give an address a display name, a comment or a second
+ * address (`"<>,;()[]\`).
+ */
+const REPLY_TO_TEXT =
+  /^[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+@[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+\.[^\s\u0000-\u001f\u007f-\u009f@"<>,;()[\]\\]+$/;
+
+/**
+ * Whether a sender name is plain: nothing `SENDER_NAME_REFUSED` names, judged on its NFKC form. The
+ * save rule and the Outbox worker both ask it, so a stored row the rule never saw can't reach the
+ * From header (security review round 2).
+ */
+export function isPlainSenderName(name: string): boolean {
+  return !SENDER_NAME_REFUSED.test(name.normalize("NFKC"));
+}
+
+/** Format characters and line or paragraph separators, which can hide what an address really is (round 4). */
+const INVISIBLE = /[\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/** Printable ASCII only: a reply-to can't use a letter from another alphabet that looks like a Latin one (round 5). */
+const PRINTABLE_ASCII = /^[\x21-\x7e]+$/;
+
+/**
+ * Whether a reply-to is one plain mailbox (`REPLY_TO_TEXT`) in printable ASCII, with no invisible or
+ * text-direction character, so the address the page and the audit log show is where replies go and
+ * no look-alike letter can hide another domain (security review rounds 4 and 5); the save rule and
+ * the Outbox worker both ask it. An internationalised address is refused (session log Q4).
+ */
+export function isPlainReplyTo(address: string): boolean {
+  return REPLY_TO_TEXT.test(address) && PRINTABLE_ASCII.test(address) && !INVISIBLE.test(address);
+}
 
 /** What Number format says about what it refuses that no single kind's range covers. */
 export const NUMBER_MESSAGES = {
@@ -146,6 +206,23 @@ export function expenseSettingsProblem(expenses: ExpenseSettings): string | null
 }
 
 /**
+ * Why Settings → Email can't be saved, or null (notifications.md "EmailSettings"; ADR 0059, bell and
+ * Outbox part, D8). The sender name is at most 80 characters with nothing the From header would
+ * have to strip, so what the page shows is what recipients see; empty sends as the company's name.
+ * The reply-to is empty or one plain mailbox (`REPLY_TO_TEXT`), where customers' answers to invoices
+ * and receipts go. The sign-off is at most 500 characters with no invisible or text-direction character (round 5; line breaks are fine). Fields are stored as sent.
+ */
+export function emailSettingsProblem(email: EmailSettings): string | null {
+  if (email.senderName.length > EMAIL_MAX.senderName) return EMAIL_MESSAGES.senderName;
+  if (!isPlainSenderName(email.senderName)) return EMAIL_MESSAGES.senderNameCharacters;
+  if (email.replyTo.length > EMAIL_MAX.replyTo) return EMAIL_MESSAGES.replyTo;
+  if (email.replyTo !== "" && !isPlainReplyTo(email.replyTo)) return EMAIL_MESSAGES.replyTo;
+  if (email.signature.length > EMAIL_MAX.signature) return EMAIL_MESSAGES.signature;
+  if (INVISIBLE.test(email.signature)) return EMAIL_MESSAGES.signatureCharacters;
+  return null;
+}
+
+/**
  * Why Localization and tax is never saved whole (spec settings-and-permissions.md rule 7; ADR 0059,
  * part 3b, D16): each tab saves on its own, with its own key, rules, step-up and dating
  * (`LOCALIZATION_TABS`, `localizationTabProblem`, `localizationTabStored`; Sales tax's versions),
@@ -169,7 +246,10 @@ export interface SettingsRuleContext {
  * refuse a change that no page makes. Shared costs are judged against `context`'s live locations; a
  * call without them throws, so no caller can skip that check (part 4b, D8). Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
- * rule 7; ADR 0059, part 3b, D33). Every other section gets its rules when its part moves to the API.
+ * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5), Branding
+ * `brandingProblem` (part 6), Settings → Email `emailSettingsProblem` (the bell and Outbox part),
+ * Stock rules `inventorySettingsProblem` (the Stock rules part). Every other section gets its rules
+ * when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -190,5 +270,10 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
     if (!context) throw new Error("Shared costs are judged against the company's live locations.");
     return sharedCostsProblem(settings.sharedCosts, context.locations);
   }
+  // The value alone; what recorded pay forbids needs the store's records (`hrScheduleProblem`, ADR 0059 part 5).
+  if (settings.hr) return hrSettingsProblem(settings.hr);
+  if (settings.branding) return brandingProblem(settings.branding);
+  if (settings.email) return emailSettingsProblem(settings.email);
+  if (settings.inventory) return inventorySettingsProblem(settings.inventory);
   return null;
 }

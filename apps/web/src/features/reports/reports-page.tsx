@@ -9,6 +9,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { useApiQuery } from "@/lib/api/use-api";
 import { BusinessReportView } from "./business-report";
 import { HubReportView, isHubReport } from "./hub-report";
+import { TrialBalanceView } from "./trial-balance-report";
 
 function ReportsNav({ reports, current }: { reports: readonly ReportKey[]; current: ReportKey }) {
   const router = useRouter();
@@ -37,7 +38,7 @@ function ReportsNav({ reports, current }: { reports: readonly ReportKey[]; curre
 
 function ReportsHub({ options, onRefresh }: { options: ReportOptions; onRefresh: () => void }) {
   const params = useSearchParams();
-  const hub = options.reports.filter(isHubReport);
+  const hub = options.reports.filter((k) => k !== "business");
   const hasBusiness = options.reports.includes("business");
   const requested = params.get("report");
   const key = hub.find((k) => k === requested) ?? hub[0] ?? null;
@@ -51,7 +52,9 @@ function ReportsHub({ options, onRefresh }: { options: ReportOptions; onRefresh:
         <ReportsNav reports={options.reports} current={showBusiness || key === null ? "business" : key} />
         {showBusiness ? (
           <BusinessReportView options={options} onRefresh={onRefresh} />
-        ) : key ? (
+        ) : key === "trial-balance" ? (
+          <TrialBalanceView options={options} onRefresh={onRefresh} />
+        ) : key && isHubReport(key) ? (
           <HubReportView reportKey={key} options={options} onRefresh={onRefresh} />
         ) : null}
       </div>
@@ -61,7 +64,7 @@ function ReportsHub({ options, onRefresh }: { options: ReportOptions; onRefresh:
 
 /**
  * The reports hub (spec "Purpose" and rule 1): the Business report first, then Profit and loss,
- * Sales by category and Payments received. Which reports show and export, and the pickers' choices,
+ * Sales by category, Payments received and, in api mode only, the Trial balance (ADR 0055). Which reports show and export, and the pickers' choices,
  * come from the server (`reportOptions`, ADR 0055), so a report the person may not open, such as a
  * company-wide one for a branch manager (S1) or one that is switched off, is never offered.
  */

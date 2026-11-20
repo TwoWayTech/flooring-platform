@@ -311,8 +311,15 @@ function lastDayOfMonth(firstDay: string): string {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
-/** Why a pay frequency cannot be used, or null: monthly cannot serve California non-exempt staff (ADR 0024). */
-export function payFrequencyProblem(frequency: PayPeriod["frequency"], employees: readonly Employee[]): string | null {
+/**
+ * Why a pay frequency cannot be used, or null: monthly cannot serve California non-exempt staff (ADR
+ * 0024). Only the work state, FLSA status and employment status are read, so the API can pass the
+ * rows it locked without the rest of the record (ADR 0059, part 5).
+ */
+export function payFrequencyProblem(
+  frequency: PayPeriod["frequency"],
+  employees: readonly Pick<Employee, "state" | "flsaStatus" | "status">[],
+): string | null {
   if (frequency !== "monthly") return null;
   const blocked = employees.some((e) => e.state === "CA" && e.flsaStatus === "non_exempt" && e.status !== "terminated");
   return blocked ? "California non-exempt staff must be paid at least twice a month." : null;

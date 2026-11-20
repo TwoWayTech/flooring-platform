@@ -8,34 +8,17 @@ import {
   moneyString,
   postingProblem,
   reversedLines,
-  type AccountType,
+  CONTRACT_SOURCE_TYPES,
+  PAY_ACCOUNT_KEYS,
+  PAY_SOURCE_TYPES,
   type LedgerKey,
   type PostingDraft,
   type PostingLine,
+  type TrialBalance,
+  type TrialBalanceFacts,
 } from "@workspace/shared";
-import { and, asc, desc, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
-
-/** One account's totals in the trial balance. */
-export interface TrialBalanceRow {
-  key: string | null;
-  code: string;
-  name: string;
-  type: AccountType;
-  debit: string;
-  credit: string;
-  /** Debits less credits. */
-  balance: string;
-}
-
-/** The trial balance through a day: every account's totals, and whether they agree. */
-export interface TrialBalance {
-  through: string | null;
-  rows: TrialBalanceRow[];
-  debit: string;
-  credit: string;
-  balanced: boolean;
-}
 
 /** A posting the books refuse: 409 with the rule's words. */
 function refused(code: string, message: string): ConflictException {
@@ -233,6 +216,45 @@ export class LedgerService {
       credit: moneyString(sums?.credit ?? "0"),
       balanced: dec(sums?.debit ?? "0").eq(sums?.credit ?? "0"),
     };
+  }
+
+  /**
+   * What the journal holds that decides who may read it (`seesTrialBalance`; ADR 0055 "Trial
+   * balance"): any contract posting, and any pay posting by its source or its account. Read over all
+   * time, whatever day the trial balance is asked through, so the rule never depends on the date.
+   */
+  async trialBalanceFacts(db: CompanyDb): Promise<TrialBalanceFacts> {
+    const [contract] = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(inArray(journalEntries.sourceType, [...CONTRACT_SOURCE_TYPES]))
+      .limit(1);
+    // Two indexed existence checks, not one OR across a join that would scan every line when no pay
+    // has posted (PR review): entries by source type, then lines on the pay accounts by account id.
+    const [paySource] = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(inArray(journalEntries.sourceType, [...PAY_SOURCE_TYPES]))
+      .limit(1);
+    if (paySource) return { hasContractPostings: contract !== undefined, hasPayPostings: true };
+    const payAccounts = await db
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(inArray(ledgerAccounts.key, [...PAY_ACCOUNT_KEYS]));
+    const [payLine] =
+      payAccounts.length === 0
+        ? []
+        : await db
+            .select({ id: journalLines.id })
+            .from(journalLines)
+            .where(
+              inArray(
+                journalLines.accountId,
+                payAccounts.map((account) => account.id),
+              ),
+            )
+            .limit(1);
+    return { hasContractPostings: contract !== undefined, hasPayPostings: payLine !== undefined };
   }
 
   /**

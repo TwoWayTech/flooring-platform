@@ -39,7 +39,7 @@ export async function postAs<T>(request: APIRequestContext, path: string, data?:
 
 /**
  * The trial balance as the person sees it (GET /ledger/trial-balance; needs `reports.financial.view`
- * at scope all, so Grace or the Owner). No screen shows it yet (STATUS "Later").
+ * at scope all and the cost and pay sight its figures reveal, so Grace or the Owner; ADR 0055).
  */
 export function trialBalance(request: APIRequestContext): Promise<TrialBalance> {
   return readAs<TrialBalance>(request, "/ledger/trial-balance");
@@ -56,7 +56,7 @@ export function expectLedgerMoved(before: TrialBalance, after: TrialBalance, exp
   expect(ledgerMismatches(before, after, expected), `the books moved by ${moved}`).toEqual([]);
 }
 
-/** One Outbox row as GET /outbox answers it (apps/api `listOutbox`); the Outbox screen is still DemoStore in api mode. */
+/** One Outbox row as GET /outbox answers it (apps/api `listOutbox`), which the Outbox screens read in api mode too. */
 export interface OutboxRow {
   id: string;
   eventKey: NotificationEventKey;
@@ -71,12 +71,12 @@ export interface OutboxRow {
   failureDetail: string | null;
 }
 
-/** The Outbox rows the person caused or received (all of them with `settings.outbox.view`), newest 200. */
+/** The Outbox rows the person caused or received, newest 200 (`?all=true` would give the whole company's to `settings.outbox.view`). */
 export function outboxRows(request: APIRequestContext): Promise<OutboxRow[]> {
   return readAs<OutboxRow[]>(request, "/outbox");
 }
 
-/** One in-app note as GET /notifications answers it; the bell is still DemoStore in api mode. */
+/** One in-app note as GET /notifications answers it, which the bell reads in api mode too. */
 export type InAppNote = Pick<InAppNotification, "id" | "eventKey" | "title" | "href" | "readAt" | "createdAt">;
 
 /** The person's own in-app notes, newest 50. */

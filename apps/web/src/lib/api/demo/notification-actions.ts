@@ -1,8 +1,12 @@
 import {
   effectiveRule,
   featureOn,
-  formatNumber,
+  isPlainReplyTo,
+  isPlainSenderName,
+  messageMoney,
   notificationEvent,
+  outboxSight,
+  REDACTED_OUTBOX,
   renderTemplate,
   type InAppNotification,
   type Invoice,
@@ -38,15 +42,26 @@ export interface NotifyInput {
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-/** A dollar amount as messages show it, from the company's number settings. */
+/**
+ * An amount as messages show it, in the company's number format: the shared `messageMoney`, as the
+ * API writes it (spec rule 11). The format's money style carries the currency sign itself.
+ */
 export function money(ctx: ActionContext, amount: string): string {
-  return `$${formatNumber(amount, "money", ctx.db.settings.numbers)}`;
+  return messageMoney(amount, ctx.db.settings.numbers);
 }
 
 function failureOf(email: string): { type: OutboxFailure; detail: string } | null {
   if (!email) return { type: "missing_email", detail: "no email address on file" };
   if (!EMAIL.test(email)) return { type: "invalid_email", detail: "that email address is not valid" };
   return null;
+}
+
+/**
+ * The sender a demo Outbox row shows, as the API's worker sends it (`senderHeaders`): the name only
+ * when plain, the reply-to only when one plain mailbox (security review round 3).
+ */
+function demoSender(name: string, replyTo: string): Pick<OutboxMessage, "fromName" | "replyTo"> {
+  return { fromName: isPlainSenderName(name) ? name : "", replyTo: isPlainReplyTo(replyTo) ? replyTo : "" };
 }
 
 /**
@@ -74,8 +89,13 @@ export function notify(ctx: ActionContext, input: NotifyInput): void {
         sourceId: input.source.id,
         actorUserId: ctx.actor.id,
         recipient,
-        fromName: ctx.db.settings.email.senderName,
-        replyTo: ctx.db.settings.email.replyTo,
+        // An empty sender name sends as the company, as on the API (ADR 0059, bell and Outbox part, D10);
+        // a name or reply-to the save rule would refuse is shown as the API's worker sends it: no name,
+        // no reply-to (security review round 3).
+        ...demoSender(
+          ctx.db.settings.email.senderName || ctx.db.settings.branding.displayName,
+          ctx.db.settings.email.replyTo,
+        ),
         subject: renderTemplate(rule.subject, scoped).text,
         values: scoped,
         bodyText: [renderTemplate(rule.body, scoped).text, ctx.db.settings.email.signature]
@@ -242,27 +262,36 @@ export async function resetNotificationRule(ctx: ActionContext, key: Notificatio
   });
 }
 
-/** Whether a message is this person's own: they sent it or it was addressed to them (ADR 0020). */
-function isMine(ctx: ActionContext, m: OutboxMessage): boolean {
-  return (
-    m.actorUserId === ctx.actor.id ||
-    (m.recipient.kind === "user" && m.recipient.id === ctx.actor.id) ||
-    m.recipient.email === ctx.actor.email
-  );
-}
-
-/** The Outbox as a person may see it (ADR 0020): their own rows, or all with settings.outbox.view; restricted rows are redacted. */
-export async function listOutbox(ctx: ActionContext, all: boolean): Promise<OutboxMessage[]> {
-  const admin = all && (await ctx.can("settings.outbox.view"));
-  const hrView = await ctx.can("hr.employee.view");
+/**
+ * The Outbox as a person may see it, through the shared `outboxSight` the API applies too (ADR
+ * 0020; ADR 0059, bell and Outbox part, D2): their own rows, or all with `all` and
+ * settings.outbox.view and data scope `all` (`wholeCompany`); another's restricted row is redacted
+ * without hr.employee.view, and a private meeting's for everyone it does not involve, its source id too.
+ */
+export async function listOutbox(ctx: ActionContext, all: boolean, wholeCompany: boolean): Promise<OutboxMessage[]> {
+  const reader = {
+    userId: ctx.actor.id,
+    email: ctx.actor.email,
+    admin: all && wholeCompany && (await ctx.can("settings.outbox.view")),
+    hrView: await ctx.can("hr.employee.view"),
+  };
   return ctx.db
     .list("outboxMessages")
-    .filter((m) => admin || isMine(ctx, m))
-    .map((m) =>
-      m.restricted && !isMine(ctx, m) && !hrView
-        ? { ...m, subject: "Restricted message", bodyText: "Only the people involved can read this.", attachments: [] }
-        : m,
-    )
+    .flatMap((m) => {
+      const sight = outboxSight(
+        {
+          sourceType: m.sourceType,
+          actorUserId: m.actorUserId,
+          recipientKind: m.recipient.kind,
+          recipientId: m.recipient.id,
+          recipientEmail: m.recipient.email,
+          restricted: m.restricted,
+        },
+        reader,
+      );
+      if (sight === "hidden") return [];
+      return [sight === "redacted" ? { ...m, ...REDACTED_OUTBOX, sourceId: "", attachments: [] } : m];
+    })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -272,11 +301,14 @@ function outboxRow(ctx: ActionContext, id: string): OutboxMessage {
   return row;
 }
 
-/** A row this person may resend or cancel: their own, or any row with settings.outbox.view (ADR 0020). */
+/**
+ * A row this person may resend or cancel: any row, with settings.outbox.view, the key the API's
+ * Retry and Cancel need (ADR 0032; ADR 0059, bell and Outbox part, D3). The spec also let people act
+ * on their own rows; both modes keep the stricter rule until the owner decides (session log Q1).
+ */
 async function actionableRow(ctx: ActionContext, id: string): Promise<OutboxMessage> {
-  const row = outboxRow(ctx, id);
-  if (!isMine(ctx, row)) await ctx.assertCan(["settings.outbox.view"]);
-  return row;
+  await ctx.assertCan(["settings.outbox.view"]);
+  return outboxRow(ctx, id);
 }
 
 /** Sends a failed row again: back through queued to sent, with a fresh failure check. */

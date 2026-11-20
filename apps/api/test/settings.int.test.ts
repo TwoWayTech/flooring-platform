@@ -13,7 +13,7 @@ import {
   taxRules,
   userProfiles,
 } from "@workspace/db/company";
-import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
+import { tenantBranding, tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
 import {
   DEFAULT_SHARED_COSTS,
   defaultNumberSettings,
@@ -225,6 +225,21 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     });
   }
 
+  /** A company's branding as its control row holds it (part 6). */
+  async function controlBranding(company: TestCompany) {
+    const [row] = await harness.control.db
+      .select({
+        displayName: tenantBranding.displayName,
+        monogram: tenantBranding.monogram,
+        brandColor: tenantBranding.brandColor,
+        pattern: tenantBranding.pattern,
+        defaultTheme: tenantBranding.defaultTheme,
+      })
+      .from(tenantBranding)
+      .where(eq(tenantBranding.tenantId, company.id));
+    return row;
+  }
+
   /** How many audit entries a company has. */
   function auditCount(company: TestCompany): Promise<number> {
     return withCompanyDb(company, async (db) => (await db.select({ n: count() }).from(auditLog))[0].n);
@@ -307,9 +322,23 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        const expected = readableSections({ permissions: held, modules: enabledModules([company.product], null, []) });
-        expect(Object.keys(body).sort()).toEqual([...expected].sort());
+        // All but HR, which these companies never saved and part 5's own file reads (H1), and Email and
+        // Stock rules, never saved here either, whose own files read them (settings-email.int ME1,
+        // settings-stock.int MS1).
+        const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
+        const readable = readableSections(reader);
+        const ownFiles: string[] = ["hr", "email", "inventory"];
+        const expected = readable.filter(
+          (section): section is Served | "sharedCosts" | "branding" => !ownFiles.includes(section),
+        );
+        const others = readable.filter((section) => section === "email" || section === "inventory");
+        expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
+          // Branding is the control row's (part 6; its own cases are in settings-branding.int.test.ts).
+          if (section === "branding") {
+            expect(body.branding, section).toEqual({ ...(await controlBranding(company)), logoDataUrl: null });
+            continue;
+          }
           // Nothing seeds shared costs here: never saved, they are answered as the report acts on them (part 4b, D9).
           const stored =
             (await rowOf(company, section)) ?? (section === "sharedCosts" ? DEFAULT_SHARED_COSTS : undefined);
@@ -326,17 +355,26 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(keysOf(body).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         if (company === floorco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile", "sharedCosts"]);
+          expect(Object.keys(body).sort()).toEqual([
+            "branding",
+            "email",
+            "expenses",
+            "inventory",
+            "numbers",
+            "payments",
+            "profile",
+            "sharedCosts",
+          ]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
         if (company === floorco && key === "sales") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "payments", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe("");
         }
         if (company === floorco && key === "warehouse")
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
         if (company === peopleco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "email", "numbers", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
       });
@@ -742,7 +780,17 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
           // One switch for the Expenses page: approval and shared costs both leave the read (part 4b).
           expect(body).not.toHaveProperty("expenses");
           expect(body).not.toHaveProperty("sharedCosts");
-        } else expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile", "sharedCosts"]);
+        } else
+          expect(Object.keys(body).sort()).toEqual([
+            "branding",
+            "email",
+            "expenses",
+            "inventory",
+            "numbers",
+            "payments",
+            "profile",
+            "sharedCosts",
+          ]);
       });
     }
   });
@@ -794,12 +842,16 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         403,
         "module_not_enabled",
       ]);
-      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["numbers", "profile"]);
+      // Email is a platform section: it stays while core is off.
+      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["branding", "email", "numbers", "profile"]);
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, floorco.id));
     }
     expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual([
+      "branding",
+      "email",
       "expenses",
+      "inventory",
       "numbers",
       "payments",
       "profile",

@@ -1,11 +1,17 @@
-import { Body, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
+import { Body, ConflictException, Controller, ForbiddenException, Get, Header, Put, Req } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
+  brandingProblem,
   companyProfileProblem,
   currencyProblem,
   datedRates,
   documentsProblem,
+  emailSettingsProblem,
   expenseSettingsProblem,
+  hrFrequencyProblem,
+  hrScheduleProblem,
+  hrSettingsProblem,
+  inventorySettingsProblem,
   LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
@@ -15,15 +21,20 @@ import {
   payrollProblem,
   regionKeyProblem,
   regionProblem,
-  SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   sharedCostsProblem,
   statesOfOperationChanged,
+  STOCK_RULES_OWNER_ONLY,
+  stockRulesLoosened,
   taxProblem,
+  type Branding,
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
+  type EmailSettings,
   type ExpenseSettings,
+  type HrSettings,
+  type InventorySettings,
   type LocalizationSettings,
   type NumberSettingsWire,
   type PaymentSettings,
@@ -37,6 +48,7 @@ import type { RequestAccess } from "../../core/access/access.service";
 import { AnyCompanyMember, Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
 import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
+import { requireWholeCompany } from "../../core/access/whole-company";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -44,9 +56,13 @@ import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-con
 import { loadLocations } from "../inventory/inventory-records";
 import { refuse, requireFeature } from "../sales/sales-common";
 import {
+  BRANDING_INPUT,
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
+  EMAIL_INPUT,
   EXPENSES_INPUT,
+  HR_INPUT,
+  INVENTORY_INPUT,
   NUMBERS_INPUT,
   PAYMENTS_INPUT,
   PAYROLL_INPUT,
@@ -56,15 +72,6 @@ import {
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
-
-/**
- * Settings bind the whole company, so a save needs data scope `all` (ADR 0059 D4), as the books do
- * (ADR 0040); anyone narrower gets 403, whatever key their role holds. Warehouses and showrooms use
- * it too (ADR 0059, part 4a, D23).
- */
-export function requireWholeCompany(access: RequestAccess): void {
-  if (access.dataScope !== "all") throw new ForbiddenException({ code: "forbidden", message: SETTINGS_SCOPE_MESSAGE });
-}
 
 /** Refuses a body the shared content rules refuse, with their words (400 `invalid_request`). */
 function check(problem: string | null): void {
@@ -81,7 +88,12 @@ function check(problem: string | null): void {
  * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
  * and documents and Payroll rules, one tab of the localization row each. Part 2b adds Region and
  * Currency; their checks that read the stored tab run inside the save, under the row lock. Part 3a
- * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock.
+ * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
+ * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
+ * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
+ * save that writes the control database: the company's own branding row. The bell and Outbox part
+ * adds Settings → Email, the sender details, with a step-up on every save. The Stock rules part
+ * adds the adjustment approval quantity, whose loosening is the Owner's with a step-up.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -239,6 +251,149 @@ export class SettingsController {
       async (_current, tx) => check(sharedCostsProblem(input, await loadLocations(tx))),
     );
     return sharedCosts;
+  }
+
+  /**
+   * PUT /settings/hr: Settings → HR (ADR 0059, part 5): the workweek, the pay calendar, holidays and
+   * what employees see. `settings.hr.manage` (an MFA key), module `hr`; the page's switch (404),
+   * scope `all` (403), a strict body and `hrSettingsProblem` (400). Then, under the `hr` row's lock
+   * (the one opening a pay period takes): the schedule lock against recorded pay periods, timesheets
+   * and clock punches (409 `conflict`, D4), the monthly rule on a change of frequency (400, D5), and
+   * always a step-up after them (403 `step_up_required`, D3; Payments' order, so a refused value never
+   * costs a code). The overtime rule is Payroll rules', untouched here (ADR 0050). Answers it as saved.
+   */
+  @Put("hr")
+  @RequirePermission(...SETTINGS_SECTIONS.hr.keys)
+  @RequireModule(SETTINGS_SECTIONS.hr.module)
+  @Audited()
+  async saveHr(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<HrSettings> {
+    requireFeature(SETTINGS_SECTIONS.hr.feature);
+    requireWholeCompany(access);
+    const input = parse(HR_INPUT, body);
+    check(hrSettingsProblem(input));
+    // `hrSettingsProblem` passed, so the frequency is one of `PAY_FREQUENCIES`.
+    const hr = input as HrSettings;
+    return this.settings.saveHr(tenant, actorOf(access, session, request), async (current, records) => {
+      const locked = hrScheduleProblem(hr, current, records.facts);
+      if (locked) throw new ConflictException({ code: "conflict", message: locked });
+      check(hrFrequencyProblem(hr, current, records.employees));
+      await this.stepUp.require(session);
+      return hr;
+    });
+  }
+
+  /**
+   * PUT /settings/branding (ADR 0059, part 6; approved by the owner on 2026-11-20): the display name,
+   * monogram, brand color, floor pattern and default theme, which the shell, documents, the login
+   * page and emails read. Its key and switch from `SETTINGS_SECTIONS.branding`; module `platform`
+   * (every company of both products), so no module guard, as profile and numbers. In order: the
+   * switch (404), data scope `all` (403), the strict body (400; a logo is refused, D5), the shared
+   * rule (400), then always a step-up (403 `step_up_required`, after the content checks so a refused
+   * value never costs a code), then the save. The company is only the session's: the control row is
+   * found by the verified tenant's id, never by anything in the body. Answers the branding as saved.
+   */
+  @Put("branding")
+  @RequirePermission(...SETTINGS_SECTIONS.branding.keys)
+  @Audited()
+  async saveBranding(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<Branding> {
+    requireFeature(SETTINGS_SECTIONS.branding.feature);
+    requireWholeCompany(access);
+    const branding = parse(BRANDING_INPUT, body);
+    check(brandingProblem(branding));
+    await this.stepUp.require(session);
+    return this.settings.saveBranding(tenant, actorOf(access, session, request), branding);
+  }
+
+  /**
+   * PUT /settings/email: Settings → Email, the sender details every Outbox row is written with (ADR
+   * 0059, bell and Outbox part, D7): `settings.notifications.manage`, `platform` (no module guard,
+   * as profile and numbers); the page's switch (404), scope `all` (403), a strict body and
+   * `emailSettingsProblem` (400), then always a step-up (403 `step_up_required`), after the content
+   * checks so a refused value never costs a code: the sender name and reply-to decide who customers'
+   * mail seems to come from and where their answers to invoices and receipts go, and the sign-off is
+   * under every message, so a change is a phishing lever. Answers the section as saved.
+   */
+  @Put("email")
+  @RequirePermission(...SETTINGS_SECTIONS.email.keys)
+  @Audited()
+  async saveEmail(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<EmailSettings> {
+    requireFeature(SETTINGS_SECTIONS.email.feature);
+    requireWholeCompany(access);
+    const email = parse(EMAIL_INPUT, body);
+    check(emailSettingsProblem(email));
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "email",
+      email,
+      (value) => value,
+      () => this.stepUp.require(session),
+    );
+    return email;
+  }
+
+  /**
+   * PUT /settings/inventory: Stock rules, the quantity above which a stock adjustment waits for a
+   * second person (ADR 0059, the Stock rules part, D2 to D5). `settings.locations.manage`, module
+   * `core`; the Warehouses and showrooms switch (`inventory.locations`, 404), scope `all` (403), a
+   * strict body and `inventorySettingsProblem` (400). Then, under the row's lock and against the
+   * stored section (the strictest, `"0"`, when never saved): raising or clearing the quantity is a
+   * loosening of the two-person check, so it is the Owner's alone (403 `owner_only`, the owner's
+   * answer to Q10 applied to stock) and needs a step-up (403 `step_up_required`), both after the
+   * content rule so a refused value never costs a code. Keeping or tightening needs only the key, as
+   * Warehouses and showrooms (part 4a, Q5). A first save that finds the row saved meanwhile is a 409
+   * `conflict`. Stock adjustments are switched off (`removed`) and the API
+   * has none; nothing on the API acts on the section until they come back (D1). Answers it as saved.
+   */
+  @Put("inventory")
+  @RequirePermission(...SETTINGS_SECTIONS.inventory.keys)
+  @RequireModule(SETTINGS_SECTIONS.inventory.module)
+  @Audited()
+  async saveInventory(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<InventorySettings> {
+    requireFeature(SETTINGS_SECTIONS.inventory.feature);
+    requireWholeCompany(access);
+    const inventory = parse(INVENTORY_INPUT, body);
+    check(inventorySettingsProblem(inventory));
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "inventory",
+      inventory,
+      (value) => value,
+      async (current) => {
+        if (!stockRulesLoosened(inventory, current)) return;
+        if (!access.isOwner) throw new ForbiddenException({ code: "owner_only", message: STOCK_RULES_OWNER_ONLY });
+        await this.stepUp.require(session);
+      },
+      // Two first saves at once are both judged against the never-saved answer: the second is a 409,
+      // so what is stored is always what its own judgement saw (security review round 1).
+      "refuse",
+    );
+    return inventory;
   }
 
   /**
