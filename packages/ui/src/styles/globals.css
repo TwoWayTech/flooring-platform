@@ -56,6 +56,10 @@
   --chart-4: #b7c1bf;
   --chart-5: #5b6a6e;
 
+  /* QR codes stay dark on light in both themes: many phone scanners do not read inverted codes. */
+  --qr-ink: #1f2b30;
+  --qr-paper: #ffffff;
+
   /* Aliases for names the shadcn components read directly. */
   --popover: var(--surface);
   --popover-foreground: var(--foreground);
@@ -145,6 +149,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-qr-ink: var(--qr-ink);
+  --color-qr-paper: var(--qr-paper);
   --color-raised: var(--raised);
   --color-hairline: var(--hairline);
   --color-card: var(--surface);
