@@ -30,14 +30,14 @@ Code: `apps/web/src/lib/api/demo/notification-actions.ts` (actions), `packages/s
 
 | Action | Permission key | Default roles | Enforced in |
 | --- | --- | --- | --- |
-| Change sender name, reply-to, sign-off | `settings.notifications.manage` | Owner | `NotificationsSettingsPage`; `SETTINGS_SECTIONS.email` in `packages/shared/src/settings/sections.ts`, checked by `updateSettings` |
+| Change sender name, reply-to, sign-off | `settings.notifications.manage`, data scope `all`, and a step-up | Owner | `NotificationsSettingsPage`; `SETTINGS_SECTIONS.email` in `packages/shared/src/settings/sections.ts`, checked by `updateSettings` and `PUT /settings/email`; content rule `emailSettingsProblem` |
 | Switch an event on or off, set channels, edit its template | `settings.notifications.manage` | Owner | `saveNotificationRule` |
 | Reset an event to its defaults | `settings.notifications.manage` | Owner | `resetNotificationRule` |
 | Open the whole Outbox | `settings.outbox.view` | Owner | `PageGate` with the item in `apps/web/src/products/settings-menu.ts`; `OutboxPage`; `listOutbox` |
 | Open your own Outbox | None | Every signed-in user | `/outbox` has no page rule, so `canOpenPage` in `apps/web/src/products/pages.ts` lets everyone open it; `listOutbox` limits the rows |
-| Send again on a failed row | One's own row, or `settings.outbox.view` | Everyone, on their own rows | `retryOutbox` |
-| Cancel a scheduled row | One's own row, or `settings.outbox.view` | Everyone, on their own rows | `cancelOutbox` |
-| Simulate bounce | `settings.outbox.view` | Owner | `simulateBounce`; the button appears only in the whole-company view |
+| Send again on a failed row | `settings.outbox.view` (since 2026-11-20; one's own row was enough before) | Owner | `retryOutbox`; `POST /outbox/:id/retry`; the drawer shows the button only with the key |
+| Cancel a scheduled row | `settings.outbox.view` (since 2026-11-20; one's own row was enough before) | Owner | `cancelOutbox`; `POST /outbox/:id/cancel`; the drawer shows the button only with the key |
+| Simulate bounce | `settings.outbox.view` | Owner | `simulateBounce`; the button appears only in the whole-company view, and only in the demo |
 | Simulate reply on a meeting invite | `meetings.meeting.view` for the organiser, otherwise `settings.outbox.view` | See `docs/product-spec/meetings.md` | `simulateReply` |
 | Read the bell | None | Every signed-in user | `Notifications` in `apps/web/src/components/shell/notifications.tsx` |
 | Mark your own notifications read | None | Every signed-in user | `markNotificationsRead`, which works only on the person's own rows |
@@ -46,7 +46,7 @@ Each Needs attention check has its own permission. See rule 15.
 
 ### Who can see which Outbox row
 
-`listOutbox` in `notification-actions.ts`:
+Since 2026-11-20 both modes apply one rule, `outboxSight` in `packages/shared/src/notifications/outbox-sight.ts` (the API's `GET /outbox` and DemoStore's `listOutbox`). It is the demo's rule below with two changes: the address is compared without case, and a private meeting's row is redacted for every reader it does not involve, `hr.employee.view` included. The demo's code as it was:
 
 ```ts
 const admin = all && (await ctx.can("settings.outbox.view"));
@@ -173,7 +173,7 @@ Subject, body, attachments and values are stored on the row as a snapshot. Editi
 
 10. **Sensitive values.** The catalogue offers no variable for cost, margin, pay rate, credit limit or pay amounts (comment on `NOTIFICATION_EVENTS` in `events.ts`).
 
-11. **Money in messages.** `money` in `notification-actions.ts`: `` `$${formatNumber(amount, "money", ctx.db.settings.numbers)}` ``.
+11. **Money in messages.** `messageMoney(amount, numbers)` in `packages/shared/src/notifications/render.ts`: `formatNumber(amount, "money", numbers)`, whose money style writes the currency sign itself, with the US pack's format when the company never saved one. DemoStore's `money` and the API's `loadMoneyFormat` both use it. Until 2026-11-20 DemoStore wrote the sign twice ("$$1,250.00"), and the API's quote email sent the raw total.
 
 12. **People who can approve.** `usersWith` in `notification-actions.ts`: active users holding a role whose `permissions` include the key. It reads role permissions only, without the company ceiling or enabled modules.
 
@@ -446,4 +446,11 @@ The five `meeting.*` events keep their keys, templates and recipients. On the AP
 | `meeting.reply`, `meeting.proposed` | The `meeting_responses` row id | Email, in-app | To the organiser, one per answer |
 | `meeting.requested` | `request` | Email, in-app | To the person asked |
 
-Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none. Part 2 adds no event: moves, undo and proposal decisions send through `meeting.invite`, and every send counts against the daily meeting email limits. Part 3 adds no event either: the demo store now writes these rows from the same shared send plan, reminder and reply rules (the table under "Recipients and triggers, as built"), with its own PRODID and no daily caps. In api mode the Outbox and the bell still read DemoStore's rows, not the API's (ADR 0051 part 3, residual risks).
+Every one is restricted when the meeting is private, and a colleague who is no longer an active member gets none. Part 2 adds no event: moves, undo and proposal decisions send through `meeting.invite`, and every send counts against the daily meeting email limits. Part 3 adds no event either: the demo store now writes these rows from the same shared send plan, reminder and reply rules (the table under "Recipients and triggers, as built"), with its own PRODID and no daily caps. Since 2026-11-20 the Outbox and the bell read the API's rows in api mode (next section).
+
+## Real build: the bell, the Outbox and Settings → Email (ADR 0059, 2026-11-20)
+
+- **The bell** reads `GET /notifications` (the person's own 50 newest) and marks read with `POST /notifications/read { ids }`. The web sends nothing for an empty list, because the API reads a body without ids as "all of mine".
+- **The Outbox.** `/outbox` reads `GET /outbox` (the rows the person caused or received, whatever they hold); `/settings/outbox` and the template preview read `GET /outbox?all=true` (every row to holders of `settings.outbox.view`). Rows carry the sender snapshot but never the template values, so the preview shows the event's samples in api mode. Send again and Cancel need `settings.outbox.view` in both modes. Simulate bounce, Simulate reply and the banner "This demo never sends real email." are demo-only; in api mode a sent row reads "Sent".
+- **Settings → Email** saves through `PUT /settings/email` with a step-up (docs/api-contract.md). `emailSettingsProblem`: sender name at most 80 characters with no line break, quote, backslash or angle bracket, empty meaning the company's name (in both modes); reply-to empty or one plain address; sign-off at most 500 characters. Only `settings.notifications.manage` reads it.
+- **Still on DemoStore in api mode:** the event switches, channels and templates (`saveNotificationRule`, `resetNotificationRule`, `list("notificationRules")`), so in api mode they save in the browser only while the API reads its own `notification_rules`; Needs attention, derived on the web.

@@ -370,6 +370,20 @@ Settings → HR on part 1's pattern, with checks against recorded pay. Spec: doc
 - **Who reads it.** `GET /settings` adds `hr`, as stored, for holders of `hr.overview.view`, `hr.timesheet.view`, `hr.pto.view`, `hr.portal.view` or `settings.hr.manage` while module `hr` is on, not hidden by the `settings.hr` switch; a company with no `hr` row gets none.
 - **The web.** `updateSettings("hr", value)` sends the section to its `PUT` and reads again, with no transport change (`API_SETTINGS_SECTIONS`). The page runs `hrSettingsProblem` before the code dialog.
 
+## Settings → Email (real build, ADR 0059, the bell and Outbox part, 2026-11-20)
+
+The sender details every Outbox row is written with, on part 1's pattern. The company is the verified session's. No control-database read or write.
+
+| Route | Access | Handler checks, in order | Answer |
+| --- | --- | --- | --- |
+| `PUT /settings/email` | `settings.notifications.manage` (module `platform`, so no module guard) | switch `settings.notifications` (404), data scope `all` (403), strict body (400), `emailSettingsProblem` (400), then always a step-up (403 `step_up_required`, or `step_up_mfa_required` without a factor) | the saved `EmailSettings`. Audited |
+
+- **The body** is exactly `{ senderName, replyTo, signature }`, three strings; outer lengths 800, 2,540 and 5,000, each refused with its field's words. Then `emailSettingsProblem`: the sender name at most 80 characters with no line break or other control character, quote, backslash or angle bracket (empty sends as the company's name); the reply-to empty or one plain address (`EMAIL_TEXT`) of at most 254 characters; the sign-off at most 500 characters. Stored as sent.
+- **The step-up** comes after the content checks, so a refused value never costs a code: the sender name and reply-to decide who customers' mail seems to come from and where their answers go, and the sign-off is under every message.
+- **The save** writes the row under its lock (or inserts it with `null` before) and one `audit_log` entry: "Changed email and notifications", target "Email and notifications". The last save wins. The next Outbox row is written with it; rows already written keep their snapshot.
+- **Who reads it.** `GET /settings` adds `email` for holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, it is `{ senderName: "", replyTo: "", signature: "" }`, which is what the sender acts on.
+- **The web.** `updateSettings("email", value)` goes to the route through `API_SETTINGS_SECTIONS`. The Sender form runs `emailSettingsProblem` before the code dialog.
+
 ## Inventory, part 1 (real build, P11, ADR 0035)
 
 Every route needs the `core` module. Cost fields (`cost`, `costPerSqFt`) are stripped without `inventory.product.view_sensitive`. Switched-off features answer 404.
@@ -757,11 +771,13 @@ Each answers 404 when its feature (`shell.notifications`, `settings.outbox`) is 
 
 | Route | Needs | Does |
 | --- | --- | --- |
-| `GET /notifications` | Any company member | The person's own in-app notes, newest first (50) |
+| `GET /notifications` | Any company member | The person's own in-app notes, newest first (50): `{ id, userId, eventKey, title, href, readAt, createdAt }` |
 | `POST /notifications/read` | Any company member | `{ ids? }`: marks those notes read, or all unread ones; only the person's own |
-| `GET /outbox` | Any company member | The messages the person caused or received; every message with `settings.outbox.view`. Someone else's restricted message is redacted without `hr.employee.view`. A private meeting's message is redacted for everyone it does not involve, whatever they hold (ADR 0051): subject, body and attachments are hidden, while recipient, status and dates stay |
+| `GET /outbox` | Any company member | The messages the person caused or received; with `?all=true` (exactly that value), every message to holders of `settings.outbox.view` (spec `admin = all && can`; ADR 0059, the bell and Outbox part). The row is the screen's columns plus the sender snapshot (`fromName`, `replyTo`); template values, the dedupe key and the provider's id never come. Someone else's restricted message is redacted without `hr.employee.view`. A private meeting's message is redacted for everyone it does not involve, whatever they hold (ADR 0051): subject, body and attachments are hidden, while recipient, status and dates stay |
 | `POST /outbox/:id/retry` | `settings.outbox.view` | Sends a failed message again after checking its address. 409 `not_failed` otherwise |
 | `POST /outbox/:id/cancel` | `settings.outbox.view` | Cancels a scheduled message. 409 `not_scheduled` otherwise |
+
+In api mode the bell (`listMyNotifications`, `markNotificationsRead`) and the Outbox screens (`listOutbox`, `retryOutbox`, `cancelOutbox`) use these routes (ADR 0059, the bell and Outbox part). `markNotificationsRead([])` sends nothing, because a body without ids marks every unread note. Simulate bounce and Simulate reply are demo presenter tools, hidden in api mode.
 
 Raising an event is server-side only (`NotificationService.notify`): modules call it when their records change. An Outbox row moves from `queued` (or `scheduled`) to `sent` or `failed`, and from `scheduled` to `cancelled`.
 
