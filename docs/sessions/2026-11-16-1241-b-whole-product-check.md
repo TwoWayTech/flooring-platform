@@ -253,6 +253,9 @@ Re-checked at stage 0 against `origin/main 67fc1de` and, read only, `origin/feat
 | 148 | Ten mutations | FS is new | M11: the products import stores the price as the cost; FS-5 fails |
 | 149 | Merge commits | Carry no `[skip ci]`, so `fast` ran on `f718961` and failed typecheck (the scan's three-argument factory call) | Fixed in `9e84b6c`; noted so the owner isn't surprised by the red run |
 | 150 | Stage 9: security-reviewer and, if packages/db changed, schema-reviewer | packages/db changed only in the stage-6 test helpers; never reviewed, since stage 9 hadn't run | Both run fresh. Every should-fix landed in the check's own helpers: `opt-in.ts` (URL parse, GitHub Actions only), the sweep (continue past a failure, drop a leftover database; FH-4), `SENSITIVE_KEY_OVERRIDES` with PM-1 (h) and M12, and the URL guard hardened over rounds 2 to 5 (R-6, R-7 in ADR 0058) |
+| 151 | Second merge (owner, 2026-11-20): PR #69's branch, then main | `feat/web-company-today` at `d1f4ad3` holds #66 to #68 and `today()`; main at `9704a35` holds #61 to #65 | `703a63d`: #69 merged (one conflict, `blueprint-delta.md`, both rows kept). `134ddfc`: main merged; its 19 conflicts were #62, #64 and #65 squashed against the same branch commits in #69, each main version in #69's history, so ours (#69's) kept; main changes nothing #69 lacks. No code resolved by hand, so no extra review was needed for the resolution |
+| 152 | The check reads days through sales-common's `todayIn` | Folded into the shared `dayInZone` by `today()` | One-line `support/company-day.ts` over `dayInZone`; the check's days are the product's |
+| 153 | `today`, `openCompany`, `closeCompany` are client-only; `getWorkspace` reads `GET /company` literally | All four are in `API_METHODS` now; `getWorkspace` goes through `companyAnswer` | RESOLVED_ELSEWHERE (no routes for the three that send nothing); `closeCompany` moved from demo-only to client-local; regenerated |
 
 ## Decisions and why
 1. **SH-1 fallback (stage 0).** Import has merged and flows is still a draft, so this branch builds every stage except 7. Why: it is the plan's fallback (section 0). DS and PGM reuse `flows/kit.ts`, and copying the kit would duplicate code (CLAUDE.md, style). The report marks DS and PGM "waiting for PR #42". A later commit, or a small follow-up PR if this one has merged, adds them once #42 merges.
@@ -705,6 +708,7 @@ These replace the lines above where they differ.
 | R | read-only `psql` counts on 5433 | 0 live `e2efresh` companies, 0 databases; ports 3000 and 4000 free; the orchestrator told |
 | R | Review fixes: `int.sh fh-1` to `fh-7 packages/db test/fresh-company-helpers.int.test.ts`, `rm-h` (route matrix), `mutate.sh M12`, lint and typecheck after each | FH 4 passed each time after the fix; route matrix 20 passed; M12 CAUGHT by PM-1 (h); removing the scheme allowlist by hand fails FH-2 |
 | R | `gh pr review 43 --comment --body-file …` | the reviewer summary posted |
+| R | After the second merge (rows 151 to 153): `pnpm lint`, `pnpm typecheck`, `pnpm test`; the coverage tests and `-u`; `int.sh chk-b` (the four check files), `fh-8`; `int.sh full-api2 apps/api --maxWorkers=3`, `full-db2 packages/db` | exit 0 each; regenerated (37 DemoStore calls, 5 client-local); 49 passed; 4 passed; 52 files, 1,022 passed (712 s); 9 files, 63 passed |
 
 The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.sh`, `mutate.sh`, `scope.sh`) live in the session scratchpad and aren't committed.
 
@@ -737,6 +741,6 @@ The scratch scripts (`ports.sh`, `int.sh`, `api-e2e.sh`, `full.sh`, `turbo-hash.
 
 ## Resumed (2026-11-20)
 - **Who:** B (Claude), on the owner's laptop (Windows), worktree `C:devp-check`, under the orchestrating session.
-- **Base:** `origin/main` (`c8c2d1b`) merged as `8e5f189`, then `origin/feat/auth-passkey-screens` (PR #68, `2727cd9`) as `f718961` (row 128). Main and the `today()` branch are merged again when the owner says.
+- **Base:** `origin/main` (`c8c2d1b`) merged as `8e5f189`, then `origin/feat/auth-passkey-screens` (PR #68, `2727cd9`) as `f718961` (row 128). Main and the `today()` branch were merged again on the owner's word (rows 151 to 153).
 - **Ports:** 3000 and 4000 were used only after the orchestrator gave them, and given back after the browser runs.
 - **Left running on purpose:** the check's 5433 container `fp-e2e-worktree` (Summit seeded, no live fresh company). Postgres on 5432 untouched.
