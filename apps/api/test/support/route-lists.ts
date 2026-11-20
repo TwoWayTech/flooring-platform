@@ -387,40 +387,16 @@ export const SENSITIVE_KEY_OVERRIDES: Readonly<
 
 /** Company routes that read no feature switch, with why none applies. */
 export const NO_SWITCH_ROUTES: Reviewed = {
-  "DELETE /roles/:id":
-    "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
-  "GET /audit":
-    "Reads no switch. Finding F-h: settings.audit exists, so rule 13 says this route should answer 404 when it is off.",
   "GET /ledger/period-close": "The ledger has no switch in the register (ADR 0039); no screen calls it yet.",
   "GET /company":
     "The shell's own read (ADR 0051): every screen needs the company, the person's access and the names directory, so no switch may hide it.",
   "GET /locations":
     "Shared reference data every module picks from; inventory.locations owns only the settings page, so hiding pickers with it would break other features.",
-  "GET /roles":
-    "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
   "GET /settings":
     "Company reference data every screen reads (ADR 0059 D3); each section is cut inside by its own switch (readableSections), so no one switch hides the route.",
   "GET /settings/accounting":
     "Accounting settings have no switch in the register (ADR 0040); no screen calls them yet.",
-  "GET /support-grants":
-    "Reads no switch. Finding F-h: the support-access panel sits on Settings → Users (settings.users), which this route does not read.",
-  "GET /users":
-    "Reads no switch. Finding F-h: settings.users exists, so rule 13 says this route should answer 404 when it is off.",
-  "PATCH /users/:id":
-    "Reads no switch. Finding F-h: settings.users exists, so rule 13 says this route should answer 404 when it is off.",
   "POST /ledger/period-close": "The ledger has no switch in the register (ADR 0039); no screen calls it yet.",
-  "POST /roles":
-    "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
-  "POST /roles/:id/reset":
-    "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
-  "POST /support-grants/:id/approve":
-    "Reads no switch. Finding F-h: the support-access panel sits on Settings → Users (settings.users), which this route does not read.",
-  "POST /support-grants/:id/revoke":
-    "Reads no switch. Finding F-h: the support-access panel sits on Settings → Users (settings.users), which this route does not read.",
-  "POST /users/invite":
-    "Reads no switch. Finding F-h: settings.users exists, so rule 13 says this route should answer 404 when it is off.",
-  "PUT /roles/:id":
-    "Reads no switch. Finding F-h: settings.roles exists, so rule 13 says this route should answer 404 when it is off.",
   "PUT /settings/accounting":
     "Accounting settings have no switch in the register (ADR 0040); no screen calls them yet.",
 };
