@@ -7,7 +7,7 @@ import { settingsFromAnswer } from "@/lib/api/http/settings-answer";
 // The served sections with one the merge doesn't name: the real types make such a section impossible.
 vi.mock("@workspace/shared", async (importOriginal) => {
   const real = await importOriginal<typeof import("@workspace/shared")>();
-  return { ...real, API_SETTINGS_SECTIONS: [...real.API_SETTINGS_SECTIONS, "branding"] };
+  return { ...real, API_SETTINGS_SECTIONS: [...real.API_SETTINGS_SECTIONS, "hr"] };
 });
 
 const noFiles: FileStore = {
@@ -32,7 +32,8 @@ beforeAll(async () => {
  */
 describe("the api-mode settings merge takes every served section", () => {
   it("X3 a served section the merge doesn't name is an error, never DemoStore's copy kept silently", () => {
-    const answer = { branding: { ...demo.branding, brandColor: "#123456" } } as SettingsAnswer;
-    expect(() => settingsFromAnswer(answer, demo)).toThrow('GET /settings has no answer for "branding".');
+    // HR settings are not served (branding is, since part 6).
+    const answer = { hr: { ...demo.hr } } as SettingsAnswer;
+    expect(() => settingsFromAnswer(answer, demo)).toThrow('GET /settings has no answer for "hr".');
   });
 });

@@ -3,6 +3,7 @@ import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { Address } from "../types/company";
 import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings } from "../types/settings";
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
+import { brandingProblem } from "./branding-rules";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
@@ -158,7 +159,8 @@ export const LOCALIZATION_SECTION_MESSAGE = "Localization and tax saves one tab 
  * words (ADR 0059). `current` is the stored section (or the API's never-saved answer), so a rule can
  * refuse a change that no page makes. Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
- * rule 7; ADR 0059, part 3b, D33). Every other section gets its rules when its part moves to the API.
+ * rule 7; ADR 0059, part 3b, D33). Every other section gets its rules when its part moves to the API;
+ * Branding's since part 6 (`brandingProblem`).
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -174,5 +176,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   if (settings.numbers) return numberSettingsProblem(settings.numbers, current as NumberSettings);
   if (settings.payments) return paymentSettingsProblem(settings.payments);
   if (settings.expenses) return expenseSettingsProblem(settings.expenses);
+  if (settings.branding) return brandingProblem(settings.branding);
   return null;
 }

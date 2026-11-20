@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  BRANDING_MESSAGES,
   defaultNumberSettings,
   overtimeRuleProblem,
   PAYMENT_MESSAGES,
@@ -187,5 +188,48 @@ describe("DemoStore settings saves follow the API's rules (ADR 0059)", () => {
     const kept = { ...canadian, negativeStyle: "parens" as const };
     await store.updateSettings("numbers", kept);
     expect((await store.getSettings()).numbers).toEqual(kept);
+  });
+});
+
+describe("DemoStore branding saves follow the API's rules (ADR 0059, part 6)", () => {
+  it("BD1 the shared rule refuses with its words: nothing stored, no audit entry", async () => {
+    const store = await open("summit", DANA);
+    const before = (await store.getSettings()).branding;
+    const audits = (await store.list("audit")).length;
+    const refused: [object, string][] = [
+      [{ displayName: "Summit\nBcc: someone@example.com" }, BRANDING_MESSAGES.displayName],
+      [{ monogram: "sfc" }, BRANDING_MESSAGES.monogram],
+      [{ brandColor: "2E8B7E" }, BRANDING_MESSAGES.brandColor],
+      [{ brandColor: "#F5F0A0" }, "This color is too light to read against panels. Pick a deeper shade."],
+      [{ logoDataUrl: "https://example.com/logo.png" }, BRANDING_MESSAGES.logo],
+    ];
+    for (const [patch, words] of refused)
+      await expect(store.updateSettings("branding", { ...before, ...patch }), words).rejects.toThrow(words);
+    expect((await store.getSettings()).branding).toEqual(before);
+    expect(await store.list("audit")).toHaveLength(audits);
+  });
+
+  it("BD2 the key, switch and scope come first: Sales is refused with the role words, a switched-off page with the switch's", async () => {
+    const sales = await open("summit", PRIYA);
+    const branding = (await sales.getSettings()).branding;
+    await expect(sales.updateSettings("branding", { ...branding, monogram: "x" })).rejects.toThrow(ROLE_REFUSAL);
+    OFF.add("settings.branding");
+    const owner = await open("summit", DANA);
+    await expect(owner.updateSettings("branding", branding)).rejects.toThrow("This feature is switched off.");
+  });
+
+  it("BD3 the Owner saves branding, a demo logo included; one audit entry; the HR Suite's Owner too", async () => {
+    const store = await open("summit", DANA);
+    const before = (await store.getSettings()).branding;
+    const seen = new Set((await store.list("audit")).map((row) => row.id));
+    const next = { ...before, monogram: "SC", logoDataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+    expect((await store.updateSettings("branding", next)).branding).toEqual(next);
+    const added = (await store.list("audit")).filter((row) => !seen.has(row.id));
+    expect(added.map((entry) => [entry.action, entry.target])).toEqual([["Changed branding", "Branding"]]);
+    const harbor = await open("harbor", HARBOR_OWNER);
+    const theirs = (await harbor.getSettings()).branding;
+    expect((await harbor.updateSettings("branding", { ...theirs, defaultTheme: "dark" })).branding.defaultTheme).toBe(
+      "dark",
+    );
   });
 });

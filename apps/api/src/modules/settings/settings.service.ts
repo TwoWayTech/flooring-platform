@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { settings, taxJurisdictions, taxRules, type SettingsGroup } from "@workspace/db/company";
+import { tenantBranding } from "@workspace/db/control";
 import {
   closesOn,
   defaultNumberSettings,
@@ -16,6 +17,7 @@ import {
   unservedSection,
   type ApiLocalizationTab,
   type ApiSettingsSection,
+  type Branding,
   type CompanyProfile,
   type CompanySettings,
   type LocalizationAnswer,
@@ -35,9 +37,16 @@ import type { TenantContext } from "../../core/tenancy/tenant-context";
 import { loadExpenseSettings } from "../finance/expense-records";
 import { companyClock, type CompanyClock } from "../sales/sales-common";
 import { loadLocalization } from "../sales/sales-records";
+import { BRANDING_COLUMNS, brandingAnswer, brandingMissing, brandingOf, readBranding } from "./branding-row";
+
+/**
+ * A served section stored in the company's `settings` table: every one but Branding, which lives in
+ * the control `tenant_branding` row (ADR 0059, part 6, D2).
+ */
+export type CompanySection = Exclude<ApiSettingsSection, "branding">;
 
 /** A served section's value as it is stored. */
-export type StoredSection<S extends ApiSettingsSection> = CompanySettings[S];
+export type StoredSection<S extends CompanySection> = CompanySettings[S];
 
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
@@ -100,7 +109,8 @@ export function settingsMissing(): ConflictException {
  * section at a time, each in the session's company only (TenantGuard's tenant). Rows are one per
  * group, never soft-deleted, so neither the read nor the lock filters `deleted_at`, the same as the
  * modules that read them (D20). It reads the company's time zone from the control database
- * (`companyClock`, by the verified tenant's id) and never writes it (part 1 D11; part 2b D2).
+ * (`companyClock`, by the verified tenant's id) and never writes it (part 1 D11; part 2b D2). Its one
+ * control write is the company's own branding row, by the verified tenant's id (part 6, D2).
  */
 @Injectable()
 export class SettingsService {
@@ -126,13 +136,14 @@ export class SettingsService {
     const tabs = readableTabs(access);
     if (sections.length === 0 && tabs.length === 0) return {};
     const db = await this.tenancy.db(tenant);
-    const groups: SettingsGroup[] = tabs.length > 0 ? [...sections, "localization"] : [...sections];
+    const companySections = sections.filter((section): section is CompanySection => section !== "branding");
+    const groups: SettingsGroup[] = tabs.length > 0 ? [...companySections, "localization"] : companySections;
     const rows = await db
       .select({ group: settings.group, value: settings.value })
       .from(settings)
       .where(inArray(settings.group, groups));
     const stored = new Map(rows.map((row) => [row.group, row.value]));
-    const read = <S extends ApiSettingsSection>(section: S) => this.valueOf(db, section, stored.get(section));
+    const read = <S extends CompanySection>(section: S) => this.valueOf(db, section, stored.get(section));
     const answer: SettingsAnswer = {};
     for (const section of sections) {
       switch (section) {
@@ -148,6 +159,12 @@ export class SettingsService {
         case "expenses":
           answer.expenses = await read(section);
           break;
+        case "branding": {
+          // From the control row, by the verified tenant's id; none without a live row (part 6, D6).
+          const branding = await readBranding(this.control.db, tenant.companyId);
+          if (branding) answer.branding = branding;
+          break;
+        }
         default:
           throw unservedSection(section);
       }
@@ -164,7 +181,7 @@ export class SettingsService {
   }
 
   /** A section as the rules compare against: the stored value, or the value it is answered with when never saved. */
-  async current<S extends ApiSettingsSection>(tenant: TenantContext, section: S): Promise<StoredSection<S>> {
+  async current<S extends CompanySection>(tenant: TenantContext, section: S): Promise<StoredSection<S>> {
     const db = await this.tenancy.db(tenant);
     const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.group, section));
     return this.valueOf(db, section, row?.value);
@@ -176,7 +193,7 @@ export class SettingsService {
    * `before` is exactly what its save replaced; the last save wins. `answered` gives the section as
    * the API answers it (the number format as the wire list), which is what the audit records.
    */
-  async save<S extends ApiSettingsSection>(
+  async save<S extends CompanySection>(
     tenant: TenantContext,
     actor: Actor,
     section: S,
@@ -362,6 +379,53 @@ export class SettingsService {
     });
   }
 
+  /**
+   * Saves Settings → Branding into the company's control `tenant_branding` row (ADR 0059, part 6,
+   * D2, D3), approved by the owner on 2026-11-20. One control transaction: the company's live row,
+   * found by the verified tenant's id (TenantGuard's, never a body field), is locked (`FOR UPDATE`),
+   * so two saves run one after the other and each audit `before` is exactly what its save replaced;
+   * a company with no live row gets 409 and nothing is created. Only the name, monogram, color,
+   * pattern and theme change: the session timeouts and logo keys in the row never do. The company's
+   * `audit_log` row ("Changed branding", before and after as answered) is written in a company
+   * transaction inside the control one, so it commits first: no change is ever left unaudited (D3).
+   * No transaction spans both databases, so a control commit that fails after the audit committed
+   * leaves an audit row for a change not made. Answers the branding as saved, without a logo (D5).
+   */
+  async saveBranding(tenant: TenantContext, actor: Actor, branding: Branding): Promise<Branding> {
+    const db = await this.tenancy.db(tenant);
+    return this.control.db.transaction(async (control) => {
+      const [row] = await control
+        .select({ id: tenantBranding.id, ...BRANDING_COLUMNS })
+        .from(tenantBranding)
+        .where(brandingOf(tenant.companyId))
+        .for("update");
+      if (!row) throw brandingMissing();
+      const after = brandingAnswer(branding);
+      const { displayName, monogram, brandColor, pattern, defaultTheme } = after;
+      await control
+        .update(tenantBranding)
+        .set({ displayName, monogram, brandColor, pattern, defaultTheme, updatedAt: new Date() })
+        .where(eq(tenantBranding.id, row.id));
+      await db.transaction((tx) =>
+        this.auditLog.record(
+          tenant,
+          actor.audit,
+          {
+            category: "settings",
+            action: `Changed ${SETTINGS_SECTIONS.branding.label.toLowerCase()}`,
+            targetType: "settings",
+            targetId: row.id,
+            targetLabel: SETTINGS_SECTIONS.branding.label,
+            before: brandingAnswer(row),
+            after,
+          },
+          tx,
+        ),
+      );
+      return after;
+    });
+  }
+
   /** The row of a settings group, locked until the transaction ends: it orders two saves of one group (ADR 0059). */
   private async lockGroup(tx: CompanyDb, group: SettingsGroup): Promise<{ id: string; value: unknown } | undefined> {
     const [row] = await tx
@@ -373,13 +437,13 @@ export class SettingsService {
   }
 
   /** A stored section, or what a company that never saved it is answered with and acted on (ADR 0059 D10). */
-  private async valueOf<S extends ApiSettingsSection>(
+  private async valueOf<S extends CompanySection>(
     db: CompanyDb,
     section: S,
     stored: unknown,
   ): Promise<StoredSection<S>> {
     if (stored !== undefined) return stored as StoredSection<S>;
-    const never: { [K in ApiSettingsSection]: () => Promise<CompanySettings[K]> } = {
+    const never: { [K in CompanySection]: () => Promise<CompanySettings[K]> } = {
       profile: async () => BLANK_PROFILE,
       numbers: async () => defaultNumberSettings(),
       payments: async () => NEVER_SAVED_PAYMENTS,

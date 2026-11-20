@@ -46,6 +46,10 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
       case "expenses":
         merged.expenses = answer.expenses ?? demo.expenses;
         break;
+      case "branding":
+        // The control row's, without a logo: the monogram stands in on the API (ADR 0059, part 6, D5).
+        merged.branding = answer.branding ?? demo.branding;
+        break;
       default:
         throw unservedSection(section);
     }

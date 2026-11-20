@@ -13,7 +13,7 @@ import {
   taxRules,
   userProfiles,
 } from "@workspace/db/company";
-import { tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
+import { tenantBranding, tenantModuleOverrides, tenantPermissionCeiling } from "@workspace/db/control";
 import {
   defaultNumberSettings,
   enabledModules,
@@ -223,6 +223,21 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     });
   }
 
+  /** A company's branding as its control row holds it (part 6). */
+  async function controlBranding(company: TestCompany) {
+    const [row] = await harness.control.db
+      .select({
+        displayName: tenantBranding.displayName,
+        monogram: tenantBranding.monogram,
+        brandColor: tenantBranding.brandColor,
+        pattern: tenantBranding.pattern,
+        defaultTheme: tenantBranding.defaultTheme,
+      })
+      .from(tenantBranding)
+      .where(eq(tenantBranding.tenantId, company.id));
+    return row;
+  }
+
   /** How many audit entries a company has. */
   function auditCount(company: TestCompany): Promise<number> {
     return withCompanyDb(company, async (db) => (await db.select({ n: count() }).from(auditLog))[0].n);
@@ -308,6 +323,11 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         const expected = readableSections({ permissions: held, modules: enabledModules([company.product], null, []) });
         expect(Object.keys(body).sort()).toEqual([...expected].sort());
         for (const section of expected) {
+          // Branding is the control row's (part 6; its own cases are in settings-branding.int.test.ts).
+          if (section === "branding") {
+            expect(body.branding, section).toEqual({ ...(await controlBranding(company)), logoDataUrl: null });
+            continue;
+          }
           const stored = await rowOf(company, section);
           const want =
             section === "numbers"
@@ -322,17 +342,17 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(keysOf(body).filter((name) => name in SENSITIVE_FIELDS)).toEqual([]);
         expect(await auditCount(company)).toBe(before);
         if (company === floorco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "expenses", "numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
         if (company === floorco && key === "sales") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "payments", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "payments", "profile"]);
           expect(body.profile?.ein).toBe("");
         }
         if (company === floorco && key === "warehouse")
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
         if (company === peopleco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
       });
@@ -735,7 +755,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         const body = await answerOf(owner.cookie);
         if (section === "payments") expect(body).not.toHaveProperty("payments");
         else if (section === "expenses") expect(body).not.toHaveProperty("expenses");
-        else expect(Object.keys(body).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+        else expect(Object.keys(body).sort()).toEqual(["branding", "expenses", "numbers", "payments", "profile"]);
       });
     }
   });
@@ -787,11 +807,17 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         403,
         "module_not_enabled",
       ]);
-      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["numbers", "profile"]);
+      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["branding", "numbers", "profile"]);
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, floorco.id));
     }
-    expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["expenses", "numbers", "payments", "profile"]);
+    expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual([
+      "branding",
+      "expenses",
+      "numbers",
+      "payments",
+      "profile",
+    ]);
     await put("expenses", owner.cookie, SUMMIT.settings.expenses).expect(200);
   });
 
