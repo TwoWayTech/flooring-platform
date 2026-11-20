@@ -770,6 +770,9 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
     await refusedAsShowroom(w7, LOCATION_MESSAGES.openQuotes("LNA12 line"));
+    // A closed quote holds nothing: once declined, the change is allowed.
+    await call("post", `/quotes/${pending.body.id}/status`, owner.cookie).send({ action: "decline" }).expect(201);
+    await toShowroom(w7).expect(200);
   });
 
   it("LNA13a every save waits for the stock lock", async () => {
