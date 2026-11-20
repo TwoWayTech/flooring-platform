@@ -1,4 +1,5 @@
 import type { AccountKey, AccountType } from "../accounting/accounts";
+import type { PostingDraft } from "../accounting/postings";
 import type { PermissionKey } from "../permissions/catalog";
 import { reportVisibility } from "./visibility";
 
@@ -36,11 +37,40 @@ export const PAY_ACCOUNT_KEYS = [
   "contract_labor",
 ] as const satisfies readonly AccountKey[];
 
+/** A journal source type, as the posting builders name them. */
+type SourceType = PostingDraft["sourceType"];
+
+/**
+ * What each journal source reveals, beyond the product cost every reader needs: pay, contract cost,
+ * or nothing more. A Record, so a new source type doesn't compile until someone decides (security
+ * review round 3); the sight rule's facts are derived from it.
+ */
+export const SOURCE_SIGHT: Readonly<Record<SourceType, "pay" | "contract" | "cost">> = {
+  invoice: "cost",
+  payment: "cost",
+  adjustment: "cost",
+  refund: "cost",
+  // A payroll-category expense posts to Wages, which the pay-account check catches.
+  expense: "cost",
+  goods_receipt: "cost",
+  bill: "cost",
+  supplier_payment: "cost",
+  stock_adjustment: "cost",
+  stock_issue: "cost",
+  contract_billing: "contract",
+  pay_period: "pay",
+  contractor_payment: "pay",
+  commission_statement: "pay",
+};
+
+const sourcesOf = (sight: "pay" | "contract"): SourceType[] =>
+  (Object.keys(SOURCE_SIGHT) as SourceType[]).filter((source) => SOURCE_SIGHT[source] === sight);
+
 /** The journal sources that post pay, whichever accounts they use. */
-export const PAY_SOURCE_TYPES = ["pay_period", "contractor_payment", "commission_statement"] as const;
+export const PAY_SOURCE_TYPES: readonly SourceType[] = sourcesOf("pay");
 
 /** The journal source whose cost is a contract's (ADR 0045): a contract billing or subcontract bill. */
-export const CONTRACT_SOURCE_TYPES = ["contract_billing"] as const;
+export const CONTRACT_SOURCE_TYPES: readonly SourceType[] = sourcesOf("contract");
 
 /** Facts about the company's journal that decide who may read it. */
 export interface TrialBalanceFacts {

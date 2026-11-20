@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_PERMISSION_KEYS,
   DEFAULT_ACCOUNTS,
+  CONTRACT_SOURCE_TYPES,
   PAY_ACCOUNT_KEYS,
+  PAY_SOURCE_TYPES,
+  SOURCE_SIGHT,
   PRODUCT_MODULES,
   resolveAccess,
   roleTemplate,
@@ -45,6 +48,12 @@ describe("who may read the trial balance (ADR 0055 Trial balance, owner question
     expect(seesTrialBalance(holding(...COST, "hr.payroll.view"), facts)).toBe(true);
     // Pay rates are not needed: the books hold pay totals per location, never per person.
     expect(seesTrialBalance(holding(...COST, "hr.employee.view_sensitive"), facts)).toBe(false);
+  });
+
+  it("derives the pay and contract sources from one classification of every source", () => {
+    expect([...PAY_SOURCE_TYPES].sort()).toEqual(["commission_statement", "contractor_payment", "pay_period"]);
+    expect(CONTRACT_SOURCE_TYPES).toEqual(["contract_billing"]);
+    expect(Object.keys(SOURCE_SIGHT)).toHaveLength(14);
   });
 
   it("names only real default accounts as pay accounts", () => {
