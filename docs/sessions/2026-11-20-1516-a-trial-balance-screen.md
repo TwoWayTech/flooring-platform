@@ -65,7 +65,7 @@ Files changed:
 | `trial-balance.int.test.ts` on the head | 10 passed |
 | Mutation: sight rule off | 4 tests failed (caught), then restored |
 | Mutation: pay-account fact off | 3 tests failed (caught), then restored |
-| Playwright, api mode and demo | **Not run yet.** Ports 3000 and 4000 are shared, so this waits for the go-ahead. |
+| Playwright, api mode and demo | api mode 64 passed (1 worker, fresh database); demo reports 4 passed and 1 skipped; demo export specs 55 passed and 1 skipped. See "E2E" below |
 
 ## Security review rounds
 1. **Round 1: PASS, with 2 Low findings.**
@@ -133,3 +133,16 @@ Security review by the security-reviewer subagent: 4 rounds on `29e8d42..HEAD`. 
   - the pay-period CSV doesn't escape names (predates the branch, ADR 0057 S14);
   - the fact queries run even when the margin rule already refuses;
   - one refusal string is repeated in the web and the API.
+
+## E2E (ports handed over by the coordinator)
+- **Database:** a throwaway Postgres 16 container on 5434. Secrets were made in-process and never printed or read from `.env`; the shared 5432 was left alone. Setup ran as CI does: seed, seed, migrate, then `pnpm --filter api build` and an api-mode `pnpm --filter web build`.
+- **New spec (`tests/e2e-api/trial-balance.spec.ts`):**
+  - **First run:** 1 failed, 1 passed. The screen was right: on a fresh database nothing has posted, so the books have no accounts (ADR 0039, accounts are made by the first posting). The spec had assumed every group was present.
+  - **Fix (test only, `e8fdbc2`):** the spec now checks the groups and accounts the answer holds, and the empty-books message when there are none.
+  - **Rerun:** 2 passed.
+- **Whole api-mode suite, 1 worker, same throwaway database:** 64 passed in 6.0 min. The trial balance spec ran 60th of 64. By then the earlier specs had posted, and by the end the database held 29 accounts and 15 entries, so it most likely read populated books.
+- **Demo build (`NEXT_PUBLIC_DATA_SOURCE` unset), 2 workers:**
+  - `tests/e2e/reports.spec.ts`: 4 passed, 1 skipped (the switched-off sales tax report).
+  - Every demo spec that exports a file (admin, expenses, import, invoice-lifecycle, meetings-invites, payments, quote, reports, states, tables), because `csvCell` now covers every CSV: 55 passed, 1 skipped.
+- **Clean-up:** servers stopped, ports 3000 and 4000 free, the throwaway container removed and the secrets file deleted.
+- **No product code changed in this step,** so no new security review was needed.
