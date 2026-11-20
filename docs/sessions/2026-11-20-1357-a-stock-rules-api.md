@@ -35,3 +35,55 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - apps/api: `settings-stock.int.test.ts` (route metadata, per-role answer and PUT, never saved, strict body, rule, loosening Owner-only and step-up order, tightening without a code, switch, scope, own company, one audit entry); `settings.int` adjusted only where it lists served sections.
 - apps/web units: `settings-answer` (served sections), `demo-settings` (the DemoStore rule and Owner-only loosening).
 - api-mode e2e: a Stock rules save on `/settings/locations` (once the ports are free).
+
+## Build decisions (B1…)
+
+- **B1. The path is `/settings/inventory`,** the section key, as every other section's: the web routes it through `API_SETTINGS_SECTIONS` with no transport change.
+- **B2. Step-up only for a loosening.** Tightening and keeping need no code (part 4a has none on the same key); a loosening is the Owner's and always asks one. The form's `stepUp` is a function of the draft.
+- **B3. Racing first saves refuse** (`firstSave: "refuse"`, review round 1): `SettingsService.save` gained an optional trailing parameter (default `upsert`, so the other sections are unchanged).
+- **B4. A stored row of any shape** (`null`, a number, no quantity) is read without trusting it (`quantityOf`); any change to it is a loosening; nothing throws (round 1).
+- **B5. No demo test of a malformed stored value:** DemoStore's copy only changes through `updateSettings`, which runs the rule; the shared SR4 covers the function both modes call.
+
+## Owner questions (none blocks; the safest default is taken)
+
+- **Q1. Stock adjustments on the API, or removed for good?** Taken: they stay switched off (`removed`) and get no API routes; the adjustments panel's own-request note in STATUS stays open with this question. Entry conditions for bringing them back are in ADR 0059 (the threshold read through `SettingsService.current`, a malformed threshold refuses, the requester never approves their own, by session user id).
+- **Q2. A step-up on every Stock rules save?** Taken: only on a loosening (Owner-only); tightening needs only the key.
+- **Q3. Hide the Stock rules form while adjustments are off** (CLAUDE.md rule 13 reading)? Taken: unchanged, it shows on Warehouses and showrooms as the spec documents.
+- **Q4. The never-saved answer `"0"`** (strictest) against ADR 0015's 50 and the seed's 1000. Taken: `"0"`; Summit and every seeded company have `"1000"` stored, so only provisioned companies see it, and Reset to default (DemoStore's `"1000"`) is then a loosening only an Owner saves.
+
+## Security review
+
+- **Round 1** (fresh `security-reviewer`): nothing blocking. Non-blocking, all fixed with tests: a jsonb `null` row made the loosening judge throw (500) → `quantityOf`, SR1/SR4/MS7; racing first saves could audit the wrong `before` → `firstSave: "refuse"`, MS13; coverage → MS11 (Owner lowers without a code), MS12 (owner_only before any step-up, with a second factor). Note recorded in ADR 0059: the entry conditions for adjustments.
+- **Round 2** (a new fresh reviewer, whole diff): **PASS, nothing blocking**. Four Low items: three test gaps, all added (SR3b value comparison; MS14 an Owner on a malformed or null row is asked for a code and the read still answers; MS15 a first save whose row appears after its judgement is a deterministic 409 with nothing stored or audited, and the route is shown to save with `refuse`); one demo-only parity note (a falsy section value skips `settingsSectionProblem`'s dispatch in DemoStore, the existing pattern for every section; the API refuses it at the body), left as is. Two notes (Reset to default is a loosening for a never-saved company, Q4; adjustments' entry conditions, ADR 0059).
+
+## Mutations
+
+`mutate-stock.mjs` in the scratchpad: one mutation at a time on the file's saved text, `settings-stock.int.test.ts` run, the file restored from the saved copy. 8 mutations (the route's `refuse`, the Owner check, the step-up, the scope check, the content rule; value comparison as text, clearing not a loosening, a malformed stored row trusted): **8/8 caught**.
+
+## Commands and results
+
+- `pnpm lint`, `pnpm typecheck` (root): clean after each step and after each review round.
+- `pnpm test` (root), final: shared 1211, web 466, api unit 128, db 18, providers 11, all passed.
+- `pnpm --filter @workspace/db test:api`: 59 passed (8 files). `pnpm test:hooks`: 15 passed.
+- API integration, whole suite `--maxWorkers=3` (after step 1, while round 1's tests were being edited): 44 files passed, 905 tests; the two failures were in `settings-stock.int` (MS7, MS13), both from that mid-run edit; MS7's seed then wrote SQL NULL for a jsonb null and was fixed. Final: every `settings*.int` file (8 files) **244 passed**; `settings-stock.int` alone **27 passed**.
+- **api-mode e2e not run yet:** ports 3000/4000 belong to another builder. `tests/e2e-api/settings-stock.spec.ts` (ST1) is written and typechecks; run it with the launcher when the ports are free, then the whole api-mode suite once.
+
+## What is left
+
+- Run ST1 and the api-mode e2e suite (and demo e2e `settings.spec.ts` / `warehouses.spec.ts`) against a production build when the ports are free.
+- The owner's answers to Q1 to Q4.
+
+## For STATUS
+
+- **Queue item 2, "stock adjustments, with the stock rules section":** built on `feat/inventory-stock-rules-api` (stacked on PR #65). Stock rules save on the API (`PUT /settings/inventory`, `settings.locations.manage`, core, the `inventory.locations` switch, scope `all`, `inventorySettingsProblem`); raising or clearing the adjustment approval quantity is the Owner's alone, with a step-up (ADR 0059, "the Stock rules part"). **Stock adjustments stay switched off (`removed`) and have no API** (Q1). Two security review rounds; the second clean. api-mode e2e ST1 written, not run yet (ports).
+- Remove "Stock rules" from "Unmoved settings pages save in the browser only in api mode".
+- The note "Stock adjustments (`adjustments-panel.tsx`): the own-request check compares `user.id` with DemoStore rows" stays open, now tied to owner question Q1.
+- New open questions (safest default taken): Q1 adjustments on the API or removed for good; Q2 a step-up on every Stock rules save; Q3 hide Stock rules while adjustments are off; Q4 the never-saved `"0"`.
+
+## Reviewer summary
+
+Security review of `feat/inventory-stock-rules-api` (Stock rules on the API; ADR 0059, "2026-11-20: the Stock rules part"), two fresh read-only `security-reviewer` rounds.
+
+- **Round 1: nothing blocking.** Fixed with tests: a jsonb `null` stored row made the loosening judge throw (500, fails closed) → the row is read without trusting its shape and any change to a malformed row is a loosening (SR1, SR4, MS7); racing first saves could audit the wrong `before` → the save refuses a first save that finds the row taken (409, MS13); coverage → MS11, MS12. ADR 0059 records the entry conditions for bringing adjustments back.
+- **Round 2: PASS, nothing blocking.** Three Low test gaps added (SR3b value comparison; MS14 Owner on a malformed or null row needs a code, the read still answers; MS15 a deterministic first-save 409 with nothing stored or audited, and the route saves with `refuse`). One demo-only parity note left as the existing pattern (the API refuses at the body).
+- Checked sound: guard order (module `core`, `settings.locations.manage`) then the switch (404), scope `all` (403), strict body, shared rule (400), then under the row lock `owner_only` before the step-up; tenancy only from the session (MS10); decimal comparison by value with `QUANTITY_TEXT`; never saved is the strictest `"0"`; one audit entry per save; readers limited to `settings.locations.manage`; no `SENSITIVE_FIELDS` name; API, DemoStore and form share one rule and words. Mutations: 8/8 caught. No schema, migration, dependency, provider or core auth/tenancy change. Stock adjustments stay switched off with no routes, by design.
