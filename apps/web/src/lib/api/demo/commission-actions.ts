@@ -4,7 +4,9 @@ import {
   commissionLines,
   commissionStatementRows,
   commissionTotals,
+  CREDIT_NOTE_PREFIX,
   dec,
+  FIRST_CREDIT_NOTE,
   monthEnded,
   moneyString,
   nextNumber,
@@ -355,13 +357,11 @@ export async function issueCreditNote(ctx: ActionContext, invoiceId: string, inp
   const credit: Invoice = {
     ...invoice,
     id: ctx.newId("inv"),
+    // Every invoice number counts, as on the API: a note never takes a number an invoice holds (sales.md rule 22).
     number: nextNumber(
-      "CR-",
-      ctx.db
-        .list("invoices")
-        .filter((i) => i.isReturn)
-        .map((i) => i.number),
-      5001,
+      CREDIT_NOTE_PREFIX,
+      ctx.db.list("invoices").map((i) => i.number),
+      FIRST_CREDIT_NOTE,
     ),
     quoteId: null,
     isReturn: true,

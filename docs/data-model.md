@@ -245,8 +245,8 @@ Real build (ADR 0051):
 | `localization.tax.rules` | Company | `tax_rules` |
 | `localization.tax.jurisdictions` | Company | `tax_jurisdictions` |
 | `localization.tax.companyDefault`, `filing`, `certificateTypes` | Company | New in this demo. The blueprint names no table for them |
-| `localization.payroll` | Company | `overtime_rules`, `holiday_calendars` |
-| `localization.documents` | Company | `document_defaults` |
+| `localization.payroll` | Company | `overtime_rules`, `holiday_calendars`. Written one tab at a time by `PUT /settings/localization/payroll` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a) |
+| `localization.documents` | Company | `document_defaults`. Written one tab at a time by `PUT /settings/localization/documents` under the row's lock; the other tabs and the stored tax block are kept (ADR 0059, part 2a). A prefix change doesn't touch `document_sequences` |
 | `numbers` | Company | `number_format`. Stored in `settings`; written by `PUT /settings/numbers` (ADR 0059), where `decimals` travel as a list of `{ kind, places }` (the row keeps the record) |
 | `profile` | Company | `settings`. Legal name also sits on `tenants` in the blueprint. Written by `PUT /settings/profile` (ADR 0059); `tenants.legal_name` is not updated by it |
 | `payments`, `inventory`, `expenses` | Company | `settings`. The approval thresholds are what `approval_rules` would hold. `payments` and `expenses` are written by `PUT /settings/payments` and `PUT /settings/expenses` (ADR 0059); `payments` is read by customer payments, write-offs and supplier payments |
@@ -320,7 +320,7 @@ Country rules are code, not stored data: `packages/shared/src/us-pack/` maps to 
 | `approvals`, `approval_rules`, `sod_rules` | Reviewer fields on each record and thresholds in settings. Who may review is coded in the actions |
 | `tax_categories`, `invoice_tax_lines` | `TaxCategory` is a fixed list. `Invoice` keeps a `taxRule` snapshot and one `tax` amount |
 | `accounts`, `journal_entries`, `journal_lines`, `fiscal_periods` | Derived expense journal only |
-| `document_sequences` | `nextNumber` |
+| `document_sequences` | `nextNumber`. The real build seeds it, but nothing reads it (the API numbers each kind from its own table under a lock), and a Sales and documents prefix change doesn't update it (ADR 0059, part 2a) |
 
 ## Points for the real build
 

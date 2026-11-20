@@ -2,16 +2,21 @@ import { Body, Controller, ForbiddenException, Get, Header, Put, Req } from "@ne
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import {
   companyProfileProblem,
+  documentsProblem,
   expenseSettingsProblem,
+  LOCALIZATION_TABS,
   numberSettingsProblem,
   numbersToWire,
   paymentSettingsProblem,
+  payrollProblem,
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   type CompanyProfile,
+  type DocumentsInput,
   type ExpenseSettings,
   type NumberSettingsWire,
   type PaymentSettings,
+  type PayrollInput,
   type SettingsAnswer,
 } from "@workspace/shared";
 import type { Request } from "express";
@@ -24,7 +29,14 @@ import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { refuse, requireFeature } from "../sales/sales-common";
-import { EXPENSES_INPUT, NUMBERS_INPUT, PAYMENTS_INPUT, PROFILE_INPUT } from "./settings-input";
+import {
+  DOCUMENTS_INPUT,
+  EXPENSES_INPUT,
+  NUMBERS_INPUT,
+  PAYMENTS_INPUT,
+  PAYROLL_INPUT,
+  PROFILE_INPUT,
+} from "./settings-input";
 import { SettingsService } from "./settings.service";
 
 /**
@@ -47,7 +59,8 @@ function check(problem: string | null): void {
  * MFA, the module or the key. In the handler, in order: the page's switch (404), data scope `all`
  * (403), the strict body (400), the shared content rules (400), for Payments a step-up (403
  * `step_up_required`, after the content checks so a refused value never costs a code), then the save
- * with its audit entry under a row lock. The company is only ever the session's.
+ * with its audit entry under a row lock. The company is only ever the session's. Part 2a adds Sales
+ * and documents and Payroll rules, one tab of the localization row each.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -156,5 +169,53 @@ export class SettingsController {
     check(expenseSettingsProblem(expenses));
     await this.settings.save(tenant, actorOf(access, session, request), "expenses", expenses, (value) => value);
     return expenses;
+  }
+
+  /**
+   * PUT /settings/localization/documents: Sales and documents (ADR 0059, part 2a). One key, never the
+   * section's any-of; module `core`; no step-up (D6). Only this tab of the localization row changes,
+   * and a company with no localization row gets 409 (D7). Answers the tab as saved.
+   */
+  @Put("localization/documents")
+  @RequirePermission(...LOCALIZATION_TABS.documents.keys)
+  @RequireModule(LOCALIZATION_TABS.documents.module)
+  @Audited()
+  async saveDocuments(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<DocumentsInput> {
+    requireFeature(LOCALIZATION_TABS.documents.feature);
+    requireWholeCompany(access);
+    const documents = parse(DOCUMENTS_INPUT, body);
+    check(documentsProblem(documents));
+    await this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "documents", documents);
+    return documents;
+  }
+
+  /**
+   * PUT /settings/localization/payroll: the Payroll rules tab (ADR 0059, part 2a). One key; module
+   * `hr`; the California rule is refused while its switch is off (ADR 0050). Only this tab of the
+   * localization row changes, and a company with no localization row gets 409. Answers the tab as saved.
+   */
+  @Put("localization/payroll")
+  @RequirePermission(...LOCALIZATION_TABS.payroll.keys)
+  @RequireModule(LOCALIZATION_TABS.payroll.module)
+  @Audited()
+  async savePayroll(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<PayrollInput> {
+    requireFeature(LOCALIZATION_TABS.payroll.feature);
+    requireWholeCompany(access);
+    const payroll = parse(PAYROLL_INPUT, body);
+    check(payrollProblem(payroll));
+    await this.settings.saveLocalizationTab(tenant, actorOf(access, session, request), "payroll", payroll);
+    return payroll;
   }
 }

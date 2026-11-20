@@ -3,6 +3,7 @@ import {
   NUMBER_KINDS,
   numbersToWire,
   SENSITIVE_FIELDS,
+  type ApiSettingsSection,
   type CompanySettings,
   type NumberSettingsWire,
   type SettingsAnswer,
@@ -30,7 +31,7 @@ beforeAll(async () => {
 });
 
 /** What the API serves, different from DemoStore's in every served section. */
-function served(): Required<SettingsAnswer> {
+function served(): Required<Pick<SettingsAnswer, ApiSettingsSection>> {
   return {
     profile: { ...demo.profile, legalName: "Summit Floor Company (API)", ein: "" },
     numbers: numbersToWire({
@@ -137,5 +138,69 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
   it("W7 Reset to default and resetSettings stay DemoStore's", () => {
     expect("getDefaultSettings" in API_METHODS).toBe(false);
     expect("resetSettings" in API_METHODS).toBe(false);
+  });
+});
+
+/** What the API serves of localization, different from DemoStore's in both served tabs. */
+function servedTabs(): {
+  documents: CompanySettings["localization"]["documents"];
+  payroll: CompanySettings["localization"]["payroll"];
+} {
+  return {
+    documents: { ...demo.localization.documents, quotePrefix: "QA-", defaultDepositPct: "40" },
+    payroll: { ...demo.localization.payroll, holidayState: "WY" },
+  };
+}
+
+describe("Settings part 2a in api mode: the served localization tabs (ADR 0059)", () => {
+  it("LW1 getSettings takes documents and payroll from the answer; region, currency and tax stay DemoStore's", async () => {
+    const tabs = servedTabs();
+    const settings = await client({ ...served(), localization: tabs }).client.getSettings();
+    expect(settings.localization.documents).toEqual(tabs.documents);
+    expect(settings.localization.payroll).toEqual(tabs.payroll);
+    for (const tab of ["region", "currency", "tax"] as const)
+      expect(settings.localization[tab], tab).toEqual(demo.localization[tab]);
+  });
+
+  it("LW2 an answer without localization leaves DemoStore's localization whole", async () => {
+    const settings = await client(served()).client.getSettings();
+    expect(settings.localization).toEqual(demo.localization);
+  });
+
+  it("LW3 an answer with only payroll (an Installer) keeps DemoStore's documents", async () => {
+    const { payroll } = servedTabs();
+    const settings = await client({ ...served(), localization: { payroll } }).client.getSettings();
+    expect(settings.localization.payroll).toEqual(payroll);
+    expect(settings.localization.documents).toEqual(demo.localization.documents);
+  });
+
+  it("LW4 updateLocalization('documents') sends the tab to its own route, then reads again", async () => {
+    const tabs = servedTabs();
+    const api = client({ ...served(), localization: tabs });
+    const result = await api.client.updateLocalization("documents", tabs.documents);
+    expect(api.sent).toEqual([
+      { call: "PUT /settings/localization/documents", body: tabs.documents },
+      { call: "GET /settings", body: undefined },
+    ]);
+    expect(result.localization.documents).toEqual(tabs.documents);
+    expect(result.localization.region).toEqual(demo.localization.region);
+  });
+
+  it("LW5 updateLocalization('payroll') sends the tab to its own route", async () => {
+    const { payroll } = servedTabs();
+    const api = client(served());
+    await api.client.updateLocalization("payroll", payroll);
+    expect(api.sent[0]).toEqual({ call: "PUT /settings/localization/payroll", body: payroll });
+  });
+
+  it("LW6 Region, Currency and Sales tax stay on DemoStore and send nothing to the API", async () => {
+    for (const tab of ["region", "currency", "tax"] as const) {
+      const updateLocalization = vi.fn(async () => structuredClone(demo));
+      const api = client(served(), { updateLocalization: updateLocalization as ApiClient["updateLocalization"] });
+      await api.client.updateLocalization(tab, demo.localization[tab]);
+      expect(api.sent, tab).toEqual([]);
+      expect(updateLocalization, tab).toHaveBeenCalledTimes(1);
+      expect(updateLocalization, tab).toHaveBeenCalledWith(tab, demo.localization[tab]);
+    }
   });
 });

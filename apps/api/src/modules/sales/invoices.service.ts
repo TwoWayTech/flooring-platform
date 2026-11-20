@@ -11,9 +11,11 @@ import {
 } from "@workspace/db/company";
 import {
   adjustmentPosting,
+  CREDIT_NOTE_PREFIX,
   creditNotePosting,
   dec,
   defaultAddress,
+  FIRST_CREDIT_NOTE,
   invoiceFromQuote,
   invoiceFromRoll,
   invoicePosting,
@@ -57,10 +59,6 @@ import {
 } from "./invoice-records";
 import { companyClock, notFound, refuse, seesCustomer, seesDocument, type CompanyClock } from "./sales-common";
 import { loadBranches, loadCustomers, loadLocalization, loadQuotes } from "./sales-records";
-
-/** The credit note series (`CR-5001`, spec rule 22). */
-const CREDIT_PREFIX = "CR-";
-const FIRST_CREDIT = 5001;
 
 /** What a credit note carries (spec rule 38): the amount before tax and why. */
 export interface CreditNoteRequest {
@@ -626,14 +624,17 @@ export class InvoicesService {
       const taxLeft = dec(invoice.tax).minus(sum(notes.map((n) => n.tax)));
       const tax = amount.plus(already).eq(invoice.subtotal) ? taxLeft : minDec(share(invoice.tax), taxLeft);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:invoice-number'))`);
-      const used = await tx.select({ number: invoices.number }).from(invoices).where(eq(invoices.isReturn, true));
+      // Every invoice number counts, not only the notes': the series shares `invoices_number_uidx`
+      // with invoices, so an invoice numbered `CR-…` (an import, a legacy prefix) is never reused
+      // (sales.md rule 22; ADR 0059 part 2a review round 1).
+      const used = await tx.select({ number: invoices.number }).from(invoices);
       const note: Invoice = {
         ...invoice,
         id,
         number: nextNumber(
-          CREDIT_PREFIX,
+          CREDIT_NOTE_PREFIX,
           used.map((row) => row.number),
-          FIRST_CREDIT,
+          FIRST_CREDIT_NOTE,
         ),
         quoteId: null,
         isReturn: true,

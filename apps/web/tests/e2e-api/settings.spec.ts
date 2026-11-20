@@ -2,14 +2,13 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from "@pl
 import {
   dec,
   invoiceLedger,
-  type AuditEntry,
   type Invoice,
   type InvoiceAdjustment,
   type Payment,
   type SettingsAnswer,
 } from "@workspace/shared";
 import { ACCOUNTANT_EMAIL, OWNER_EMAIL, SALES_EMAIL } from "./accounts";
-import { cellUnder, confirmStepUp, expectAuditRows, putWithStepUp, readAs } from "./flows/checks";
+import { auditBy, canonical, cellUnder, confirmStepUp, expectAuditRows, putWithStepUp, readAs } from "./flows/checks";
 import { companyToday, flowTest, resetAuthAround, runId, waitForAnswer } from "./flows/kit";
 
 /**
@@ -46,21 +45,6 @@ const EXPENSE_APPROVAL_MESSAGE = "Enter the expense approval amount as a number 
 
 type Served = "profile" | "numbers" | "payments" | "expenses";
 
-/** A JSON value with its object keys sorted, so two answers compare whatever order jsonb kept. */
-function canonical(value: unknown): string {
-  const sorted = (inner: unknown): unknown =>
-    Array.isArray(inner)
-      ? inner.map(sorted)
-      : inner && typeof inner === "object"
-        ? Object.fromEntries(
-            Object.entries(inner)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([key, item]) => [key, sorted(item)]),
-          )
-        : inner;
-  return JSON.stringify(sorted(value));
-}
-
 /**
  * Puts one settings section back to `value` unless `GET /settings` already answers it: a PUT, with
  * a step-up for Payments. Returns the last answer, the read when nothing needed changing.
@@ -90,15 +74,6 @@ async function healOrThrow(
   if (response.status() !== 200)
     throw new Error(`Putting ${section} back answered ${response.status()}: ${await response.text()}`);
   return response;
-}
-
-/** How many audit entries `actor` made with `action` from `since`'s minute on (the log keeps minutes). */
-async function auditBy(request: APIRequestContext, action: string, actor: string, since: number): Promise<number> {
-  const from = Math.floor(since / 60_000) * 60_000;
-  const entries = await readAs<AuditEntry[]>(request, "/audit");
-  return entries.filter(
-    (entry) => entry.action === action && entry.actorName === actor && Date.parse(`${entry.at}:00Z`) >= from,
-  ).length;
 }
 
 /** The first invoice in `invoices` with a Total of at least 1.00, or a failure that says none was found. */

@@ -46,6 +46,7 @@ import type {
   Invoice,
   Quote,
   CompanySettings,
+  LocalizationSettings,
   Transfer,
   TransferInput,
   Location,
@@ -878,9 +879,20 @@ export interface ApiClient {
   getSettings(): Promise<CompanySettings>;
   /**
    * Replaces one settings section and audits the change. In api mode a served section is
-   * `PUT /settings/<section>`; other sections stay on DemoStore.
+   * `PUT /settings/<section>`; other sections stay on DemoStore. Screens save `localization` per tab
+   * through `updateLocalization`; no screen sends the whole section (ADR 0059, part 2a).
    */
   updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]): Promise<CompanySettings>;
+  /**
+   * Saves one tab of Localization and tax (Region, Currency, Sales tax, Payroll rules) or the Sales
+   * and documents page, and audits it. Each tab checks its own key (LOCALIZATION_TABS), so a person who
+   * manages only sales tax can't save the other tabs. In api mode the tabs in API_LOCALIZATION_TABS are
+   * `PUT /settings/localization/<tab>`; the rest stay on DemoStore until their part (ADR 0059, part 2a).
+   */
+  updateLocalization<T extends keyof LocalizationSettings>(
+    tab: T,
+    value: LocalizationSettings[T],
+  ): Promise<CompanySettings>;
 
   /**
    * The company's original settings, for Reset to default on settings pages (spec A4). Still

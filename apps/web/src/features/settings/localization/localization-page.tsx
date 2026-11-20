@@ -59,7 +59,7 @@ export function LocalizationPage() {
   const save =
     <K extends keyof LocalizationSettings>(key: K) =>
     async (value: LocalizationSettings[K]) => {
-      await api.updateSettings("localization", { ...settings.localization, [key]: value });
+      await api.updateLocalization(key, value);
     };
   const form = <K extends Tab>(key: K) => ({
     ...TABS[key],

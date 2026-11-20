@@ -245,7 +245,7 @@ pctOf(v, p)    = v * p / 100
    other quantity = gross.toDecimalPlaces(2, ROUND_CEIL)
    ```
 
-8. **Waste is internal.** A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` and the API's `assertWaste` treat a save as a change when a saved line's waste differs in value, or a new line's waste differs in value from the category default: `10` and `10.00000000` are the same waste (`sameOptionalDecimal`; STATUS B6). The demo keeps waste as typed, so it also reads the same text (`12.`) as no change; any other text that isn't plain decimal is a change. A saved line is the same line only with the same id and product (`savedQuoteLine`); a line sent with another product is new and starts from that product's default, and a line sent without the product it had is a new line without a product, so it keeps no saved waste. On the API that line also needs `sales.tax.override`; DemoStore has no such tax rule. The API refuses a quote that sends one line twice. On the API a blank waste also differs from a number; the demo reads a line without waste as unchanged, and starts a line without a catalog product from a blank read as `0`. A change needs `sales.waste.view`. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
+8. **Waste is internal.** A new line takes `defaultWastePct(product, documents.defaultWastePct)`. Services carry none. `wasteChanged` in `apps/web/src/lib/api/demo/permission-rules.ts` and the API's `assertWaste` treat a save as a change when a saved line's waste differs in value, or a new line's waste differs in value from the category default: `10` and `10.00000000` are the same waste (`sameOptionalDecimal`; STATUS B6). The demo keeps waste as typed, so it also reads the same text (`12.`) as no change; any other text that isn't plain decimal is a change. A saved line is the same line only with the same id and product (`savedQuoteLine`); a line sent with another product is new and starts from that product's default, and a line sent without the product it had is a new line without a product, so it keeps no saved waste. On the API that line also needs `sales.tax.override`; DemoStore has no such tax rule. The API refuses a quote that sends one line twice. On the API a blank waste also differs from a number; the demo reads a line without waste as unchanged, and starts a line without a catalog product from a blank read as `0`. A change needs `sales.waste.view`. The default a new line starts from is the company's Sales and documents setting, the one the server compares with: in api mode `GET /settings` answers it to every quote reader (ADR 0059, part 2a). A builder open across a change of that default keeps the old default on lines already added, so the server refuses a salesperson's save of that draft until she re-adds those lines or reloads. `buildInvoiceModel` prints the billed quantity only. Seed defaults: carpet 12, porcelain tile 10, every other category 8.
 9. **Typing a quantity.** `parseAreaEntry` in `units.ts` reads `500` as sq ft, and `22c`, `22 ctn` or `22 cartons` as `ceil(22) * sqFtPerCarton`.
 10. **Availability on a line.** `LineStock` in `apps/web/src/features/quotes/line-stock.tsx` shows `availableToSell` from `packages/shared/src/reservations.ts` at `lineWarehouse(line, quote.locationId)`:
 
@@ -315,7 +315,7 @@ pctOf(v, p)    = v * p / 100
     ```
 
     `PAYMENT_TERM_DAYS`: `due_on_receipt` 0, `net_15` 15, `net_30` 30, `net_45` 45. `holdUntilInstalled` is `featureOn("installation.calendar") && company.modules.includes("installation")`. That feature is `removed`, so it is always false and every new invoice from a quote has a date. Seed `balanceDueDays` is 30. Roll and contract invoices use `dueDate(issuedAt, customer.terms)`. A credit note is due the day it is issued.
-22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` from 5001. `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
+22. **Numbers.** `nextNumber` in `quotes.ts` takes the highest number already used with the prefix, plus one. Quotes start at 2001 and invoices at 1001, with the prefixes in `documents.quotePrefix` and `documents.invoicePrefix`. Credit notes use the fixed prefix `CR-` (`CREDIT_NOTE_PREFIX`) from 5001, numbered after the highest `CR-` number among all invoices, not only the credit notes, because they share the invoices' number index. No quote, invoice or purchase order prefix may start with `CR-`, in any case (Settings part 2a, review round 1). `nextPaymentNumber` in `payments.ts` pads to four digits: `PAY-0001`, `RF-0001`.
 23. **The ledger.** `invoiceLedger` in `ledger.ts`:
 
     ```
@@ -614,14 +614,14 @@ A credit note is an `Invoice` with `isReturn: true`.
 | `payments.approvalThreshold` | decimal string | Empty means every payment waits. Otherwise `MONEY_TEXT` (rule 31) |
 | `payments.writeOffMax` | decimal string | Empty means no limit. Otherwise `MONEY_TEXT` (rule 31) |
 | `payments.paymentPrefix`, `payments.refundPrefix` | string | 1 to 10 letters, digits or hyphens, starting with a letter or digit; the two differ, compared without case (rule 31) |
-| `localization.documents.defaultTerms` | PaymentTerms | New customers |
-| `localization.documents.defaultDepositPct` | decimal string | New quotes |
-| `localization.documents.quoteExpiryDays` | number | Suggested expiry |
-| `localization.documents.balanceDueDays` | number | Rule 21 |
-| `localization.documents.quotePrefix`, `invoicePrefix` | string | |
-| `localization.documents.defaultWastePct` | map by category | |
-| `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it |
-| `localization.documents.legalFooter` | string | Printed on invoices |
+| `localization.documents.defaultTerms` | PaymentTerms | New customers. A known payment term; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.defaultDepositPct` | decimal string | New quotes. The quote's percent (0 to 100, `PERCENT_TEXT`); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.quoteExpiryDays` | number | Suggested expiry. Whole days, 1 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.balanceDueDays` | number | Rule 21. Whole days, 0 to 365; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.quotePrefix`, `invoicePrefix`, `poPrefix` | string | `DOCUMENT_PREFIX_TEXT`; the three differ, compared without case, and none starts with the credit notes' `CR-` (rule 22); validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.defaultWastePct` | map by category | Exactly the waste categories, each the quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.lateFeePct` | decimal string | Stored and editable. Nothing applies it. The quote's percent; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
+| `localization.documents.legalFooter` | string | Printed on invoices, receipts and purchase orders. At most 1,000 characters; validated by `documentsProblem`; saved by `PUT /settings/localization/documents` in api mode |
 | `localization.tax.rounding` | enum: line, invoice | |
 | `localization.tax.rules`, `jurisdictions`, `companyDefault` | see `tax-defaults.ts` | |
 

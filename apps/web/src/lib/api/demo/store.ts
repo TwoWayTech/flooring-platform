@@ -68,6 +68,10 @@ import {
   SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   settingsSectionProblem,
+  LOCALIZATION_TABS,
+  localizationTabProblem,
+  type LocalizationSettings,
+  type SettingsSectionRule,
 } from "@workspace/shared";
 import { viewerAccess } from "../../access";
 import type {
@@ -832,20 +836,13 @@ export class DemoStore implements ApiClient {
 
   /**
    * Replaces one settings section with the API's checks in the API's order (ADR 0059; spec rule 7):
-   * the section's module, then its keys (as `permissionDecision` in apps/api's permission guard),
-   * its page's switch, data scope `all` (View as limits it too, spec rule 22), then the shared
-   * content rules against the stored section.
+   * module, keys, switch, scope (`assertSettingsSave`), then the shared content rules against the
+   * stored section. Screens save `localization` per tab through `updateLocalization`.
    */
   async updateSettings<K extends keyof CompanySettings>(section: K, value: CompanySettings[K]) {
     const db = this.open();
     const rule = SETTINGS_SECTIONS[section];
-    const { access, company } = await this.granter(db);
-    // The API's own words (`PERMISSION_REFUSALS.module_not_enabled` in apps/api's permission guard).
-    if (!company.modules.includes(rule.module))
-      throw new DemoRuleError("This part of the product is not switched on for your company.");
-    await this.assertCan(db, rule.keys);
-    if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
-    if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
+    await this.assertSettingsSave(db, rule);
     const problem = settingsSectionProblem(section, value, db.settings[section]);
     if (problem) throw new DemoRuleError(problem);
     const before = db.settings[section];
@@ -856,6 +853,29 @@ export class DemoStore implements ApiClient {
       action: `Changed ${rule.label.toLowerCase()}`,
       target: rule.label,
       ...diff,
+    });
+    this.emit();
+    return db.settings;
+  }
+
+  /**
+   * Replaces one tab of Localization and tax, or the Sales and documents page, with its own key
+   * (ADR 0059, part 2a; `LOCALIZATION_TABS`), in the API's order, then the tab's shared rule. Only
+   * that tab changes, and the audit entry names it.
+   */
+  async updateLocalization<T extends keyof LocalizationSettings>(tab: T, value: LocalizationSettings[T]) {
+    const db = this.open();
+    const rule = LOCALIZATION_TABS[tab];
+    await this.assertSettingsSave(db, rule);
+    const problem = localizationTabProblem(tab, value);
+    if (problem) throw new DemoRuleError(problem);
+    const before = db.settings.localization[tab];
+    db.settings = { ...db.settings, localization: { ...db.settings.localization, [tab]: value } };
+    this.appendAudit(db, {
+      category: "settings",
+      action: `Changed ${SETTINGS_SECTIONS.localization.label.toLowerCase()}`,
+      target: rule.label,
+      ...diffSummary(before, value),
     });
     this.emit();
     return db.settings;
@@ -2117,6 +2137,21 @@ export class DemoStore implements ApiClient {
     const { access } = await this.granter(db);
     const employeeId = db.get("users", this.viewer!.userId)?.employeeId ?? null;
     return demoAuditAsSeen({ ...access, employeeId }, entries);
+  }
+
+  /**
+   * The checks every settings save makes before its content rules, in the API's order (ADR 0059):
+   * the module first, as `permissionDecision` in apps/api's permission guard, then the keys, the
+   * page's switch and data scope `all` (View as limits it too, spec rule 22).
+   */
+  private async assertSettingsSave(db: CompanyDb, rule: Pick<SettingsSectionRule, "keys" | "module" | "feature">) {
+    const { access, company } = await this.granter(db);
+    // The API's own words (`PERMISSION_REFUSALS.module_not_enabled` in apps/api's permission guard).
+    if (!company.modules.includes(rule.module))
+      throw new DemoRuleError("This part of the product is not switched on for your company.");
+    await this.assertCan(db, rule.keys);
+    if (!featureOn(rule.feature)) throw new DemoRuleError("This feature is switched off.");
+    if (access.dataScope !== "all") throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
   }
 
   /**

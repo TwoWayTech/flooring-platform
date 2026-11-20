@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { featureOn } from "@workspace/shared";
-import { HARBOR_OWNER, signInAs, SUMMIT_OWNER } from "./helpers";
+import { HARBOR_OWNER, signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+
+/** Keystone Flooring Supply's Owner, as invoice-lifecycle.spec.ts signs in: Keystone has a CAD rate. */
+const KEYSTONE_OWNER: Persona = { companyId: "keystone", userId: "ks-usr-01", roleKey: "owner" };
 
 /** Saves the Payments page, confirming the step-up with any six digits when the switch asks for one. */
 async function savePayments(page: Page) {
@@ -69,6 +72,67 @@ test.describe("settings saves that are refused (ADR 0059 D16)", () => {
 
     await page.goto("/settings/audit");
     await expect(page.getByRole("row").filter({ hasText: "Changed payments" }).first()).toBeVisible();
+  });
+});
+
+test.describe("settings saved one tab at a time (ADR 0059, part 2a)", () => {
+  /** Whether the audit log has a row with `action` naming `target`. */
+  async function expectAuditRow(page: Page, action: string, target: string) {
+    await page.goto("/settings/audit");
+    await expect(page.getByRole("row").filter({ hasText: action }).filter({ hasText: target }).first()).toBeVisible();
+  }
+
+  test("S2 Sales and documents says why a percent wasn't saved, saves on its own, and names the tab in the audit log", async ({
+    page,
+  }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/documents");
+    const lateFee = page.getByLabel("Late fee per month");
+    await lateFee.fill("12.");
+    await page.getByRole("button", { name: "Save documents" }).click();
+    await expect(page.getByText("Enter the late fee per month as a percent such as 1.5, from 0 to 100.")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("1 unsaved change");
+
+    // Review round 1: the inputs stop at the longest text the shared rule takes, and an invoice
+    // prefix in the credit notes' CR- series is refused with its own words.
+    await expect(page.getByLabel("Quote number prefix")).toHaveAttribute("maxlength", "10");
+    await expect(lateFee).toHaveAttribute("maxlength", "12");
+    await expect(page.getByLabel("Waste for Carpet", { exact: true })).toHaveAttribute("maxlength", "12");
+    const invoicePrefix = page.getByLabel("Invoice number prefix");
+    await lateFee.fill("1.75");
+    await invoicePrefix.fill("cr-");
+    await page.getByRole("button", { name: "Save documents" }).click();
+    await expect(
+      page.getByText("Credit notes are numbered CR-; choose a prefix that doesn't start with CR-."),
+    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Unsaved changes" })).toContainText("2 unsaved changes");
+
+    await invoicePrefix.fill("INV-");
+    await page.getByRole("button", { name: "Save documents" }).click();
+    await expect(page.getByText("Documents saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Late fee per month")).toHaveValue("1.75");
+
+    await expectAuditRow(page, "Changed localization and tax", "Sales and documents");
+  });
+
+  test("S3 Payroll rules and Currency save on their own and name their tab in the audit log", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/localization?tab=payroll");
+    await page.getByLabel("Holiday calendar").click();
+    await page.getByRole("option", { name: "Wyoming", exact: true }).click();
+    await page.getByRole("button", { name: "Save payroll rules" }).click();
+    await expect(page.getByText("Payroll rules saved")).toBeVisible();
+    await expectAuditRow(page, "Changed localization and tax", "Payroll rules");
+
+    await signInAs(page, KEYSTONE_OWNER, "/settings/localization?tab=currency");
+    await page.getByLabel("per 1 USD").fill("1.3900");
+    await page.getByRole("button", { name: "Save currency" }).click();
+    if (featureOn("auth.step-up")) {
+      const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+      await dialog.getByLabel("Authenticator code").fill("123456");
+      await dialog.getByRole("button", { name: "Confirm" }).click();
+    }
+    await expect(page.getByText("Currency saved")).toBeVisible();
+    await expectAuditRow(page, "Changed localization and tax", "Currency");
   });
 });
 

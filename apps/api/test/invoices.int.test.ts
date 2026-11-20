@@ -12,7 +12,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { dec } from "@workspace/shared";
+import { CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -444,6 +444,36 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect(
       (await call("post", `/invoices/${note.body.id}/void`, cookies.owner).send({ reason: "Mistake" })).status,
     ).toBe(400);
+  });
+
+  it("numbers a credit note past every CR- number, an invoice's too, so the two series never collide", async () => {
+    // An invoice holding the number the credit notes alone would take next, as an import or an old
+    // prefix could leave one: credit notes share `invoices_number_uidx` (review round 1).
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ilse Brandt" }).expect(201);
+    const legacy = await invoiced(cookies.salesA, customer.body.id);
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const handle = await harness.companyDb(company.id);
+    let taken = "";
+    try {
+      const notes = await handle.db
+        .select({ number: invoices.number })
+        .from(invoices)
+        .where(eq(invoices.isReturn, true));
+      taken = nextNumber(
+        CREDIT_NOTE_PREFIX,
+        notes.map((row) => row.number),
+        FIRST_CREDIT_NOTE,
+      );
+      await handle.db.update(invoices).set({ number: taken }).where(eq(invoices.id, legacy.invoice.id));
+    } finally {
+      await handle.close();
+    }
+    const note = await call("post", `/invoices/${invoice.id}/credit-notes`, cookies.owner).send({
+      subtotal: "45.00",
+      reason: "One carton returned",
+    });
+    expect(note.status, JSON.stringify(note.body)).toBe(201);
+    expect(note.body.number).toBe(`${CREDIT_NOTE_PREFIX}${Number(taken.slice(CREDIT_NOTE_PREFIX.length)) + 1}`);
   });
 
   it("posts every event to a ledger that stays in balance, and refuses a closed period", async () => {

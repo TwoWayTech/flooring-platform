@@ -82,6 +82,9 @@ export function californiaPayOn(register: FeatureRegister = FEATURES): boolean {
   return featureOn("hr.payroll.california", register);
 }
 
+/** What a rule other than the two is refused with, in both modes and by the API's body check. */
+export const OVERTIME_RULE_MESSAGE = "Choose the federal or the California overtime rule.";
+
 /**
  * Why a company overtime rule cannot be saved, or null. California is refused while its switch is
  * off, as the payroll rule picker hides it (ADR 0050); anything but the two rules is refused.
@@ -93,7 +96,7 @@ export function overtimeRuleProblem(rule: unknown, californiaOn: boolean = calif
       ? null
       : "California pay rules are switched off until a payroll review. Choose the federal rule.";
   }
-  return "Choose the federal or the California overtime rule.";
+  return OVERTIME_RULE_MESSAGE;
 }
 
 /**

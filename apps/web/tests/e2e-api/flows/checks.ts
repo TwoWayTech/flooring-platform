@@ -275,6 +275,50 @@ function auditTime(at: string): number {
   return Date.parse(`${at}:00Z`);
 }
 
+/** The audit entries `actor` made with `action` from `since`'s minute on, read through the API as `request`'s person. */
+export async function auditEntriesBy(
+  request: APIRequestContext,
+  action: string,
+  actor: string,
+  since: number,
+): Promise<AuditEntry[]> {
+  const from = Math.floor(since / 60_000) * 60_000;
+  const entries = await readAs<AuditEntry[]>(request, "/audit");
+  return entries.filter((entry) => entry.action === action && entry.actorName === actor && auditTime(entry.at) >= from);
+}
+
+/**
+ * How many audit entries `actor` made with `action` from `since`'s minute on (the log keeps
+ * minutes). Settings specs compare a count taken right after their heal with one taken at the end,
+ * so a heal in the same minute doesn't count (ADR 0059 B9).
+ */
+export async function auditBy(
+  request: APIRequestContext,
+  action: string,
+  actor: string,
+  since: number,
+): Promise<number> {
+  return (await auditEntriesBy(request, action, actor, since)).length;
+}
+
+/**
+ * A JSON value with its object keys sorted, so two answers compare whatever order jsonb kept: a
+ * settings spec heals a section or tab only when `GET /settings` answers something else (ADR 0059).
+ */
+export function canonical(value: unknown): string {
+  const sorted = (inner: unknown): unknown =>
+    Array.isArray(inner)
+      ? inner.map(sorted)
+      : inner && typeof inner === "object"
+        ? Object.fromEntries(
+            Object.entries(inner)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => [key, sorted(item)]),
+          )
+        : inner;
+  return JSON.stringify(sorted(value));
+}
+
 /**
  * Asserts the audit log holds each of `actions` on a target containing `search`, made at or after
  * `since` (an epoch ms), first in the page's GET /audit answer, then on screen after searching
