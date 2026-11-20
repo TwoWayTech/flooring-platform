@@ -37,6 +37,13 @@ describe("payment controls only an Owner may loosen (ADR 0059 2026-11-20, PR #51
     expect(loosened({ writeOffMax: "10.00" }, { ...STORED, writeOffMax: "" })).toBe(false);
   });
 
+  it("PC6 while the check is off its amount loosens nothing, and switching it on with any amount tightens", () => {
+    const off = { ...STORED, approvalRequired: false, approvalThreshold: "" };
+    expect(loosened({ approvalRequired: true, approvalThreshold: "1000.00" }, off)).toBe(false);
+    expect(loosened({ approvalThreshold: "5000.00" }, off)).toBe(false);
+    expect(loosened({ approvalThreshold: "5000.00" }, { ...off, approvalThreshold: "10.00" })).toBe(false);
+  });
+
   it("PC5 prefixes alone never loosen", () => {
     expect(loosened({ paymentPrefix: "P-", refundPrefix: "R-" })).toBe(false);
   });

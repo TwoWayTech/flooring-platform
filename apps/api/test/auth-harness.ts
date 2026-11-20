@@ -181,7 +181,6 @@ export class AuthHarness {
       .set("X-Proxy-Secret", PROXY_SECRET);
   }
 
-  /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */
   /**
    * Records a passed step-up for the session behind `cookie`, the rows a verified code writes
    * (`AttemptLog.recordStepUpPass`). Only for suites where a step-up is setup, not what they test;
@@ -200,6 +199,7 @@ export class AuthHarness {
     ]);
   }
 
+  /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */
   async signIn(email: string, host?: string): Promise<string> {
     const response = await this.post("/api/auth/sign-in/email", host).send({ email, password: PASSWORD });
     if (response.status !== 200) throw new Error(`Sign-in failed: ${response.status} ${JSON.stringify(response.body)}`);
