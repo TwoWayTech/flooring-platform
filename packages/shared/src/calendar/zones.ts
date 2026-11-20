@@ -55,11 +55,17 @@ function formatter(zone: string): Intl.DateTimeFormat {
   return made;
 }
 
-/** The wall clock a zone shows at an instant, read as if it were UTC, in milliseconds. */
+/**
+ * The wall clock a zone shows at an instant, read as if it were UTC, in milliseconds. Built with
+ * `setUTCFullYear`, because `Date.UTC` reads a year 0 to 99 as 1900 to 1999 (security review, round 1).
+ */
 function wallClockAt(instantMs: number, zone: string): number {
   const parts = formatter(zone).formatToParts(new Date(instantMs));
   const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value);
-  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  const wall = new Date(0);
+  wall.setUTCFullYear(get("year"), get("month") - 1, get("day"));
+  wall.setUTCHours(get("hour"), get("minute"), get("second"), 0);
+  return wall.getTime();
 }
 
 /** The zone's offset from UTC at an instant, in milliseconds (negative west of Greenwich). */
@@ -140,6 +146,30 @@ export function zonedToInstantLenient(local: string, zone: string): Date | null 
 /** The local "YYYY-MM-DDTHH:mm" a zone's clock shows at an instant; seconds are dropped. Throws for an unknown zone. */
 export function instantToZoned(instant: Date, zone: string): string {
   return new Date(wallClockAt(instant.getTime(), zone)).toISOString().slice(0, 16);
+}
+
+/**
+ * The calendar day, "YYYY-MM-DD", a zone's clock shows at an instant: the company's day when the zone
+ * is the company's (`tenants.time_zone`). The API dates and checks every record on it (`companyClock`)
+ * and the web's `today()` reads it too, so a form's default date is the day the server accepts
+ * (ADR 0051, "The company's day on the web", 2026-11-20). Throws a RangeError for a zone Intl doesn't know.
+ */
+export function dayInZone(instant: Date, zone: string): string {
+  return instantToZoned(instant, zone).slice(0, 10);
+}
+
+/**
+ * Whether Intl knows a zone name, so that `dayInZone` and `instantToZoned` can read a clock in it. A
+ * known zone's formatter is cached, so the web's `today()` costs no new formatter per call.
+ */
+export function isKnownTimeZone(zone: string): boolean {
+  if (!zone) return false;
+  try {
+    formatter(zone);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a name is one of the zones a meeting can be booked in, exactly as listed. */

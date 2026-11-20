@@ -17,14 +17,16 @@ vi.mock("@/lib/session/webauthn", () => ({ createPasskey: async () => ({}), sign
 type RoutedMethod = keyof typeof API_METHODS;
 
 interface Case {
-  kind: "read" | "write";
-  call: (client: ApiClient) => Promise<unknown>;
+  /** `local` answers in the browser and sends nothing: `today()`, the company's day (ADR 0051, 2026-11-20). */
+  kind: "read" | "write" | "local";
+  call: (client: ApiClient) => unknown;
   /** The one POST this read sends through `requestAsRead`, if any; a read sends no other non-GET. */
   postRead?: string;
 }
 
 const read = (call: Case["call"], postRead?: string): Case => ({ kind: "read", call, postRead });
 const write = (call: Case["call"]): Case => ({ kind: "write", call });
+const local = (call: Case["call"]): Case => ({ kind: "local", call });
 
 /** An argument whose content the factory only passes on: the right type for the call, with just the fields it reads. */
 function stub<T>(fields: object = {}): T {
@@ -75,6 +77,9 @@ const CASES = {
   requestSupportAccess: write((c) => c.requestSupportAccess(stub())),
   getCompanyStanding: read((c) => c.getCompanyStanding()),
   getWorkspace: read((c) => c.getWorkspace()),
+  today: local((c) => c.today()),
+  closeCompany: local((c) => c.closeCompany()),
+  openCompany: local((c) => c.openCompany("summit", { userId: ID, viewAsRoleId: null })),
   whoAmI: read((c) => c.whoAmI()),
   getSettings: read((c) => c.getSettings()),
   updateSettings: write((c) => c.updateSettings("numbers", defaultNumberSettings())),
@@ -229,6 +234,7 @@ const ALL = Object.entries(CASES).flatMap(([name, entry]) =>
 );
 const READS = ALL.filter((c) => c.kind === "read");
 const WRITES = ALL.filter((c) => c.kind === "write");
+const LOCALS = ALL.filter((c) => c.kind === "local");
 
 const OK: FakeAnswer = { status: 200, body: {} };
 const refused = (status: number): FakeAnswer => ({ status, body: { code: "refused", message: "Refused." } });
@@ -237,7 +243,9 @@ const refused = (status: number): FakeAnswer => ({ status, body: { code: "refuse
 async function run(c: Case, nonGet: FakeAnswer = OK) {
   const fake = fakeApi({}, (call) => (call.startsWith("GET ") ? OK : nonGet));
   // Some answers' transforms throw on `{}`; only what was sent and the re-reads matter here.
-  await c.call(fake.client).catch(() => undefined);
+  await Promise.resolve()
+    .then(() => c.call(fake.client))
+    .catch(() => undefined);
   return { ...fake, nonGets: fake.sent.map((s) => s.call).filter((call) => !call.startsWith("GET ")) };
 }
 
@@ -247,10 +255,19 @@ describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
     // 158 and 113 before: the passkey screens add 5 (3 writes), the trial balance 1 read.
     expect(READS.length + WRITES.length).toBe(164);
     expect(WRITES).toHaveLength(116);
+    expect(LOCALS.map((c) => c.name).sort()).toEqual(["closeCompany", "openCompany", "today"]);
+  });
+
+  it("sends nothing and asks no re-read for a method that answers in the browser", async () => {
+    for (const c of LOCALS) {
+      const { sent, changes } = await run(c);
+      expect(sent, c.name).toEqual([]);
+      expect(changes(), c.name).toBe(0);
+    }
   });
 
   it("sends at least one request in every case, so no case passes without reaching the API", async () => {
-    for (const c of ALL) {
+    for (const c of [...READS, ...WRITES]) {
       const { sent } = await run(c);
       expect(sent.length, `${c.name} (${c.kind})`).toBeGreaterThan(0);
     }

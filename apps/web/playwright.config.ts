@@ -26,6 +26,9 @@ export default defineConfig({
   retries: remote ? 2 : process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
+    // The browser runs on Summit's calendar (America/Denver), the zone the app's `today()` reads for
+    // Summit, so a screen's own clock and the specs' `summitDay()` agree wherever the machine is.
+    timezoneId: "America/Denver",
     trace: "retain-on-failure",
     navigationTimeout: remote ? 90_000 : undefined,
     // Locally the installed Chrome avoids a 200 MB browser download; CI uses Playwright's own build.

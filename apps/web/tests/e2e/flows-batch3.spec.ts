@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { addDays, mondayOf } from "@workspace/shared";
-import { FLOW_TAG, signInAs, SUMMIT_OWNER, type Persona } from "./helpers";
+import { FLOW_TAG, signInAs, summitDay, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const PRIYA: Persona = { companyId: "summit", userId: "sm-usr-03", roleKey: "sales" };
 const GRACE: Persona = { companyId: "summit", userId: "sm-usr-06", roleKey: "accountant" };
@@ -10,7 +10,8 @@ const BRI: Persona = { companyId: "summit", userId: "sm-usr-14", roleKey: "emplo
 const RENATA: Persona = { companyId: "summit", userId: "sm-usr-15", roleKey: "purchasing" };
 
 const PDF = { name: "proof.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%demo proof\n%%EOF\n") };
-const today = () => new Date().toLocaleDateString("en-CA");
+/** Summit's day in Denver, the day its forms default to. */
+const today = () => summitDay();
 
 /** The gross pay cell of a person's row on the pay period page. */
 const grossCell = (page: Page, name: string) =>

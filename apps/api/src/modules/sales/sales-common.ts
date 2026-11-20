@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { ControlDb } from "@workspace/db";
 import { tenants } from "@workspace/db/control";
-import { featureOn, scopeAllows, type Customer, type FeatureKey } from "@workspace/shared";
+import { dayInZone, featureOn, scopeAllows, type Customer, type FeatureKey } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -29,13 +29,6 @@ export function refuse(message: string): BadRequestException {
 /** A record that is gone, or outside the person's data scope: 404, so neither case reveals the other. */
 export function notFound(what: string): NotFoundException {
   return new NotFoundException({ code: "not_found", message: `This ${what} no longer exists.` });
-}
-
-/** Today in a time zone, as the shared rules compare dates (`yyyy-MM-dd`). */
-export function todayIn(timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
 }
 
 /** The company's time zone and today in it: the business day every sales date is read in. */
@@ -68,12 +61,11 @@ export async function companyToday(control: ControlDb, tenant: TenantContext): P
 /**
  * The company's day a moment falls on. Invoices keep the moment they were issued, sent or voided;
  * read as a UTC day, an invoice issued after 6 pm in Chicago would read as tomorrow, and a payment
- * made that evening would be refused as "before the invoice date".
+ * made that evening would be refused as "before the invoice date". The shared `dayInZone`, which the
+ * web's `today()` reads too, so a form's default date is the day this API accepts.
  */
 export function dayIn(moment: Date, zone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    moment,
-  );
+  return dayInZone(moment, zone);
 }
 
 /**
