@@ -210,7 +210,7 @@ describe("a new quote line (spec Quote builder)", () => {
       description: "Tidewater Vinyl Weathered Pier",
       category: "material",
       unit: "sq_ft",
-      quantity: "1",
+      quantity: "23.64",
       unitPrice: "4.25",
       unitCost: "2.10",
       sqFtPerCarton: "23.64",
@@ -223,6 +223,11 @@ describe("a new quote line (spec Quote builder)", () => {
     const line = quoteLineFor(product({ sqFtPerCarton: "23.64" }), "draft-1", [], waste);
     expect(line).not.toHaveProperty("roomIds");
     expect(line.wastePct).toBe(waste.lvp);
+  });
+
+  it("starts a boxed line at one whole carton, so a new line is never a part carton (F-m, ADR 0027)", () => {
+    expect(quoteLineFor(product({ sqFtPerCarton: "23.640" }), "draft-1", [], waste).quantity).toBe("23.64");
+    expect(quoteLineFor(product({}), "draft-1", [], waste).quantity).toBe("1");
   });
 
   it("ties installation sold per sq ft to the rooms, with no waste, by its name and taxed as labor", () => {

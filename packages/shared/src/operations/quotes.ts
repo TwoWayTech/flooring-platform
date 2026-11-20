@@ -97,7 +97,8 @@ export function quoteLineFor(
     description: product.category === "service" ? product.name : `${product.brand} ${product.name}`,
     category: productTaxCategory(product),
     unit: product.unit,
-    quantity: "1",
+    // A boxed line starts at one whole carton, never a part one (ADR 0027; the API refuses part cartons, F-m).
+    quantity: product.sqFtPerCarton ? dec(product.sqFtPerCarton).toString() : "1",
     unitPrice: product.price,
     // Absent when the API withheld it, and never a placeholder: a "0" would show a 100 % margin.
     unitCost: product.cost,
