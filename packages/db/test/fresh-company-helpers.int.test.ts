@@ -231,6 +231,15 @@ describe("fresh-company test helpers (needs the local PostgreSQL)", () => {
         /this machine.*adminUrl/,
       ],
       [
+        "provision with a scheme the guard doesn't allow",
+        () =>
+          provisionTestCompany(
+            { ...server, adminUrl: "http:postgres:postgres@localhost:5432/x://db.example.com:5432/postgres" },
+            company,
+          ),
+        /this machine.*adminUrl/,
+      ],
+      [
         "provision with a tab before the authority",
         () =>
           provisionTestCompany(

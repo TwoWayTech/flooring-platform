@@ -572,19 +572,26 @@ function demoCompanyNames(): { slugs: ReadonlySet<string>; emails: ReadonlySet<s
  */
 const ALLOWED_URL_OPTIONS: ReadonlySet<string> = new Set(["sslmode"]);
 
+/**
+ * The schemes a test database URL may use. For these WHATWG URL keeps the host exactly as written;
+ * for `http:` and the like it rewrites hosts such as `0177.0.0.1` that postgres.js would resolve raw.
+ */
+const ALLOWED_URL_PROTOCOLS: ReadonlySet<string> = new Set(["postgres:", "postgresql:"]);
+
 /** Control characters, spaces and backslashes: WHATWG URL drops or rewrites them, postgres.js doesn't. */
 // eslint-disable-next-line no-control-regex -- matching control characters is the point here
 const UNSAFE_URL_CHARACTERS = /[\u0000-\u0020\u007f\\]/;
 
 /**
  * Whether a database URL could make postgres.js connect somewhere other than what WHATWG URL
- * reads: a fragment, a query option other than `sslmode`, a control character, space or backslash
+ * reads: a scheme other than `postgres:` or `postgresql:`, a fragment, a query option other than `sslmode`, a control character, space or backslash
  * (which WHATWG drops or rewrites before parsing and postgres.js keeps), or a scheme not followed
  * at once by `//` (postgres.js takes the authority after the first `://` it finds). The guards
  * refuse such a URL rather than reason about it (security reviews, 2026-11-20).
  */
 export function redirectableUrl(url: string, parsed: URL): boolean {
   return (
+    !ALLOWED_URL_PROTOCOLS.has(parsed.protocol) ||
     url.includes("#") ||
     UNSAFE_URL_CHARACTERS.test(url) ||
     !url.startsWith(`${parsed.protocol}//`) ||
