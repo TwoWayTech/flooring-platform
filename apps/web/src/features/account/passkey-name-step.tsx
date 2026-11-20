@@ -5,7 +5,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { api } from "@/lib/api";
-import { apiErrorCode, ApiError } from "@/lib/api/errors";
+import { apiErrorCode, failureWords } from "@/lib/api/errors";
 import { isDemoMode } from "@/lib/data-source";
 import { defaultPasskeyName, PASSKEY_NAME_MAX, passkeyNameProblem } from "@/lib/session/passkeys";
 
@@ -46,9 +46,8 @@ export function PasskeyNameStep({ onAdded, onPasswordExpired, idPrefix }: Passke
       await api.addPasskey(name);
       onAdded();
     } catch (failure) {
-      if (!(failure instanceof ApiError)) throw failure;
-      if (apiErrorCode(failure) === "password_confirmation_required") onPasswordExpired(failure.message);
-      else setError(failure.message);
+      if (apiErrorCode(failure) === "password_confirmation_required") onPasswordExpired(failureWords(failure));
+      else setError(failureWords(failure));
       setPending(false);
     }
   }

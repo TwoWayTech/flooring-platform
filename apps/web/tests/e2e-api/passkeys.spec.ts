@@ -79,6 +79,12 @@ test.describe("passkeys (api mode)", () => {
       );
       await page.getByLabel("Confirm your password").fill(seedPassword());
       await page.getByRole("button", { name: "Continue" }).click();
+      // A device that cannot make a passkey is not a dead end: back to the choice, the app chosen.
+      await page.getByRole("button", { name: "Use an authenticator app instead" }).click();
+      await expect(page.getByRole("radio", { name: /^Authenticator app/ })).toBeChecked();
+      await page.getByRole("radio", { name: /^Passkey/ }).check();
+      await page.getByLabel("Confirm your password").fill(seedPassword());
+      await page.getByRole("button", { name: "Continue" }).click();
       await page.getByLabel("Passkey name").fill("Work laptop");
       await page.getByRole("button", { name: "Create passkey" }).click();
       await expect(page.getByText("Two-step sign-in is on. Next time, choose Sign in with a passkey")).toBeVisible();

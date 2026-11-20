@@ -7,7 +7,7 @@ import { Label } from "@workspace/ui/components/label";
 import { cn } from "@workspace/ui/lib/utils";
 import { PasskeyNameStep } from "@/features/account/passkey-name-step";
 import { api } from "@/lib/api";
-import { ApiError } from "@/lib/api/errors";
+import { failureWords } from "@/lib/api/errors";
 import { confirmTotpEnrolment, startTotpEnrolment, type TotpEnrolment } from "@/lib/session/api-auth";
 import { passkeysSupported } from "@/lib/session/webauthn";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -90,11 +90,23 @@ export function MfaEnrolment({ onDone, onSignOut }: MfaEnrolmentProps) {
       ) : phase.kind === "codes" ? (
         <BackupCodes codes={phase.codes} onDone={onDone} />
       ) : phase.kind === "passkey-name" ? (
-        <PasskeyNameStep
-          idPrefix="mfa"
-          onAdded={() => setPhase({ kind: "passkey-done" })}
-          onPasswordExpired={(notice) => setPhase({ kind: "password", notice })}
-        />
+        <>
+          <PasskeyNameStep
+            idPrefix="mfa"
+            onAdded={() => setPhase({ kind: "passkey-done" })}
+            onPasswordExpired={(notice) => setPhase({ kind: "password", notice })}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setMethod("app");
+              setPhase({ kind: "password", notice: null });
+            }}
+            className="text-brand-ink self-start rounded-sm text-sm underline-offset-4 hover:underline"
+          >
+            Use an authenticator app instead
+          </button>
+        </>
       ) : (
         <PasskeyDone onDone={onDone} />
       )}
@@ -138,8 +150,7 @@ async function confirmFor(method: Method, password: string): Promise<TotpEnrolme
     await api.confirmPassword(password);
     return null;
   } catch (failure) {
-    if (failure instanceof ApiError) return { message: failure.message };
-    throw failure;
+    return { message: failureWords(failure) };
   }
 }
 

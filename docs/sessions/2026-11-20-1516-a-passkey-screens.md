@@ -50,3 +50,11 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **Q2. Bound passkey names on the API** (the plugin accepts any length)? Taken: 1 to 60 characters on screen only; a server bound needs an auth hook change (asked first, CLAUDE.md).
 - **Q3. Let people whose role does not require MFA set up the authenticator app from Sign-in and security** (and turn it off)? Taken: not built; the page shows whether it is set up.
 - **Q4. ADR number:** 0060 (0058 stays reserved by the paused whole-product check). If another branch takes 0060 first, this one renumbers.
+
+## Security review
+
+- **Round 1** (fresh `security-reviewer`, diff 29e8d42..21128ed): **PASS, nothing blocking.** Four notes:
+  1. A failure that is not an ApiError (say a 2xx body that is not JSON) left the passkey and enrolment buttons stuck. Fixed: `failureWords` (lib/api/errors.ts) gives every failure words and frees the button, in the name step, the enrolment password step and the dialogs (PK13).
+  2. No way back from Passkey to the authenticator app at enrolment, for a device that cannot make a passkey. Fixed: "Use an authenticator app instead" under the name step (passkeys.spec.ts, enrolment step).
+  3. In existing API code, `checkNoDowngrade` (auth-hooks.ts) reads the factor count and then the plugin deletes, with no lock: two simultaneous deletes by a required user with two passkeys and no app could leave no factor. It heals into enrolment at the next request, so nothing is bypassed. **Not changed here** (auth API code, asked first); follow-up for STATUS.
+  4. ADR wording: server rendering loads `qrcode`'s Node entry; the ADR said the list keeps "device type". Both fixed. Also added PK11/PK12 (the login page's passkey sign-in: calls through /api/auth only, and the words for an unknown passkey, a refused one and the per-IP limit).

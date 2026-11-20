@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, failureWords } from "@/lib/api/errors";
+import { signInWithPasskey } from "@/lib/session/api-auth";
 import { defaultPasskeyName, PASSKEY_NAME_MAX, passkeyNameProblem } from "@/lib/session/passkeys";
 import { fakeApi, type FakeAnswer } from "./fake-api";
 
@@ -168,5 +170,51 @@ describe("passkey names", () => {
     expect(defaultPasskeyName(windowsChrome)).toBe("Chrome on Windows");
     expect(defaultPasskeyName(iphone)).toBe("Safari on iPhone or iPad");
     expect(defaultPasskeyName("")).toBe("My passkey");
+  });
+});
+
+describe("passkey sign-in on the login page", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubFetch(answers: Record<string, FakeAnswer>) {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const call = `${init?.method ?? "GET"} ${url}`;
+      calls.push(call);
+      const answer = answers[call] ?? { status: 200, body: {} };
+      if (answer === "network") throw new TypeError("fetch failed");
+      return new Response(JSON.stringify(answer.body ?? {}), { status: answer.status });
+    });
+    return calls;
+  }
+
+  it("PK11 asks for options, then sends the assertion, through /api/auth only", async () => {
+    const calls = stubFetch({});
+    expect(await signInWithPasskey()).toEqual({ ok: true });
+    expect(calls).toEqual([
+      "GET /api/auth/passkey/generate-authenticate-options",
+      "POST /api/auth/passkey/verify-authentication",
+    ]);
+  });
+
+  it("PK12 an unknown passkey, a refused one and the per-IP limit each have their words", async () => {
+    stubFetch({ "POST /api/auth/passkey/verify-authentication": refusal(400, "PASSKEY_NOT_FOUND") });
+    expect(await signInWithPasskey()).toEqual({
+      ok: false,
+      message:
+        "That passkey does not belong to an account here. Choose another passkey, or sign in with your password.",
+    });
+    stubFetch({ "POST /api/auth/passkey/verify-authentication": refusal(401, "AUTHENTICATION_FAILED") });
+    expect(await signInWithPasskey()).toMatchObject({ ok: false, message: expect.stringMatching(/was not accepted/) });
+    stubFetch({ "POST /api/auth/passkey/verify-authentication": refusal(429) });
+    expect(await signInWithPasskey()).toMatchObject({ ok: false, message: expect.stringMatching(/Too many attempts/) });
+  });
+});
+
+describe("failureWords", () => {
+  it("PK13 shows an ApiError's own words and a plain retry for anything else, so no button stays stuck", () => {
+    expect(failureWords(new ApiError("That password is not right."))).toBe("That password is not right.");
+    expect(failureWords(new SyntaxError("Unexpected token <"))).toBe("Something went wrong. Try again.");
+    expect(failureWords("boom")).toBe("Something went wrong. Try again.");
   });
 });

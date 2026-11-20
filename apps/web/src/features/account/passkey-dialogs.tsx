@@ -14,7 +14,7 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { api } from "@/lib/api";
-import { ApiError } from "@/lib/api/errors";
+import { failureWords } from "@/lib/api/errors";
 import { isDemoMode } from "@/lib/data-source";
 import { PASSKEY_NAME_MAX, passkeyNameProblem, type PasskeySummary } from "@/lib/session/passkeys";
 import { PasskeyNameStep } from "./passkey-name-step";
@@ -38,7 +38,7 @@ function Hint({ id, error, children }: { id: string; error: string | null; child
   );
 }
 
-/** Runs a write and shows the ApiError's words; other failures are bugs and are thrown. */
+/** Runs a write and shows what went wrong in the person's words; the button is freed either way. */
 function useWrite() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -49,8 +49,7 @@ function useWrite() {
       await write();
       return true;
     } catch (failure) {
-      if (!(failure instanceof ApiError)) throw failure;
-      setError(failure.message);
+      setError(failureWords(failure));
       return false;
     } finally {
       setPending(false);
