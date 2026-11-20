@@ -3,12 +3,15 @@ import { auditLog, employees, invoices, meetings, payPeriods, userProfiles } fro
 import { userInvitations } from "@workspace/db/control";
 import {
   addDays,
+  API_LOCALIZATION_TABS,
+  API_SETTINGS_SECTIONS,
   dec,
   DEFAULT_ACCOUNTS,
   invoiceLedger,
   planActions,
   PRODUCT_ROLES,
   type AuditEntry,
+  type CompanyAnswer,
   type ContractBilling,
   type ContractorPayment,
   type Customer,
@@ -407,7 +410,13 @@ describe("money scenarios on new companies (whole-product check; needs the local
       },
       {
         route: "PUT /timesheets",
-        call: moneyCalls.timesheet(wes!.id, period.start, ["9", "8", "8", "8", "8", "0", "0"]),
+        // The form starts from the stored hours, so the approval is what refuses it, not a stale form.
+        call: moneyCalls.timesheet(
+          wes!.id,
+          period.start,
+          ["9", "8", "8", "8", "8", "0", "0"],
+          ["8", "8", "8", "8", "8", "0", "0"],
+        ),
         cookie: hr,
         refused: invalid(/^This week is approved, so it is locked\.$/),
       },
@@ -786,6 +795,18 @@ const SETUP_ROOTS: ReadonlySet<string> = new Set([
   "warehouses",
 ]);
 
+/**
+ * The writes under SETUP_ROOTS today: every settings section and Localization tab (ADR 0059) and
+ * the locations (part 4a). None adds a branch or a product (G3), so FA-5 fails when one appears.
+ */
+const SETUP_WRITES: readonly string[] = [
+  "POST /locations",
+  "PUT /locations/:id",
+  "PUT /settings/accounting",
+  ...API_SETTINGS_SECTIONS.map((section) => `PUT /settings/${section}`),
+  ...API_LOCALIZATION_TABS.map((tab) => `PUT /settings/localization/${tab}`),
+];
+
 /** The money columns of a P&L row and of its totals (reports.md, Profit and loss). */
 const PNL_MONEY = ["revenue", "cogs", "grossMargin", "expenses", "netIncome"] as const;
 
@@ -974,21 +995,37 @@ describe("a bare new company on the API (whole-product check FA; needs the local
     });
   }, 60_000);
 
-  it("FA-5, GAP-G3 (demo steps 5 and 7): no locations or products, a purchase order has nowhere to go, and no route makes a location or product but the import (STATUS: Settings → Locations moves to the API)", async () => {
+  it("FA-5, GAP-G3 (demo steps 5 and 7): no branches, locations or products; a location waits for a branch no route makes, a purchase order has nowhere to go, and products come only through the import (STATUS: Settings → Locations; ADR 0059 part 4a)", async () => {
     expect(await read("/locations")).toEqual([]);
     expect(await read("/products")).toEqual([]);
+    expect((await read<CompanyAnswer>("/company")).company.branches).toEqual([]);
+    // POST /locations exists since ADR 0059 part 4a, but a location belongs to a branch, and
+    // provisioning makes none and no route adds one: only the demo seed writes branches.
+    const warehouse = {
+      name: "Main warehouse",
+      kind: "warehouse",
+      branchId: uuidv7(),
+      address: { street: "40 Quarry Rd", city: "Austin", state: "TX", zip: "78701" },
+      isDefault: true,
+      displaySamples: 0,
+    };
+    expectRefused(await send({ verb: "post", path: "/locations", body: warehouse }), {
+      status: 400,
+      code: "invalid_request",
+      message: /^Choose the branch this location belongs to.$/,
+    });
     const tile = { productId: uuidv7(), description: "Porcelain tile", quantity: "200", unitCost: "2.1000" };
     expectRefused(await send(moneyCalls.purchaseOrder(supplierId, uuidv7(), [tile], true)), {
       status: 400,
       code: "invalid_request",
-      message: /^Receive into a warehouse\.$/,
+      message: /^Receive into a warehouse.$/,
     });
     const catalog = routeCatalog(harness.app);
     const setup = catalog.filter((route) => isWrite(route) && SETUP_ROOTS.has(route.path.split("/")[1] ?? ""));
     expect(
-      setup.map((route) => route.name),
-      "the only write under the setup paths",
-    ).toEqual(["PUT /settings/accounting"]);
+      setup.map((route) => route.name).sort(),
+      "the writes under the setup paths: settings and locations, never a branch or a product",
+    ).toEqual([...SETUP_WRITES].sort());
     expect(catalog.map((route) => route.name)).toContain("POST /imports");
   }, 60_000);
 
@@ -1037,10 +1074,10 @@ describe("a bare new company on the API (whole-product check FA; needs the local
     expect(await read("/meetings"), "a cancelled meeting is not listed").toEqual([]);
   }, 60_000);
 
-  it("FA-8 (demo step 10): the reports open, and the P&L holds only the one expense", async () => {
+  it("FA-8 (demo step 10): the reports open, the trial balance among them, and the P&L holds only the one expense", async () => {
     expect(await read<ReportOptions>("/reports/options")).toEqual({
-      reports: ["business", "pnl", "sales", "payments"],
-      exports: ["business", "pnl", "sales", "payments"],
+      reports: ["business", "pnl", "sales", "payments", "trial-balance"],
+      exports: ["business", "pnl", "sales", "payments", "trial-balance"],
       locations: [],
       salespeople: [],
       vendors: [{ id: supplierId, name: "Front Range Services" }],

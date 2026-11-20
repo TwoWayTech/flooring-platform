@@ -21,6 +21,7 @@ import {
 import { APPROVAL_THRESHOLD, CARPET, TILE, TILE_WASTE_PCT } from "./company-bootstrap";
 import { moneyCalls, type ExpenseInput, type OrderLine, type QuoteLine, type ReceiptLineInput } from "./money-actions";
 import type { MoneyRun } from "./money-run";
+import { stepUp } from "./sign-in";
 
 /**
  * The money events the check drives, each as the person the product expects to do it, shared by
@@ -354,7 +355,10 @@ export async function correctStock(
   run.note("stock correction");
 }
 
-/** Saves the bank accounts as the Owner; the costing method and tax basis stay the owner's defaults (ADR 0040). */
+/**
+ * Saves the bank accounts as the Owner, after a step-up: accounting saves need one (PR #57); the
+ * costing method and tax basis stay the owner's defaults (ADR 0040).
+ */
 export async function saveBanks(
   run: MoneyRun,
   bankAccounts: readonly BankAccountSetting[],
@@ -364,6 +368,7 @@ export async function saveBanks(
     salesTaxBasis: "accrual",
     bankAccounts: [...bankAccounts],
   };
+  await stepUp(run.harness, run.actors.owner);
   const saved = await run.act<AccountingSettings>(200, moneyCalls.accounting(settings), run.owner);
   run.note("bank accounts saved");
   return saved;

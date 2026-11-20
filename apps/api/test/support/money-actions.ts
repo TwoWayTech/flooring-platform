@@ -4,6 +4,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { AuthHarness } from "../auth-harness";
 import { decimalProblems } from "./json-walk";
 import type { TrialBalance } from "./ledger-read";
+import { NO_HOURS } from "./timesheet-week";
 
 /** The HTTP verbs the money actions use. */
 export type Verb = "get" | "post" | "put";
@@ -488,11 +489,19 @@ export const moneyCalls = {
     body: { reason: "Wrong period" },
   }),
 
-  /** PUT /timesheets: a week's hours, Monday first. */
-  timesheet: (employeeId: string, weekStart: string, days: readonly string[]): Call => ({
+  /**
+   * PUT /timesheets: a week's hours, Monday first, with the hours the form started from
+   * (`expectedDays`; seven "0" for a week with no sheet, ADR 0051 2026-11-16).
+   */
+  timesheet: (
+    employeeId: string,
+    weekStart: string,
+    days: readonly string[],
+    expectedDays: readonly string[] = NO_HOURS,
+  ): Call => ({
     verb: "put",
     path: "/timesheets",
-    body: { employeeId, weekStart, days },
+    body: { employeeId, weekStart, days, expectedDays },
   }),
 
   /** POST /timesheets/:id/submit. */
