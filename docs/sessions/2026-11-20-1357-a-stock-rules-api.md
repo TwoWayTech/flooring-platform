@@ -66,16 +66,19 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - `pnpm test` (root), final: shared 1211, web 466, api unit 128, db 18, providers 11, all passed.
 - `pnpm --filter @workspace/db test:api`: 59 passed (8 files). `pnpm test:hooks`: 15 passed.
 - API integration, whole suite `--maxWorkers=3` (after step 1, while round 1's tests were being edited): 44 files passed, 905 tests; the two failures were in `settings-stock.int` (MS7, MS13), both from that mid-run edit; MS7's seed then wrote SQL NULL for a jsonb null and was fixed. Final: every `settings*.int` file (8 files) **244 passed**; `settings-stock.int` alone **27 passed**.
-- **api-mode e2e not run yet:** ports 3000/4000 belong to another builder. `tests/e2e-api/settings-stock.spec.ts` (ST1) is written and typechecks; run it with the launcher when the ports are free, then the whole api-mode suite once.
+- **E2e (ports free, at the coordinator's request).** Database: a throwaway `postgres:16-alpine` container on port 5434 (`fpstock-e2e-pg`), as CI does, with throwaway secrets made in-process by a scratchpad `run-env.mjs` (never printed, no `.env` read), `pnpm db:seed` twice and `pnpm db:migrate`; the shared PostgreSQL on 5432 untouched; the container removed afterwards. Builds one at a time: `pnpm --filter api build`, `NEXT_PUBLIC_DATA_SOURCE=api pnpm --filter web build`, later the demo build.
+  - api mode, ST1 alone: **1 passed**.
+  - api mode, the whole suite on a freshly recreated database, the config's 1 worker: **62 passed (7.2 min)**, ST1 among them.
+  - demo, 2 workers: `settings.spec.ts` and `warehouses.spec.ts` `--project=flooring`: **17 passed**; `settings.spec.ts --project=hr`: **1 passed**.
+  - No failure, so no code change and no further review. Ports 3000 and 4000 free after each run (`netstat`).
 
 ## What is left
 
-- Run ST1 and the api-mode e2e suite (and demo e2e `settings.spec.ts` / `warehouses.spec.ts`) against a production build when the ports are free.
 - The owner's answers to Q1 to Q4.
 
 ## For STATUS
 
-- **Queue item 2, "stock adjustments, with the stock rules section":** built on `feat/inventory-stock-rules-api` (stacked on PR #65). Stock rules save on the API (`PUT /settings/inventory`, `settings.locations.manage`, core, the `inventory.locations` switch, scope `all`, `inventorySettingsProblem`); raising or clearing the adjustment approval quantity is the Owner's alone, with a step-up (ADR 0059, "the Stock rules part"). **Stock adjustments stay switched off (`removed`) and have no API** (Q1). Two security review rounds; the second clean. api-mode e2e ST1 written, not run yet (ports).
+- **Queue item 2, "stock adjustments, with the stock rules section":** built on `feat/inventory-stock-rules-api` (stacked on PR #65). Stock rules save on the API (`PUT /settings/inventory`, `settings.locations.manage`, core, the `inventory.locations` switch, scope `all`, `inventorySettingsProblem`); raising or clearing the adjustment approval quantity is the Owner's alone, with a step-up (ADR 0059, "the Stock rules part"). **Stock adjustments stay switched off (`removed`) and have no API** (Q1). Two security review rounds; the second clean. api-mode e2e: the whole suite 62 passed on a fresh database (ST1 among them); demo settings and warehouses 18 passed.
 - Remove "Stock rules" from "Unmoved settings pages save in the browser only in api mode".
 - The note "Stock adjustments (`adjustments-panel.tsx`): the own-request check compares `user.id` with DemoStore rows" stays open, now tied to owner question Q1.
 - New open questions (safest default taken): Q1 adjustments on the API or removed for good; Q2 a step-up on every Stock rules save; Q3 hide Stock rules while adjustments are off; Q4 the never-saved `"0"`.
