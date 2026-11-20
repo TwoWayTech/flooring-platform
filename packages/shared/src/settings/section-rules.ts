@@ -6,6 +6,7 @@ import type { CompanyProfile, CompanySettings, ExpenseSettings, PaymentSettings 
 import { isStateCode, ZIP_PATTERN } from "../us-pack/states";
 import { hrSettingsProblem } from "./hr-rules";
 import { DOCUMENT_PREFIX_TEXT } from "./localization-rules";
+import { inventorySettingsProblem } from "./stock-rules";
 
 /** An EIN as the IRS writes it: 12-3456789 (spec rule 28). */
 export const EIN_PATTERN = /^\d{2}-\d{7}$/;
@@ -234,8 +235,8 @@ export const LOCALIZATION_SECTION_MESSAGE = "Localization and tax saves one tab 
  * refuse a change that no page makes. Localization and tax is refused by its name, whatever the
  * value holds: its tabs save one at a time through `updateLocalization` (spec settings-and-permissions.md
  * rule 7; ADR 0059, part 3b, D33). Settings → HR runs `hrSettingsProblem` (part 5), Settings → Email
- * `emailSettingsProblem` (the bell and Outbox part). Every other
- * section gets its rules when its part moves to the API.
+ * `emailSettingsProblem` (the bell and Outbox part), Stock rules `inventorySettingsProblem` (the
+ * Stock rules part). Every other section gets its rules when its part moves to the API.
  */
 export function settingsSectionProblem<K extends keyof CompanySettings>(
   section: K,
@@ -254,5 +255,6 @@ export function settingsSectionProblem<K extends keyof CompanySettings>(
   // The value alone; what recorded pay forbids needs the store's records (`hrScheduleProblem`, ADR 0059 part 5).
   if (settings.hr) return hrSettingsProblem(settings.hr);
   if (settings.email) return emailSettingsProblem(settings.email);
+  if (settings.inventory) return inventorySettingsProblem(settings.inventory);
   return null;
 }

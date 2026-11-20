@@ -98,6 +98,14 @@ async function loadHrRecords(tx: CompanyDb): Promise<HrRecords> {
  */
 const NEVER_SAVED_EMAIL: CompanySettings["email"] = { senderName: "", replyTo: "", signature: "" };
 
+/**
+ * Stock rules never saved (ADR 0059, the Stock rules part, D5): the strictest quantity, so every
+ * non-zero adjustment would wait for a second person, as Payments' never-saved answer is the
+ * strictest; a save is judged against it, so only an Owner can loosen it. Nothing on the API acts on
+ * it while stock adjustments are switched off.
+ */
+const NEVER_SAVED_INVENTORY: CompanySettings["inventory"] = { adjustmentApprovalQty: "0" };
+
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
   legalName: "",
@@ -209,6 +217,9 @@ export class SettingsService {
           break;
         case "email":
           answer.email = await read(section);
+          break;
+        case "inventory":
+          answer.inventory = await read(section);
           break;
         case "hr": {
           // As stored, and only once saved: the API acts on no HR settings before that (part 5, D7).
@@ -505,6 +516,7 @@ export class SettingsService {
       // Exactly how the expense rules read a missing row: approval off.
       expenses: () => loadExpenseSettings(db),
       email: async () => NEVER_SAVED_EMAIL,
+      inventory: async () => NEVER_SAVED_INVENTORY,
     };
     return (await never[section]()) as StoredSection<S>;
   }

@@ -321,9 +321,10 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
           modules: enabledModules([company.product], null, []),
         }).filter((section): section is Served => (SERVED as readonly string[]).includes(section));
         expect(partOne(body)).toEqual([...expected].sort());
-        // Nothing else but Settings → Email, never saved here, to its readers (settings-email.int, ME1).
+        // Nothing else but Settings → Email and Stock rules, never saved here, to their readers
+        // (settings-email.int ME1, settings-stock.int MS1).
         const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
-        const others = readableSections(reader).includes("email") ? ["email"] : [];
+        const others = readableSections(reader).filter((section) => section === "email" || section === "inventory");
         expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
           const stored = await rowOf(company, section);

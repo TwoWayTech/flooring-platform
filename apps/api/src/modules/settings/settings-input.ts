@@ -13,7 +13,9 @@ import {
   NUMBER_MESSAGES,
   numbersFromWire,
   PAYROLL_MESSAGES,
+  QUANTITY_TEXT_MAX,
   REGION_MESSAGES,
+  STOCK_RULES_MESSAGES,
   TAX_JURISDICTIONS_MAX,
   TAX_MESSAGES,
   US_STATES,
@@ -24,6 +26,7 @@ import {
   type EmailSettings,
   type ExpenseSettings,
   type HrSettingsInput,
+  type InventorySettings,
   type NumberKind,
   type NumberSettings,
   type PaymentSettings,
@@ -316,5 +319,16 @@ export const EMAIL_INPUT: z.ZodType<EmailSettings> = z
     senderName: z.string().max(10 * EMAIL_MAX.senderName, EMAIL_MESSAGES.senderName),
     replyTo: z.string().max(10 * EMAIL_MAX.replyTo, EMAIL_MESSAGES.replyTo),
     signature: z.string().max(10 * EMAIL_MAX.signature, EMAIL_MESSAGES.signature),
+  })
+  .strict();
+
+/**
+ * Stock rules as Warehouses and showrooms sends them (ADR 0059, the Stock rules part, D2): the
+ * approval quantity as a string, never a JSON number (CLAUDE.md rule 6), with an outer bound that
+ * carries the shared words; `inventorySettingsProblem` checks the form after this.
+ */
+export const INVENTORY_INPUT: z.ZodType<InventorySettings> = z
+  .object({
+    adjustmentApprovalQty: z.string().max(10 * QUANTITY_TEXT_MAX, STOCK_RULES_MESSAGES.adjustmentApprovalQty),
   })
   .strict();

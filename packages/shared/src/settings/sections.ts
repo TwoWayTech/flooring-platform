@@ -8,6 +8,7 @@ import type {
   CompanySettings,
   ExpenseSettings,
   HrSettings,
+  InventorySettings,
   LocalizationSettings,
   PaymentSettings,
 } from "../types/settings";
@@ -97,9 +98,17 @@ export const SETTINGS_SECTIONS = {
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
  * DemoStore in api mode until then. Part 5 adds Settings → HR; the bell and Outbox part adds
- * Settings → Email (`email`, the sender details).
+ * Settings → Email (`email`, the sender details); the Stock rules part adds `inventory`.
  */
-export const API_SETTINGS_SECTIONS = ["profile", "numbers", "payments", "expenses", "hr", "email"] as const;
+export const API_SETTINGS_SECTIONS = [
+  "profile",
+  "numbers",
+  "payments",
+  "expenses",
+  "hr",
+  "email",
+  "inventory",
+] as const;
 
 /** A section the API serves. */
 export type ApiSettingsSection = (typeof API_SETTINGS_SECTIONS)[number];
@@ -144,6 +153,9 @@ export interface SettingsReadRule {
  * - `email` (the bell and Outbox part, D9): only Settings → Email and notifications reads it, so only
  *   `settings.notifications.manage`, and it is hidden while that page's switch is off. The API's
  *   sender reads the stored row whatever is answered.
+ * - `inventory` (the Stock rules part, D6): only the Stock rules form on Warehouses and showrooms
+ *   reads it, so only `settings.locations.manage`, and it is hidden while that page's switch
+ *   (`inventory.locations`) is off. Nothing on the API acts on it while stock adjustments are off.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -159,6 +171,7 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
     hiddenWhenOff: false,
   },
   email: { readers: ["settings.notifications.manage"], hiddenWhenOff: true },
+  inventory: { readers: ["settings.locations.manage"], hiddenWhenOff: true },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -263,6 +276,8 @@ export interface SettingsAnswer {
   hr?: HrSettings;
   /** Settings → Email as stored, or all three fields empty when never saved (the bell and Outbox part, D10). */
   email?: EmailSettings;
+  /** Stock rules as stored, or the strictest quantity (`"0"`) when never saved (the Stock rules part, D5). */
+  inventory?: InventorySettings;
   /**
    * Present only when the company has saved localization and the person reads at least one served
    * tab (`readableTabs`); each tab as stored (ADR 0059, part 2a), except that Region's time zone is

@@ -50,6 +50,7 @@ function served(): Required<Pick<SettingsAnswer, ApiSettingsSection>> {
       holidays: [{ date: "2026-12-24", name: "Shop closed" }],
     },
     email: { senderName: "Summit Billing", replyTo: "billing@summit.example", signature: "" },
+    inventory: { adjustmentApprovalQty: "75.5" },
   };
 }
 
@@ -69,7 +70,7 @@ function keysOf(value: unknown): string[] {
   return [];
 }
 
-const UNSERVED = ["localization", "branding", "inventory", "sharedCosts", "meetings"] as const;
+const UNSERVED = ["localization", "branding", "sharedCosts", "meetings"] as const;
 
 describe("Settings part 1 in api mode (ADR 0059)", () => {
   it("W1 getSettings reads GET /settings: the served sections are the API's, the rest DemoStore's", async () => {
@@ -82,6 +83,7 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(settings.expenses).toEqual(answer.expenses);
     expect(settings.hr).toEqual(answer.hr);
     expect(settings.email).toEqual(answer.email);
+    expect(settings.inventory).toEqual(answer.inventory);
     expect(settings.numbers).toEqual({
       ...demo.numbers,
       negativeStyle: "parens",
@@ -104,6 +106,8 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(hr.hr).toEqual(demo.hr);
     // Settings → Email left out (not its manager, or its page switched off): DemoStore's copy stays.
     expect(hr.email).toEqual(demo.email);
+    // Stock rules left out (not their manager, or Warehouses and showrooms switched off): DemoStore's copy stays.
+    expect(hr.inventory).toEqual(demo.inventory);
   });
 
   it("W3 the number kinds are read tolerantly: an unknown kind is dropped, a missing one takes its default", async () => {
@@ -132,8 +136,8 @@ describe("Settings part 1 in api mode (ADR 0059)", () => {
     expect(result.localization).toEqual(demo.localization);
   });
 
-  it("W5 updateSettings sends the profile, payments, expenses, HR and Email unchanged to their own route", async () => {
-    for (const section of ["profile", "payments", "expenses", "hr", "email"] as const) {
+  it("W5 updateSettings sends the profile, payments, expenses, HR, Email and Stock rules unchanged to their own route", async () => {
+    for (const section of ["profile", "payments", "expenses", "hr", "email", "inventory"] as const) {
       const api = client(served());
       const value = demo[section];
       await api.client.updateSettings(section, value);
