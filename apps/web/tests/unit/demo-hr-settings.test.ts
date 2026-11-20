@@ -25,9 +25,9 @@ vi.mock("@workspace/shared", async (importOriginal) => {
 
 /**
  * How Summit opens: `fresh` drops its pay periods, timesheets and clock punches (a company that has
- * recorded no pay yet); `california` makes its first employee a California non-exempt worker.
+ * recorded no pay yet); `noPeriods` drops only its pay periods, keeping its hours; `california` makes its first employee a California non-exempt worker.
  */
-const SUMMIT = vi.hoisted(() => ({ fresh: false, california: false }));
+const SUMMIT = vi.hoisted(() => ({ fresh: false, california: false, noPeriods: false }));
 
 vi.mock("@/lib/api/demo/fixtures", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api/demo/fixtures")>();
@@ -38,6 +38,7 @@ vi.mock("@/lib/api/demo/fixtures", async (importOriginal) => {
       if (companyId !== "summit") return fixtures;
       const patched = { ...fixtures };
       if (SUMMIT.fresh) Object.assign(patched, { payPeriods: [], timesheets: [], clockEntries: [] });
+      if (SUMMIT.noPeriods) Object.assign(patched, { payPeriods: [] });
       if (SUMMIT.california) {
         const [first, ...rest] = fixtures.employees;
         patched.employees = [{ ...first!, state: "CA", flsaStatus: "non_exempt", status: "active" }, ...rest];
@@ -51,6 +52,7 @@ afterEach(() => {
   OFF.clear();
   SUMMIT.fresh = false;
   SUMMIT.california = false;
+  SUMMIT.noPeriods = false;
 });
 
 /** Summit's Owner and Sales rep; Harbor's HR manager (HR Suite). */
@@ -120,6 +122,17 @@ describe("DemoStore Settings → HR (ADR 0059, part 5)", () => {
     await expectRefused(store, { ...hr, payFrequency: "weekly" }, HR_MESSAGES.scheduleLocked);
     await expectRefused(store, { ...hr, payPeriodAnchor: "2026-01-05" }, HR_MESSAGES.scheduleLocked);
     await expectRefused(store, { ...hr, workweekStartDay: (hr.workweekStartDay + 1) % 7 }, HR_MESSAGES.workweekLocked);
+  });
+
+  it("HD3b recorded hours alone fix the workweek, not the pay frequency", async () => {
+    SUMMIT.noPeriods = true;
+    const store = await open("summit", DANA);
+    const hr = (await store.getSettings()).hr;
+    expect((await store.list("payPeriods")).length).toBe(0);
+    expect((await store.list("timesheets")).length).toBeGreaterThan(0);
+    await expectRefused(store, { ...hr, workweekStartDay: (hr.workweekStartDay + 1) % 7 }, HR_MESSAGES.workweekLocked);
+    await store.updateSettings("hr", { ...hr, payFrequency: "weekly" });
+    expect((await store.getSettings()).hr.payFrequency).toBe("weekly");
   });
 
   it("HD4 a company with no pay periods, timesheets or punches may still change its schedule and workweek", async () => {

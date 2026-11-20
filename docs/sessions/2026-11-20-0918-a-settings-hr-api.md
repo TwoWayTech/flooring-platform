@@ -35,10 +35,55 @@ Person: A (Claude), on A's Windows laptop, working unattended. Worktree `C:\dev\
 - **D9. The web.** `settingsFromAnswer` takes `hr`; `updateSettings("hr")` is routed by `API_SETTINGS_SECTIONS` with no transport change. The page passes `problem` and `stepUp`.
 - **D10. DemoStore.** The same module, keys, switch, scope, content rule (through the dispatcher with `current`), then the schedule lock and the monthly rule against its own collections. Its step-up is the dialog alone.
 
+## Build decisions (B1…)
+
+- **B1. `payFrequencyProblem` takes `Pick<Employee, "state" | "flsaStatus" | "status">[]`** instead of `Employee[]` (backward compatible), so the API passes the three columns it reads under the lock instead of the whole record (pay rates included).
+- **B2. `HrSettingsInput`** (the frequency as plain text) is what the strict body produces, as 2a's `PayrollInput`; the controller narrows it to `HrSettings` once `hrSettingsProblem` passed.
+- **B3. `SettingsService`:** `save`, `current` and `valueOf` are typed over `DefaultedSection` (every served section but `hr`, D7); the new `saveHr` and `save` share one private `write` (upsert and audit), so no write or audit logic is duplicated.
+- **B4. The schedule lock is 409 `conflict`** (the standard code for "state changed underneath"); the content rules and the monthly rule are 400 `invalid_request` (the monthly rule is 400 at approval too).
+- **B5. Facts are "any live row" queries** (`deleted_at IS NULL`, `LIMIT 1`) on `pay_periods`, `timesheets` and `clock_entries`, read in the save's transaction after the row lock; employees are read for the three columns only.
+- **B6. Part 1's A1** now compares part 1's four sections only (its companies never saved HR); part 5's H1 covers `hr` for every default role of both products.
+- **B7. The page's helpers** ("Workweek starts on", "Pay frequency") say they are fixed once hours or a pay period exist, so the 409 isn't a surprise; text only.
+- **B8. The e2e specs restore Summit's section as they found it** (read at the start), not a written-out fixture, because the seed shifts fixture dates.
+
 ## Commands and results
 
-(filled in as the work goes)
+- `npx vitest run test/hr-settings-rules.test.ts test/settings-sections.test.ts` (packages/shared): 17 passed.
+- `npx vitest run tests/unit/demo-hr-settings.test.ts tests/unit/settings-answer.test.ts tests/unit/settings-dispatch.test.ts` (apps/web): 7 and 19 passed.
+- `npx vitest run --project integration --maxWorkers=2 test/settings-hr.int.test.ts` (apps/api): 26 passed, first run.
+- `pnpm typecheck`, `pnpm lint` (root): clean after the first commit.
+- Mutations (`mutate.mjs` in the scratchpad: one at a time, restored after each): see "Mutations".
+
+## Mutations
+
+20 mutations, one at a time, each restored. HM1 to HM17 and HM19, HM20 caught on the first run; **HM18 survived** (DemoStore ignoring timesheets and punches: every demo workweek case also had pay periods), so HD3b was added (Summit with hours but no pay periods) and HM18 is now caught.
+
+| Id | Mutation | Caught by |
+| --- | --- | --- |
+| HM1 | schedule lock never refuses | H6, H9 |
+| HM2 | no monthly rule | H8 |
+| HM3 | no step-up | H1, H5 |
+| HM4 | no scope check | H11 |
+| HM5 | no content rule on the API | H4 |
+| HM6 | no switch check | H10 |
+| HM7 | facts read before the row lock, outside the transaction | H9 |
+| HM8 | deleted rows count | H6, H7 |
+| HM9 | clock punches don't count | H7 |
+| HM10 | audit `before` always null | H5 |
+| HM11 | never-saved section answered | H2 |
+| HM12 | a pay period doesn't fix the workweek | HR4 |
+| HM13 | the anchor isn't locked | H6 |
+| HM14 | duplicate holiday dates pass | H4 |
+| HM15 | any year passes | HR2 |
+| HM16 | monthly rule judged on every save | H8 |
+| HM17 | DemoStore skips the records check | HD3 |
+| HM18 | DemoStore ignores hours | HD3b (added) |
+| HM19 | anchor not checked | H4 |
+| HM20 | dispatcher skips hr | HD2 |
 
 ## Owner questions (none blocks; each with its safest default taken)
 
-(filled in as the work goes)
+- **Q1. Changing the schedule on purpose.** Taken: refused once a pay period exists (frequency, anchor) or hours or a period exist (workweek). A company that must change its pay frequency or workweek has no path but support. Build "a new schedule from a chosen date" (close the open period, start the new cadence the day after, record the change for the FLSA records)?
+- **Q2. A step-up on every HR save,** holidays and the portal switches included. Taken: yes (payroll-relevant). Ask for it only when the workweek, frequency, anchor or a pay-visibility switch changes?
+- **Q3. Show the schedule lock on the page.** Taken: the page runs the content rule before the code, but the lock is judged by the store or the API, so its words show after the code (the step-up stays valid 5 minutes). Add a light read (whether a pay period or hours exist) so the page can show the fields as fixed?
+- **Q4. The first timesheet in the same instant as a workweek change.** Taken: accepted as a residual risk. Timesheet saves, uploads and clock punches read the workweek without the `hr` row's lock, so the company's very first sheet, saved in the same instant as a workweek change, can land on the old week. Close it by having those writes take `FOR SHARE` on the `hr` row (an HR module change)?
