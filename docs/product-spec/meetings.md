@@ -607,7 +607,7 @@ Part 3 (ADR 0051 "Part 3"), the screens on the API, also safer than this spec wh
   - Settings → Meetings and saving new guests (rule 11), narrowed: a contact only under a customer the reader can see, a lead only for someone who reads and may create customers;
   - the demo's PRODID;
   - no daily email caps (the per-meeting limits apply);
-  - the browser's day and clock, with meeting times as the zone's wall time;
+  - the company's day and clock in its own zone (`today()`; ADR 0051, "The company's day on the web"), with meeting times as the zone's wall time;
   - Undo remembered in memory only, so a reload forgets it and the toast is refused;
   - audit entries in the demo's own words, naming no private title, address or private guest;
   - email guest ids `ext-…`;
