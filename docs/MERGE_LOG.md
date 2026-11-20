@@ -35,3 +35,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-14 | #29 | fix(hr): California pay rules behind hr.payroll.california, off by default | @TwoWayTech | fix/hr-california-pay-switch | `f9b18a9` |
 | 2026-11-14 | #30 | fix(audit): commission plan terms and reasons only for pay viewers | @TwoWayTech | fix/hr-commission-audit-visibility | `e2ff2ae` |
 | 2026-11-14 | #31 | docs: handoff after PRs #28 to #30, queue paused | @TwoWayTech | fix/docs-handoff-2026-11-14 | `bd9155d` |
+| 2026-11-20 | #76 | docs: hand off A's run of 2026-11-20 (#45 to #69 and #43, then fix PRs #70 to #75) | @TwoWayTech | fix/docs-handoff-2026-11-20 | `ef2cb56` |
