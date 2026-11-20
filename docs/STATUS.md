@@ -132,6 +132,18 @@ Both plan files were written read-only by B and checked by a critic, but neither
 - The night watchdog LaunchAgent (`local.flooring-watchdog`) stopped itself on 2026-11-15 but is still loaded. Remove it with `launchctl bootout gui/$(id -u)/local.flooring-watchdog`.
 - B's helper scripts, logs and e2e traces are in the session scratchpad under /private/tmp. A reboot can clear them; nothing in them is needed to continue.
 
+## Owner's answers (2026-11-20, A's run)
+
+A carries on from "Handover for A". GitHub Actions runs again (PR #45's `e2e` re-ran green on 2026-11-20), so the stack merges on CI. The owner's answers, recorded in docs/blueprint-delta.md (2026-11-20 rows) and the ADRs named there:
+- **Invite branches** (PR #50 Q6): approved, first after the stack, with a security review (ADR 0051, 2026-11-20).
+- **Separation of duties** (PR #51 Q10): loosening the two-person payment check, its threshold or the write-off limit is Owner-only with a step-up; `PUT /settings/accounting` needs a step-up (ADR 0059, ADR 0040).
+- **People directory** (PR #50 Q2): active colleagues' names only; disabled people only for `settings.users.view` (ADR 0051).
+- **Waste is not sensitive** (PR #49 Q3): `wastePct` stays visible; sales.md rule 8 (ADR 0037).
+- **Time zone** stays read only (PR #53 Q1).
+- **Tax** (PR #54 Q1 and Q8): a change takes effect on the company's day of the save; an accepted quote keeps its accepted total; the invoice is taxed on its own day, with a note when that differs (ADR 0059). **Awaiting the client's accountant.**
+- **Passkey screens** approved with the `qrcode` library, after `/verify-password`; **Settings part 6** (branding) approved with a step-up and an audit row.
+- Every other open question keeps the safest default already built.
+
 ## Owner decisions (2026-11-14)
 - **Vercel:** option 2. PR #16 is merged (`328ca36`). `apps/web/vercel.json` lets only `demo` deploy. The self-merge rule counts only the GitHub Actions checks; Vercel's status is ignored on every branch except `demo`.
 - **Merge and push guard:** it does not read the quoted title or body of `gh pr|issue create|edit|comment|review`, so a PR comment can quote a guarded command.
@@ -671,6 +683,7 @@ Waiting for the owner, outside this queue: meetings part 4 (ADR 0051, "Later par
   - **Tests:** prove one pool per company, that parallel first requests share one open, and eviction while an open is in flight.
 
 ## Blockers and open questions
+- **Awaiting the client's accountant: tax on accepted quotes (owner, 2026-11-20).** A tax change takes effect on the company's day of the save. An accepted quote keeps the total the customer accepted; the invoice is taxed under the rule in force on its own day and carries a short note when that differs from the accepted quote (ADR 0059, "2026-11-20"). The accountant should confirm this before a real company relies on it.
 - **GitHub Actions is blocked by billing (since 2026-11-16 23:11 EET).** On PR #45, `verify` passed, then GitHub refused to start `e2e`: "The job was not started because recent account payments have failed or your spending limit needs to be increased." Re-runs at 23:43 and 2026-11-17 01:25 EET failed the same way (run 43954258826, attempts 2 and 3). Until the owner fixes the payment or raises the Actions spending limit (github.com, Settings, Billing and plans), no PR can self-merge. Meanwhile the fixes are built and reviewed locally, stacked in queue order (#45 to #54), and merge in that order once CI runs ("Handover for A" says how).
 - **Owner questions (PR #34, platform admin; ADR 0052, "For the owner"; spec docs/specs/platform-admin.md, "Waiting for the owner"):**
   - The admin host: an admin's home company must be one the platform controls, and admin sessions follow the stricter of the platform's and the company's timeouts?

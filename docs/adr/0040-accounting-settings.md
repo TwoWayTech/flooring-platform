@@ -36,3 +36,6 @@
 - A refund void, when one is added, credits back through `postedCashAccount` for the refund, not `cashAccountFor`.
 - The settings screen in the web app comes with the Settings module. Until then the API is the only way to set bank accounts.
 - When the accountant answers, each default is changed by saving the setting. No code changes are needed, except for a costing method other than average.
+
+## 2026-11-20: the owner's answer on separation of duties
+- `PUT /settings/accounting` needs a step-up, like every other save that moves money controls (ADR 0059, Q10). Built with the separation-of-duties task; ADR 0059 "2026-11-20" has the rule for the payment approval and write-off settings.
