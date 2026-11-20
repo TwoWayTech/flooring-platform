@@ -8,6 +8,7 @@ import {
   EXAMPLE_TAX_RULES,
   invoiceFromQuote,
   nextNumber,
+  quantityForArea,
   quoteLineFor,
   remeasureLines,
   savedQuoteLine,
@@ -226,7 +227,8 @@ describe("a new quote line (spec Quote builder)", () => {
   });
 
   it("starts a boxed line at one whole carton, so a new line is never a part carton (F-m, ADR 0027)", () => {
-    expect(quoteLineFor(product({ sqFtPerCarton: "23.640" }), "draft-1", [], waste).quantity).toBe("23.64");
+    const boxed = quoteLineFor(product({ sqFtPerCarton: "23.640" }), "draft-1", [], waste);
+    expect(boxed).toMatchObject({ quantity: "23.64", sqFtPerCarton: "23.640" });
     expect(quoteLineFor(product({}), "draft-1", [], waste).quantity).toBe("1");
     // A pack that is no carton (zero) is no pack: one unit, no carton size, and remeasuring doesn't throw.
     const zero = product({ sqFtPerCarton: "0.000" });
@@ -234,7 +236,8 @@ describe("a new quote line (spec Quote builder)", () => {
     expect(line.quantity).toBe("1");
     expect(line).not.toHaveProperty("sqFtPerCarton");
     const measured = remeasureLines([{ ...line, roomIds: ["living"] }], rooms, [zero]);
-    expect(measured[0]!.quantity).not.toBe("1");
+    // The living room is 14 × 18 = 252 sq ft, plus waste, with no carton rounding.
+    expect(measured[0]!.quantity).toBe(quantityForArea("252", line.wastePct ?? "0").toString());
   });
 
   it("ties installation sold per sq ft to the rooms, with no waste, by its name and taxed as labor", () => {
