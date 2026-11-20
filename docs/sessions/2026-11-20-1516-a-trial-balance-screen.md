@@ -146,3 +146,13 @@ Security review by the security-reviewer subagent: 4 rounds on `29e8d42..HEAD`. 
   - Every demo spec that exports a file (admin, expenses, import, invoice-lifecycle, meetings-invites, payments, quote, reports, states, tables), because `csvCell` now covers every CSV: 55 passed, 1 skipped.
 - **Clean-up:** servers stopped, ports 3000 and 4000 free, the throwaway container removed and the secrets file deleted.
 - **No product code changed in this step,** so no new security review was needed.
+
+## Merge of the moved base (f3e9136)
+`git merge --no-ff origin/feat/inventory-stock-rules-api` (f3e9136: Settings parts 4b, 5 and 6, and the bell) made `618fd77`, with no conflicts. Both sides had changed five files, and git merged each one automatically: `apps/web/src/lib/api/demo/store.ts`, `apps/web/src/lib/api/http/api-methods.ts`, docs/FEATURES.md, docs/api-contract.md and docs/blueprint-delta.md. No API file conflicted, the resolution needed no hand edit, and so it needed no new security review.
+
+Checks after the merge:
+- lint and typecheck pass;
+- `pnpm test`: shared 1234, web 486, api 128, db 18 and providers 11, all passing;
+- the reports and ledger API integration files (`--maxWorkers=3`): 11 files, 207 passed. They were trial-balance, reports, accounting, expenses, payroll, contract-billing, payables, commissions, stock-issue, invoices and settings-shared-costs.
+
+Playwright was not run, because the ports went to another builder.
