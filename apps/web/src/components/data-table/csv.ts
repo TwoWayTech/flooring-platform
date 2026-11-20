@@ -10,7 +10,7 @@ const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
  * formula gets a leading ' so a spreadsheet shows it instead of running it, as the import's CSV
  * does (ADR 0057 S-15); plain numbers stay as they are, so exports keep their values.
  */
-function escape(value: string | number | null): string {
+export function csvCell(value: string | number | null): string {
   if (value === null) return "";
   const raw = String(value);
   const text = FORMULA_START.test(raw) && !PLAIN_NUMBER.test(raw) ? `'${raw}` : raw;
@@ -20,8 +20,8 @@ function escape(value: string | number | null): string {
 /** CSV text of the given rows and columns. Values are the stored ones, so exports keep full precision. */
 export function toCsv<T>(rows: readonly T[], columns: readonly ColumnSpec<T>[]): string {
   const exported = columns.filter((c) => !c.visualOnly);
-  const header = exported.map((c) => escape(c.header)).join(",");
-  const lines = rows.map((row) => exported.map((c) => escape(c.value(row))).join(","));
+  const header = exported.map((c) => csvCell(c.header)).join(",");
+  const lines = rows.map((row) => exported.map((c) => csvCell(c.value(row))).join(","));
   return [header, ...lines].join("\n");
 }
 

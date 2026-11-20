@@ -12,6 +12,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
+import { RequireProduct } from "../../core/tenancy/access";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { requireReport } from "../reports/report-access";
@@ -42,12 +43,14 @@ export class LedgerController {
 
   /**
    * GET /ledger/trial-balance?through=: every account's totals, and whether debits equal credits.
-   * The Reports hub's Trial balance (ADR 0055 "Trial balance"): the hub's switch (404), company-wide
-   * scope (403), the query (400), then the sight rule (403), all before any figure is read. The rule
-   * and the figures come from one read-only snapshot, so a pay or contract posting that lands
-   * between them can't reach someone the rule would now refuse.
+   * The Reports hub's Trial balance (ADR 0055 "Trial balance"): Flooring Suite like the hub (403
+   * `product_not_enabled`), the hub's switch (404), company-wide scope (403), the query (400), then
+   * the sight rule (403), all before any figure is read. The rule and the figures come from one
+   * read-only snapshot, so a pay or contract posting that lands between them can't reach someone
+   * the rule would now refuse.
    */
   @Get("trial-balance")
+  @RequireProduct("flooring")
   @RequirePermission("reports.financial.view")
   @Header("Cache-Control", NO_STORE)
   async trialBalance(

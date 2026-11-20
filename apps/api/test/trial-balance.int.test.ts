@@ -264,6 +264,14 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     await read(cookies.owner!);
   });
 
+  it("is Flooring Suite only, like the hub: an HR Suite Owner gets the product refusal", async () => {
+    const hrCompany = await harness.provisionCompany("tbhr", ["hr"]);
+    const owner = await enrolled(await harness.addUser({ companyIds: [hrCompany.id], roles: ["owner"] }));
+    const response = await call(PATH, owner);
+    status(response, 403);
+    expect(response.body.code).toBe("product_not_enabled");
+  });
+
   it("is hidden with the Reports hub switched off (CLAUDE.md rule 13)", async () => {
     await withHubOff(async () => {
       status(await call(PATH, cookies.owner), 404);
