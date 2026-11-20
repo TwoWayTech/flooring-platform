@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { floatUses, parseFloatCalls, uiFiles } from "./coverage-scan/float-uses";
 import { KNOWN_FLOAT_USES } from "./coverage-scan/known-float-uses";
+import { SCAN_TIMEOUT_MS } from "./coverage-scan/source";
 
 /**
  * Money in the UI (whole-product check, UI-1, ADR 0058). CLAUDE.md rule 6: money, quantities and
@@ -8,7 +9,7 @@ import { KNOWN_FLOAT_USES } from "./coverage-scan/known-float-uses";
  * never as JS floats. ESLint already bans `toFixed` in UI code; this test bans `parseFloat` and
  * pins every money-named `Number(…)` or unary `+` to a reviewed entry with its class and follow-up.
  */
-describe("money in the UI (UI-1)", () => {
+describe("money in the UI (UI-1)", { timeout: SCAN_TIMEOUT_MS }, () => {
   it("scans the UI code", () => {
     expect(uiFiles().length, "the UI folders could not be read").toBeGreaterThan(200);
   });
