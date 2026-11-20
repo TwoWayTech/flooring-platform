@@ -1,3 +1,4 @@
+import { defaultNumberSettings, formatNumber, type NumberSettings } from "../numbers";
 import type { NotificationRule } from "../types/notifications";
 import { notificationEvent, type NotificationEvent } from "./events";
 
@@ -43,4 +44,15 @@ export function effectiveRule(
 /** The sample values of an event, for a preview when there is no real record to show. */
 export function sampleValues(event: Pick<NotificationEvent, "variables">): Record<string, string> {
   return Object.fromEntries(Object.entries(event.variables).map(([key, v]) => [key, v.sample]));
+}
+
+/**
+ * An amount as messages write it (spec rule 11, "Money in messages"): through the company's number
+ * format, whose money style already carries the currency sign ("$1,250.00"), or the US pack's when
+ * the company never saved one (CLAUDE.md rule 12: no literal sign). DemoStore and the API both use
+ * it, so an email and an in-app title show money the way every screen does (ADR 0059, bell and
+ * Outbox part, D6).
+ */
+export function messageMoney(amount: string, numbers: NumberSettings | undefined): string {
+  return formatNumber(amount, "money", numbers ?? defaultNumberSettings());
 }

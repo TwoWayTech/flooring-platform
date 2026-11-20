@@ -1334,16 +1334,32 @@ export class DemoStore implements ApiClient {
     return this.act((ctx) => resetNotificationRule(ctx, key));
   }
 
+  /** The Outbox; the whole company's only at data scope `all`, as on the API (security review round 2). */
   async listOutbox(all: boolean) {
-    return listOutbox(this.actionContext(this.open()), all);
+    const db = this.open();
+    const { access } = await this.granter(db);
+    return listOutbox(this.actionContext(db), all, access.dataScope === "all");
   }
 
   async retryOutbox(id: string) {
+    await this.assertWholeOutbox();
     return this.act((ctx) => retryOutbox(ctx, id));
   }
 
   async cancelOutbox(id: string) {
+    await this.assertWholeOutbox();
     return this.act((ctx) => cancelOutbox(ctx, id));
+  }
+
+  /**
+   * Send again and Cancel act on the whole company's Outbox: a holder of settings.outbox.view below
+   * data scope `all` is refused with the settings words, after the key, as on the API (round 2).
+   */
+  private async assertWholeOutbox(): Promise<void> {
+    const db = this.open();
+    const { access } = await this.granter(db);
+    if (access.permissions.has("settings.outbox.view") && access.dataScope !== "all")
+      throw new DemoRuleError(SETTINGS_SCOPE_MESSAGE);
   }
 
   async simulateBounce(id: string) {

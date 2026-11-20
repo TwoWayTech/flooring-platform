@@ -116,6 +116,13 @@ async function loadHrRecords(tx: CompanyDb): Promise<HrRecords> {
   return { facts: { payPeriods: periods, hoursRecorded: hours }, employees: people };
 }
 
+/**
+ * Settings → Email never saved (ADR 0059, bell and Outbox part, D10): every field empty, which is
+ * what the sender acts on: an empty sender name sends as the company's name, with no reply-to and
+ * no sign-off (`NotificationService`).
+ */
+const NEVER_SAVED_EMAIL: CompanySettings["email"] = { senderName: "", replyTo: "", signature: "" };
+
 /** A company profile that was never saved: every field empty. */
 const BLANK_PROFILE: CompanyProfile = {
   legalName: "",
@@ -242,6 +249,9 @@ export class SettingsService {
           if (branding) answer.branding = branding;
           break;
         }
+        case "email":
+          answer.email = await read(section);
+          break;
         default:
           throw unservedSection(section);
       }
@@ -619,6 +629,7 @@ export class SettingsService {
       expenses: () => loadExpenseSettings(db),
       // Exactly how the Business report reads a missing row: by revenue share (ADR 0023; part 4b, D9).
       sharedCosts: async () => DEFAULT_SHARED_COSTS,
+      email: async () => NEVER_SAVED_EMAIL,
     };
     return (await never[section]()) as StoredSection<S>;
   }

@@ -322,12 +322,15 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         expect(response.headers["cache-control"]).toBe("no-store");
         const body = response.body as SettingsAnswer;
         const held = new Set(expectedPermissions(company.product, key));
-        // All but HR: these companies never saved Settings → HR, which part 5's own file reads (H1).
-        const expected = readableSections({
-          permissions: held,
-          modules: enabledModules([company.product], null, []),
-        }).filter((section): section is Served | "sharedCosts" | "branding" => section !== "hr");
-        expect(Object.keys(body).sort()).toEqual([...expected].sort());
+        // All but HR, which these companies never saved and part 5's own file reads (H1), and Email,
+        // never saved here either, whose own file reads it (settings-email.int, ME1).
+        const reader = { permissions: held, modules: enabledModules([company.product], null, []) };
+        const readable = readableSections(reader);
+        const expected = readable.filter(
+          (section): section is Served | "sharedCosts" | "branding" => section !== "hr" && section !== "email",
+        );
+        const others = readable.includes("email") ? ["email"] : [];
+        expect(Object.keys(body).sort()).toEqual([...expected, ...others].sort());
         for (const section of expected) {
           // Branding is the control row's (part 6; its own cases are in settings-branding.int.test.ts).
           if (section === "branding") {
@@ -352,6 +355,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         if (company === floorco && key === "owner") {
           expect(Object.keys(body).sort()).toEqual([
             "branding",
+            "email",
             "expenses",
             "numbers",
             "payments",
@@ -367,7 +371,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         if (company === floorco && key === "warehouse")
           expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
         if (company === peopleco && key === "owner") {
-          expect(Object.keys(body).sort()).toEqual(["branding", "numbers", "profile"]);
+          expect(Object.keys(body).sort()).toEqual(["branding", "email", "numbers", "profile"]);
           expect(body.profile?.ein).toBe(SUMMIT.settings.profile.ein);
         }
       });
@@ -776,6 +780,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         } else
           expect(Object.keys(body).sort()).toEqual([
             "branding",
+            "email",
             "expenses",
             "numbers",
             "payments",
@@ -833,12 +838,14 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         403,
         "module_not_enabled",
       ]);
-      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["branding", "numbers", "profile"]);
+      // Email is a platform section: it stays while core is off.
+      expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual(["branding", "email", "numbers", "profile"]);
     } finally {
       await harness.control.db.delete(tenantModuleOverrides).where(eq(tenantModuleOverrides.tenantId, floorco.id));
     }
     expect(Object.keys(await answerOf(owner.cookie)).sort()).toEqual([
       "branding",
+      "email",
       "expenses",
       "numbers",
       "payments",

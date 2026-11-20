@@ -3,6 +3,7 @@ import { NUMBER_KINDS, type NumberKind, type NumberSettings } from "../numbers";
 import type { PermissionKey } from "../permissions/catalog";
 import type { ModuleKey } from "../products";
 import type { Branding } from "../types/company";
+import type { EmailSettings } from "../types/notifications";
 import type {
   CompanyProfile,
   CompanySettings,
@@ -97,8 +98,8 @@ export const SETTINGS_SECTIONS = {
 /**
  * The sections the API reads and writes (ADR 0059). Each later part adds its section here and to
  * `SETTINGS_READERS`, and the web routes it with no other change; every other section stays on
- * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR and part 6
- * Branding.
+ * DemoStore in api mode until then. Part 4b adds shared costs, part 5 Settings → HR, part 6
+ * Branding, and the bell and Outbox part Settings → Email (`email`, the sender details).
  */
 export const API_SETTINGS_SECTIONS = [
   "profile",
@@ -108,6 +109,7 @@ export const API_SETTINGS_SECTIONS = [
   "sharedCosts",
   "hr",
   "branding",
+  "email",
 ] as const;
 
 /** A section the API serves. */
@@ -155,6 +157,9 @@ export interface SettingsReadRule {
  * - `branding`: every member: the shell paints every screen with its color, pattern and theme and
  *   shows its name and monogram, and invoices, receipts and purchase orders print it (part 6, D6).
  *   Its page switch gates only the save. The API answers it from the control `tenant_branding` row.
+ * - `email` (the bell and Outbox part, D9): only Settings → Email and notifications reads it, so only
+ *   `settings.notifications.manage`, and it is hidden while that page's switch is off. The API's
+ *   sender reads the stored row whatever is answered.
  *
  * A screen added later that reads a section for someone not listed here must add its key, or in
  * api mode it gets DemoStore's copy. The server's own payment and expense checks read the stored
@@ -171,6 +176,7 @@ export const SETTINGS_READERS: Readonly<Record<ApiSettingsSection, SettingsReadR
     hiddenWhenOff: false,
   },
   branding: { readers: "everyone", hiddenWhenOff: false },
+  email: { readers: ["settings.notifications.manage"], hiddenWhenOff: true },
 };
 
 /** What `readableSections` needs to know about the reader: their effective keys and the company's modules. */
@@ -275,6 +281,8 @@ export interface SettingsAnswer {
   sharedCosts?: SharedCostSettings;
   /** Settings → HR as stored; left out while the company has never saved it (ADR 0059, part 5, D7). */
   hr?: HrSettings;
+  /** Settings → Email as stored, or all three fields empty when never saved (the bell and Outbox part, D10). */
+  email?: EmailSettings;
   /**
    * From the control `tenant_branding` row (ADR 0059, part 6, D6); left out when the company has no
    * live row. `logoDataUrl` is always null on the API: the monogram stands in for a logo (D5).

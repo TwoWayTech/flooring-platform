@@ -57,6 +57,11 @@ export function settingsFromAnswer(answer: SettingsAnswer, demo: CompanySettings
         // The control row's, without a logo: the monogram stands in on the API (ADR 0059, part 6, D5).
         merged.branding = answer.branding ?? demo.branding;
         break;
+      case "email":
+        // Only Settings → Email's manager reads it (the bell and Outbox part, D9); anyone else keeps
+        // DemoStore's copy, which none of their screens reads.
+        merged.email = answer.email ?? demo.email;
+        break;
       default:
         throw unservedSection(section);
     }

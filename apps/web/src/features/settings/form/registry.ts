@@ -212,7 +212,7 @@ export const SETTINGS = {
   },
   "email.senderName": {
     label: "Sender name",
-    helper: "The name people see in their inbox.",
+    helper: "The name people see in their inbox. Empty: your company's name.",
     href: "/settings/notifications",
   },
   "email.replyTo": {

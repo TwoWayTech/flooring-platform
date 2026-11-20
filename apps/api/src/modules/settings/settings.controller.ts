@@ -6,6 +6,7 @@ import {
   currencyProblem,
   datedRates,
   documentsProblem,
+  emailSettingsProblem,
   expenseSettingsProblem,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -19,7 +20,6 @@ import {
   payrollProblem,
   regionKeyProblem,
   regionProblem,
-  SETTINGS_SCOPE_MESSAGE,
   SETTINGS_SECTIONS,
   sharedCostsProblem,
   statesOfOperationChanged,
@@ -28,6 +28,7 @@ import {
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
+  type EmailSettings,
   type ExpenseSettings,
   type HrSettings,
   type LocalizationSettings,
@@ -43,6 +44,7 @@ import type { RequestAccess } from "../../core/access/access.service";
 import { AnyCompanyMember, Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
 import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
+import { requireWholeCompany } from "../../core/access/whole-company";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { StepUpService } from "../../core/auth/step-up.service";
@@ -53,6 +55,7 @@ import {
   BRANDING_INPUT,
   CURRENCY_INPUT,
   DOCUMENTS_INPUT,
+  EMAIL_INPUT,
   EXPENSES_INPUT,
   HR_INPUT,
   NUMBERS_INPUT,
@@ -64,15 +67,6 @@ import {
   TAX_INPUT,
 } from "./settings-input";
 import { settingsMissing, SettingsService } from "./settings.service";
-
-/**
- * Settings bind the whole company, so a save needs data scope `all` (ADR 0059 D4), as the books do
- * (ADR 0040); anyone narrower gets 403, whatever key their role holds. Warehouses and showrooms use
- * it too (ADR 0059, part 4a, D23).
- */
-export function requireWholeCompany(access: RequestAccess): void {
-  if (access.dataScope !== "all") throw new ForbiddenException({ code: "forbidden", message: SETTINGS_SCOPE_MESSAGE });
-}
 
 /** Refuses a body the shared content rules refuse, with their words (400 `invalid_request`). */
 function check(problem: string | null): void {
@@ -92,7 +86,8 @@ function check(problem: string | null): void {
  * adds Sales tax, whose save versions the rule and county-rate tables under the row's lock. Part 4b
  * adds Shared costs, judged against the live locations inside the save. Part 5 adds Settings → HR,
  * whose checks against recorded pay run under the `hr` row's lock. Part 6 adds Branding, the one
- * save that writes the control database: the company's own branding row.
+ * save that writes the control database: the company's own branding row. The bell and Outbox part
+ * adds Settings → Email, the sender details, with a step-up on every save.
  */
 @ApiTags("settings")
 @ApiCookieAuth()
@@ -313,6 +308,40 @@ export class SettingsController {
     check(brandingProblem(branding));
     await this.stepUp.require(session);
     return this.settings.saveBranding(tenant, actorOf(access, session, request), branding);
+  }
+
+  /**
+   * PUT /settings/email: Settings → Email, the sender details every Outbox row is written with (ADR
+   * 0059, bell and Outbox part, D7): `settings.notifications.manage`, `platform` (no module guard,
+   * as profile and numbers); the page's switch (404), scope `all` (403), a strict body and
+   * `emailSettingsProblem` (400), then always a step-up (403 `step_up_required`), after the content
+   * checks so a refused value never costs a code: the sender name and reply-to decide who customers'
+   * mail seems to come from and where their answers to invoices and receipts go, and the sign-off is
+   * under every message, so a change is a phishing lever. Answers the section as saved.
+   */
+  @Put("email")
+  @RequirePermission(...SETTINGS_SECTIONS.email.keys)
+  @Audited()
+  async saveEmail(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentAccess() access: RequestAccess,
+    @CurrentSession() session: AuthSession,
+    @Req() request: Request,
+    @Body() body: unknown,
+  ): Promise<EmailSettings> {
+    requireFeature(SETTINGS_SECTIONS.email.feature);
+    requireWholeCompany(access);
+    const email = parse(EMAIL_INPUT, body);
+    check(emailSettingsProblem(email));
+    await this.settings.save(
+      tenant,
+      actorOf(access, session, request),
+      "email",
+      email,
+      (value) => value,
+      () => this.stepUp.require(session),
+    );
+    return email;
   }
 
   /**

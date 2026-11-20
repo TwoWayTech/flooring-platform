@@ -19,7 +19,7 @@ import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
 import { CurrentTenant, type TenantContext } from "../../core/tenancy/tenant-context";
 import { ADDRESS_INPUT } from "../settings/settings-input";
-import { requireWholeCompany } from "../settings/settings.controller";
+import { requireWholeCompany } from "../../core/access/whole-company";
 import { InventoryService } from "./inventory.service";
 import { LocationsService } from "./locations.service";
 

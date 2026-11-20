@@ -7,6 +7,8 @@ import {
   CATEGORY_LABELS,
   CURRENCY_MESSAGES,
   DOCUMENT_MESSAGES,
+  EMAIL_MAX,
+  EMAIL_MESSAGES,
   HOLIDAY_NAME_MAX,
   HOLIDAYS_MAX,
   HR_MESSAGES,
@@ -26,6 +28,7 @@ import {
   type CompanyProfile,
   type CurrencyInput,
   type DocumentsInput,
+  type EmailSettings,
   type ExpenseSettings,
   type HrSettingsInput,
   type NumberKind,
@@ -355,5 +358,18 @@ export const HR_INPUT: z.ZodType<HrSettingsInput> = z
     showRatesToEmployees: z.boolean(),
     showTeamCalendarToEmployees: z.boolean(),
     clockEnabled: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Settings → Email as its page sends it (ADR 0059, bell and Outbox part, D7): three strings, nothing
+ * else. Each length carries its field's words and sits above the shared rule's own (ten times), so
+ * `emailSettingsProblem` speaks first for anything a person types; the JSON body limit bounds the rest.
+ */
+export const EMAIL_INPUT: z.ZodType<EmailSettings> = z
+  .object({
+    senderName: z.string().max(10 * EMAIL_MAX.senderName, EMAIL_MESSAGES.senderName),
+    replyTo: z.string().max(10 * EMAIL_MAX.replyTo, EMAIL_MESSAGES.replyTo),
+    signature: z.string().max(10 * EMAIL_MAX.signature, EMAIL_MESSAGES.signature),
   })
   .strict();

@@ -1022,13 +1022,18 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **The logo** isn't on the API yet: `GET /settings` answers none, so the monogram stands in, a logo sent to the API is refused with "Logos can't be uploaded yet. The monogram stands in for a logo.", and in api mode the page shows those words instead of the upload. The demo keeps its logo upload.
 - **The demo** runs the same key, switch, scope and rule 27 with the same words; its step-up is the dialog alone.
 
+**Settings on the API, the bell and Outbox part (ADR 0059): Email:**
+- **Who reads what.** `GET /settings` also answers `email` (sender name, reply-to, sign-off) to holders of `settings.notifications.manage` while `settings.notifications` is on; never saved, the three fields are empty, and an empty sender name sends as the company's name.
+- **The save.** `PUT /settings/email`, with `settings.notifications.manage`, the `settings.notifications` switch (404 when off), data scope `all`, a body with exactly the three fields, and the shared rule (`emailSettingsProblem`): the sender name at most 80 characters with no line break, quote, backslash, angle bracket, `@` or text-direction mark; the reply-to empty or one plain mailbox; the sign-off at most 500 characters. Then always a step-up: who mail seems to come from and where customers' answers go are a phishing lever. One audit entry, "Changed email and notifications".
+- **The demo** applies the same key, switch, scope, rule and words; its step-up is the dialog.
+
 **Known limits in api mode:**
 - **The seat limit is checked only on invite.** Enabling a disabled user does not check it, so a lowered limit can be passed by disabling and re-enabling someone. Lowering the limit below the seats in use is allowed.
 - **The branch limit is stored, not enforced.** The page says "Stored, not enforced yet." Enforcement comes with a branch editor (locations aren't branches; ADR 0059, part 4a).
 - **No live updates.** A role, ceiling or module changed elsewhere shows after the person's next write or a reload. Until then a button may show that the API refuses (a 403 message, then the app reads again) or hide one it allows. A person disabled while the app is open keeps the last screens until a reload, while the API refuses every call.
 - **The seat meter's limit, the plan and the status** on company screens are still the demo's (`getCompany()`), until billing facts reach those screens.
 - **The shell's branding** is the API's since Settings part 6, without a logo: the monogram stands in until logo upload is built (ADR 0059, part 6, Q1). The number format and the profile are the API's too (ADR 0059).
-- **Settings pages not yet on the API save in the browser only:** Email and notifications, Stock rules and Meetings. Their parts follow ADR 0059's order.
+- **Settings pages not yet on the API save in the browser only:** the event rules on Email and notifications (the sender is on the API), Stock rules and Meetings. Their parts follow ADR 0059's order.
 - **Locations (part 4a).** A location added in the wrong branch can be renamed but not moved or removed, and stays in every picker. A company with no branch can't add a location until a branch editor exists. Short rows stay at a location that became a showroom (they hold nothing). A quote saved at the moment its warehouse becomes a showroom stays open there; its conversion is refused until its warehouse is changed. The dashboard's warehouse filter reads the API's locations while its quotes are still the demo's, so with a warehouse picked its pending quotes read 0. Shared costs on the Expenses page list the API's locations but still save in the browser until part 4b. Saved demo data with an empty floor area breaks the demo's Business report until that location is saved again.
 - **Reset to default** reads the demo's original values, which the API was seeded with; Region and Currency keep the time zone, country, locale, base currency, its lock and the currencies from the company's own copy (ADR 0059, part 2b); Sales tax keeps filing and certificate types from the company's own copy (part 3a).
 - **The Sales tax tab shows rates at the columns' scale** (`8.81000000`).
@@ -1036,7 +1041,6 @@ The API follows this spec. Where it differs, it is in the safer direction, and e
 - **Installation-job invoices** stay on DemoStore and use its tax rules, which the Sales tax tab no longer writes in api mode.
 - **A Sales tax page left open** saves its view back (the last save wins; both are audited), as every settings section.
 - **The console's legal name** (`tenants.legal_name`) is the one given at sign-up; the company profile's legal name is the one documents print.
-- **The bell's and Outbox's money format** is still the demo's until the bell and Outbox move.
 - **"Members"** counts people who can sign in, not seats in use.
 - **No link to /admin.** There is no admin host yet; an admin signs in through a company and types /admin.
 - **The last save wins** when two admins edit one company. Both saves are in the platform audit log.

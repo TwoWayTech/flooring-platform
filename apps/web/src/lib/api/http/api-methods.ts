@@ -115,6 +115,9 @@ import {
   type SettingsAnswer,
 } from "@workspace/shared";
 import { settingsFromAnswer } from "./settings-answer";
+// The bell and the Outbox (ADR 0059, bell and Outbox part) keep their own imports.
+import type { InAppNotification } from "@workspace/shared";
+import { markRead, outboxAction, readOutbox } from "./outbox-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
 
@@ -210,6 +213,15 @@ export const API_METHODS = {
       await http.request<unknown>("PUT", `/settings/${section}`, body);
       return readSettings(http, demo);
     },
+  // The bell and the Outbox (ADR 0059, bell and Outbox part, D1 to D4): the person's own notes and
+  // their read state; the Outbox, their own rows or, with `all` and settings.outbox.view, the whole
+  // company's; Send again and Cancel message with settings.outbox.view. Simulate bounce and Simulate
+  // reply are presenter tools, hidden in api mode and left on DemoStore.
+  listMyNotifications: (http) => () => http.request<InAppNotification[]>("GET", "/notifications"),
+  markNotificationsRead: (http) => (ids) => markRead(http, ids),
+  listOutbox: (http) => (all) => readOutbox(http, all),
+  retryOutbox: (http) => (id) => outboxAction(http, id, "retry"),
+  cancelOutbox: (http) => (id) => outboxAction(http, id, "cancel"),
   // Settings, parts 2a, 2b and 3a (ADR 0059): every tab in API_LOCALIZATION_TABS, all of them since
   // part 3a, saves on the API; Sales tax checks its own key.
   updateLocalization:

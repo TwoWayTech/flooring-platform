@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   effectiveRule,
+  emailSettingsProblem,
   NOTIFICATION_EVENTS,
   NOTIFICATION_GROUPS,
   type EmailSettings,
@@ -145,6 +146,10 @@ export function NotificationsSettingsPage() {
           description="The name and reply address people see on every email."
           initial={settings.email}
           defaults={defaults.email}
+          // The shared rule first, then a code: who mail seems to come from and where replies go are
+          // a phishing lever, so the API asks for a step-up on every save (ADR 0059, bell and Outbox part, D7).
+          problem={emailSettingsProblem}
+          stepUp
           onSave={(email) => api.updateSettings("email", email).then(() => {})}
         >
           {(draft, setDraft, changed) => <SenderSection draft={draft} setDraft={setDraft} changed={changed} />}
