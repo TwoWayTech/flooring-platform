@@ -255,8 +255,11 @@ describe("commissions API (needs the local PostgreSQL)", () => {
     return test;
   }
 
-  const send = (method: "post" | "put", path: string, cookie: string, body: Record<string, unknown> = {}) =>
-    call(method, path, cookie).send(body);
+  /** A write. Approving or reopening a pay period needs a step-up (ADR 0063), so those get one first. */
+  const send = async (method: "post" | "put", path: string, cookie: string, body: Record<string, unknown> = {}) => {
+    if (/^\/pay-periods\/[^/]+\/(approve|reopen)$/.test(path)) await harness.grantStepUp(cookie);
+    return call(method, path, cookie).send(body);
+  };
 
   /** Asserts a status and shows the body when it differs. */
   function status(response: Response, expected: number): void {

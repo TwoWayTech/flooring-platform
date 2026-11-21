@@ -310,8 +310,10 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
           expect((await healSection(dana.request, "profile", seededProfile)).status()).toBe(200);
         }
         personas.onCleanup("put the profile email back", () => healOrThrow(dana.request, "profile", seededProfile));
-        personas.onCleanup("put expense approval back", () => healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES));
-        expect((await healSection(dana.request, "expenses", SUMMIT_EXPENSES)).status()).toBe(200);
+        personas.onCleanup("put expense approval back", () =>
+          healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret),
+        );
+        expect((await healSection(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret)).status()).toBe(200);
         const email = `e2e-${runId()}@summitfloor.example`;
 
         // 1. Dana saves a new email on Company profile.
@@ -359,14 +361,28 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         await dana.page.getByRole("button", { name: "Save expense approval" }).click();
         expect((await expensesPut).status()).toBe(200);
         await expect(dana.page.getByText("Expense approval saved")).toBeVisible();
+        // A lower amount tightens the check, so no code was asked for (ADR 0063).
+        await expect(dana.page.getByRole("dialog", { name: "Confirm it is you" })).toHaveCount(0);
         expect(sharedCosts).toEqual([]);
         await dana.page.reload();
         await expect(dana.page.getByLabel("Approval above")).toHaveValue("750.00");
         expect((await readAs<SettingsAnswer>(dana.request, "/settings")).expenses?.approvalThreshold).toBe("750.00");
 
-        // 4. Put both back.
+        // 4. Raising it back loosens the check: the Owner's, with a code (owner's decision 6, ADR 0063).
+        await dana.page.getByLabel("Approval above").fill(SUMMIT_EXPENSES.approvalThreshold);
+        const raised = dana.page.waitForResponse(
+          (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === "/api-proxy/settings/expenses",
+        );
+        await dana.page.getByRole("button", { name: "Save expense approval" }).click();
+        await confirmStepUp(dana.page, dana.secret!);
+        expect((await raised).status()).toBe(200);
+        expect((await readAs<SettingsAnswer>(dana.request, "/settings")).expenses).toEqual(SUMMIT_EXPENSES);
+
+        // 5. Put both back.
         expect((await healOrThrow(dana.request, "profile", seededProfile)).status()).toBe(200);
-        expect((await healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES)).status()).toBe(200);
+        expect((await healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret)).status()).toBe(200);
       },
     );
   });

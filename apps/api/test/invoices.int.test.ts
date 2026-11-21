@@ -663,6 +663,15 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     );
     expect(closed.status).toBe(409);
     expect(closed.body.code).toBe("period_closed");
+    // Reopening loosens the close, so it needs a fresh step-up (ADR 0063); closing needed none.
+    await harness.dropStepUp(cookies.owner);
+    const unconfirmed = await call("post", "/ledger/period-close", cookies.owner).send({
+      through: "2000-01-01",
+      note: "Reopened",
+    });
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect((await call("get", "/ledger/period-close", cookies.owner).expect(200)).body.closedThrough).toBe(today);
+    await harness.grantStepUp(cookies.owner);
     await call("post", "/ledger/period-close", cookies.owner)
       .send({ through: "2000-01-01", note: "Reopened" })
       .expect(201);

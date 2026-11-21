@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuthModule } from "../../core/auth/auth.module";
 import { NotificationsModule } from "../../core/notifications/notifications.module";
 import { BonusesService } from "./bonuses.service";
 import { CommissionsController, CommissionTotalsController } from "./commissions.controller";
@@ -23,7 +24,8 @@ import { TimesheetsService } from "./timesheets.service";
  * companies with HR and HR Suite companies.
  */
 @Module({
-  imports: [NotificationsModule],
+  // AuthModule gives StepUpService for approving and reopening a pay period (ADR 0063).
+  imports: [AuthModule, NotificationsModule],
   controllers: [
     PeopleController,
     TimesheetsController,

@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  EXPENSE_APPROVAL_OWNER_ONLY,
+  expenseApprovalLoosened,
   expenseSettingsProblem,
   PERCENT_TEXT_MAX,
   sharedCostsProblem,
@@ -111,10 +113,18 @@ function SharingSection({
   );
 }
 
-/** Settings → Expenses (spec F1): approval above an amount and how company-wide costs are shared. */
+/**
+ * Settings → Expenses (spec F1): approval above an amount and how company-wide costs are shared.
+ * Switching approval off or raising its amount loosens the two-person check, so it is the Owner's
+ * alone and asks for a step-up code; the shared rule and the Owner-only words run first, so a
+ * refused value never costs a code (owner's decision 6, ADR 0061; ADR 0063). Tightening needs no code.
+ */
 export function ExpensesSettingsPage() {
   const can = useCan();
-  const { settings } = useWorkspace();
+  const { settings, access } = useWorkspace();
+  const loosens = (draft: ExpenseSettings) => expenseApprovalLoosened(draft, settings.expenses);
+  const approvalProblem = (draft: ExpenseSettings) =>
+    expenseSettingsProblem(draft) ?? (!access.isOwner && loosens(draft) ? EXPENSE_APPROVAL_OWNER_ONLY : null);
   const data = useApiQuery(async (client) => {
     const [defaults, locations] = await Promise.all([client.getDefaultSettings(), client.list("locations")]);
     return { defaults, locations };
@@ -131,7 +141,8 @@ export function ExpensesSettingsPage() {
           description="Expenses above this amount wait for a second person."
           initial={settings.expenses}
           defaults={defaults.expenses}
-          problem={expenseSettingsProblem}
+          problem={approvalProblem}
+          stepUp={loosens}
           onSave={(expenses) => api.updateSettings("expenses", expenses).then(() => {})}
         >
           {(draft, setDraft, changed) => <ApprovalSection draft={draft} setDraft={setDraft} changed={changed} />}

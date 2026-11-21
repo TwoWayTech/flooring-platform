@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import type { LocalizationSettings } from "@workspace/shared";
+import { overtimeRuleChanged, type LocalizationSettings } from "@workspace/shared";
 import { Panel } from "@workspace/ui/components/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@workspace/ui/components/tabs";
 import { NoAccess } from "@/components/no-access";
@@ -42,7 +42,7 @@ type Tab = keyof typeof TABS;
  * Settings: Localization and tax (blueprint "Localization, currency and tax settings"): the place
  * for everything that changes a company's calculations. Each tab saves on its own. Region asks for
  * a code only when the states of operation change, Currency always; both run their shared rule
- * first (ADR 0059, part 2b). Sales tax runs its shared rule before the code, keeps what it can't
+ * first (ADR 0059, part 2b). Payroll rules asks only when the overtime rule changes (ADR 0063). Sales tax runs its shared rule before the code, keeps what it can't
  * change on Reset, and remounts when the tab in force changes, so a save shows its own dates (part 3a).
  */
 export function LocalizationPage() {
@@ -105,7 +105,10 @@ export function LocalizationPage() {
           </SettingsForm>
         </TabsContent>
         <TabsContent value="payroll" className="pt-4">
-          <SettingsForm {...form("payroll")}>
+          <SettingsForm
+            {...form("payroll")}
+            stepUp={(draft: LocalizationSettings["payroll"]) => overtimeRuleChanged(draft, loc.payroll)}
+          >
             {(draft, setDraft, changed) => <PayrollTab draft={draft} setDraft={setDraft} changed={changed} />}
           </SettingsForm>
         </TabsContent>

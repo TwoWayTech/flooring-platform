@@ -31,7 +31,7 @@ import {
 import { hashPassword } from "better-auth/crypto";
 import { decodeMemberRoles, encodeMemberRoles, rolesRequireMfa, type ProductKey } from "@workspace/shared";
 import { roles, userProfiles, userRoles } from "@workspace/db/company";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 import { createApp } from "../src/app";
@@ -197,6 +197,24 @@ export class AuthHarness {
       { kind: "step_up_pass", subject: `step:${row.userId}`, ip: null },
       { kind: "step_up_ok", subject: row.id, ip: null },
     ]);
+  }
+
+  /**
+   * Forgets every passed step-up of the session behind `cookie`, as if its 5 minutes were over, so a
+   * suite that steps up as setup can still check that a route refuses without one (ADR 0063).
+   */
+  async dropStepUp(cookie: string): Promise<void> {
+    await this.control.db
+      .delete(authAttempts)
+      .where(and(eq(authAttempts.kind, "step_up_ok"), eq(authAttempts.subject, await this.sessionIdOf(cookie))));
+  }
+
+  /** The id of the session behind a session cookie. */
+  private async sessionIdOf(cookie: string): Promise<string> {
+    const token = decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)).split(".")[0];
+    const [row] = await this.control.db.select({ id: session.id }).from(session).where(eq(session.token, token));
+    if (!row) throw new Error("No session for that cookie.");
+    return row.id;
   }
 
   /** Signs in and returns the session cookie, or fails the test with Better Auth's answer. */

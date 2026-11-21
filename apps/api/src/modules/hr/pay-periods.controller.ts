@@ -84,7 +84,7 @@ export class PayPeriodsController {
     return this.periods.setExclusion(tenant, actorOf(access, session, request), id, input.employeeId, input.reason);
   }
 
-  /** POST /pay-periods/:id/approve: freezes the lines and posts the payroll accrual. */
+  /** POST /pay-periods/:id/approve: freezes the lines and posts the payroll accrual, after a step-up (ADR 0063). */
   @Post(":id/approve")
   @RequirePermission("hr.payroll.approve")
   @Audited()
@@ -99,7 +99,7 @@ export class PayPeriodsController {
     return this.periods.approve(tenant, actorOf(access, session, request), id);
   }
 
-  /** POST /pay-periods/:id/reopen: returns an approved run to review, reversing its postings. */
+  /** POST /pay-periods/:id/reopen: returns an approved run to review, reversing its postings, after a step-up (ADR 0063). */
   @Post(":id/reopen")
   @RequirePermission("hr.payroll.approve")
   @Audited()

@@ -380,6 +380,8 @@ describe("money scenarios on new companies (whole-product check; needs the local
         .id;
     });
     await run.step("the Owner approves the run (HR added the bonus, so someone else approves)", async () => {
+      // Approving and reopening a pay period need a step-up (ADR 0063).
+      await harness.grantStepUp(run.owner);
       await run.act(201, moneyCalls.payPeriodApprove(opened!.id), run.owner);
     });
     await run.checkAll("after the approval");
@@ -428,11 +430,13 @@ describe("money scenarios on new companies (whole-product check; needs the local
       },
     ]);
     await run.step("HR reopens the run, which reverses its entry today", async () => {
+      await harness.grantStepUp(hr);
       await run.act(201, moneyCalls.payPeriodReopen(opened!.id), hr);
     });
     await run.checkAll("after the reopen");
     expect(balanceOf(run.books.trial, "accrued_payroll").isZero(), "the reopen took the accrual back").toBe(true);
     await run.step("the Owner approves the run again", async () => {
+      await harness.grantStepUp(run.owner);
       await run.act(201, moneyCalls.payPeriodApprove(opened!.id), run.owner);
     });
     await run.checkAll("after the second approval");

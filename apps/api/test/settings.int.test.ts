@@ -18,6 +18,7 @@ import {
   DEFAULT_SHARED_COSTS,
   defaultNumberSettings,
   enabledModules,
+  EXPENSE_APPROVAL_OWNER_ONLY,
   EXPENSE_MESSAGES,
   FEATURES,
   NUMBER_KINDS,
@@ -685,7 +686,7 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect((await cardPayment(y.id, "1.00")).number).toBe("RCV-0001");
   });
 
-  it("A7 PUT /settings/expenses: the Owner without a step-up; the server applies the approval rule", async () => {
+  it("A7 PUT /settings/expenses: the Owner; the server applies the approval rule", async () => {
     const body = { approvalRequired: false, approvalThreshold: "" };
     for (const key of PRODUCT_ROLES.flooring) {
       const response = await put("expenses", people.get(`flooring:${key}`)!.cookie, SUMMIT.settings.expenses);
@@ -721,6 +722,8 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         asDraft: false,
         files: [PDF],
       });
+    // Switching approval off loosens it: the Owner's, with a step-up (ADR 0063; A17).
+    await stepUp(pay.owner);
     await put("expenses", pay.owner.cookie, body).expect(200);
     const free = await expense();
     expect(free.status, JSON.stringify(free.body)).toBe(201);
@@ -984,6 +987,53 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
     expect(await rowOf(payco, "payments")).toBeUndefined();
     await stepUp(pay.owner);
     await put("payments", pay.owner.cookie, loose).expect(200);
+  });
+
+  it("A17 only an Owner loosens expense approval, with a step-up, refused before the code; tightening needs neither (ADR 0063)", async () => {
+    const rules = SUMMIT.settings.expenses;
+    const dana = people.get("flooring:owner")!;
+    await stepUp(dana);
+    await put("expenses", dana.cookie, rules).expect(200);
+    const roleKey = "expense-approval-keeper";
+    await withCompanyDb(floorco, async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: roleKey, name: "Expense approval keeper", dataScope: "all" as const })
+        .returning();
+      await db.insert(rolePermissions).values({ roleId: role.id, permissionKey: SETTINGS_SECTIONS.expenses.keys[0] });
+    });
+    const keeper = await member(floorco, [roleKey], true);
+    const before = await rowOf(floorco, "expenses");
+    const audits = await auditCount(floorco);
+    const looser = [{ approvalRequired: false }, { approvalThreshold: "1000.01" }];
+    // Anyone but an Owner: refused with the Owner-only words, before any code is asked for.
+    for (const patch of looser) {
+      const refused = await put("expenses", keeper.cookie, { ...rules, ...patch });
+      expect([...outcome(refused), refused.body.message], JSON.stringify(patch)).toEqual([
+        403,
+        "owner_only",
+        EXPENSE_APPROVAL_OWNER_ONLY,
+      ]);
+    }
+    // The Owner without a fresh step-up: refused with the step-up code; nothing stored or audited.
+    await harness.dropStepUp(dana.cookie);
+    for (const patch of looser)
+      expect(outcome(await put("expenses", dana.cookie, { ...rules, ...patch })), JSON.stringify(patch)).toEqual([
+        403,
+        "step_up_required",
+      ]);
+    expect(await rowOf(floorco, "expenses")).toEqual(before);
+    expect(await auditCount(floorco)).toBe(audits);
+    // Keeping or tightening needs only the key: no step-up, for the keeper or the Owner.
+    await put("expenses", keeper.cookie, rules).expect(200);
+    const tighter = { approvalRequired: true, approvalThreshold: "500.00" };
+    await put("expenses", keeper.cookie, tighter).expect(200);
+    await put("expenses", keeper.cookie, { approvalRequired: true, approvalThreshold: "" }).expect(200);
+    // The Owner with a step-up loosens.
+    await harness.grantStepUp(dana.cookie);
+    await put("expenses", dana.cookie, { approvalRequired: false, approvalThreshold: "" }).expect(200);
+    await put("expenses", dana.cookie, rules).expect(200);
+    expect(await rowOf(floorco, "expenses")).toEqual(rules);
   });
 
   it("A14 two saves at once: both answered, both audited in order, the later one stored", async () => {

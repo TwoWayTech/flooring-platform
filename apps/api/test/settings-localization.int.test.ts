@@ -627,10 +627,18 @@ describe("settings part 2a on the API: Sales and documents and Payroll rules (ne
       overtimeRuleProblem("california", false),
     ]);
     await withCaliforniaRules(async () => {
+      // A new overtime rule changes everyone's overtime pay, so it needs a step-up (ADR 0063); the
+      // holiday calendar alone (the role walk above) needs none.
+      await harness.dropStepUp(owner.cookie);
+      const unconfirmed = await put("payroll", owner.cookie, california);
+      expect(outcome(unconfirmed)).toEqual([403, "step_up_required"]);
+      expect((await rowOf(floorco))!.payroll.overtimeRule).toBe("federal");
+      await harness.grantStepUp(owner.cookie);
       const taken = await put("payroll", owner.cookie, california);
       expect(taken.status, JSON.stringify(taken.body)).toBe(200);
       expect((await rowOf(floorco))!.payroll.overtimeRule).toBe("california");
     });
+    // Back to the federal rule is a change too, within the step-up just given.
     await put("payroll", owner.cookie, { overtimeRule: "federal", holidayState: "CO" }).expect(200);
     const weekly = await put("payroll", owner.cookie, { overtimeRule: "weekly", holidayState: "CO" });
     expect([...outcome(weekly), weekly.body.message]).toEqual([

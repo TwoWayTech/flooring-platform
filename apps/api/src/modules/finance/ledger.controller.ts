@@ -10,6 +10,7 @@ import { CurrentAccess } from "../../core/access/permission.guard";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { RequireProduct } from "../../core/tenancy/access";
@@ -39,6 +40,7 @@ export class LedgerController {
     private readonly ledger: LedgerService,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -77,7 +79,10 @@ export class LedgerController {
     return { closedThrough: await this.ledger.closedThrough(await this.tenancy.db(tenant)) };
   }
 
-  /** POST /ledger/period-close: closes the books through a day, or reopens to an earlier one. Audited. */
+  /**
+   * POST /ledger/period-close: closes the books through a day, or reopens to an earlier one, which
+   * needs a step-up (ADR 0063). Audited.
+   */
   @Post("period-close")
   @RequirePermission("settings.company.manage")
   @Audited()
@@ -98,7 +103,12 @@ export class LedgerController {
     const actor = actorOf(access, session, request);
     const db = await this.tenancy.db(tenant);
     await db.transaction(async (tx) => {
-      const before = await this.ledger.closePeriod(tx, through, note.trim(), access.userId);
+      // Reopening lets entries back into days already closed, a loosening of a control, so it needs a
+      // step-up, judged under the period lock against the day closed before (ADR 0063). Closing
+      // tightens, so it needs none.
+      const before = await this.ledger.closePeriod(tx, through, note.trim(), access.userId, async (closed) => {
+        if (closed && through < closed) await this.stepUp.require(session);
+      });
       await this.auditLog.record(
         tenant,
         actor.audit,

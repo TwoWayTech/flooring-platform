@@ -185,6 +185,18 @@ export function payrollProblem(payroll: PayrollInput): string | null {
     : PAYROLL_MESSAGES.holidayState;
 }
 
+/**
+ * Whether a Payroll rules save changes the overtime rule, which changes everyone's overtime pay, so
+ * it needs a step-up (ADR 0063); the holiday calendar alone does not. `current` is the stored tab, or
+ * undefined when none is stored, which counts as a change (the safest reading).
+ */
+export function overtimeRuleChanged(
+  next: Pick<PayrollInput, "overtimeRule">,
+  current: { overtimeRule?: unknown } | undefined,
+): boolean {
+  return current?.overtimeRule !== next.overtimeRule;
+}
+
 // Region and Currency (ADR 0059, part 2b).
 
 /** The date formats the Region tab offers; `regionProblem` takes exactly these. */

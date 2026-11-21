@@ -568,12 +568,14 @@
         "listPayPeriods",
         "reopenPayPeriod",
         "reviewPayPeriod",
-        "setPayExclusion"
+        "setPayExclusion",
+        "verifyStepUp"
       ],
       "onDemo": [],
       "routes": [
         "GET /pay-periods",
         "GET /pay-periods/:id/review",
+        "POST /auth/step-up",
         "POST /pay-periods",
         "POST /pay-periods/:id/approve",
         "POST /pay-periods/:id/exclusions",
