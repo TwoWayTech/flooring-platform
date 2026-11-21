@@ -10,6 +10,7 @@ import {
   lineToDate,
   moneyString,
   sum,
+  TYPED_SIGNATURE_NOTE,
   type BillingLine,
   type ChangeOrder,
   type Contract,
@@ -93,14 +94,28 @@ function FormDialog({
   );
 }
 
-/** Records a simulated signature: typed name and role (spec D2). */
-export function SignDialog({ contract, signer, onClose }: { contract: Contract; signer: string; onClose: () => void }) {
+/**
+ * Records a typed signature: name and role (spec D2). `signer` is the other company's contact
+ * person, or empty when it has none, so a company name is never offered as a person's name.
+ * `warning` (no insurance certificate on a subcontract) is shown but never blocks signing.
+ */
+export function SignDialog({
+  contract,
+  signer,
+  warning,
+  onClose,
+}: {
+  contract: Contract;
+  signer: string;
+  warning: string | null;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(signer);
   const [role, setRole] = useState("Authorized signer");
   return (
     <FormDialog
       title={`Record signature on ${contract.number}`}
-      description="This is a simulated signature for the demo. A real signature would come from a signing provider."
+      description={TYPED_SIGNATURE_NOTE}
       confirm="Record signature"
       onClose={onClose}
       onSubmit={async () => {
@@ -108,12 +123,61 @@ export function SignDialog({ contract, signer, onClose }: { contract: Contract; 
         return "Signature recorded";
       }}
     >
+      {warning ? (
+        <p role="status" className="text-warning-ink bg-warning/14 rounded-md p-3 text-sm">
+          {warning}
+        </p>
+      ) : null}
       <Field id="sign-name" label="Signer's full name">
         <Input id="sign-name" value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field id="sign-role" label="Role">
         <Input id="sign-role" value={role} onChange={(e) => setRole(e.target.value)} />
       </Field>
+    </FormDialog>
+  );
+}
+
+/**
+ * Confirms approving a change order, with the contract value it leads to (spec rule 17). Approval
+ * changes line values at once, so it is never a single click.
+ */
+export function ApproveChangeOrderDialog({
+  order,
+  value,
+  onClose,
+}: {
+  order: ChangeOrder;
+  /** The contract value now: the sum of its lines. */
+  value: string;
+  onClose: () => void;
+}) {
+  const change = sum(order.lines.map((l) => l.amountDelta));
+  return (
+    <FormDialog
+      title={`Approve ${order.number}`}
+      description="The schedule of values changes at once. Invoices already issued stay as they are."
+      confirm="Approve"
+      onClose={onClose}
+      onSubmit={async () => {
+        await api.decideChangeOrder(order.id, { approve: true, reason: "" });
+        return `${order.number} approved`;
+      }}
+    >
+      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-muted-foreground">Contract value now</dt>
+        <dd className="text-right">
+          <Num kind="money" value={value} />
+        </dd>
+        <dt className="text-muted-foreground">This change</dt>
+        <dd className="text-right">
+          <Num kind="money" value={moneyString(change)} />
+        </dd>
+        <dt className="font-medium">New contract value</dt>
+        <dd className="text-right font-medium">
+          <Num kind="money" value={moneyString(dec(value).plus(change))} />
+        </dd>
+      </dl>
     </FormDialog>
   );
 }

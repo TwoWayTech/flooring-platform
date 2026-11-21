@@ -161,7 +161,7 @@ Every row is one `meeting.invite` Outbox row and one `.ics` per guest, from `sen
 4. They set Repeats (`none`, `weekly`, `biweekly`, `monthly`), Reminder (10, 15, 30 or 60 minutes), Private and Hide the guest list.
 5. Schedule meeting checks the title, the recurrence start and each new email. It saves new guests, writes the meeting, sends the invites and schedules the reminder.
 
-**Move or resize** (`useReschedule`, `TimeGrid`, `RescheduleForm`, `rescheduleMeeting`). Drag moves a meeting and snaps to 15 minutes. Dragging the bottom edge resizes it. The drawer's Reschedule form does the same by keyboard. A repeating meeting asks This event, This and following events, or All events, with This event selected. A one-off goes straight through with scope `all`. After saving, conflicts appear as a warning, and the toast offers Undo. (Since part 3, ADR 0051: the dialog offers only the scopes the shared move rules allow for that drop and names why each other one is left out, and a move gives one toast that offers Undo and names any conflicts in it.)
+**Move or resize** (`useReschedule`, `TimeGrid`, `RescheduleForm`, `rescheduleMeeting`). Drag moves a meeting and snaps to 15 minutes. Dragging the bottom edge resizes it. The drawer's Reschedule form does the same by keyboard. A repeating meeting asks This event, This and following events, or All events, with This event selected. A one-off goes straight through with scope `all`. After saving, conflicts appear as a warning, and the toast offers Undo. (Since part 3, ADR 0051: the dialog offers only the scopes the shared move rules allow for that drop and names why each other one is left out, and a move gives one toast that offers Undo and names any conflicts in it.) (Since click-through #44: only a 6 px band at the block's bottom edge, at most a quarter of the block, resizes; a drag from anywhere else moves. A change that keeps the start is a resize and says so: the dialog "Change a repeating meeting's length", the toast "<title> now lasts N minutes" and the audit entry `Changed meeting length`. The toast and its Undo stay 10 seconds. Blocks under 40 px show the time and title on one line, truncated, with the full text as a tooltip.)
 
 **Answer.** Staff answer in the meeting drawer with Accept, Maybe, Decline or Propose a new time. The organiser gets no answer buttons. External guests are represented by Simulate reply on the Outbox row (`SimulateReply` in `simulate-reply.tsx`), which offers the same four answers.
 
@@ -426,6 +426,7 @@ Audit entries, all `category: "data"`, written with `ctx.audit`:
 | `Accepted proposed time` | `decideProposal` on accept | Title | Old start | New start |
 | `Requested meeting` | `requestMeeting` | Title | null | The other person |
 | `Moved meeting` | `rescheduleMeeting` | Title | Planned time | New time, length and scope |
+| `Changed meeting length` | `rescheduleMeeting` that keeps the occurrence's start (a resize; click-through #44) | Title | Planned time | New time, length and scope |
 | `Undid meeting move` | `undoReschedule` | Title | null | Restored start |
 
 Saving Settings > Meetings writes `Changed meetings`, `category: "settings"`, target `Meetings`, from `updateSettings` in `store.ts`.

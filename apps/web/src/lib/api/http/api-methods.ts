@@ -8,6 +8,7 @@ import type {
   Conflict,
   Contract,
   ContractBilling,
+  ContractSchedule,
   ContractLine,
   Customer,
   Employee,
@@ -584,6 +585,8 @@ export const API_METHODS = {
       locations,
       bills,
       supplierPayments,
+      schedule,
+      supplierContacts,
     ] = await Promise.all([
       seen(http.request<Contract[]>("GET", "/contracts")),
       seen(http.request<ContractLine[]>("GET", "/contract-lines")),
@@ -597,6 +600,11 @@ export const API_METHODS = {
       seen(http.request<Location[]>("GET", "/locations")),
       seenOrOff(http.request<Bill[]>("GET", "/bills")),
       seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+      // Derived on the server (contracts.md rules 10a, 11a); without billing it reads as no figures.
+      seenOrOff(http.request<ContractSchedule>("GET", "/contract-schedule").then((schedule) => [schedule])).then(
+        ([schedule]): ContractSchedule => schedule ?? { lines: [], billings: [] },
+      ),
+      seenOrOff(http.request<SupplierContact[]>("GET", "/supplier-contacts")),
     ]);
     return {
       contracts,
@@ -610,6 +618,8 @@ export const API_METHODS = {
       locations,
       bills,
       supplierPayments,
+      schedule,
+      supplierContacts,
     };
   },
   saveContract: (http) => (input) => {

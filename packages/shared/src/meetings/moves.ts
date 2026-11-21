@@ -12,6 +12,7 @@ import {
 } from "../operations/meetings";
 import type { Attendee, Meeting, MeetingException } from "../types";
 import { meetingForViewer, sameAttendee, seesMeeting, type MeetingViewer } from "./access";
+import { MEETING_AUDIT_ACTIONS } from "./audit";
 import { durationProblem, MEETING_LIMITS, startProblem, typedStartProblem } from "./input";
 import { hasEnded } from "./sends";
 
@@ -505,10 +506,38 @@ export function undoneMeeting(current: Meeting, record: MoveRecord): Meeting {
  */
 export function restoredOccurrence(record: MoveRecord): { recurrenceId: string; start: string; durationMin: number } {
   const { planned, series } = record.before;
-  const earlier = series.exceptions.find((e) => e.planned === planned);
-  return {
-    recurrenceId: planned,
-    start: earlier?.start ?? planned,
-    durationMin: earlier?.durationMin ?? series.durationMin,
-  };
+  return { recurrenceId: planned, ...occurrenceTime(series, planned) };
+}
+
+/**
+ * The time and length an occurrence has now (meetings.md rule 1): an exception's own where it has
+ * them, otherwise the planned time and the series' length.
+ */
+export function occurrenceTime(
+  meeting: Pick<Meeting, "durationMin" | "exceptions">,
+  planned: string,
+): { start: string; durationMin: number } {
+  const own = meeting.exceptions.find((e) => e.planned === planned);
+  return { start: own?.start ?? planned, durationMin: own?.durationMin ?? meeting.durationMin };
+}
+
+/** Whether a change of an occurrence moves it or only changes its length (a resize). */
+export type MoveKind = "move" | "resize";
+
+/**
+ * What a change does to the occurrence it starts from (meetings.md "Move or resize"; click-through
+ * #44): a resize keeps the start and changes only the length; anything else, a new start with or
+ * without a new length, is a move. The screen words its dialog and toast by it, and the server picks
+ * the audit action by it from the meeting it holds, never from anything the client says.
+ */
+export function moveKind(
+  from: { start: string; durationMin: number },
+  to: { start: string; durationMin: number },
+): MoveKind {
+  return to.start === from.start && to.durationMin !== from.durationMin ? "resize" : "move";
+}
+
+/** The audit action of a change by its kind: "Moved meeting", or "Changed meeting length" for a resize. */
+export function moveAuditAction(kind: MoveKind): string {
+  return kind === "resize" ? MEETING_AUDIT_ACTIONS.resized : MEETING_AUDIT_ACTIONS.moved;
 }

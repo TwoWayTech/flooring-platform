@@ -893,4 +893,81 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
     expect(refused.body.message).toContain("already released");
     expectSame(before, await balances());
   });
+
+  /** GET /contract-schedule, narrowed to one contract. */
+  async function scheduleOf(id: string, who: Who = "owner") {
+    const body = (await call("get", "/contract-schedule", who).expect(200)).body as {
+      lines: Json[];
+      billings: Json[];
+    };
+    return {
+      lines: body.lines.filter((l) => l.contractId === id),
+      billings: body.billings.filter((b) => b.contractId === id),
+    };
+  }
+
+  it("serves each line's billed to date, retained and remaining, from posted billings only (#31, rule 11a)", async () => {
+    const c = await customerContract();
+    expect((await scheduleOf(c.id)).lines).toEqual([
+      { lineId: c.a, contractId: c.id, billed: "0.00", retained: "0.00", remaining: "1000.00" },
+      { lineId: c.b, contractId: c.id, billed: "0.00", retained: "0.00", remaining: "500.00" },
+    ]);
+    await postBilling("owner", c.id, [
+      [c.a, "300.00", "100.00"],
+      [c.b, "200.00"],
+    ]);
+    await postBilling("owner", c.id, [[c.a, "600.00"]]);
+    const last = await postBilling("owner", c.id, [[c.b, "450.00"]]);
+    await call("post", `/contract-billings/${last.id}/void`, "owner").send({ reason: "Entered in error" }).expect(201);
+    const { lines } = await scheduleOf(c.id);
+    // A1: 600 billed (stored 100 installed), 10 % held; B1: 200 billed, billing 3 is void.
+    expect(lines).toEqual([
+      { lineId: c.a, contractId: c.id, billed: "600.00", retained: "60.00", remaining: "400.00" },
+      { lineId: c.b, contractId: c.id, billed: "200.00", retained: "20.00", remaining: "300.00" },
+    ]);
+  });
+
+  it("allocates each release to the billings it paid out, oldest first (#33, rule 10a)", async () => {
+    const c = await customerContract();
+    const first = await postBilling("owner", c.id, [[c.a, "400.00"]]); // A1 holds 40.00
+    const second = await postBilling("owner", c.id, [[c.a, "1000.00"]]); // and 60.00 more
+    const r1 = await release("owner", c.id, "50.00");
+    let allocation = new Map((await scheduleOf(c.id)).billings.map((b) => [b.billingId, b]));
+    expect(allocation.get(first.id as string)).toMatchObject({ released: "40.00", paidFrom: [], unallocated: "0.00" });
+    expect(allocation.get(second.id as string)).toMatchObject({ released: "10.00", paidFrom: [] });
+    expect(allocation.get(r1.id as string)).toEqual({
+      billingId: r1.id,
+      contractId: c.id,
+      released: "50.00",
+      paidFrom: [
+        { billingId: first.id, amount: "40.00" },
+        { billingId: second.id, amount: "10.00" },
+      ],
+      unallocated: "0.00",
+    });
+
+    const r2 = await release("owner", c.id, "50.00");
+    allocation = new Map((await scheduleOf(c.id)).billings.map((b) => [b.billingId, b]));
+    expect(allocation.get(second.id as string)).toMatchObject({ released: "60.00" });
+    expect(allocation.get(r2.id as string)).toMatchObject({
+      released: "50.00",
+      paidFrom: [{ billingId: second.id, amount: "50.00" }],
+      unallocated: "0.00",
+    });
+    expect((await scheduleOf(c.id)).lines.find((l) => l.lineId === c.a)).toMatchObject({ retained: "0.00" });
+  });
+
+  it("guards GET /contract-schedule like the billings: 401, 403 without billing.view, and data scope", async () => {
+    const c = await customerContract();
+    await postBilling("owner", c.id, [[c.a, "100.00"]]);
+    const anonymous = await request(harness.app.getHttpServer())
+      .get("/contract-schedule")
+      .set("X-Forwarded-Host", "localhost:3000");
+    expect(anonymous.status).toBe(401);
+    expect((await call("get", "/contract-schedule", "warehouse")).status).toBe(403);
+    expect((await scheduleOf(c.id, "accountant")).lines).toHaveLength(2);
+    // Own scope by someone else, and another company's manager, see none of it.
+    expect(await scheduleOf(c.id, "scoped")).toEqual({ lines: [], billings: [] });
+    expect(await scheduleOf(c.id, "otherManager")).toEqual({ lines: [], billings: [] });
+  });
 });

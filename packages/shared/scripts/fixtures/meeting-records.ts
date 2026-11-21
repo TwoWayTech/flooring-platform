@@ -57,6 +57,34 @@ function buildContacts(ctx: GenContext, rng: Rng, f: CompanyFixtures): CustomerC
     });
 }
 
+/** Team meetings whose guests are the team itself rather than a random draw: title to the team's role key. */
+const TEAM_MEETINGS: Record<string, string> = { "Weekly sales huddle": "sales" };
+
+/**
+ * Invites a team meeting's own team (click-through #45: the sales huddle had HR and no salespeople):
+ * the organiser stays, and every active user holding the team's role joins as an accepted guest. It
+ * draws no random numbers and runs after every draw, so the rest of the seed stays as it was.
+ */
+function withTeamGuests(f: CompanyFixtures, meetings: readonly Meeting[]): Meeting[] {
+  return meetings.map((m) => {
+    const team = TEAM_MEETINGS[m.title];
+    const role = team && f.roles.find((r) => r.key === team);
+    const organiser = m.attendees.find((a) => a.kind === "staff" && a.id === m.ownerUserId);
+    if (!role || !organiser) return m;
+    const members = f.users.filter(
+      (u) => u.status === "active" && u.id !== organiser.id && u.roleIds.includes(role.id),
+    );
+    const guests = members.map((u): Attendee => ({
+      ...organiser,
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      partStat: "accepted",
+    }));
+    return { ...m, attendees: [organiser, ...guests] };
+  });
+}
+
 /**
  * Adds to the seed what Batch E needs (spec G1): UIDs on every meeting, one with an external guest
  * and its invite in the Outbox, and one request waiting for an answer. On its own random stream.
@@ -175,7 +203,7 @@ export function withMeetingRecords(ctx: GenContext, f: CompanyFixtures): Company
   };
   return {
     ...f,
-    meetings: [...meetings, external, request],
+    meetings: [...withTeamGuests(f, meetings), external, request],
     customerContacts: contacts,
     outboxMessages: [...f.outboxMessages, invite],
   };
