@@ -340,6 +340,10 @@ describe("test company seed", () => {
         .from(employees)
         .where(eq(employees.id, seedId(fixture.id)));
       expect(row).toMatchObject({ managerId: seedId(fixture.managerId!), payRate: fixture.payRate });
+      // Every person has the Payroll ID the pay export writes as employee_external_id (click-through #48).
+      const payrollIds = (await company.db.select({ id: employees.externalId }).from(employees)).map((e) => e.id);
+      expect(payrollIds.sort()).toEqual(fixtures.employees.map((e) => e.externalId).sort());
+      expect(payrollIds.every((id) => !!id)).toBe(true);
       // No Social Security or bank columns exist on the table (CLAUDE.md rule 14).
       expect(Object.keys(row!).some((key) => /ssn|social|bank|routing|account/i.test(key))).toBe(false);
       // One since-records-began manager row per employee, as migration 0005 backfills (ADR 0048).

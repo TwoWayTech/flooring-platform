@@ -186,6 +186,8 @@ All functions below are in `packages/shared/src/hr/commission-plans.ts` unless a
 
     The plan for a month is the one in force on the 15th. `payable` is never negative, so a bad month cannot reduce base pay. It is the only figure the pay period reads.
 
+    The Statements list (`statementFigureColumns`, `apps/web/src/features/hr/commissions/statement-columns.ts`) shows Earned, Overrides, Reversals and Payable always, and Adjustments, Carried in (shown negative, the deduction it is) and Draw when some row of the month has one, so each row and the totals read Earned + Overrides + Reversals + Adjustments + Carried in = Payable unless a draw is larger. The statement's title names the month in words, "Dana Whitfield, October 2026" (click-through #49).
+
 12. **Adjustments.** `adjustmentProblem`. The amount needs at most two decimals and must not be zero. The reason needs at least 3 characters. A negative amount must name an invoice. `addCommissionAdjustment` refuses a month whose statement is not `draft`.
 
 13. **Plan versions.** `saveCommissionPlan`, `commission-actions.ts`. A plan is edited in place unless a user assigned to it has a non-draft statement. Then the save makes a new plan with `version + 1`, `effectiveFrom` today, and retires the old one with `effectiveTo` yesterday. Open assignments end yesterday and move to the new version from today, with `acknowledgement: null`.
@@ -202,7 +204,7 @@ All functions below are in `packages/shared/src/hr/commission-plans.ts` unless a
 
     It carries the invoice's `commissionSplit` and has `isReturn: true`, `creditForInvoiceId`, and `lines: []`. Sales documents and customer credit are in `docs/product-spec/sales.md`.
 
-17. **Sales, Team reads the same lines.** `commissionTotals`, called by `teamCommission`. Lines count when `confirmedOn` is in the range. `paid` means the line's month has a `paid` statement. The other figures in the table come from `teamStats` in `packages/shared/src/commissions.ts`.
+17. **Sales, Team reads the same lines.** `commissionTotals`, called by `teamCommission`. Lines count when `confirmedOn` is in the range. `paid` means the line's month has a `paid` statement. The other figures in the table come from `teamStats` in `packages/shared/src/commissions.ts`. The column and its CSV header read "Commission (incl. overrides)", because the sum holds every line: the person's own, manager overrides on their team's sales and reversals, so a manager with no plan can show commission. Average deal is the Sales figure (credit notes taken off) over the period's invoices that are not credit notes, so it agrees with Sales (click-through #50).
 
 18. **A rep's own margin base (plan N-5).** `myPortal` returns the rep's lines, and `MyCommissionPage` shows the base per line, which is margin dollars on a margin plan. Cost and margin percent are not sent. `statementRows` does not mask base.
 

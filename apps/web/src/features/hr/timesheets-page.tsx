@@ -21,6 +21,7 @@ import {
   companyOvertimeRule,
   dec,
   OVERTIME_RULE_LABELS,
+  plural,
   sum,
   timesheetFlags,
   timesheetTemplate,
@@ -171,24 +172,27 @@ function BulkApproveDialog({ rows, onClose }: { rows: QueueRow[]; onClose: () =>
   // Hours are added with decimal.js, never floats (fifth security review of PR #25).
   const hours = sum(clean.map((r) => r.total)).toString();
   const overtime = sum(clean.map((r) => r.overtime));
+  const flagged = rows.length - clean.length;
+  // Every count in this dialog reads singular for one (click-through #46).
+  const sheets = (n: number) => `${n} ${plural(n, "timesheet", "timesheets")}`;
   async function confirm() {
     await api.decideTimesheets(
       clean.map((r) => r.sheet.id),
       { action: "approve" },
     );
-    toast.success(`${clean.length} timesheets approved`);
+    toast.success(`${sheets(clean.length)} approved`);
     onClose();
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="bg-surface sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Approve {clean.length} timesheets</DialogTitle>
+          <DialogTitle>Approve {sheets(clean.length)}</DialogTitle>
           <DialogDescription>
-            <Num kind="quantity" value={hours} /> hours in total, <Num kind="quantity" value={overtime} /> of them
-            overtime.
-            {rows.length > clean.length
-              ? ` ${rows.length - clean.length} flagged sheets are left for you to review one by one.`
+            <Num kind="quantity" value={hours} /> {dec(hours).eq(1) ? "hour" : "hours"} in total,{" "}
+            <Num kind="quantity" value={overtime} /> of them overtime.
+            {flagged > 0
+              ? ` ${flagged} flagged ${plural(flagged, "sheet is", "sheets are")} left for you to review one by one.`
               : ""}
           </DialogDescription>
         </DialogHeader>

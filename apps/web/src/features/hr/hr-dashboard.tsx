@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { Cake, ChevronRight, PartyPopper } from "lucide-react";
-import { addDays, featureOn, sum, upcomingPersonDates, type Employee } from "@workspace/shared";
+import { addDays, featureOn, upcomingPersonDates, type Employee } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { PageHeader } from "@workspace/ui/components/page-header";
 import { Panel } from "@workspace/ui/components/panel";
@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
 import { HrTabs } from "./hr-tabs";
-import { weekRows, weeksOf } from "./hr-week";
+import { hrHomeFigures } from "./hr-week";
 
 function Figure({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -80,15 +80,19 @@ export function HrDashboard() {
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading HR" />;
 
   const { employees, timesheets, ptoRequests, statements, periods } = data.data;
-  const active = employees.filter((e) => e.status !== "terminated");
-  const week = weeksOf(timesheets)[0] ?? "";
-  const rows = weekRows(timesheets, employees, week, settings.localization.payroll.overtimeRule);
+  const figures = hrHomeFigures(
+    employees,
+    timesheets,
+    today,
+    settings.hr.workweekStartDay,
+    settings.localization.payroll.overtimeRule,
+  );
   const upcoming = ptoRequests
     .filter(
       (p) => (p.status === "pending" || p.status === "approved") && p.end >= today && p.start <= addDays(today, 30),
     )
     .sort((a, b) => a.start.localeCompare(b.start));
-  const departments = byDepartment(active);
+  const departments = byDepartment(figures.staff);
   const largest = departments[0]?.[1] ?? 1;
   const holidays = settings.hr.holidays.filter((h) => h.date >= today).slice(0, 4);
   const toApprove = timesheets.filter((s) => s.status === "submitted").length;
@@ -128,16 +132,16 @@ export function HrDashboard() {
           <Panel title="People and hours this week">
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Figure label="Headcount">
-                <Num kind="count" value={active.length} />
+                <Num kind="count" value={figures.staff.length} />
               </Figure>
               <Figure label="Contractors (1099)">
-                <Num kind="count" value={active.filter((e) => e.workerType === "1099").length} />
+                <Num kind="count" value={figures.contractors} />
               </Figure>
-              <Figure label="Hours this week">
-                <Num kind="quantity" value={sum(rows.map((r) => r.total)).toString()} />
+              <Figure label={`Timesheet hours, week of ${formatDate(figures.week)}`}>
+                <Num kind="quantity" value={figures.hours} />
               </Figure>
               <Figure label="Overtime hours">
-                <Num kind="quantity" value={sum(rows.map((r) => r.extraHours))} />
+                <Num kind="quantity" value={figures.overtime} />
               </Figure>
             </dl>
           </Panel>

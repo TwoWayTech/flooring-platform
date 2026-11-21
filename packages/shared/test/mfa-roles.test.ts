@@ -6,6 +6,9 @@ import {
   memberRoleValue,
   MFA_REQUIRED_KEYS,
   MFA_REQUIRED_ROLES,
+  plural,
+  roleMfaChange,
+  roleMfaWarning,
   roleRequiresMfa,
   rolesRequireMfa,
   roleTemplate,
@@ -65,5 +68,56 @@ describe("mandatory MFA by role content (P10 part 2)", () => {
     expect(value).toBe("custom-ap,mfa,sales");
     expect(rolesRequireMfa(decodeMemberRoles(value))).toBe(true);
     expect(memberRoleValue([{ key: "sales", owner: false, permissions: ["sales.quote.create"] }])).toBe("sales");
+  });
+});
+
+describe("warning before a role starts needing two-step sign-in (click-through #60)", () => {
+  const manager = { id: "r-manager", owner: false, permissions: ["sales.quote.view"] };
+  const gained = { ...manager, permissions: [...manager.permissions, "settings.roles.manage"] };
+  const hr = { id: "r-hr", owner: false, permissions: ["hr.payroll.view"] };
+  const roles = [manager, hr];
+  const user = (roleIds: string[], mfaEnrolled = false, status = "active") => ({ roleIds, mfaEnrolled, status });
+
+  it("counts the holders who must set it up: not enrolled, not disabled, not already required by another role", () => {
+    const users = [
+      user(["r-manager"]),
+      user(["r-manager"], true),
+      user(["r-manager", "r-hr"]),
+      user(["r-manager"], false, "disabled"),
+      user(["r-hr"]),
+    ];
+    const change = roleMfaChange(manager, gained, roles, users)!;
+    expect(change).toEqual({ keys: ["settings.roles.manage"], holders: 3, mustEnrol: 1 });
+    expect(roleMfaWarning(change)).toBe(
+      "This role will need two-step sign-in, because it can manage security roles. 1 of its 3 users will have to set it up at their next sign-in; the others already use it.",
+    );
+  });
+
+  it("says nothing when the role needed it already or still does not", () => {
+    expect(
+      roleMfaChange(gained, { ...gained, permissions: [...gained.permissions, "hr.payroll.view"] }, roles, []),
+    ).toBeNull();
+    expect(roleMfaChange(manager, { ...manager, permissions: ["sales.quote.create"] }, roles, [])).toBeNull();
+  });
+
+  it("words every count in the singular or plural", () => {
+    const keys = ["settings.users.manage", "settings.roles.manage"] as const;
+    expect(roleMfaWarning({ keys: [...keys], holders: 0, mustEnrol: 0 })).toBe(
+      "This role will need two-step sign-in, because it can manage users and manage security roles. Anyone given it will have to set it up at their next sign-in.",
+    );
+    expect(roleMfaWarning({ keys: ["settings.roles.manage"], holders: 1, mustEnrol: 1 })).toMatch(
+      /Its 1 user will have to set it up at their next sign-in\.$/,
+    );
+    expect(roleMfaWarning({ keys: ["settings.roles.manage"], holders: 2, mustEnrol: 0 })).toMatch(
+      /Its 2 users already use it\.$/,
+    );
+  });
+});
+
+describe("plural (click-through #46)", () => {
+  it("is singular for exactly one", () => {
+    expect(plural(1, "sheet is", "sheets are")).toBe("sheet is");
+    expect(plural(0, "sheet is", "sheets are")).toBe("sheets are");
+    expect(plural(2, "sheet is", "sheets are")).toBe("sheets are");
   });
 });

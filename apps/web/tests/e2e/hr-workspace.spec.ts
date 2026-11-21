@@ -53,9 +53,9 @@ test.describe("HR workspace (spec C1)", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.getByRole("checkbox", { name: /select all/i }).check();
     await page.getByRole("button", { name: "Approve selected" }).click();
-    await expect(page.getByRole("dialog").getByText(/hours in total/)).toBeVisible();
+    await expect(page.getByRole("dialog").getByText(/hours? in total/)).toBeVisible();
     await page.getByRole("dialog").getByRole("button", { name: "Approve" }).click();
-    await expect(page.getByText(/timesheets approved/)).toBeVisible();
+    await expect(page.getByText(/timesheets? approved/)).toBeVisible();
   });
 
   test("uploads hours from the template and reports bad rows", async ({ page }) => {
@@ -84,10 +84,16 @@ test.describe("HR workspace (spec C1)", () => {
 
   test("approves a commission statement and shows the plans and signatures", async ({ page }) => {
     await signInAs(page, SUMMIT_HR, "/hr/commissions");
+    // Manager overrides have their own column, so Earned to Payable adds up on the row (click-through #49).
+    for (const name of ["Earned", "Overrides", "Reversals", "Payable"]) {
+      await expect(page.getByRole("button", { name: `${name}, column options` })).toBeVisible();
+    }
     await page
       .getByRole("row", { name: /^Open .*statement$/ })
       .first()
       .click();
+    // The title names the month in words: "Dana Whitfield, October 2026".
+    await expect(page.getByRole("heading", { name: /, [A-Z][a-z]+ \d{4}$/ })).toBeVisible();
     await page.getByRole("button", { name: "Approve statement" }).click();
     await expect(page.getByText(/^Statement approved for/)).toBeVisible();
     await page.getByRole("tab", { name: "Plans", exact: true }).click();
@@ -103,7 +109,9 @@ test.describe("HR workspace (spec C1)", () => {
       .first()
       .click();
     // The reason goes to the audit log, so it asks for no amounts (owner decision 2026-11-14).
-    await expect(page.getByLabel("Reason")).toHaveAccessibleDescription("Don't type amounts here.");
+    await expect(page.getByLabel("Reason")).toHaveAccessibleDescription(
+      "Say why. The amount goes in the Amount field.",
+    );
     await page.getByLabel("Amount").fill("-20");
     await page.getByLabel("Reason").fill("Return");
     await page.getByRole("button", { name: "Add adjustment" }).click();
@@ -160,7 +168,7 @@ test.describe("HR workspace (spec C1)", () => {
 
   test("Sales → Team links commission to the HR figures", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/sales?view=team");
-    await expect(page.getByRole("button", { name: "Commission earned, column options" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Commission (incl. overrides), column options" })).toBeVisible();
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, TriangleAlert } from "lucide-react";
 import { featureOn } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
@@ -24,6 +24,8 @@ interface StepUpDialogProps {
   action: string;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => Promise<void> | void;
+  /** A consequence to read before confirming, e.g. that a role's users must set up two-step sign-in. */
+  notice?: string | null;
 }
 
 /** Confirms once per opening, without asking for a code, while the auth.step-up feature is off. */
@@ -54,7 +56,7 @@ function useSkipWhenSwitchedOff(
  * (`verifyStepUp`) before the change is sent. Any six digits pass in the demo. With the
  * auth.step-up feature switched off, the demo confirms at once.
  */
-export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDialogProps) {
+export function StepUpDialog({ open, action, onOpenChange, onConfirm, notice }: StepUpDialogProps) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -92,6 +94,12 @@ export function StepUpDialog({ open, action, onOpenChange, onConfirm }: StepUpDi
             </DialogTitle>
             <DialogDescription>{action} needs a fresh code from your authenticator app.</DialogDescription>
           </DialogHeader>
+          {notice ? (
+            <p role="note" className="text-warning-ink bg-warning/14 flex gap-2 rounded-md p-3 text-sm">
+              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              {notice}
+            </p>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="step-up-code">Authenticator code</Label>
             <Input

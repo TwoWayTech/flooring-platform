@@ -15,6 +15,7 @@ import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import type { CommissionInvoiceRef, CommissionStatementRow } from "@/lib/api/contract";
 import { useFormatDate } from "@/lib/use-format-date";
+import { monthName } from "./month-name";
 
 function Line({ label, value, strong }: { label: ReactNode; value: string; strong?: boolean }) {
   return (
@@ -75,7 +76,7 @@ function AdjustForm({ row, invoices }: { row: CommissionStatementRow; invoices: 
           />
         </Field>
         {/* The reason goes to the audit log; amounts stay out of it (owner decision 2026-11-14, ADR 0048). */}
-        <Field id="adj-reason" label="Reason" hint="Don't type amounts here.">
+        <Field id="adj-reason" label="Reason" hint="Say why. The amount goes in the Amount field.">
           <Input
             id="adj-reason"
             value={reason}
@@ -140,7 +141,7 @@ export function StatementSheet({
       <SheetContent className="bg-surface w-full overflow-y-auto sm:max-w-2xl">
         <SheetHeader>
           <SheetTitle>
-            {row.name}, {row.month}
+            {row.name}, {monthName(row.month)}
           </SheetTitle>
           <SheetDescription>{row.planName ?? "No plan for this month"}</SheetDescription>
         </SheetHeader>
