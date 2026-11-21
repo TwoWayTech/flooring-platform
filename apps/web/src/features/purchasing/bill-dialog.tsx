@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { moneyString, receivedValue, type GoodsReceipt, type PurchaseOrder } from "@workspace/shared";
+import { damagedLines, moneyString, receivedValue, type GoodsReceipt, type PurchaseOrder } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -17,11 +17,12 @@ import { Num } from "@workspace/ui/components/num";
 import { Field } from "@/components/field";
 import { api } from "@/lib/api";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
+import { DamagedLines } from "./damaged-quantity";
 
 /**
  * Enter the supplier's bill (spec D2): only against goods received and not yet billed; the total
  * starts at what they are worth at the PO's costs, a different total is flagged on the bill, and
- * the supplier's invoice file is attached.
+ * the supplier's invoice file is attached. Damaged units, which are not billed, are listed.
  */
 export function BillDialog({
   po,
@@ -68,6 +69,7 @@ export function BillDialog({
               .
             </DialogDescription>
           </DialogHeader>
+          <DamagedLines lines={damagedLines(po, receipts)} className="text-warning-ink text-sm" />
           <Field id="bill-number" label="Supplier's bill number">
             <Input id="bill-number" value={number} onChange={(e) => setNumber(e.target.value)} />
           </Field>

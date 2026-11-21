@@ -72,6 +72,60 @@ export function receivedByLine(poId: string, receipts: readonly GoodsReceipt[]):
 }
 
 /**
+ * What arrived damaged for each PO line, over all its receipts (spec D2 rule 18: damaged units stay
+ * out of stock and off the bill, and stay owed). Lines with nothing damaged are left out, so the PO
+ * panel can show the damage next to what was received (click-through #24).
+ */
+export function damagedByLine(poId: string, receipts: readonly GoodsReceipt[]): Map<string, Dec> {
+  const out = new Map<string, Dec>();
+  for (const r of receipts.filter((x) => x.poId === poId)) {
+    for (const l of r.lines) {
+      if (dec(l.damaged || "0").gt(0)) out.set(l.poLineId, (out.get(l.poLineId) ?? dec(0)).plus(l.damaged));
+    }
+  }
+  return out;
+}
+
+/** One receipt line that arrived damaged, with what a screen needs to say so. */
+export interface DamagedLine {
+  receiptId: string;
+  receiptNumber: string;
+  poLineId: string;
+  description: string;
+  unit: PoLine["unit"];
+  /** In the line's unit, as stored. */
+  damaged: string;
+  sqFtPerCarton?: string;
+}
+
+/**
+ * The damaged lines of some receipts of an order, receipt by receipt (spec D2 rule 18). Damaged
+ * units are recorded on the receipt but never billed, so the PO panel and the bill show them where
+ * the difference to the order is read (click-through #24).
+ */
+export function damagedLines(
+  po: Pick<PurchaseOrder, "lines">,
+  receipts: readonly Pick<GoodsReceipt, "id" | "number" | "lines">[],
+): DamagedLine[] {
+  return receipts.flatMap((r) =>
+    r.lines
+      .filter((l) => dec(l.damaged || "0").gt(0))
+      .map((l) => {
+        const line = po.lines.find((x) => x.id === l.poLineId);
+        return {
+          receiptId: r.id,
+          receiptNumber: r.number,
+          poLineId: l.poLineId,
+          description: line?.description ?? "",
+          unit: line?.unit ?? "sq_ft",
+          damaged: l.damaged,
+          ...(line?.sqFtPerCarton ? { sqFtPerCarton: line.sqFtPerCarton } : {}),
+        };
+      }),
+  );
+}
+
+/**
  * Why a receipt cannot be recorded, or null (spec D2): something arrived, and never more than is
  * still due. Each order line appears once, and rolls entered for a line are broadloom and never
  * cover more area than was received on it, so a receipt can never make stock out of nothing

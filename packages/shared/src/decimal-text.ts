@@ -66,6 +66,17 @@ export const QUANTITY_TEXT_MAX = 14;
  */
 export const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
 
+/**
+ * A stored decimal as an input shows it for editing: the API answers a numeric(14,3) column at its
+ * scale ("19.800"), which reads as raw data in a field, so trailing zeros after the point go
+ * ("19.8", "20"). Only the text changes, never the value. Anything but plain decimal text is
+ * returned as it is (click-through #22).
+ */
+export function editableDecimal(value: string): string {
+  if (!PLAIN_DECIMAL.test(value) || !value.includes(".")) return value;
+  return value.replace(/0+$/, "").replace(/\.$/, "");
+}
+
 /** Whether an optional decimal string is blank: absent, null or "". */
 function isBlank(value: string | null | undefined): value is null | undefined | "" {
   return value === undefined || value === null || value === "";

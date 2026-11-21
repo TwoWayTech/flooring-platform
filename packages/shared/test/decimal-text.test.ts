@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { dec, MONEY_TEXT, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT } from "../src";
+import { dec, editableDecimal, MONEY_TEXT, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT } from "../src";
+
+describe("decimals shown for editing (click-through #22)", () => {
+  it("drops trailing zeros after the point and keeps the value", () => {
+    const shown = ["19.800", "20.000", "0.500", "100", "1.250", "10.0", "0.000"].map(editableDecimal);
+    expect(shown).toEqual(["19.8", "20", "0.5", "100", "1.25", "10", "0"]);
+  });
+
+  it("returns anything but plain decimal text unchanged", () => {
+    expect(["", "22c", "1e3", "12."].map(editableDecimal)).toEqual(["", "22c", "1e3", "12."]);
+  });
+});
 
 /** Each text with the pattern's verdict, so a failure names the text. */
 function verdicts(pattern: RegExp, texts: readonly string[]): Record<string, boolean> {

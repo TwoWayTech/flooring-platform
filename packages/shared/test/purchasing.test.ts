@@ -6,6 +6,8 @@ import {
   billFromReceipts,
   billLedger,
   cartonsFor,
+  damagedByLine,
+  damagedLines,
   poState,
   poLineAmount,
   poTotal,
@@ -66,6 +68,29 @@ const receipt = (id: string, carpetQty: string, lvpQty: string, damaged = "0"): 
 const fmt = (v: string) => `$${v}`;
 const pay = (billId: string, amount: string, status: SupplierPayment["status"] = "confirmed") =>
   ({ id: `p-${amount}`, status, allocations: [{ billId, amount }] }) as SupplierPayment;
+
+describe("damaged units after a receipt (click-through #24)", () => {
+  it("sums damaged units per line over the order's receipts and leaves undamaged lines out", () => {
+    const damaged = damagedByLine("po", [receipt("1", "100", "20", "20"), receipt("2", "0", "0", "0")]);
+    expect([...damaged.keys()]).toEqual(["2"]);
+    expect(damaged.get("2")?.toString()).toBe("20");
+  });
+
+  it("lists each damaged receipt line with its description, unit and receipt number", () => {
+    const withPack = { ...po, lines: [lines[0]!, { ...lines[1]!, sqFtPerCarton: "20.00" }] };
+    expect(damagedLines(withPack, [receipt("1", "100", "20", "20.000"), receipt("2", "10", "0")])).toEqual([
+      {
+        receiptId: "1",
+        receiptNumber: "GR-1",
+        poLineId: "2",
+        description: "LVP",
+        unit: "sq_ft",
+        damaged: "20.000",
+        sqFtPerCarton: "20.00",
+      },
+    ]);
+  });
+});
 
 describe("purchasing (spec D1 to D3)", () => {
   it("orders area goods by area: cartons are calculated and rounded up", () => {
