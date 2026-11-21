@@ -317,8 +317,8 @@ describe("a fresh company from the setup script, set up through the API with sam
         },
       ]),
     );
-    await ok(201, moneyCalls.quoteStatus(quote.id, "send"));
-    await ok(201, moneyCalls.quoteStatus(quote.id, "accept"));
+    const sent = await ok<{ total: string }>(201, moneyCalls.quoteSend(quote.id));
+    await ok(201, moneyCalls.quoteAccept(quote.id, sent.total));
     const invoice = await ok<Invoice>(201, moneyCalls.invoiceFromQuote(quote.id));
     const payment = await ok<Payment>(201, moneyCalls.payment(invoice.id, invoice.total, "check", today));
     expect(payment.status, "under the saved approval threshold, the Owner's payment counts at once").toBe("confirmed");

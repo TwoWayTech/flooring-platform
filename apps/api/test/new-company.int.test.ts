@@ -580,7 +580,8 @@ describe("money scenarios on new companies (whole-product check; needs the local
       },
       {
         route: "POST /quotes/:id/status",
-        call: moneyCalls.quoteStatus(quoteId, "accept"),
+        // A well-formed accept: the converted quote refuses it for its state, whatever the total.
+        call: moneyCalls.quoteAccept(quoteId, "0.00"),
         cookie: run.owner,
         refused: {
           status: 409,

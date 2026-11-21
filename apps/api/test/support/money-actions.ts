@@ -219,11 +219,18 @@ export const moneyCalls = {
     },
   }),
 
-  /** POST /quotes/:id/status: send (with an expiry far ahead) or accept. */
-  quoteStatus: (id: string, action: "send" | "accept"): Call => ({
+  /** POST /quotes/:id/status: send, with an expiry far ahead. */
+  quoteSend: (id: string): Call => ({
     verb: "post",
     path: `/quotes/${id}/status`,
-    body: action === "send" ? { action, expiresAt: "2099-01-01" } : { action },
+    body: { action: "send", expiresAt: "2099-01-01" },
+  }),
+
+  /** POST /quotes/:id/status: accept, naming the total the customer saw (ADR 0061, decision 7). */
+  quoteAccept: (id: string, expectedTotal: string): Call => ({
+    verb: "post",
+    path: `/quotes/${id}/status`,
+    body: { action: "accept", expectedTotal },
   }),
 
   /** POST /quotes/:id/invoice: converts an accepted quote. */
