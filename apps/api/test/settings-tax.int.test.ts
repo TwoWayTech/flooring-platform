@@ -463,10 +463,12 @@ describe("settings part 3a on the API: Sales tax with versioned rules (needs the
 
   /** Sends and accepts a quote. */
   async function accept(id: string): Promise<void> {
-    await call("post", `/quotes/${id}/status`, tax.owner.cookie)
+    const sentQuote = await call("post", `/quotes/${id}/status`, tax.owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${id}/status`, tax.owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${id}/status`, tax.owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
   }
 
   /** Converts an accepted quote; answers the invoice. */

@@ -578,10 +578,12 @@ describe("settings part 1 on the API (needs the local PostgreSQL)", () => {
         notes: "",
       })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, pay.owner.cookie)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, pay.owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, pay.owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, pay.owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     return (await call("post", `/quotes/${quote.body.id}/invoice`, pay.owner.cookie).expect(201)).body;
   }
 

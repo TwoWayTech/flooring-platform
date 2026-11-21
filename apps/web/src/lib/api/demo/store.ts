@@ -14,7 +14,9 @@ import {
   nextNumber,
   dateShift,
   isDefaultRoleKey,
+  acceptsShownTotal,
   keepsAcceptedTotal,
+  QUOTE_CHANGED_MESSAGE,
   repricesAcceptedQuote,
   REPRICED_QUOTE_ACTION,
   savedQuoteStatus,
@@ -1293,6 +1295,10 @@ export class DemoStore implements ApiClient {
     if (change.action === "send") {
       const problem = Object.values(quoteSendProblems(quote, expiresAt, today))[0];
       if (problem) throw new DemoRuleError(problem);
+    }
+    // The customer accepts the total they saw, as on the API (ADR 0061, decision 7).
+    if (change.action === "accept" && !acceptsShownTotal(quote, change.expectedTotal)) {
+      throw new DemoRuleError(QUOTE_CHANGED_MESSAGE);
     }
     const saved: Quote = {
       ...quote,

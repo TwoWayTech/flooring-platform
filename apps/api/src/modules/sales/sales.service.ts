@@ -2,7 +2,9 @@ import { ConflictException, ForbiddenException, Inject, Injectable, Logger } fro
 import type { CompanyDb, ControlDb, DbHandle } from "@workspace/db";
 import { addresses, customers, measurementRooms, quoteLines, quotes } from "@workspace/db/company";
 import {
+  acceptsShownTotal,
   computeTotals,
+  QUOTE_CHANGED_MESSAGE,
   dec,
   keepsAcceptedTotal,
   productTaxCategory,
@@ -431,14 +433,20 @@ export class SalesService {
     return (await loadQuotes(db, [id]))[0]!;
   }
 
-  /** Sends, accepts or declines a quote, as its state allows (spec "Quote status"). */
+  /**
+   * Sends, accepts or declines a quote, as its state allows (spec "Quote status"). An accept names
+   * the total the person saw and is refused with 409 `quote_changed` when the quote's total is
+   * another, checked again in the update itself so a reprice that commits meanwhile is caught too
+   * (owner decision 7 of 2026-11-21, ADR 0061).
+   */
   async updateQuoteStatus(
     tenant: TenantContext,
     actor: Actor,
     quoteId: string,
-    action: QuoteAction,
-    expiresAt: string | null | undefined,
+    change: { action: QuoteAction; expiresAt?: string | null; expectedTotal?: string },
   ): Promise<Quote> {
+    const { action, expiresAt } = change;
+    const changed = () => new ConflictException({ code: "quote_changed", message: QUOTE_CHANGED_MESSAGE });
     const db = await this.tenancy.db(tenant);
     const day = await companyToday(this.control.db, tenant);
     const updated = await db.transaction(async (tx) => {
@@ -455,6 +463,8 @@ export class SalesService {
         const problem = Object.values(quoteSendProblems(quote, expiry, day))[0];
         if (problem) throw refuse(problem);
       }
+      const accepting = action === "accept";
+      if (accepting && !acceptsShownTotal(quote, change.expectedTotal)) throw changed();
       const status = QUOTE_ACTION_STATUS[action];
       const total = action === "send" ? await this.priceOn(tx, quote, day) : quote.total;
       const [moved] = await tx
@@ -465,8 +475,16 @@ export class SalesService {
           expiresAt: expiry,
           sentAt: quote.sentAt ? undefined : action === "send" ? new Date() : undefined,
         })
-        .where(and(eq(quotes.id, quoteId), eq(quotes.status, quote.status)))
+        .where(
+          and(
+            eq(quotes.id, quoteId),
+            eq(quotes.status, quote.status),
+            // The total the person saw must still be the quote's when the accept is written.
+            accepting ? eq(quotes.total, quote.total) : undefined,
+          ),
+        )
         .returning({ id: quotes.id });
+      if (!moved && accepting) throw changed();
       if (!moved)
         throw new ConflictException({ code: "quote_state", message: `Quote ${quote.number} changed meanwhile.` });
       await this.auditLog.record(

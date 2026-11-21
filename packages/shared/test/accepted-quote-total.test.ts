@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptedTotalIfDifferent,
+  acceptsShownTotal,
   keepsAcceptedTotal,
   repricesAcceptedQuote,
   savedQuoteStatus,
@@ -86,6 +87,15 @@ describe("saving an accepted quote keeps its total unless the save reprices it (
     expect(keepsAcceptedTotal(undefined, accepted)).toBe(false);
   });
 
+  it("AT1 an accept names the quote's current total, by value; a missing or older total is refused", () => {
+    expect(acceptsShownTotal({ total: "489.65" }, "489.65")).toBe(true);
+    expect(acceptsShownTotal({ total: "489.65" }, "489.650")).toBe(true);
+    expect(acceptsShownTotal({ total: "587.57" }, "489.65")).toBe(false);
+    expect(acceptsShownTotal({ total: "489.65" }, undefined)).toBe(false);
+    expect(acceptsShownTotal({ total: "489.65" }, "")).toBe(false);
+    expect(acceptsShownTotal({ total: "489.65" }, "4.8965e2")).toBe(false);
+  });
+
   describe("repricing an accepted quote sends it back to Pending (owner decision 7, 2026-11-21)", () => {
     const repricings: [string, Quote][] = [
       ["a quantity", { ...accepted, lines: [{ ...line, quantity: "120" }] }],
@@ -127,6 +137,16 @@ describe("saving an accepted quote keeps its total unless the save reprices it (
       }
       expect(repricesAcceptedQuote(undefined, next)).toBe(false);
       expect(savedQuoteStatus(undefined, next)).toBe("draft");
+    });
+
+    it("RP5 reordering the lines alone is not a reprice; changing one of them still is", () => {
+      const install = { ...line, id: "l2", productId: "p9", category: "labor" as const, unitPrice: "1.75" };
+      const two = { ...accepted, lines: [line, install] };
+      expect(repricesAcceptedQuote(two, { ...two, lines: [install, line] })).toBe(false);
+      expect(savedQuoteStatus(two, { ...two, lines: [install, line] })).toBe("accepted");
+      expect(repricesAcceptedQuote(two, { ...two, lines: [{ ...install, unitPrice: "2" }, line] })).toBe(true);
+      // The same line twice is not the same as it once.
+      expect(repricesAcceptedQuote(two, { ...two, lines: [line, line] })).toBe(true);
     });
 
     it("RP4 a quantity being typed that is not yet a number still counts as a change, without throwing", () => {

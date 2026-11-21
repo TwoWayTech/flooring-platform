@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Req } from "@nestjs/common";
-import { dec, isStateCode, PERCENT_TEXT, QUANTITY_TEXT } from "@workspace/shared";
+import { dec, isStateCode, MONEY_TEXT, PERCENT_TEXT, QUANTITY_TEXT } from "@workspace/shared";
 import type { Request } from "express";
 import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
@@ -128,10 +128,20 @@ const QUOTE = z.object({
   notes: z.string().max(5000).default(""),
 });
 
-const STATUS = z.object({
-  action: z.enum(["send", "accept", "decline"]),
-  expiresAt: DAY.nullable().optional(),
-});
+/**
+ * A status change. Accepting names the total the person saw (`expectedTotal`), so a quote
+ * repriced since it was loaded is never accepted at a total nobody saw (ADR 0061, decision 7).
+ */
+const STATUS = z
+  .object({
+    action: z.enum(["send", "accept", "decline"]),
+    expiresAt: DAY.nullable().optional(),
+    expectedTotal: z.string().regex(MONEY_TEXT).optional(),
+  })
+  .refine((change) => change.action !== "accept" || change.expectedTotal !== undefined, {
+    message: "Accepting a quote needs the total the customer accepted.",
+    path: ["expectedTotal"],
+  });
 
 /** A switched-off feature is hidden from the API too (CLAUDE.md rule 13): its routes answer 404. */
 /**
@@ -238,6 +248,6 @@ export class SalesController {
   ) {
     requireFeature("sales.quotes");
     const change = parse(STATUS, body);
-    return this.sales.updateQuoteStatus(tenant, actorOf(access, session, request), id, change.action, change.expiresAt);
+    return this.sales.updateQuoteStatus(tenant, actorOf(access, session, request), id, change);
   }
 }

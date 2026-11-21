@@ -293,7 +293,12 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     expect(audit).toMatchObject({ before: `Accepted, total ${accepted.total}`, after: "Pending, total 2.00" });
     // It converts only once accepted again; then it does, once.
     await expect(store.convertQuoteToInvoice(AFTER_QUOTE)).rejects.toThrow("Mark the quote accepted");
-    await store.updateQuoteStatus(AFTER_QUOTE, { action: "accept" });
+    // Accepting names the total the person saw: the old one is refused (decision 7).
+    await expect(
+      store.updateQuoteStatus(AFTER_QUOTE, { action: "accept", expectedTotal: accepted.total }),
+    ).rejects.toThrow("This quote changed; review the new total before accepting.");
+    await expect(store.updateQuoteStatus(AFTER_QUOTE, { action: "accept" })).rejects.toThrow("This quote changed");
+    await store.updateQuoteStatus(AFTER_QUOTE, { action: "accept", expectedTotal: "2.000" });
     await store.convertQuoteToInvoice(AFTER_QUOTE);
     await expect(store.convertQuoteToInvoice(AFTER_QUOTE)).rejects.toThrow();
   });

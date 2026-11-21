@@ -727,6 +727,11 @@ export interface QuoteStatusChange {
   action: QuoteAction;
   /** Send only: the date the quote stops being valid, or null for no expiry. */
   expiresAt?: string | null;
+  /**
+   * Accept only, and required there: the total the person saw. A quote whose total is another by
+   * then is refused, "This quote changed; review the new total before accepting." (ADR 0061, 7).
+   */
+  expectedTotal?: string;
 }
 
 export interface NewCustomerInput {

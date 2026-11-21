@@ -235,7 +235,10 @@ export function QuoteBuilder({
 
   function changeStatus(action: QuoteAction, expiresAt?: string | null) {
     withSaved(async (saved) => {
-      const updated = await api.updateQuoteStatus(saved.id, { action, expiresAt });
+      // Accepting names the total this screen holds for the quote, so a reprice made elsewhere
+      // since it loaded is refused rather than accepted unseen (ADR 0061, decision 7).
+      const expectedTotal = action === "accept" ? saved.total : undefined;
+      const updated = await api.updateQuoteStatus(saved.id, { action, expiresAt, expectedTotal });
       dispatch({ type: "saved", quote: updated });
       setSavedDraft(updated);
       setSending(false);

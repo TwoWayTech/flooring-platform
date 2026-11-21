@@ -1,6 +1,6 @@
 import { addDays, daysBetween } from "../dates";
 import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxContext } from "../documents";
-import { trimmedDecimal } from "../decimal-text";
+import { sameOptionalDecimal, trimmedDecimal } from "../decimal-text";
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
@@ -266,7 +266,8 @@ export type QuotePricing = Pick<Quote, "customerId" | "jobSite" | "taxOverride" 
 /**
  * What prices a quote, by value: its customer (a certificate exempts), where the job is (state and
  * county pick the tax rule), its tax override, lump sum, deposit, and each line's product, category,
- * unit, quantity (the waste is already in it) and price.
+ * unit, quantity (the waste is already in it) and price. The lines are compared as a sorted list,
+ * so reordering them alone changes nothing: the total is their sum.
  */
 function pricingOf(quote: QuotePricing): string {
   return JSON.stringify({
@@ -276,14 +277,31 @@ function pricingOf(quote: QuotePricing): string {
     overridePct: quote.taxOverride ? trimmedDecimal(quote.taxOverride.ratePct) : null,
     lumpSum: quote.lumpSum,
     depositPct: trimmedDecimal(quote.depositPct || "0"),
-    lines: quote.lines.map((line) => [
-      line.productId ?? "",
-      line.category,
-      line.unit,
-      trimmedDecimal(line.quantity),
-      trimmedDecimal(line.unitPrice),
-    ]),
+    lines: quote.lines
+      .map((line) =>
+        JSON.stringify([
+          line.productId ?? "",
+          line.category,
+          line.unit,
+          trimmedDecimal(line.quantity),
+          trimmedDecimal(line.unitPrice),
+        ]),
+      )
+      .sort(),
   });
+}
+
+/** What a refused accept says when the quote's total is not the one the person saw. */
+export const QUOTE_CHANGED_MESSAGE = "This quote changed; review the new total before accepting.";
+
+/**
+ * Whether an accept names the quote's current total (owner decision 7 of 2026-11-21, ADR 0061):
+ * the customer accepts the total they saw, so an accept sent with an older total (the quote was
+ * repriced between loading it and clicking Mark accepted) is refused. Compared by value; a
+ * missing total never matches.
+ */
+export function acceptsShownTotal(quote: Pick<Quote, "total">, expectedTotal: string | null | undefined): boolean {
+  return !!expectedTotal && sameOptionalDecimal(quote.total, expectedTotal);
 }
 
 /**

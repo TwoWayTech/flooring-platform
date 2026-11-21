@@ -376,10 +376,12 @@ describe("settings part 4a on the API: warehouses and showrooms (needs the local
   async function accepted(location: string, lineLocation?: string): Promise<string> {
     const quote = await call("post", "/quotes", owner.cookie).send(quoteBody(location, lineLocation));
     expect(quote.status, JSON.stringify(quote.body)).toBe(201);
-    await call("post", `/quotes/${quote.body.id}/status`, owner.cookie)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     return quote.body.id as string;
   }
 

@@ -5,6 +5,7 @@ import {
   locations,
   products,
   quoteLines,
+  quotes,
   rolePermissions,
   roles,
   settings,
@@ -186,10 +187,12 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     const quote = await call("post", "/quotes", cookie)
       .send(quoteBody(customerId, location, product, depositPct))
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookie)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     return quote.body as { id: string; number: string };
   }
 
@@ -276,8 +279,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     );
     expect(holds).toHaveLength(1);
     expect(holds[0]).toMatchObject({ quantity: "50.000", shortBy: "50.000", status: "active" });
-    const quotes = (await call("get", "/quotes", cookies.salesA)).body as { id: string; status: string }[];
-    expect(quotes.find((q) => q.id === quote.id)?.status).toBe("converted");
+    const listed = (await call("get", "/quotes", cookies.salesA)).body as { id: string; status: string }[];
+    expect(listed.find((q) => q.id === quote.id)?.status).toBe("converted");
     // Another rep's own scope does not reach it.
     const seenByB = (await call("get", "/invoices", cookies.salesB).expect(200)).body.some(
       (i: { id: string }) => i.id === invoice.id,
@@ -336,10 +339,12 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     } finally {
       await handle.close();
     }
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     const refused = await call("post", `/quotes/${quote.body.id}/invoice`, cookies.salesA);
     expect(refused.status).toBe(400);
     expect(refused.body).toMatchObject({
@@ -385,10 +390,12 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     } finally {
       await handle.close();
     }
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+    const sentQuote = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     const converted = await call("post", `/quotes/${quote.body.id}/invoice`, cookies.salesA);
     expect(converted.status, JSON.stringify(converted.body)).toBe(201);
   });
@@ -421,7 +428,9 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     } finally {
       await handle.close();
     }
-    await call("post", `/quotes/${quote.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${quote.id}/status`, cookies.salesA)
+      .send({ action: "accept", expectedTotal: more.body.total })
+      .expect(201);
     const invoice = await call("post", `/quotes/${quote.id}/invoice`, cookies.salesA);
     expect(invoice.status, JSON.stringify(invoice.body)).toBe(201);
     expect(invoice.body).toMatchObject({ total: "587.57", quoteId: quote.id });
@@ -461,6 +470,69 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       quoteBody(customer.body.id, warehouse, tile, "0", "120"),
     );
     expect(late.status).toBe(409);
+  });
+
+  it("RQ4 an accept names the total the person saw; a quote repriced since answers 409 and stays Pending (ADR 0061, 7)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Noor Vale" }).expect(201);
+    const quote = await call("post", "/quotes", cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, "0"))
+      .expect(201);
+    const seen = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA)
+      .send({ action: "send", expiresAt: "2099-01-01" })
+      .expect(201);
+    expect(seen.body.total).toBe("489.65");
+    // Someone reprices it between the page loading and Mark accepted.
+    await call("put", `/quotes/${quote.body.id}`, cookies.salesA)
+      .send(quoteBody(customer.body.id, warehouse, tile, "0", "120"))
+      .expect(200);
+    const stale = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({
+      action: "accept",
+      expectedTotal: seen.body.total,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({
+      code: "quote_changed",
+      message: "This quote changed; review the new total before accepting.",
+    });
+    const missing = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" });
+    expect(missing.status).toBe(400);
+    const after = (await call("get", "/quotes", cookies.salesA)).body as { id: string; status: string }[];
+    expect(after.find((q) => q.id === quote.body.id)?.status).toBe("pending");
+    // The new total is accepted.
+    const ok = await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({
+      action: "accept",
+      expectedTotal: "587.57",
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect(ok.body).toMatchObject({ status: "accepted", total: "587.57" });
+  });
+
+  it("RQ5 a save whose quote changes status between its read and its update answers 409 quote_state", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Bea Lowe" }).expect(201);
+    const quote = await accepted(cookies.salesA, customer.body.id);
+    const handle = await harness.companyDb(company.id);
+    try {
+      let save: Promise<request.Response> | undefined;
+      await handle.db.transaction(async (tx) => {
+        // Hold the row, so the save reads it (reads don't wait) and then waits at its update.
+        await tx.select({ id: quotes.id }).from(quotes).where(eq(quotes.id, quote.id)).for("update");
+        save = call("put", `/quotes/${quote.id}`, cookies.salesA)
+          .send({ ...quoteBody(customer.body.id, warehouse, tile, "0"), notes: "Late edit" })
+          .then((answer) => answer);
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        await tx.update(quotes).set({ status: "declined" }).where(eq(quotes.id, quote.id));
+      });
+      const answer = await save!;
+      expect(answer.status, JSON.stringify(answer.body)).toBe(409);
+      expect(answer.body.code).toBe("quote_state");
+      const [row] = await handle.db
+        .select({ status: quotes.status, notes: quotes.notes })
+        .from(quotes)
+        .where(eq(quotes.id, quote.id));
+      expect(row).toEqual({ status: "declined", notes: "" });
+    } finally {
+      await handle.close();
+    }
   });
 
   it("checks proof, references and amounts, and makes a second person confirm", async () => {

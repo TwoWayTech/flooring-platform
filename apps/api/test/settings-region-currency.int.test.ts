@@ -602,10 +602,12 @@ describe("settings part 2b on the API: Region and Currency (needs the local Post
     const accepted = await quoteOf(customerId, "WY");
     expect(accepted.status, JSON.stringify(accepted.body)).toBe(201);
     const acceptedId = (accepted.body as { id: string }).id;
-    await call("post", `/quotes/${acceptedId}/status`, tax.owner.cookie)
+    const sentQuote = await call("post", `/quotes/${acceptedId}/status`, tax.owner.cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
-    await call("post", `/quotes/${acceptedId}/status`, tax.owner.cookie).send({ action: "accept" }).expect(201);
+    await call("post", `/quotes/${acceptedId}/status`, tax.owner.cookie)
+      .send({ action: "accept", expectedTotal: sentQuote.body.total })
+      .expect(201);
     // 5 (before). Colorado has its own rule, whatever the states say.
     expect(await quoteTotal(customerId, "CO")).toBe("489.65");
     // 3. Colorado only.

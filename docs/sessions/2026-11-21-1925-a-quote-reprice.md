@@ -19,5 +19,11 @@ Owner decision 7 (ADR 0061) and click-through findings #5 to #9 on the quote bui
 - Integration, `--maxWorkers=1`: `invoices.int.test.ts` 18 pass (new RQ1 to RQ3), `settings-tax.int.test.ts` 34 pass, `sales.int.test.ts` 11 pass.
 - Playwright not run locally (shared laptop); the new demo-mode test in `quote-status.spec.ts` typechecks and lints; CI's `e2e` runs it.
 
+## Review round 1 (same PR)
+- **Accept names the total the person saw.** `POST /quotes/:id/status` takes `expectedTotal` (money text, required for `accept`). `acceptsShownTotal` in shared; the API checks it and adds `total = <read total>` to the accept UPDATE's WHERE, so a reprice that commits in between is caught too; either way 409 `quote_changed` "This quote changed; review the new total before accepting.", and the quote keeps its status. DemoStore refuses the same way; the builder sends the stored total of the quote it holds. Every API test that accepts now sends the total the send answered (9 files) and so does the api-mode demo-script spec. `docs/api-contract.md` updated.
+- **The save's `quote_state` 409 is tested** (RQ5): the test holds the quote row, lets the save read it and wait at its update, declines the quote, and the save answers 409 `quote_state` with nothing written.
+- **Reordering lines is not a reprice:** `pricingOf` compares the lines as a sorted list (RP5).
+- Checks: typecheck and lint pass; shared `accepted-quote-total` 13 pass; web `demo-tax` and `api-rereads` 19 pass; integration (`--maxWorkers=1`): `invoices` 20, `sales` 11, `settings-tax` 34, `accounting` 6 pass, and the other accepting files below.
+
 ## Open questions
 - A tax rule that changed since acceptance, with nothing else changed, does not count as a reprice (the quote keeps its accepted total, as PR #59). Confirm that is the owner's intent.
