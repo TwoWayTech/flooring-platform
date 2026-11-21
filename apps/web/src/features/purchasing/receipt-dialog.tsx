@@ -5,7 +5,6 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   dec,
-  PLAIN_DECIMAL,
   receivedByLine,
   stockUnit,
   UNIT_LABELS,
@@ -39,8 +38,9 @@ const DAMAGE_NOTE_MAX = 1000;
 /**
  * Receive goods (spec D2): per line what arrived in good condition and what was damaged; for
  * broadloom, each roll's number, dye lot and length; the receiving warehouse. Lines start at what
- * is still to come, so a full delivery is one click and a partial one is a few edits. When anything
- * arrived damaged, an optional damage note goes on the receipt's stored note (click-through #24).
+ * is still to come, so a full delivery is one click and a partial one is a few edits. An optional
+ * damage note goes on the receipt's stored note (click-through #24). It is always shown, so the
+ * form never shifts under the pointer when a damaged quantity is committed on blur.
  */
 export function ReceiptDialog({
   po,
@@ -72,7 +72,6 @@ export function ReceiptDialog({
   );
   const [damageNote, setDamageNote] = useState("");
   const [pending, setPending] = useState(false);
-  const anyDamaged = lines.some((l) => PLAIN_DECIMAL.test(l.damaged) && dec(l.damaged).gt(0));
   const isRoll = (productId: string) => {
     const p = products.find((x) => x.id === productId);
     return !!p && stockUnit(p) === "ft";
@@ -84,8 +83,7 @@ export function ReceiptDialog({
     event.preventDefault();
     setPending(true);
     try {
-      const note = anyDamaged ? damageNote.trim() : "";
-      const receipt = await api.recordReceipt(po.id, { locationId, lines, note });
+      const receipt = await api.recordReceipt(po.id, { locationId, lines, note: damageNote.trim() });
       toast.success(`${receipt.number} recorded for ${po.number}`);
       onClose();
     } catch (e) {
@@ -219,17 +217,15 @@ export function ReceiptDialog({
               </fieldset>
             );
           })}
-          {anyDamaged ? (
-            <Field id="gr-damage-note" label="Damage note (optional)">
-              <Input
-                id="gr-damage-note"
-                maxLength={DAMAGE_NOTE_MAX}
-                placeholder="What was damaged and how"
-                value={damageNote}
-                onChange={(e) => setDamageNote(e.target.value)}
-              />
-            </Field>
-          ) : null}
+          <Field id="gr-damage-note" label="Damage note (optional)">
+            <Input
+              id="gr-damage-note"
+              maxLength={DAMAGE_NOTE_MAX}
+              placeholder="What was damaged and how"
+              value={damageNote}
+              onChange={(e) => setDamageNote(e.target.value)}
+            />
+          </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
