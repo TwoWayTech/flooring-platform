@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   LIST_READS,
   mayReadList,
@@ -109,6 +109,10 @@ async function plan(page: keyof typeof PAGES, permissions: readonly PermissionKe
   });
   return { calls, refused };
 }
+
+// The gate and sharing apply in a browser only (`ReadShare`); these are the browser's plans.
+beforeEach(() => vi.stubGlobal("window", {}));
+afterEach(() => vi.unstubAllGlobals());
 
 const permissionsOf = (role: DefaultRoleKey): PermissionKey[] => roleTemplate(role).permissions;
 

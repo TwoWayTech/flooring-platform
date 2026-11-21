@@ -5,7 +5,6 @@ import {
   monthlyPnl,
   pnlTotals,
   slowMovers,
-  boxedStock,
   type Crew,
   type Customer,
   type Expense,
@@ -102,7 +101,7 @@ export function useDashboardData() {
         months,
         totals: pnlTotals(months),
         slow: withProduct(
-          slowMovers(products, rolls, sales.invoices, today, LIST_LENGTH, boxedStock(stockMovements)),
+          slowMovers(products, rolls, sales.invoices, today, LIST_LENGTH, stockMovements),
           products,
         ),
         jobsToday: jobs

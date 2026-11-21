@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   bestSellers,
-  boxedStock,
   customerCredit,
   customerStatement,
   dec,
@@ -41,7 +40,7 @@ describe("best sellers and slow movers", () => {
       summit.invoices,
       today,
       5,
-      boxedStock(summit.stockMovements),
+      summit.stockMovements,
     );
     expect(slow).toHaveLength(5);
     expect(slow.every((s) => dec(s.onHand).gt(0))).toBe(true);

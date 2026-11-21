@@ -206,13 +206,13 @@ export const API_METHODS = {
   // Opening a company (sign-in, a switch) drops the last one's zone and access until its GET /company answers.
   openCompany: (http, demo) => (companyId, viewer) => {
     companyDayOf(demo).forget();
-    http.gate.forget();
+    http.forgetReads();
     return demo.openCompany(companyId, viewer);
   },
   // Leaving the company (the platform pages) also drops its zone and access; DemoStore closes its own copy.
   closeCompany: (http, demo) => () => {
     companyDayOf(demo).forget();
-    http.gate.forget();
+    http.forgetReads();
     demo.closeCompany();
   },
   // The API's own id for the session, the read `meetingsData` makes too; never the demo persona's.
@@ -1133,13 +1133,17 @@ async function companyPeople(http: HttpTransport, demo: ApiClient): Promise<User
 
 /**
  * Reads GET /company and keeps its `company.timeZone` for `today()`, so every answer the client reads
- * also settles the company's day (ADR 0051, "The company's day on the web", 2026-11-20).
+ * also settles the company's day (ADR 0051, "The company's day on the web", 2026-11-20), and the
+ * person's effective permissions, so screens skip the lists their role can't read (finding #28).
+ * An answer sent before a company or session change is not learned: it is the old company's.
  */
 async function companyAnswer(http: HttpTransport, demo: ApiClient): Promise<CompanyAnswer> {
+  const generation = http.generation;
   const answer = await http.request<CompanyAnswer>("GET", "/company");
-  companyDayOf(demo).learn(answer.company.timeZone);
-  // ...and the person's effective permissions, so screens skip the lists their role can't read (#28).
-  http.gate.learn(answer.access.permissions);
+  if (http.isCurrent(generation)) {
+    companyDayOf(demo).learn(answer.company.timeZone);
+    http.gate.learn(answer.access.permissions);
+  }
   return answer;
 }
 

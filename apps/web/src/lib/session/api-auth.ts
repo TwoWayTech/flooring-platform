@@ -1,4 +1,5 @@
 import { apiErrorCode, ApiError } from "@/lib/api/errors";
+import { forgetSharedReads } from "@/lib/api/http/read-share";
 import { HttpTransport } from "@/lib/api/http/transport";
 import type { SessionContext } from "./api-context";
 import { API_PROXY_PATH, AUTH_BASE_PATH } from "./auth-cookie";
@@ -42,13 +43,23 @@ interface ErrorBody {
   message?: string;
 }
 
+/**
+ * Posts to an auth endpoint. Each may change the session or its company (sign-in, a code, a
+ * company switch, sign-out), so the client's shared reads and known access are forgotten before it
+ * is sent and once it is answered: no screen of the next session joins a read of the last one.
+ */
 async function post(path: string, body: unknown): Promise<Response> {
-  return fetch(path, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  forgetSharedReads();
+  try {
+    return await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } finally {
+    forgetSharedReads();
+  }
 }
 
 async function errorBody(response: Response): Promise<ErrorBody> {
@@ -125,8 +136,11 @@ export async function signOutOfApi(): Promise<void> {
  * required user whose only factor is a passkey must sign in this way (`passkey_required`).
  */
 export async function signInWithPasskey(): Promise<AuthStep> {
+  forgetSharedReads();
   try {
     await signInWithPasskeyOn(new HttpTransport(AUTH_BASE_PATH));
+    // A new session: like `post`, nothing read before it is shared after it.
+    forgetSharedReads();
     return { ok: true };
   } catch (failure) {
     if (apiErrorCode(failure) === "PASSKEY_NOT_FOUND") return { ok: false, message: UNKNOWN_PASSKEY_MESSAGE };

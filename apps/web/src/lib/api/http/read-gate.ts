@@ -13,8 +13,12 @@ import { isPermissionKey, mayReadList, type ListReadPath, type PermissionKey } f
 export class ReadGate {
   private held: ReadonlySet<PermissionKey> | null = null;
 
-  /** Keeps the person's effective permissions from a `GET /company` answer. */
+  /**
+   * Keeps the person's effective permissions from a `GET /company` answer. Only in a browser: on the
+   * server the client is one module for every rendering request, so it never keeps a person's access.
+   */
   learn(permissions: readonly string[]): void {
+    if (typeof window === "undefined") return;
     this.held = new Set(permissions.filter((key) => isPermissionKey(key)));
   }
 

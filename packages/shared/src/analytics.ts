@@ -4,6 +4,7 @@ import { daysBetween } from "./dates";
 import { countsAsCost } from "./expenses";
 import { lineAmount } from "./documents";
 import { rollAreaSqFt } from "./units";
+import { boxedStock } from "./stock";
 import type { InvoiceLedger } from "./ledger";
 import type { BillLedger } from "./operations/purchasing";
 import type {
@@ -16,6 +17,7 @@ import type {
   Product,
   Refund,
   Roll,
+  StockMovement,
   ViewedInvoice,
 } from "./types";
 
@@ -272,15 +274,41 @@ export function bestSellers(invoices: readonly Invoice[], since: string, limit: 
 export interface SlowMover {
   productId: string;
   lastSoldAt: string | null;
+  /** The product's newest stock receipt (a roll received, or a boxed receipt), or null when never received. */
+  receivedAt: string | null;
+  /** Days since the last sale; when it never sold, days in stock since its newest receipt (else since it was added). */
   daysWithoutSale: number;
   /** Stock on hand in the product's stock unit: sq ft or each for boxed goods, ft for rolls. */
   onHand: string;
   onHandUnit: "sq_ft" | "each" | "ft";
 }
 
+/** The movements slow movers read: boxed quantities on hand and when stock was received. */
+export type SlowMoverMovement = Pick<StockMovement, "productId" | "locationId" | "quantity" | "kind" | "at">;
+
 /**
- * Slow movers (spec "Dashboard"): stocked products ranked by days since their last sale, or
- * since they were added when they never sold. Quantities only, so no cost is exposed.
+ * Each product's newest stock receipt, "YYYY-MM-DD...": a roll's `receivedAt` or a boxed
+ * `receipt` movement, whichever is later. A product never received has none.
+ */
+export function newestReceipts(
+  rolls: readonly Pick<Roll, "productId" | "receivedAt">[],
+  movements: readonly SlowMoverMovement[],
+): Map<string, string> {
+  const newest = new Map<string, string>();
+  const note = (productId: string, at: string) => {
+    if ((newest.get(productId) ?? "") < at) newest.set(productId, at);
+  };
+  for (const roll of rolls) note(roll.productId, roll.receivedAt);
+  for (const m of movements) if (m.kind === "receipt") note(m.productId, m.at);
+  return newest;
+}
+
+/**
+ * Slow movers (spec "Dashboard", feature batch 02 "Slow movers"; owner decision 2026-11-21 on
+ * click-through #4): stocked products ranked by days since their last sale. One that never sold
+ * counts its days in stock from its newest stock receipt, and from when it was added only if it
+ * was never received, so a product restocked last month never reads as years old. Quantities
+ * only, so no cost is exposed.
  */
 export function slowMovers(
   products: readonly Product[],
@@ -288,8 +316,10 @@ export function slowMovers(
   invoices: readonly Invoice[],
   today: string,
   limit: number,
-  boxed: BoxedStock,
+  movements: readonly SlowMoverMovement[],
 ): SlowMover[] {
+  const boxed: BoxedStock = boxedStock(movements);
+  const received = newestReceipts(rolls, movements);
   const lastSale = new Map<string, string>();
   for (const inv of invoices) {
     if (inv.isReturn || inv.voidedAt) continue;
@@ -307,10 +337,12 @@ export function slowMovers(
       const feet = rollFeet.get(p.id);
       const onHand = feet ?? boxed.get(p.id) ?? dec(0);
       const sold = lastSale.get(p.id) ?? null;
+      const receivedAt = received.get(p.id) ?? null;
       return {
         productId: p.id,
         lastSoldAt: sold,
-        daysWithoutSale: daysBetween(sold ?? p.createdAt, today),
+        receivedAt,
+        daysWithoutSale: daysBetween((sold ?? receivedAt ?? p.createdAt).slice(0, 10), today),
         onHand: onHand.toString(),
         onHandUnit: (feet ? "ft" : p.unit === "each" ? "each" : "sq_ft") as SlowMover["onHandUnit"],
       };
