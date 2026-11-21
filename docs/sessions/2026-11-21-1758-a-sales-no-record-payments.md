@@ -36,3 +36,10 @@ the accessible name of locked boxes in Settings → Security roles.
 ## Open questions
 - Api-mode e2e no longer covers `POST /payments/:id/review` (F1 payments now count at once). It
   stays covered by five integration specs and the demo flows.
+
+## Follow-up (coordinator's answer to the open question)
+- New api-mode spec `apps/web/tests/e2e-api/payments-verify.spec.ts`: Grace records 1001.00 on the
+  seeded open invoice with the largest balance; it shows Pending verification and the balance stays;
+  Dana confirms it on Finance → Payments to verify and the balance drops by 1001.00; Grace then voids
+  it so the invoice is back as it was (a clean-up voids it if the run stops midway).
+  `POST /payments/:id/review` is covered in api mode again. Merged origin/main (no conflicts).
