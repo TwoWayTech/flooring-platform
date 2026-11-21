@@ -40,6 +40,7 @@ export * from "./operations/transfers";
 export * from "./stock";
 export * from "./features";
 export * from "./business-report";
+export { NO_PROFIT_FILTERS, periodProfit, soldAt, type Profit, type ProfitData, type ProfitFilters } from "./profit";
 export * from "./reports";
 export * from "./sales-lines";
 export * from "./calendar/ics";
