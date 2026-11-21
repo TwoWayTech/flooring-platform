@@ -60,7 +60,7 @@ The Owner role holds every key in the company's plan. Default roles come from `p
 | Split commission on an invoice | `hr.commission.manage` or `sales.invoice.edit` | Owner, Manager, Accountant, HR manager | Store: `setCommissionSplit` |
 | See payments on an invoice | `sales.payment.view` | Owner, Manager, Accountant, Sales | Screen only: `InvoicePage` |
 | Open a proof file | Any of `sales.payment.view`, `hr.employee.view`, `hr.portal.view`, `contracts.contract.view`, `finance.expense.view` | Everyone holding one of them | Store: `getFile` |
-| Record a payment or deposit, add a file | `sales.payment.record` | Owner, Manager, Accountant, Sales | Store: `recordPayment`, `attachPaymentFiles` |
+| Record a payment or deposit, add a file | `sales.payment.record` | Owner, Manager, Accountant (not Sales by default, ADR 0061; a company may grant it) | Store: `recordPayment`, `attachPaymentFiles` |
 | Confirm or reject a payment | `sales.payment.approve` | Owner, Accountant | Store: `reviewPayment` |
 | Open Payments to verify | `sales.payment.approve` or `purchasing.payment.approve` | Owner, Accountant (customer rows need the first key) | Screen only: `pages.ts`, `PaymentsQueue` |
 | Void a payment | `sales.payment.void` | Owner, Accountant | Store: `voidPayment` |

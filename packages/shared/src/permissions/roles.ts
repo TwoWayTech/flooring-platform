@@ -139,8 +139,9 @@ const TEMPLATES: Record<DefaultRoleKey, RoleTemplate> = {
       "sales.quote.edit",
       "sales.invoice.view",
       "sales.invoice.create",
+      // Sales sees a customer's payments but does not record them: the money is taken by
+      // accounting (docs/demo-script.md step 15; ADR 0061 decision 3).
       "sales.payment.view",
-      "sales.payment.record",
       "sales.commission.view",
       "customers.customer.view",
       "customers.customer.create",

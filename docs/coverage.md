@@ -57,8 +57,8 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `finance.expenses` | demo | `/finance` (api), `/settings/expenses` (mixed) | 10 | 3 | 7 | 6 | 7 |
-| `finance.payments-queue` | demo | `/finance` (api) | 0 | 1 | 0 | 6 | 5 |
+| `finance.expenses` | demo | `/finance` (api), `/settings/expenses` (mixed) | 10 | 3 | 7 | 6 | 6 |
+| `finance.payments-queue` | demo | `/finance` (api) | 0 | 1 | 0 | 6 | 4 |
 
 ### `docs/product-spec/hr.md`
 
@@ -202,7 +202,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/contracts` | api | `contractsData`, `saveContract` | — | `page-gates-host.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `contracts.spec.ts`, `flows-batch3.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts`, `f5-contract-retainage.spec.ts` |
 | `/contracts/*` | api | `addContractFiles`, `closeContract`, `completeContract`, `contractsData`, `decideChangeOrder`, `getFile`, `list:invoices`, `list:payments`, `postBilling`, `recallContract`, `recordWaiver`, `releaseRetainage`, `renewContract`, `saveCertificate`, `saveChangeOrder`, `saveContract`, `sendContract`, `signContract`, `terminateContract`, `voidBilling` | — | — | `a11y.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts`, `f5-contract-retainage.spec.ts` |
 | `/design` | no data | — | — | — | — | — |
-| `/finance` | api | `expensesData`, `getFile`, `list:invoices`, `list:payments`, `purchasingData`, `reviewExpense`, `reviewPayment`, `reviewSupplierPayment`, `salesData`, `saveExpense`, `saveRecurringExpense`, `voidExpense` | — | `page-gates-host.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `expenses.spec.ts`, `flows-batch3.spec.ts`, `responsive.spec.ts`, `suppliers.spec.ts` | `demo-script.spec.ts`, `company-day.spec.ts`, `expenses.spec.ts`, `f1-sales-quote-to-cut.spec.ts`, `f7-expense-location-profit.spec.ts` |
+| `/finance` | api | `expensesData`, `getFile`, `list:invoices`, `list:payments`, `purchasingData`, `reviewExpense`, `reviewPayment`, `reviewSupplierPayment`, `salesData`, `saveExpense`, `saveRecurringExpense`, `voidExpense` | — | `page-gates-host.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `expenses.spec.ts`, `flows-batch3.spec.ts`, `responsive.spec.ts`, `suppliers.spec.ts` | `demo-script.spec.ts`, `company-day.spec.ts`, `expenses.spec.ts`, `f7-expense-location-profit.spec.ts` |
 | `/forgot-password` | no data | — | — | — | — | — |
 | `/hr` | api | `hrData`, `listCommissionStatements`, `listPayPeriods` | — | `features.test.ts`, `notifications-api.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `hr-workspace.spec.ts`, `responsive.spec.ts` | — |
 | `/hr/commissions` | api | `addCommissionAdjustment`, `approveStatement`, `assignPlan`, `commissionData`, `decideReversal`, `saveCommissionPlan` | — | — | `a11y.spec.ts`, `console.spec.ts`, `credit-notes.spec.ts`, `hr-workspace.spec.ts`, `responsive.spec.ts` | `demo-script.spec.ts` |
@@ -428,7 +428,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `POST /pay-periods/:id/reopen` | company | `hr.payroll.approve` | hr | — | `hr.pay-periods gating` | `/hr/pay-periods` | `commissions.int.test.ts`, `fresh-setup.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `payroll.int.test.ts` | — |
 | `POST /payments` | company | `sales.payment.record` | core | — | `sales.payments gating` | `/sales/invoices/*` | `accounting.int.test.ts`, `contract-billing.int.test.ts`, `fresh-setup.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts`, `settings.int.test.ts`, `stock-issue.int.test.ts` | `demo-script.spec.ts`, `company.spec.ts`, `f1-sales-quote-to-cut.spec.ts`, `f2-purchasing-receipt-to-payment.spec.ts`, `f3-timesheet-to-pay-period.spec.ts`, `f4-time-off-balance-and-pay.spec.ts`, `f5-contract-retainage.spec.ts`, `f6-meeting-outbox.spec.ts`, `f7-expense-location-profit.spec.ts`, `notifications.spec.ts`, `sales.spec.ts`, `settings-branding.spec.ts`, `settings-hr.spec.ts`, `settings-localization.spec.ts`, `settings-locations.spec.ts`, `settings-region-currency.spec.ts`, `settings-shared-costs.spec.ts`, `settings-stock.spec.ts`, `settings-tax.spec.ts`, `settings.spec.ts` |
 | `POST /payments/:id/files` | company | `sales.payment.record` | core | — | `sales.payments gating` | `/sales/invoices/*` | `invoices.int.test.ts` | — |
-| `POST /payments/:id/review` | company | `sales.payment.approve` | core | — | `sales.payments gating` | `/finance`, `/sales/invoices/*` | `accounting.int.test.ts`, `fresh-setup.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | `f1-sales-quote-to-cut.spec.ts` |
+| `POST /payments/:id/review` | company | `sales.payment.approve` | core | — | `sales.payments gating` | `/finance`, `/sales/invoices/*` | `accounting.int.test.ts`, `fresh-setup.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | — |
 | `POST /payments/:id/void` | company | `sales.payment.void` | core | — | `sales.payments gating` | `/sales/invoices/*` | `accounting.int.test.ts`, `fresh-setup.int.test.ts`, `invoices.int.test.ts`, `money-integrity.int.test.ts`, `new-company.int.test.ts` | `f1-sales-quote-to-cut.spec.ts` |
 | `POST /platform/companies/:id/cancel` | session | — | — | — | — | `/admin/companies/*/status` | `platform-company-status.int.test.ts` | — |
 | `POST /platform/companies/:id/reinstate` | session | — | — | — | — | `/admin/companies/*/status` | `platform-company-status.int.test.ts` | — |
