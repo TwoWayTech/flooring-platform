@@ -12,7 +12,7 @@ export interface DefaultAccount {
 /**
  * The default chart of accounts every company starts with (blueprint pages 24 and 25; ADR 0023;
  * ADR 0039; ADR 0042 adds Goods Received Not Billed and Inventory Adjustments; ADR 0045 adds
- * Retainage Receivable and Retainage Payable; ADR 0047 adds Contract Labor for 1099 contractors). Postings name accounts by key, so a company can
+ * Retainage Receivable and Retainage Payable; ADR 0047 adds Contract Labor for 1099 contractors; ADR 0062 adds Opening Balance Equity, the other side of an opening-balance entry). Postings name accounts by key, so a company can
  * rename an account without breaking them. The client's accountant may rename these and add more
  * (STATUS, accountant questions).
  */
@@ -28,6 +28,7 @@ export const DEFAULT_ACCOUNTS = [
   { key: "customer_credit", code: "2200", name: "Customer Credit", type: "liability" },
   { key: "accrued_payroll", code: "2300", name: "Accrued Payroll", type: "liability" },
   { key: "owner_equity", code: "3000", name: "Owner's Equity", type: "equity" },
+  { key: "opening_balance_equity", code: "3900", name: "Opening Balance Equity", type: "equity" },
   { key: "sales", code: "4000", name: "Sales", type: "revenue" },
   { key: "sales_returns", code: "4100", name: "Sales Returns and Allowances", type: "revenue" },
   { key: "cost_of_goods_sold", code: "5000", name: "Cost of Goods Sold", type: "expense" },

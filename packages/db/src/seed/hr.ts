@@ -80,7 +80,7 @@ async function seedManagerHistory(tx: CompanyDb, list: readonly Employee[]): Pro
  * timesheets with a time entry per day, clock punches, time-off policies, requests, pay periods
  * with who was left out and their frozen lines, bonuses, contractor payments and the time-off
  * ledger, whose accrual lines point at the period that posted them, and commissions. Seeded history posts no journal
- * entries: the ledger starts at go-live (STATUS, opening balances). Seeded documents have no bytes,
+ * entries of its own: what is still owed arrives in the opening-balance entry (ADR 0062). Seeded documents have no bytes,
  * so no attachment rows are written (ADR 0038).
  */
 export async function seedHr(tx: CompanyDb, { fixtures }: DemoCompany): Promise<void> {

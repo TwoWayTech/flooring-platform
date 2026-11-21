@@ -566,9 +566,9 @@ Also settled while building: the screen never sends a pick the server no longer 
 
 ### Trial balance (real build only, 2026-11-20)
 A fifth report, "Trial balance" (`?report=trial-balance`), read from `GET /ledger/trial-balance`; ADR 0055 "Trial balance".
-- **Who:** `reports.financial.view`, data scope `all`, and the sight its figures reveal: sales margin and product cost always, contract cost once a contract billing has posted, and pay sight once pay has posted. Anyone else is never offered it, and the API refuses them. Default roles: Owner and Accountant.
+- **Who:** `reports.financial.view`, data scope `all`, and the sight its figures reveal: sales margin and product cost always, contract cost once a contract billing (or any line on Retainage Payable, or a seed opening entry that holds a subcontract bill; ADR 0062) has posted, and pay sight once pay has posted. Anyone else is never offered it, and the API refuses them. Default roles: Owner and Accountant.
 - **Not in the demo:** the demo keeps no journal, so the report is never offered there.
-- **What it shows:** an As of day (today by default), the accounts grouped by kind with their debits, credits and balance (Dr or Cr), empty accounts on request, the totals, and whether the books balance (and by how much they don't). Export CSV for `reports.financial.export`.
+- **What it shows:** an As of day (today by default), the accounts grouped by kind with their debits, credits and balance (Dr or Cr), empty accounts on request, the totals, and whether the books balance (and by how much they don't). Export CSV for `reports.financial.export`. The footnote says the figures are the opening balances entry, if the company has one, and everything recorded since; the dev seed posts one (ADR 0062).
 - **Switch:** `reports.hub`; no switch of its own.
 
 ### Known limits this build closes

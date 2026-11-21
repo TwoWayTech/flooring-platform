@@ -37,6 +37,13 @@ export const PAY_ACCOUNT_KEYS = [
   "contract_labor",
 ] as const satisfies readonly AccountKey[];
 
+/**
+ * The account whose balance shows what subcontracts cost (ADR 0045): what is withheld from a
+ * subcontractor is a share of their bill's gross. A line on it needs contract cost sight whichever
+ * source posted it, such as the opening-balance entry (ADR 0062).
+ */
+export const CONTRACT_ACCOUNT_KEYS = ["retainage_payable"] as const satisfies readonly AccountKey[];
+
 /** A journal source type, as the posting builders name them. */
 type SourceType = PostingDraft["sourceType"];
 
@@ -61,6 +68,10 @@ export const SOURCE_SIGHT: Readonly<Record<SourceType, "pay" | "contract" | "cos
   pay_period: "pay",
   contractor_payment: "pay",
   commission_statement: "pay",
+  // Stock at cost and what is owed (ADR 0062); a Retainage Payable line is caught by CONTRACT_ACCOUNT_KEYS.
+  opening_balance: "cost",
+  // An opening entry whose payables hold a subcontract bill shows what the subcontract cost (ADR 0062).
+  opening_balance_contract: "contract",
 };
 
 const sourcesOf = (sight: "pay" | "contract"): SourceType[] =>
@@ -74,7 +85,10 @@ export const CONTRACT_SOURCE_TYPES: readonly SourceType[] = sourcesOf("contract"
 
 /** Facts about the company's journal that decide who may read it. */
 export interface TrialBalanceFacts {
-  /** An entry from a contract billing: its Cost of Goods Sold is contract cost (ADR 0055 S4). */
+  /**
+   * An entry from a contract billing, whose Cost of Goods Sold is contract cost (ADR 0055 S4), or a
+   * line on a contract account (`CONTRACT_ACCOUNT_KEYS`).
+   */
   hasContractPostings: boolean;
   /** An entry from pay, or a line on a pay account (`PAY_ACCOUNT_KEYS`, `PAY_SOURCE_TYPES`). */
   hasPayPostings: boolean;

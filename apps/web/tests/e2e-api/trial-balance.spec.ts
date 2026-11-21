@@ -82,6 +82,14 @@ test.describe("trial balance (api mode)", () => {
       await expect(table.getByRole("columnheader", { name: "Debits" })).toBeVisible();
     });
 
+    await test.step("starts from the seed's opening balances, so the books balance from the first sign-in", async () => {
+      // ADR 0062: the seed posts one opening-balance entry against Opening Balance Equity.
+      expect(rows.map((row) => row.name)).toContain("Opening Balance Equity");
+      await expect(table.getByRole("rowheader", { name: "Opening Balance Equity", exact: true })).toBeVisible();
+      await expect(page.getByText("Balanced", { exact: true })).toBeVisible();
+      await expect(page.getByText(/the opening balances entry, if the company has one/)).toBeVisible();
+    });
+
     await test.step("shows every account when asked, grouped by kind", async () => {
       await page.getByRole("switch").click();
       // Accounts are made by the first posting (ADR 0039), so a fresh database has none yet.

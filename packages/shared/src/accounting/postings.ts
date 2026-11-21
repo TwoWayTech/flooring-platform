@@ -31,7 +31,9 @@ export interface PostingDraft {
     | "contract_billing"
     | "pay_period"
     | "contractor_payment"
-    | "commission_statement";
+    | "commission_statement"
+    | "opening_balance"
+    | "opening_balance_contract";
   sourceId: string;
   sourceNumber: string;
   /** The accounting date, `yyyy-MM-dd`. */
@@ -58,6 +60,7 @@ export type PostingEvent =
   | "payroll.approved"
   | "contractor_payment.paid"
   | "commission.approved"
+  | "opening_balance.posted"
   | `${
       | "invoice.issued"
       | "credit_note.issued"

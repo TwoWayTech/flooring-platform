@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NoopProvisioner } from "@workspace/providers";
-import { decodeMemberRoles } from "@workspace/shared";
+import { dec, decodeMemberRoles, sum } from "@workspace/shared";
 import { verifyPassword } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -8,6 +8,9 @@ import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openComp
 import {
   contractorPayments,
   employees,
+  journalEntries,
+  journalLines,
+  ledgerAccounts,
   meetings,
   payPeriods,
   ptoRequests,
@@ -36,6 +39,8 @@ import {
   seededTenantId,
   seedLocalTestData,
   localSeedRefusal,
+  OPENING_MEMO,
+  openingEntryId,
   seedTestCompany,
   type LocalSeedOptions,
   type SeedOptions,
@@ -146,6 +151,29 @@ describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
       expect(await company.db.select().from(meetings)).toHaveLength(fixtures.meetings.length);
       const [hr] = await company.db.select().from(settings).where(eq(settings.group, "hr"));
       expect((hr.value as { holidays: unknown[] }).holidays).toHaveLength(fixtures.settings.hr.holidays.length);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("opens Harbor's books once with cash for its approved contractor payments, against Opening Balance Equity (ADR 0062)", async () => {
+    const company = openCompanyDb(scratch[2].url, { max: 1 });
+    try {
+      const entries = await company.db.select().from(journalEntries);
+      expect(entries.map((entry) => [entry.id, entry.sourceType, entry.memo])).toEqual([
+        [openingEntryId("harbor"), "opening_balance", OPENING_MEMO],
+      ]);
+      const lines = await company.db
+        .select({ key: ledgerAccounts.key, debit: journalLines.debit, credit: journalLines.credit })
+        .from(journalLines)
+        .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId));
+      // An HR Suite company holds no receivables, bills or stock, and the app never pays out
+      // Accrued Payroll, so the only thing to open is the cash its approved contractor payments need.
+      const owed = sum(harbor.fixtures.contractorPayments.filter((p) => p.status === "approved").map((p) => p.amount));
+      const cash = lines.find((line) => line.key === "cash")!;
+      expect(lines.map((line) => line.key).sort()).toEqual(["cash", "opening_balance_equity"]);
+      expect(dec(cash.debit).gte(owed)).toBe(true);
+      expect(lines.find((line) => line.key === "opening_balance_equity")!.credit).toBe(cash.debit);
     } finally {
       await company.close();
     }
