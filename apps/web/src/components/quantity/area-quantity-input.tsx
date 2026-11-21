@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { featureOn, parseAreaEntry, wholeCartonArea } from "@workspace/shared";
+import { editableDecimal, featureOn, parseAreaEntry, wholeCartonArea } from "@workspace/shared";
 import { Input } from "@workspace/ui/components/input";
 
 interface AreaQuantityInputProps {
@@ -18,7 +18,7 @@ interface AreaQuantityInputProps {
 /**
  * A quantity field in sq ft that also takes cartons (spec A1): "500" is sq ft, "22c" or "22
  * cartons" converts when the field is left. Boxed goods round up to whole cartons (plan N-2),
- * so the figure on screen is what will be ordered or billed.
+ * so the figure on screen is what will be ordered or billed. A stored "19.800" shows as "19.8".
  */
 export function AreaQuantityInput({ value, sqFtPerCarton, onChange, className, ...field }: AreaQuantityInputProps) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function AreaQuantityInput({ value, sqFtPerCarton, onChange, className, .
   return (
     <Input
       {...field}
-      value={draft ?? value}
+      value={draft ?? editableDecimal(value)}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
