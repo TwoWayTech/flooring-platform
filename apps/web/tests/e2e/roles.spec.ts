@@ -13,6 +13,14 @@ test.describe("settings: security roles", () => {
     await page.getByRole("button", { name: /^Manager/ }).click();
     const excluded = page.getByRole("checkbox", { name: "Delete customers, Not included in your plan" });
     await expect(excluded).toBeDisabled();
+
+    // The locked box takes focus for its tooltip, but neither a click nor Space changes it (#53).
+    const ticked = await excluded.getAttribute("aria-checked");
+    await excluded.click({ force: true });
+    await excluded.focus();
+    await page.keyboard.press("Space");
+    await expect(excluded).toHaveAttribute("aria-checked", ticked ?? "false");
+    await expect(page.getByRole("button", { name: "Save role" })).toBeDisabled();
   });
 
   test("blocks granting a permission the editor does not hold", async ({ page }) => {

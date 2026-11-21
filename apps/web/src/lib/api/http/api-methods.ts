@@ -8,6 +8,7 @@ import type {
   Conflict,
   Contract,
   ContractBilling,
+  ContractSchedule,
   ContractLine,
   Customer,
   Employee,
@@ -590,6 +591,8 @@ export const API_METHODS = {
       locations,
       bills,
       supplierPayments,
+      schedule,
+      supplierContacts,
     ] = await Promise.all([
       readList<Contract>(http, "/contracts"),
       readList<ContractLine>(http, "/contract-lines"),
@@ -603,6 +606,12 @@ export const API_METHODS = {
       readList<Location>(http, "/locations"),
       readListOrOff<Bill>(http, "/bills"),
       readListOrOff<SupplierPayment>(http, "/supplier-payments"),
+      // Derived on the server (contracts.md rules 10a, 11a); without billing it reads as no figures.
+      (http.gate.allows("/contract-schedule")
+        ? seenOrOff(http.request<ContractSchedule>("GET", "/contract-schedule").then((schedule) => [schedule]))
+        : Promise.resolve([])
+      ).then(([schedule]): ContractSchedule => schedule ?? { lines: [], billings: [] }),
+      readListOrOff<SupplierContact>(http, "/supplier-contacts"),
     ]);
     return {
       contracts,
@@ -616,6 +625,8 @@ export const API_METHODS = {
       locations,
       bills,
       supplierPayments,
+      schedule,
+      supplierContacts,
     };
   },
   saveContract: (http) => (input) => {

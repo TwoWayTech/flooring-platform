@@ -16,6 +16,7 @@ export const LIST_READS = {
   "/change-orders": ["contracts.contract.view"],
   "/contract-billings": ["contracts.billing.view"],
   "/contract-lines": ["contracts.contract.view"],
+  "/contract-schedule": ["contracts.billing.view"],
   "/contractor-payments": ["hr.payroll.view"],
   "/commissions": ["hr.commission.view"],
   "/contracts": ["contracts.contract.view"],

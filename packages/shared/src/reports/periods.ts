@@ -94,8 +94,8 @@ export interface HubWindow {
   invoicesTo: string;
   /** Payments dated up to today (rule 24). */
   paymentsTo: string;
-  /** Expenses dated up to the end of this month: the P&L counts the whole month. */
-  expensesTo: string;
+  /** Profit and loss reads every document dated up to the end of this month: each row is a whole month. */
+  profitTo: string;
 }
 
 /** The dates the hub reports read (spec rule 24): the builders filter by these, and the API reads no more. */
@@ -106,6 +106,6 @@ export function hubWindow(range: ReportRange, today: string): HubWindow {
     from: `${months[0] ?? today.slice(0, 7)}-01`,
     invoicesTo: addDays(today, 1),
     paymentsTo: today,
-    expensesTo: monthEnd(today.slice(0, 7)),
+    profitTo: monthEnd(today.slice(0, 7)),
   };
 }

@@ -10,10 +10,12 @@ import {
   type CompanyFixtures,
   type Expense,
   type HubReportData,
+  type PnlData,
   type Payment,
   type PaymentsReportQuery,
   type Report,
 } from "../src";
+import { businessDataOf } from "./report-fixtures";
 
 const summit = JSON.parse(
   readFileSync(fileURLToPath(new URL("../fixtures/summit.json", import.meta.url)), "utf8"),
@@ -21,18 +23,15 @@ const summit = JSON.parse(
 const data: HubReportData = {
   today: summit.anchorDate,
   invoices: summit.invoices,
-  expenses: summit.expenses,
   products: summit.products,
   payments: summit.payments,
   customers: summit.customers,
 };
 const all = { margin: true, payroll: true };
+/** What Profit and loss reads: the profit calculation's documents (ADR 0061 decision 2). */
+const pnlData: PnlData = businessDataOf(summit);
 const DENVER = "sm-loc-denver";
 const SPRINGS = "sm-loc-springs";
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** The screen's "MMM yyyy", so rows compare with what the web printed before the move. */
-const asShown = (rows: Report["rows"]) =>
-  rows.map((r) => ({ ...r, month: `${MONTHS[Number(r.month!.slice(5, 7)) - 1]} ${r.month!.slice(0, 4)}` }));
 const keysOf = (report: Report) => [
   ...new Set([...report.rows.flatMap((r) => Object.keys(r)), ...Object.keys(report.totals ?? {})]),
 ];
@@ -42,52 +41,15 @@ const payments = (query: Partial<PaymentsReportQuery>, d: HubReportData = data) 
 // Golden values: the web builders in apps/web/src/features/reports/report-model.ts at e6b37ea, run on
 // the Summit fixtures with the page's own rule 24 filters, today = the fixtures' anchor (2026-11-04).
 describe("the hub reports moved to shared give the web's old output (S-HUB-1)", () => {
-  it("Profit and loss", () => {
-    expect(pnlReport({ range: "12m", locationId: null }, data, all).totals).toEqual({
-      month: "Total",
-      revenue: "2006976.46",
-      cogs: "1184202.02",
-      grossMargin: "822774.44",
-      expenses: "588006.13",
-      netIncome: "234768.31",
-    });
-    expect(pnlReport({ range: "3m", locationId: DENVER }, data, all).totals).toEqual({
-      month: "Total",
-      revenue: "720243.76",
-      cogs: "427829.94",
-      grossMargin: "292413.82",
-      expenses: "124007.55",
-      netIncome: "168406.27",
-    });
-    const recent = pnlReport({ range: "3m", locationId: null }, data, all);
-    expect(asShown(recent.rows)).toEqual([
-      {
-        month: "Sep 2026",
-        revenue: "304385.84",
-        cogs: "180214.72",
-        grossMargin: "124171.12",
-        grossMarginPct: "40.79398700018371419642911116",
-        expenses: "50473.99",
-        netIncome: "73697.13",
-      },
-      {
-        month: "Oct 2026",
-        revenue: "395894.37",
-        cogs: "236492.13",
-        grossMargin: "159402.24",
-        grossMarginPct: "40.26383098097606187226153279",
-        expenses: "53260.10",
-        netIncome: "106142.14",
-      },
-      {
-        month: "Nov 2026",
-        revenue: "19963.55",
-        cogs: "11123.09",
-        grossMargin: "8840.46",
-        grossMarginPct: "44.28300577803046051428728858",
-        expenses: "20273.46",
-        netIncome: "-11433.00",
-      },
+  it("Profit and loss keeps its shape and its revenue (ADR 0061 decision 2 changed expenses and net)", () => {
+    const year = pnlReport({ range: "12m", locationId: null }, pnlData, all);
+    expect(year.totals!.revenue).toBe("2006976.46");
+    expect(year.totals!.cogs).toBe("1184202.02");
+    const recent = pnlReport({ range: "3m", locationId: null }, pnlData, all);
+    expect(recent.rows.map((r) => [r.month, r.revenue, r.cogs, r.grossMarginPct])).toEqual([
+      ["2026-09", "304385.84", "180214.72", "40.79398700018371419642911116"],
+      ["2026-10", "395894.37", "236492.13", "40.26383098097606187226153279"],
+      ["2026-11", "19963.55", "11123.09", "44.28300577803046051428728858"],
     ]);
     expect(recent.rows[0]!.month).toBe("2026-09");
     expect(recent.columns[0]).toEqual({ id: "month", header: "Month", format: "month" });
@@ -145,46 +107,56 @@ describe("hidden columns are absent, not blank (ADR 0055 S6, S18, S-HUB-2)", () 
   });
 
   it("Profit and loss without margin shows month, revenue and expenses only", () => {
-    const report = pnlReport({ range: "12m", locationId: null }, data, { margin: false, payroll: true });
+    const report = pnlReport({ range: "12m", locationId: null }, pnlData, { margin: false, payroll: true });
     expect(report.columns.map((c) => c.id)).toEqual(["month", "revenue", "expenses"]);
     expect(keysOf(report).sort()).toEqual(["expenses", "month", "revenue"]);
-    expect(report.totals).toEqual({ month: "Total", revenue: "2006976.46", expenses: "588006.13" });
+    const full = pnlReport({ range: "12m", locationId: null }, pnlData, all);
+    expect(report.totals).toEqual({ month: "Total", revenue: "2006976.46", expenses: full.totals!.expenses });
   });
 });
 
 describe("pay is left out of the P&L without pay sight (ADR 0055 S3, S-HUB-3)", () => {
+  // August has no HR pay period, so its payroll expense is its people cost (rule 7).
   const extra: Expense = {
     ...summit.expenses.find((e) => e.category === "payroll" && e.status === "confirmed")!,
     id: "extra-payroll",
-    date: "2026-10-20",
+    date: "2026-08-20",
     amount: "1000.00",
     tax: "0.00",
   };
-  const withExtra = { ...data, expenses: [...data.expenses, extra] };
+  const withExtra = { ...pnlData, expenses: [...pnlData.expenses, extra] };
+  const august = (report: Report) => report.rows.find((r) => r.month === "2026-08")!;
   const october = (report: Report) => report.rows.find((r) => r.month === "2026-10")!;
+  const noPay = { margin: true, payroll: false };
 
-  it("ignores payroll expenses and says so in the headers", () => {
-    const noPay = { margin: true, payroll: false };
-    const report = pnlReport({ range: "3m", locationId: null }, withExtra, noPay);
-    expect(report).toEqual(
-      pnlReport(
-        { range: "3m", locationId: null },
-        { ...data, expenses: data.expenses.filter((e) => e.category !== "payroll") },
-        noPay,
-      ),
-    );
+  it("ignores payroll expenses and pay periods and says so in the headers", () => {
+    const report = pnlReport({ range: "ytd", locationId: null }, withExtra, noPay);
+    const stripped = { ...pnlData, expenses: pnlData.expenses.filter((e) => e.category !== "payroll"), payPeriods: [] };
+    expect(report).toEqual(pnlReport({ range: "ytd", locationId: null }, stripped, noPay));
     expect(report.columns.find((c) => c.id === "expenses")!.header).toBe("Expenses, excluding payroll");
     expect(report.columns.find((c) => c.id === "netIncome")!.header).toBe("Net income, before payroll");
-    const seeded = pnlReport({ range: "3m", locationId: null }, data, all);
+    const seeded = pnlReport({ range: "ytd", locationId: null }, pnlData, all);
     expect(dec(october(report).expenses!).lt(october(seeded).expenses!)).toBe(true);
+    expect(dec(august(report).expenses!).lt(august(seeded).expenses!)).toBe(true);
   });
 
-  it("counts a payroll expense's amount with pay sight", () => {
-    const before = october(pnlReport({ range: "3m", locationId: null }, data, all)).expenses!;
-    const after = pnlReport({ range: "3m", locationId: null }, withExtra, all);
-    expect(dec(october(after).expenses!).minus(before).toFixed(2)).toBe("1000.00");
+  it("counts a payroll expense with its tax in a month without HR pay, with pay sight", () => {
+    const before = august(pnlReport({ range: "ytd", locationId: null }, pnlData, all)).expenses!;
+    const after = pnlReport({ range: "ytd", locationId: null }, withExtra, all);
+    expect(dec(august(after).expenses!).minus(before).toFixed(2)).toBe("1000.00");
     expect(after.columns.find((c) => c.id === "expenses")!.header).toBe("Expenses");
     expect(after.columns.find((c) => c.id === "netIncome")!.header).toBe("Net income");
+  });
+
+  it("counts HR gross pay instead of the payroll expense in a month with an approved or exported pay period (rule 7)", () => {
+    const octoberExtra = { ...extra, id: "october-payroll", date: "2026-10-20" };
+    const before = october(pnlReport({ range: "ytd", locationId: null }, pnlData, all)).expenses!;
+    const after = pnlReport(
+      { range: "ytd", locationId: null },
+      { ...pnlData, expenses: [...pnlData.expenses, octoberExtra] },
+      all,
+    );
+    expect(october(after).expenses).toBe(before);
   });
 });
 

@@ -154,6 +154,8 @@ describe("the pages ask only for the lists the person's role may read (finding #
           "/locations",
           "/bills",
           "/supplier-payments",
+          "/contract-schedule",
+          "/supplier-contacts",
           "/invoices",
           "/payments",
         ].map((path) => `GET ${path}`),

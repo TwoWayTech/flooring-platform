@@ -201,11 +201,17 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
           await expect(page.getByText("Sent for signature", { exact: true })).toBeVisible();
           await page.getByRole("button", { name: "Record signature" }).click();
           const sign = page.getByRole("dialog", { name: `Record signature on ${made.number}` });
+          // A company name is never offered as the signer; this customer has no contact person (#35).
+          await expect(sign.getByLabel("Signer's full name")).toHaveValue("");
+          await expect(
+            sign.getByText("Recorded as a typed signature; a signing provider is not connected yet."),
+          ).toBeVisible();
+          await sign.getByLabel("Signer's full name").fill("Avery Stone");
           const signed = waitForAnswer<Contract>(page, "POST", new RegExp(`^/api-proxy/contracts/${made.id}/sign$`));
           await sign.getByRole("button", { name: "Record signature" }).click();
           expect((await signed).status, "the signature makes the contract active").toBe("active");
           await expect(sign).toBeHidden();
-          await expect(page.getByText(/^Simulated signature: /)).toBeVisible();
+          await expect(page.getByText(/^Typed signature: /)).toBeVisible();
           return made;
         },
       );
@@ -265,6 +271,24 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
         await expect(figure(page, "Invoiced")).toHaveText(shown(billing.gross, "money"));
         await expect(figure(page, "Paid")).toHaveText(shown(invoice.total, "money"));
         await expect(figure(page, "Retained")).toHaveText(shown(billing.withheld, "money"));
+        // The schedule of values per line, from GET /contract-schedule (#31): value, billed, retained, remaining.
+        const schedule = page.getByRole("region", { name: "Schedule of values" });
+        await expect(schedule.getByRole("columnheader")).toHaveText([
+          "Line",
+          "Billing",
+          "Value",
+          "Billed to date",
+          "Retained",
+          "Remaining to bill",
+        ]);
+        await expect(schedule.getByRole("row", { name: /^L1 Final inspection/ }).getByRole("cell")).toHaveText([
+          "L1 Final inspection",
+          /^Milestone/,
+          shown("800", "money"),
+          shown("800", "money"),
+          shown(billing.withheld, "money"),
+          shown("0", "money"),
+        ]);
         return tb;
       });
 
@@ -300,8 +324,17 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
           expect(made.released).toBe(billing.withheld);
           const raised = invoiceOf(await reread, made);
           await expect(
-            page.getByRole("row", { name: /^Release,/ }).getByRole("link", { name: raised.number, exact: true }),
+            page
+              .getByRole("row", { name: /^Release of retainage from billing 1,/ })
+              .getByRole("link", { name: raised.number, exact: true }),
           ).toBeVisible();
+          // The release is allocated to the billing whose retainage it paid out (#33).
+          await expect(
+            page
+              .getByRole("row", { name: /^Billing 1,/ })
+              .getByRole("cell")
+              .nth(4),
+          ).toHaveText(shown(billing.withheld, "money"));
           return { release: made, released: raised };
         },
       );
@@ -320,7 +353,7 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
 
       const t4 = await flowTest.step("5. the Owner pays the release invoice", async () => {
         await page
-          .getByRole("row", { name: /^Release,/ })
+          .getByRole("row", { name: /^Release of retainage from billing 1,/ })
           .getByRole("link", { name: released.number, exact: true })
           .click();
         await payInvoice(page, released, `E2E-F5-REL-${run}`);
