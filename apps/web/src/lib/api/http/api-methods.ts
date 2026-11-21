@@ -134,6 +134,8 @@ import type { InAppNotification } from "@workspace/shared";
 import { markRead, outboxAction, readOutbox } from "./outbox-answer";
 import { ApiError } from "../errors";
 import type { HttpTransport } from "./transport";
+// Reads the person's role allows (click-through finding #28) keep their own import.
+import type { ListReadPath } from "@workspace/shared";
 
 /**
  * Collections the real API lists through `list`, with their endpoints (docs/api-contract.md).
@@ -144,7 +146,7 @@ import type { HttpTransport } from "./transport";
  * screen comes from one place. Locations moved with Settings part 4a (ADR 0059), so every screen that
  * lists warehouses and showrooms reads the API's ids.
  */
-const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
+const SERVED_LISTS: Partial<Record<CollectionName, ListReadPath>> = {
   audit: "/audit",
   invoices: "/invoices",
   payments: "/payments",
@@ -158,13 +160,20 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   // Settings part 4a (ADR 0059): warehouses and showrooms, for every member; an HR Suite company
   // answers 403, read as none (`seen`).
   locations: "/locations",
+  // Contracts (ADR 0044): the four lists the dashboard's Contracts widget needs, so it no longer
+  // loads the whole register's eleven reads (`contractsData`; click-through finding #29).
+  contracts: "/contracts",
+  contractLines: "/contract-lines",
+  changeOrders: "/change-orders",
+  contractBillings: "/contract-billings",
 };
 
 /**
  * The ApiClient methods apps/api already serves when NEXT_PUBLIC_DATA_SOURCE=api. Each module's
  * pull request adds its methods here, with the endpoints from docs/api-contract.md, and its
  * Playwright tests run against the API. `list` and `get` go to the API only for the collections
- * in SERVED_LISTS; the rest stay on the demo client until their module moves.
+ * in SERVED_LISTS; the rest stay on the demo client until their module moves. A served list the
+ * person's role can't read, or whose feature is switched off, is empty (`readListOrOff`).
  *
  * Every request but a GET makes the screens read again once the server answered it (the transport;
  * ADR 0051, "Re-reading after every write", 2026-11-16). A POST that only reads goes through
@@ -177,7 +186,7 @@ export const API_METHODS = {
       if (collection === "users") return companyPeople(http, demo) as Promise<Collections[K]>;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.list(collection);
-      return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
+      return readListOrOff<ItemOf<K>>(http, path) as Promise<Collections[K]>;
     },
   get:
     (http, demo) =>
@@ -186,21 +195,23 @@ export const API_METHODS = {
         return (await companyPeople(http, demo)).find((user) => user.id === id) as ItemOf<K> | undefined;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
-      const all = await seen(http.request<ItemOf<K>[]>("GET", path));
+      const all = await readListOrOff<ItemOf<K>>(http, path);
       return all.find((item) => (item as { id: string }).id === id);
     },
   // The shell's person, roles, access and company facts (ADR 0051, "GET /company").
   getWorkspace: (http, demo) => async () => workspaceFromAnswer(await companyAnswer(http, demo)),
   // The company's day in its own zone, learned from GET /company (ADR 0051, "The company's day on the web").
   today: (_http, demo) => () => companyDayOf(demo).today(),
-  // Opening a company (sign-in, a switch) drops the last one's zone until its GET /company answers.
-  openCompany: (_http, demo) => (companyId, viewer) => {
+  // Opening a company (sign-in, a switch) drops the last one's zone and access until its GET /company answers.
+  openCompany: (http, demo) => (companyId, viewer) => {
     companyDayOf(demo).forget();
+    http.gate.forget();
     return demo.openCompany(companyId, viewer);
   },
-  // Leaving the company (the platform pages) also drops its zone; DemoStore closes its own copy.
-  closeCompany: (_http, demo) => () => {
+  // Leaving the company (the platform pages) also drops its zone and access; DemoStore closes its own copy.
+  closeCompany: (http, demo) => () => {
     companyDayOf(demo).forget();
+    http.gate.forget();
     demo.closeCompany();
   },
   // The API's own id for the session, the read `meetingsData` makes too; never the demo persona's.
@@ -337,21 +348,21 @@ export const API_METHODS = {
   },
   inventoryData: (http) => async () => {
     const [products, rolls, stockMovements, locations, transfers, reservations] = await Promise.all([
-      seen(http.request<Product[]>("GET", "/products")),
-      seen(http.request<Roll[]>("GET", "/rolls")),
-      seen(http.request<StockMovement[]>("GET", "/stock-movements")),
-      seen(http.request<Location[]>("GET", "/locations")),
-      seen(http.request<Transfer[]>("GET", "/transfers")),
-      seen(http.request<Reservation[]>("GET", "/reservations")),
+      readList<Product>(http, "/products"),
+      readList<Roll>(http, "/rolls"),
+      readList<StockMovement>(http, "/stock-movements"),
+      readList<Location>(http, "/locations"),
+      readList<Transfer>(http, "/transfers"),
+      readList<Reservation>(http, "/reservations"),
     ]);
     // Stock adjustments with approval move with inventory part 2 (ADR 0038).
     return { products, rolls, stockMovements, locations, transfers, reservations, stockAdjustments: [] };
   },
   salesData: (http) => async () => {
     const [quotes, customers, locations] = await Promise.all([
-      seen(http.request<Quote[]>("GET", "/quotes")),
-      seen(http.request<Customer[]>("GET", "/customers")),
-      seen(http.request<Location[]>("GET", "/locations")),
+      readList<Quote>(http, "/quotes"),
+      readList<Customer>(http, "/customers"),
+      readList<Location>(http, "/locations"),
     ]);
     return { quotes, customers, locations };
   },
@@ -386,10 +397,10 @@ export const API_METHODS = {
   getFile: (http, demo) => (fileId) => (isSaved(fileId) ? http.blob(`/files/${fileId}`) : demo.getFile(fileId)),
   expensesData: (http) => async () => {
     const [expenses, recurring, suppliers, locations] = await Promise.all([
-      seen(http.request<Expense[]>("GET", "/expenses")),
-      seen(http.request<RecurringExpense[]>("GET", "/recurring-expenses")),
-      seen(http.request<Supplier[]>("GET", "/suppliers")),
-      seen(http.request<Location[]>("GET", "/locations")),
+      readList<Expense>(http, "/expenses"),
+      readList<RecurringExpense>(http, "/recurring-expenses"),
+      readList<Supplier>(http, "/suppliers"),
+      readList<Location>(http, "/locations"),
     ]);
     return { expenses, recurring, suppliers, locations };
   },
@@ -464,16 +475,16 @@ export const API_METHODS = {
   purchasingData: (http) => async () => {
     const [suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments] =
       await Promise.all([
-        seen(http.request<Supplier[]>("GET", "/suppliers")),
-        seen(http.request<SupplierContact[]>("GET", "/supplier-contacts")),
-        seen(http.request<PurchaseOrder[]>("GET", "/purchase-orders")),
-        seen(http.request<GoodsReceipt[]>("GET", "/receipts")),
-        seen(http.request<Product[]>("GET", "/products")),
-        seen(http.request<Location[]>("GET", "/locations")),
+        readList<Supplier>(http, "/suppliers"),
+        readList<SupplierContact>(http, "/supplier-contacts"),
+        readList<PurchaseOrder>(http, "/purchase-orders"),
+        readList<GoodsReceipt>(http, "/receipts"),
+        readList<Product>(http, "/products"),
+        readList<Location>(http, "/locations"),
         // Bills and supplier payments post to the ledger, so they moved with P12 part 3 (ADR 0042).
         // With `purchasing.orders` off these answer 404; the queue and other screens read them as empty.
-        seenOrOff(http.request<Bill[]>("GET", "/bills")),
-        seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+        readListOrOff<Bill>(http, "/bills"),
+        readListOrOff<SupplierPayment>(http, "/supplier-payments"),
       ]);
     return { suppliers, contacts, purchaseOrders, receipts, products, locations, bills, supplierPayments };
   },
@@ -513,7 +524,7 @@ export const API_METHODS = {
   },
   correctStockCount: (http) => (input) => http.request<StockAdjustment>("POST", "/stock/corrections", input),
   // Ready to cut, issuing and cutting, the roll quick invoice and the split moved in inventory part 2 (ADR 0043).
-  listStockHolds: (http) => () => seen(http.request<StockHold[]>("GET", "/stock-holds")),
+  listStockHolds: (http) => () => readList<StockHold>(http, "/stock-holds"),
   issueReservation: (http) => (reservationId, overrideReason) =>
     http.request<Reservation>("POST", `/reservations/${reservationId}/issue`, overrideReason ? { overrideReason } : {}),
   createRollInvoice:
@@ -526,8 +537,10 @@ export const API_METHODS = {
   // Commissions (ADR 0048): statements, plans and assignments; paid through pay runs.
   commissionData: (http) => () => http.request<CommissionData>("GET", "/commissions"),
   // HR Home reads it beside other panels: a 403 (say a branch-scope role) is no statements, not a failed page.
-  listCommissionStatements: (http) => () =>
-    seen(http.request<CommissionData>("GET", "/commissions").then((data) => data.statements)),
+  listCommissionStatements: (http) => async () =>
+    http.gate.allows("/commissions")
+      ? seen(http.request<CommissionData>("GET", "/commissions").then((data) => data.statements))
+      : [],
   teamCommission: (http) => (range) =>
     http.request<[string, TeamCommission][]>(
       "GET",
@@ -578,18 +591,18 @@ export const API_METHODS = {
       bills,
       supplierPayments,
     ] = await Promise.all([
-      seen(http.request<Contract[]>("GET", "/contracts")),
-      seen(http.request<ContractLine[]>("GET", "/contract-lines")),
-      seenOrOff(http.request<ChangeOrder[]>("GET", "/change-orders")),
+      readList<Contract>(http, "/contracts"),
+      readList<ContractLine>(http, "/contract-lines"),
+      readListOrOff<ChangeOrder>(http, "/change-orders"),
       // Billings and compliance have their own switches; switched off they read as empty.
-      seenOrOff(http.request<ContractBilling[]>("GET", "/contract-billings")),
-      seenOrOff(http.request<LienWaiver[]>("GET", "/lien-waivers")),
-      seenOrOff(http.request<InsuranceCertificate[]>("GET", "/insurance-certificates")),
-      seen(http.request<Customer[]>("GET", "/customers")),
-      seen(http.request<Supplier[]>("GET", "/suppliers")),
-      seen(http.request<Location[]>("GET", "/locations")),
-      seenOrOff(http.request<Bill[]>("GET", "/bills")),
-      seenOrOff(http.request<SupplierPayment[]>("GET", "/supplier-payments")),
+      readListOrOff<ContractBilling>(http, "/contract-billings"),
+      readListOrOff<LienWaiver>(http, "/lien-waivers"),
+      readListOrOff<InsuranceCertificate>(http, "/insurance-certificates"),
+      readList<Customer>(http, "/customers"),
+      readList<Supplier>(http, "/suppliers"),
+      readList<Location>(http, "/locations"),
+      readListOrOff<Bill>(http, "/bills"),
+      readListOrOff<SupplierPayment>(http, "/supplier-payments"),
     ]);
     return {
       contracts,
@@ -672,14 +685,14 @@ export const API_METHODS = {
   // HR part 1 (ADR 0046): people, timesheets and time off. Pay periods (ADR 0047) and the portal with the clock (ADR 0049) follow below.
   hrData: (http) => async () => {
     const [employees, timesheets, ptoRequests, timeOffPolicies, timeOffEntries, locations] = await Promise.all([
-      seenOrOff(http.request<Employee[]>("GET", "/employees")),
+      readListOrOff<Employee>(http, "/employees"),
       // Each HR screen has its own switch; switched off, its records read as empty.
-      seenOrOff(http.request<TimesheetWire[]>("GET", "/timesheets")),
-      seenOrOff(http.request<PtoRequest[]>("GET", "/pto-requests")),
-      seenOrOff(http.request<TimeOffPolicy[]>("GET", "/time-off-policies")),
-      seenOrOff(http.request<TimeOffEntry[]>("GET", "/time-off-entries")),
+      readListOrOff<TimesheetWire>(http, "/timesheets"),
+      readListOrOff<PtoRequest>(http, "/pto-requests"),
+      readListOrOff<TimeOffPolicy>(http, "/time-off-policies"),
+      readListOrOff<TimeOffEntry>(http, "/time-off-entries"),
       // HR Suite companies have no warehouses module, so locations may answer 403 or 404.
-      seenOrOff(http.request<Location[]>("GET", "/locations")),
+      readListOrOff<Location>(http, "/locations"),
     ]);
     // Hours travel as decimal strings; the screens' Timesheet reads numbers (ADR 0046).
     return {
@@ -807,7 +820,7 @@ export const API_METHODS = {
     const [meetings, guests, mine] = await Promise.all([
       http.request<Meeting[]>("GET", "/meetings"),
       // Without meetings.meeting.create (403) or with meetings.invites off (404): nobody to invite.
-      seenOrOff(http.request<GuestOption[]>("GET", "/meeting-guests")),
+      readListOrOff<GuestOption>(http, "/meeting-guests"),
       asks ? orNone(http.request<MyMeetings>("GET", "/me/meetings")) : Promise.resolve(null),
     ]);
     // The reader's id is the server's, never the demo persona's (S15); asked for only when needed.
@@ -1062,6 +1075,20 @@ async function seenOrOff<T>(list: Promise<T[]>): Promise<T[]> {
   }
 }
 
+/**
+ * A list the person's role may read, as `seen`; one their effective permissions don't allow
+ * (`ReadGate`, the shared `mayReadList`) is empty without asking, so a screen that loads a whole
+ * module sends no request the API would refuse (click-through finding #28).
+ */
+async function readList<T>(http: HttpTransport, path: ListReadPath): Promise<T[]> {
+  return http.gate.allows(path) ? seen(http.request<T[]>("GET", path)) : [];
+}
+
+/** Like `readList`, and a switched-off feature's 404 is an empty list too (`seenOrOff`). */
+async function readListOrOff<T>(http: HttpTransport, path: ListReadPath): Promise<T[]> {
+  return http.gate.allows(path) ? seenOrOff(http.request<T[]>("GET", path)) : [];
+}
+
 /** Proof files as the API takes them: each name with its bytes in base64 (ADR 0038). */
 async function encodeFiles(files: readonly File[]): Promise<{ name: string; data: string }[]> {
   return Promise.all(
@@ -1100,6 +1127,8 @@ async function companyPeople(http: HttpTransport, demo: ApiClient): Promise<User
 async function companyAnswer(http: HttpTransport, demo: ApiClient): Promise<CompanyAnswer> {
   const answer = await http.request<CompanyAnswer>("GET", "/company");
   companyDayOf(demo).learn(answer.company.timeZone);
+  // ...and the person's effective permissions, so screens skip the lists their role can't read (#28).
+  http.gate.learn(answer.access.permissions);
   return answer;
 }
 

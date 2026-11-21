@@ -54,10 +54,9 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
   useRecordPaymentRequest(useCallback(() => setRecording("payment"), []));
   const data = useApiQuery(
     async (client) => {
-      const invoice = await client.get("invoices", invoiceId);
-      if (!invoice) return null;
       // Customers, quotes and stock come through the module reads, so their ids match the invoice's
-      // whichever data source serves it (ADR 0038).
+      // whichever data source serves it (ADR 0038). The invoice is the ledger's own, read with
+      // everything else at once rather than the whole list first and again (finding #29).
       const [salesData, stock, sales, settings, jobs, users] = await Promise.all([
         client.salesData(),
         client.inventoryData(),
@@ -66,6 +65,8 @@ export function InvoicePage({ invoiceId }: { invoiceId: string }) {
         client.list("jobs"),
         client.list("users"),
       ]);
+      const invoice = sales.invoices.find((candidate) => candidate.id === invoiceId);
+      if (!invoice) return null;
       const customer = salesData.customers.find((c) => c.id === invoice.customerId);
       const quote = invoice.quoteId ? salesData.quotes.find((q) => q.id === invoice.quoteId) : undefined;
       const { locations, reservations, products, rolls } = stock;

@@ -173,7 +173,7 @@ test.describe("sales (api mode)", () => {
     ]);
     expect(
       invoices.some((invoice) => !invoice.voidedAt && invoice.issuedAt >= range.from),
-      "her answer has an invoice this year; the API seed keeps the fixture dates (to 2026-11-04)",
+      "her answer has an invoice this year; the API seed moves the fixtures to the day it first ran",
     ).toBe(true);
     const [expected] = teamStats(
       { users: [answer.me], invoices, payments, quotes, commission: new Map(commission) },
@@ -212,14 +212,14 @@ test.describe("sales (api mode)", () => {
     expect(
       live.some((invoice) => invoice.issuedAt >= addDays(companyToday(), -330)),
       "her answer has an invoice in the last 12 months, so the loader's monthlyPnl meets a withheld cost; " +
-        "the API seed keeps the fixture dates (to 2026-11-04)",
+        "the API seed moves the fixtures to the day it first ran",
     ).toBe(true);
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
     const panel = page.getByRole("region", { name: "Your revenue, last 12 months" });
     await expect(panel).toBeVisible();
     await expect(failures(page)).toHaveCount(0);
 
-    // A window that holds her invoices, taken from her answer: the calendar has moved past the seed.
+    // A window that holds her invoices, taken from her answer: the calendar may have moved past the seed day.
     const to = live
       .map((invoice) => invoice.issuedAt)
       .sort()

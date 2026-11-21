@@ -81,6 +81,8 @@ describe("test company seed", () => {
       provisioner: new NoopProvisioner(scratch[1].url),
       provider: "noop",
       userPassword,
+      // Fixed fixture dates (the meetings below): the anchor day moves nothing.
+      seedDay: loadDemoCompany("summit").fixtures.anchorDate,
     };
     tenantId = await seedTestCompany(options);
     await seedTestCompany(options);

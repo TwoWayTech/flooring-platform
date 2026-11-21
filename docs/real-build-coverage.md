@@ -151,7 +151,7 @@ With G2, G3 and G4 stood in for once each (one Localization row, one branch row,
 | --- | --- | --- | --- | --- |
 | 1 Dashboard | Partly | DS-1, PGM (loads for every persona, Sales included) | — | G5 (17 DemoStore lists) |
 | 2 Quote a job | Done on Summit | F1, `sales.spec.ts` | FS-6 after stand-ins | G2, G3 |
-| 3 Deposit with proof | Done | F1 | FS-6 | — |
+| 3 Split, then deposit with proof | Done | F1 | FS-6 | — |
 | 4 Corrections | Done | DS-4 (commission split and credit note) | — | — |
 | 5 Cut a roll | Done | F1 | — | — |
 | 6 Receivables | Partly | `sales.spec.ts` | — | G5 (customer pickers) |

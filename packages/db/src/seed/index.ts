@@ -9,6 +9,7 @@ import { seedCompany } from "./company";
 import { seedControl } from "./control";
 import { loadDemoCompany } from "./fixtures";
 import { seedPlatformAdmin } from "./platform-admin";
+import { demoOnDay, firstSeedDay } from "./seed-day";
 
 export { seedId, loadDemoCompany } from "./fixtures";
 export { ensureReferenceData, seededTenantId, seededUserId } from "./control";
@@ -23,6 +24,14 @@ export interface SeedOptions {
   provider: string;
   /** Password for every seeded user (SEED_USER_PASSWORD). Without it the users get no password. */
   userPassword?: string;
+  /**
+   * The day, "YYYY-MM-DD", the seed moves the fixtures for: their anchor lands on it or up to 6 days
+   * before, in whole weeks (`anchorDayFor`), so the newest activity is recent and weekdays are kept.
+   * Left out, it is the day the company was first seeded, in its own zone (`firstSeedDay`), so the
+   * dashboard's trends and stock ages read as they do in the demo, and a re-seed never shifts twice.
+   * Tests that check fixed fixture dates pass the fixtures' own `anchorDate`, which moves nothing.
+   */
+  seedDay?: string;
 }
 
 /** What the local-only seed needs: the seed options plus the server the provisioner creates databases on. */
@@ -65,16 +74,18 @@ export interface LocalSeedResult {
 /**
  * Seeds one demo company: migrate the control database, write the company there (with a password
  * for every user when one is given), give it a database through the provisioner, migrate it and
- * seed it from the demo fixtures. Safe to run again: ids are stable and existing rows are kept.
- * Returns the tenant id.
+ * seed it from the demo fixtures, moved to the seed day (`SeedOptions.seedDay`). Safe to run again:
+ * ids are stable, existing rows are kept and the seed day stays the first seed's. Returns the tenant id.
  */
 async function seedDemoCompany(options: SeedOptions, id: CompanyId): Promise<string> {
-  const demo = loadDemoCompany(id);
+  const fixed = loadDemoCompany(id);
   await migrateControl(options.controlUrl);
   const control = openControlDb(options.controlUrl, { max: 1 });
   try {
     const passwordHash = options.userPassword ? await hashPassword(options.userPassword) : undefined;
-    const tenantId = await seedControl(control.db, demo, passwordHash);
+    // The control side reads no fixture date, so it goes first and dates the company's first seed.
+    const tenantId = await seedControl(control.db, fixed, passwordHash);
+    const demo = demoOnDay(fixed, options.seedDay ?? (await firstSeedDay(control.db, tenantId)));
     // Seeded as provisioning's prepare step, so the company is ready only once its rows exist (PR #8 review).
     await provisionCompany(
       control.db,

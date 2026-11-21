@@ -3,6 +3,7 @@ export * from "./products";
 export * from "./permissions/catalog";
 export * from "./permissions/roles";
 export * from "./permissions/engine";
+export * from "./permissions/list-reads";
 export * from "./permissions/mfa";
 export * from "./permissions/access-rules";
 export * from "./permissions/pay-audit";
