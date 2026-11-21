@@ -1,7 +1,7 @@
 import type { CompanyDb, DbHandle } from "@workspace/db";
-import { userProfiles } from "@workspace/db/company";
+import { rolePermissions, roles, userProfiles } from "@workspace/db/company";
 import { cashAccountFor, type PaymentMethod } from "@workspace/shared";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { todayIn } from "./company-day";
 import type { AuthHarness } from "../auth-harness";
 import { BOOTSTRAP_ZONE, bootstrapCompany, type BootstrappedCompany } from "./company-bootstrap";
@@ -184,7 +184,8 @@ export class MoneyRun {
  * A money run on a company made for it: provisioned the real way (America/Chicago), bootstrapped
  * with settings and products (G2, G3), its Owner signed in through the invitation provisioning
  * should send (G4), and an Accountant, HR, Purchasing, Warehouse and Sales added; Warehouse and
- * Sales work at the Denver branch, because a roll invoice needs its seller's branch. The caller
+ * Sales work at the Denver branch, because a roll invoice needs its seller's branch, and Sales may
+ * record customer payments (a customised role). The caller
  * closes `run.db` when done.
  */
 export async function startMoneyRun(
@@ -205,6 +206,10 @@ export async function startMoneyRun(
   const db = await harness.companyDb(company.id);
   const placed = [await harness.userIdOf(emails.warehouse), await harness.userIdOf(emails.sales)];
   await db.db.update(userProfiles).set({ branchId: places.branches[0] }).where(inArray(userProfiles.userId, placed));
+  // The default Sales role only views payments (ADR 0061 decision 3); this company lets its Sales
+  // record them, as a company may, so the run keeps the own-scope payments that always wait.
+  const [salesRole] = await db.db.select({ id: roles.id }).from(roles).where(eq(roles.key, "sales"));
+  await db.db.insert(rolePermissions).values({ roleId: salesRole!.id, permissionKey: "sales.payment.record" });
   const actors: MoneyActors = {
     owner,
     accountant,

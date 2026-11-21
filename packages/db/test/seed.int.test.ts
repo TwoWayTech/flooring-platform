@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NoopProvisioner } from "@workspace/providers";
-import { eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, latestVersion, migrateAllCompanies, MIGRATIONS, openCompanyDb, openControlDb } from "../src";
 import {
@@ -53,6 +53,7 @@ import {
   purchaseOrders,
   rollCuts,
   rolls,
+  rolePermissions,
   roles,
   stockMovements,
   supplierContacts,
@@ -72,10 +73,11 @@ const userPassword = randomBytes(12).toString("base64url");
 describe("test company seed", () => {
   const scratch: { url: string; drop: () => Promise<void> }[] = [];
   let tenantId = "";
+  let options: Parameters<typeof seedTestCompany>[0];
 
   beforeAll(async () => {
     scratch.push(await scratchDatabase("seed_control"), await scratchDatabase("seed_company"));
-    const options = {
+    options = {
       controlUrl: scratch[0].url,
       encryptionKey,
       provisioner: new NoopProvisioner(scratch[1].url),
@@ -124,6 +126,32 @@ describe("test company seed", () => {
       const seededRoles = await company.db.select().from(roles);
       expect(seededRoles.filter((role) => role.owner)).toHaveLength(1);
       expect(await company.db.select().from(userProfiles)).toHaveLength(15);
+    } finally {
+      await company.close();
+    }
+  });
+
+  it("seeds Sales to view customer payments but not record them; a re-seed keeps a company's change (ADR 0061)", async () => {
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      const [sales] = await company.db.select().from(roles).where(eq(roles.key, "sales"));
+      const keysOf = async () =>
+        (await company.db.select().from(rolePermissions).where(eq(rolePermissions.roleId, sales.id))).map(
+          (row) => row.permissionKey,
+        );
+      const held = await keysOf();
+      expect(held).toContain("sales.payment.view");
+      expect(held).not.toContain("sales.payment.record");
+
+      // A company that lets its Sales record keeps that: the seed only adds what is missing.
+      const record = and(
+        eq(rolePermissions.roleId, sales.id),
+        eq(rolePermissions.permissionKey, "sales.payment.record"),
+      );
+      await company.db.insert(rolePermissions).values({ roleId: sales.id, permissionKey: "sales.payment.record" });
+      await seedTestCompany(options);
+      expect(await keysOf()).toContain("sales.payment.record");
+      await company.db.delete(rolePermissions).where(record);
     } finally {
       await company.close();
     }

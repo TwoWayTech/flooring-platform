@@ -165,11 +165,25 @@ export function demoBusinessReport(db: CompanyDb, viewer: ReportViewer, filters:
   return capDrillRecords(report);
 }
 
-/** Profit and loss by month (spec rule 24), by the API's rules: data scope `all` (S1), a live warehouse, the viewer's visibility (S18). */
+/**
+ * Profit and loss by month (spec rule 24), by the API's rules: data scope `all` (S1), a live
+ * warehouse, the viewer's visibility (S18), and the Business report's profit for each month
+ * (ADR 0061 decision 2), so it reads what that profit reads.
+ */
 export function demoPnlReport(db: CompanyDb, viewer: ReportViewer, query: PnlQuery): Report {
   assertOpens(viewer, "pnl");
   assertWarehouse(db, query.locationId);
-  const data = { today: viewer.today, invoices: db.list("invoices"), expenses: db.list("expenses") };
+  const data = {
+    today: viewer.today,
+    invoices: db.list("invoices"),
+    expenses: db.list("expenses"),
+    adjustments: db.list("invoiceAdjustments"),
+    payPeriods: db.list("payPeriods"),
+    employees: db.list("employees"),
+    locations: db.list("locations"),
+    productCategories: db.list("products"),
+    settings: db.settings,
+  };
   return pnlReport(query, data, visibility(db, viewer));
 }
 
