@@ -1,4 +1,4 @@
-import { addDays } from "../dates";
+import { addDays, daysBetween } from "../dates";
 import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxContext } from "../documents";
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
@@ -162,6 +162,25 @@ function invoiceDueDate(
   if (!deposit || !input.balanceDueDays) return byTerms;
   const byBalance = addDays(input.issuedAt, input.balanceDueDays);
   return byBalance > byTerms ? byBalance : byTerms;
+}
+
+/**
+ * The terms an invoice prints beside its due date (spec sales.md rule 21; click-through #10). A
+ * deposit invoice's balance can be due later than the customer's terms (the company's balance
+ * days), so printing only "Due on receipt" beside a date 30 days out reads as a contradiction.
+ * Such an invoice says what each part follows: "Deposit due on receipt, balance in 30 days".
+ * Every other invoice prints the terms' label.
+ */
+export function invoiceTermsText(
+  invoice: Pick<Invoice, "issuedAt" | "dueAt" | "depositPct">,
+  terms: PaymentTerms,
+): string {
+  const label = PAYMENT_TERM_LABELS[terms];
+  const deposit = dec(invoice.depositPct || "0").gt(0);
+  if (!deposit || !invoice.dueAt) return label;
+  const days = daysBetween(invoice.issuedAt, invoice.dueAt);
+  if (days === PAYMENT_TERM_DAYS[terms]) return label;
+  return `Deposit ${label.charAt(0).toLowerCase()}${label.slice(1)}, balance in ${days} ${days === 1 ? "day" : "days"}`;
 }
 
 /**

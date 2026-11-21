@@ -4,7 +4,7 @@ import { useState } from "react";
 import { formatDistanceStrict, parseISO } from "date-fns";
 import { CircleCheck, CircleDashed, Ban, MoreHorizontal, ShieldCheck, ShieldOff, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { User } from "@workspace/shared";
+import { endSentence, type User } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   DropdownMenu,
@@ -231,7 +231,7 @@ export function UsersPage() {
         onOpenChange={(open) => !open && setResettingMfa(null)}
         onConfirm={async () => {
           await api.updateUser(resettingMfa!.id, { mfaEnrolled: false });
-          toast.success(`MFA reset for ${resettingMfa!.name}. They enroll again at next sign-in.`);
+          toast.success(`${endSentence(`MFA reset for ${resettingMfa!.name}`)} They enroll again at next sign-in.`);
           setResettingMfa(null);
         }}
       />

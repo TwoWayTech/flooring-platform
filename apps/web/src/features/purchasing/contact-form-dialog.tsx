@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   CONTACT_ROLE_LABELS,
   contactProblem,
+  endSentence,
   type ContactMethod,
   type ContactRole,
   type Supplier,
@@ -78,7 +79,7 @@ export function ContactFormDialog({
         <form onSubmit={(e) => void submit(e)} noValidate className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>{contact ? `Edit ${contact.name}` : "Add contact"}</DialogTitle>
-            <DialogDescription>{supplier.name}. A name, plus an email or a phone number.</DialogDescription>
+            <DialogDescription>{endSentence(supplier.name)} A name, plus an email or a phone number.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="contact-name" label="Name">
