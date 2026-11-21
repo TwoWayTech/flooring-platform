@@ -77,7 +77,14 @@ test.describe("inventory linked to invoices (spec C1, C2, C3)", () => {
     await expect(row).toBeVisible();
     const number = (await row.getByRole("cell").first().innerText()).trim();
     await row.getByRole("button", { name: /^(Cut|Issue)$/ }).click();
-    await expect(page.getByText(new RegExp(`(Cut|Issued) for ${number}`))).toBeVisible();
+    // It asks first, as on the invoice (click-through #17); Cancel leaves the row.
+    const confirm = page.getByRole("dialog", { name: /^(Cut .+ ft from roll .+|Issue .+)\?$/ });
+    await expect(confirm).toContainText("can't be undone");
+    await confirm.getByRole("button", { name: "Cancel" }).click();
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: /^(Cut|Issue)$/ }).click();
+    await confirm.getByRole("button", { name: /^(Cut|Issue) / }).click();
+    await expect(page.getByText(new RegExp(`^(Cut|Issued) .+ for ${number}$`))).toBeVisible();
     await expect(page.getByRole("row", { name: new RegExp(number) })).toHaveCount(0);
   });
 

@@ -25,7 +25,8 @@ Fix what the api-mode click-through found on invoices, payments and receivables.
 - `pnpm --filter api test:api test/invoices.int.test.ts --maxWorkers=1`: 16 passed.
 - Playwright was not run locally (shared laptop); CI's `e2e` runs the new and changed specs.
 
-## Open questions
+## Follow-up (coordinator's answers)
 
-- Ready to cut (`/inventory?view=ready`) still cuts in one click; the finding named the invoice's Stock panel. Should it ask too?
-- In the click-through the count read 3 of 4, so the Owner's own row was most likely labelled in the Decide column, off-screen to the right at 894 px. The label is now in the first column as well.
+- Ready to cut (`/inventory?view=ready`) asks first too, with the same dialog and words; `stock.spec.ts`, `flows-batch3.spec.ts` and `f1-sales-quote-to-cut.spec.ts` confirm the cut.
+- The blueprint-delta row moved to the PR body; docs/blueprint-delta.md is main's.
+- #36's explanation accepted: in the click-through the count read 3 of 4, so the Owner's own row was most likely labelled in the Decide column, off-screen to the right at 894 px. The label is now in the first column as well.

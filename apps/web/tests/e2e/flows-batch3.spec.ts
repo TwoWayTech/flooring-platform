@@ -81,7 +81,11 @@ test.describe("end-to-end flows (spec G3)", () => {
         .first()
         .getByRole("button", { name: /^(Cut|Issue)$/ })
         .click();
-      await expect(page.getByText(new RegExp(`(Cut|Issued) for ${number}`))).toBeVisible();
+      await page
+        .getByRole("dialog", { name: /^(Cut|Issue) .+\?$/ })
+        .getByRole("button", { name: /^(Cut|Issue) / })
+        .click();
+      await expect(page.getByText(new RegExp(`^(Cut|Issued) .+ for ${number}$`))).toBeVisible();
     },
   );
 
