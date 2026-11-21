@@ -219,4 +219,15 @@ describe("periodProfit follows the Business report's rules 5 to 9 (reports.md)",
     expect(profit({ expenses }, { ...NO_PROFIT_FILTERS, locationIds: [SHOWROOM] }).opex).toBe("100.00");
     expect(profit({ expenses }).net).toBe("300.00");
   });
+
+  it("keeps a company-wide cost when the company has no location to split it across", () => {
+    const expenses = [expense({ locationId: null, tax: "0.00" })];
+    expect(profit({ expenses, locations: [], invoices: [] })).toEqual({
+      revenue: "0.00",
+      cost: "0.00",
+      gross: "0.00",
+      opex: "100.00",
+      net: "-100.00",
+    });
+  });
 });

@@ -111,7 +111,7 @@ with a locationId:     direct[locationId] += expenseCost(e)
 without a locationId:  spread(expenseCost(e), month of e.date)
 ```
 
-`spread` splits the cost across every location with `weightsFor` and `shareByWeight` (`finance-expenses.md`, rules 14 and 15) and adds to `shared`. The revenue weights always use all non-void invoices in that month, whatever filters are on.
+`spread` splits the cost across every location with `weightsFor` and `shareByWeight` (`finance-expenses.md`, rules 14 and 15) and adds to `shared`. A company with no locations has nothing to split across, so the cost stays whole in `shared` and still counts in operating expenses (2026-11-21; before, it was lost). The revenue weights always use all non-void invoices in that month, whatever filters are on.
 
 ### 7. People costs
 

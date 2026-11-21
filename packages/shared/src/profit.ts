@@ -47,6 +47,9 @@ export type ProfitData = Pick<
   "invoices" | "expenses" | "adjustments" | "payPeriods" | "employees" | "locations" | "productCategories" | "settings"
 >;
 
+/** Where a company-wide cost sits when the company has no location to split it across (no location id is empty). */
+const NO_LOCATION = "";
+
 /** The filters profit follows (spec rule 22); the period is passed on its own. */
 export type ProfitFilters = Pick<
   BusinessFilters,
@@ -215,6 +218,12 @@ export function profitFigures(
     return totals;
   };
   const spread = (amount: Dec, month: string) => {
+    // A company with no locations has nothing to split across: the cost stays the company's, so
+    // operating expenses still hold it (a location filter can't be on, since there are none to pick).
+    if (locations.length === 0) {
+      add(shared, NO_LOCATION, amount);
+      return;
+    }
     const { rule, weights } = weightsFor(locations, data.settings.sharedCosts, revenueInMonth(month));
     rulesUsed.add(rule);
     for (const [id, cents] of shareByWeight(toCents(amount), weights)) add(shared, id, fromCents(cents));
