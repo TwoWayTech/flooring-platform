@@ -25,6 +25,7 @@ import {
 import { LOCAL_HOSTS, redirectableUrl } from "./local-url";
 import { provisionTenant, type ProvisionedTenant } from "./provision-tenant";
 import { loadDemoCompany } from "./seed/fixtures";
+import { SEED_PLATFORM_ADMIN } from "./seed/platform-admin";
 import { companyDatabaseName, PostgresServerProvisioner } from "@workspace/providers";
 
 export { redirectableUrl } from "./local-url";
@@ -555,12 +556,13 @@ const FRESH_COMPANY = {
 
 let demoNames: { slugs: ReadonlySet<string>; emails: ReadonlySet<string> } | undefined;
 
-/** The demo companies' slugs and their people's emails, read once from the fixtures the seed writes from. */
+/** The demo companies' slugs and their people's and the seeded platform admin's emails, read once from the fixtures the seed writes from. */
 function demoCompanyNames(): { slugs: ReadonlySet<string>; emails: ReadonlySet<string> } {
   if (!demoNames) {
     const ids = Object.keys(DEMO_COMPANIES) as CompanyId[];
     const emails = ids.flatMap((id) => loadDemoCompany(id).fixtures.users.map((person) => person.email.toLowerCase()));
-    demoNames = { slugs: new Set(ids), emails: new Set(emails) };
+    // The seeded platform admin (ADR 0065) is a seeded user too.
+    demoNames = { slugs: new Set(ids), emails: new Set([...emails, SEED_PLATFORM_ADMIN.email]) };
   }
   return demoNames;
 }

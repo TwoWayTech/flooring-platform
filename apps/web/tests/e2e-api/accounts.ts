@@ -44,6 +44,13 @@ export const DISABLED_EMAIL = "victor.sims@summitfloor.example";
  */
 export const HARBOR_OWNER_EMAIL = "elena.brooks@harborstaffing.example";
 
+/**
+ * The platform admin `pnpm db:seed` writes for local testing only (ADR 0065): an `owner` in
+ * platform_admins whose home company is Summit, as an Employee, since there is no admin host yet.
+ * Platform admins require MFA.
+ */
+export const PLATFORM_ADMIN_EMAIL = "platform.admin@platform.example";
+
 /** The seeded accounts these tests sign in with, reset before each run (global-setup.ts). */
 export const SEEDED_EMAILS = [
   OWNER_EMAIL,
@@ -55,6 +62,7 @@ export const SEEDED_EMAILS = [
   WAREHOUSE_EMAIL,
   PURCHASING_EMAIL,
   HARBOR_OWNER_EMAIL,
+  PLATFORM_ADMIN_EMAIL,
 ] as const;
 
 /** The password `pnpm db:seed` gave the seeded users. */

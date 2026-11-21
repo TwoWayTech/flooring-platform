@@ -155,7 +155,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 
 | Feature | Status | Pages (standing) | Routes | Unit | Integration | Demo e2e | Api-mode e2e |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `admin.access` | demo | `/admin` (api), `/admin/audit` (api), `/admin/companies/*` (api), `/admin/companies/*/database` (mixed), `/admin/companies/*/import` (mixed), `/admin/companies/*/status` (api), `/admin/companies/*/support` (api), `/admin/plans` (api) | 0 | 2 | 0 | 6 | 3 |
+| `admin.access` | demo | `/admin` (api), `/admin/audit` (api), `/admin/companies/*` (api), `/admin/companies/*/database` (mixed), `/admin/companies/*/import` (mixed), `/admin/companies/*/status` (api), `/admin/companies/*/support` (api), `/admin/plans` (api) | 0 | 2 | 0 | 6 | 4 |
 | `admin.billing` | demo | `/admin/plans` (api) | 0 | 3 | 0 | 4 | 1 |
 | `settings.billing` | demo | `/settings/billing` (api) | 1 | 3 | 5 | 4 | 2 |
 
@@ -191,7 +191,7 @@ Counts of test files; a feature's routes are those whose switch it is (the route
 | `/[...missing]` | no data | — | — | — | — | — |
 | `/accept-invite` | no data | — | — | — | — | `fresh-company.spec.ts`, `users.spec.ts` |
 | `/account/security` | api | `addPasskey`, `confirmPassword`, `deletePasskey`, `renamePasskey`, `signInSecurity` | — | `page-gates-host.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | — |
-| `/admin` | api | `listPlatformCompanies` | — | — | `a11y.spec.ts`, `admin-billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `platform-admin.spec.ts`, `platform-billing.spec.ts`, `platform-support.spec.ts` |
+| `/admin` | api | `listPlatformCompanies` | — | — | `a11y.spec.ts`, `admin-billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `platform-admin.spec.ts`, `platform-billing.spec.ts`, `platform-seeded-admin.spec.ts`, `platform-support.spec.ts` |
 | `/admin/audit` | api | `listPlatformAudit`, `listPlatformCompanies` | — | — | `a11y.spec.ts`, `billing.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | `platform-billing.spec.ts`, `platform-support.spec.ts` |
 | `/admin/companies/*` | api | `getPlatformCompany`, `getPlatformDirectory`, `updatePlatformCompanyAccess`, `verifyStepUp` | — | `features.test.ts` | `a11y.spec.ts`, `console.spec.ts`, `import.spec.ts`, `responsive.spec.ts` | — |
 | `/admin/companies/*/database` | mixed | `importOverview`, `previewImport`, `runImport`, `saveImportMapping`, `undoImport`, `verifyStepUp` | `listCompanies` (workspace), `testDatabaseConnection` (simulated) | — | `a11y.spec.ts`, `console.spec.ts`, `responsive.spec.ts` | — |

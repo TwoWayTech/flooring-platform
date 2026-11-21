@@ -75,7 +75,8 @@ export async function seedTestCompany(options: SeedOptions): Promise<string> {
 
 /**
  * The local-testing seed (ADR 0065): the HR Suite company Harbor Staffing Co. with its own
- * database and people, and an invented platform admin who belongs to no company. Refuses, before
+ * database and people, and an invented platform admin whose home company is Summit (an Employee
+ * there), so they can sign in until the admin host exists. Run it after seedTestCompany. Refuses, before
  * it connects anywhere, a control database that is not on this machine, so it never reaches a
  * shared or production server. Safe to run again: ids are stable and existing rows are kept.
  */
@@ -90,7 +91,7 @@ export async function seedLocalTestData(options: SeedOptions): Promise<LocalSeed
   const control = openControlDb(options.controlUrl, { max: 1 });
   try {
     const passwordHash = options.userPassword ? await hashPassword(options.userPassword) : undefined;
-    const platformAdminUserId = await seedPlatformAdmin(control.db, passwordHash);
+    const platformAdminUserId = await seedPlatformAdmin(control.db, options.encryptionKey, passwordHash);
     return { harborTenantId, platformAdminUserId };
   } finally {
     await control.close();

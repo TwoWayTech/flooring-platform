@@ -16,6 +16,7 @@ import {
   timeOffEntries,
   timesheets,
   userProfiles,
+  userRoles,
 } from "../src/company";
 import {
   account,
@@ -45,6 +46,17 @@ const userPassword = randomBytes(12).toString("base64url");
 const harbor = loadDemoCompany("harbor");
 const summit = loadDemoCompany("summit");
 const HARBOR_ID = seededTenantId("harbor");
+
+/** What the Employee role holds: the least-privileged system role that can sign in (ADR 0065). */
+const EMPLOYEE_PERMISSIONS = [
+  "hr.portal.view",
+  "hr.pto.request",
+  "hr.pto.view",
+  "hr.timesheet.edit",
+  "hr.timesheet.view",
+  "meetings.meeting.create",
+  "meetings.meeting.view",
+];
 
 /** Two companies seeded twice is four full seeds; a shared local server can be slow. */
 const SEED_TIMEOUT_MS = 600_000;
@@ -132,16 +144,18 @@ describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
     }
   });
 
-  it("keeps Summit's database free of Harbor's people", async () => {
+  it("keeps Summit's database free of Harbor's people; only the platform admin joins Summit's", async () => {
     const company = openCompanyDb(scratch[1].url, { max: 1 });
     try {
-      expect(await company.db.select().from(userProfiles)).toHaveLength(summit.fixtures.users.length);
+      const profiles = await company.db.select().from(userProfiles);
+      expect(profiles).toHaveLength(summit.fixtures.users.length + 1);
+      expect(profiles.filter((profile) => profile.userId === seededPlatformAdminId)).toHaveLength(1);
     } finally {
       await company.close();
     }
   });
 
-  it("writes one platform admin, an owner of no company, with the seed password and no MFA secret", async () => {
+  it("writes one platform admin, an owner, with the seed password and no MFA secret", async () => {
     const control = openControlDb(scratch[0].url, { max: 1 });
     try {
       const admins = await control.db.select().from(platformAdmins);
@@ -152,13 +166,42 @@ describe("local test seed: Harbor Staffing Co. and a platform admin", () => {
         name: "Platform Admin",
         twoFactorEnabled: false,
       });
-      expect(await control.db.select().from(member).where(eq(member.userId, seededPlatformAdminId))).toHaveLength(0);
       const credentials = await control.db.select().from(account).where(eq(account.userId, seededPlatformAdminId));
       expect(credentials).toHaveLength(1);
       expect(await verifyPassword({ hash: credentials[0].password ?? "", password: userPassword })).toBe(true);
     } finally {
       await control.close();
     }
+  });
+
+  it("makes Summit the platform admin's home company, as an Employee and nothing more (no admin host yet)", async () => {
+    const control = openControlDb(scratch[0].url, { max: 1 });
+    try {
+      const memberships = await control.db.select().from(member).where(eq(member.userId, seededPlatformAdminId));
+      expect(memberships.map((row) => row.organizationId)).toEqual([seededTenantId("summit")]);
+      expect(decodeMemberRoles(memberships[0].role ?? "")).toEqual(["employee"]);
+    } finally {
+      await control.close();
+    }
+    const company = openCompanyDb(scratch[1].url, { max: 1 });
+    try {
+      const held = await company.db
+        .select({ key: roles.key, dataScope: roles.dataScope })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(eq(userRoles.userId, seededPlatformAdminId));
+      expect(held).toEqual([{ key: "employee", dataScope: "own" }]);
+      const [profile] = await company.db
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, seededPlatformAdminId));
+      expect(profile).toMatchObject({ status: "active", employeeId: null });
+    } finally {
+      await company.close();
+    }
+    // The Employee role reaches only one's own records: My portal's timesheet, time off and meetings.
+    const employee = summit.fixtures.roles.find((role) => role.key === "employee");
+    expect([...(employee?.permissions ?? [])].sort()).toEqual(EMPLOYEE_PERMISSIONS);
   });
 
   it("brings Harbor's database along when every company is migrated (pnpm db:migrate)", async () => {
