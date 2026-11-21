@@ -43,3 +43,7 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-21 | #84 | feat(db): seed Harbor Staffing Co. and a platform admin for local testing (#67) | @TwoWayTech | feat/db-local-test-seeds | `0a430a2` |
 | 2026-11-21 | #80 | fix(roles): default Sales views customer payments but does not record them (#53) | @TwoWayTech | fix/roles-sales-no-record-payments | `b552cc5` |
 | 2026-11-21 | #82 | fix(reports): Profit and loss gives the Business report's profit (finding #39) | @TwoWayTech | fix/reports-profit-agree | `c8d3e8e` |
+| 2026-11-21 | #90 | fix(contracts): schedule of values per line, release allocation and clearer approvals | @TwoWayTech | fix/contracts-schedule-of-values | `eb46943` |
+| 2026-11-21 | #83 | fix(hr): My pay and Pay periods no longer crash on the stripped salary (click-through #26) | @TwoWayTech | fix/hr-my-pay-crash | `870919c` |
+| 2026-11-21 | #86 | fix(meetings): drag from a block's body moves it; a resize says so | @TwoWayTech | fix/meetings-drag-move | `077dc3a` |
+| 2026-11-21 | #92 | fix(sales): invoice, payment and receivables click-through fixes | @TwoWayTech | fix/sales-invoice-click-through | `fca234a` |

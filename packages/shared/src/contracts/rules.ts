@@ -72,6 +72,20 @@ export function insuranceStatus(
   return earliest <= addDays(today, 30) ? "expiring" : "valid";
 }
 
+/** What a recorded signature says, in the dialog and on the signed PDF: no signing provider yet (contracts.md step 3). */
+export const TYPED_SIGNATURE_NOTE = "Recorded as a typed signature; a signing provider is not connected yet.";
+
+/**
+ * The warning shown when a subcontract is signed with no insurance certificate on file, or null
+ * (contracts.md step 3, owner 2026-11-21). It only warns: signing is never blocked by it.
+ */
+export function signatureWarning(
+  contract: Pick<Contract, "direction">,
+  certificate: Pick<InsuranceCertificate, "coverages"> | null,
+): string | null {
+  return contract.direction === "subcontractor" && !certificate ? "No insurance certificate on file" : null;
+}
+
 /** Why a waiver cannot be recorded, or null: an unconditional waiver must follow a confirmed payment (ADR 0026). */
 export function waiverProblem(waiver: Pick<LienWaiver, "type" | "amount">, paymentConfirmed: boolean): string | null {
   if (!dec(waiver.amount || 0).gt(0)) return "Enter the waiver amount.";

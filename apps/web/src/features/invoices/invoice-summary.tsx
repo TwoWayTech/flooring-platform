@@ -9,29 +9,61 @@ import {
   type Job,
   type Location,
 } from "@workspace/shared";
-import { featureOn } from "@workspace/shared";
+import { dec, featureOn } from "@workspace/shared";
 import { Num } from "@workspace/ui/components/num";
 import { Panel } from "@workspace/ui/components/panel";
+import { cn } from "@workspace/ui/lib/utils";
 import { InvoiceStatusPills } from "@/lib/document-status";
 import { useFormatDate } from "@/lib/use-format-date";
 import { HELD_LABEL } from "./invoice-model";
 import { ScheduleJob } from "./schedule-job";
 
-/** One money figure of the summary; Remaining is the largest. */
-function Figure({ label, value, large }: { label: string; value: string; large?: boolean }) {
+/** One money figure of the invoice summary. */
+export interface SummaryFigure {
+  label: string;
+  value: string;
+  /** Remaining is the largest figure. */
+  large?: boolean;
+}
+
+/**
+ * The money figures at the top of an invoice (spec B2, Appendix A): Total, Paid, then Credits and
+ * Written off when there are any, then Remaining, so the figures on screen add up: Remaining =
+ * Total − Paid − Credits − Written off (click-through #16). Remaining never goes below zero, as in
+ * the ledger.
+ */
+export function summaryFigures(ledger: InvoiceLedger): SummaryFigure[] {
+  return [
+    { label: "Total", value: ledger.total },
+    { label: "Paid", value: ledger.paid },
+    ...(dec(ledger.credited).gt(0) ? [{ label: "Credits", value: ledger.credited }] : []),
+    ...(dec(ledger.writtenOff).gt(0) ? [{ label: "Written off", value: ledger.writtenOff }] : []),
+    { label: "Remaining", value: ledger.balance, large: true },
+  ];
+}
+
+function Figure({ label, value, large }: SummaryFigure) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className={cn("flex min-w-0 flex-col gap-0.5", large && "col-span-2 sm:col-span-1")}>
       <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className={large ? "font-display text-2xl font-semibold" : "text-lg font-medium"}>
+      <dd className={cn("break-words", large ? "font-display text-2xl font-semibold" : "text-lg font-medium")}>
         <Num kind="money" value={value} />
       </dd>
     </div>
   );
 }
 
+/** A credit note issued against the invoice, for the summary's link to it. */
+export interface CreditNoteLink {
+  id: string;
+  number: string;
+}
+
 /**
- * The invoice's header (spec B2): status, the money summary (total, paid, remaining) in front,
- * then where it ships from, the job site, the due date and the linked installation job.
+ * The invoice's header (spec B2): status, the money summary (total, paid, credits, remaining) in
+ * front, then the credit notes issued against it, where it ships from, the job site, the due date
+ * and the linked installation job. At phone width the figures sit two to a row and Remaining takes
+ * its own, so nothing scrolls sideways at 375 px (click-through #27).
  */
 export function InvoiceSummary({
   invoice,
@@ -41,9 +73,12 @@ export function InvoiceSummary({
   customerName,
   quoteNumber,
   canSchedule,
+  creditNotes,
 }: {
   invoice: Invoice;
   ledger: InvoiceLedger;
+  /** Live credit notes that credit this invoice (CR-xxxx). */
+  creditNotes: readonly CreditNoteLink[];
   locations: Location[];
   job: Job | undefined;
   customerName: string;
@@ -58,10 +93,10 @@ export function InvoiceSummary({
         <h1 className="font-display text-xl font-semibold">Invoice {invoice.number}</h1>
         <InvoiceStatusPills ledger={ledger} />
       </div>
-      <dl className="grid grid-cols-3 gap-4 sm:max-w-xl">
-        <Figure label="Total" value={ledger.total} />
-        <Figure label="Paid" value={ledger.paid} />
-        <Figure label="Remaining" value={ledger.balance} large />
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-8">
+        {summaryFigures(ledger).map((figure) => (
+          <Figure key={figure.label} {...figure} />
+        ))}
       </dl>
       <dl className="text-muted-foreground grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div>
@@ -85,6 +120,22 @@ export function InvoiceSummary({
               >
                 {quoteNumber}
               </Link>
+            </dd>
+          </div>
+        ) : null}
+        {creditNotes.length > 0 ? (
+          <div>
+            <dt className="text-xs">{creditNotes.length === 1 ? "Credit note" : "Credit notes"}</dt>
+            <dd className="flex flex-wrap gap-x-2">
+              {creditNotes.map((note) => (
+                <Link
+                  key={note.id}
+                  href={`/sales/invoices/${note.id}`}
+                  className="text-brand-ink underline-offset-4 hover:underline"
+                >
+                  {note.number}
+                </Link>
+              ))}
             </dd>
           </div>
         ) : null}

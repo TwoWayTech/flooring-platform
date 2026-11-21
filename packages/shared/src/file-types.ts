@@ -41,8 +41,19 @@ export function proofFilesProblem(files: readonly ProofCandidate[]): string | nu
   if (files.length === 0) return "Attach the receipt, bank confirmation or check photo to continue.";
   if (files.length > MAX_PROOF_FILES) return `Attach at most ${MAX_PROOF_FILES} files.`;
   for (const file of files) {
-    if (file.size > MAX_PROOF_BYTES) return `${file.name} is larger than 5 MB.`;
-    if (!detectProofType(file.head)) return `${file.name} is not a PDF, JPG, PNG, WebP or HEIC file.`;
+    const problem = proofFileProblem(file);
+    if (problem) return problem;
   }
+  return null;
+}
+
+/**
+ * Why one proof file cannot be attached, or null when it can (spec Appendix A): at most 5 MB and
+ * of an accepted type by its first bytes. The picker checks each file with this when it is chosen
+ * and the server checks it again on save, so both refuse it in the same words.
+ */
+export function proofFileProblem(file: ProofCandidate): string | null {
+  if (file.size > MAX_PROOF_BYTES) return `${file.name} is larger than 5 MB.`;
+  if (!detectProofType(file.head)) return `${file.name} is not a PDF, JPG, PNG, WebP or HEIC file.`;
   return null;
 }
