@@ -1187,13 +1187,16 @@ describe("reports (needs the local PostgreSQL)", () => {
     // Finding #39: October's expenses are the Business report's operating expenses, people costs included.
     const october = await ok<BusinessReport>(PATHS.business, cookies.owner!);
     const pnl = await ok<Report>("/reports/pnl?range=12m", cookies.owner!);
-    const row = pnl.rows.find((r) => r.month === "2026-10");
-    if (row) {
-      const peopleCosts = section(october, "people")!.rows.find((r) => r.id === "pay")!.values.amount!;
-      expect(fixed(row.expenses)).toBe(fixed(summaryValue(october, "opex")));
-      expect(dec(row.expenses!).gte(peopleCosts)).toBe(true);
-      expect(fixed(row.netIncome)).toBe(fixed(summaryValue(october, "net")));
-    }
+    // The finding's period is pinned to OCTOBER; P&L's 12 months must reach it, or the check fails loudly.
+    const row = pnl.rows.find((r) => r.month === OCTOBER.from.slice(0, 7));
+    expect(
+      row,
+      `P&L's 12 months (${pnl.rows[0]?.month} to ${pnl.rows.at(-1)?.month}) must include October 2026`,
+    ).toBeDefined();
+    const peopleCosts = section(october, "people")!.rows.find((r) => r.id === "pay")!.values.amount!;
+    expect(fixed(row!.expenses)).toBe(fixed(summaryValue(october, "opex")));
+    expect(dec(row!.expenses!).gte(peopleCosts)).toBe(true);
+    expect(fixed(row!.netIncome)).toBe(fixed(summaryValue(october, "net")));
     for (const param of [
       "expenseCategory=rent",
       `supplierId=${vendorId}`,
