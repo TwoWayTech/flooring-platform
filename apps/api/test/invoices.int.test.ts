@@ -65,11 +65,23 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   const harness = new AuthHarness();
   let company = { id: "", slug: "" };
   let other = { id: "", slug: "" };
+  let stock = { id: "", slug: "" };
+  let stockPlace = { warehouse: "", tile: "" };
   let warehouse = "";
   let otherWarehouse = "";
   let otherTile = "";
   let tile = "";
-  const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "", manager: "" };
+  const cookies = {
+    salesA: "",
+    salesB: "",
+    accountant: "",
+    owner: "",
+    otherSales: "",
+    dispatcher: "",
+    manager: "",
+    stockSales: "",
+    stockAccountant: "",
+  };
 
   function call(method: "get" | "post", path: string, cookie: string) {
     return request(harness.app.getHttpServer())
@@ -136,6 +148,21 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
         version: 1,
       });
       return { branch: branch.id, warehouse: store.id, tile: product.id };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  /**
+   * Lets the company's Sales role record customer payments, as a company may (spec A3). The default
+   * Sales role only views them (ADR 0061 decision 3); these companies opt in, so the own-scope
+   * two-person check stays covered.
+   */
+  async function letSalesRecord(companyId: string) {
+    const handle = await harness.companyDb(companyId);
+    try {
+      const [sales] = await handle.db.select({ id: roles.id }).from(roles).where(eq(roles.key, "sales"));
+      await handle.db.insert(rolePermissions).values({ roleId: sales!.id, permissionKey: "sales.payment.record" });
     } finally {
       await handle.close();
     }
@@ -220,8 +247,12 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     await harness.start();
     company = await harness.provisionCompany("bill");
     other = await harness.provisionCompany("billother");
+    stock = await harness.provisionCompany("billstock");
     const mine = await setUp(company.id);
     const theirs = await setUp(other.id);
+    stockPlace = await setUp(stock.id);
+    await letSalesRecord(company.id);
+    await letSalesRecord(other.id);
     warehouse = mine.warehouse;
     otherWarehouse = theirs.warehouse;
     otherTile = theirs.tile;
@@ -245,6 +276,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       accountant: await harness.addUser({ companyIds: [company.id], roles: ["accountant"] }),
       owner: await harness.addUser({ companyIds: [company.id], roles: ["owner"] }),
       otherSales: await harness.addUser({ companyIds: [other.id], roles: ["sales"] }),
+      stockSales: await harness.addUser({ companyIds: [stock.id], roles: ["sales"] }),
+      stockAccountant: await harness.addUser({ companyIds: [stock.id], roles: ["accountant"] }),
     };
     await placeIn(company.id, emails.salesA, mine.branch);
     cookies.salesA = await harness.signIn(emails.salesA);
@@ -254,7 +287,9 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     cookies.otherSales = await harness.signIn(emails.otherSales);
     cookies.dispatcher = await harness.signIn(emails.dispatcher);
     cookies.manager = await harness.signIn(emails.manager);
-  }, 120_000);
+    cookies.stockSales = await harness.signIn(emails.stockSales);
+    cookies.stockAccountant = await enrolled(emails.stockAccountant);
+  }, 180_000);
 
   afterAll(async () => {
     await harness.stop();
@@ -721,6 +756,32 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     // A branch-scoped role with the report key still may not see company-wide books.
     expect((await call("get", "/ledger/trial-balance", cookies.manager)).status).toBe(403);
     expect((await call("get", "/ledger/trial-balance?through=2026-02-30", cookies.owner)).status).toBe(400);
+  });
+
+  it("lets the default Sales role view customer payments but not record them (ADR 0061 decision 3)", async () => {
+    const customer = await call("post", "/customers", cookies.stockSales).send({ name: "Noor Aziz" }).expect(201);
+    const { invoice } = await invoiced(cookies.stockSales, customer.body.id, stockPlace.warehouse, stockPlace.tile);
+    expect((await call("get", "/payments", cookies.stockSales)).status).toBe(200);
+    const refused = await call("post", "/payments", cookies.stockSales).send(payment(invoice.id));
+    expect([refused.status, refused.body.code]).toEqual([403, "forbidden"]);
+    // The accountant records one; Sales sees it on its own sale but may not add proof to it.
+    const paid = await call("post", "/payments", cookies.stockAccountant).send(payment(invoice.id)).expect(201);
+    const seen = (await call("get", "/payments", cookies.stockSales).expect(200)).body as { id: string }[];
+    expect(seen.map((p) => p.id)).toContain(paid.body.id);
+    const files = await call("post", `/payments/${paid.body.id}/files`, cookies.stockSales).send({ files: [PDF] });
+    expect([files.status, files.body.code]).toEqual([403, "forbidden"]);
+    const handle = await harness.companyDb(stock.id);
+    try {
+      const [sales] = await handle.db.select({ id: roles.id }).from(roles).where(eq(roles.key, "sales"));
+      const keys = await handle.db
+        .select({ key: rolePermissions.permissionKey })
+        .from(rolePermissions)
+        .where(eq(rolePermissions.roleId, sales!.id));
+      expect(keys.map((row) => row.key)).toContain("sales.payment.view");
+      expect(keys.map((row) => row.key)).not.toContain("sales.payment.record");
+    } finally {
+      await handle.close();
+    }
   });
 
   it("keeps payments, refunds and proof from someone who may see invoices but not money", async () => {
