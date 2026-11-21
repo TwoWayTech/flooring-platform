@@ -28,7 +28,9 @@ import {
   FEATURES,
   hubLocationsOf,
   hubWindow,
+  last12Months,
   lineAmount,
+  monthEnd,
   paymentsReport,
   pnlReport,
   REPORT_QUERY_MESSAGES as M,
@@ -337,6 +339,10 @@ describe("reports (needs the local PostgreSQL)", () => {
 
   const expectedBusiness = (full: Full, filters: BusinessFilters, show: BusinessVisibility) =>
     capDrillRecords(businessReport({ ...full.business, today: today() }, filters, show));
+
+  /** Profit and loss on the full record: the same profit calculation as the Business report (ADR 0061 decision 2). */
+  const expectedPnl = (full: Full, query: PnlQuery, show: BusinessVisibility) =>
+    pnlReport(query, { ...full.business, today: today() }, show);
 
   /** Whether a person's data scope covers an invoice, by the rule of GET /invoices (ADR 0055 S2). */
   const inScope = (who: { scope: DataScope; userId: string; branchId: string | null }) => (i: Invoice) =>
@@ -787,15 +793,10 @@ describe("reports (needs the local PostgreSQL)", () => {
     expect(pnl.columns.find((c) => c.id === "expenses")!.header).toBe("Expenses, excluding payroll");
     expect(pnl.columns.find((c) => c.id === "netIncome")!.header).toBe("Net income, before payroll");
     const query: PnlQuery = { range: "12m", locationId: null };
-    expect(pnl).toEqual(pnlReport(query, { today: today(), invoices: full.invoices, expenses: full.expenses }, NOPAY));
-    const months = new Set(ownerPnl.rows.map((row) => row.month));
-    const payroll = sum(
-      full.expenses
-        .filter((e) => e.category === "payroll" && e.status === "confirmed" && months.has(e.date.slice(0, 7)))
-        .map((e) => e.amount),
-    );
-    expect(payroll.gt(0)).toBe(true);
-    expect(dec(ownerPnl.totals!.expenses!).minus(pnl.totals!.expenses!).eq(payroll)).toBe(true);
+    expect(pnl).toEqual(expectedPnl(full, query, NOPAY));
+    expect(ownerPnl).toEqual(expectedPnl(full, query, ALL));
+    // The difference is the people costs of rule 7, as in the Business report (ADR 0061 decision 2).
+    expect(dec(ownerPnl.totals!.expenses!).gt(pnl.totals!.expenses!)).toBe(true);
   });
 
   it("hides cost of goods while contract invoices exist and the contract cost key is missing (R-STRIP-3; S4)", async () => {
@@ -951,12 +952,8 @@ describe("reports (needs the local PostgreSQL)", () => {
       for (const locationId of [null, places["Denver Central"]!]) {
         const hub = `range=${range}${locationId ? `&locationId=${locationId}` : ""}`;
         const pnlQuery: PnlQuery = { range, locationId };
-        expect(await ok<Report>(`/reports/pnl?${hub}`, cookies.owner!)).toEqual(
-          pnlReport(pnlQuery, { today: today(), invoices: full.invoices, expenses: full.expenses }, ALL),
-        );
-        expect(await ok<Report>(`/reports/pnl?${hub}`, cookies.rpt_nopay!)).toEqual(
-          pnlReport(pnlQuery, { today: today(), invoices: full.invoices, expenses: full.expenses }, NOPAY),
-        );
+        expect(await ok<Report>(`/reports/pnl?${hub}`, cookies.owner!)).toEqual(expectedPnl(full, pnlQuery, ALL));
+        expect(await ok<Report>(`/reports/pnl?${hub}`, cookies.rpt_nopay!)).toEqual(expectedPnl(full, pnlQuery, NOPAY));
         const salesQuery: SalesByCategoryQuery = { ...pnlQuery, category: null };
         expect(await ok<Report>(`/reports/sales-by-category?${hub}`, cookies.owner!)).toEqual(
           expectedSales(full, salesQuery, () => true, true),
@@ -1140,6 +1137,88 @@ describe("reports (needs the local PostgreSQL)", () => {
       });
     } finally {
       await summit((db) => db.update(locationTable).set({ deletedAt: null }).where(eq(locationTable.id, southgate)));
+    }
+  });
+  it("gives Profit and loss the Business report's profit for a month, a quarter, the year and a custom range (R-PROFIT; ADR 0061 decision 2)", async () => {
+    const months = last12Months(today());
+    const year = months.filter((m) => m.startsWith(today().slice(0, 4)));
+    const spans = [
+      { name: "October 2026", months: months.filter((m) => m === "2026-10") },
+      { name: "last month", months: months.slice(-2, -1) },
+      { name: "the last full quarter", months: months.slice(-4, -1) },
+      { name: "year to date", months: year },
+      { name: "a custom range of months", months: months.slice(1, 6) },
+      { name: "the last 12 months", months },
+    ].filter((span) => span.months.length > 0);
+    const fixed = (value: string | undefined) => dec(value!).toFixed(2);
+    const fromBusiness = (report: BusinessReport) => ({
+      revenue: fixed(summaryValue(report, "revenue")),
+      cogs: fixed(summaryValue(report, "cogs")),
+      gross: fixed(summaryValue(report, "gross")),
+      opex: fixed(summaryValue(report, "opex")),
+      net: fixed(summaryValue(report, "net")),
+    });
+    const fromPnl = (rows: readonly Record<string, string>[]) => {
+      const add = (id: string) => sum(rows.map((row) => row[id]!)).toFixed(2);
+      return {
+        revenue: add("revenue"),
+        cogs: add("cogs"),
+        gross: add("grossMargin"),
+        opex: add("expenses"),
+        net: add("netIncome"),
+      };
+    };
+    const people = [
+      { name: "Owner", cookie: cookies.owner! },
+      { name: "Accountant", cookie: cookies.accountant! },
+      { name: "no pay sight", cookie: cookies.rpt_nopay! },
+    ];
+    // P&L's one filter is a warehouse; it stands for the Business report with that location ticked.
+    // P&L has no product category, expense category, salesperson or vendor filter (it refuses them).
+    for (const locationId of [null, places["Denver Central"]!]) {
+      const where = locationId ? `&locationId=${locationId}` : "";
+      for (const person of people) {
+        const pnl = await ok<Report>(`/reports/pnl?range=12m${where}`, person.cookie);
+        for (const span of spans) {
+          const period = { from: `${span.months[0]}-01`, to: monthEnd(span.months.at(-1)!) };
+          const filters = filtersOf(period, { locationIds: locationId ? [locationId] : [] });
+          const business = await ok<BusinessReport>(businessPath(filters), person.cookie);
+          const rows = pnl.rows.filter((row) => span.months.includes(row.month!));
+          expect(fromPnl(rows), `${person.name}, ${span.name}, ${locationId ?? "all"}`).toEqual(fromBusiness(business));
+        }
+        for (const range of ["3m", "ytd"] as const) {
+          const preset = await ok<Report>(`/reports/pnl?range=${range}${where}`, person.cookie);
+          const first = preset.rows[0]!.month!;
+          const last = preset.rows.at(-1)!.month!;
+          const filters = filtersOf(
+            { from: `${first}-01`, to: monthEnd(last) },
+            { locationIds: locationId ? [locationId] : [] },
+          );
+          const business = await ok<BusinessReport>(businessPath(filters), person.cookie);
+          expect(fromPnl([preset.totals!]), `${person.name}, ${range} total`).toEqual(fromBusiness(business));
+        }
+      }
+    }
+    // Finding #39: October's expenses are the Business report's operating expenses, people costs included.
+    const october = await ok<BusinessReport>(PATHS.business, cookies.owner!);
+    const pnl = await ok<Report>("/reports/pnl?range=12m", cookies.owner!);
+    // The finding's period is pinned to OCTOBER; P&L's 12 months must reach it, or the check fails loudly.
+    const row = pnl.rows.find((r) => r.month === OCTOBER.from.slice(0, 7));
+    expect(
+      row,
+      `P&L's 12 months (${pnl.rows[0]?.month} to ${pnl.rows.at(-1)?.month}) must include October 2026`,
+    ).toBeDefined();
+    const peopleCosts = section(october, "people")!.rows.find((r) => r.id === "pay")!.values.amount!;
+    expect(fixed(row!.expenses)).toBe(fixed(summaryValue(october, "opex")));
+    expect(dec(row!.expenses!).gte(peopleCosts)).toBe(true);
+    expect(fixed(row!.netIncome)).toBe(fixed(summaryValue(october, "net")));
+    for (const param of [
+      "expenseCategory=rent",
+      `supplierId=${vendorId}`,
+      "productCategory=carpet",
+      `salesRepId=${ids.sales}`,
+    ]) {
+      await refused(`/reports/pnl?${param}`, cookies.owner!, 400, { code: "invalid_request", message: M.unknown });
     }
   });
 });

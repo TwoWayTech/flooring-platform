@@ -31,6 +31,7 @@ import { loadLocations, loadProducts, loadRolls } from "../inventory/inventory-r
 import { loadNames } from "../sales/invoice-records";
 import { companyClock, seesCustomer, seesDocument } from "../sales/sales-common";
 import { loadBranches } from "../sales/sales-records";
+import { loadProfitData } from "./profit-records";
 import { checkHubLocation, checkLocations, checkWarehouse } from "./report-params";
 import {
   hasContractInvoices,
@@ -187,20 +188,22 @@ export class ReportsService {
     return capDrillRecords(businessReport({ ...data, users }, filters, show));
   }
 
-  /** Profit and loss by month (spec rule 24), for data scope `all` only (S1, checked by the controller). */
+  /**
+   * Profit and loss by month (spec rule 24), for data scope `all` only (S1, checked by the controller).
+   * Each month is the Business report's profit for that month (ADR 0061 decision 2), so it reads the
+   * same documents for whole months up to the end of this one.
+   */
   async pnl(tenant: TenantContext, access: RequestAccess, query: PnlQuery): Promise<Report> {
     const clock = await companyClock(this.control.db, tenant);
     const w = hubWindow(query.range, clock.day);
-    const { invoices, expenses, show } = await readSnapshot(await this.tenancy.db(tenant), async (tx) => {
-      checkHubLocation("pnl", query.locationId, await loadLocations(tx));
+    const { data, show } = await readSnapshot(await this.tenancy.db(tenant), async (tx) => {
+      const locations = await loadLocations(tx);
+      checkHubLocation("pnl", query.locationId, locations);
       const show = await visibilityFor(tx, access);
-      return {
-        show,
-        invoices: await loadInvoiceHeads(tx, clock.zone, { from: w.from, to: w.invoicesTo }),
-        expenses: await loadExpenseRows(tx, { from: w.from, to: w.expensesTo, payroll: show.payroll }),
-      };
+      const window = { from: w.from, to: w.profitTo, payroll: show.payroll };
+      return { show, data: await loadProfitData(tx, clock.zone, window, locations) };
     });
-    return pnlReport(query, { today: clock.day, invoices, expenses }, show);
+    return pnlReport(query, { ...data, today: clock.day }, show);
   }
 
   /**

@@ -11,7 +11,7 @@ Four reports are on:
 | Report | Feature key | Built by |
 | --- | --- | --- |
 | Business report (first and default) | `reports.business` | `businessReport` in `packages/shared/src/business-report.ts`, shown by `apps/web/src/features/reports/business-report.tsx` |
-| Profit and loss | `reports.pnl` | `pnlReport` in `apps/web/src/features/reports/report-model.ts`, using `monthlyPnl` in `packages/shared/src/analytics.ts` |
+| Profit and loss | `reports.pnl` | `pnlReport` in `packages/shared/src/reports/hub-reports.ts`, using `profitFigures` and `profitOf` in `packages/shared/src/profit.ts` (the Business report's own profit; ADR 0061 decision 2) |
 | Sales by category | `reports.sales-category` | `salesByCategoryReport` in `report-model.ts`, using `salesByCategory` in `analytics.ts` |
 | Payments received | `reports.payments` | `paymentsReport` in `report-model.ts` |
 
@@ -111,7 +111,7 @@ with a locationId:     direct[locationId] += expenseCost(e)
 without a locationId:  spread(expenseCost(e), month of e.date)
 ```
 
-`spread` splits the cost across every location with `weightsFor` and `shareByWeight` (`finance-expenses.md`, rules 14 and 15) and adds to `shared`. The revenue weights always use all non-void invoices in that month, whatever filters are on.
+`spread` splits the cost across every location with `weightsFor` and `shareByWeight` (`finance-expenses.md`, rules 14 and 15) and adds to `shared`. A company with no locations has nothing to split across, so the cost stays whole in `shared` and still counts in operating expenses (2026-11-21; before, it was lost). The revenue weights always use all non-void invoices in that month, whatever filters are on.
 
 ### 7. People costs
 
@@ -227,7 +227,7 @@ With a salesperson filter the note reads "Filtered to one salesperson, so the su
 
 ### 14. Section: Profit by location
 
-`profitByLocation` in `business-report.ts`. Key `locations`. Shown when `show.margin`, the company has locations and no salesperson filter is on. It lists the picked locations, or all. Chart column: Net profit.
+`profitByLocation` in `business-report.ts`. Key `locations`. Shown when `show.margin`, the company has locations (or holds a cost kept whole because it has none, rule 6) and no salesperson filter is on. Such a cost is its own row, "Company-wide" (id `company-wide`), so the rows still add up to company net profit (2026-11-21). It lists the picked locations, or all. Chart column: Net profit.
 
 ```
 own     = invoices in scope where soldAt(i) === location
@@ -354,30 +354,33 @@ From `business-report.tsx` and `business-report-pdf.tsx`.
 
 `ReportsPage` builds them in the browser from `client.list`.
 
-**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`), and the Payments report uses the warehouse of the payment's invoice. On Profit and loss the filter is called Location and lists every live location, showrooms too, as the Business report's Locations filter does (`HUB_LOCATION_FILTERS` in `packages/shared/src/reports/hub-locations.ts`; 2026-11-21). Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
+**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. On Sales by category, Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`); on Profit and loss it is called Location, lists every live location, showrooms too, and is the Business report's Locations filter with that location ticked (below; `HUB_LOCATION_FILTERS` in `packages/shared/src/reports/hub-locations.ts`, 2026-11-21). The Payments report uses the warehouse of the payment's invoice. Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
 
 ```
 from     = first day of the first month
 invoices = invoices with issuedAt >= from and issuedAt <= addDays(today, 1), in the warehouse
-expenses = expenses with date >= from
+expenses = expenses with date >= from      // Profit and loss: every document up to the end of this month (`hubWindow.profitTo`)
 payments = payments with date >= from and date <= today, in the warehouse
 ```
 
-**Profit and loss.** `monthlyPnl` in `packages/shared/src/analytics.ts`, one row per month.
+**Profit and loss.** `pnlReport` in `packages/shared/src/reports/hub-reports.ts`, one row per calendar month. **Each row is the Business report's profit for that whole month and the same filters** (ADR 0061 decision 2, 2026-11-21): the same `profitFigures` and `profitOf` in `packages/shared/src/profit.ts` work out both, so the two reports cannot drift.
 
 ```
-inMonth  = invoices where !voidedAt and issuedAt starts with month
-revenue  = sum(signed subtotal)        // a return subtracts
-cogs     = sum(signed cost)
-opex     = sum(e.amount) over expenses where countsAsCost(e) and date starts with month
-gross    = revenue - cogs
+period    = [month-01, monthEnd(month)]               // the whole month, also for this month
+filters   = no filter, or locationIds = [the picked location]
+revenue   = Business report revenue (rule 5: line amounts, a return subtracts)
+cogs      = Business report cost of goods (rule 5: line costs)
+grossMargin = revenue - cogs
 marginPct = revenue is zero ? 0 : (revenue - cogs) / revenue * 100
-netIncome = gross - opex
+expenses  = Business report operating expenses (rules 6 to 9: cost expenses but payroll at amount + tax,
+            people costs, bad debts and shared costs)
+netIncome = Business report net profit = grossMargin - expenses
+Total     = the sum of the rows = the Business report over the first month's first day to the last month's end
 ```
 
-`cogs` is null for a month with an invoice whose cost the viewer doesn't hold (a browser's data; CLAUDE.md rule 5), and so are `gross`, `marginPct` and `netIncome`. `pnlReport` reads stored invoices, which always carry cost, through `storedPnl`, which refuses a null (ADR 0037, 2026-11-17).
+Without pay sight payroll expenses and pay periods are left out before anything is added up, as in the Business report (S3). The Location filter is the Business report's Locations filter with that one location ticked: revenue and cost follow `soldAt` (rule 4), not where the invoice ships from, and expenses are that location's direct, people, bad-debt and shared costs (rule 22). Profit and loss has no product category, expense category, salesperson or vendor filter; it refuses them as unknown. It reads stored invoices only, so an invoice with no cost (a browser's data) makes it fail rather than print a partial cost of goods (ADR 0037, 2026-11-17).
 
-`opex` uses `amount` before tax, includes payroll expenses and has no HR pay or write-offs. So this report's expenses differ from the Business report's Operating expenses.
+Until 2026-11-21 this report used invoice subtotals, expense amounts before tax and payroll expenses, with no HR pay or write-offs, and its warehouse filter left expenses alone; so its expenses and net income differed from the Business report's (click-through finding #39). The dashboard's 12-month panel (`monthlyPnl` in `analytics.ts`) still uses that older rule.
 
 **Sales by category.** `salesByCategory` in `packages/shared/src/analytics.ts`.
 
@@ -474,7 +477,7 @@ Reports store nothing. These are the shapes passed around, in `packages/shared/s
 | Report | Collections |
 | --- | --- |
 | Business report | `invoices`, `payments`, `invoiceAdjustments`, `refunds`, `expenses`, `bills`, `supplierPayments`, `receipts`, `purchaseOrders`, `suppliers`, `users`, `employees`, `locations`, `products`, `rolls`, `stockMovements`, `payPeriods`, `settings.sharedCosts` |
-| Profit and loss | `invoices`, `expenses` |
+| Profit and loss | `invoices`, `expenses`, `invoiceAdjustments`, `payPeriods`, `employees`, `locations`, `products`, `settings.sharedCosts` |
 | Sales by category | `invoices`, `products` |
 | Payments received | `payments`, `invoices`, `customers` |
 
@@ -500,7 +503,7 @@ Report PDFs print with `apps/web/src/features/reports/report-pdf.tsx`, landscape
 ## Edge cases and known limits
 
 - **Data scope differs between reports.** The Business report uses `db.list`, so it shows the whole company even to a Manager with branch scope. The other three use `client.list`, which applies data scope to invoices, payments and customers. A Sales user sees Sales by category for their own invoices only. (Closed on the API, ADR 0055: the Business report and P&L need data scope `all`; the other two apply data scope on the server.)
-- **Profit and loss mixes scopes.** For a branch-scoped Manager, invoices are the branch's and expenses are the company's. The warehouse filter also leaves expenses alone. (Closed on the API, ADR 0055: Profit and loss needs data scope `all`, so its invoices and expenses are both the company's. The warehouse filter still leaves expenses alone.)
+- **Profit and loss mixes scopes.** For a branch-scoped Manager, invoices are the branch's and expenses are the company's. The warehouse filter also leaves expenses alone. (Closed on the API, ADR 0055: Profit and loss needs data scope `all`, so its invoices and expenses are both the company's. Since ADR 0061 decision 2 the warehouse filter narrows expenses to that location, as the Business report's Locations filter does.)
 - **Sections hidden from a person still count.** The Accountant has no People costs section, but Operating expenses and Net profit include those costs.
 - **Product category filter reaches only the top of the Summary.** Profit by location and the Revenue sections ignore it, so their totals stop matching Summary revenue when it is on. Drill lists keep the whole invoice's amount.
 - **Filters do not reach every section.** Location, Vendor and Expense category filters skip some sections (rule 22), and the report prints no note saying which. ADR 0023 asked for one.
@@ -570,7 +573,8 @@ A fifth report, "Trial balance" (`?report=trial-balance`), read from `GET /ledge
 
 ### Known limits this build closes
 - **Data scope differs between reports:** closed (S1, S2).
-- **Profit and loss mixes scopes:** closed (S1). The warehouse filter still leaves expenses alone.
+- **Profit and loss mixes scopes:** closed (S1). The warehouse filter narrows expenses too (ADR 0061 decision 2).
+- **Profit and loss and the Business report give different profits** (click-through finding #39): closed (ADR 0061 decision 2). One calculation, `profit.ts`, serves both.
 - **Drill lists stop at 200 records with no message:** closed (S8).
 - **Write-offs and receipts on UTC days** (the PR #18 follow-up in docs/STATUS.md): closed for reports (S12). Payment `recordedAt` and `voidedAt` aren't read by reports; that follow-up stays open for commissions.
 
