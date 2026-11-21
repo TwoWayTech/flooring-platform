@@ -14,6 +14,7 @@ import {
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
 import {
+  addDays,
   bestSellersIn,
   CREDIT_NOTE_PREFIX,
   dec,
@@ -22,7 +23,6 @@ import {
   type Product,
   type ViewedInvoice,
 } from "@workspace/shared";
-import { addDays, CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -311,6 +311,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
         expect(product).toHaveProperty("swatch");
       }
     }
+  });
+
   it("dates a new invoice by the customer's terms: due on receipt is due the day it is issued (sales.md rule 21, click-through #10)", async () => {
     // A new customer takes the company's default terms, which are Summit's "Due on receipt".
     const customer = await call("post", "/customers", cookies.salesA).send({ name: "Noor Haddad" }).expect(201);
