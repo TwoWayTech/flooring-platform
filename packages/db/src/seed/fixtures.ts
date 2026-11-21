@@ -27,7 +27,7 @@ export interface DemoCompany {
   fixtures: CompanyFixtures;
 }
 
-/** Loads a demo company by id; the real build seeds only Summit Floor Co. for now. */
+/** Loads a demo company by id: Summit Floor Co. for every seed, Harbor Staffing Co. for the local-only one (ADR 0065). */
 export function loadDemoCompany(id: Company["id"]): DemoCompany {
   const platform = readFixture<PlatformFixtures>("platform");
   const company = platform.companies.find((candidate) => candidate.id === id);
