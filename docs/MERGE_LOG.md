@@ -40,3 +40,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-21 | #78 | docs: the owner's decisions after the click-through of 2026-11-21 (ADR 0061) | @TwoWayTech | feat/docs-owner-decisions-2026-11-21 | `943dfee` |
 | 2026-11-21 | #79 | ci: raise verify's timeout to 40 minutes (ADR 0061) | @TwoWayTech | fix/ci-verify-timeout | `fc14190` |
 | 2026-11-21 | #81 | fix(documents): full-precision money, printable PDF signs and agreeing terms on invoices | @TwoWayTech | fix/documents-invoice-pdf | `666808f` |
+| 2026-11-21 | #84 | feat(db): seed Harbor Staffing Co. and a platform admin for local testing (#67) | @TwoWayTech | feat/db-local-test-seeds | `0a430a2` |
