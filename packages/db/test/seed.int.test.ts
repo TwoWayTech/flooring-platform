@@ -308,7 +308,7 @@ describe("test company seed", () => {
       // Seeded history posts no entry of its own; the one opening-balance entry holds what is
       // still open (ADR 0062, opening-balances.int.test.ts).
       const entries = await company.db.select().from(journalEntries);
-      expect(entries.map((entry) => entry.sourceType)).toEqual(["opening_balance"]);
+      expect(entries.map((entry) => entry.sourceType)).toEqual(["opening_balance_contract"]);
     } finally {
       await company.close();
     }

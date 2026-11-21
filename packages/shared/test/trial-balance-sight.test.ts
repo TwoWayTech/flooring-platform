@@ -53,10 +53,12 @@ describe("who may read the trial balance (ADR 0055 Trial balance, owner question
 
   it("derives the pay and contract sources from one classification of every source", () => {
     expect([...PAY_SOURCE_TYPES].sort()).toEqual(["commission_statement", "contractor_payment", "pay_period"]);
-    expect(CONTRACT_SOURCE_TYPES).toEqual(["contract_billing"]);
+    expect(CONTRACT_SOURCE_TYPES).toEqual(["contract_billing", "opening_balance_contract"]);
     // 15 with the opening-balance entry (ADR 0062), which reveals stock at cost like the others.
-    expect(Object.keys(SOURCE_SIGHT)).toHaveLength(15);
+    expect(Object.keys(SOURCE_SIGHT)).toHaveLength(16);
     expect(SOURCE_SIGHT.opening_balance).toBe("cost");
+    // An opening entry holding a subcontract bill shows what it cost (ADR 0062).
+    expect(SOURCE_SIGHT.opening_balance_contract).toBe("contract");
   });
 
   it("names only real default accounts as pay and contract accounts", () => {

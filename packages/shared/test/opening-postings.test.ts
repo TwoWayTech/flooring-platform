@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ACCOUNTS, openingBalancePosting, postingProblem, type OpeningBalances } from "../src";
+import {
+  CONTRACT_SOURCE_TYPES,
+  DEFAULT_ACCOUNTS,
+  openingBalancePosting,
+  postingProblem,
+  type OpeningBalances,
+} from "../src";
 
 const REF = { id: "ob-1", date: "2025-12-09", memo: "Opening balances (seed)" };
 
@@ -12,6 +18,7 @@ const NOTHING: OpeningBalances = {
   receivedNotBilled: "0",
   retainagePayable: "0",
   customerCredit: [],
+  holdsSubcontractBill: false,
 };
 
 describe("the opening-balance entry (ADR 0062)", () => {
@@ -38,6 +45,7 @@ describe("the opening-balance entry (ADR 0062)", () => {
       receivedNotBilled: "500",
       retainagePayable: "370",
       customerCredit: [{ customerId: "c2", amount: "25" }],
+      holdsSubcontractBill: false,
     });
     expect(draft).toMatchObject({
       event: "opening_balance.posted",
@@ -79,6 +87,19 @@ describe("the opening-balance entry (ADR 0062)", () => {
     const draft = openingBalancePosting(REF, { ...NOTHING, cash: "10000", receivables: [{ amount: "0" }] });
     expect(draft.lines.map((entry) => entry.account)).toEqual(["cash", "opening_balance_equity"]);
     expect(openingBalancePosting(REF, NOTHING).lines).toEqual([]);
+  });
+
+  it("posts as a contract source when its payables hold a subcontract bill, so the trial balance needs contract sight", () => {
+    const draft = openingBalancePosting(REF, {
+      ...NOTHING,
+      cash: "10000",
+      payables: "7030",
+      holdsSubcontractBill: true,
+    });
+    expect(draft.sourceType).toBe("opening_balance_contract");
+    expect(CONTRACT_SOURCE_TYPES).toContain(draft.sourceType);
+    expect(openingBalancePosting(REF, { ...NOTHING, cash: "1", payables: "1" }).sourceType).toBe("opening_balance");
+    expect(CONTRACT_SOURCE_TYPES).not.toContain("opening_balance");
   });
 
   it("needs no equity line when holdings and debts match", () => {

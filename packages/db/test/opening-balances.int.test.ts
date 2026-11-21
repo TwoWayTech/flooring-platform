@@ -63,7 +63,8 @@ describe("the seed opens Summit's books with one opening-balance entry", () => {
         id: openingEntryId("summit"),
         date: seedOpening(loadDemoCompany("summit").fixtures)!.date,
         memo: OPENING_MEMO,
-        source_type: "opening_balance",
+        // Summit owes a subcontract bill, so the entry is a contract posting (ADR 0062).
+        source_type: "opening_balance_contract",
       },
     ]);
     const [equity] = await company.db.execute<{ code: string; name: string; type: string }>(

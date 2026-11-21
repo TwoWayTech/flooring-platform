@@ -90,5 +90,21 @@ describe("the seed's opening balances, worked out from the fixtures (ADR 0062)",
     );
     expect([b.payables, b.receivedNotBilled, b.retainagePayable]).toEqual(["0.00", "0.00", "0.00"]);
     expect(dec(b.cash).gt(0)).toBe(true);
+    expect(b.holdsSubcontractBill).toBe(false);
+  });
+
+  it("marks the entry as holding contract cost when an open or retaining bill is a subcontract bill", () => {
+    expect(opening.balances.holdsSubcontractBill).toBe(true);
+    // Without its subcontract bills Summit's opening payables reveal no contract cost.
+    const plain = { ...fixtures, bills: fixtures.bills.filter((bill) => !bill.contractId) };
+    expect(seedOpening(plain)!.balances.holdsSubcontractBill).toBe(false);
+    // A subcontract bill still owed counts even when it withheld no retainage.
+    const noRetainage = {
+      ...fixtures,
+      bills: fixtures.bills.map((bill) => (bill.contractId ? { ...bill, retainageWithheld: "0.00" } : bill)),
+    };
+    const owed = seedOpening(noRetainage)!.balances;
+    expect(owed.retainagePayable).toBe("0.00");
+    expect(owed.holdsSubcontractBill).toBe(true);
   });
 });

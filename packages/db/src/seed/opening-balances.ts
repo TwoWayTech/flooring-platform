@@ -177,6 +177,8 @@ export function seedOpening(fixtures: CompanyFixtures): SeedOpening | null {
     receivedNotBilled: moneyString(receivedNotBilled),
     retainagePayable: moneyString(retainagePayable),
     customerCredit: perCustomer(credit),
+    // A subcontract bill's balance or retainage shows what the subcontract cost (ADR 0055 S4).
+    holdsSubcontractBill: [...openBills, ...heldBills].some((bill) => bill.contractId),
   };
   const opened = [
     ...openInvoices.map((invoice) => invoice.issuedAt),
@@ -200,6 +202,8 @@ async function seedAccounts(tx: CompanyDb, companyId: string): Promise<Map<strin
   await tx
     .insert(ledgerAccounts)
     .values(DEFAULT_ACCOUNTS.map((account) => ({ id: seedId(`${companyId}:account:${account.key}`), ...account })))
+    // Skips existing keys only: a custom account already using a default's code (such as 3900) still
+    // fails the unique code index, as in LedgerService.accounts (ADR 0062, "Left open").
     .onConflictDoNothing({ target: ledgerAccounts.key });
   const rows = await tx
     .select({ id: ledgerAccounts.id, key: ledgerAccounts.key })

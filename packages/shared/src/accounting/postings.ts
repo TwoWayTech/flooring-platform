@@ -32,7 +32,8 @@ export interface PostingDraft {
     | "pay_period"
     | "contractor_payment"
     | "commission_statement"
-    | "opening_balance";
+    | "opening_balance"
+    | "opening_balance_contract";
   sourceId: string;
   sourceNumber: string;
   /** The accounting date, `yyyy-MM-dd`. */

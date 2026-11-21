@@ -111,8 +111,8 @@ describe("trial balance (needs the local PostgreSQL)", () => {
     return sessionCookie(confirmed.headers["set-cookie"]);
   }
 
-  async function post(posting: PostingDraft): Promise<void> {
-    const handle = await harness.companyDb(company.id);
+  async function post(posting: PostingDraft, companyId = company.id): Promise<void> {
+    const handle = await harness.companyDb(companyId);
     try {
       await handle.db.transaction(async (tx) => {
         await harness.app.get(LedgerService).post(tx, posting, uuidv7());
@@ -252,6 +252,37 @@ describe("trial balance (needs the local PostgreSQL)", () => {
       expect(await read(cookies[key]!)).toMatchObject({ debit: "680.00", credit: "680.00", balanced: true });
       expect(await offered(cookies[key]!)).toBe(true);
     }
+  });
+
+  it("counts an opening entry as contract only when it holds a subcontract bill or retainage payable (ADR 0062)", async () => {
+    const books = harness.app.get(LedgerService);
+    const factsOf = async (companyId: string) => {
+      const handle = await harness.companyDb(companyId);
+      try {
+        return await books.trialBalanceFacts(handle.db);
+      } finally {
+        await handle.close();
+      }
+    };
+    // Plain opening payables reveal no contract cost; a Retainage Payable line does.
+    const plain = await harness.provisionCompany("tbopen");
+    await post(
+      draft("opening_balance.posted", "opening_balance", "2026-01-01", "cash", "accounts_payable", "5.00"),
+      plain.id,
+    );
+    expect(await factsOf(plain.id)).toEqual({ hasContractPostings: false, hasPayPostings: false });
+    await post(
+      draft("opening_balance.posted", "opening_balance", "2026-01-02", "cash", "retainage_payable", "5.00"),
+      plain.id,
+    );
+    expect((await factsOf(plain.id)).hasContractPostings).toBe(true);
+    // Payables that hold a subcontract bill post as the contract source, with no retainage line at all.
+    const subcontract = await harness.provisionCompany("tbopensub");
+    await post(
+      draft("opening_balance.posted", "opening_balance_contract", "2026-01-01", "cash", "accounts_payable", "7.00"),
+      subcontract.id,
+    );
+    expect(await factsOf(subcontract.id)).toEqual({ hasContractPostings: true, hasPayPostings: false });
   });
 
   it("refuses an Owner whose company switched HR off once pay has posted (pay sight, S3)", async () => {

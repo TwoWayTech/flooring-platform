@@ -31,6 +31,12 @@ export interface OpeningBalances {
   retainagePayable: string;
   /** Customer credit not yet applied or refunded, per customer. */
   customerCredit: readonly OpeningAmount[];
+  /**
+   * Whether the payables or retainage hold a subcontract bill, whose amount shows what the
+   * subcontract cost. The entry is then a contract posting, so reading the trial balance needs
+   * contract cost sight (ADR 0055 S4; ADR 0062).
+   */
+  holdsSubcontractBill: boolean;
 }
 
 /** Which entry this is: its source id, accounting date (`yyyy-MM-dd`) and memo. */
@@ -66,7 +72,8 @@ function credits(account: LedgerKey, amounts: readonly OpeningAmount[]): Posting
  * received not billed, retainage payable, customer credit) for its balance, so every balance-sheet
  * account starts at what the documents say. What they leave over is the owners' stake on that day,
  * which goes to Opening Balance Equity, so the entry balances. Lines of zero are left out; an entry
- * with nothing to open has no lines and posts nothing.
+ * with nothing to open has no lines and posts nothing. One that holds a subcontract bill posts as
+ * `opening_balance_contract`, a contract source, so the trial balance asks for contract cost sight.
  */
 export function openingBalancePosting(ref: OpeningEntryRef, balances: OpeningBalances): PostingDraft {
   const lines = [
@@ -83,7 +90,7 @@ export function openingBalancePosting(ref: OpeningEntryRef, balances: OpeningBal
   const equity = net.isZero() ? [] : [signed("opening_balance_equity", net.negated())];
   return {
     event: "opening_balance.posted",
-    sourceType: "opening_balance",
+    sourceType: balances.holdsSubcontractBill ? "opening_balance_contract" : "opening_balance",
     sourceId: ref.id,
     sourceNumber: "Opening balances",
     date: ref.date,

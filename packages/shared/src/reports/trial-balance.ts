@@ -70,6 +70,8 @@ export const SOURCE_SIGHT: Readonly<Record<SourceType, "pay" | "contract" | "cos
   commission_statement: "pay",
   // Stock at cost and what is owed (ADR 0062); a Retainage Payable line is caught by CONTRACT_ACCOUNT_KEYS.
   opening_balance: "cost",
+  // An opening entry whose payables hold a subcontract bill shows what the subcontract cost (ADR 0062).
+  opening_balance_contract: "contract",
 };
 
 const sourcesOf = (sight: "pay" | "contract"): SourceType[] =>
