@@ -1192,7 +1192,8 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
       ["customers", data.customers.length],
       ["addresses", data.customers.flatMap((c) => c.addresses).length],
     ] as const;
-    expect(kinds.map(([, n]) => n)).toEqual([26, 120, 80, 118]);
+    // The seed's goods suppliers and its service vendors (Tidewell Facility Services since 2026-11-21).
+    expect(kinds.map(([, n]) => n)).toEqual([27, 120, 80, 118]);
     const batches: string[] = [];
     for (const [kind, n] of kinds) {
       const result = await imported(owner, files[kind]);
@@ -1201,7 +1202,7 @@ describe("data import, part 1 (needs the local PostgreSQL)", () => {
     }
     const primaries = data.supplierContacts.filter((contact) => contact.isPrimary).length;
     await inCompany(co.g, async (db) => {
-      expect((await loadSuppliers(db)).length).toBe(26);
+      expect((await loadSuppliers(db)).length).toBe(data.suppliers.length);
       expect((await loadContacts(db)).length).toBe(primaries);
       expect((await loadProducts(db)).length).toBe(120);
       const customers = await loadCustomers(db);
