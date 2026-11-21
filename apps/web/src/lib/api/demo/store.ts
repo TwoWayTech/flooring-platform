@@ -90,6 +90,7 @@ import {
   localizationTabProblem,
   localizationTabStored,
   taxInForce,
+  contractSchedule,
   type LocalizationSettings,
   type SettingsSectionRule,
   type TrialBalance,
@@ -1498,6 +1499,7 @@ export class DemoStore implements ApiClient {
       locations,
       bills,
       supplierPayments,
+      supplierContacts,
     ] = await Promise.all([
       this.list("contracts"),
       this.list("contractLines"),
@@ -1510,6 +1512,7 @@ export class DemoStore implements ApiClient {
       this.list("locations"),
       this.list("bills"),
       this.list("supplierPayments"),
+      this.list("supplierContacts"),
     ]);
     return {
       contracts,
@@ -1523,6 +1526,9 @@ export class DemoStore implements ApiClient {
       locations,
       bills,
       supplierPayments,
+      // As GET /contract-schedule derives it (rules 10a, 11a); without billing view the screen hides it.
+      schedule: contractSchedule(lines, billings),
+      supplierContacts,
     };
   }
 

@@ -37,6 +37,29 @@ const LOCK_TEXT: Record<Exclude<CellLock, null>, string> = {
  */
 const PLAIN_LOCKS: ReadonlySet<CellLock> = new Set(["owner", "read_only"]);
 
+/**
+ * A box's accessible name: always the permission's label, then why it is locked, if it is. The
+ * locked box itself is the tooltip's focus stop (aria-disabled rather than disabled, so it can take
+ * focus and hover), so no unnamed wrapper is ever announced in its place (click-through #53).
+ */
+export function cellName(def: Pick<PermissionDef, "label">, lock: CellLock): string {
+  return lock ? `${def.label}, ${LOCK_TEXT[lock]}` : def.label;
+}
+
+/**
+ * What a box does when clicked or toggled with Space: a locked one does nothing. An aria-disabled
+ * box still receives clicks and keys, so the lock, not the browser, must keep it from changing.
+ */
+export function boxToggle(
+  key: PermissionKey,
+  lock: CellLock,
+  onToggle: (key: PermissionKey, on: boolean) => void,
+): (on: boolean | "indeterminate") => void {
+  return (on) => {
+    if (lock === null) onToggle(key, on === true);
+  };
+}
+
 interface Row {
   resource: string;
   cells: Partial<Record<PermissionAction, PermissionDef>>;
@@ -120,32 +143,37 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
                         if (!def) return <td key={action} />;
                         const lock = lockOf(def.key);
                         const checked = granted.includes(def.key);
-                        const inactive = checked && (lock === "plan" || lock === "module");
-                        const box = (
-                          <Checkbox
-                            aria-label={`${def.label}${lock ? `, ${LOCK_TEXT[lock]}` : ""}`}
-                            checked={checked}
-                            disabled={!!lock}
-                            onCheckedChange={(on) => onToggle(def.key, on === true)}
-                            className={cn(inactive && "opacity-40")}
-                          />
-                        );
+                        const tooltip = lock !== null && !PLAIN_LOCKS.has(lock);
                         return (
                           <td key={action} className="px-2 text-center">
-                            {lock && !PLAIN_LOCKS.has(lock) ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="inline-flex items-center gap-0.5" tabIndex={0}>
-                                    {box}
-                                    {lock === "plan" ? (
-                                      <Lock aria-hidden="true" className="text-muted-foreground size-3" />
-                                    ) : null}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>{LOCK_TEXT[lock]}</TooltipContent>
-                              </Tooltip>
+                            {tooltip ? (
+                              <span className="inline-flex items-center gap-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Checkbox
+                                      aria-label={cellName(def, lock)}
+                                      aria-disabled="true"
+                                      checked={checked}
+                                      onCheckedChange={boxToggle(def.key, lock, onToggle)}
+                                      className={cn(
+                                        "cursor-not-allowed opacity-50",
+                                        checked && (lock === "plan" || lock === "module") && "opacity-40",
+                                      )}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent>{LOCK_TEXT[lock]}</TooltipContent>
+                                </Tooltip>
+                                {lock === "plan" ? (
+                                  <Lock aria-hidden="true" className="text-muted-foreground size-3" />
+                                ) : null}
+                              </span>
                             ) : (
-                              box
+                              <Checkbox
+                                aria-label={cellName(def, lock)}
+                                checked={checked}
+                                disabled={lock !== null}
+                                onCheckedChange={boxToggle(def.key, lock, onToggle)}
+                              />
                             )}
                           </td>
                         );

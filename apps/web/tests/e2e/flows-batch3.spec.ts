@@ -59,21 +59,28 @@ test.describe("end-to-end flows (spec G3)", () => {
       await page.getByRole("button", { name: "Convert to invoice" }).click();
       await expect(page).toHaveURL(/\/sales\/invoices\//);
       const number = (await page.getByRole("heading", { level: 1 }).innerText()).match(/INV-\d+/)![0];
+      const invoicePath = new URL(page.url()).pathname;
+      // The default Sales role views payments but does not record them (ADR 0061 decision 3).
+      await expect(page.getByRole("button", { name: "Record payment" })).toHaveCount(0);
 
+      await signInAs(page, GRACE, invoicePath);
       await page.getByRole("button", { name: "Update status" }).click();
       await page.getByRole("menuitem", { name: "Record deposit" }).click();
       const sheet = page.getByRole("dialog", { name: /Record deposit/ });
       await sheet.getByLabel("Reference or transaction ID").fill("ACH-FLOW-1");
       await sheet.locator("input[type=file]").setInputFiles(PDF);
       await sheet.getByRole("button", { name: /^Save (payment|deposit)$/ }).click();
-      await expect(page.getByText(/waits for verification/)).toBeVisible();
-
-      await signInAs(page, GRACE, "/finance?view=payments");
-      await page
-        .getByRole("row", { name: new RegExp(number) })
-        .getByRole("button", { name: /^Confirm PAY-/ })
-        .click();
-      await expect(page.getByText(/PAY-\d+ confirmed/)).toBeVisible();
+      const recorded = page.getByText(new RegExp(`^PAY-\\d+ recorded(; it waits for verification| on ${number})$`));
+      await expect(recorded).toBeVisible();
+      // Above the approval threshold even the accountant's deposit waits for a second person.
+      if ((await recorded.innerText()).includes("waits")) {
+        await signInAs(page, SUMMIT_OWNER, "/finance?view=payments");
+        await page
+          .getByRole("row", { name: new RegExp(number) })
+          .getByRole("button", { name: /^Confirm PAY-/ })
+          .click();
+        await expect(page.getByText(/PAY-\d+ confirmed/)).toBeVisible();
+      }
 
       await signInAs(page, COLE, "/inventory?view=ready");
       await page
@@ -229,8 +236,10 @@ test.describe("end-to-end flows (spec G3)", () => {
       await expect(page.getByRole("heading", { name: /Flow contract/ })).toBeVisible();
       await page.getByRole("button", { name: "Send for signature" }).click();
       await page.getByRole("button", { name: "Record signature" }).click();
+      // The signer starts as the customer's contact person, or empty; type one so the flow never depends on it.
+      await page.getByLabel("Signer's full name").fill("Avery Stone");
       await page.getByRole("dialog").getByRole("button", { name: "Record signature" }).click();
-      await expect(page.getByText(/Simulated signature/)).toBeVisible();
+      await expect(page.getByText(/^Typed signature: Avery Stone/)).toBeVisible();
 
       await page.getByRole("button", { name: "New billing" }).click();
       await page.getByRole("checkbox", { name: "L1 complete" }).check();
