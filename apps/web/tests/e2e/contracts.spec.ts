@@ -34,8 +34,23 @@ test.describe("Contracts (spec D1, D2)", () => {
     await page.getByRole("button", { name: "Record signature" }).click();
     await page.getByLabel("Signer's full name").fill("Avery Stone");
     await page.getByRole("dialog").getByRole("button", { name: "Record signature" }).click();
-    await expect(page.getByText(/Simulated signature: Avery Stone/)).toBeVisible();
+    await expect(page.getByText(/Typed signature: Avery Stone/)).toBeVisible();
     await expect(page.getByRole("button", { name: /^Signed CTR-/ })).toBeVisible();
+  });
+
+  test("signing a subcontract with no insurance certificate warns but does not block", async ({ page }) => {
+    await open(page, "CTR-1005");
+    await expect(page.getByText("No certificate on file.")).toBeVisible();
+    await page.getByRole("button", { name: "Record signature" }).click();
+    const dialog = page.getByRole("dialog", { name: "Record signature on CTR-1005" });
+    await expect(
+      dialog.getByText("Recorded as a typed signature; a signing provider is not connected yet."),
+    ).toBeVisible();
+    await expect(dialog.getByRole("status")).toHaveText("No insurance certificate on file");
+    await dialog.getByLabel("Signer's full name").fill("Avery Stone");
+    await dialog.getByRole("button", { name: "Record signature" }).click();
+    await expect(page.getByText(/^Typed signature: Avery Stone/)).toBeVisible();
+    await expect(page.getByText(/a signing provider is not connected yet\.$/)).toBeVisible();
   });
 
   test("refuses to send a schedule that does not add up", async ({ page }) => {

@@ -933,14 +933,27 @@ describe("contract billings (contracts part 2; needs the local PostgreSQL)", () 
     const second = await postBilling("owner", c.id, [[c.a, "1000.00"]]); // and 60.00 more
     const r1 = await release("owner", c.id, "50.00");
     let allocation = new Map((await scheduleOf(c.id)).billings.map((b) => [b.billingId, b]));
-    expect(allocation.get(first.id as string)).toMatchObject({ released: "40.00", covers: [] });
-    expect(allocation.get(second.id as string)).toMatchObject({ released: "10.00", covers: [] });
-    expect(allocation.get(r1.id as string)).toMatchObject({ released: "50.00", covers: [first.id, second.id] });
+    expect(allocation.get(first.id as string)).toMatchObject({ released: "40.00", paidFrom: [], unallocated: "0.00" });
+    expect(allocation.get(second.id as string)).toMatchObject({ released: "10.00", paidFrom: [] });
+    expect(allocation.get(r1.id as string)).toEqual({
+      billingId: r1.id,
+      contractId: c.id,
+      released: "50.00",
+      paidFrom: [
+        { billingId: first.id, amount: "40.00" },
+        { billingId: second.id, amount: "10.00" },
+      ],
+      unallocated: "0.00",
+    });
 
     const r2 = await release("owner", c.id, "50.00");
     allocation = new Map((await scheduleOf(c.id)).billings.map((b) => [b.billingId, b]));
     expect(allocation.get(second.id as string)).toMatchObject({ released: "60.00" });
-    expect(allocation.get(r2.id as string)).toMatchObject({ released: "50.00", covers: [second.id] });
+    expect(allocation.get(r2.id as string)).toMatchObject({
+      released: "50.00",
+      paidFrom: [{ billingId: second.id, amount: "50.00" }],
+      unallocated: "0.00",
+    });
     expect((await scheduleOf(c.id)).lines.find((l) => l.lineId === c.a)).toMatchObject({ retained: "0.00" });
   });
 

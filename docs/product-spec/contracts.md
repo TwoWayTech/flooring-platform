@@ -147,7 +147,7 @@ stateDiagram-v2
 
 1. **Add a draft.** The form takes direction, kind, other company, title, scope, dates and job site. A project also takes retainage percent, tax treatment and lines. A master takes pricing and terms. Defaults: 5 percent retainage, `on_billing`, end date 180 days out, sales rep is the creator, branch is the creator's, warehouse is the first location.
 2. **Send for signature.** The lines lock and the other company gets an Outbox row.
-3. **Record signature.** A person holding `contracts.contract.approve` types the signer's name and role. The dialog says "Recorded as a typed signature; a signing provider is not connected yet." The name starts as the customer's contact person or the supplier's active primary contact, and empty when there is none, never the company name. `signContract` files `Signed <number>.pdf`, marked "Simulated signature for the demo. Not a legal signature." The contract becomes Active.
+3. **Record signature.** A person holding `contracts.contract.approve` types the signer's name and role. The dialog says "Recorded as a typed signature; a signing provider is not connected yet." The name starts as the customer's contact person or the supplier's active primary contact, and empty when there is none, never the company name. `signContract` files `Signed <number>.pdf`, marked with the same words as the dialog (`TYPED_SIGNATURE_NOTE`). On a subcontract with no insurance certificate on file the dialog warns "No insurance certificate on file" (`signatureWarning` in `rules.ts`); it never blocks signing (owner, 2026-11-21). The contract becomes Active, and the page reads "Typed signature: <name>, <role>, <date>. Recorded by <person>; a signing provider is not connected yet."
 4. **New billing.** The user enters cumulative work to date and stored materials per line. A milestone line is one Complete checkbox that bills its full value. The billing is the change since the last one.
 5. **Release retainage.** The user enters an amount up to what is held. It goes on its own invoice or bill.
 6. **Change order.** The user adds rows against an existing line or a new line. It waits for approval. Approving asks first and states the new contract value (value now plus the change). Approval changes line values at once and never changes issued invoices.
@@ -222,7 +222,9 @@ Money uses decimal.js. `roundMoney` rounds to 2 places, half up. `pctOf(value, p
 
     ```
     released(progress billing) = sum of release shares taken from its retainage
-    released(release)          = its amount; covers = the progress billings it took from, oldest first
+    released(release)          = its amount
+    paidFrom(release)          = { billingId, amount } taken from each progress billing, oldest first
+    unallocated(release)       = released - sum(paidFrom); 0.00 whenever rule 10 held at posting, shown, never dropped
     ```
 
     In Billings, a progress billing's Released column shows `released`, and a release reads "Release of retainage from billing 1 and 2".

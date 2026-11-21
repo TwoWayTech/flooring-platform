@@ -10,6 +10,7 @@ import {
   lineToDate,
   moneyString,
   sum,
+  TYPED_SIGNATURE_NOTE,
   type BillingLine,
   type ChangeOrder,
   type Contract,
@@ -96,14 +97,25 @@ function FormDialog({
 /**
  * Records a typed signature: name and role (spec D2). `signer` is the other company's contact
  * person, or empty when it has none, so a company name is never offered as a person's name.
+ * `warning` (no insurance certificate on a subcontract) is shown but never blocks signing.
  */
-export function SignDialog({ contract, signer, onClose }: { contract: Contract; signer: string; onClose: () => void }) {
+export function SignDialog({
+  contract,
+  signer,
+  warning,
+  onClose,
+}: {
+  contract: Contract;
+  signer: string;
+  warning: string | null;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(signer);
   const [role, setRole] = useState("Authorized signer");
   return (
     <FormDialog
       title={`Record signature on ${contract.number}`}
-      description="Recorded as a typed signature; a signing provider is not connected yet."
+      description={TYPED_SIGNATURE_NOTE}
       confirm="Record signature"
       onClose={onClose}
       onSubmit={async () => {
@@ -111,6 +123,11 @@ export function SignDialog({ contract, signer, onClose }: { contract: Contract; 
         return "Signature recorded";
       }}
     >
+      {warning ? (
+        <p role="status" className="text-warning-ink bg-warning/14 rounded-md p-3 text-sm">
+          {warning}
+        </p>
+      ) : null}
       <Field id="sign-name" label="Signer's full name">
         <Input id="sign-name" value={name} onChange={(e) => setName(e.target.value)} />
       </Field>

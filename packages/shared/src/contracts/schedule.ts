@@ -20,8 +20,13 @@ export interface BillingRetainage {
   contractId: string;
   /** On a progress billing, how much of the retainage it held has been released since; on a release, its amount. */
   released: string;
-  /** On a release, the progress billings whose retainage it paid out, oldest first; empty on a progress billing. */
-  covers: string[];
+  /** On a release, how much it took from each progress billing's retainage, oldest first; empty on a progress billing. */
+  paidFrom: { billingId: string; amount: string }[];
+  /**
+   * On a release, any part that found no retainage to pay out of: "0.00" whenever the billings
+   * agree, because posting refuses a release above what is held (rule 10). Shown, never dropped.
+   */
+  unallocated: string;
 }
 
 /** The schedule of values and the release allocation of some contracts, derived from posted billings. */
@@ -69,9 +74,16 @@ function withhold(queue: Held, billing: ContractBilling, seen: readonly Contract
   }
 }
 
-/** Pays a release out of each line's queue, oldest billing first; returns what each billing gave. */
-function payOut(queue: Held, billing: ContractBilling): Map<string, Dec> {
+/** What one release paid out of each billing, and what found no retainage to pay out of. */
+interface PaidOut {
+  given: Map<string, Dec>;
+  unallocated: Dec;
+}
+
+/** Pays a release out of each line's queue, oldest billing first. An excess is kept as `unallocated`, never dropped. */
+function payOut(queue: Held, billing: ContractBilling): PaidOut {
   const given = new Map<string, Dec>();
+  let unallocated = dec(0);
   for (const release of billing.releases) {
     let amount = dec(release.amount);
     for (const entry of queue.get(release.lineId) ?? []) {
@@ -82,14 +94,16 @@ function payOut(queue: Held, billing: ContractBilling): Map<string, Dec> {
       amount = amount.minus(take);
       given.set(entry.billingId, (given.get(entry.billingId) ?? dec(0)).plus(take));
     }
+    unallocated = unallocated.plus(D.max(amount, 0));
   }
-  return given;
+  return { given, unallocated };
 }
 
 /**
  * Allocates each posted release to the progress billings whose retainage it paid out (rule 10a):
  * per line, a release takes the oldest billing's retainage first. A billing that lowered a line
  * gives back the newest withholding first, so the allocation matches what each billing still holds.
+ * A release's `paidFrom` amounts plus its `unallocated` add up exactly to its line shares.
  */
 export function releaseAllocation(billings: readonly ContractBilling[]): BillingRetainage[] {
   const result: BillingRetainage[] = [];
@@ -97,28 +111,29 @@ export function releaseAllocation(billings: readonly ContractBilling[]): Billing
     const done = postedInOrder(billings.filter((b) => b.contractId === contractId));
     const queue: Held = new Map();
     const released = new Map<string, Dec>();
-    const covers = new Map<string, string[]>();
+    const paid = new Map<string, PaidOut>();
     const seen: ContractBilling[] = [];
     for (const billing of done) {
       if (billing.kind === "progress") withhold(queue, billing, seen);
-      const given = payOut(queue, billing);
-      for (const [billingId, amount] of given) {
+      const out = payOut(queue, billing);
+      for (const [billingId, amount] of out.given) {
         released.set(billingId, (released.get(billingId) ?? dec(0)).plus(amount));
       }
-      if (given.size > 0) {
-        covers.set(
-          billing.id,
-          done.filter((b) => given.has(b.id)).map((b) => b.id),
-        );
-      }
+      if (billing.kind === "release") paid.set(billing.id, out);
       seen.push(billing);
     }
     for (const billing of done) {
+      const out = paid.get(billing.id);
       result.push({
         billingId: billing.id,
         contractId,
         released: moneyString(billing.kind === "release" ? billing.released : (released.get(billing.id) ?? 0)),
-        covers: covers.get(billing.id) ?? [],
+        paidFrom: out
+          ? done
+              .filter((b) => out.given.has(b.id))
+              .map((b) => ({ billingId: b.id, amount: moneyString(out.given.get(b.id)!) }))
+          : [],
+        unallocated: moneyString(out?.unallocated ?? 0),
       });
     }
   }

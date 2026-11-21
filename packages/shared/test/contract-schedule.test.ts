@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateRelease,
   billingFigures,
   contractSchedule,
+  D,
+  dec,
+  heldByLine,
   moneyString,
   releaseAllocation,
   scheduleLines,
@@ -106,9 +110,18 @@ describe("release allocation to billings (contracts.md rule 10a)", () => {
       },
     ]);
     expect(releaseAllocation(billings)).toEqual([
-      { billingId: "c1-b1", contractId: "c1", released: "1800.00", covers: [] },
-      { billingId: "c1-b2", contractId: "c1", released: "600.00", covers: [] },
-      { billingId: "c1-b3", contractId: "c1", released: "2400.00", covers: ["c1-b1", "c1-b2"] },
+      { billingId: "c1-b1", contractId: "c1", released: "1800.00", paidFrom: [], unallocated: "0.00" },
+      { billingId: "c1-b2", contractId: "c1", released: "600.00", paidFrom: [], unallocated: "0.00" },
+      {
+        billingId: "c1-b3",
+        contractId: "c1",
+        released: "2400.00",
+        paidFrom: [
+          { billingId: "c1-b1", amount: "1800.00" },
+          { billingId: "c1-b2", amount: "600.00" },
+        ],
+        unallocated: "0.00",
+      },
     ]);
   });
 
@@ -122,8 +135,11 @@ describe("release allocation to billings (contracts.md rule 10a)", () => {
     const byId = new Map(releaseAllocation(billings).map((r) => [r.billingId, r]));
     expect(byId.get("c1-b1")?.released).toBe("500.00");
     expect(byId.get("c1-b2")?.released).toBe("200.00");
-    expect(byId.get("c1-b3")?.covers).toEqual(["c1-b1"]);
-    expect(byId.get("c1-b4")?.covers).toEqual(["c1-b1", "c1-b2"]);
+    expect(byId.get("c1-b3")?.paidFrom).toEqual([{ billingId: "c1-b1", amount: "300.00" }]);
+    expect(byId.get("c1-b4")?.paidFrom).toEqual([
+      { billingId: "c1-b1", amount: "200.00" },
+      { billingId: "c1-b2", amount: "200.00" },
+    ]);
   });
 
   it("a billing that lowers a line gives back its newest withholding first", () => {
@@ -144,8 +160,38 @@ describe("release allocation to billings (contracts.md rule 10a)", () => {
     billings[1]!.status = "void";
     const schedule = contractSchedule([line("L1", "72000.00")], [...billings, ...post([[input("X1", "1000")]], "c2")]);
     expect(schedule.billings).toEqual([
-      { billingId: "c1-b1", contractId: "c1", released: "0.00", covers: [] },
-      { billingId: "c2-b1", contractId: "c2", released: "0.00", covers: [] },
+      { billingId: "c1-b1", contractId: "c1", released: "0.00", paidFrom: [], unallocated: "0.00" },
+      { billingId: "c2-b1", contractId: "c2", released: "0.00", paidFrom: [], unallocated: "0.00" },
     ]);
+  });
+
+  it("shows a release above what the billings held as unallocated, never dropping it", () => {
+    const billings = post([[input("L1", "10000")], { release: [{ lineId: "L1", amount: "600.00" }] }]);
+    const [, release] = releaseAllocation(billings);
+    expect(release).toMatchObject({ paidFrom: [{ billingId: "c1-b1", amount: "500.00" }], unallocated: "100.00" });
+  });
+
+  it("across releases posted the way the API posts them, paidFrom adds up exactly to each release", () => {
+    // Releases split by allocateRelease over heldByLine, as releaseRetainage does, in odd cents.
+    const steps: Parameters<typeof post>[0] = [];
+    const cumulative = { L1: 0, L2: 0, L3: 0 };
+    const sizes = ["333.33", "0.01", "1234.57", "77.77", "5000.03"];
+    for (let i = 0; i < 12; i++) {
+      const key = (["L1", "L2", "L3"] as const)[i % 3]!;
+      cumulative[key] += 1000 + i * 137;
+      steps.push((["L1", "L2", "L3"] as const).map((l) => input(l, String(cumulative[l]))));
+      const done = post(steps);
+      const held = heldByLine(done, [line("L1", "1"), line("L2", "1"), line("L3", "1")]);
+      const total = sum([...held.values()]);
+      const amount = D.min(dec(sizes[i % sizes.length]!), total);
+      if (amount.gt(0)) steps.push({ release: allocateRelease(moneyString(amount), held) });
+    }
+    const billings = post(steps);
+    const releases = releaseAllocation(billings).filter((r) => r.paidFrom.length > 0 || r.unallocated !== "0.00");
+    expect(releases.length).toBeGreaterThan(5);
+    for (const release of releases) {
+      expect(release.unallocated, release.billingId).toBe("0.00");
+      expect(moneyString(sum(release.paidFrom.map((p) => p.amount))), release.billingId).toBe(release.released);
+    }
   });
 });

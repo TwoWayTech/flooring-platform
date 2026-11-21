@@ -211,7 +211,7 @@ flowTest.describe("flow F5: contract billing with retainage, and its release", (
           await sign.getByRole("button", { name: "Record signature" }).click();
           expect((await signed).status, "the signature makes the contract active").toBe("active");
           await expect(sign).toBeHidden();
-          await expect(page.getByText(/^Simulated signature: /)).toBeVisible();
+          await expect(page.getByText(/^Typed signature: /)).toBeVisible();
           return made;
         },
       );

@@ -229,8 +229,10 @@ test.describe("end-to-end flows (spec G3)", () => {
       await expect(page.getByRole("heading", { name: /Flow contract/ })).toBeVisible();
       await page.getByRole("button", { name: "Send for signature" }).click();
       await page.getByRole("button", { name: "Record signature" }).click();
+      // The signer starts as the customer's contact person, or empty; type one so the flow never depends on it.
+      await page.getByLabel("Signer's full name").fill("Avery Stone");
       await page.getByRole("dialog").getByRole("button", { name: "Record signature" }).click();
-      await expect(page.getByText(/Simulated signature/)).toBeVisible();
+      await expect(page.getByText(/^Typed signature: Avery Stone/)).toBeVisible();
 
       await page.getByRole("button", { name: "New billing" }).click();
       await page.getByRole("checkbox", { name: "L1 complete" }).check();

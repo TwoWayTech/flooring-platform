@@ -11,6 +11,7 @@ import {
   insuranceStatus,
   moneyString,
   pastEndDate,
+  signatureWarning,
   sum,
   type ChangeOrder,
   type ContractBilling,
@@ -159,7 +160,9 @@ export function ContractPage({ id }: { id: string }) {
   const releasedOn = (b: ContractBilling) => retainageOf(b)?.released ?? b.released;
   const billingLabel = (b: ContractBilling) => {
     if (b.kind === "progress") return `Billing ${b.number}`;
-    const numbers = (retainageOf(b)?.covers ?? []).flatMap((id) => billings.find((x) => x.id === id)?.number ?? []);
+    const numbers = (retainageOf(b)?.paidFrom ?? []).flatMap(
+      (p) => billings.find((x) => x.id === p.billingId)?.number ?? [],
+    );
     return numbers.length === 0 ? "Release" : `Release of retainage from ${billingNumbers(numbers)}`;
   };
   const customer = d.customers.find((c) => c.id === contract.customerId);
@@ -274,8 +277,9 @@ export function ContractPage({ id }: { id: string }) {
       )}
       {contract.signature ? (
         <p className="text-muted-foreground text-sm">
-          Simulated signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
-          {formatDate(contract.signature.signedAt.slice(0, 10))}. Recorded by {contract.signature.recordedBy}.
+          Typed signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
+          {formatDate(contract.signature.signedAt.slice(0, 10))}. Recorded by {contract.signature.recordedBy}; a signing
+          provider is not connected yet.
         </p>
       ) : null}
       {project ? (
@@ -484,7 +488,15 @@ export function ContractPage({ id }: { id: string }) {
           onSaved={() => setDialog(null)}
         />
       ) : null}
-      {dialog === "sign" ? <SignDialog contract={contract} signer={signer} onClose={() => setDialog(null)} /> : null}
+      {dialog === "sign" ? (
+        <SignDialog
+          contract={contract}
+          signer={signer}
+          // Certificates are read with compliance.view; without it the page cannot tell, so it does not warn.
+          warning={can("contracts.compliance.view") ? signatureWarning(contract, certificate) : null}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
       {dialog === "billing" ? (
         <BillingDialog contract={contract} lines={lines} billings={billings} onClose={() => setDialog(null)} />
       ) : null}

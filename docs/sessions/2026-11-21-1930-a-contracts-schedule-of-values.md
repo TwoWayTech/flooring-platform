@@ -26,7 +26,13 @@ Click-through findings #30 to #35 on Contracts (CTR-1001, CTR-1005, Summit, api 
 - `test/route-matrix.int.test.ts` (snapshot updated, then 20 pass), `test/new-company.int.test.ts` (19 pass).
 - Playwright not run locally (shared laptop); demo `contracts.spec.ts` and api-mode `f5-contract-retainage.spec.ts` updated and typecheck.
 
-## Open questions
+## Follow-up (owner answers and review, same day)
+
+- Signing a subcontract with no insurance certificate on file warns "No insurance certificate on file" in the dialog, never blocks (`signatureWarning` in `rules.ts`; only when the person can view compliance).
+- The signed PDF (DemoStore) and the page's signature line use the dialog's words (`TYPED_SIGNATURE_NOTE`); the page reads "Typed signature: …; a signing provider is not connected yet." The API files no PDF.
+- Release allocation now returns `paidFrom` (`{ billingId, amount }[]`) and `unallocated` instead of `covers`: an excess is shown, never dropped. A shared test posts 12 billings with releases split by `allocateRelease` as the API does and checks each release's `paidFrom` adds up exactly to it with nothing unallocated.
+
+## Open questions (before the follow-up; both answered)
 
 - **Insurance warning on activation (#35):** contracts.md's compliance rules (rule 22) say nothing about warning when a subcontract is signed with no certificate, so no warning was added. Owner: should Record signature on a subcontract warn "No insurance certificate on file" (warn, not block)?
 - **% complete** per line: not in the spec, not added.
