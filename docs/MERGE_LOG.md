@@ -39,3 +39,4 @@ One line per change that lands on `main`, appended by `.github/workflows/merge-l
 | 2026-11-21 | #77 | docs: click-through of the real product in api mode, 2026-11-21 | @TwoWayTech | feat/docs-click-through-2026-11-21 | `a320b6e` |
 | 2026-11-21 | #78 | docs: the owner's decisions after the click-through of 2026-11-21 (ADR 0061) | @TwoWayTech | feat/docs-owner-decisions-2026-11-21 | `943dfee` |
 | 2026-11-21 | #79 | ci: raise verify's timeout to 40 minutes (ADR 0061) | @TwoWayTech | fix/ci-verify-timeout | `fc14190` |
+| 2026-11-21 | #81 | fix(documents): full-precision money, printable PDF signs and agreeing terms on invoices | @TwoWayTech | fix/documents-invoice-pdf | `666808f` |
