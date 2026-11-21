@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { signInAs, type Persona, sendAndAccept } from "./helpers";
+import { confirmDemoStepUp, signInAs, type Persona, sendAndAccept } from "./helpers";
 
 /** Keystone confirms payments at once, so the balance moves as soon as a payment is saved. */
 const KEYSTONE_OWNER: Persona = { companyId: "keystone", userId: "ks-usr-01", roleKey: "owner" };
@@ -86,6 +86,7 @@ test.describe("invoice lifecycle (spec Appendix A, B2)", () => {
     await page.getByRole("menuitem", { name: "Write off remaining balance" }).click();
     await page.getByLabel("Reason").fill("Rounding left by the customer");
     await page.getByRole("button", { name: "Write off" }).click();
+    await confirmDemoStepUp(page);
     await expect(mainStatus(page)).toHaveText("Paid");
     await expect(page.getByRole("article").getByText("Written off")).toBeVisible();
 

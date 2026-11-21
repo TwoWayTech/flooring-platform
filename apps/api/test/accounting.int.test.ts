@@ -374,6 +374,8 @@ describe("accounting settings and bank accounts (needs the local PostgreSQL)", (
     const before = await balances();
     // Confirmed on review, the card payment posts to the bank card payments now go to.
     expect(moneyString(dec(before.get(operating)!).minus(pending.get(operating) ?? "0"))).toBe("500.00");
+    // A refund needs a step-up (ADR 0063); here it is setup.
+    await harness.grantStepUp(cookies.owner);
     await call("post", "/refunds", cookies.owner)
       .send({
         customerId: bill.customerId,

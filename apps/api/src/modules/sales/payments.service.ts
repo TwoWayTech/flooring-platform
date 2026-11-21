@@ -35,6 +35,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { loadAccountingForPosting } from "../../core/ledger/accounting-settings";
 import { loadExpenses, locationBranches, seesExpense, seesPayroll } from "../finance/expense-records";
@@ -84,6 +85,7 @@ export class PaymentsService {
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
     private readonly books: LedgerService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -415,6 +417,8 @@ export class PaymentsService {
         await lockCustomer(tx, customer.id);
         const credit = moneyString(await creditNow(tx, this.control.db, customer.id, clock));
         firstProblem(validateRefund(input, { credit, today: clock.day, formatMoney: money }));
+        // A refund sends money out, so it needs a fresh step-up, asked after its checks (ADR 0063).
+        await this.stepUp.require(actor.session);
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:refund-number'))`);
         const used = await tx.select({ number: refunds.number }).from(refunds);
         const now = new Date();

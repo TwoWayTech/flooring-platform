@@ -41,6 +41,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { LedgerService } from "../../core/ledger/ledger.service";
 import { NotificationService } from "../../core/notifications/notification.service";
@@ -92,6 +93,7 @@ export class InvoicesService {
     private readonly auditLog: AuditService,
     private readonly notifications: NotificationService,
     private readonly books: LedgerService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /** Invoices and credit notes the person may see. */
@@ -699,7 +701,8 @@ export class InvoicesService {
 
   /**
    * Writes off the whole balance (spec rule 34): a reason, and only up to the company's write-off
-   * maximum. The invoice then reads Paid.
+   * maximum. The invoice then reads Paid. Writing off gives up money owed, so it needs a step-up,
+   * whatever the amount, after the balance and limit checks (ADR 0063).
    */
   async writeOff(tenant: TenantContext, actor: Actor, invoiceId: string, reason: string): Promise<InvoiceAdjustment> {
     const why = reasonFor(reason, "the balance is written off");
@@ -707,18 +710,26 @@ export class InvoicesService {
     const clock = await companyClock(this.control.db, tenant);
     const found = await invoiceInScope(db, actor.access, invoiceId, clock.zone);
     const [settings, money] = await Promise.all([loadPaymentSettings(db), loadMoneyFormat(db)]);
-    return this.adjust(tenant, actor, found, clock, "Wrote off balance", ({ balance, pending }) => {
-      if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to write off.`);
-      // A payment that waits could still settle it; writing off first would turn it into credit.
-      if (pending.gt(0)) throw refuse(`Verify or reject the payment waiting on ${found.number} first.`);
-      const max = settings.writeOffMax.trim();
-      if (max && balance.gt(max)) {
-        throw refuse(
-          `Only balances up to ${money(max)} can be written off; this one is ${money(moneyString(balance))}.`,
-        );
-      }
-      return { kind: "write_off", amount: moneyString(balance), reason: why };
-    });
+    return this.adjust(
+      tenant,
+      actor,
+      found,
+      clock,
+      "Wrote off balance",
+      ({ balance, pending }) => {
+        if (balance.lte(0)) throw refuse(`Invoice ${found.number} has nothing left to write off.`);
+        // A payment that waits could still settle it; writing off first would turn it into credit.
+        if (pending.gt(0)) throw refuse(`Verify or reject the payment waiting on ${found.number} first.`);
+        const max = settings.writeOffMax.trim();
+        if (max && balance.gt(max)) {
+          throw refuse(
+            `Only balances up to ${money(max)} can be written off; this one is ${money(moneyString(balance))}.`,
+          );
+        }
+        return { kind: "write_off", amount: moneyString(balance), reason: why };
+      },
+      () => this.stepUp.require(actor.session),
+    );
   }
 
   /** Applies the customer's credit to an invoice (spec rule 36): as much as the balance takes. */
@@ -749,6 +760,7 @@ export class InvoicesService {
       credit: ReturnType<typeof dec>;
       pending: ReturnType<typeof dec>;
     }) => Pick<InvoiceAdjustment, "kind" | "amount" | "reason">,
+    confirm?: () => Promise<void>,
   ): Promise<InvoiceAdjustment> {
     const db = await this.tenancy.db(tenant);
     const id = uuidv7();
@@ -758,6 +770,8 @@ export class InvoicesService {
       if (ledger.state === "void" || ledger.state === "return") throw refuse(`Invoice ${invoice.number} owes nothing.`);
       const credit = await creditNow(tx, this.control.db, invoice.customerId, clock);
       const decided = decide({ balance: dec(ledger.balance), credit, pending: dec(ledger.pending) });
+      // A step-up when the action needs one, after every check above (ADR 0063).
+      if (confirm) await confirm();
       const now = new Date();
       await tx.insert(invoiceAdjustments).values({
         id,

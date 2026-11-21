@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { CommissionPlan } from "@workspace/shared";
+import { commissionPlanProblem, type CommissionPlan } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Field } from "@/components/field";
+import { useStepUp } from "@/components/use-step-up";
 import { api } from "@/lib/api";
 import { Pick } from "../pick";
 
@@ -59,9 +60,24 @@ export function PlanFormDialog({ plan, onClose }: { plan: CommissionPlan | null;
   const [draft, setDraft] = useState(plan ?? blank(api.today()));
   const [error, setError] = useState<string | null>(null);
   const set = (patch: Partial<CommissionPlan>) => setDraft({ ...draft, ...patch });
+  const stepUp = useStepUp();
 
-  async function submit(event: FormEvent) {
+  /**
+   * A plan is a rule pay follows, so the API asks for a fresh code to save one (ADR 0063); the
+   * shared rule runs first, so a refused plan never costs a code.
+   */
+  function submit(event: FormEvent) {
     event.preventDefault();
+    const problem = commissionPlanProblem(draft);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setError(null);
+    stepUp.ask(plan ? `Saving ${plan.name}` : "Adding a commission plan", save);
+  }
+
+  async function save() {
     try {
       await api.saveCommissionPlan(draft);
       toast.success("Plan saved");
@@ -188,6 +204,7 @@ export function PlanFormDialog({ plan, onClose }: { plan: CommissionPlan | null;
             <Button type="submit">Save plan</Button>
           </DialogFooter>
         </form>
+        {stepUp.dialog}
       </DialogContent>
     </Dialog>
   );

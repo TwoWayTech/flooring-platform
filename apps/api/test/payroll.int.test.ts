@@ -341,6 +341,8 @@ describe("payroll API (needs the local PostgreSQL)", () => {
     cookies.sales = await harness.signIn(emails.sales);
     cookies.wes = await harness.signIn(emails.wes);
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    // Ivy's (hr4) pay edits change pay facts, which need a step-up (ADR 0063); setup here.
+    await harness.grantLastingStepUp(cookies.hr4);
     await harness.grantStepUp(cookies.accountant);
     const saved = await call("put", "/settings/accounting", cookies.accountant)
       .send({

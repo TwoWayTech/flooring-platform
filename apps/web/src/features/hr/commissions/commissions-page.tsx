@@ -23,6 +23,7 @@ import type { ColumnSpec } from "@/components/data-table/types";
 import { Field } from "@/components/field";
 import { NoAccess } from "@/components/no-access";
 import { QueryFallback } from "@/components/query-fallback";
+import { useStepUp } from "@/components/use-step-up";
 import { useCan, useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import type { CommissionPerson, CommissionStatementRow } from "@/lib/api/contract";
@@ -75,6 +76,7 @@ function AssignDialog({
   const [effectiveFrom, setFrom] = useState(api.today());
   const [target, setTarget] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const stepUp = useStepUp();
   async function save() {
     try {
       await api.assignPlan({ userId, planId, effectiveFrom, monthlyTargetOverride: target });
@@ -129,8 +131,10 @@ function AssignDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => void save()}>Assign</Button>
+          {/* Putting someone on a plan changes the rule their pay follows: a fresh code first (ADR 0063). */}
+          <Button onClick={() => stepUp.ask("Assigning a commission plan", save)}>Assign</Button>
         </DialogFooter>
+        {stepUp.dialog}
       </DialogContent>
     </Dialog>
   );

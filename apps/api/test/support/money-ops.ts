@@ -134,6 +134,8 @@ export async function creditNote(run: MoneyRun, invoiceId: string, subtotal: str
 
 /** Writes off a small leftover as the Accountant (spec rule 34). */
 export async function writeOff(run: MoneyRun, invoiceId: string): Promise<InvoiceAdjustment> {
+  // Writing off needs a step-up (ADR 0063); here it is setup, not what is tested.
+  await run.harness.grantStepUp(run.actors.accountant.cookie);
   const adjustment = await run.act<InvoiceAdjustment>(
     201,
     moneyCalls.writeOff(invoiceId),
@@ -157,6 +159,8 @@ export async function refund(
   amount: string,
   method: PaymentMethod,
 ): Promise<Refund> {
+  // A refund needs a step-up (ADR 0063); here it is setup, not what is tested.
+  await run.harness.grantStepUp(run.actors.accountant.cookie);
   const done = await run.act<Refund>(
     201,
     moneyCalls.refund(customerId, amount, method, run.today),

@@ -92,6 +92,15 @@ export async function sendAndAccept(page: Page) {
   await expect(page.getByRole("button", { name: "Convert to invoice" })).toBeVisible();
 }
 
+/** Confirms the open step-up dialog with any six digits (the demo's step-up), when the switch asks for one. */
+export async function confirmDemoStepUp(page: Page) {
+  if (!featureOn("auth.step-up")) return;
+  const dialog = page.getByRole("dialog", { name: "Confirm it is you" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Authenticator code").fill("123456");
+  await dialog.getByRole("button", { name: "Confirm" }).click();
+}
+
 /** Tag for tests that belong to the HR Suite project, which runs them on the HR host. */
 export const HR_TAG = "@hr";
 

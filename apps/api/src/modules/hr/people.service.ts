@@ -26,6 +26,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestAccess } from "../../core/access/access.service";
 import { AuditService } from "../../core/access/audit";
 import type { Actor } from "../../core/access/request-actor";
+import { StepUpService } from "../../core/auth/step-up.service";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { STORAGE } from "../../core/storage/storage.module";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
@@ -74,6 +75,7 @@ export class PeopleService {
     @Inject(STORAGE) private readonly storage: StorageProvider,
     private readonly tenancy: TenantConnectionService,
     private readonly auditLog: AuditService,
+    private readonly stepUp: StepUpService,
   ) {}
 
   /**
@@ -97,7 +99,8 @@ export class PeopleService {
    * exempt or non-exempt; only an exempt person has an exemption basis; with the California pay
    * rules on, a California salary covers 40 hours (Labor Code 515; ADR 0050). A new person gets the
    * onboarding checklist. Setting or moving a manager adds to the dated manager history on the
-   * company's day (`recordManager`), so overrides follow the manager on each sale's day.
+   * company's day (`recordManager`), so overrides follow the manager on each sale's day. An edit
+   * that changes the person's pay facts needs a step-up (ADR 0063); adding a person does not.
    */
   async save(tenant: TenantContext, actor: Actor, id: string | null, input: EmployeeFields): Promise<Employee> {
     const name = input.name.trim();
@@ -169,6 +172,9 @@ export class PeopleService {
         );
         await this.checkManager(tx, employeeId, input.managerId);
         if (input.homeLocationId) await this.checkLocation(tx, input.homeLocationId);
+        // A changed rate, pay type, worker type, overtime status or salaried hours changes the rule
+        // this person's pay follows, so it needs a step-up, after every other check (ADR 0063).
+        if (before && payFactsChanged(before, values)) await this.stepUp.require(actor.session);
         let row: EmployeeRow;
         if (before) {
           [row] = (await tx
@@ -562,6 +568,19 @@ async function recordManager(
 
 /** What decides a person's pay: their rate, pay type, worker type, overtime status and salaried hours. */
 type PayFacts = Pick<EmployeeRow, "payRate" | "payType" | "workerType" | "flsaStatus" | "salaryHoursPerWeek">;
+
+const PAY_FACT_KEYS = [
+  "payRate",
+  "payType",
+  "workerType",
+  "flsaStatus",
+  "salaryHoursPerWeek",
+] as const satisfies readonly (keyof PayFacts)[];
+
+/** Whether a save changes any of a person's pay facts, compared as `fieldChanged` compares them (ADR 0063). */
+function payFactsChanged(before: EmployeeRow, after: EmployeeValues): boolean {
+  return PAY_FACT_KEYS.some((key) => fieldChanged(key, before, after));
+}
 
 /** The fields a person edits, for audit entries: never the pay rate (CLAUDE.md rule 5). */
 function editable(row: EmployeeRow) {

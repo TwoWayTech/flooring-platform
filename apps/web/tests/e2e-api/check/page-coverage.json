@@ -509,11 +509,13 @@
         "assignPlan",
         "commissionData",
         "decideReversal",
-        "saveCommissionPlan"
+        "saveCommissionPlan",
+        "verifyStepUp"
       ],
       "onDemo": [],
       "routes": [
         "GET /commissions",
+        "POST /auth/step-up",
         "POST /commission-adjustments",
         "POST /commission-assignments",
         "POST /commission-plans",
@@ -536,7 +538,8 @@
         "hrData",
         "saveEmployee",
         "setChecklistItem",
-        "startOffboarding"
+        "startOffboarding",
+        "verifyStepUp"
       ],
       "onDemo": [],
       "routes": [
@@ -547,6 +550,7 @@
         "GET /time-off-entries",
         "GET /time-off-policies",
         "GET /timesheets",
+        "POST /auth/step-up",
         "POST /employees",
         "POST /employees/:id/checklist/:itemId",
         "POST /employees/:id/documents",
@@ -1211,6 +1215,7 @@
         "salesData",
         "saveCustomer",
         "teamCommission",
+        "verifyStepUp",
         "whoAmI"
       ],
       "onDemo": [
@@ -1234,6 +1239,7 @@
         "GET /payments",
         "GET /quotes",
         "GET /refunds",
+        "POST /auth/step-up",
         "POST /customers",
         "POST /refunds",
         "PUT /customers/:id"
@@ -1266,6 +1272,7 @@
         "reviewPayment",
         "salesData",
         "setCommissionSplit",
+        "verifyStepUp",
         "voidInvoice",
         "voidPayment",
         "writeOffBalance"
@@ -1291,6 +1298,7 @@
         "GET /settings",
         "GET /stock-movements",
         "GET /transfers",
+        "POST /auth/step-up",
         "POST /invoices/:id/apply-credit",
         "POST /invoices/:id/credit-notes",
         "POST /invoices/:id/sent",

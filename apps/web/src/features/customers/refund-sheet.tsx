@@ -25,6 +25,7 @@ import {
 } from "@workspace/ui/components/sheet";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Field } from "@/components/field";
+import { useStepUp } from "@/components/use-step-up";
 import { api } from "@/lib/api";
 import { ProofFilesField } from "@/features/invoices/payments/proof-files-field";
 
@@ -57,15 +58,25 @@ export function RefundSheet({
   const [files, setFiles] = useState<File[]>([]);
   const [errors, setErrors] = useState<RefundErrors>({});
   const [pending, setPending] = useState(false);
+  const stepUp = useStepUp();
   const set = (patch: Partial<RefundInput>) => setInput((prev) => ({ ...prev, ...patch }));
   const formatMoney = (v: string) => formatNumber(v, "money", numbers);
 
-  async function submit(event?: FormEvent) {
+  function submit(event?: FormEvent) {
     event?.preventDefault();
     const found = validateRefund(input, { credit, today, formatMoney });
     setErrors(found);
     const first = ORDER.find((k) => found[k]);
-    if (first) return document.getElementById(`refund-${first}`)?.focus();
+    if (first) {
+      document.getElementById(`refund-${first}`)?.focus();
+      return;
+    }
+    // A refund sends money out, so the API asks for a fresh code first (ADR 0063).
+    stepUp.ask(`Refunding ${formatMoney(input.amount)} to ${customer.name}`, send);
+  }
+
+  /** Sends the refund once the code passed. */
+  async function send() {
     setPending(true);
     try {
       const refund = await api.refundCredit(input, files);
@@ -173,6 +184,7 @@ export function RefundSheet({
             </div>
           </SheetFooter>
         </form>
+        {stepUp.dialog}
       </SheetContent>
     </Sheet>
   );

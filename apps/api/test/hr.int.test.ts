@@ -417,6 +417,9 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     cookies.hrSuiteHr = await enrolled(hrSuiteEmail);
     // The Owner decides what HR entered, since nobody else decides hours they entered (maker-checker).
     cookies.owner = await enrolled(await harness.addUser({ companyIds: [company.id], roles: ["owner"] }));
+    // Editing someone's pay facts needs a step-up (ADR 0063); here it is setup for the many edits,
+    // and the pay-rate test checks the refusal without one.
+    for (const cookie of [cookies.hr, cookies.hrSuiteHr, cookies.owner]) await harness.grantLastingStepUp(cookie);
   }, 180_000);
 
   afterAll(async () => {
@@ -583,6 +586,20 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     expect(added.body).not.toHaveProperty("payRate");
     expect(await storedPay(added.body.id)).toBe("0.00");
 
+    // A new rate changes the rule this person's pay follows: refused without a fresh step-up, and
+    // the stored rate stays (ADR 0063); with one it saves.
+    await harness.dropStepUp(cookies.hr);
+    const unconfirmed = await call("put", `/employees/${pat.id}`, cookies.hr).send(
+      form({ name: "Pat Payroll", title: "Lead", payRate: "80.00" }),
+    );
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect(await storedPay(pat.id)).toBe("77.77");
+    // A save that keeps the pay facts needs none.
+    const titled = await call("put", `/employees/${pat.id}`, cookies.hr).send(
+      form({ name: "Pat Payroll", title: "Senior lead", payRate: "77.77" }),
+    );
+    status(titled, 200);
+    await harness.grantLastingStepUp(cookies.hr);
     const raised = await call("put", `/employees/${pat.id}`, cookies.hr).send(
       form({ name: "Pat Payroll", title: "Lead", payRate: "80.00" }),
     );
@@ -1854,6 +1871,8 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     );
     status(titled, 400);
     expect(titled.body.message).toContain(unlinked);
+    // A new rate needs a step-up (ADR 0063); here it is setup.
+    await harness.grantStepUp(owner);
     status(await raise(owner, "40.00"), 200);
     expect(await storedPay(pay.id)).toBe("40.00");
   });

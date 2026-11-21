@@ -481,6 +481,14 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("post", `/invoices/${invoice.id}/write-off`, cookies.owner).send({ reason: "x" })).status).toBe(
       400,
     );
+    // Writing off gives up money owed: refused without a fresh step-up, whatever the amount, and the
+    // balance stays (ADR 0063); with one it goes through.
+    await harness.dropStepUp(cookies.owner);
+    const unwritten = await call("post", `/invoices/${invoice.id}/write-off`, cookies.owner).send({
+      reason: "Rounding",
+    });
+    expect([unwritten.status, unwritten.body.code]).toEqual([403, "step_up_required"]);
+    await harness.grantStepUp(cookies.owner);
     const writeOff = await call("post", `/invoices/${invoice.id}/write-off`, cookies.owner)
       .send({ reason: "Rounding" })
       .expect(201);
@@ -523,6 +531,16 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       files: [PDF],
     });
     expect((await call("post", "/refunds", cookies.owner).send(refund("200.00"))).status).toBe(400);
+    // A refund sends money out: refused without a fresh step-up, and nothing is refunded (ADR 0063).
+    await harness.dropStepUp(cookies.owner);
+    const unconfirmed = await call("post", "/refunds", cookies.owner).send(refund("50.00"));
+    expect([unconfirmed.status, unconfirmed.body.code]).toEqual([403, "step_up_required"]);
+    expect(
+      ((await call("get", "/refunds", cookies.owner).expect(200)).body as { customerId: string }[]).filter(
+        (r) => r.customerId === customer.body.id,
+      ),
+    ).toEqual([]);
+    await harness.grantStepUp(cookies.owner);
     const refunded = await call("post", "/refunds", cookies.owner).send(refund("50.00")).expect(201);
     expect(refunded.body.number).toMatch(/^RF-\d{4}$/);
     const second = await invoiced(cookies.salesA, customer.body.id);

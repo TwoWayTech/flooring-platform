@@ -200,6 +200,19 @@ export class AuthHarness {
   }
 
   /**
+   * `grantStepUp` that stays fresh for a day, for suites whose many setup edits need a step-up
+   * (ADR 0063) and that run longer than its 5 minutes. A test that checks a refusal without one
+   * calls `dropStepUp` and grants this again after.
+   */
+  async grantLastingStepUp(cookie: string): Promise<void> {
+    const sessionId = await this.sessionIdOf(cookie);
+    const until = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.control.db
+      .insert(authAttempts)
+      .values({ kind: "step_up_ok", subject: sessionId, ip: null, createdAt: until });
+  }
+
+  /**
    * Forgets every passed step-up of the session behind `cookie`, as if its 5 minutes were over, so a
    * suite that steps up as setup can still check that a route refuses without one (ADR 0063).
    */
