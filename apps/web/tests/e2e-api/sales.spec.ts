@@ -15,8 +15,19 @@ import {
   type TeamCommission,
   type ViewedInvoice,
 } from "@workspace/shared";
-import { MANAGER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
-import { addDays, addProduct, choose, companyToday, FIELDSTONE, runId, waitForAnswer } from "./flows/kit";
+import { MANAGER_EMAIL, OWNER_EMAIL, SALES_EMAIL, signInAs } from "./accounts";
+import { readAs } from "./flows/checks";
+import {
+  addDays,
+  addProduct,
+  choose,
+  companyToday,
+  FIELDSTONE,
+  flowTest,
+  resetAuthAround,
+  runId,
+  waitForAnswer,
+} from "./flows/kit";
 
 /** The quote builder's Summary panel. */
 function summaryOf(page: Page): Locator {
@@ -31,6 +42,27 @@ function marginRow(summary: Locator): Locator {
 /** The two ways a screen fails: its data didn't load, or it threw while rendering. */
 function failures(page: Page): Locator {
   return page.getByText("This page could not load its data.").or(page.getByText("This screen stopped working."));
+}
+
+/**
+ * The names of the catalog's products that `invoices` sell, as one pattern; it fails when none of
+ * their products is in the catalog, as in click-through #1 (2026-11-21), where ids never matched.
+ */
+function soldNames(invoices: readonly ViewedInvoice[], catalog: readonly Product[]): RegExp {
+  const sold = new Set(invoices.flatMap((invoice) => invoice.lines.map((line) => line.productId)));
+  const names = catalog.filter((product) => sold.has(product.id)).map((product) => product.name);
+  expect(names.length, "the invoices' products are in the API's catalog").toBeGreaterThan(0);
+  return new RegExp(names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+}
+
+/** A 30-day window that ends at the last live invoice: the calendar has moved past the seed. */
+function lastThirtyDays(invoices: readonly ViewedInvoice[]): { from: string; to: string } {
+  const to = invoices
+    .filter((invoice) => !invoice.voidedAt)
+    .map((invoice) => invoice.issuedAt)
+    .sort()
+    .at(-1)!;
+  return { from: addDays(to, -29), to };
 }
 
 /**
@@ -198,8 +230,9 @@ test.describe("sales (api mode)", () => {
   test("a salesperson's dashboard loads without cost and shows no margin (B5)", async ({ page }) => {
     await signInAs(page, SALES_EMAIL);
     const answer = waitForAnswer<ViewedInvoice[]>(page, "GET", /^\/api-proxy\/invoices$/);
+    const catalogAnswer = waitForAnswer<Product[]>(page, "GET", /^\/api-proxy\/products$/);
     await page.goto("/");
-    const invoices = await answer;
+    const [invoices, catalog] = await Promise.all([answer, catalogAnswer]);
 
     // Rule 5 on her answer: no invoice cost reaches her browser.
     expect(invoices.length, "her invoices").toBeGreaterThan(0);
@@ -220,11 +253,7 @@ test.describe("sales (api mode)", () => {
     await expect(failures(page)).toHaveCount(0);
 
     // A window that holds her invoices, taken from her answer: the calendar has moved past the seed.
-    const to = live
-      .map((invoice) => invoice.issuedAt)
-      .sort()
-      .at(-1)!;
-    const from = addDays(to, -29);
+    const { from, to } = lastThirtyDays(invoices);
     const inWindow = invoicesIn(invoices, from, to);
     expect(
       inWindow.some((invoice) => invoice.lines.some((line) => line.category === "material" && line.productId)),
@@ -253,9 +282,13 @@ test.describe("sales (api mode)", () => {
     await expect(best.getByText("No sales in this period.")).toHaveCount(0);
     await expect(best.getByRole("button", { name: "Revenue", exact: true })).toBeVisible();
     await expect(best.getByRole("button", { name: "Margin", exact: true })).toHaveCount(0);
+    // Click-through #1: each bar and each table row names its product from the API's catalog.
+    const named = soldNames(inWindow, catalog);
+    await expect(best.getByRole("listitem").first()).toContainText(named);
     await best.getByRole("button", { name: "Show best sellers as a table" }).click();
     await expect(best.getByRole("columnheader", { name: "Revenue", exact: true })).toBeVisible();
     await expect(best.getByRole("columnheader", { name: "Margin", exact: true })).toHaveCount(0);
+    await expect(best.getByRole("row").nth(1).getByRole("cell").first()).toContainText(named);
 
     // The 12-month table: revenue only.
     await panel.getByRole("button", { name: "Show table" }).click();
@@ -282,6 +315,35 @@ test.describe("sales (api mode)", () => {
     await expect(page.getByText("Gross margin").first()).toBeVisible();
     const best = page.getByRole("region", { name: "Best sellers" });
     await expect(best.getByRole("button", { name: "Margin", exact: true })).toBeVisible();
+    await expect(failures(page)).toHaveCount(0);
+  });
+});
+
+flowTest.describe("the Owner's best sellers (api mode)", () => {
+  resetAuthAround([OWNER_EMAIL]);
+
+  flowTest("each best seller names its product, as bars and as a table (click-through #1)", async ({ personas }) => {
+    const dana = await personas.open(OWNER_EMAIL, { mfa: true });
+    const { page } = dana;
+    const [invoices, catalog] = await Promise.all([
+      readAs<ViewedInvoice[]>(dana.request, "/invoices"),
+      readAs<Product[]>(dana.request, "/products"),
+    ]);
+    // The window ends at the last invoice that sells a product, so the card has rows to name.
+    const selling = invoices.filter((invoice) =>
+      invoice.lines.some((line) => line.category === "material" && line.productId),
+    );
+    const { from, to } = lastThirtyDays(selling);
+    const named = soldNames(invoicesIn(selling, from, to), catalog);
+
+    await page.goto("/");
+    const best = page.getByRole("region", { name: "Best sellers" });
+    await choose(page, best.getByLabel("Best sellers period"), "Custom");
+    await best.getByLabel("Best sellers from").fill(from);
+    await best.getByLabel("Best sellers to").fill(to);
+    await expect(best.getByRole("listitem").first()).toContainText(named);
+    await best.getByRole("button", { name: "Show best sellers as a table" }).click();
+    await expect(best.getByRole("row").nth(1).getByRole("cell").first()).toContainText(named);
     await expect(failures(page)).toHaveCount(0);
   });
 });

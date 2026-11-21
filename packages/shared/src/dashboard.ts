@@ -156,6 +156,11 @@ export type SellerMetric = "revenue" | "quantity" | "margin";
 /** One best seller with all three measures. */
 export interface SellerRow {
   productId: string;
+  /**
+   * The product's catalog name, or the line's own description when the catalog the viewer read
+   * doesn't hold it, so a row always names what it sold (click-through #1, 2026-11-21).
+   */
+  name: string;
   revenue: string;
   quantity: string;
   /**
@@ -167,6 +172,7 @@ export interface SellerRow {
 
 /** A product's running totals; margin turns unknown at its first line without cost. */
 interface SellerTotals {
+  name: string;
   revenue: Dec;
   quantity: Dec;
   margin: Dec | null;
@@ -177,7 +183,8 @@ interface SellerTotals {
  * by revenue, quantity or margin, optionally one category and one warehouse. Margin can't rank what
  * isn't known: when a counted line arrived without its cost, every row's margin is null and a margin
  * ranking falls back to revenue (rule 5; ADR 0037, 2026-11-17). A contract invoice's lines carry no
- * product, so they are never counted.
+ * product, so they are never counted. Each row is named from the catalog, or from its first line's
+ * description when the catalog doesn't hold the product.
  */
 export function bestSellersIn(
   invoices: readonly ViewedInvoice[],
@@ -198,11 +205,17 @@ export function bestSellersIn(
       if (line.category !== "material" || !line.productId) continue;
       const product = products.find((p) => p.id === line.productId);
       if (options.category && product?.category !== options.category) continue;
-      const t = totals.get(line.productId) ?? { revenue: dec(0), quantity: dec(0), margin: dec(0) };
+      const t = totals.get(line.productId) ?? {
+        name: product?.name ?? line.description,
+        revenue: dec(0),
+        quantity: dec(0),
+        margin: dec(0),
+      };
       const amount = lineAmount(line).times(sign);
       const unitCost = line.unitCost ?? null;
       const cost = unitCost === null ? null : roundMoney(dec(line.quantity).times(unitCost)).times(sign);
       totals.set(line.productId, {
+        name: t.name,
         revenue: t.revenue.plus(amount),
         quantity: t.quantity.plus(dec(line.quantity).times(sign)),
         margin: t.margin === null || cost === null ? null : t.margin.plus(amount.minus(cost)),
@@ -220,6 +233,7 @@ export function bestSellersIn(
     .slice(0, options.limit)
     .map(([productId, t]) => ({
       productId,
+      name: t.name,
       revenue: moneyString(t.revenue),
       quantity: t.quantity.toString(),
       margin: !costKnown || t.margin === null ? null : moneyString(t.margin),

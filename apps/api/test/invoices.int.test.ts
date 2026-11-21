@@ -13,7 +13,16 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { addDays, CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
+import {
+  addDays,
+  bestSellersIn,
+  CREDIT_NOTE_PREFIX,
+  dec,
+  FIRST_CREDIT_NOTE,
+  nextNumber,
+  type Product,
+  type ViewedInvoice,
+} from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -310,6 +319,33 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("post", `/invoices/${invoice.id}/sent`, cookies.salesB)).status).toBe(404);
     const sent = await call("post", `/invoices/${invoice.id}/sent`, cookies.salesA).expect(201);
     expect(sent.body.sentAt).not.toBeNull();
+  });
+
+  // Click-through #1 (2026-11-21): the dashboard's best sellers join GET /invoices to GET /products,
+  // so every product an invoice line sells must be in the catalog the same person reads, named.
+  it("names every best seller for the Owner and for Sales: invoice lines' products are in their GET /products", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Best Seller Co" }).expect(201);
+    await invoiced(cookies.salesA, customer.body.id);
+    for (const cookie of [cookies.owner, cookies.salesA]) {
+      const [invoiceList, productList] = await Promise.all([
+        call("get", "/invoices", cookie).expect(200),
+        call("get", "/products", cookie).expect(200),
+      ]);
+      const sold = invoiceList.body as ViewedInvoice[];
+      const catalog = productList.body as Product[];
+      const rows = bestSellersIn(sold, catalog, {
+        from: "2000-01-01",
+        to: "2099-12-31",
+        metric: "revenue",
+        limit: 5,
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        const product = catalog.find((p) => p.id === row.productId);
+        expect(product?.name).toBe("Slate Tile");
+        expect(product).toHaveProperty("swatch");
+      }
+    }
   });
 
   it("dates a new invoice by the customer's terms: due on receipt is due the day it is issued (sales.md rule 21, click-through #10)", async () => {

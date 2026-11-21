@@ -159,6 +159,13 @@ const SERVED_LISTS: Partial<Record<CollectionName, string>> = {
   // Settings part 4a (ADR 0059): warehouses and showrooms, for every member; an HR Suite company
   // answers 403, read as none (`seen`).
   locations: "/locations",
+  // Inventory part 1 (ADR 0035) for the screens outside Inventory: the dashboard's best sellers name
+  // the products the API's invoices sell, and slow movers and Needs attention count the API's stock,
+  // so every id matches (click-through #1, 2026-11-21). The API strips costs (rule 5); without the
+  // permission (403) or with the feature switched off (404) a list is empty (`seenOrOff`).
+  products: "/products",
+  rolls: "/rolls",
+  stockMovements: "/stock-movements",
 };
 
 /**
@@ -178,7 +185,7 @@ export const API_METHODS = {
       if (collection === "users") return companyPeople(http, demo) as Promise<Collections[K]>;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.list(collection);
-      return seen(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
+      return seenOrOff(http.request<ItemOf<K>[]>("GET", path)) as Promise<Collections[K]>;
     },
   get:
     (http, demo) =>
@@ -187,7 +194,7 @@ export const API_METHODS = {
         return (await companyPeople(http, demo)).find((user) => user.id === id) as ItemOf<K> | undefined;
       const path = SERVED_LISTS[collection];
       if (!path) return demo.get(collection, id);
-      const all = await seen(http.request<ItemOf<K>[]>("GET", path));
+      const all = await seenOrOff(http.request<ItemOf<K>[]>("GET", path));
       return all.find((item) => (item as { id: string }).id === id);
     },
   // The shell's person, roles, access and company facts (ADR 0051, "GET /company").

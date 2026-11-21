@@ -9,6 +9,7 @@ import {
   type Product,
   type ProductCategory,
   type SellerMetric,
+  type SellerRow,
   type ViewedInvoice,
 } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
@@ -60,20 +61,11 @@ export function BestSellers({
   });
   const marginShown = allowed && rows.every((r) => r.margin !== null);
   const shownMetric: SellerMetric = metric === "margin" && !marginShown ? "revenue" : metric;
-  const top = Math.max(
-    ...rows.flatMap((r) => {
-      const value = r[shownMetric];
-      return value === null ? [] : [Math.abs(Number(value))];
-    }),
-    1,
-  );
-  const kind = shownMetric === "quantity" ? "quantity" : "money";
   const metrics: (readonly [SellerMetric, string])[] = [
     ["revenue", "Revenue"],
     ["quantity", "Quantity"],
     ...(marginShown ? [["margin", "Margin"] as const] : []),
   ];
-  const product = (id: string) => products.find((p) => p.id === id);
   return (
     <Panel
       title="Best sellers"
@@ -151,69 +143,124 @@ export function BestSellers({
       {rows.length === 0 ? (
         <p className="text-muted-foreground text-sm">No sales in this period.</p>
       ) : asTable ? (
-        <table className="w-full text-sm">
-          <thead className="text-muted-foreground text-xs">
-            <tr>
-              <th scope="col" className="py-1 text-left font-medium">
-                Product
-              </th>
-              <th scope="col" className="py-1 text-right font-medium">
-                Revenue
-              </th>
-              <th scope="col" className="py-1 text-right font-medium">
-                Quantity
-              </th>
-              {marginShown ? (
-                <th scope="col" className="py-1 text-right font-medium">
-                  Margin
-                </th>
-              ) : null}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.productId} className="border-hairline border-t">
-                <td className="py-1.5">{product(r.productId)?.name}</td>
-                <td className="py-1.5 text-right">
-                  <Num kind="money" value={r.revenue} />
-                </td>
-                <td className="py-1.5 text-right">
-                  <Num kind="quantity" value={r.quantity} />
-                </td>
-                {marginShown && r.margin !== null ? (
-                  <td className="py-1.5 text-right">
-                    <Num kind="money" value={r.margin} />
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <BestSellerTable rows={rows} products={products} marginShown={marginShown} />
       ) : (
-        <ol className="flex flex-col gap-3">
-          {rows.map((r) => {
-            const p = product(r.productId);
-            // A shown value is never null (margin shows only when every row has one); this narrows the type.
-            const value = r[shownMetric];
-            if (value === null) return null;
-            return (
-              <li key={r.productId} className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2 text-sm">
-                  {p ? <Swatch color={p.swatch} label={p.colorName} /> : null}
-                  <span className="min-w-0 flex-1 truncate">{p?.name}</span>
-                  <Num kind={kind} value={value} className="font-medium" />
-                </div>
-                <span className="bg-raised h-1.5 overflow-hidden rounded-full" aria-hidden="true">
-                  <span
-                    className="bg-chart-1 block h-full rounded-full"
-                    style={{ width: `${(Math.abs(Number(value)) / top) * 100}%` }}
-                  />
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+        <BestSellerBars rows={rows} products={products} metric={shownMetric} />
       )}
     </Panel>
+  );
+}
+
+/** A product's colour swatch and name: the catalog's when it holds the product, else the row's own name. */
+function ProductName({ row, products }: { row: SellerRow; products: readonly Product[] }) {
+  const product = products.find((p) => p.id === row.productId);
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      {product ? <Swatch color={product.swatch} label={product.colorName} /> : null}
+      <span className="min-w-0 truncate">{product?.name ?? row.name}</span>
+    </span>
+  );
+}
+
+/**
+ * Best sellers as a table: product, revenue, quantity, and margin when `marginShown`. Every row
+ * names its product (click-through #1, 2026-11-21).
+ */
+export function BestSellerTable({
+  rows,
+  products,
+  marginShown,
+}: {
+  rows: readonly SellerRow[];
+  products: readonly Product[];
+  marginShown: boolean;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="text-muted-foreground text-xs">
+        <tr>
+          <th scope="col" className="py-1 text-left font-medium">
+            Product
+          </th>
+          <th scope="col" className="py-1 text-right font-medium">
+            Revenue
+          </th>
+          <th scope="col" className="py-1 text-right font-medium">
+            Quantity
+          </th>
+          {marginShown ? (
+            <th scope="col" className="py-1 text-right font-medium">
+              Margin
+            </th>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.productId} className="border-hairline border-t">
+            <td className="py-1.5">
+              <ProductName row={r} products={products} />
+            </td>
+            <td className="py-1.5 text-right">
+              <Num kind="money" value={r.revenue} />
+            </td>
+            <td className="py-1.5 text-right">
+              <Num kind="quantity" value={r.quantity} />
+            </td>
+            {marginShown && r.margin !== null ? (
+              <td className="py-1.5 text-right">
+                <Num kind="money" value={r.margin} />
+              </td>
+            ) : null}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * Best sellers as bars: each product's swatch and name, its value by `metric`, and a bar scaled to
+ * the largest value. Every row names its product (click-through #1, 2026-11-21).
+ */
+export function BestSellerBars({
+  rows,
+  products,
+  metric,
+}: {
+  rows: readonly SellerRow[];
+  products: readonly Product[];
+  metric: SellerMetric;
+}) {
+  const top = Math.max(
+    ...rows.flatMap((r) => {
+      const value = r[metric];
+      return value === null ? [] : [Math.abs(Number(value))];
+    }),
+    1,
+  );
+  const kind = metric === "quantity" ? "quantity" : "money";
+  return (
+    <ol className="flex flex-col gap-3">
+      {rows.map((r) => {
+        // A shown value is never null (margin shows only when every row has one); this narrows the type.
+        const value = r[metric];
+        if (value === null) return null;
+        return (
+          <li key={r.productId} className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 text-sm">
+              <ProductName row={r} products={products} />
+              <Num kind={kind} value={value} className="font-medium" />
+            </div>
+            <span className="bg-raised h-1.5 overflow-hidden rounded-full" aria-hidden="true">
+              <span
+                className="bg-chart-1 block h-full rounded-full"
+                style={{ width: `${(Math.abs(Number(value)) / top) * 100}%` }}
+              />
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
