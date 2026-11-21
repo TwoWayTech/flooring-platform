@@ -71,6 +71,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     dispatcher: "",
     manager: "",
     stockSales: "",
+    stockAccountant: "",
   };
 
   function call(method: "get" | "post", path: string, cookie: string) {
@@ -267,6 +268,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
       owner: await harness.addUser({ companyIds: [company.id], roles: ["owner"] }),
       otherSales: await harness.addUser({ companyIds: [other.id], roles: ["sales"] }),
       stockSales: await harness.addUser({ companyIds: [stock.id], roles: ["sales"] }),
+      stockAccountant: await harness.addUser({ companyIds: [stock.id], roles: ["accountant"] }),
     };
     await placeIn(company.id, emails.salesA, mine.branch);
     cookies.salesA = await harness.signIn(emails.salesA);
@@ -277,7 +279,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     cookies.dispatcher = await harness.signIn(emails.dispatcher);
     cookies.manager = await harness.signIn(emails.manager);
     cookies.stockSales = await harness.signIn(emails.stockSales);
-  }, 120_000);
+    cookies.stockAccountant = await enrolled(emails.stockAccountant);
+  }, 180_000);
 
   afterAll(async () => {
     await harness.stop();
@@ -710,6 +713,12 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("get", "/payments", cookies.stockSales)).status).toBe(200);
     const refused = await call("post", "/payments", cookies.stockSales).send(payment(invoice.id));
     expect([refused.status, refused.body.code]).toEqual([403, "forbidden"]);
+    // The accountant records one; Sales sees it on its own sale but may not add proof to it.
+    const paid = await call("post", "/payments", cookies.stockAccountant).send(payment(invoice.id)).expect(201);
+    const seen = (await call("get", "/payments", cookies.stockSales).expect(200)).body as { id: string }[];
+    expect(seen.map((p) => p.id)).toContain(paid.body.id);
+    const files = await call("post", `/payments/${paid.body.id}/files`, cookies.stockSales).send({ files: [PDF] });
+    expect([files.status, files.body.code]).toEqual([403, "forbidden"]);
     const handle = await harness.companyDb(stock.id);
     try {
       const [sales] = await handle.db.select({ id: roles.id }).from(roles).where(eq(roles.key, "sales"));

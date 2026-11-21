@@ -46,6 +46,20 @@ export function cellName(def: Pick<PermissionDef, "label">, lock: CellLock): str
   return lock ? `${def.label}, ${LOCK_TEXT[lock]}` : def.label;
 }
 
+/**
+ * What a box does when clicked or toggled with Space: a locked one does nothing. An aria-disabled
+ * box still receives clicks and keys, so the lock, not the browser, must keep it from changing.
+ */
+export function boxToggle(
+  key: PermissionKey,
+  lock: CellLock,
+  onToggle: (key: PermissionKey, on: boolean) => void,
+): (on: boolean | "indeterminate") => void {
+  return (on) => {
+    if (lock === null) onToggle(key, on === true);
+  };
+}
+
 interface Row {
   resource: string;
   cells: Partial<Record<PermissionAction, PermissionDef>>;
@@ -129,7 +143,7 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
                                       aria-label={cellName(def, lock)}
                                       aria-disabled="true"
                                       checked={checked}
-                                      onCheckedChange={() => undefined}
+                                      onCheckedChange={boxToggle(def.key, lock, onToggle)}
                                       className={cn(
                                         "cursor-not-allowed opacity-50",
                                         checked && (lock === "plan" || lock === "module") && "opacity-40",
@@ -147,7 +161,7 @@ export function PermissionMatrix({ modules: included, granted, lockOf, onToggle 
                                 aria-label={cellName(def, lock)}
                                 checked={checked}
                                 disabled={lock !== null}
-                                onCheckedChange={(on) => onToggle(def.key, on === true)}
+                                onCheckedChange={boxToggle(def.key, lock, onToggle)}
                               />
                             )}
                           </td>
