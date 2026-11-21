@@ -9,16 +9,20 @@ import {
   cancelledMeeting,
   declinedProposal,
   guestAuditName,
+  isMoveAuditAction,
   MEETING_AUDIT_ACTIONS,
   MEETING_CHANGED,
   MEETING_REFUSALS,
   meetingEmailCount,
   meetingForViewer,
+  moveAuditAction,
   moveAuditEntry,
   movedMeetings,
   movedOccurrenceKey,
+  moveKind,
   moveProblem,
   normalizeGuestEmail,
+  occurrenceTime,
   proposalDecisionProblem,
   restoredOccurrence,
   sameAttendee,
@@ -137,8 +141,10 @@ export class MeetingMoves {
         plans.flatMap((planned) => planned.sends),
       );
       const record = moveAuditEntry(before.meeting, before.row.start, move, moved);
+      // A change that keeps the occurrence's start is a resize, worked out from the stored meeting (#44).
+      const kind = moveKind(occurrenceTime(before.meeting, move.planned), move);
       await auditMeeting(this.auditLog, tenant, actor, tx, {
-        action: MEETING_AUDIT_ACTIONS.moved,
+        action: moveAuditAction(kind),
         meeting: before.meeting,
         before: { ...record.before },
         after: { ...record.after, [SENDS_ENTRY]: sends },
@@ -199,7 +205,7 @@ export class MeetingMoves {
     const done = await db.transaction(async (tx) => {
       const { loaded: current, sight } = await lockChangeable(tx, actor.access, id);
       const last = await lastMeetingEntry(tx, id);
-      const record = last?.action === MEETING_AUDIT_ACTIONS.moved ? parseMoveRecord(last.before, last.after) : null;
+      const record = last && isMoveAuditAction(last.action) ? parseMoveRecord(last.before, last.after) : null;
       const problem = undoProblem(current.meeting, {
         record,
         moverUserId: last?.actorUserId ?? null,

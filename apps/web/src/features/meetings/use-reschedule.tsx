@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import type { MeetingOccurrence, MoveScope, OccurrenceKey } from "@workspace/shared";
+import { moveKind, type MeetingOccurrence, type MoveScope, type OccurrenceKey } from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import type { MeetingMove, MeetingUndo } from "@/lib/api/contract";
 import { conflictWarning } from "./conflict-warning";
 import { keyOf, movedKey } from "./current-occurrence";
+import { moveWords, UNDO_TOAST_MS, type MoveWords } from "./move-words";
 import { scopeChoices, type ScopeChoice } from "./scope-choices";
 
 /** A change waiting for "this event, this and following, or all" (spec F). */
@@ -26,6 +27,8 @@ interface Pending {
   durationMin: number;
   /** Each scope with the move rules' answer for this drop, worked out once when the dialog opens. */
   choices: ScopeChoice[];
+  /** A move or a resize, in words. */
+  words: MoveWords;
 }
 
 /** What the screen hears about a move the server took. */
@@ -38,25 +41,32 @@ export interface RescheduleOptions {
  * Moves or resizes a meeting from a drag, a resize or the reschedule form (spec F). A one-off moves
  * at once; a repeating meeting first asks which occurrences the change covers, offering only the
  * scopes the shared move rules allow for that drop and saying why each other one is left out
- * (ADR 0051 "Part 3", safest option 6); the server decides again. After the save, the move's toast
- * offers Undo, which sends only the SEQUENCE the screen saw and shows every refusal (safest option
- * 7), and names in a warning the guests booked elsewhere then.
+ * (ADR 0051 "Part 3", safest option 6); the server decides again. A change that keeps the start is
+ * a resize and is worded as one in the dialog and the toast (`moveKind`; click-through #44). After
+ * the save, the toast offers Undo for `UNDO_TOAST_MS`, which sends only the SEQUENCE the screen saw
+ * and shows every refusal (safest option 7), and names in a warning the guests booked elsewhere then.
  */
 export function useReschedule({ onMoved }: RescheduleOptions = {}) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [scope, setScope] = useState<MoveScope>("this");
 
-  function undo(record: MeetingUndo, from: OccurrenceKey, to: OccurrenceKey) {
+  function undo(record: MeetingUndo, from: OccurrenceKey, to: OccurrenceKey, words: MoveWords) {
     api.undoReschedule(record).then(
       () => {
-        toast.success("Move undone");
+        toast.success(words.undone);
         onMoved?.(to, from);
       },
-      (error: unknown) => toast.error(error instanceof Error ? error.message : "The move was not undone."),
+      (error: unknown) => toast.error(error instanceof Error ? error.message : words.undoFailed),
     );
   }
 
-  async function save(occurrence: MeetingOccurrence, start: string, durationMin: number, chosen: MoveScope) {
+  async function save(
+    occurrence: MeetingOccurrence,
+    start: string,
+    durationMin: number,
+    chosen: MoveScope,
+    words: MoveWords,
+  ) {
     const move: MeetingMove = {
       meetingId: occurrence.meeting.id,
       planned: occurrence.planned,
@@ -70,28 +80,32 @@ export function useReschedule({ onMoved }: RescheduleOptions = {}) {
       const to = movedKey(move, answer, occurrence.meeting);
       // One toast per move: a conflict warning comes with the move's own Undo, so a second toast never
       // stacks over the Undo just when a clash makes it most wanted (spec F, "Move or resize"). The
-      // toast takes the pointer back, since the meeting drawer, a modal, turns it off outside itself.
+      // toast takes the pointer back, since the meeting drawer, a modal, turns it off outside itself,
+      // and it stays long enough to reach Undo (#44).
       const shown = {
-        action: { label: "Undo", onClick: () => undo(answer.undo, from, to) },
+        action: { label: "Undo", onClick: () => undo(answer.undo, from, to, words) },
         className: "pointer-events-auto",
+        duration: UNDO_TOAST_MS,
       };
+      const done = words.done(occurrence.meeting.title, durationMin);
       const warning = conflictWarning(answer.conflicts);
-      if (warning) toast.warning(`${occurrence.meeting.title} moved`, { ...shown, description: warning });
-      else toast.success(`${occurrence.meeting.title} moved`, shown);
+      if (warning) toast.warning(done, { ...shown, description: warning });
+      else toast.success(done, shown);
       onMoved?.(from, to);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "The meeting was not moved.");
+      toast.error(error instanceof Error ? error.message : words.failed);
     }
   }
 
-  /** Starts a move; recurring meetings ask for the scope first. */
+  /** Starts a move or a resize; recurring meetings ask for the scope first. */
   function reschedule(occurrence: MeetingOccurrence, start: string, durationMin: number) {
     if (start === occurrence.start && durationMin === occurrence.durationMin) return;
-    if (occurrence.meeting.recurrence === "none") return void save(occurrence, start, durationMin, "all");
+    const words = moveWords(moveKind(occurrence, { start, durationMin }));
+    if (occurrence.meeting.recurrence === "none") return void save(occurrence, start, durationMin, "all", words);
     const choices = scopeChoices(occurrence, start, durationMin, api.today(), new Date());
     const open = choices.filter((c) => c.problem === null);
     setScope((open.find((c) => c.scope === "this") ?? open[0])?.scope ?? "this");
-    setPending({ occurrence, start, durationMin, choices });
+    setPending({ occurrence, start, durationMin, choices, words });
   }
 
   const offered = pending?.choices.filter((c) => c.problem === null) ?? [];
@@ -100,15 +114,19 @@ export function useReschedule({ onMoved }: RescheduleOptions = {}) {
     <Dialog open onOpenChange={(o) => !o && setPending(null)}>
       <DialogContent className="bg-surface sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Move a repeating meeting</DialogTitle>
+          <DialogTitle>{pending.words.dialogTitle}</DialogTitle>
           <DialogDescription>
             {offered.length > 0
-              ? `${pending.occurrence.meeting.title} repeats. Which events move?`
-              : `${pending.occurrence.meeting.title} repeats, and no events can move to that time.`}
+              ? pending.words.question(pending.occurrence.meeting.title)
+              : pending.words.noneOpen(pending.occurrence.meeting.title)}
           </DialogDescription>
         </DialogHeader>
         {offered.length > 0 ? (
-          <RadioGroup value={scope} onValueChange={(v) => setScope(v as MoveScope)} aria-label="Which events move">
+          <RadioGroup
+            value={scope}
+            onValueChange={(v) => setScope(v as MoveScope)}
+            aria-label={pending.words.scopeLabel}
+          >
             {offered.map((c) => (
               <label key={c.scope} className="flex items-center gap-2 text-sm">
                 <RadioGroupItem value={c.scope} />
@@ -118,7 +136,7 @@ export function useReschedule({ onMoved }: RescheduleOptions = {}) {
           </RadioGroup>
         ) : null}
         {refused.length > 0 ? (
-          <ul className="text-muted-foreground flex flex-col gap-1.5 text-sm" aria-label="Not available for this move">
+          <ul className="text-muted-foreground flex flex-col gap-1.5 text-sm" aria-label={pending.words.refusedLabel}>
             {refused.map((c) => (
               <li key={c.scope}>
                 {c.label}: {c.problem}
@@ -135,10 +153,10 @@ export function useReschedule({ onMoved }: RescheduleOptions = {}) {
               onClick={() => {
                 const p = pending;
                 setPending(null);
-                void save(p.occurrence, p.start, p.durationMin, scope);
+                void save(p.occurrence, p.start, p.durationMin, scope, p.words);
               }}
             >
-              Move
+              {pending.words.confirm}
             </Button>
           ) : null}
         </DialogFooter>

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { FLOW_TAG, HARBOR_OWNER, HR_TAG, signInAs, summitDay, SUMMIT_OWNER, type Persona } from "./helpers";
 
 const SUMMIT_SALES: Persona = { companyId: "summit", userId: "sm-usr-03", roleKey: "sales" };
@@ -45,6 +45,23 @@ function hourLater(time: string): string {
   return `${h24 % 12 === 0 ? 12 : h24 % 12}:${String(m).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
 }
 
+/** The start time a meeting block shows first, such as "2:00 PM". */
+async function startOf(block: Locator): Promise<string> {
+  return (await block.innerText()).trim().match(/^\d{1,2}:\d{2} [AP]M/)![0];
+}
+
+/** Presses a meeting block at `at` of its height (0 top, 1 bottom) and drags it `dy` pixels down. */
+async function drag(page: Page, block: Locator, at: number, dy: number): Promise<void> {
+  const box = (await block.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height * at;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + dy / 2, { steps: 4 });
+  await page.mouse.move(x, y + dy, { steps: 4 });
+  await page.mouse.up();
+}
+
 test.describe("meetings calendar (spec F)", () => {
   test(
     "drags a repeating meeting an hour later for this event only, and Undo puts it back (flow 5)",
@@ -52,25 +69,42 @@ test.describe("meetings calendar (spec F)", () => {
     async ({ page }) => {
       await signInAs(page, SUMMIT_OWNER, "/meetings");
       const meeting = page.getByRole("button", { name: /Weekly sales huddle/ }).first();
-      const before = (await meeting.innerText()).trim().split(/\s*\n\s*/)[0]!;
-      const box = (await meeting.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + 8);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2, box.y + 8 + 24, { steps: 4 });
-      await page.mouse.move(box.x + box.width / 2, box.y + 8 + 48, { steps: 4 });
-      await page.mouse.up();
+      const before = await startOf(meeting);
+      // Grabbed in the lower half of the 30-minute block, which used to resize it (click-through #44).
+      await drag(page, meeting, 0.6, 48);
       const ask = page.getByRole("dialog", { name: "Move a repeating meeting" });
       await ask.getByLabel("This event").check();
       await ask.getByRole("button", { name: "Move" }).click();
       await expect(page.getByText("Weekly sales huddle moved")).toBeVisible();
       await expect(
-        page.getByRole("button", { name: new RegExp(`^${hourLater(before)}.*Weekly sales huddle`) }),
+        page.getByRole("button", { name: new RegExp(`^${hourLater(before)}.*Weekly sales huddle.*, 30 minutes`) }),
       ).toBeVisible();
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(page.getByText("Move undone")).toBeVisible();
       await expect(page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle`) })).toBeVisible();
     },
   );
+
+  test("dragging a short block's bottom edge changes its length and says so", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/meetings");
+    const meeting = page.getByRole("button", { name: /Weekly sales huddle/ }).first();
+    const before = await startOf(meeting);
+    // The title shows beside the time on a 30-minute block (#43).
+    await expect(meeting).toContainText("Weekly sales huddle");
+    await drag(page, meeting, 0.95, 48);
+    const ask = page.getByRole("dialog", { name: "Change a repeating meeting's length" });
+    await ask.getByLabel("This event").check();
+    await ask.getByRole("button", { name: "Change length" }).click();
+    await expect(page.getByText("Weekly sales huddle now lasts 90 minutes")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle.*, 90 minutes`) }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(page.getByText("Length change undone")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${before}.*Weekly sales huddle.*, 30 minutes`) }),
+    ).toBeVisible();
+  });
 
   test("reschedules from the form, and shows month and agenda views", async ({ page }) => {
     await signInAs(page, SUMMIT_OWNER, "/meetings");
