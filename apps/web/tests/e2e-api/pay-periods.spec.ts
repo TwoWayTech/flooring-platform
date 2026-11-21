@@ -1,17 +1,22 @@
-import { expect, type APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
 import type { PayPeriod } from "@workspace/shared";
 import type { PayPeriodReview } from "../../src/lib/api/contract";
 import { OWNER_EMAIL } from "./accounts";
-import { confirmStepUp, readAs, stepUp } from "./flows/checks";
+import { confirmStepUp, stepUp } from "./flows/checks";
 import { flowTest, resetAuthAround, waitForAnswer } from "./flows/kit";
 
-/** Puts a pay period back in review when the test left it approved: a reopen, with its step-up. */
-async function reopenIfApproved(request: APIRequestContext, id: string, secret: string): Promise<void> {
-  const [period] = (await readAs<PayPeriod[]>(request, "/pay-periods")).filter((p) => p.id === id);
-  if (period?.status !== "approved") return;
+/**
+ * Puts a pay period back in review when the test left it approved: a reopen, with its step-up.
+ * Returns the reopen's answer, or the list read when nothing needed reopening.
+ */
+async function reopenIfApproved(request: APIRequestContext, id: string, secret: string): Promise<APIResponse> {
+  const listed = await request.get("/api-proxy/pay-periods");
+  const period = ((await listed.json()) as PayPeriod[]).find((p) => p.id === id);
+  if (period?.status !== "approved") return listed;
   await stepUp(request, secret);
   const reopened = await request.post(`/api-proxy/pay-periods/${id}/reopen`, { data: {} });
   if (reopened.status() !== 201) throw new Error(`Reopening answered ${reopened.status()}: ${await reopened.text()}`);
+  return reopened;
 }
 
 /**

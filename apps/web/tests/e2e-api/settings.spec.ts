@@ -311,9 +311,9 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
         }
         personas.onCleanup("put the profile email back", () => healOrThrow(dana.request, "profile", seededProfile));
         personas.onCleanup("put expense approval back", () =>
-          healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret),
+          healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret!),
         );
-        expect((await healSection(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret)).status()).toBe(200);
+        expect((await healSection(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret!)).status()).toBe(200);
         const email = `e2e-${runId()}@summitfloor.example`;
 
         // 1. Dana saves a new email on Company profile.
@@ -382,7 +382,7 @@ flowTest.describe("Settings part 1 on the API (api mode)", () => {
 
         // 5. Put both back.
         expect((await healOrThrow(dana.request, "profile", seededProfile)).status()).toBe(200);
-        expect((await healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret)).status()).toBe(200);
+        expect((await healOrThrow(dana.request, "expenses", SUMMIT_EXPENSES, dana.secret!)).status()).toBe(200);
       },
     );
   });
