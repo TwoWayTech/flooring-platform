@@ -13,7 +13,7 @@ import {
   userProfiles,
 } from "@workspace/db/company";
 import { totpCode, totpSecretFromUri } from "@workspace/db/testing";
-import { CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
+import { addDays, CREDIT_NOTE_PREFIX, dec, FIRST_CREDIT_NOTE, nextNumber } from "@workspace/shared";
 import { eq } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -182,8 +182,8 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     return sessionCookie(confirmed.headers["set-cookie"]);
   }
 
-  /** An accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65), converted to an invoice. */
-  async function invoiced(cookie: string, customerId: string, location = warehouse, product = tile) {
+  /** An accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65) with the given deposit, converted to an invoice. */
+  async function invoiced(cookie: string, customerId: string, location = warehouse, product = tile, depositPct = "0") {
     const quote = await call("post", "/quotes", cookie)
       .send({
         customerId,
@@ -203,7 +203,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
             wastePct: "10",
           },
         ],
-        depositPct: "0",
+        depositPct,
         taxOverride: null,
         notes: "",
       })
@@ -310,6 +310,21 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     expect((await call("post", `/invoices/${invoice.id}/sent`, cookies.salesB)).status).toBe(404);
     const sent = await call("post", `/invoices/${invoice.id}/sent`, cookies.salesA).expect(201);
     expect(sent.body.sentAt).not.toBeNull();
+  });
+
+  it("dates a new invoice by the customer's terms: due on receipt is due the day it is issued (sales.md rule 21, click-through #10)", async () => {
+    // A new customer takes the company's default terms, which are Summit's "Due on receipt".
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Noor Haddad" }).expect(201);
+    expect(customer.body.terms).toBe("due_on_receipt");
+    const { invoice } = await invoiced(cookies.salesA, customer.body.id);
+    const plain = invoice as unknown as { issuedAt: string; dueAt: string | null };
+    expect(plain.dueAt).toBe(plain.issuedAt);
+    // A deposit invoice's balance gets the company's 30 balance days instead (the PDF says so).
+    const deposit = (await invoiced(cookies.salesA, customer.body.id, warehouse, tile, "50")).invoice as unknown as {
+      issuedAt: string;
+      dueAt: string | null;
+    };
+    expect(deposit.dueAt).toBe(addDays(deposit.issuedAt, 30));
   });
 
   it("F-m refuses to convert a quote whose boxed line isn't whole cartons, as a quote saved before the rule (rule 7, ADR 0027)", async () => {

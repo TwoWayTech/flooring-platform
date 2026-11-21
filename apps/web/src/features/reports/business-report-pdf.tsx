@@ -1,5 +1,12 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { DOCUMENT_TOKENS, formatNumber, type BusinessReport, type NumberSettings } from "@workspace/shared";
+import {
+  DOCUMENT_TOKENS,
+  endSentence,
+  formatNumber,
+  type BusinessReport,
+  type NumberSettings,
+} from "@workspace/shared";
+import { pdfSafe, pdfText } from "@/lib/pdf-text";
 
 const { ink, muted, hairline } = DOCUMENT_TOKENS;
 const styles = StyleSheet.create({
@@ -17,7 +24,7 @@ const styles = StyleSheet.create({
 
 /** The business report as a PDF, printed from the same sections as the screen and the CSV (spec F2). */
 export function BusinessReportPdf({
-  report,
+  report: shown,
   company,
   filters,
   settings,
@@ -29,13 +36,13 @@ export function BusinessReportPdf({
 }) {
   const value = (raw: string | undefined, kind: "money" | "percent" | undefined) =>
     raw === undefined || raw === "" ? "" : kind ? formatNumber(raw, kind, settings) : raw;
+  // The PDF font lacks some signs (click-through #11); the screen keeps them.
+  const report = pdfSafe(shown);
   return (
     <Document title="Business report" author={company}>
       <Page size="LETTER" style={styles.page}>
         <Text style={styles.title}>Business report</Text>
-        <Text style={styles.muted}>
-          {company}. {filters}
-        </Text>
+        <Text style={styles.muted}>{pdfText(`${endSentence(company)} ${filters}`)}</Text>
         {report.sections.map((section) => (
           <View key={section.key} style={styles.section} wrap={false}>
             <Text style={styles.heading}>{section.title}</Text>
