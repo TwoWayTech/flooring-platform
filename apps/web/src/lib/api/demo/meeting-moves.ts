@@ -10,11 +10,14 @@ import {
   MEETING_CHANGED,
   MEETING_REFUSALS,
   meetingAuditTarget,
+  moveAuditAction,
   moveAuditEntry,
   movedMeetings,
   movedOccurrenceKey,
+  moveKind,
   moveProblem,
   occurrenceConflicts,
+  occurrenceTime,
   proposalDecisionProblem,
   restoredOccurrence,
   sameAttendee,
@@ -146,7 +149,7 @@ export async function rescheduleMeeting(
   if (split) syncReminder(ctx, split);
   ctx.audit({
     category: "data",
-    action: MEETING_AUDIT_ACTIONS.moved,
+    action: moveAuditAction(moveKind(occurrenceTime(before, move.planned), move)),
     target: meetingAuditTarget(before),
     before: auditTime(move.planned),
     after: `${auditTime(move.start)}, ${move.durationMin} min (${SCOPE_WORDS[moved.scope]})`,

@@ -4,6 +4,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { Repeat } from "lucide-react";
 import { addDays, type Meeting, type MeetingOccurrence } from "@workspace/shared";
 import { cn } from "@workspace/ui/lib/utils";
+import { dragModeAt, ONE_LINE_BELOW_PX, resizeBandPx } from "./drag-mode";
 import { RECURRENCE } from "./new-meeting-dialog";
 import { timeOf } from "./time-text";
 
@@ -108,10 +109,14 @@ export function TimeGrid({
     return { start: at(day, minutes), durationMin: d.occurrence.durationMin };
   }
 
-  function begin(event: ReactPointerEvent, occurrence: MeetingOccurrence, mode: Drag["mode"]) {
+  /** Starts a drag on a block: a move from its body, a resize from the thin band at its bottom edge (#44). */
+  function begin(event: ReactPointerEvent<HTMLElement>, occurrence: MeetingOccurrence) {
     if (!canMove(occurrence.meeting) || event.button !== 0) return;
     event.stopPropagation();
-    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    const block = event.currentTarget;
+    block.setPointerCapture(event.pointerId);
+    const rect = block.getBoundingClientRect();
+    const mode = dragModeAt(event.clientY - rect.top, rect.height);
     const columnPx = grid.current ? grid.current.clientWidth / days.length : 1;
     setDrag({ occurrence, mode, x: event.clientX, y: event.clientY, dx: 0, dy: 0, columnPx });
   }
@@ -180,11 +185,20 @@ export function TimeGrid({
                   const height = Math.max(20, (shown.durationMin / 60) * HOUR_PX);
                   const dayShift =
                     dragging && drag.mode === "move" && days.length > 1 ? Math.round(drag.dx / drag.columnPx) : 0;
+                  const oneLine = height < ONE_LINE_BELOW_PX;
+                  const repeats =
+                    o.meeting.recurrence !== "none" ? (
+                      <Repeat
+                        role="img"
+                        aria-label={RECURRENCE[o.meeting.recurrence]}
+                        className="text-muted-foreground size-3 shrink-0"
+                      />
+                    ) : null;
                   return (
                     <div
                       key={`${o.meeting.id}-${o.planned}`}
                       className={cn(
-                        "bg-surface border-chart-1 absolute overflow-hidden rounded-sm border border-l-4 text-xs shadow-sm",
+                        "bg-surface border-chart-1 absolute touch-none overflow-hidden rounded-sm border border-l-4 text-xs shadow-sm",
                         dragging && "ring-ring z-10 ring-2",
                       )}
                       style={{
@@ -194,36 +208,42 @@ export function TimeGrid({
                         width: `calc(${100 / place.of}% - 4px)`,
                         transform: dayShift ? `translateX(${dayShift * place.of * 100}%)` : undefined,
                       }}
+                      onPointerDown={(e) => begin(e, o)}
+                      onPointerMove={move}
+                      onPointerUp={() => end(o)}
                     >
                       <button
                         type="button"
-                        className="flex h-full w-full touch-none flex-col items-start gap-0.5 p-1.5 text-left"
-                        onPointerDown={(e) => begin(e, o, "move")}
-                        onPointerMove={move}
-                        onPointerUp={() => end(o)}
+                        title={`${timeOf(shown.start)} ${o.meeting.title}, ${shown.durationMin} minutes`}
+                        className={cn(
+                          "flex h-full w-full min-w-0 text-left",
+                          oneLine ? "items-center gap-1 px-1.5 py-0.5" : "flex-col items-start gap-0.5 p-1.5",
+                        )}
                         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen(o))}
                       >
-                        <span className="flex w-full items-center justify-between gap-1 font-medium tabular-nums">
-                          {timeOf(shown.start)}
-                          {o.meeting.recurrence !== "none" ? (
-                            <Repeat
-                              role="img"
-                              aria-label={RECURRENCE[o.meeting.recurrence]}
-                              className="text-muted-foreground size-3"
-                            />
-                          ) : null}
-                        </span>
-                        <span className="line-clamp-2">{o.meeting.title}</span>
+                        {oneLine ? (
+                          <>
+                            <span className="shrink-0 font-medium tabular-nums">{timeOf(shown.start)}</span>
+                            <span className="min-w-0 flex-1 truncate">{o.meeting.title}</span>
+                            {repeats}
+                          </>
+                        ) : (
+                          <>
+                            <span className="flex w-full items-center justify-between gap-1 font-medium tabular-nums">
+                              {timeOf(shown.start)}
+                              {repeats}
+                            </span>
+                            <span className="line-clamp-2">{o.meeting.title}</span>
+                          </>
+                        )}
                         <span className="sr-only">, {o.durationMin} minutes</span>
                       </button>
                       {canMove(o.meeting) ? (
                         <span
                           aria-hidden="true"
-                          onPointerDown={(e) => begin(e, o, "resize")}
-                          onPointerMove={move}
-                          onPointerUp={() => end(o)}
                           data-resize
-                          className="hover:bg-chart-1/30 absolute inset-x-0 bottom-0 h-2 cursor-ns-resize touch-none"
+                          className="hover:bg-chart-1/30 absolute inset-x-0 bottom-0 cursor-ns-resize"
+                          style={{ height: resizeBandPx(height) }}
                         />
                       ) : null}
                     </div>
