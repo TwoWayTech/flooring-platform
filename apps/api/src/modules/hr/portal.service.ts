@@ -36,7 +36,7 @@ import type { Actor } from "../../core/access/request-actor";
 import { CONTROL_DB } from "../../core/database/control-db";
 import { TenantConnectionService } from "../../core/tenancy/tenant-connection.service";
 import type { TenantContext } from "../../core/tenancy/tenant-context";
-import { minuteOf } from "../sales/invoice-records";
+import { instantOf } from "../sales/invoice-records";
 import { companyClock, notFound, refuse } from "../sales/sales-common";
 import { loadCommissionAssignments, loadCommissionBook, loadCommissionPlans } from "./commission-records";
 import { auditHr, lockEmployee, PAYROLL_LOCK } from "./hr-common";
@@ -392,7 +392,7 @@ async function openPunchAt(db: CompanyDb, employeeId: string): Promise<string | 
     .from(clockEntries)
     .where(and(eq(clockEntries.employeeId, employeeId), isNull(clockEntries.outAt), isNull(clockEntries.deletedAt)))
     .limit(1);
-  return row ? minuteOf(row.inAt) : null;
+  return row ? instantOf(row.inAt) : null;
 }
 
 /**

@@ -384,7 +384,7 @@ export class TimesheetsService {
           world: emptyWorld({ employees: people, timesheets: sheets.map(timesheetFromWire) }),
           companyId: tenant.companyId as CompanyId,
           today: clock.day,
-          now: clock.now.toISOString().slice(0, 16),
+          now: clock.now.toISOString(),
           actorId: actor.access.userId,
           batch: { id: "upload", number: "this upload" },
           newId: () => uuidv7(),
@@ -756,7 +756,7 @@ export class TimesheetsService {
  */
 function event(actor: Actor, at: Date, action: TimesheetEvent["action"], reason: string | null = null): TimesheetEvent {
   return {
-    at: at.toISOString().slice(0, 16),
+    at: at.toISOString(),
     by: actor.session.user.name,
     byUserId: actor.access.userId,
     action,

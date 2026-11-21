@@ -29,8 +29,29 @@ export function AuditLogPage() {
   const data = useApiQuery((client) => client.list("audit"), []);
   if (!can("settings.audit.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading audit log" />;
+  const columns = auditLogColumns(formatDate);
 
-  const columns: ColumnSpec<AuditEntry>[] = [
+  return (
+    <DataTable
+      id="settings-audit"
+      rows={data.data}
+      columns={columns}
+      getRowId={(e) => e.id}
+      searchPlaceholder="Search the audit log"
+      csvName="audit-log"
+      initialSort={{ id: "at", desc: true }}
+      empty={{ message: "No changes recorded yet." }}
+    />
+  );
+}
+
+/**
+ * The audit log's columns. "When" is the entry's moment on the company's clock in 12-hour time with
+ * the zone named, "Nov 21, 2026, 7:56 AM MST" (ADR 0064, click-through #57); the CSV export writes it
+ * as ISO 8601 with the company's offset.
+ */
+export function auditLogColumns(formatDate: (iso: string, withTime?: boolean) => string): ColumnSpec<AuditEntry>[] {
+  return [
     { id: "at", header: "When", value: (e) => e.at, cell: (e) => formatDate(e.at, true) },
     {
       id: "who",
@@ -66,17 +87,4 @@ export function AuditLogPage() {
       className: "max-w-64 truncate",
     },
   ];
-
-  return (
-    <DataTable
-      id="settings-audit"
-      rows={data.data}
-      columns={columns}
-      getRowId={(e) => e.id}
-      searchPlaceholder="Search the audit log"
-      csvName="audit-log"
-      initialSort={{ id: "at", desc: true }}
-      empty={{ message: "No changes recorded yet." }}
-    />
-  );
 }

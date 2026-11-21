@@ -14,6 +14,7 @@ import { QueryFallback } from "@/components/query-fallback";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { FileViewerDialog } from "@/features/invoices/payments/file-viewer-dialog";
 import { RequestMeetingDialog } from "@/features/meetings/meeting-answers";
+import { timeOf } from "@/features/meetings/time-text";
 import { api } from "@/lib/api";
 import type { MyPortal } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
@@ -84,7 +85,7 @@ function Meetings() {
             <li key={meeting.id} className="flex justify-between gap-3 px-4 py-2.5">
               <span>{meeting.title}</span>
               <span className="text-muted-foreground whitespace-nowrap">
-                {formatDate(next.start.slice(0, 10))} at {next.start.slice(11, 16)}
+                {formatDate(next.start.slice(0, 10))} at {timeOf(next.start)}
               </span>
             </li>
           ))}

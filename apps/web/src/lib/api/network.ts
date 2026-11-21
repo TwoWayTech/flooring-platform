@@ -17,6 +17,7 @@ const LOCAL_METHODS = new Set<PropertyKey>([
   "setViewer",
   "subscribe",
   "today",
+  "timeZone",
   "openCompany",
   "closeCompany",
   "takeNotices",

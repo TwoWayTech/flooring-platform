@@ -125,7 +125,7 @@ describe("what each part 2 action sends (meetings.md sends table, ADR 0051 Part 
     expect(text).toContain("RECURRENCE-ID;TZID=America/Denver:20261126T083000\r\n");
     expect(text).toContain("DTSTART;TZID=America/Denver:20261126T100000\r\n");
     expect(text).not.toContain("RRULE:FREQ=WEEKLY");
-    expect(inviteValues(sends[0]!, series, "Dana")["meeting.when"]).toBe("2026-11-26 at 10:00");
+    expect(inviteValues(sends[0]!, series, "Dana")["meeting.when"]).toBe("Nov 26, 2026 at 10:00 AM MST");
     expect(sendPlan("occurrence", series, on)).toEqual([]);
   });
 
@@ -221,12 +221,13 @@ describe("what goes into each invite", () => {
     expect(inviteValues(send!, meeting, "Dana")).toEqual({
       "meeting.action": "Invitation",
       "meeting.title": "Design consultation",
-      "meeting.when": "2026-11-19 at 08:30",
+      "meeting.when": "Nov 19, 2026 at 8:30 AM MST",
       "meeting.location": "Showroom",
       "meeting.organiser": "Dana",
       "meeting.sequence": "0",
     });
-    expect(meetingWhenText("2026-11-19T08:30")).toBe("2026-11-19 at 08:30");
+    expect(meetingWhenText("2026-11-19T08:30", "America/Denver")).toBe("Nov 19, 2026 at 8:30 AM MST");
+    expect(meetingWhenText("2026-07-02T15:00", "America/Denver")).toBe("Jul 2, 2026 at 3:00 PM MDT");
   });
 
   it("maps each guest kind to its Outbox recipient kind", () => {

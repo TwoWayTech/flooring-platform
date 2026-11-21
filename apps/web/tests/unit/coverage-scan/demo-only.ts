@@ -118,6 +118,8 @@ export const CLIENT_LOCAL: Readonly<Record<string, string>> = {
   setViewer: "Sets who the client acts as for View as.",
   subscribe: "Lets a screen re-read after a change.",
   takeNotices: "Hands the shell the client's queued notices.",
+  timeZone:
+    "The zone moments are shown in, the one today() reads, from GET /company's time zone (ADR 0064); computed on the client.",
   today:
     "The company's day in its own zone, from GET /company's time zone (ADR 0051, \"The company's day on the web\"); computed on the client.",
 };

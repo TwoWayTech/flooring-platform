@@ -45,6 +45,11 @@ export class CompanyDay {
     this.zone = null;
   }
 
+  /** The company's zone once known, else null, when the browser's applies (ADR 0064). */
+  timeZone(): string | null {
+    return this.zone;
+  }
+
   /** Today, "YYYY-MM-DD", in the company's zone once known, else in the browser's. */
   today(now: Date = new Date()): string {
     return dayInOrBrowser(this.zone, now);

@@ -1,4 +1,5 @@
 import { MEETINGS_PRODID, type IcsInput } from "../calendar/ics";
+import { calendarDateText, clockText, momentInZone } from "../calendar/moments";
 import { zonedToInstantLenient } from "../calendar/zones";
 import type { Attendee, Meeting, OutboxRecipient } from "../types";
 import { isOrganiser } from "./access";
@@ -206,9 +207,15 @@ export function inviteVersion(
   return `${send.sequence}-${send.method}-${send.recurrenceId ?? ""}-${stamp.getTime()}`;
 }
 
-/** "YYYY-MM-DD at HH:mm", the spec's `meeting.when` (meetings.md "Emails", `whenText`). */
-export function meetingWhenText(start: string): string {
-  return `${start.slice(0, 10)} at ${start.slice(11, 16)}`;
+/**
+ * "Nov 19, 2026 at 8:30 AM MST", the spec's `meeting.when` (meetings.md "Emails", `whenText`): the
+ * meeting's wall time on a 12-hour clock with its zone named, so a guest in another zone reads it
+ * right (ADR 0064; it was "2026-11-19 at 08:30" with no zone).
+ */
+export function meetingWhenText(start: string, zone: string): string {
+  const moment = momentInZone(start, zone);
+  if (!moment) return `${start.slice(0, 10)} at ${start.slice(11, 16)}`;
+  return `${calendarDateText(moment.wall.slice(0, 10))} at ${clockText(moment.wall)} ${moment.abbreviation}`.trim();
 }
 
 /** The longest attachment name before `.ics`. */
@@ -232,7 +239,7 @@ export function inviteValues(send: MeetingSend, meeting: Meeting, organizerName:
   return {
     "meeting.action": send.action,
     "meeting.title": meeting.title,
-    "meeting.when": meetingWhenText(send.start ?? meeting.start),
+    "meeting.when": meetingWhenText(send.start ?? meeting.start, meeting.timeZone),
     "meeting.location": meeting.location,
     "meeting.organiser": organizerName,
     "meeting.sequence": String(send.sequence),

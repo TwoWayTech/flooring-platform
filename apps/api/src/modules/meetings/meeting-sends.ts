@@ -181,7 +181,7 @@ export class MeetingSends {
           "guest.name": guest.name,
           "guest.reply": outcome.partStat,
           "meeting.title": meeting.title,
-          "meeting.when": meetingWhenText(proposedStart ?? meeting.start),
+          "meeting.when": meetingWhenText(proposedStart ?? meeting.start, meeting.timeZone),
         },
         restricted: meeting.private,
       });
@@ -202,7 +202,7 @@ export class MeetingSends {
         values: {
           "actor.name": asker.name,
           "meeting.title": meeting.title,
-          "meeting.when": meetingWhenText(meeting.start),
+          "meeting.when": meetingWhenText(meeting.start, meeting.timeZone),
         },
         restricted: meeting.private,
       });

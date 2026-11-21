@@ -39,6 +39,10 @@ export const RESOLVED_ELSEWHERE: Readonly<Record<string, { routes: string[]; bet
     routes: [],
     why: "Sends nothing: the company's day from the zone GET /company gave (companyDayOf, lib/api/company-day.ts; ADR 0051).",
   },
+  timeZone: {
+    routes: [],
+    why: "Sends nothing: the zone GET /company gave, the one today() reads (companyDayOf, lib/api/company-day.ts; ADR 0064).",
+  },
   openCompany: {
     routes: [],
     why: "Sends nothing: forgets the last company's zone, then opens the company on the client (demo.openCompany).",

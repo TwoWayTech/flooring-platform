@@ -43,6 +43,7 @@ export * from "./business-report";
 export * from "./reports";
 export * from "./sales-lines";
 export * from "./calendar/ics";
+export * from "./calendar/moments";
 export * from "./calendar/zones";
 export * from "./meetings";
 export * from "./cost-sharing";

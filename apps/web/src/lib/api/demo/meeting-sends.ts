@@ -87,7 +87,7 @@ export function syncReminder(ctx: ActionContext, meeting: Meeting): void {
     source: MEETING_SOURCE(meeting),
     values: {
       "meeting.title": meeting.title,
-      "meeting.when": meetingWhenText(reminder.occurrence.start),
+      "meeting.when": meetingWhenText(reminder.occurrence.start, meeting.timeZone),
       "meeting.location": meeting.location,
     },
     to: to.map((guest) => ({ kind: "user" as const, id: guest.id, name: guest.name, email: guest.email })),

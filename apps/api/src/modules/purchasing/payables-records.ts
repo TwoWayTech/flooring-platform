@@ -2,7 +2,7 @@ import type { CompanyDb, ControlDb } from "@workspace/db";
 import { billReceipts, paymentAllocations, paymentsMade, supplierBills } from "@workspace/db/company";
 import type { Bill, SupplierPayment } from "@workspace/shared";
 import { and, asc, desc, inArray, isNull } from "drizzle-orm";
-import { fileRows, filesByOwner, loadNames, minuteOf } from "../sales/invoice-records";
+import { fileRows, filesByOwner, loadNames, instantOf } from "../sales/invoice-records";
 
 /**
  * Supplier bills with their receipts and the supplier's invoice files (purchasing.md "Bill").
@@ -93,12 +93,12 @@ export async function loadSupplierPayments(
     status: row.status,
     recordedById: row.recordedById,
     recordedBy: names.get(row.recordedById) ?? "",
-    recordedAt: minuteOf(row.recordedAt),
+    recordedAt: instantOf(row.recordedAt),
     reviewedBy: nameOf(row.reviewedById),
-    reviewedAt: row.reviewedAt ? minuteOf(row.reviewedAt) : null,
+    reviewedAt: row.reviewedAt ? instantOf(row.reviewedAt) : null,
     rejectReason: row.rejectReason,
     voidedBy: nameOf(row.voidedById),
-    voidedAt: row.voidedAt ? minuteOf(row.voidedAt) : null,
+    voidedAt: row.voidedAt ? instantOf(row.voidedAt) : null,
     voidReason: row.voidReason,
   }));
 }

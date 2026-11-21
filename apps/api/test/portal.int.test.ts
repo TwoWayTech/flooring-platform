@@ -885,7 +885,8 @@ describe("employee portal API (needs the local PostgreSQL)", () => {
     expect((await portal(cookies.ana)).visible.clock).toBe(true);
     status(await call("post", "/clock/in", cookies.ana), 201);
     const inAt = (await portal(cookies.ana)).clock.clockedInAt;
-    expect(inAt).not.toBeNull();
+    // An instant with its zone mark, which the portal shows on the company's clock (ADR 0064, #66).
+    expect(inAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
     await setHr({ clockEnabled: false });
     try {

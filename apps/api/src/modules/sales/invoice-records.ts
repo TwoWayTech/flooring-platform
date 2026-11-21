@@ -30,9 +30,13 @@ import { dayIn } from "./sales-common";
 /** Who did something, by user id, as the screens show it. Users live in the control database (rule 8). */
 export type Names = ReadonlyMap<string, string>;
 
-/** A moment as the screens read it, `yyyy-MM-ddTHH:mm`, in UTC. */
-export function minuteOf(value: Date): string {
-  return value.toISOString().slice(0, 16);
+/**
+ * A moment as the screens read it: ISO 8601 with its `Z` mark, so the web shows it on the company's
+ * clock with the zone named (ADR 0064). Before, it was UTC minutes with no mark, which the screens
+ * read as the browser's local time (click-through #57).
+ */
+export function instantOf(value: Date): string {
+  return value.toISOString();
 }
 
 /** The names of the given people, from the control database; an unknown id reads as empty. */
@@ -174,7 +178,7 @@ export function filesByOwner(rows: Awaited<ReturnType<typeof fileRows>>, names: 
       type: row.contentType,
       size: row.size,
       uploadedBy: names.get(row.createdBy ?? "") ?? "",
-      uploadedAt: minuteOf(row.uploadedAt),
+      uploadedAt: instantOf(row.uploadedAt),
     });
     byOwner.set(row.ownerId, list);
   }
@@ -219,12 +223,12 @@ export async function loadPayments(db: CompanyDb, control: ControlDb, filter: Re
     status: row.status,
     recordedById: row.recordedById,
     recordedBy: names.get(row.recordedById) ?? "",
-    recordedAt: minuteOf(row.recordedAt),
+    recordedAt: instantOf(row.recordedAt),
     reviewedBy: nameOf(row.reviewedById),
-    reviewedAt: row.reviewedAt ? minuteOf(row.reviewedAt) : null,
+    reviewedAt: row.reviewedAt ? instantOf(row.reviewedAt) : null,
     rejectReason: row.rejectReason,
     voidedBy: nameOf(row.voidedById),
-    voidedAt: row.voidedAt ? minuteOf(row.voidedAt) : null,
+    voidedAt: row.voidedAt ? instantOf(row.voidedAt) : null,
     voidReason: row.voidReason,
   }));
 }
@@ -259,7 +263,7 @@ export async function loadAdjustments(
     amount: row.amount,
     reason: row.reason,
     byName: names.get(row.byUserId) ?? "",
-    at: minuteOf(row.at),
+    at: instantOf(row.at),
   }));
 }
 
@@ -291,7 +295,7 @@ export async function loadRefunds(db: CompanyDb, control: ControlDb, filter: Rec
     files: files.get(row.id) ?? [],
     status: row.status,
     byName: names.get(row.byUserId) ?? "",
-    at: minuteOf(row.at),
+    at: instantOf(row.at),
   }));
 }
 
@@ -314,8 +318,8 @@ export async function loadReservations(db: CompanyDb, invoiceIds?: readonly stri
     quantity: row.quantity,
     shortBy: row.shortBy,
     status: row.status,
-    createdAt: minuteOf(row.createdAt),
-    closedAt: row.closedAt ? minuteOf(row.closedAt) : null,
+    createdAt: instantOf(row.createdAt),
+    closedAt: row.closedAt ? instantOf(row.closedAt) : null,
     overrideReason: row.overrideReason,
   }));
 }

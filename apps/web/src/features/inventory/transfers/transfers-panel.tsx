@@ -72,7 +72,7 @@ export function TransfersPanel({ transfers, locations, products, rolls, stockMov
     { id: "from", header: "From", value: (t) => locationName(locations, t.fromId) },
     { id: "to", header: "To", value: (t) => locationName(locations, t.toId) },
     { id: "items", header: "Items", value: (t) => itemsOf(t, products, rolls), className: "max-w-80 truncate" },
-    { id: "sent", header: "Sent", value: (t) => t.createdAt, cell: (t) => formatDate(t.createdAt.slice(0, 10)) },
+    { id: "sent", header: "Sent", value: (t) => t.createdAt, cell: (t) => formatDate(t.createdAt) },
     {
       id: "by",
       header: "Sent by",
@@ -102,7 +102,7 @@ export function TransfersPanel({ transfers, locations, products, rolls, stockMov
             Receive
           </Button>
         ) : t.receivedAt ? (
-          <span className="text-muted-foreground text-xs">{formatDate(t.receivedAt.slice(0, 10))}</span>
+          <span className="text-muted-foreground text-xs">{formatDate(t.receivedAt)}</span>
         ) : null,
     },
   ];

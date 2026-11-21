@@ -302,7 +302,7 @@ export class ContractsService {
       if (before.status !== "sent") throw refuse("Send the contract for signature first.");
       const lines = await loadContractLines(tx, [id]);
       const party = await partyOf(tx, before);
-      const signedAt = clock.now.toISOString().slice(0, 16);
+      const signedAt = clock.now.toISOString();
       const signature: SignatureRecord = {
         documentId: before.id,
         // One version per time it was sent for signature, so a recall and resend is a new version.
@@ -315,7 +315,7 @@ export class ContractsService {
         recordedBy: actor.session.user.name,
         signedAt,
         events: [
-          { kind: "sent", at: before.sentAt ? before.sentAt.toISOString().slice(0, 16) : signedAt },
+          { kind: "sent", at: before.sentAt ? before.sentAt.toISOString() : signedAt },
           { kind: "signed", at: signedAt },
         ],
       };

@@ -48,7 +48,7 @@ export function TaxOverrideDialog({ open, currentRatePct, onOpenChange, onConfir
   const { errors } = form.formState;
 
   function submit(values: OverrideForm) {
-    onConfirm({ ...values, byName: user.name, at: new Date().toISOString().slice(0, 16) });
+    onConfirm({ ...values, byName: user.name, at: new Date().toISOString() });
     onOpenChange(false);
   }
 

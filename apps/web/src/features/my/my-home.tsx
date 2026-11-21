@@ -10,10 +10,13 @@ import { Panel } from "@workspace/ui/components/panel";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { api } from "@/lib/api";
 import type { MyPortal } from "@/lib/api/contract";
+import { useTimeZone } from "@/lib/use-format-date";
+import { clockedInText } from "./clock-line";
 import { MyShell } from "./my-shell";
 
 function Clocking({ portal }: { portal: MyPortal }) {
   const inAt = portal.clock.clockedInAt;
+  const zone = useTimeZone();
   async function run(action: () => Promise<void>, done: string) {
     try {
       await action();
@@ -26,7 +29,7 @@ function Clocking({ portal }: { portal: MyPortal }) {
     <Panel title="Clock">
       <div className="flex flex-wrap items-center gap-3">
         <Clock aria-hidden="true" className="text-muted-foreground size-5" />
-        <p className="text-sm">{inAt ? `Clocked in at ${inAt.slice(11, 16)}` : "You are not clocked in."}</p>
+        <p className="text-sm">{clockedInText(inAt, zone)}</p>
         {inAt ? (
           <Button
             onClick={() => void run(() => api.clockOut(), "Clocked out. Your hours are on this week's timesheet.")}

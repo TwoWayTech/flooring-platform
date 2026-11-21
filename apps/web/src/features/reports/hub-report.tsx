@@ -32,7 +32,7 @@ import { api } from "@/lib/api";
 import type { ApiClient } from "@/lib/api/contract";
 import { useApiQuery } from "@/lib/api/use-api";
 import { saveBlob } from "@/lib/save-blob";
-import { useFormatDate } from "@/lib/use-format-date";
+import { useFormatDate, useTimeZone } from "@/lib/use-format-date";
 import { presentReport } from "./present-report";
 import { shownAnswer, type KeyedAnswer } from "./report-answer";
 import { ReportFallback } from "./report-fallback";
@@ -172,6 +172,7 @@ export function HubReportView({
 }) {
   const { company, settings } = useWorkspace();
   const formatDate = useFormatDate();
+  const zone = useTimeZone();
   const [range, setRange] = useState<ReportRange>("12m");
   const [warehouse, setWarehouse] = useState(ALL_WAREHOUSES);
   const [category, setCategory] = useState<ProductCategory | typeof ALL>(ALL);
@@ -217,6 +218,7 @@ export function HubReportView({
           header: c.header,
           value: (r: Record<string, string>) => r[c.id] ?? "",
         })),
+        zone,
       ),
     );
   }

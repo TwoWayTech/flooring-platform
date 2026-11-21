@@ -329,7 +329,7 @@ describe("meeting moves, undo and proposals (needs the local PostgreSQL)", () =>
     expect(fileOf(row!)).toContain(`RECURRENCE-ID;TZID=America/Chicago:${YEAR}1117T090000`);
     expect(fileOf(row!)).toContain(`DTSTART;TZID=America/Chicago:${YEAR}1118T100000`);
     expect(fileOf(row!)).not.toContain("RRULE:FREQ=WEEKLY");
-    expect(row!.values["meeting.when"]).toBe(`${YEAR}-11-18 at 10:00`);
+    expect(row!.values["meeting.when"]).toBe(`Nov 18, ${YEAR} at 10:00 AM CST`);
   });
 
   it("splits a series: a new UID at SEQUENCE 0 with copied guests, one REQUEST per series, both reminders; the mover undoes it", async () => {

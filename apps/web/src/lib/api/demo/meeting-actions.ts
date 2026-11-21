@@ -492,7 +492,7 @@ function tellOrganiser(
       "guest.name": guest.name,
       "guest.reply": outcome.partStat,
       "meeting.title": meeting.title,
-      "meeting.when": meetingWhenText(proposedStart ?? meeting.start),
+      "meeting.when": meetingWhenText(proposedStart ?? meeting.start, meeting.timeZone),
     },
     to: [{ kind: "user", id: organiser.id, name: organiser.name, email: organiser.email }],
     inApp: [{ userId: organiser.id, title: `${guest.name} ${word}: ${meeting.title}` }],
@@ -617,7 +617,7 @@ export async function requestMeeting(ctx: ActionContext, { sight, company }: Mee
     values: {
       "actor.name": actor.name,
       "meeting.title": meeting.title,
-      "meeting.when": meetingWhenText(meeting.start),
+      "meeting.when": meetingWhenText(meeting.start, meeting.timeZone),
     },
     to: [{ kind: "user", id: asked.id, name: asked.name, email: asked.email }],
     inApp: [{ userId: asked.id, title: `${actor.name} asked to meet: ${meeting.title}` }],

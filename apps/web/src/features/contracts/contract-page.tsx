@@ -246,7 +246,7 @@ export function ContractPage({ id }: { id: string }) {
       {contract.signature ? (
         <p className="text-muted-foreground text-sm">
           Simulated signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
-          {contract.signature.signedAt.slice(0, 10)}. Recorded by {contract.signature.recordedBy}.
+          {formatDate(contract.signature.signedAt, true)}. Recorded by {contract.signature.recordedBy}.
         </p>
       ) : null}
       {project ? (

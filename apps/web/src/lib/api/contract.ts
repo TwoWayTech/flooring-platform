@@ -765,6 +765,11 @@ export interface ApiClient {
   subscribe(listener: () => void): () => void;
   /** Today's date (YYYY-MM-DD) as the data sees it. */
   today(): string;
+  /**
+   * The IANA zone the open company's moments are shown in (ADR 0064): the one `today()` reads, or
+   * null while no company's zone is known (the sign-in and platform pages), when the browser's applies.
+   */
+  timeZone(): string | null;
   /** Restores every company to the generated fixtures. */
   resetDemo(): Promise<void>;
   /**

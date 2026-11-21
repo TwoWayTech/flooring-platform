@@ -78,6 +78,7 @@ const CASES = {
   getCompanyStanding: read((c) => c.getCompanyStanding()),
   getWorkspace: read((c) => c.getWorkspace()),
   today: local((c) => c.today()),
+  timeZone: local((c) => c.timeZone()),
   closeCompany: local((c) => c.closeCompany()),
   openCompany: local((c) => c.openCompany("summit", { userId: ID, viewAsRoleId: null })),
   whoAmI: read((c) => c.whoAmI()),
@@ -255,7 +256,7 @@ describe("re-reading after a routed write (ADR 0051, 2026-11-16)", () => {
     // 158 and 113 before: the passkey screens add 5 (3 writes), the trial balance 1 read.
     expect(READS.length + WRITES.length).toBe(164);
     expect(WRITES).toHaveLength(116);
-    expect(LOCALS.map((c) => c.name).sort()).toEqual(["closeCompany", "openCompany", "today"]);
+    expect(LOCALS.map((c) => c.name).sort()).toEqual(["closeCompany", "openCompany", "timeZone", "today"]);
   });
 
   it("sends nothing and asks no re-read for a method that answers in the browser", async () => {

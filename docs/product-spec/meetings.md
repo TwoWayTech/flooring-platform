@@ -444,7 +444,7 @@ No real email is sent. Each row below is an Outbox row only. A row with status `
 | `meeting.proposed` | `{{ guest.name }} proposed a new time for {{ meeting.title }}` | `{{ guest.name }} proposed {{ meeting.when }} for {{ meeting.title }}.` | None |
 | `meeting.requested` | `{{ actor.name }} asked to meet: {{ meeting.title }}` | `{{ actor.name }} asked to meet about {{ meeting.title }} at {{ meeting.when }}.` | None |
 
-`meeting.action` is one of `Invitation`, `Updated`, `Cancelled`, `Removed` or `Proposal declined`. `meeting.when` is `YYYY-MM-DD at HH:mm` (`whenText`). The file name is the title with characters outside `[\w ]` removed, plus `.ics`.
+`meeting.action` is one of `Invitation`, `Updated`, `Cancelled`, `Removed` or `Proposal declined`. `meeting.when` is the meeting's date and 12-hour time with its zone named, `Nov 19, 2026 at 8:30 AM MST` (`whenText`; ADR 0064, which replaced `YYYY-MM-DD at HH:mm`). The file name is the title with characters outside `[\w ]` removed, plus `.ics`.
 
 ## Reports
 
@@ -619,7 +619,7 @@ Kept as this spec says in part 3: the views, drag, resize, the Reschedule form, 
 Kept as this spec says:
 - a move does not reset answers (part 2 follows the sends table, and keeps it);
 - reminders go to staff guests only;
-- `meeting.when` has no zone, and RSVP stays TRUE;
+- `meeting.when` names its zone since ADR 0064 (it had none), and RSVP stays TRUE;
 - the organiser gets no notice of someone else's change;
 - a cancelled request sends CANCEL to its guest;
 - a significant edit resets the organiser's answer too;

@@ -270,7 +270,7 @@ export class CommissionsService {
       month,
       status: "approved",
       approvedBy: names.get(actor.access.userId) ?? "",
-      approvedAt: result.saved.approvedAt!.toISOString().slice(0, 16),
+      approvedAt: result.saved.approvedAt!.toISOString(),
       payPeriodId: null,
     };
   }

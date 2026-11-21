@@ -3,7 +3,7 @@ import { expenses, locations, recurringExpenses, settings } from "@workspace/db/
 import { scopeAllows, type Expense, type ExpenseSettings, type RecurringExpense } from "@workspace/shared";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
-import { fileRows, filesByOwner, loadNames, minuteOf } from "../sales/invoice-records";
+import { fileRows, filesByOwner, loadNames, instantOf } from "../sales/invoice-records";
 
 /** Who a raised recurring draft is recorded by until a person saves it (spec rule 13). */
 export const RECURRING_RECORDER = "Recurring expense";
@@ -85,12 +85,12 @@ export async function loadExpenses(db: CompanyDb, control: ControlDb, ids?: read
     recordedById: row.recordedById,
     // A raised draft has no creator until a person saves it (spec rule 13).
     recordedBy: row.createdBy === null && row.recurringId ? RECURRING_RECORDER : (names.get(row.recordedById) ?? ""),
-    recordedAt: minuteOf(row.recordedAt),
+    recordedAt: instantOf(row.recordedAt),
     reviewedBy: nameOf(row.reviewedById),
-    reviewedAt: row.reviewedAt ? minuteOf(row.reviewedAt) : null,
+    reviewedAt: row.reviewedAt ? instantOf(row.reviewedAt) : null,
     rejectReason: row.rejectReason,
     voidedBy: nameOf(row.voidedById),
-    voidedAt: row.voidedAt ? minuteOf(row.voidedAt) : null,
+    voidedAt: row.voidedAt ? instantOf(row.voidedAt) : null,
     voidReason: row.voidReason,
   }));
 }

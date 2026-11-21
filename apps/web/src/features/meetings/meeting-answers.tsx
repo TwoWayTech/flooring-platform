@@ -19,7 +19,9 @@ import { downloadText } from "@/components/data-table/csv";
 import { Pick } from "@/features/hr/pick";
 import { api } from "@/lib/api";
 import type { MeetingsData, ReplyInput } from "@/lib/api/contract";
+import { useFormatDate } from "@/lib/use-format-date";
 import { meetingRights } from "./meeting-rights";
+import { timeOf } from "./time-text";
 
 const STATE_LABEL: Record<Attendee["partStat"], string> = {
   accepted: "Accepted",
@@ -183,6 +185,7 @@ function EditMeetingDialog({ meeting, onClose }: { meeting: Meeting; onClose: ()
  * (ADR 0051 "Part 3"), so it is offered only when the server would take it.
  */
 export function MeetingAnswers({ meeting, viewer }: { meeting: Meeting; viewer: MeetingViewer }) {
+  const formatDate = useFormatDate();
   const mine = staffGuestOf(meeting, viewer.userId);
   const rights = meetingRights(viewer, meeting);
   const cancelled = meeting.status === "cancelled";
@@ -233,7 +236,7 @@ export function MeetingAnswers({ meeting, viewer }: { meeting: Meeting; viewer: 
                 </span>
                 {a.proposal?.status === "pending" && rights.decide ? (
                   <span className="bg-raised flex w-full flex-wrap items-center justify-between gap-2 rounded-md p-2">
-                    Proposes {a.proposal.start.replace("T", " at ")}
+                    Proposes {formatDate(a.proposal.start.slice(0, 10))} at {timeOf(a.proposal.start)}
                     <span className="flex gap-1.5">
                       <Button
                         size="sm"

@@ -37,7 +37,7 @@ import {
 } from "@workspace/shared";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
-import { loadAdjustments, loadInvoices, loadNames, loadPayments, minuteOf } from "../sales/invoice-records";
+import { loadAdjustments, loadInvoices, loadNames, loadPayments, instantOf } from "../sales/invoice-records";
 import { dayIn } from "../sales/sales-common";
 
 /** A stored commission statement row. */
@@ -102,7 +102,7 @@ export async function loadCommissionAssignments(db: CompanyDb): Promise<Commissi
     monthlyTargetOverride: row.monthlyTargetOverride === null ? null : moneyString(row.monthlyTargetOverride),
     acknowledgement:
       row.acknowledgedName && row.acknowledgedAt
-        ? { signedName: row.acknowledgedName, signedAt: minuteOf(row.acknowledgedAt) }
+        ? { signedName: row.acknowledgedName, signedAt: instantOf(row.acknowledgedAt) }
         : null,
   }));
 }
@@ -124,7 +124,7 @@ export async function loadCommissionStatements(db: CompanyDb, control: ControlDb
     month: row.month,
     status: row.status,
     approvedBy: row.approvedById ? (names.get(row.approvedById) ?? "") : null,
-    approvedAt: row.approvedAt ? minuteOf(row.approvedAt) : null,
+    approvedAt: row.approvedAt ? instantOf(row.approvedAt) : null,
     payPeriodId: row.payPeriodId,
   }));
 }
@@ -148,7 +148,7 @@ export async function loadCommissionAdjustments(db: CompanyDb, control: ControlD
     invoiceId: row.invoiceId,
     reason: row.reason,
     byName: names.get(row.byUserId) ?? "",
-    at: minuteOf(row.at),
+    at: instantOf(row.at),
     decides: row.decides ?? null,
   }));
 }
@@ -229,7 +229,7 @@ function managerEmployeeOn(chain: ManagerChain, employeeId: string, date: string
 }
 
 /**
- * The company's day of a confirmed moment (`lineConfirmedAt`: `YYYY-MM-DDTHH:mm` in UTC, or a bare
+ * The company's day of a confirmed moment (`lineConfirmedAt`: an ISO instant in UTC, or a bare
  * day, read as it is). Manager changes are dated on the company's calendar (people.service.ts
  * `recordManager`), so a payment confirmed on a company's evening, already the next day in UTC, is
  * judged on the company's day it happened (first review of PR #32; ADR 0048).

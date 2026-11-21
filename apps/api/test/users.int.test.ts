@@ -17,6 +17,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AuthHarness, PASSWORD, sessionCookie } from "./auth-harness";
 import { withFeaturesOff } from "./support/switches";
 
+/** An ISO 8601 instant with its `Z` mark, as every moment goes out since ADR 0064. */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 /** A TOTP code for the next 30-second step, so a code is never used twice in one step. */
 function freshCode(secret: string): string {
   return totpCode(secret, new Date(Date.now() + 30_000));
@@ -468,6 +471,8 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     const entries = await call("get", "/audit", owner.cookie).expect(200);
     const actions = entries.body.map((entry: { action: string }) => entry.action);
     expect(actions).toEqual(expect.arrayContaining(["Changed roles", "Created role", "Invited user", "Reset MFA"]));
+    // Each moment is an instant with its zone mark, which the screens show on the company's clock (ADR 0064, #57).
+    for (const entry of entries.body as { at: string }[]) expect(entry.at).toMatch(INSTANT);
     const handle = await harness.companyDb(company.id);
     try {
       const rows = await handle.db.select().from(auditLog).where(eq(auditLog.action, "Approved support access"));

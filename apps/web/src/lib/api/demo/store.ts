@@ -2,6 +2,7 @@
 import { browserDay, clockInOrBrowser, dayInOrBrowser } from "../company-day";
 import {
   branchManageDenial,
+  isKnownTimeZone,
   PAYMENT_CONTROLS_OWNER_ONLY,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -425,6 +426,11 @@ export class DemoStore implements ApiClient {
    */
   today() {
     return this.current ? dayOf(this.current) : browserDay();
+  }
+
+  timeZone() {
+    const zone = this.current?.settings.localization.region.timeZone;
+    return zone && isKnownTimeZone(zone) ? zone : null;
   }
 
   async resetDemo() {

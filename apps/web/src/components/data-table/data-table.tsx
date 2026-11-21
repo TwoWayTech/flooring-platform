@@ -26,6 +26,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Num } from "@workspace/ui/components/num";
 import { cn } from "@workspace/ui/lib/utils";
 import { api } from "@/lib/api";
+import { useTimeZone } from "@/lib/use-format-date";
 import { ColumnMenu } from "./column-menu";
 import { downloadText, toCsv } from "./csv";
 import { FilterChips } from "./filter-chips";
@@ -77,6 +78,7 @@ export function DataTable<T>({
   empty,
   initialSort,
 }: DataTableProps<T>) {
+  const zone = useTimeZone();
   const [prefs, updatePrefs] = useTablePrefs(
     id,
     columns.filter((c) => c.hidden).map((c) => c.id),
@@ -206,6 +208,7 @@ export function DataTable<T>({
       toCsv(
         visibleRows.map((r) => r.original),
         visible,
+        zone,
       ),
     );
   }

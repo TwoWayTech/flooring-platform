@@ -1,4 +1,4 @@
-import { format, parseISO } from "date-fns";
+import { formatWhen } from "@/lib/moments";
 import {
   acceptedTotalIfDifferent,
   cartonEquivalent,
@@ -121,7 +121,9 @@ export function buildInvoiceModel(
   settings: CompanySettings,
 ): InvoiceModel {
   const fmt = (v: DecimalInput, kind: NumberKind) => formatNumber(v, kind, settings.numbers);
-  const date = (iso: string) => format(parseISO(iso), settings.localization.region.dateFormat);
+  const { dateFormat: pattern, timeZone: zone } = settings.localization.region;
+  // A moment is printed as the company's day; a calendar date as it is (ADR 0064).
+  const date = (iso: string) => formatWhen(iso, { pattern, zone });
   const { profile, branding } = settings;
   return {
     number: invoice.number,

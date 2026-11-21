@@ -65,7 +65,7 @@ export function AdjustmentsPanel({
       value: (a) => a.number,
       cell: (a) => <span className="font-medium">{a.number}</span>,
     },
-    { id: "at", header: "Date", value: (a) => a.requestedAt, cell: (a) => formatDate(a.requestedAt.slice(0, 10)) },
+    { id: "at", header: "Date", value: (a) => a.requestedAt, cell: (a) => formatDate(a.requestedAt) },
     {
       id: "item",
       header: "Item",

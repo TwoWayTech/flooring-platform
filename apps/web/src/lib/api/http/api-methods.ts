@@ -193,6 +193,8 @@ export const API_METHODS = {
   getWorkspace: (http, demo) => async () => workspaceFromAnswer(await companyAnswer(http, demo)),
   // The company's day in its own zone, learned from GET /company (ADR 0051, "The company's day on the web").
   today: (_http, demo) => () => companyDayOf(demo).today(),
+  // The zone moments are shown in, the same one `today()` reads (ADR 0064).
+  timeZone: (_http, demo) => () => companyDayOf(demo).timeZone(),
   // Opening a company (sign-in, a switch) drops the last one's zone until its GET /company answers.
   openCompany: (_http, demo) => (companyId, viewer) => {
     companyDayOf(demo).forget();

@@ -25,3 +25,30 @@ test.describe("settings: company profile and audit log", () => {
     await expect(page.getByRole("cell", { name: /ein: 84-1234567/ })).toBeVisible();
   });
 });
+
+test.describe("audit log: times in the company's zone (ADR 0064, click-through #57)", () => {
+  // The browser is in Tokyo, so a time shown in the browser's zone or as UTC can't pass.
+  test.use({ timezoneId: "Asia/Tokyo" });
+
+  /** The hour Denver's clock shows now, as the audit log writes it ("7" for 07:56). */
+  const denverHour = () =>
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", hour: "numeric", hour12: true })
+      .format(new Date())
+      .split(" ")[0]!;
+
+  test("shows a new entry's time on Summit's Denver clock, in 12-hour time, with the zone named", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/settings/company");
+    await page.getByLabel("EIN").fill("84-7654321");
+    const hours = [denverHour()];
+    await page.getByRole("button", { name: "Save company profile" }).click();
+    await expect(page.getByText("Company profile saved")).toBeVisible();
+    hours.push(denverHour());
+
+    await page.goto("/settings/audit");
+    const row = page.getByRole("row").filter({ hasText: "ein: 84-7654321" }).first();
+    const when = row.getByRole("cell", { name: /, \d{1,2}:\d{2} (AM|PM) (MST|MDT)$/ });
+    await expect(when).toBeVisible();
+    const hour = /, (\d{1,2}):/.exec(await when.innerText())?.[1];
+    expect(hours).toContain(hour);
+  });
+});

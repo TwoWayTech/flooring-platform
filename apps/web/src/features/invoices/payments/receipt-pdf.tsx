@@ -1,5 +1,5 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
-import { format, parseISO } from "date-fns";
+import { formatWhen } from "@/lib/moments";
 import {
   formatNumber,
   PAYMENT_METHOD_LABELS,
@@ -55,7 +55,10 @@ export function buildReceiptModel(
     },
     customer: customer.name,
     invoiceNumber: invoice.number,
-    date: format(parseISO(payment.date), settings.localization.region.dateFormat),
+    date: formatWhen(payment.date, {
+      pattern: settings.localization.region.dateFormat,
+      zone: settings.localization.region.timeZone,
+    }),
     amount: money(payment.amount),
     method,
     reference: payment.reference || "None",

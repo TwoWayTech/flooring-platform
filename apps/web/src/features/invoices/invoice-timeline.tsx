@@ -63,7 +63,7 @@ export function timelineSteps(
   if (installs) {
     steps.push(
       { key: "scheduled", label: "Installation scheduled", date: job?.date ?? null, by: null },
-      { key: "installed", label: "Installed", date: job?.signedOffAt?.slice(0, 10) ?? null, by: job?.signedBy ?? null },
+      { key: "installed", label: "Installed", date: job?.signedOffAt ?? null, by: job?.signedBy ?? null },
     );
   }
   steps.push({

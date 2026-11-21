@@ -104,14 +104,14 @@ test.describe("meetings (api mode)", () => {
 
       // 4. The organiser accepts Priya's proposed time, and the meeting moves.
       await inGrid(page, title).first().click();
-      await expect(drawer.getByText(`Proposes ${day} at 16:00`)).toBeVisible();
+      await expect(drawer.getByText(`Proposes ${formatted(day)} at 4:00 PM`)).toBeVisible();
       await drawer.getByRole("button", { name: "Accept time" }).click();
       await expect(page.getByText("Meeting moved")).toBeVisible();
       await expect(drawer.getByText(/4:00 PM/)).toBeVisible();
 
       // 5. My meetings lists it with its date and time, and offers Request because there are colleagues to ask.
       await page.goto("/my/meetings");
-      await expect(page.getByRole("listitem").filter({ hasText: title })).toContainText(`${formatted(day)} at 16:00`);
+      await expect(page.getByRole("listitem").filter({ hasText: title })).toContainText(`${formatted(day)} at 4:00 PM`);
       await expect(page.getByRole("button", { name: "Request a meeting" })).toBeVisible();
 
       // 6. Settings → Meetings is not built on the API yet, so the server answers with the not-found
