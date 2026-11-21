@@ -22,6 +22,6 @@
 
 ## Consequences
 
-- Real companies are unaffected by decisions 1 and the local seeds: the seed refuses non-local databases, as before.
+- Real companies are unaffected by decision 1 and by the local seeds: the seed refuses non-local databases, as before.
 - Decisions 3, 4 and 6 tighten defaults; existing customised roles keep their permissions.
 - Decision 7 means a quote's status can go back from Accepted to Pending; converting needs the new acceptance.
