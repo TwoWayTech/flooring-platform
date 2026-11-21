@@ -7,6 +7,7 @@ import {
   needsApproval,
   nextPaymentNumber,
   proofFilesProblem,
+  TYPED_SIGNATURE_NOTE,
   validatePayment,
   type FileMeta,
   type Invoice,
@@ -250,7 +251,7 @@ export async function readFile(ctx: ActionContext, fileId: string): Promise<Blob
     return placeholderProof(
       [`${contract.number}, ${contract.title}`, `Signed ${contract.signedAt?.slice(0, 10) ?? ""}`],
       "Signed contract",
-      "Simulated signature for the demo. Not a legal signature.",
+      TYPED_SIGNATURE_NOTE,
     );
   }
   const payment = ctx.db.list("payments").find((p) => p.files.some((f) => f.id === fileId));

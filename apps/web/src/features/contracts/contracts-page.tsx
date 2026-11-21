@@ -62,7 +62,21 @@ export function ContractsPage() {
       ),
     },
     { id: "value", header: "Value", kind: "money", value: (c) => figures(c)?.value ?? "0", total: true },
-    { id: "held", header: "Retained", kind: "money", value: (c) => figures(c)?.held ?? "0", total: true },
+    // Retainage either way is kept apart, as on the dashboard: one is owed to us, the other we owe (spec rule 24).
+    {
+      id: "heldByCustomer",
+      header: "Customers hold",
+      kind: "money",
+      value: (c) => (c.direction === "customer" ? (figures(c)?.held ?? "0") : null),
+      total: true,
+    },
+    {
+      id: "heldByUs",
+      header: "We hold",
+      kind: "money",
+      value: (c) => (c.direction === "subcontractor" ? (figures(c)?.held ?? "0") : null),
+      total: true,
+    },
     { id: "end", header: "End date", value: (c) => c.endsAt, cell: (c) => formatDate(c.endsAt) },
   ];
 

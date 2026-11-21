@@ -18,6 +18,7 @@ import type {
   ChangeOrder,
   Contract,
   ContractBilling,
+  ContractSchedule,
   ContractLine,
   InsuranceCertificate,
   LienWaiver,
@@ -594,6 +595,10 @@ export interface ContractsData {
   locations: Location[];
   bills: Bill[];
   supplierPayments: SupplierPayment[];
+  /** Each line's billed, retained and remaining money and what each release paid out, from the server (rules 10a, 11a). */
+  schedule: ContractSchedule;
+  /** Supplier contacts, so a subcontract's signer starts as the supplier's primary contact. */
+  supplierContacts: SupplierContact[];
 }
 
 /** The records the Purchasing page reads together (ApiClient `purchasingData`). */
