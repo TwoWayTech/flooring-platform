@@ -62,7 +62,7 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
   let tile = "";
   const cookies = { salesA: "", salesB: "", accountant: "", owner: "", otherSales: "", dispatcher: "", manager: "" };
 
-  function call(method: "get" | "post", path: string, cookie: string) {
+  function call(method: "get" | "post" | "put", path: string, cookie: string) {
     return request(harness.app.getHttpServer())
       [method](path)
       .set("X-Forwarded-Host", "localhost:3000")
@@ -155,38 +155,49 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     return sessionCookie(confirmed.headers["set-cookie"]);
   }
 
-  /** An accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65) with the given deposit, converted to an invoice. */
-  async function invoiced(cookie: string, customerId: string, location = warehouse, product = tile, depositPct = "0") {
+  /** The body of a quote for `quantity` sq ft of tile at 4.50 with the given deposit. */
+  function quoteBody(customerId: string, location: string, product: string, depositPct: string, quantity = "100") {
+    return {
+      customerId,
+      locationId: location,
+      jobSite: { street: "12 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
+      rooms: [],
+      lines: [
+        {
+          id: "draft-1",
+          productId: product,
+          description: "Slate Tile",
+          category: "material",
+          unit: "sq_ft",
+          quantity,
+          unitPrice: "4.50",
+          unitCost: "0",
+          wastePct: "10",
+        },
+      ],
+      depositPct,
+      taxOverride: null,
+      notes: "",
+    };
+  }
+
+  /** A sent and accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65) with the given deposit. */
+  async function accepted(cookie: string, customerId: string, location = warehouse, product = tile, depositPct = "0") {
     const quote = await call("post", "/quotes", cookie)
-      .send({
-        customerId,
-        locationId: location,
-        jobSite: { street: "12 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
-        rooms: [],
-        lines: [
-          {
-            id: "draft-1",
-            productId: product,
-            description: "Slate Tile",
-            category: "material",
-            unit: "sq_ft",
-            quantity: "100",
-            unitPrice: "4.50",
-            unitCost: "0",
-            wastePct: "10",
-          },
-        ],
-        depositPct,
-        taxOverride: null,
-        notes: "",
-      })
+      .send(quoteBody(customerId, location, product, depositPct))
       .expect(201);
     await call("post", `/quotes/${quote.body.id}/status`, cookie)
       .send({ action: "send", expiresAt: "2099-01-01" })
       .expect(201);
     await call("post", `/quotes/${quote.body.id}/status`, cookie).send({ action: "accept" }).expect(201);
-    const invoice = await call("post", `/quotes/${quote.body.id}/invoice`, cookie).expect(201);
-    return { quote: quote.body as { id: string }, invoice: invoice.body as { id: string; number: string } };
+    return quote.body as { id: string; number: string };
+  }
+
+  /** An accepted quote for 100 sq ft of tile (450.00 + 39.65 tax = 489.65) with the given deposit, converted to an invoice. */
+  async function invoiced(cookie: string, customerId: string, location = warehouse, product = tile, depositPct = "0") {
+    const quote = await accepted(cookie, customerId, location, product, depositPct);
+    const invoice = await call("post", `/quotes/${quote.id}/invoice`, cookie).expect(201);
+    return { quote, invoice: invoice.body as { id: string; number: string } };
   }
 
   function payment(invoiceId: string, extra: Record<string, unknown> = {}) {
@@ -380,6 +391,76 @@ describe("sales part 2: invoices and payments (P11, needs the local PostgreSQL)"
     await call("post", `/quotes/${quote.body.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
     const converted = await call("post", `/quotes/${quote.body.id}/invoice`, cookies.salesA);
     expect(converted.status, JSON.stringify(converted.body)).toBe(201);
+  });
+
+  it("RQ1 repricing an accepted quote sends it back to Pending, audited; it converts only once accepted again (ADR 0061, 7)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Lea Park" }).expect(201);
+    const quote = await accepted(cookies.salesA, customer.body.id);
+    // 120 sq ft is six whole 20 sq ft cartons: 540.00 + 47.57 tax.
+    const more = await call("put", `/quotes/${quote.id}`, cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, "0", "120"),
+    );
+    expect(more.status, JSON.stringify(more.body)).toBe(200);
+    expect(more.body).toMatchObject({ status: "pending", total: "587.57" });
+    const refused = await call("post", `/quotes/${quote.id}/invoice`, cookies.salesA);
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain("Mark the quote accepted");
+    const handle = await harness.companyDb(company.id);
+    try {
+      const rows = await handle.db
+        .select({ action: auditLog.action, before: auditLog.before, after: auditLog.after })
+        .from(auditLog)
+        .where(eq(auditLog.targetId, quote.id));
+      expect(rows.filter((row) => row.action === "Quote repriced; back to pending")).toEqual([
+        {
+          action: "Quote repriced; back to pending",
+          before: { status: "accepted", total: "489.65" },
+          after: { status: "pending", total: "587.57" },
+        },
+      ]);
+    } finally {
+      await handle.close();
+    }
+    await call("post", `/quotes/${quote.id}/status`, cookies.salesA).send({ action: "accept" }).expect(201);
+    const invoice = await call("post", `/quotes/${quote.id}/invoice`, cookies.salesA);
+    expect(invoice.status, JSON.stringify(invoice.body)).toBe(201);
+    expect(invoice.body).toMatchObject({ total: "587.57", quoteId: quote.id });
+  });
+
+  it("RQ2 an accepted quote saved with no priced change stays Accepted with its total; a new deposit reprices it", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Ivo Marsh" }).expect(201);
+    const quote = await accepted(cookies.salesA, customer.body.id);
+    const notes = await call("put", `/quotes/${quote.id}`, cookies.salesA).send({
+      ...quoteBody(customer.body.id, warehouse, tile, "0.00", "100.000"),
+      notes: "Gate code 1234",
+      jobSite: { street: "14 Pine Rd", city: "Denver", state: "CO", zip: "80202" },
+    });
+    expect(notes.status, JSON.stringify(notes.body)).toBe(200);
+    expect(notes.body).toMatchObject({ status: "accepted", total: "489.65", notes: "Gate code 1234" });
+    const deposit = await call("put", `/quotes/${quote.id}`, cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, "50"),
+    );
+    expect(deposit.status, JSON.stringify(deposit.body)).toBe(200);
+    expect(deposit.body).toMatchObject({ status: "pending", total: "489.65" });
+  });
+
+  it("RQ3 two conversions of one quote at once make one invoice; the other answers 409 (click-through #9)", async () => {
+    const customer = await call("post", "/customers", cookies.salesA).send({ name: "Tam Ochoa" }).expect(201);
+    const quote = await accepted(cookies.salesA, customer.body.id);
+    const answers = await Promise.all([
+      call("post", `/quotes/${quote.id}/invoice`, cookies.salesA),
+      call("post", `/quotes/${quote.id}/invoice`, cookies.salesA),
+    ]);
+    expect(answers.map((answer) => answer.status).sort()).toEqual([201, 409]);
+    const made = (await call("get", "/invoices", cookies.salesA).expect(200)).body.filter(
+      (i: { quoteId: string | null }) => i.quoteId === quote.id,
+    );
+    expect(made).toHaveLength(1);
+    // A save of the converted quote is refused too.
+    const late = await call("put", `/quotes/${quote.id}`, cookies.salesA).send(
+      quoteBody(customer.body.id, warehouse, tile, "0", "120"),
+    );
+    expect(late.status).toBe(409);
   });
 
   it("checks proof, references and amounts, and makes a second person confirm", async () => {

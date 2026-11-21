@@ -14,8 +14,11 @@ import {
   quoteDraftProblem,
   quoteIsOpen,
   quoteSendProblems,
+  repricesAcceptedQuote,
+  REPRICED_QUOTE_ACTION,
   sameOptionalDecimal,
   savedQuoteLine,
+  savedQuoteStatus,
   taxContextFor,
   type Customer,
   type CustomerAddress,
@@ -322,15 +325,18 @@ export class SalesService {
         : asked && { ...asked, byName: actor.session.user.name, at: new Date().toISOString() };
       const day = await companyToday(this.control.db, tenant);
       const ctx = taxContextFor(localization, input.jobSite, customer, day, before?.lumpSum ?? false, taxOverride);
-      // An accepted quote keeps the total the customer accepted unless the save reprices it (rule 18).
+      // An accepted quote keeps the total the customer accepted unless the save reprices it; a
+      // repriced one goes back to Pending for the customer to accept the new total (rule 18; ADR 0061, 7).
       const next = {
         customerId: customer.id,
         jobSite: input.jobSite,
         taxOverride,
         lumpSum: before?.lumpSum ?? false,
+        depositPct: input.depositPct,
         lines,
       };
       const total = before && keepsAcceptedTotal(before, next) ? before.total : computeTotals(lines, ctx).total;
+      const repriced = repricesAcceptedQuote(before, next);
 
       const quoteId = before?.id ?? uuidv7();
       const values = {
@@ -347,7 +353,15 @@ export class SalesService {
       };
       let number = before?.number ?? "";
       if (before) {
-        await tx.update(quotes).set(values).where(eq(quotes.id, quoteId));
+        // Only from the status read above, so an accept, decline or conversion that commits
+        // meanwhile is never overwritten by this save, nor accepted at a total nobody agreed to.
+        const [saved] = await tx
+          .update(quotes)
+          .set({ ...values, status: savedQuoteStatus(before, next) })
+          .where(and(eq(quotes.id, quoteId), eq(quotes.status, before.status)))
+          .returning({ id: quotes.id });
+        if (!saved)
+          throw new ConflictException({ code: "quote_state", message: `Quote ${before.number} changed meanwhile.` });
       } else {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext('sales:quote-number'))`);
         const existing = await tx.select({ number: quotes.number }).from(quotes);
@@ -380,6 +394,22 @@ export class SalesService {
         },
         tx,
       );
+      if (before && repriced) {
+        await this.auditLog.record(
+          tenant,
+          actor.audit,
+          {
+            category: "data",
+            action: REPRICED_QUOTE_ACTION,
+            targetType: "quote",
+            targetId: quoteId,
+            targetLabel: number,
+            before: { status: before.status, total: before.total },
+            after: { status: "pending", total },
+          },
+          tx,
+        );
+      }
       if (taxChanged) {
         await this.auditLog.record(
           tenant,

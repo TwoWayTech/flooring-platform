@@ -6,8 +6,10 @@ import {
   depositAmount,
   dec,
   EXAMPLE_RULE_NOTE,
+  sameOptionalDecimal,
   seesMargin,
   stateName,
+  trimmedDecimal,
   type DocumentTotals,
   type TaxContext,
   type TaxOverride,
@@ -173,10 +175,13 @@ export function QuoteSummary({
                   <Input
                     aria-label="Deposit percent"
                     inputMode="decimal"
-                    defaultValue={depositPct}
+                    defaultValue={trimmedDecimal(depositPct)}
                     key={depositPct}
-                    onBlur={(e) => onDeposit(e.target.value.replace(/[^\d.]/g, "") || "0")}
-                    className="h-7 w-14 text-right tabular-nums"
+                    onBlur={(e) => {
+                      const typed = e.target.value.replace(/[^\d.]/g, "") || "0";
+                      if (!sameOptionalDecimal(typed, depositPct)) onDeposit(typed);
+                    }}
+                    className="h-7 w-20 text-right tabular-nums"
                   />
                   <span className="text-muted-foreground text-xs">%</span>
                 </span>

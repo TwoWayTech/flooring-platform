@@ -53,7 +53,7 @@ export function RollPicker({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ANY}>
-          {fits.length ? `Any roll that fits (${fits.length})` : `No roll has ${ft(need.toString())} ft free here`}
+          {fits.length ? `Any roll that fits (${fits.length})` : `No roll has ${ft(need.toString())} ft available here`}
         </SelectItem>
         {options.map((r) => (
           <SelectItem key={r.id} value={r.id}>

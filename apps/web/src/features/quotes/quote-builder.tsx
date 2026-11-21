@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -35,6 +35,7 @@ import {
   quoteSendProblems,
   quoteState,
   QUOTE_STATE_LABELS,
+  repricesAcceptedQuote,
   type QuoteAction,
   type QuoteField,
 } from "@workspace/shared";
@@ -165,6 +166,12 @@ export function QuoteBuilder({
   );
   const totals = computeTotals(draft.lines, ctx);
   const dirty = draft !== savedDraft;
+  // A save that reprices an accepted quote sends it back to Pending (ADR 0061, decision 7), so the
+  // screen warns before it and offers no conversion until the customer accepts the new total.
+  const repricing = dirty && repricesAcceptedQuote(savedDraft, draft);
+  // Set while a save, status change or conversion is in flight, so a second click is ignored even
+  // before the disabled buttons render (click-through finding #9).
+  const busy = useRef(false);
 
   /** Full validation before sending or converting; shows each problem next to its field. */
   function validate(): boolean {
@@ -187,26 +194,47 @@ export function QuoteBuilder({
     const saved = await api.saveQuote({ ...draft, total: totals.total });
     dispatch({ type: "saved", quote: saved });
     setSavedDraft(saved);
-    toast.success(`Quote ${saved.number} saved`);
+    toast.success(
+      saved.status === draft.status
+        ? `Quote ${saved.number} saved`
+        : `Quote ${saved.number} saved; back to ${QUOTE_STATE_LABELS[saved.status]}`,
+    );
     if (!draft.id && navigate) router.replace(`/sales/quotes/${saved.id}`);
     return saved;
   }
 
-  /** Runs a step on the saved quote, saving unsaved changes first; a failure becomes a toast. */
-  async function withSaved(step: (saved: Quote) => Promise<void>, failure: string) {
+  /**
+   * Runs one request at a time with the buttons disabled; a failure becomes a toast. A run that
+   * answers "leaving" has started navigating away, so the buttons stay disabled until the next
+   * page shows, and a second click can't convert the quote twice (click-through finding #9).
+   */
+  async function exclusive(run: () => Promise<"leaving" | void>, failure: string) {
+    if (busy.current) return;
+    busy.current = true;
     setPending(true);
+    let leaving = false;
     try {
-      const saved = dirty || !draft.id ? await save({ navigate: false }) : draft;
-      if (saved) await step(saved);
+      leaving = (await run()) === "leaving";
     } catch (error) {
       toast.error(message(error, failure));
     } finally {
-      setPending(false);
+      if (!leaving) {
+        busy.current = false;
+        setPending(false);
+      }
     }
   }
 
+  /** Runs a step on the saved quote, saving unsaved changes first. */
+  function withSaved(step: (saved: Quote) => Promise<"leaving" | void>, failure: string) {
+    void exclusive(async () => {
+      const saved = dirty || !draft.id ? await save({ navigate: false }) : draft;
+      return saved ? step(saved) : undefined;
+    }, failure);
+  }
+
   function changeStatus(action: QuoteAction, expiresAt?: string | null) {
-    void withSaved(async (saved) => {
+    withSaved(async (saved) => {
       const updated = await api.updateQuoteStatus(saved.id, { action, expiresAt });
       dispatch({ type: "saved", quote: updated });
       setSavedDraft(updated);
@@ -217,11 +245,12 @@ export function QuoteBuilder({
   }
 
   function convert() {
-    if (!validate()) return;
-    void withSaved(async (saved) => {
+    if (busy.current || !validate()) return;
+    withSaved(async (saved) => {
       const invoice = await api.convertQuoteToInvoice(saved.id);
       toast.success(`Invoice ${invoice.number} created`);
       router.push(`/sales/invoices/${invoice.id}`);
+      return "leaving";
     }, "The invoice was not created. Try again.");
   }
 
@@ -385,9 +414,19 @@ export function QuoteBuilder({
                   isDraft={draft.status === "draft"}
                   dirty={dirty}
                   pending={pending}
+                  repricing={repricing}
                   actions={draft.number && !can("sales.quote.edit") ? [] : quoteActions(draft, today)}
-                  canConvert={draft.status === "accepted" && can("sales.invoice.create") && featureOn("sales.invoices")}
-                  onSave={() => void save().catch((e: unknown) => toast.error(message(e, "Not saved. Try again.")))}
+                  canConvert={
+                    draft.status === "accepted" &&
+                    !repricing &&
+                    can("sales.invoice.create") &&
+                    featureOn("sales.invoices")
+                  }
+                  onSave={() =>
+                    void exclusive(async () => {
+                      await save();
+                    }, "Not saved. Try again.")
+                  }
                   onAction={(action) => {
                     if (action !== "send") return changeStatus(action);
                     if (validate()) setSending(true);

@@ -81,3 +81,15 @@ export function sameOptionalDecimal(a: string | null | undefined, b: string | nu
   if (isBlank(a) || isBlank(b)) return isBlank(a) && isBlank(b);
   return PLAIN_DECIMAL.test(a) && PLAIN_DECIMAL.test(b) && dec(a).eq(dec(b));
 }
+
+/**
+ * A stored decimal by value, without the column's trailing zeros ("8.000" is "8", "50.00" is "50",
+ * "12.50" is "12.5"). Inputs show it for editing, so a percent fits its box and reads as typed
+ * (click-through finding #7), and a check for a change compares through it. Anything but plain
+ * decimal text comes back as it is; blank is "". This is input text, not display: values on screen
+ * still go through formatNumber or `<Num>`.
+ */
+export function trimmedDecimal(value: string | null | undefined): string {
+  if (isBlank(value)) return "";
+  return PLAIN_DECIMAL.test(value) ? dec(value).toFixed() : value;
+}

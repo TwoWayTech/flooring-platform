@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dec, MONEY_TEXT, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT } from "../src";
+import { dec, MONEY_TEXT, PERCENT_TEXT, sameOptionalDecimal, SHARE_PERCENT_TEXT, trimmedDecimal } from "../src";
 
 /** Each text with the pattern's verdict, so a failure names the text. */
 function verdicts(pattern: RegExp, texts: readonly string[]): Record<string, boolean> {
@@ -120,5 +120,26 @@ describe("money text (Settings part 1)", () => {
     const bad = ["12.", ".5", "-1", "1e3", " 1", "1,000", "1234567890123", "1.234", "+1", "0x10", ""];
     expect(verdicts(MONEY_TEXT, good)).toEqual(all(good, true));
     expect(verdicts(MONEY_TEXT, bad)).toEqual(all(bad, false));
+  });
+});
+
+/** Inputs show stored decimals by value, without the column's trailing zeros (click-through #7). */
+describe("a stored decimal for editing", () => {
+  it("R10 trimmedDecimal drops trailing zeros and keeps the value", () => {
+    expect(trimmedDecimal("8.000")).toBe("8");
+    expect(trimmedDecimal("50.00")).toBe("50");
+    expect(trimmedDecimal("50.00000000")).toBe("50");
+    expect(trimmedDecimal("12.50")).toBe("12.5");
+    expect(trimmedDecimal("0.125")).toBe("0.125");
+    expect(trimmedDecimal("100")).toBe("100");
+    expect(trimmedDecimal("0")).toBe("0");
+  });
+
+  it("R11 trimmedDecimal leaves blank and non-decimal text alone", () => {
+    expect(trimmedDecimal("")).toBe("");
+    expect(trimmedDecimal(null)).toBe("");
+    expect(trimmedDecimal(undefined)).toBe("");
+    expect(trimmedDecimal("1e3")).toBe("1e3");
+    expect(trimmedDecimal("12.")).toBe("12.");
   });
 });

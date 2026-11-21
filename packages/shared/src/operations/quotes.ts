@@ -1,5 +1,6 @@
 import { addDays, daysBetween } from "../dates";
 import { computeTotals, productTaxCategory, storedCost, type DocLine, type TaxContext } from "../documents";
+import { trimmedDecimal } from "../decimal-text";
 import { dec } from "../money";
 import type { Address, Customer, Invoice, PaymentTerms, Product, Quote, Room } from "../types";
 import type { LocalizationSettings } from "../types/settings";
@@ -259,35 +260,67 @@ export function acceptedTotalIfDifferent(
   return dec(quote.total).equals(dec(invoice.total)) ? null : quote.total;
 }
 
-/** What prices a quote: its customer, where the job is, its tax override and its lines, by value. */
-function pricingOf(quote: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">): string {
+/** The fields of a quote that price it (owner's answer of 2026-11-20; owner decision 7 of 2026-11-21). */
+export type QuotePricing = Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "depositPct" | "lines">;
+
+/**
+ * What prices a quote, by value: its customer (a certificate exempts), where the job is (state and
+ * county pick the tax rule), its tax override, lump sum, deposit, and each line's product, category,
+ * unit, quantity (the waste is already in it) and price.
+ */
+function pricingOf(quote: QuotePricing): string {
   return JSON.stringify({
     customerId: quote.customerId,
     state: quote.jobSite.state,
     county: quote.jobSite.county ?? "",
-    overridePct: quote.taxOverride ? dec(quote.taxOverride.ratePct).toFixed() : null,
+    overridePct: quote.taxOverride ? trimmedDecimal(quote.taxOverride.ratePct) : null,
     lumpSum: quote.lumpSum,
+    depositPct: trimmedDecimal(quote.depositPct || "0"),
     lines: quote.lines.map((line) => [
       line.productId ?? "",
       line.category,
       line.unit,
-      dec(line.quantity).toFixed(),
-      dec(line.unitPrice).toFixed(),
+      trimmedDecimal(line.quantity),
+      trimmedDecimal(line.unitPrice),
     ]),
   });
 }
 
 /**
+ * Whether a save of an accepted quote changes something that prices it, which sends it back to
+ * Pending: the customer must accept the new total (owner decision 7 of 2026-11-21, ADR 0061;
+ * sales.md rule 18). Notes, line descriptions, rooms and the street, city and ZIP don't price it,
+ * and neither does a tax rule that changed since the acceptance, so editing notes keeps what was
+ * agreed. Only an accepted quote counts.
+ */
+export function repricesAcceptedQuote(before: Quote | undefined, next: QuotePricing): boolean {
+  return before?.status === "accepted" && pricingOf(before) !== pricingOf(next);
+}
+
+/**
  * Whether a save of this quote keeps its stored total instead of pricing it again (owner's answer
  * of 2026-11-20, ADR 0059; sales.md rule 18): an accepted quote keeps the total the customer
- * accepted as long as the save changes nothing that prices it (customer, job site state and county,
- * tax override, lump sum, and each line's product, category, unit, quantity and price), so editing
- * its notes after a tax change can't rewrite what was agreed. A priced change is a new offer and is
- * priced under the day's rule, as any save.
+ * accepted as long as the save changes nothing that prices it, so editing its notes after a tax
+ * change can't rewrite what was agreed. A priced change is a new offer: it is priced under the
+ * day's rule and the quote goes back to Pending (`repricesAcceptedQuote`).
  */
-export function keepsAcceptedTotal(
-  before: Quote | undefined,
-  next: Pick<Quote, "customerId" | "jobSite" | "taxOverride" | "lumpSum" | "lines">,
-): boolean {
-  return before?.status === "accepted" && pricingOf(before) === pricingOf(next);
+export function keepsAcceptedTotal(before: Quote | undefined, next: QuotePricing): boolean {
+  return before?.status === "accepted" && !repricesAcceptedQuote(before, next);
 }
+
+/**
+ * The status a saved quote takes (spec B1; owner decision 7 of 2026-11-21): a new quote is a
+ * Draft, a repriced accepted quote goes back to Pending, and any other save keeps its status.
+ * Otherwise status changes only through its own calls (send, accept, decline, convert).
+ */
+export function savedQuoteStatus(before: Quote | undefined, next: QuotePricing): Quote["status"] {
+  if (!before) return "draft";
+  return repricesAcceptedQuote(before, next) ? "pending" : before.status;
+}
+
+/** The quote builder's warning before a save that sends an accepted quote back to Pending. */
+export const REPRICE_ACCEPTED_WARNING =
+  "Changing this accepted quote sends it back to Pending; the customer must accept the new total.";
+
+/** The audit action written when a save sends an accepted quote back to Pending. */
+export const REPRICED_QUOTE_ACTION = "Quote repriced; back to pending";

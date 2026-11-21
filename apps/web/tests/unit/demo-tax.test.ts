@@ -273,6 +273,8 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
     await store.updateLocalization("tax", withRule(await taxOf(store), "CO", { ratePct: "8.5" }));
     const notes = await store.saveQuote({ ...accepted, notes: "Gate code 1234", total: "1.00" });
     expect(notes.total).toBe(accepted.total);
+    // No priced change: it stays Accepted (owner decision 7, 2026-11-21).
+    expect(notes.status).toBe("accepted");
     const [first, ...rest] = accepted.lines;
     // Whole cartons when the line is boxed: DemoStore refuses a part carton, as the API does (F-m).
     const more999 = first!.sqFtPerCarton ? wholeCartonArea("999", first!.sqFtPerCarton).toString() : "999";
@@ -283,6 +285,17 @@ describe("DemoStore saves Sales tax with the API's rules and versions (ADR 0059,
       total: "2.00",
     });
     expect(more.total).toBe("2.00");
+    // Repriced: back to Pending for the customer to accept the new total, and audited (ADR 0061, 7).
+    expect(more.status).toBe("pending");
+    const audit = (await store.list("audit")).find(
+      (entry) => entry.target === accepted.number && entry.action === "Quote repriced; back to pending",
+    );
+    expect(audit).toMatchObject({ before: `Accepted, total ${accepted.total}`, after: "Pending, total 2.00" });
+    // It converts only once accepted again; then it does, once.
+    await expect(store.convertQuoteToInvoice(AFTER_QUOTE)).rejects.toThrow("Mark the quote accepted");
+    await store.updateQuoteStatus(AFTER_QUOTE, { action: "accept" });
+    await store.convertQuoteToInvoice(AFTER_QUOTE);
+    await expect(store.convertQuoteToInvoice(AFTER_QUOTE)).rejects.toThrow();
   });
 
   it("TD9 saved data with tax-inclusive prices can go back to before tax; never the other way", async () => {

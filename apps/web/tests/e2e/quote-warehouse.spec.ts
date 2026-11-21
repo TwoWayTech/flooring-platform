@@ -27,17 +27,17 @@ test.describe("warehouse on new quotes (spec A2)", () => {
     await page.keyboard.type(product.sku);
     const option = page.getByRole("option").first();
     await expect(option).toContainText(product.sku);
-    await expect(option).toContainText("free");
+    await expect(option).toContainText("available");
     await option.click();
     await expect(page.getByText(/Available at /)).toBeVisible();
     const quantity = page.getByLabel(`${product.brand} ${product.name} quantity`);
     await quantity.fill("99000");
     await quantity.blur();
-    await expect(page.getByText(/free at /)).toBeVisible();
+    await expect(page.getByText(/available at /)).toBeVisible();
     await expect(page.getByRole("button", { name: "Create a transfer" })).toBeVisible();
     await page.getByRole("combobox", { name: `Warehouse for ${product.brand} ${product.name}` }).click();
     await page.getByRole("option", { name: /Ship from Colorado Springs/ }).click();
-    await expect(page.getByText(/free at Colorado Springs/)).toBeVisible();
+    await expect(page.getByText(/available at Colorado Springs/)).toBeVisible();
   });
 
   test("Create a transfer opens prefilled with the short line", async ({ page }) => {
