@@ -1,4 +1,4 @@
-import { format, parseISO } from "date-fns";
+import { formatWhen } from "@/lib/moments";
 import {
   acceptedTotalIfDifferent,
   cartonEquivalent,
@@ -119,7 +119,8 @@ function taxNote(
 /**
  * Builds the invoice model from the invoice, its ledger, customer, quote, payments and company
  * settings. Only confirmed payments are printed; paid and balance due come from the ledger
- * (spec Appendix A "Payments on the invoice").
+ * (spec Appendix A "Payments on the invoice"). `zone` is the company's zone, the one the screens
+ * show moments in (`useTimeZone`, from GET /company), never the settings copy.
  */
 export function buildInvoiceModel(
   invoice: Invoice,
@@ -128,9 +129,12 @@ export function buildInvoiceModel(
   quote: Quote | undefined,
   payments: readonly Payment[],
   settings: CompanySettings,
+  zone: string,
 ): InvoiceModel {
   const fmt: DocFormat = (v, kind) => formatDocumentNumber(v, kind, settings.numbers);
-  const date = (iso: string) => format(parseISO(iso), settings.localization.region.dateFormat);
+  const pattern = settings.localization.region.dateFormat;
+  // A moment is printed as the company's day; a calendar date as it is (ADR 0064).
+  const date = (iso: string) => formatWhen(iso, { pattern, zone });
   const { profile, branding } = settings;
   return {
     number: invoice.number,

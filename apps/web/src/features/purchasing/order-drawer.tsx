@@ -237,8 +237,7 @@ export function OrderDrawer({
             <ul className="flex flex-col gap-1">
               {own.map((r) => (
                 <li key={r.id}>
-                  {r.number}, {formatDate(r.receivedAt.slice(0, 10))}, {r.receivedBy}, into{" "}
-                  {locationName(locations, r.locationId)}
+                  {r.number}, {formatDate(r.receivedAt)}, {r.receivedBy}, into {locationName(locations, r.locationId)}
                   {toBill.includes(r) ? <span className="text-warning-ink"> (not billed yet)</span> : null}
                   <DamagedLines lines={damagedLines(po, [r])} className="text-warning-ink text-xs" />
                   {r.note ? <span className="text-muted-foreground block text-xs">Note: {r.note}</span> : null}

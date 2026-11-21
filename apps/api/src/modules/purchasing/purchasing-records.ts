@@ -9,11 +9,7 @@ import {
 } from "@workspace/db/company";
 import type { GoodsReceipt, PurchaseOrder, Supplier, SupplierContact } from "@workspace/shared";
 import { and, asc, desc, inArray, isNull } from "drizzle-orm";
-
-/** A timestamp as the screens read it, `yyyy-MM-ddTHH:mm` like the demo's records. */
-function stamp(value: Date): string {
-  return value.toISOString().slice(0, 16);
-}
+import { instantOf } from "../sales/invoice-records";
 
 /**
  * What a supplier's audit entry keeps: everything that changes who gets orders or money, so a
@@ -161,7 +157,7 @@ export async function loadReceipts(db: CompanyDb, poIds?: readonly string[]): Pr
     poId: row.poId,
     supplierId: row.supplierId,
     locationId: row.locationId,
-    receivedAt: stamp(row.receivedAt),
+    receivedAt: instantOf(row.receivedAt),
     receivedById: row.receivedById,
     receivedBy: "",
     note: row.note,

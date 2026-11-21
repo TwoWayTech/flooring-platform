@@ -21,7 +21,7 @@ import {
 } from "@workspace/shared";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
-import { loadNames, minuteOf } from "../sales/invoice-records";
+import { loadNames, instantOf } from "../sales/invoice-records";
 import { notFound } from "../sales/sales-common";
 import { workFactsOnly } from "./hr-records";
 
@@ -162,8 +162,8 @@ export async function loadPayPeriods(db: CompanyDb, control: ControlDb, ids?: re
     payDate: row.payDate,
     status: row.status,
     approvedBy: row.approvedById ? (names.get(row.approvedById) ?? "") : null,
-    approvedAt: row.approvedAt ? minuteOf(row.approvedAt) : null,
-    exportedAt: row.exportedAt ? minuteOf(row.exportedAt) : null,
+    approvedAt: row.approvedAt ? instantOf(row.approvedAt) : null,
+    exportedAt: row.exportedAt ? instantOf(row.exportedAt) : null,
     excluded: excluded
       .filter((x) => x.payPeriodId === row.id)
       .map((x) => ({ employeeId: x.employeeId, reason: x.reason })),

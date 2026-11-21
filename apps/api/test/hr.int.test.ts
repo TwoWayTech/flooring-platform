@@ -2078,6 +2078,17 @@ describe("HR part 1 API (needs the local PostgreSQL)", () => {
     const stored = (await sheetsOf(cookies.hr)).find((s) => s.id === entered.id)!;
     expect(stored.history.map((step) => step.action)).toEqual(["saved", "submitted"]);
     expect(stored.history.every((step) => (step as { byUserId?: string }).byUserId === users.hr)).toBe(true);
+    // New steps carry the zone mark; a step stored before ADR 0064 (UTC minutes, no mark) is answered
+    // with the mark added and is not rewritten in the database.
+    const steps = stored.history as unknown as { at: string }[];
+    expect(steps.every((step) => /Z$/.test(step.at))).toBe(true);
+    const [row] = await rows((db) => db.select().from(timesheets).where(eq(timesheets.id, entered.id)));
+    const legacy = row!.history.map((step, i) => (i === 0 ? { ...step, at: "2026-11-02T15:00" } : step));
+    await rows((db) => db.update(timesheets).set({ history: legacy }).where(eq(timesheets.id, entered.id)));
+    const reread = (await sheetsOf(cookies.hr)).find((s) => s.id === entered.id)!;
+    expect((reread.history as unknown as { at: string }[])[0]!.at).toBe("2026-11-02T15:00:00.000Z");
+    const [kept] = await rows((db) => db.select().from(timesheets).where(eq(timesheets.id, entered.id)));
+    expect(kept!.history[0]!.at).toBe("2026-11-02T15:00");
     const own = await call("post", "/timesheets/decisions", cookies.hr).send({ action: "approve", ids: [entered.id] });
     status(own, 400);
     expect(own.body.message).toContain("you entered or sent yourself");

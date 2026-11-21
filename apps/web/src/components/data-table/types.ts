@@ -24,6 +24,13 @@ export interface ColumnSpec<T> {
   /** Sums the column over the filtered rows in a totals row; for money columns where a sum means something. */
   total?: boolean;
   className?: string;
+  /**
+   * The zone a row's wall times with no mark belong to, for the CSV's offset (ADR 0064). Left out,
+   * they are the company's clock (DemoStore's stamps); a column of meeting times names the meeting's
+   * own `timeZone`, so a meeting in another zone exports with its own offset. No table lists meeting
+   * times today.
+   */
+  timeZone?: (row: T) => string;
 }
 
 /** Per-person table preferences, kept in this browser (design brief "Tables"). */

@@ -11,18 +11,32 @@ import {
   insuranceCoverages,
   lienWaivers,
 } from "@workspace/db/company";
-import type {
-  ChangeOrder,
-  Contract,
-  ContractBilling,
-  ContractLine,
-  InsuranceCertificate,
-  LienWaiver,
+import {
+  utcMinuteAsInstant,
+  type ChangeOrder,
+  type Contract,
+  type ContractBilling,
+  type ContractLine,
+  type InsuranceCertificate,
+  type LienWaiver,
+  type SignatureRecord,
 } from "@workspace/shared";
 import { and, asc, desc, inArray, isNull } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
-import { fileRows, filesByOwner, loadNames, minuteOf } from "../sales/invoice-records";
+import { fileRows, filesByOwner, loadNames, instantOf } from "../sales/invoice-records";
 import { dayIn, seesDocument } from "../sales/sales-common";
+
+/**
+ * A stored signature with its moments as instants (ADR 0064). One signed before then carries UTC
+ * minutes with no mark, which are read as UTC; the stored row is not rewritten.
+ */
+function signatureRead(signature: SignatureRecord): SignatureRecord {
+  return {
+    ...signature,
+    signedAt: utcMinuteAsInstant(signature.signedAt),
+    events: signature.events.map((event) => ({ ...event, at: utcMinuteAsInstant(event.at) })),
+  };
+}
 
 /**
  * Whether the person's data scope covers a contract (contracts.md "Who uses it", `byRep`): own by
@@ -85,9 +99,9 @@ export async function loadContracts(
     bondInLieu: row.bondInLieu,
     taxTreatment: row.taxTreatment,
     status: row.status,
-    sentAt: row.sentAt ? minuteOf(row.sentAt) : null,
-    signedAt: row.signedAt ? minuteOf(row.signedAt) : null,
-    signature: row.signature ?? null,
+    sentAt: row.sentAt ? instantOf(row.sentAt) : null,
+    signedAt: row.signedAt ? instantOf(row.signedAt) : null,
+    signature: row.signature ? signatureRead(row.signature) : null,
     substantialCompletionAt: row.substantialCompletionAt,
     finalAcceptanceAt: row.finalAcceptanceAt,
     terminatedAt: row.terminatedAt ? dayIn(row.terminatedAt, zone) : null,
@@ -179,8 +193,8 @@ export async function loadChangeOrders(
         category: line.category,
         amountDelta: line.amountDelta,
       })),
-    submittedAt: row.submittedAt ? minuteOf(row.submittedAt) : null,
-    decidedAt: row.decidedAt ? minuteOf(row.decidedAt) : null,
+    submittedAt: row.submittedAt ? instantOf(row.submittedAt) : null,
+    decidedAt: row.decidedAt ? instantOf(row.decidedAt) : null,
     decidedBy: row.decidedById ? (names.get(row.decidedById) ?? "") : null,
     decisionReason: row.decisionReason,
     files: [],
@@ -249,7 +263,7 @@ export async function loadBillings(
     released: row.released,
     invoiceId: row.invoiceId,
     billId: row.billId,
-    postedAt: minuteOf(row.postedAt),
+    postedAt: instantOf(row.postedAt),
     postedBy: names.get(row.postedById) ?? "",
   }));
 }

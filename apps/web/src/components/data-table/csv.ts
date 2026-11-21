@@ -1,3 +1,4 @@
+import { isMarkedMoment, momentIso } from "@workspace/shared";
 import type { ColumnSpec } from "./types";
 
 /** A cell a spreadsheet would run as a formula: it starts with =, +, -, @, a tab or a carriage return. */
@@ -17,11 +18,24 @@ export function csvCell(value: string | number | null): string {
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-/** CSV text of the given rows and columns. Values are the stored ones, so exports keep full precision. */
-export function toCsv<T>(rows: readonly T[], columns: readonly ColumnSpec<T>[]): string {
+/**
+ * CSV text of the given rows and columns. Values are the stored ones, so exports keep full precision.
+ * With `zone`, a moment is written as ISO 8601 with that zone's offset, "2026-11-21T07:56:00-07:00",
+ * so a spreadsheet keeps the exact instant and reads the company's clock (ADR 0064); calendar dates
+ * and every other value stay as they are. A wall time with no mark is the company's clock, unless its
+ * column names the zone it belongs to (`ColumnSpec.timeZone`, a meeting's own zone), whose offset it
+ * then keeps.
+ */
+export function toCsv<T>(rows: readonly T[], columns: readonly ColumnSpec<T>[], zone?: string): string {
   const exported = columns.filter((c) => !c.visualOnly);
   const header = exported.map((c) => csvCell(c.header)).join(",");
-  const lines = rows.map((row) => exported.map((c) => csvCell(c.value(row))).join(","));
+  const cell = (row: T, column: ColumnSpec<T>) => {
+    const value = column.value(row);
+    if (!zone || typeof value !== "string") return csvCell(value);
+    const own = column.timeZone && !isMarkedMoment(value) ? column.timeZone(row) : zone;
+    return csvCell(momentIso(value, own));
+  };
+  const lines = rows.map((row) => exported.map((c) => cell(row, c)).join(","));
   return [header, ...lines].join("\n");
 }
 

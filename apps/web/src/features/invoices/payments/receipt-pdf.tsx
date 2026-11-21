@@ -1,5 +1,5 @@
 import { Document, Page, Text, View } from "@react-pdf/renderer";
-import { format, parseISO } from "date-fns";
+import { formatWhen } from "@/lib/moments";
 import {
   formatDocumentNumber,
   PAYMENT_METHOD_LABELS,
@@ -26,13 +26,17 @@ export interface ReceiptModel {
   footer: string;
 }
 
-/** Builds the receipt for one payment from the invoice's ledger and the company settings. */
+/**
+ * Builds the receipt for one payment from the invoice's ledger and the company settings. `zone` is the
+ * company's zone, the one the screens show moments in (`useTimeZone`, from GET /company; ADR 0064).
+ */
 export function buildReceiptModel(
   payment: Payment,
   invoice: Invoice,
   ledger: InvoiceLedger,
   customer: Customer,
   settings: CompanySettings,
+  zone: string,
 ): ReceiptModel {
   // A receipt is a customer document: full cents whatever the display setting (click-through #55).
   const money = (v: string) => formatDocumentNumber(v, "money", settings.numbers);
@@ -57,7 +61,7 @@ export function buildReceiptModel(
     },
     customer: customer.name,
     invoiceNumber: invoice.number,
-    date: format(parseISO(payment.date), settings.localization.region.dateFormat),
+    date: formatWhen(payment.date, { pattern: settings.localization.region.dateFormat, zone }),
     amount: money(payment.amount),
     method,
     reference: payment.reference || "None",

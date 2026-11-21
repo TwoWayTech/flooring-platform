@@ -42,7 +42,7 @@ export function taxContextFor(
 ): TaxContext & { source: TaxSource } {
   const { tax, region } = localization;
   const resolved = resolveTaxRule(tax, region.statesOfOperation, site, on);
-  const { rule, source } = withOverride(resolved, site.state, override);
+  const { rule, source } = withOverride(resolved, site.state, override, region.timeZone);
   const exempt = customer.taxExempt && !!customer.certificate && customer.certificate.expiresAt >= on;
   return { rule, exempt, rounding: tax.rounding, lumpSum, source };
 }

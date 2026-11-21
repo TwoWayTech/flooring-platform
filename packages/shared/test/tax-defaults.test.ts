@@ -50,8 +50,16 @@ describe("default tax rates (spec A5)", () => {
   it("lets one document change the rate, naming who and why", () => {
     const resolved = resolveTaxRule(tax, operating, { state: "CO" }, on);
     const override = { ratePct: "0", reason: "Church, exempt by letter", byName: "Grace Liu", at: "2026-11-07T10:00" };
-    const { rule, source } = withOverride(resolved, "CO", override);
+    const { rule, source } = withOverride(resolved, "CO", override, "America/Denver");
     expect(rule?.ratePct).toBe("0");
     expect(source).toEqual({ kind: "override", label: "Changed by Grace Liu: Church, exempt by letter" });
+  });
+
+  it("dates a rate changed where no rule applies on the company's day, not the UTC day (ADR 0064)", () => {
+    const none = { rule: undefined, source: { kind: "none" as const, label: "No rule" } };
+    // 03:30 UTC on the 8th is still the evening of the 7th in Denver.
+    const override = { ratePct: "2.9", reason: "County rate", byName: "Grace Liu", at: "2026-11-08T03:30:00.000Z" };
+    expect(withOverride(none, "CO", override, "America/Denver").rule?.validFrom).toBe("2026-11-07");
+    expect(withOverride(none, "CO", override, "Asia/Tokyo").rule?.validFrom).toBe("2026-11-08");
   });
 });

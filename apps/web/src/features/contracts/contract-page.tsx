@@ -278,7 +278,7 @@ export function ContractPage({ id }: { id: string }) {
       {contract.signature ? (
         <p className="text-muted-foreground text-sm">
           Typed signature: {contract.signature.signerName}, {contract.signature.signerRole},{" "}
-          {formatDate(contract.signature.signedAt.slice(0, 10))}. Recorded by {contract.signature.recordedBy}; a signing
+          {formatDate(contract.signature.signedAt, true)}. Recorded by {contract.signature.recordedBy}; a signing
           provider is not connected yet.
         </p>
       ) : null}

@@ -2,11 +2,7 @@ import type { CompanyDb } from "@workspace/db";
 import { locations, products, rollCuts, rolls, stockMovements, transferLines, transfers } from "@workspace/db/company";
 import type { Location, Product, Roll, StockMovement, Transfer } from "@workspace/shared";
 import { and, asc, inArray, isNull } from "drizzle-orm";
-
-/** A timestamp as the screens read it, `yyyy-MM-ddTHH:mm` like the demo's records. */
-function stamp(value: Date): string {
-  return value.toISOString().slice(0, 16);
-}
+import { instantOf } from "../sales/invoice-records";
 
 /** Live products as the shared `Product`, by SKU. */
 export async function loadProducts(db: CompanyDb): Promise<Product[]> {
@@ -29,7 +25,7 @@ export async function loadProducts(db: CompanyDb): Promise<Product[]> {
     ...(row.widthFt === null ? {} : { widthFt: row.widthFt }),
     attributes: row.attributes,
     supplierId: row.supplierId ?? "",
-    createdAt: stamp(row.createdAt),
+    createdAt: instantOf(row.createdAt),
   }));
 }
 
@@ -65,12 +61,12 @@ export async function loadRolls(db: CompanyDb, ids?: readonly string[]): Promise
     transferId: row.transferId,
     isRemnant: row.isRemnant,
     parentRollId: row.parentRollId,
-    receivedAt: stamp(row.receivedAt),
+    receivedAt: instantOf(row.receivedAt),
     cuts: cuts
       .filter((cut) => cut.rollId === row.id)
       .map((cut) => ({
         id: cut.id,
-        at: stamp(cut.at),
+        at: instantOf(cut.at),
         lengthFt: cut.lengthFt,
         reference: cut.reference,
         byUserId: cut.byUserId ?? "",
@@ -86,7 +82,7 @@ export async function loadMovements(db: CompanyDb): Promise<StockMovement[]> {
   const rows = await db.select().from(stockMovements).orderBy(asc(stockMovements.at));
   return rows.map((row) => ({
     id: row.id,
-    at: stamp(row.at),
+    at: instantOf(row.at),
     productId: row.productId,
     locationId: row.locationId,
     quantity: row.quantity,
@@ -137,9 +133,9 @@ export async function loadTransfers(db: CompanyDb, ids?: readonly string[]): Pro
     lines: lines
       .filter((line) => line.transferId === row.id && line.deletedAt === null)
       .map((line) => ({ id: line.id, productId: line.productId, rollId: line.rollId, quantity: line.quantity })),
-    createdAt: stamp(row.createdAt),
+    createdAt: instantOf(row.createdAt),
     createdBy: row.createdBy ?? "",
-    receivedAt: row.receivedAt ? stamp(row.receivedAt) : null,
+    receivedAt: row.receivedAt ? instantOf(row.receivedAt) : null,
     receivedBy: row.receivedBy,
     note: row.note,
   }));

@@ -16,6 +16,7 @@ import {
   addDays,
   dec,
   seesPersonRecords,
+  utcMinuteAsInstant,
   type ChecklistItem,
   type ClockEntry,
   type CompanyId,
@@ -30,7 +31,7 @@ import {
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { RequestAccess } from "../../core/access/access.service";
 import type { Actor } from "../../core/access/request-actor";
-import { fileRows, filesByOwner, loadNames, minuteOf } from "../sales/invoice-records";
+import { fileRows, filesByOwner, loadNames, instantOf } from "../sales/invoice-records";
 
 /** A stored employee row. */
 export type EmployeeRow = typeof employees.$inferSelect;
@@ -217,7 +218,7 @@ export async function loadEmployees(
   const listOf = (employeeId: string, list: "onboarding" | "offboarding"): ChecklistItem[] =>
     items
       .filter((item) => item.employeeId === employeeId && item.list === list)
-      .map((item) => ({ id: item.id, label: item.label, doneAt: item.doneAt ? minuteOf(item.doneAt) : null }));
+      .map((item) => ({ id: item.id, label: item.label, doneAt: item.doneAt ? instantOf(item.doneAt) : null }));
   return rows.map((row) => ({
     id: row.id,
     companyId: companyId as CompanyId,
@@ -316,12 +317,13 @@ export async function loadTimesheets(
     // Hours are stored as numeric(14,3) per day and travel as decimal strings (CLAUDE.md rule 6; ADR 0046).
     days: Array.from({ length: 7 }, (_, i) => hours.get(`${row.id}|${addDays(row.weekStart, i)}`) ?? "0"),
     status: row.status,
-    submittedAt: row.submittedAt ? minuteOf(row.submittedAt) : null,
+    submittedAt: row.submittedAt ? instantOf(row.submittedAt) : null,
     decidedBy: row.decidedById ? (names.get(row.decidedById) ?? "") : null,
-    decidedAt: row.decidedAt ? minuteOf(row.decidedAt) : null,
+    decidedAt: row.decidedAt ? instantOf(row.decidedAt) : null,
     rejectionReason: row.rejectionReason,
     source: row.source,
-    history: row.history,
+    // Events written before ADR 0064 carry UTC minutes with no mark; they are read as UTC, not rewritten.
+    history: row.history.map((step) => ({ ...step, at: utcMinuteAsInstant(step.at) })),
   }));
 }
 
@@ -336,8 +338,8 @@ export async function loadClockEntries(db: CompanyDb): Promise<ClockEntry[]> {
     id: row.id,
     employeeId: row.employeeId,
     date: row.date,
-    inAt: minuteOf(row.inAt),
-    outAt: row.outAt ? minuteOf(row.outAt) : null,
+    inAt: instantOf(row.inAt),
+    outAt: row.outAt ? instantOf(row.outAt) : null,
   }));
 }
 
@@ -426,7 +428,7 @@ export async function loadPtoRequests(
     status: row.status,
     note: row.note,
     decidedBy: row.decidedById ? (names.get(row.decidedById) ?? "") : null,
-    decidedAt: row.decidedAt ? minuteOf(row.decidedAt) : null,
+    decidedAt: row.decidedAt ? instantOf(row.decidedAt) : null,
     decisionReason: row.decisionReason,
   }));
 }

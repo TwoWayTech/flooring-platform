@@ -196,11 +196,7 @@ export function CommissionsPage() {
       value: (a) => (a.acknowledgement ? "Signed" : "Not signed"),
       cell: (a) =>
         a.acknowledgement ? (
-          <StatusPill
-            tone="success"
-            icon={CircleCheck}
-            label={`Signed ${formatDate(a.acknowledgement.signedAt.slice(0, 10))}`}
-          />
+          <StatusPill tone="success" icon={CircleCheck} label={`Signed ${formatDate(a.acknowledgement.signedAt)}`} />
         ) : (
           <StatusPill tone="warning" icon={TriangleAlert} label="Not signed" />
         ),

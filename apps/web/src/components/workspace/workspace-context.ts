@@ -19,6 +19,8 @@ export interface Workspace {
    */
   access: Access;
   viewAsRole: Role | null;
+  /** The zone moments are shown in, from GET /company (ADR 0064); null when Intl does not know it. */
+  timeZone: string | null;
   setViewAs: (roleId: string | null) => void;
 }
 

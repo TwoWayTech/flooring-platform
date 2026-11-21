@@ -2,6 +2,7 @@
 import { browserDay, clockInOrBrowser, dayInOrBrowser } from "../company-day";
 import {
   branchManageDenial,
+  isKnownTimeZone,
   PAYMENT_CONTROLS_OWNER_ONLY,
   hrFrequencyProblem,
   hrScheduleProblem,
@@ -873,7 +874,10 @@ export class DemoStore implements ApiClient {
     const access = viewerAccess(company, roles, user, null);
     const { name, city, state, modules, ceiling, branches } = company;
     const shown = seesCeiling((key) => access.permissions.has(key)) ? ceiling : [];
-    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access };
+    // The open company's zone, which every screen shows moments in (ADR 0064).
+    const zone = this.open().settings.localization.region.timeZone;
+    const timeZone = isKnownTimeZone(zone) ? zone : null;
+    return { company: { name, city, state, modules, ceiling: shown, branches }, user, roles, access, timeZone };
   }
 
   async getSettings() {

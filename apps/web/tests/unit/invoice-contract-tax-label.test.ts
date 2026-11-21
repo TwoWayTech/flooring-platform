@@ -11,7 +11,7 @@ describe("a contract billing's tax line (click-through #32, contracts.md rule 13
   const label = (patch: Partial<Invoice>) => {
     const invoice = { ...base, ...patch };
     const ledger = invoiceLedger(invoice, { payments: [], adjustments: [] }, invoice.issuedAt);
-    return buildInvoiceModel(invoice, ledger, customer, undefined, [], summit.settings).taxLabel;
+    return buildInvoiceModel(invoice, ledger, customer, undefined, [], summit.settings, "America/Denver").taxLabel;
   };
 
   it("says no tax was charged on a contract billing that carried none", () => {

@@ -39,6 +39,7 @@ export function buildWorkspace(read: WorkspaceRead, { session, viewAs, setViewAs
     roles: facts.roles,
     access: viewAsRole ? viewerAccess(base, facts.roles, facts.user, viewAsRole.id) : facts.access,
     viewAsRole,
+    timeZone: facts.timeZone,
     setViewAs,
   };
 }

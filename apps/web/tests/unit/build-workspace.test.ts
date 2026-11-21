@@ -46,7 +46,13 @@ function companyFacts(changes: Partial<CompanyFacts> = {}): CompanyFacts {
 
 /** What the shell reads for `userId`: the facts (with this access), DemoStore's company and the settings. */
 function read(userId: string, access: Access, company: Partial<CompanyFacts> = {}, factRoles = roles) {
-  const facts: WorkspaceFacts = { company: companyFacts(company), user: user(userId), roles: factRoles, access };
+  const facts: WorkspaceFacts = {
+    company: companyFacts(company),
+    user: user(userId),
+    roles: factRoles,
+    access,
+    timeZone: "America/Denver",
+  };
   return { facts, base, settings };
 }
 

@@ -80,7 +80,7 @@ export class AuditLogService {
       redactPayAudit(
         {
           id: row.id,
-          at: row.at.toISOString().slice(0, 16),
+          at: row.at.toISOString(),
           actorName: names.find((name) => name.id === row.actorUserId)?.name ?? "Platform admin",
           actorRole: row.actorRole || "Super-admin",
           category: row.category,

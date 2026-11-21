@@ -1,3 +1,4 @@
+import { momentInZone } from "../calendar/moments";
 import type { Address } from "../types/company";
 import { stateName, type StateCode } from "./states";
 import type { TaxCategory, TaxRule } from "./tax";
@@ -147,12 +148,14 @@ export function taxInForce<T extends TaxDefaults>(tax: T, day: string): T {
 
 /**
  * Applies a per-document change of rate (spec A5). The resolved rule keeps its taxability; with
- * no rule at all, materials are taxed at the new rate.
+ * no rule at all, materials are taxed at the new rate, from the company's day the change was made:
+ * `override.at` is a moment, read on the company's clock in `zone` (ADR 0064), not as a UTC day.
  */
 export function withOverride(
   resolved: { rule: TaxRule | undefined; source: TaxSource },
   state: string,
   override: TaxOverride | null | undefined,
+  zone: string,
 ): { rule: TaxRule | undefined; source: TaxSource } {
   if (!override) return resolved;
   const base: TaxRule = resolved.rule ?? {
@@ -161,7 +164,7 @@ export function withOverride(
     ratePct: "0",
     taxable: { material: true, labor: false, freight: false, service: false },
     lumpSumLaborTaxable: false,
-    validFrom: override.at.slice(0, 10),
+    validFrom: momentInZone(override.at, zone)?.wall.slice(0, 10) ?? override.at.slice(0, 10),
     version: 1,
     rationale: "Rate changed on this document.",
   };
