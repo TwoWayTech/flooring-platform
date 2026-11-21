@@ -16,7 +16,7 @@ Close click-through findings #44 (major), #43 and #45 on branch `fix/meetings-dr
 - `pnpm --filter @workspace/shared test`: 86 files, 1254 tests pass.
 - `pnpm --filter web exec vitest run tests/unit`: 81 files, 580 tests pass.
 - `pnpm --filter api test`: 18 files, 129 tests pass.
-- `pnpm --filter api test:api -- meetings`: see the PR body.
+- API integration with `--maxWorkers=1`: `meetings-moves.int.test.ts` 32 pass, `meetings.int.test.ts` 32 pass; packages/db `seed.int.test.ts` 14 pass. (The first run was cut short when the shared Postgres restarted, and was run again.)
 - Playwright not run locally (shared laptop); CI's `e2e` runs the new and changed specs in apps/web/tests/e2e/meetings.spec.ts.
 
 ## Open questions
