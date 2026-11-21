@@ -174,11 +174,11 @@ else remove the bill
 
 ### 10. Vendors come from the supplier directory
 
-The form and the recurring form offer suppliers where `type !== "goods"` and `status === "active"` (`expense-form-dialog.tsx`, `recurring-expenses.tsx`). This filter is on the screen only.
+The form and the recurring form offer suppliers where `type !== "goods"` and `status === "active"` (`expense-form-dialog.tsx`, `recurring-expenses.tsx`). This filter is on the screen only. Vendor and Location are search pickers (`SearchPick`, 2026-11-21, click-through #38): typing on the closed picker opens it with those letters, the list keeps the names that contain them (names that start with them first, then a word that does), and Enter picks the first.
 
 ### 11. Expense numbers
 
-`nextExpenseNumber` in `expense-actions.ts` calls `nextNumber("EXP-", existing, 1)` in `packages/shared/src/operations/quotes.ts`. The result is the prefix plus highest plus one, with no zero padding. Seeded numbers are padded to four digits, so the first new number after `EXP-0209` is `EXP-210`.
+`nextExpenseNumber` in `expense-actions.ts` calls `nextNumber("EXP-", existing, 1)` in `packages/shared/src/operations/quotes.ts`. The result is the prefix plus highest plus one, padded with zeros to the widest number already in the series and never cut: the first new number after `EXP-0209` is `EXP-0210`, and `EXP-9999` is followed by `EXP-10000` (2026-11-21, click-through #37; before, the padding was lost and `EXP-210` followed). Every series built with `nextNumber` keeps its padding the same way.
 
 ### 12. Receipt files
 

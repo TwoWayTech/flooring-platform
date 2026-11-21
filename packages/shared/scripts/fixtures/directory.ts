@@ -13,6 +13,7 @@ const VENDORS: readonly { name: string; type: SupplierType; domain: string }[] =
   { name: "BrightSign Marketing", type: "services", domain: "brightsign" },
   { name: "FastLane Fleet Fuel", type: "services", domain: "fastlanefleet" },
   { name: "State Revenue Office", type: "government", domain: "staterevenue" },
+  { name: "Tidewell Facility Services", type: "services", domain: "tidewellfs" },
 ];
 
 const EXTRA_ROLES: readonly ContactRole[] = ["account_manager", "accounts_receivable", "sales_rep"];

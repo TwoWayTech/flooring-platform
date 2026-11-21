@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import {
   CATEGORY_LABELS,
   EXPENSE_CATEGORIES,
+  hubLocationProblem,
   PAYMENT_METHODS,
   REPORT_CUSTOMER_SEARCH_MAX,
   REPORT_QUERY_MESSAGES as M,
@@ -10,6 +11,7 @@ import {
   reportPeriodProblem,
   type BusinessFilters,
   type ExpenseCategory,
+  type HubReportKind,
   type Location,
   type PaymentsReportQuery,
   type PnlQuery,
@@ -84,7 +86,8 @@ const HUB = {
   locationId: z.uuid({ error: M.warehouse }).optional(),
 };
 
-const PNL = z.strictObject(HUB, UNKNOWN);
+/** Profit and loss takes any location, so a malformed one reads as a location, not a warehouse. */
+const PNL = z.strictObject({ ...HUB, locationId: z.uuid({ error: M.location }).optional() }, UNKNOWN);
 
 const SALES = z.strictObject(
   {
@@ -175,7 +178,18 @@ export function checkLocations(ids: readonly string[], live: readonly Pick<Locat
 
 /** A hub report's location must be a live warehouse, where invoices ship from (rule 24; S10). */
 export function checkWarehouse(id: string | null, live: readonly Pick<Location, "id" | "kind">[]): void {
-  if (id !== null && !live.some((location) => location.id === id && location.kind === "warehouse")) {
-    throw refuse(M.warehouse);
-  }
+  checkHubLocation("sales", id, live);
+}
+
+/**
+ * A hub report's location must be one its filter offers (rule 24; S10): any live location for
+ * Profit and loss, which reads it as where the sale was made, a live warehouse for the other two.
+ */
+export function checkHubLocation(
+  report: HubReportKind,
+  id: string | null,
+  live: readonly Pick<Location, "id" | "kind">[],
+): void {
+  const problem = hubLocationProblem(report, id, live);
+  if (problem) throw refuse(problem);
 }

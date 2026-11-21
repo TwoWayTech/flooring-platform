@@ -301,7 +301,12 @@ describe("reports in the demo follow the API's rules (ADR 0055 S16)", () => {
     expect(await refusal(store.businessReport(quarter(store, { locationIds: ["sm-loc-nowhere"] })))).toBe(
       REPORT_QUERY_MESSAGES.locations,
     );
-    expect(await refusal(store.pnlReport({ range: "12m", locationId: SHOWROOM }))).toBe(
+    // Profit and loss takes any live location, showrooms too; the other hub reports only warehouses.
+    expect(await refusal(store.pnlReport({ range: "12m", locationId: SHOWROOM }))).toBe("");
+    expect(await refusal(store.pnlReport({ range: "12m", locationId: "sm-loc-nowhere" }))).toBe(
+      REPORT_QUERY_MESSAGES.location,
+    );
+    expect(await refusal(store.salesByCategoryReport({ range: "12m", locationId: SHOWROOM, category: null }))).toBe(
       REPORT_QUERY_MESSAGES.warehouse,
     );
     expect(

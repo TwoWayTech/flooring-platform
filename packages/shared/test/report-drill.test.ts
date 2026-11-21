@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { capDrillRecords, DRILL_LIMIT, type BusinessReport, type DrillRecord } from "../src";
+import {
+  addDays,
+  businessReport,
+  capDrillRecords,
+  DRILL_LIMIT,
+  drillTotal,
+  type BusinessReport,
+  type BusinessRow,
+  type BusinessSection,
+  type DrillRecord,
+} from "../src";
+import { businessDataOf, loadFixtures, NO_FILTERS, rowsOf, sectionOf } from "./report-fixtures";
 
 const record = (i: number, label = `INV-${String(i).padStart(4, "0")}`): DrillRecord => ({
   // Spread over about eight months, out of order, with some days shared.
@@ -75,5 +86,56 @@ describe("drill lists are capped on the server (ADR 0055 S8, S-DRL-1)", () => {
     expect(capped.sections[0]!.total).toEqual(before.sections[0]!.total);
     expect(capped.period).toEqual(before.period);
     expect(capped.previous).toEqual(before.previous);
+  });
+});
+
+describe("the total under a drill list (click-through #40)", () => {
+  const columns: BusinessSection["columns"] = [
+    { id: "now", header: "This period", kind: "money" },
+    { id: "before", header: "Previous period", kind: "money" },
+  ];
+  const row = (now: string, amounts: string[]): BusinessRow => ({
+    id: "revenue",
+    label: "Revenue",
+    values: { now, before: "9.99", change: "" },
+    records: amounts.map((amount, i) => ({ ...record(i), amount })),
+  });
+
+  it("adds the records exactly and says Total when they make the figure clicked", () => {
+    expect(drillTotal({ columns }, row("1000.30", ["0.10", "0.20", "1000.00"]))).toEqual({
+      total: "1000.3",
+      figure: "1000.30",
+      matches: true,
+    });
+  });
+
+  it("says the records differ when the figure is worked out from more than them", () => {
+    expect(drillTotal({ columns }, row("500.00", ["120.00", "80.00"]))).toMatchObject({ total: "200", matches: false });
+  });
+
+  it("never claims a cut list is the whole figure", () => {
+    const cut = capDrillRecords(report(250)).sections[0]!.rows[0]!;
+    expect(drillTotal({ columns }, { ...cut, values: { now: "1.00" } })?.matches).toBe(false);
+  });
+
+  it("has no line for a row without records or a percent row", () => {
+    expect(drillTotal({ columns }, row("0.00", []))).toBeNull();
+    expect(drillTotal({ columns }, { ...row("40.0", ["1.00"]), kind: "percent" })).toBeNull();
+  });
+
+  it("matches the figure on every revenue, expense and cash row of the seeded report", () => {
+    const f = loadFixtures("summit");
+    const show = { margin: true, payroll: true, people: true, stock: true };
+    const filters = { ...NO_FILTERS, from: addDays(f.anchorDate, -29), to: f.anchorDate };
+    const business = businessReport(businessDataOf(f), filters, show);
+    const checked = ["locations", "revenue_rep", "expense_category", "expense_vendor", "expense_location", "cash"];
+    const rows = rowsOf(business).filter(({ section, row }) => checked.includes(section) && row.records.length);
+    expect(rows.length).toBeGreaterThan(10);
+    for (const { section, row } of rows) {
+      expect(drillTotal(sectionOf(business, section), row)?.matches, `${section} ${row.label}`).toBe(true);
+    }
+    const summary = sectionOf(business, "summary");
+    const revenue = summary.rows.find((r) => r.id === "revenue")!;
+    expect(drillTotal(summary, revenue)).toMatchObject({ figure: revenue.values.now, matches: true });
   });
 });

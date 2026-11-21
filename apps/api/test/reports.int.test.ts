@@ -26,6 +26,7 @@ import {
   dec,
   DEFAULT_SHARED_COSTS,
   FEATURES,
+  hubLocationsOf,
   hubWindow,
   last12Months,
   lineAmount,
@@ -875,6 +876,9 @@ describe("reports (needs the local PostgreSQL)", () => {
     const hub: [string, string][] = [
       ["/reports/pnl?range=2y", M.range],
       [`/reports/sales-by-category?locationId=${places["Southgate Showroom"]}`, M.warehouse],
+      [`/reports/payments?locationId=${places["Southgate Showroom"]}`, M.warehouse],
+      [`/reports/pnl?locationId=${uuidv7()}`, M.location],
+      ["/reports/pnl?locationId=abc", M.location],
       ["/reports/sales-by-category?category=service", M.category],
       ["/reports/payments?method=bitcoin", M.method],
       [`/reports/payments?customer=${"x".repeat(101)}`, M.customer],
@@ -884,6 +888,17 @@ describe("reports (needs the local PostgreSQL)", () => {
       await refused(path, cookies.owner!, 400, { code: "invalid_request", message });
     }
     status(await call("/reports/business?from=2025-01-01&to=2026-01-01", cookies.owner), 200);
+  });
+
+  it("offers Profit and loss every live location, showrooms too, and the other hub reports warehouses (R-PNL-LOC)", async () => {
+    const options = await ok<ReportOptions>("/reports/options", cookies.owner!);
+    const showroom = options.locations.find((l) => l.id === places["Southgate Showroom"])!;
+    expect(showroom.kind).toBe("showroom");
+    expect(hubLocationsOf("pnl", options.locations)).toEqual(options.locations);
+    expect(hubLocationsOf("sales", options.locations)).not.toContainEqual(showroom);
+    for (const location of options.locations) {
+      status(await call(`/reports/pnl?locationId=${location.id}`, cookies.owner), 200);
+    }
   });
 
   it("hides a switched-off report on the API (R-SWITCH; CLAUDE.md rule 13)", async () => {

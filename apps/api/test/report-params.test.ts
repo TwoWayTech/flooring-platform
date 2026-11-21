@@ -3,6 +3,7 @@ import { REPORT_QUERY_MESSAGES as M, REPORT_WHOLE_COMPANY } from "@workspace/sha
 import { describe, expect, it } from "vitest";
 import { requireWholeCompany } from "../src/modules/reports/report-access";
 import {
+  checkHubLocation,
   checkLocations,
   checkWarehouse,
   parseBusinessQuery,
@@ -141,7 +142,8 @@ describe("hub report queries (spec rule 24; ADR 0055 S10)", () => {
   it("refuses what the pickers never send", () => {
     expect(refusal(() => parsePnlQuery({ range: "2y" }))).toBe(M.range);
     expect(refusal(() => parsePnlQuery({ range: ["12m", "3m"] }))).toBe(M.range);
-    expect(refusal(() => parsePnlQuery({ locationId: "abc" }))).toBe(M.warehouse);
+    expect(refusal(() => parsePnlQuery({ locationId: "abc" }))).toBe(M.location);
+    expect(refusal(() => parseSalesQuery({ locationId: "abc" }))).toBe(M.warehouse);
     expect(refusal(() => parseSalesQuery({ category: "service" }))).toBe(M.category);
     expect(refusal(() => parseSalesQuery({ category: "nope" }))).toBe(M.category);
     expect(refusal(() => parsePaymentsQuery({ method: "bitcoin" }))).toBe(M.method);
@@ -173,6 +175,14 @@ describe("report location checks (ADR 0055 S10)", () => {
     expect(refusal(() => checkWarehouse(A, live))).toBeNull();
     expect(refusal(() => checkWarehouse(B, live))).toBe(M.warehouse);
     expect(refusal(() => checkWarehouse("0190f6a2-0000-7000-8000-00000000000f", live))).toBe(M.warehouse);
+  });
+
+  it("lets Profit and loss take any live location, a showroom too (where the sale was made)", () => {
+    expect(refusal(() => checkHubLocation("pnl", null, live))).toBeNull();
+    expect(refusal(() => checkHubLocation("pnl", A, live))).toBeNull();
+    expect(refusal(() => checkHubLocation("pnl", B, live))).toBeNull();
+    expect(refusal(() => checkHubLocation("pnl", "0190f6a2-0000-7000-8000-00000000000f", live))).toBe(M.location);
+    expect(refusal(() => checkHubLocation("payments", B, live))).toBe(M.warehouse);
   });
 });
 

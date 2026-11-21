@@ -16,6 +16,17 @@ test.describe("reports hub", () => {
     expect((await pdf).suggestedFilename()).toMatch(/^pnl-\d{4}-\d{2}-\d{2}\.pdf$/);
   });
 
+  test("the P&L filters by Location, showrooms included, as the Business report does", async ({ page }) => {
+    await signInAs(page, SUMMIT_OWNER, "/reports?report=pnl");
+    await expect(page.getByRole("combobox", { name: "Warehouse" })).toHaveCount(0);
+    await page.getByRole("combobox", { name: "Location" }).click();
+    await expect(page.getByRole("option", { name: "All locations" })).toBeVisible();
+    await page.getByRole("option", { name: "Southgate Showroom" }).click();
+    await expect(page.getByRole("combobox", { name: "Location" })).toHaveText("Southgate Showroom");
+    await expect(page.getByText(/Southgate Showroom\./)).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Net income" })).toBeVisible();
+  });
+
   test("the demo, which keeps no journal, never offers the Trial balance (ADR 0055 Trial balance)", async ({
     page,
   }) => {

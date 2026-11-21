@@ -32,7 +32,7 @@ import { loadNames } from "../sales/invoice-records";
 import { companyClock, seesCustomer, seesDocument } from "../sales/sales-common";
 import { loadBranches } from "../sales/sales-records";
 import { loadProfitData } from "./profit-records";
-import { checkLocations, checkWarehouse } from "./report-params";
+import { checkHubLocation, checkLocations, checkWarehouse } from "./report-params";
 import {
   hasContractInvoices,
   loadAdjustmentRows,
@@ -198,7 +198,7 @@ export class ReportsService {
     const w = hubWindow(query.range, clock.day);
     const { data, show } = await readSnapshot(await this.tenancy.db(tenant), async (tx) => {
       const locations = await loadLocations(tx);
-      checkWarehouse(query.locationId, locations);
+      checkHubLocation("pnl", query.locationId, locations);
       const show = await visibilityFor(tx, access);
       const window = { from: w.from, to: w.profitTo, payroll: show.payroll };
       return { show, data: await loadProfitData(tx, clock.zone, window, locations) };

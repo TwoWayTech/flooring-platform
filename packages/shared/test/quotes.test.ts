@@ -105,6 +105,33 @@ describe("quote rules", () => {
     expect(nextNumber("Q-", [], 2001)).toBe("Q-2001");
   });
 
+  describe("keeps a series' zero padding (click-through #37)", () => {
+    const series = ["EXP", "INV", "PO", "PAY", "CR", "GR", "SP", "IMP", "Q", "CTR", "TR", "J"];
+
+    it.each(series)("%s- follows 0209 with 0210, not 210", (code) => {
+      const prefix = `${code}-`;
+      expect(nextNumber(prefix, [`${prefix}0208`, `${prefix}0209`], 1)).toBe(`${prefix}0210`);
+    });
+
+    it.each(series)("%s- rolls 0999 over to 1000 and 9999 to 10000 without truncating", (code) => {
+      const prefix = `${code}-`;
+      expect(nextNumber(prefix, [`${prefix}0998`, `${prefix}0999`], 1)).toBe(`${prefix}1000`);
+      expect(nextNumber(prefix, [`${prefix}9999`], 1)).toBe(`${prefix}10000`);
+      expect(nextNumber(prefix, [`${prefix}10000`, `${prefix}0005`], 1)).toBe(`${prefix}10001`);
+    });
+
+    it("pads to the widest number when an unpadded one slipped in, and ignores other suffixes", () => {
+      expect(nextNumber("EXP-", ["EXP-0209", "EXP-210"], 1)).toBe("EXP-0211");
+      expect(nextNumber("INV-", ["INV-0041", "INV-0042-R", "INVX-9000"], 1)).toBe("INV-0042");
+    });
+
+    it("starts an empty series at the start number, padded to the minimum width", () => {
+      expect(nextNumber("EXP-", [], 1)).toBe("EXP-1");
+      expect(nextNumber("PAY-", [], 1, 4)).toBe("PAY-0001");
+      expect(nextNumber("PAY-", ["PAY-9999"], 1, 4)).toBe("PAY-10000");
+    });
+  });
+
   it("converts a quote into an invoice with the same total and the rule version it used", () => {
     const measured = remeasureLines(lines, rooms, [lvp]);
     const quote = {

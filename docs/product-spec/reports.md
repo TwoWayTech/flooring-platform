@@ -344,7 +344,7 @@ No filter is stored in the address. Only `?report=` is.
 
 From `business-report.tsx` and `business-report-pdf.tsx`.
 
-- **Drill-down.** In a table, a row with records has a link that opens a sheet of its records. In a chart, every bar opens the sheet, and a row with no records says "This figure is worked out from other lines." The sheet lists at most 200 records.
+- **Drill-down.** In a table, a row with records has a link that opens a sheet of its records. In a chart, every bar opens the sheet, and a row with no records says "This figure is worked out from other lines." The sheet lists at most 200 records, then a total line (`drillTotal` in `packages/shared/src/reports/drill.ts`; 2026-11-21, click-through #40): "Total" when the records add up to the figure clicked (the row's first money value), else "Total of the records listed" with the figure beside it, as for operating expenses (pay periods have no record), a product category (each whole invoice is listed) or a cut list.
 - **Chart or table.** A section with a `chartColumn` opens as a chart with a Chart / Table switch. Bars are drawn only for values above zero.
 - **CSV.** `toCsvText` writes each section as `Section, Line, <columns>` with its rows and total, then a blank line. Values are raw, not formatted. File: `business-report-<today>.csv`.
 - **PDF.** `BusinessReportPdf`, US Letter portrait, built with `formatNumber` and the company's number settings. File: `business-report-<today>.pdf`.
@@ -354,7 +354,7 @@ From `business-report.tsx` and `business-report-pdf.tsx`.
 
 `ReportsPage` builds them in the browser from `client.list`.
 
-**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. On Sales by category, Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`); on Profit and loss it is the Business report's Locations filter with that location ticked (below). The Payments report uses the warehouse of the payment's invoice. Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
+**Filters.** Dates: Last 12 months (default), Last 3 months, This month, This year. `monthsFor` picks the months. On Sales by category, Warehouse compares `invoice.locationId` (where it ships from, not `soldAt`); on Profit and loss it is called Location, lists every live location, showrooms too, and is the Business report's Locations filter with that location ticked (below; `HUB_LOCATION_FILTERS` in `packages/shared/src/reports/hub-locations.ts`, 2026-11-21). The Payments report uses the warehouse of the payment's invoice. Category appears only on Sales by category and leaves out Services. Method and Customer appear only on Payments received.
 
 ```
 from     = first day of the first month
@@ -367,7 +367,7 @@ payments = payments with date >= from and date <= today, in the warehouse
 
 ```
 period    = [month-01, monthEnd(month)]               // the whole month, also for this month
-filters   = no filter, or locationIds = [the picked warehouse]
+filters   = no filter, or locationIds = [the picked location]
 revenue   = Business report revenue (rule 5: line amounts, a return subtracts)
 cogs      = Business report cost of goods (rule 5: line costs)
 grossMargin = revenue - cogs
@@ -378,7 +378,7 @@ netIncome = Business report net profit = grossMargin - expenses
 Total     = the sum of the rows = the Business report over the first month's first day to the last month's end
 ```
 
-Without pay sight payroll expenses and pay periods are left out before anything is added up, as in the Business report (S3). The warehouse filter is the Business report's Locations filter with that one location ticked: revenue and cost follow `soldAt` (rule 4), not where the invoice ships from, and expenses are that location's direct, people, bad-debt and shared costs (rule 22). Profit and loss has no product category, expense category, salesperson or vendor filter; it refuses them as unknown. It reads stored invoices only, so an invoice with no cost (a browser's data) makes it fail rather than print a partial cost of goods (ADR 0037, 2026-11-17).
+Without pay sight payroll expenses and pay periods are left out before anything is added up, as in the Business report (S3). The Location filter is the Business report's Locations filter with that one location ticked: revenue and cost follow `soldAt` (rule 4), not where the invoice ships from, and expenses are that location's direct, people, bad-debt and shared costs (rule 22). Profit and loss has no product category, expense category, salesperson or vendor filter; it refuses them as unknown. It reads stored invoices only, so an invoice with no cost (a browser's data) makes it fail rather than print a partial cost of goods (ADR 0037, 2026-11-17).
 
 Until 2026-11-21 this report used invoice subtotals, expense amounts before tax and payroll expenses, with no HR pay or write-offs, and its warehouse filter left expenses alone; so its expenses and net income differed from the Business report's (click-through finding #39). The dashboard's 12-month panel (`monthlyPnl` in `analytics.ts`) still uses that older rule.
 

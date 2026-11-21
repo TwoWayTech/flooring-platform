@@ -16,7 +16,7 @@ const VENDOR_FOR: Partial<Record<ExpenseCategory, string>> = {
   fuel_vehicles: "FastLane Fleet Fuel",
   taxes_licenses: "State Revenue Office",
   sales_tax_payment: "State Revenue Office",
-  other: "Peakline Internet and Phone",
+  maintenance: "Tidewell Facility Services",
 };
 
 const receipt = (id: string, date: string, by: string): FileMeta => ({

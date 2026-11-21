@@ -138,11 +138,21 @@ export function remeasureLines(
   });
 }
 
-/** The next document number after the highest one already used with this prefix, e.g. INV-1228. */
-export function nextNumber(prefix: string, existing: readonly string[], start: number): string {
-  const used = existing.filter((n) => n.startsWith(prefix)).map((n) => Number(n.slice(prefix.length)));
-  const highest = used.filter((n) => Number.isFinite(n)).reduce((max, n) => Math.max(max, n), start - 1);
-  return `${prefix}${highest + 1}`;
+/**
+ * The next document number after the highest one already used with this prefix, e.g. INV-1228.
+ * It keeps the series' zero padding (EXP-0209 is followed by EXP-0210, not EXP-210): the digits
+ * are padded to the widest number already in the series, and grow past it without truncation
+ * (EXP-9999 is followed by EXP-10000). `minWidth` pads a series' first numbers (PAY-0001).
+ * Suffixes that are not plain digits are not part of the series. Click-through finding #37.
+ */
+export function nextNumber(prefix: string, existing: readonly string[], start: number, minWidth = 0): string {
+  const digits = existing
+    .filter((n) => n.startsWith(prefix))
+    .map((n) => n.slice(prefix.length))
+    .filter((suffix) => /^\d+$/.test(suffix));
+  const highest = digits.reduce((max, suffix) => Math.max(max, Number(suffix)), start - 1);
+  const width = digits.reduce((max, suffix) => Math.max(max, suffix.length), minWidth);
+  return `${prefix}${String(highest + 1).padStart(width, "0")}`;
 }
 
 /**

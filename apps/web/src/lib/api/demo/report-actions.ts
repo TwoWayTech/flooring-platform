@@ -4,6 +4,7 @@ import {
   capDrillRecords,
   EMPTY_REPORT_OPTIONS,
   featureOn,
+  hubLocationProblem,
   paymentsReport,
   pnlReport,
   REPORT_CATALOG,
@@ -18,6 +19,7 @@ import {
   type BusinessFilters,
   type BusinessReport,
   type Customer,
+  type HubReportKind,
   type Invoice,
   type PaymentsReportQuery,
   type PnlQuery,
@@ -91,11 +93,10 @@ function seesCustomer(db: CompanyDb, viewer: ReportViewer, customer: Pick<Custom
   });
 }
 
-/** A hub report's warehouse must be a live warehouse, where invoices ship from (rule 24; S10). */
-function assertWarehouse(db: CompanyDb, locationId: string | null): void {
-  if (locationId !== null && !db.list("locations").some((l) => l.id === locationId && l.kind === "warehouse")) {
-    throw new DemoRuleError(M.warehouse);
-  }
+/** A hub report's location must be one its filter offers, as on the API (rule 24; S10). */
+function assertHubLocation(db: CompanyDb, report: HubReportKind, locationId: string | null): void {
+  const problem = hubLocationProblem(report, locationId, db.list("locations"));
+  if (problem) throw new DemoRuleError(problem);
 }
 
 /**
@@ -166,13 +167,13 @@ export function demoBusinessReport(db: CompanyDb, viewer: ReportViewer, filters:
 }
 
 /**
- * Profit and loss by month (spec rule 24), by the API's rules: data scope `all` (S1), a live
- * warehouse, the viewer's visibility (S18), and the Business report's profit for each month
- * (ADR 0061 decision 2), so it reads what that profit reads.
+ * Profit and loss by month (spec rule 24), by the API's rules: data scope `all` (S1), any live
+ * location, showrooms too, the viewer's visibility (S18), and the Business report's profit for
+ * each month (ADR 0061 decision 2), so it reads what that profit reads.
  */
 export function demoPnlReport(db: CompanyDb, viewer: ReportViewer, query: PnlQuery): Report {
   assertOpens(viewer, "pnl");
-  assertWarehouse(db, query.locationId);
+  assertHubLocation(db, "pnl", query.locationId);
   const data = {
     today: viewer.today,
     invoices: db.list("invoices"),
@@ -190,7 +191,7 @@ export function demoPnlReport(db: CompanyDb, viewer: ReportViewer, query: PnlQue
 /** Sales by category (spec rule 24) over the invoices in the viewer's data scope, by the API's rules (S2, S6). */
 export function demoSalesByCategoryReport(db: CompanyDb, viewer: ReportViewer, query: SalesByCategoryQuery): Report {
   assertOpens(viewer, "sales");
-  assertWarehouse(db, query.locationId);
+  assertHubLocation(db, "sales", query.locationId);
   const invoices = db.list("invoices").filter((i) => seesInvoice(viewer, i));
   return salesByCategoryReport(
     query,
@@ -207,7 +208,7 @@ export function demoPaymentsReport(db: CompanyDb, viewer: ReportViewer, query: P
   assertOpens(viewer, "payments");
   // The query is read before the warehouse, as on the API (its parser, then its service).
   if (query.customer.trim().length > REPORT_CUSTOMER_SEARCH_MAX) throw new DemoRuleError(M.customer);
-  assertWarehouse(db, query.locationId);
+  assertHubLocation(db, "payments", query.locationId);
   const invoices = db.list("invoices").filter((i) => seesInvoice(viewer, i));
   const seen = new Set(invoices.map((i) => i.id));
   return paymentsReport(query, {
