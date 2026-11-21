@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@workspace/ui/components/button";
 import { StepUpDialog } from "@/components/step-up-dialog";
+import { useUnsavedChanges } from "@/lib/leave-guard";
 import { SaveBar } from "./save-bar";
 import { nextSaveStep, saveSection } from "./save-section";
 
@@ -53,6 +54,7 @@ interface SettingsFormProps<T> {
  * One settings section (spec A4): title and one sentence, the rows with changed ones marked,
  * Reset to default, and the sticky Save / Discard bar. Saving goes through the ApiClient, which
  * writes the change to the audit log; a refused save shows its message and keeps the draft.
+ * Leaving the page with unsaved changes asks first (`useUnsavedChanges`).
  */
 export function SettingsForm<T>({
   title,
@@ -72,6 +74,8 @@ export function SettingsForm<T>({
   const [saving, setSaving] = useState(false);
   const changes = changeCount(draft, saved);
   const changed = (key: keyof T) => differs(draft[key], saved[key]);
+  // Leaving with changes, or with the step-up code still to type, asks first (click-through #56).
+  useUnsavedChanges(changes > 0);
 
   async function save() {
     setSaving(true);

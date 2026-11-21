@@ -468,6 +468,12 @@ describe("users, roles and access requests (P10 part 2, needs the local PostgreS
     const entries = await call("get", "/audit", owner.cookie).expect(200);
     const actions = entries.body.map((entry: { action: string }) => entry.action);
     expect(actions).toEqual(expect.arrayContaining(["Changed roles", "Created role", "Invited user", "Reset MFA"]));
+    // The role ids an invitation names come with the roles' names, so the screen shows names (#58).
+    type Entry = { action: string; after: string | null; names?: Record<string, string> };
+    const roleIdsOf = (entry: Entry) => (JSON.parse(entry.after ?? "{}") as { roleIds?: string[] }).roleIds ?? [];
+    const invited = (entries.body as Entry[]).find((e) => e.action === "Invited user" && roleIdsOf(e).length > 0);
+    expect(invited).toBeDefined();
+    for (const id of roleIdsOf(invited!)) expect(invited!.names?.[id]).toEqual(expect.any(String));
     const handle = await harness.companyDb(company.id);
     try {
       const rows = await handle.db.select().from(auditLog).where(eq(auditLog.action, "Approved support access"));

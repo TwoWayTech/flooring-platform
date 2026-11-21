@@ -17,6 +17,7 @@ import { z } from "zod";
 import type { RequestAccess } from "../../core/access/access.service";
 import { Audited, RequireModule, RequirePermission } from "../../core/access/permission.decorators";
 import { CurrentAccess } from "../../core/access/permission.guard";
+import { MarginRevealingFields } from "../../core/access/sensitive-fields";
 import { actorOf, parse } from "../../core/access/request-actor";
 import { CurrentSession } from "../../core/auth/session.guard";
 import type { AuthSession } from "../../core/auth/session.service";
@@ -112,10 +113,12 @@ function safeFileName(name: string): string {
  * Sales, part 2 (docs/product-spec/sales.md "Conversion and invoices", "Payments", "Corrections";
  * ADR 0038): invoices, payments, credits, write-offs, refunds and the stock they hold. Every route
  * is in the `core` module and switched by the Invoices or Payments feature. Invoice cost and line
- * cost are stripped by name without `inventory.product.view_sensitive`.
+ * cost are stripped by name without `inventory.product.view_sensitive`, and without margin sight
+ * (`seesMargin`), since price less cost is the margin (click-through #68).
  */
 @Controller()
 @RequireModule("core")
+@MarginRevealingFields()
 export class InvoicesController {
   constructor(
     private readonly invoices: InvoicesService,

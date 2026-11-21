@@ -10,6 +10,7 @@ import { usePresenterGuide } from "@/features/presenter/use-presenter-guide";
 import { Notifications } from "./notifications";
 import { UserMenu } from "./user-menu";
 import { featureOn } from "@workspace/shared";
+import { featureInBuild } from "@/lib/demo-tools";
 
 interface TopBarProps {
   onOpenPalette: () => void;
@@ -53,7 +54,7 @@ export function TopBar({ onOpenPalette, onOpenMenu }: TopBarProps) {
         </button>
       ) : null}
       <div className={cn("flex items-center gap-1", !featureOn("shell.command-palette") && "ml-auto")}>
-        {featureOn("shell.presenter-guide") ? (
+        {featureInBuild("shell.presenter-guide") ? (
           <Button
             variant="ghost"
             size="icon"

@@ -30,7 +30,8 @@ function draftRole(companyId: Role["companyId"], from?: Role): Role {
 
 /**
  * Settings: Security roles (spec Tier 1, A3): the roles with their user counts beside the editor
- * for the selected role, and the effective access preview. Default roles carry a System badge,
+ * for the selected role (above it below 1400 px, so the permission grid has the width;
+ * click-through #53), and the effective access preview. Default roles carry a System badge,
  * cannot be deleted and can be reset; duplicates stay unsaved until Save role.
  */
 export function RolesPage() {
@@ -58,7 +59,7 @@ export function RolesPage() {
   }
 
   return (
-    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-start gap-6 min-[1400px]:grid-cols-[240px_minmax(0,1fr)]">
       <Panel
         title="Roles"
         actions={
@@ -71,7 +72,7 @@ export function RolesPage() {
         }
         bodyClassName="p-2"
       >
-        <ul className="flex flex-col gap-0.5">
+        <ul className="grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3 min-[1400px]:grid-cols-1">
           {list.map((role) => (
             <li key={role.id}>
               <button
@@ -107,7 +108,7 @@ export function RolesPage() {
         }}
         onDeleted={() => setSelectedId(null)}
       />
-      <Panel title="Effective access preview" className="xl:col-start-2">
+      <Panel title="Effective access preview" className="min-[1400px]:col-start-2">
         <p className="text-muted-foreground mb-4 max-w-prose text-sm">
           Pick a role or a person to see every page, action and sensitive field they get under your plan.
         </p>

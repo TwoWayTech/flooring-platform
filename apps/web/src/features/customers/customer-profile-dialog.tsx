@@ -4,7 +4,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { PAYMENT_TERM_LABELS, type Customer, type CustomerType, type PaymentTerms } from "@workspace/shared";
+import {
+  CUSTOMER_FIELD_MESSAGES,
+  PAYMENT_TERM_LABELS,
+  PAYMENT_TERMS,
+  type Customer,
+  type CustomerType,
+  type PaymentTerms,
+} from "@workspace/shared";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -29,7 +36,7 @@ const ProfileSchema = z
     email: z.union([z.literal(""), z.email("Enter a valid email address.")]),
     phone: z.string().trim(),
     type: z.enum(["homeowner", "dealer", "contractor"]),
-    terms: z.enum(["due_on_receipt", "net_15", "net_30", "net_45"]),
+    terms: z.enum(PAYMENT_TERMS, CUSTOMER_FIELD_MESSAGES.terms),
   })
   .refine((v) => v.email.trim() !== "" || v.phone.trim().length >= 7, {
     path: ["phone"],

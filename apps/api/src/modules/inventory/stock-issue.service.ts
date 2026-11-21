@@ -9,6 +9,7 @@ import {
   featureOn,
   mayIssue,
   moneyString,
+  stockIssueAction,
   validateCut,
   type Reservation,
 } from "@workspace/shared";
@@ -165,6 +166,7 @@ export class StockIssueService {
       let summary: string;
       let warehouseId = reservation.locationId;
       let remnantHolds = 0;
+      let cutRollNumber: string | null = null;
       if (reservation.rollId) {
         const [roll] = await loadRolls(tx, [reservation.rollId]);
         if (!roll) throw refuse("This roll no longer exists.");
@@ -230,6 +232,7 @@ export class StockIssueService {
           remnantHolds = moved.length;
         }
         warehouseId = roll.locationId;
+        cutRollNumber = roll.rollNumber;
         // What left the roll at its own cost: the cut, and a leftover under 12 ft that became a remnant stays stock.
         cost = dec(reservation.quantity).times(roll.widthFt).times(roll.costPerSqFt);
         summary = `cut ${reservation.quantity} ft from ${roll.rollNumber}${result.remnant ? `, remnant ${result.remnant.rollNumber}` : ""}`;
@@ -278,7 +281,7 @@ export class StockIssueService {
         actor.audit,
         {
           category: "data",
-          action: paidFor ? "Issued stock" : "Issued stock before payment",
+          action: stockIssueAction(paidFor, invoice.number, cutRollNumber),
           targetType: "reservation",
           targetId: reservationId,
           targetLabel: invoice.number,

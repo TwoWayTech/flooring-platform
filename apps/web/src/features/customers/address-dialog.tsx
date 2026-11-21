@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   ADDRESS_LABELS,
   plainAddress,
-  ZIP_PATTERN,
+  zipProblem,
   type Address,
   type Customer,
   type CustomerAddress,
@@ -33,7 +33,8 @@ function addressErrors(a: Address): Partial<Record<keyof Address, string>> {
   if (!a.street.trim()) errors.street = "Enter the street address.";
   if (!a.city.trim()) errors.city = "Enter the city.";
   if (!a.state) errors.state = "Choose the state.";
-  if (!ZIP_PATTERN.test(a.zip.trim())) errors.zip = "Enter a ZIP such as 80202 or 80202-1234.";
+  const zip = zipProblem(a.zip);
+  if (zip) errors.zip = zip;
   return errors;
 }
 

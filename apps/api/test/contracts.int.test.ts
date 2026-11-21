@@ -921,7 +921,7 @@ describe("contracts register (contracts part 1)", () => {
       "Sent contract for signature",
       "Recorded simulated signature",
       "Submitted change order",
-      "Approved change order",
+      "Approved change order CO-1",
       "Recorded lien waiver",
       "Saved insurance certificate",
       "Added contract files",

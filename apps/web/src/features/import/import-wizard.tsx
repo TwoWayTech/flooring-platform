@@ -174,7 +174,9 @@ export function ImportWizard({
       {step === "check" && def && draft.preview ? (
         <CheckStep def={def} preview={draft.preview} mapping={draft.mapping} />
       ) : null}
-      {step === "done" && def && draft.result ? <DoneStep def={def} result={draft.result} /> : null}
+      {step === "done" && def && draft.result && draft.file ? (
+        <DoneStep def={def} table={draft.file.table} result={draft.result} />
+      ) : null}
       <div className="border-hairline flex flex-wrap justify-between gap-2 border-t pt-4">
         {step === "kind" || step === "done" ? (
           <span />

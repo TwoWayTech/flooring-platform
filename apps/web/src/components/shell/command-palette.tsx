@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
 import {
@@ -33,6 +33,8 @@ import { useSessionActions } from "@/lib/session/use-session-actions";
 import { visibleItems } from "@/products";
 import { useWorkspace } from "@/components/workspace/workspace-context";
 import { usePresenterGuide } from "@/features/presenter/use-presenter-guide";
+import { featureInBuild } from "@/lib/demo-tools";
+import { useGuardedRouter } from "@/lib/leave-guard";
 import { resetDemo } from "./user-menu";
 import { useCanViewAs } from "./view-as";
 
@@ -66,7 +68,8 @@ function useHotkey(onOpen: () => void) {
  * guide, View as role, Toggle theme and Sign out.
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const router = useRouter();
+  // Going somewhere from the palette asks first while a page has unsaved changes (click-through #56).
+  const router = useGuardedRouter();
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
   const { product, access, roles, setViewAs, viewAsRole, company, session } = useWorkspace();
@@ -125,7 +128,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { label: "Sign out", icon: LogOut, run: () => void signOut() },
   ];
   const actions = allActions.filter(
-    (a) => (!a.permission || access.permissions.has(a.permission)) && (!a.feature || featureOn(a.feature)),
+    (a) => (!a.permission || access.permissions.has(a.permission)) && (!a.feature || featureInBuild(a.feature)),
   );
   const canViewAs = useCanViewAs();
 

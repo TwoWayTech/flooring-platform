@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import type { AuditCategory, AuditEntry } from "@workspace/shared";
+import { Label } from "@workspace/ui/components/label";
+import { useNumberSettings } from "@workspace/ui/components/number-settings";
+import { Switch } from "@workspace/ui/components/switch";
 import { QueryFallback } from "@/components/query-fallback";
 import { DataTable } from "@/components/data-table/data-table";
 import type { ColumnSpec } from "@/components/data-table/types";
@@ -8,6 +12,7 @@ import { NoAccess } from "@/components/no-access";
 import { useCan } from "@/components/workspace/workspace-context";
 import { useApiQuery } from "@/lib/api/use-api";
 import { useFormatDate } from "@/lib/use-format-date";
+import { AuditChangeList, auditChangesText } from "./audit-change-list";
 
 const CATEGORIES: Record<AuditCategory, string> = {
   role: "Roles",
@@ -20,12 +25,17 @@ const CATEGORIES: Record<AuditCategory, string> = {
 };
 
 /**
- * Settings: Audit log (blueprint "Audit log": who, what, when, before and after). Every change
- * made in the demo is listed, newest first; the log is read-only.
+ * Settings: Audit log (blueprint "Audit log": who, what, when, before and after). Every change is
+ * listed, newest first; the log is read-only. Before and after read as one line per changed field
+ * ("Location: Denver Central → Boulder Showroom"), with Show raw for the stored values
+ * (click-through #58). The raw values are also columns, hidden at first, that the Columns menu
+ * shows and the CSV then exports.
  */
 export function AuditLogPage() {
   const can = useCan();
   const formatDate = useFormatDate();
+  const numbers = useNumberSettings();
+  const [raw, setRaw] = useState(false);
   const data = useApiQuery((client) => client.list("audit"), []);
   if (!can("settings.audit.view")) return <NoAccess />;
   if (data.status !== "ready") return <QueryFallback query={data} className="h-96" label="Loading audit log" />;
@@ -52,19 +62,15 @@ export function AuditLogPage() {
     },
     { id: "target", header: "On", value: (e) => e.target },
     {
-      id: "before",
-      header: "Before",
-      value: (e) => e.before,
-      cell: (e) => <span className="text-muted-foreground">{e.before ?? "None"}</span>,
-      className: "max-w-64 truncate",
+      id: "change",
+      header: "Change",
+      value: (e) => auditChangesText(e, numbers),
+      cell: (e) => <AuditChangeList entry={e} raw={raw} />,
+      filter: "text",
+      className: "min-w-64 max-w-md align-top text-sm",
     },
-    {
-      id: "after",
-      header: "After",
-      value: (e) => e.after,
-      cell: (e) => e.after ?? <span className="text-muted-foreground">None</span>,
-      className: "max-w-64 truncate",
-    },
+    { id: "before", header: "Before (raw)", value: (e) => e.before, hidden: true },
+    { id: "after", header: "After (raw)", value: (e) => e.after, hidden: true },
   ];
 
   return (
@@ -76,6 +82,14 @@ export function AuditLogPage() {
       searchPlaceholder="Search the audit log"
       csvName="audit-log"
       initialSort={{ id: "at", desc: true }}
+      toolbar={
+        <div className="flex items-center gap-2">
+          <Switch id="audit-raw" checked={raw} onCheckedChange={setRaw} />
+          <Label htmlFor="audit-raw" className="text-sm">
+            Show raw
+          </Label>
+        </div>
+      }
       empty={{ message: "No changes recorded yet." }}
     />
   );

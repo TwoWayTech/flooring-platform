@@ -178,10 +178,11 @@ export class ContractChangesService {
         tenant,
         actor,
         tx,
-        approve ? "Approved change order" : "Rejected change order",
+        // The entry names the change order as well as its contract (click-through #58).
+        `${approve ? "Approved" : "Rejected"} change order ${order.number}`,
         contract,
         { changeOrder: order.number, status: "pending" },
-        { status: approve ? "approved" : "rejected", reason: reason || null },
+        { changeOrder: order.number, status: approve ? "approved" : "rejected", reason: reason || null },
       );
     });
     return (await loadChangeOrders(db, this.control.db, { ids: [id] }))[0]!;

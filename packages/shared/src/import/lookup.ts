@@ -94,7 +94,7 @@ export function addressFields(required: boolean): ImportField[] {
     {
       key: "zip",
       label: "ZIP",
-      type: "text",
+      type: "zip",
       required,
       maxLength: 10,
       aliases: ["zip code", "postal code", "postcode"],
@@ -103,11 +103,9 @@ export function addressFields(required: boolean): ImportField[] {
   ];
 }
 
-const ZIP = /^\d{5}(-\d{4})?$/;
-
 /**
- * The address a row gives, if any: all four columns together or none, with a US ZIP code. An
- * error names what is missing.
+ * The address a row gives, if any: all four columns together or none. An error names what is
+ * missing; the ZIP column is read as a US ZIP code with its cell (`readCell`).
  */
 export function rowAddress(row: ParsedRow): { address: Address | null } | { error: string; field: string } {
   const parts = {
@@ -120,7 +118,6 @@ export function rowAddress(row: ParsedRow): { address: Address | null } | { erro
   if (given === 0) return { address: null };
   const missing = (Object.keys(parts) as (keyof typeof parts)[]).find((k) => !parts[k]);
   if (missing) return { error: "Give street, city, state and ZIP together, or leave all four empty.", field: missing };
-  if (!ZIP.test(parts.zip)) return { error: `“${parts.zip}” is not a US ZIP code.`, field: "zip" };
   return { address: parts };
 }
 

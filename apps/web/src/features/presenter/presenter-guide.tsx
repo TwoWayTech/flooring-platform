@@ -11,6 +11,7 @@ import { GUIDE_STEPS, type GuideStep } from "./guide-steps";
 import { NetworkControl } from "./network-control";
 import { usePresenterGuide } from "./use-presenter-guide";
 import { featureOn, pathOn } from "@workspace/shared";
+import { featureInBuild } from "@/lib/demo-tools";
 
 /** 2 when the browser shows the step's screen and tab, 1 for the screen alone, 0 otherwise. */
 function matchScore(step: GuideStep, pathname: string, view: string | null): number {
@@ -112,7 +113,7 @@ export function PresenterGuide() {
               );
             })}
           </ol>
-          {featureOn("shell.network-simulation") ? (
+          {featureInBuild("shell.network-simulation") ? (
             <footer className="border-hairline border-t px-4 py-2">
               <NetworkControl />
             </footer>

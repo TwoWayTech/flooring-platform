@@ -2,6 +2,7 @@
 
 import { Suspense, useState, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@workspace/ui/components/sheet";
+import { LeaveGuardDialog } from "@/components/leave-guard-dialog";
 import { PageGate } from "@/components/page-gate";
 import { PresenterGuide } from "@/features/presenter/presenter-guide";
 import { OwnerBillingBanner } from "@/features/standing/owner-billing-banner";
@@ -11,11 +12,12 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 import { ViewAsBanner } from "./view-as";
 import { featureOn } from "@workspace/shared";
+import { featureInBuild } from "@/lib/demo-tools";
 
 /**
  * The app shell (design brief "Layout"): sidebar on the Limestone canvas from 1024 px, a drawer
  * below that, a skip link to the page, the top bar, the Owner's account banner, the "View as" banner,
- * the page and the presenter guide. While the company is blocked, the ⌘K palette stays closed
+ * the page, the unsaved-changes guard and the presenter guide. While the company is blocked, the ⌘K palette stays closed
  * (docs/specs/platform-admin.md, part 4): its shortcut pauses and an open palette closes.
  */
 export function AppShell({ children }: { children: ReactNode }) {
@@ -58,7 +60,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {featureOn("shell.command-palette") ? (
         <CommandPalette open={paletteOpen && !blocked} onOpenChange={(next) => setPaletteOpen(next && !blocked)} />
       ) : null}
-      {featureOn("shell.presenter-guide") ? (
+      <LeaveGuardDialog />
+      {featureInBuild("shell.presenter-guide") ? (
         <Suspense fallback={null}>
           <PresenterGuide />
         </Suspense>

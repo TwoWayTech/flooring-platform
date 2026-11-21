@@ -662,6 +662,15 @@ describe("sales part 1 (P11, needs the local PostgreSQL)", () => {
           "Marked quote accepted",
         ]),
       );
+      // A new customer is logged with who it is, not only its type (click-through #58).
+      const added = await handle.db
+        .select({ label: auditLog.targetLabel, after: auditLog.after })
+        .from(auditLog)
+        .where(eq(auditLog.action, "Added customer"));
+      expect(added.length).toBeGreaterThan(0);
+      for (const entry of added) {
+        expect(entry.after).toMatchObject({ name: entry.label, type: expect.any(String), terms: expect.any(String) });
+      }
     } finally {
       await handle.close();
     }

@@ -24,6 +24,8 @@ export interface AuditEntry {
   target: string;
   before: string | null;
   after: string | null;
+  /** Names of the records the ids in before and after stand for, where the log found them (#58). */
+  names?: Record<string, string>;
 }
 
 /** Settings: Localization and tax (blueprint "Localization, currency and tax settings"). */
